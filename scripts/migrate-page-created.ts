@@ -53,6 +53,7 @@ import '../src/bootstrap-env.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
+import { isSealedBytes } from '../src/utils/privateStoreCrypto.js';
 
 interface Args {
   apply: boolean;
@@ -221,13 +222,18 @@ interface FileResult {
   created?: string;
 }
 
-async function migrateFile(
+export async function migrateFile(
   filePath: string,
   pagesDir: string,
   requiredDir: string,
   apply: boolean
 ): Promise<FileResult> {
-  const raw = await fs.readFile(filePath, 'utf8');
+  // #1836: a page in a sealed vault is ciphertext. Read as text and written
+  // back with a `created:` header, it was destroyed and replaced by plaintext;
+  // this script has no key, so a sealed file is left exactly as it is.
+  const bytes = await fs.readFile(filePath);
+  if (isSealedBytes(bytes)) return { outcome: 'already', filePath };
+  const raw = bytes.toString('utf8');
 
   // Parse just to read existing lastModified for the fallback chain.
   const parsedForLM = matter(raw);

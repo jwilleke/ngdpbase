@@ -18,8 +18,10 @@
  */
 
 import fs from 'fs-extra';
+import path from 'path';
 import {
   createEncryptedStore,
+  isSealedBytes,
   newRecoveryWords,
   sameMnemonic,
   unwrapDek,
@@ -153,6 +155,76 @@ export async function findUnsealedVaults(
       const { state } = await readVaultSealState(pagesDirectory, owner, vault, layout);
       if (state === 'mismatch') found.push({ owner, vault, state });
       else if (state === 'unopened' && (await fs.readdir(root)).length > 0) found.push({ owner, vault, state });
+    }
+  }
+  return found;
+}
+
+/** A sealed vault holding files that are not sealed (#1836). */
+export interface PlaintextInSealedVault {
+  owner: string;
+  vault: string;
+  /** How many files in it are not sealed bytes. */
+  files: number;
+  /** Where they are: the vault's own folders (`versions`, `attachments`, …), `.` for its root. */
+  areas: string[];
+}
+
+/** The first bytes of a file — enough to see the sealed-file magic without reading the rest. */
+async function headOf(file: string): Promise<Buffer> {
+  const handle = await fs.promises.open(file, 'r');
+  try {
+    const buf = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Every sealed vault (its `store.json` says `encrypt: true`) that holds files
+ * in the clear (#1836): a page's history moved in with `fs.move`, an
+ * attachment adopted without its I/O, a backup restored from before the vault
+ * was sealed. A sealed file starts with the `sealBytes` magic, so each file's
+ * first bytes tell them apart without the key. `store.json` is the one file
+ * that is never sealed; an empty file holds nothing and is not counted.
+ *
+ * Read only — nothing is moved, sealed or deleted; what to do with the files
+ * is an administrator's call. Vaults that are not sealed at all are
+ * {@link findUnsealedVaults}'s.
+ */
+export async function findPlaintextInSealedVaults(
+  pagesDirectory: string,
+  layout: PrivateStoreLayout
+): Promise<PlaintextInSealedVault[]> {
+  const found: PlaintextInSealedVault[] = [];
+  for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+    const userDir = path.join(pagesDirectory, layout.privateRoot, owner);
+    for (const ent of await fs.readdir(userDir, { withFileTypes: true })) {
+      if (!ent.isDirectory() || !isValidStoreId(ent.name)) continue;
+      const vault = ent.name;
+      let state: string;
+      try {
+        ({ state } = await readVaultSealState(pagesDirectory, owner, vault, layout));
+      } catch {
+        continue; // an unreadable store.json is not a sealed one; not this check's to report
+      }
+      if (state !== 'sealed') continue;
+      const root = privateStoreRoot(pagesDirectory, owner, vault, layout);
+      let files = 0;
+      const areas = new Set<string>();
+      for (const f of await fs.readdir(root, { recursive: true, withFileTypes: true })) {
+        if (!f.isFile()) continue;
+        const full = path.join(f.parentPath, f.name);
+        const rel = path.relative(root, full).split(path.sep);
+        if (rel.length === 1 && rel[0] === layout.files.storemeta) continue;
+        const head = await headOf(full);
+        if (head.length === 0 || isSealedBytes(head)) continue;
+        files++;
+        areas.add(rel.length === 1 ? '.' : rel[0]);
+      }
+      if (files > 0) found.push({ owner, vault, files, areas: [...areas].sort() });
     }
   }
   return found;

@@ -52,7 +52,7 @@ import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
-import { findUnsealedVaults } from '../utils/privateStoreDoor.js';
+import { findPlaintextInSealedVaults, findUnsealedVaults } from '../utils/privateStoreDoor.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -529,11 +529,24 @@ class PageManager extends BaseManager implements CatalogSource {
       if (!pagesDirectory) return;
       const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
       const found = await findUnsealedVaults(pagesDirectory, layout);
-      if (found.length === 0) return;
-      const detail = found
-        .map((v) => `${v.owner}/${v.vault} (${v.state === 'unopened' ? 'files but no store.json' : 'store.json not sealed'})`)
-        .join(', ');
-      const reason = `${found.length} vault(s) of an encrypted system-category hold files that are not encrypted, so they stay closed: ${detail}. Their files were left as they are; move or remove them, then have the owner open the vault (#1834)`;
+      // #1836: and sealed vaults holding files in the clear — history or
+      // attachments moved in, or a backup restored, without the store I/O.
+      const mixed = await findPlaintextInSealedVaults(pagesDirectory, layout);
+      if (found.length === 0 && mixed.length === 0) return;
+      const reasons: string[] = [];
+      if (found.length > 0) {
+        const detail = found
+          .map((v) => `${v.owner}/${v.vault} (${v.state === 'unopened' ? 'files but no store.json' : 'store.json not sealed'})`)
+          .join(', ');
+        reasons.push(`${found.length} vault(s) of an encrypted system-category hold files that are not encrypted, so they stay closed: ${detail}. Their files were left as they are; move or remove them, then have the owner open the vault (#1834)`);
+      }
+      if (mixed.length > 0) {
+        const detail = mixed
+          .map((v) => `${v.owner}/${v.vault} (${v.files} file(s) in ${v.areas.join(', ')})`)
+          .join(', ');
+        reasons.push(`${mixed.length} encrypted vault(s) hold files that are not encrypted: ${detail}. They were left as they are; an administrator decides what to do with them (#1836)`);
+      }
+      const reason = reasons.join('. ');
       logger.error(`📄 ${reason}`);
       if (this.markDegraded(reason)) {
         try {

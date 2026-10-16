@@ -161,6 +161,17 @@ At startup `PageManager` looks for vaults of a sealed kind that hold files in th
 
 Every file in a store goes through that I/O — the page files, their version blobs, the trash blobs, the attachments, and all five indexes. `store.json` is the one exception and cannot be sealed: it holds the wrapped DEK needed to open everything else.
 
+### Moving bytes into or out of a vault
+
+Bytes that change place go through both sides' I/O too, never a bare `fs.move` ([#1836](https://github.com/jwilleke/ngdpbase/issues/1836)):
+
+- __History__ (`VersioningFileProvider` when a page changes place, between the public area and a vault, or between vaults): both I/Os are resolved first, so a vault that refuses (locked, or a sealed kind that hasn't been opened) refuses the whole save, before the page or its history moves. `moveStoreFolder()` reads each file as its source stores it and writes it as its destination does: sealed with the new vault's DEK going in, opened coming out, re-sealed between two sealed vaults. Two plain sides are still a rename. The copy is staged beside the destination and renamed into place when it's complete; the source is removed last.
+- __Adopted attachments__ (`BasicAttachmentProvider.adoptRecordIntoStore`): into a sealed store, the shared pool's bytes are written through the location's I/O and the shared copy removed. Bytes already in a sealed store's folder in the clear are sealed where they are. The boot migration still skips sealed stores, since it holds no key.
+- __Paths with no key__ only write bytes that are already sealed into a vault that `vaultMustBeSealed()` says is sealed (its kind, or its `store.json`, or an unreadable `store.json`), and refuse anything else. These are the backup restore (`FileSystemProvider.restore`), the legacy page and history migrations, and putting back a pre-#1456 public tombstone whose `deletedFrom` is in a vault. A restore decides per vault before it writes anything: the kind, the `store.json` on disk, or the one in the backup. Into a sealed vault it writes only sealed files and a sealed `store.json`. A backup's `store.json` that isn't sealed never replaces a sealed one, because that would lose the wrapped DEK. Skipped files are counted in one error line.
+- __Required-pages sync ids__ (`adminSyncRequiredPages`) must each be one path segment, because each one becomes `{id}.md` or `versions/{id}`. Otherwise the request is refused with 400 before anything is written.
+
+At startup `findPlaintextInSealedVaults` checks every sealed vault (sealed `store.json`) for files whose first bytes aren't the `sealBytes` magic, leaving out `store.json` and empty files. It reports each vault with its owner, the file count and the folders (`versions`, `attachments`, `.` for the root), using the same log error, banner and notification as `findUnsealedVaults`. Nothing is read beyond each file's first 64 bytes, and nothing is moved, sealed or deleted.
+
 Because encryption is per file rather than a container, anyone with disk or backup access can still see how many items a store holds, their sizes and their dates. Names disclose nothing — pages are `{uuid}.md`, files `{uuid}.ext`.
 
 ### The session key bag

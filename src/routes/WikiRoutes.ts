@@ -131,6 +131,7 @@ import {
 import {
   canonicalPageName,
   formatPrivatePageName,
+  isSafePathSegment,
   parsePrivatePageName,
   PRIVATE_URL_SEGMENT,
   privateStoreLayoutFromConfig,
@@ -13084,6 +13085,20 @@ ${panes}
 
       if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0 && removeOrphanUuids.length === 0 && declineItems.length === 0 && allowItems.length === 0) {
         return res.status(400).json({ success: false, error: 'No pages selected' });
+      }
+
+      // #1836: every id below becomes a file name (`{id}.md`, `versions/{id}`)
+      // under the pages or required-pages folder. One that is not a single
+      // path segment could name a file in a vault, a sealed one included,
+      // and write a public page's plaintext there. Refused before anything.
+      const fileIds: unknown[] = [
+        ...uuids,
+        ...pushToSourceUuids,
+        ...reconcileItems.flatMap((r) => [r?.sourceUuid, r?.liveUuid]),
+        ...adoptItems.flatMap((a) => [a?.sourceUuid, a?.liveUuid])
+      ];
+      if (fileIds.some((id) => typeof id !== 'string' || !isSafePathSegment(id))) {
+        return res.status(400).json({ success: false, error: 'A page id is not valid. Nothing was changed.' });
       }
 
       await fse.ensureDir(pagesDirResolved);

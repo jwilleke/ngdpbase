@@ -5,6 +5,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import logger from './logger.js';
+import { vaultMustBeSealed } from './privateStoreFiles.js';
 import {
   parsePrivatePageRel,
   privatePageFilePath,
@@ -29,10 +30,17 @@ export async function migrateLegacyPrivatePages(
     if (!userEnt.isDirectory()) continue;
     const userDir = path.join(privateRoot, userEnt.name);
     const entries = await fs.readdir(userDir, { withFileTypes: true });
+    let sealed: boolean | null = null;
     for (const ent of entries) {
       if (ent.isDirectory()) continue;
       if (catalogFiles.has(ent.name)) continue;
       if (!ent.name.toLowerCase().endsWith('.md')) continue;
+      // #1836: a legacy page is plaintext; it never moves into a sealed vault.
+      sealed ??= await vaultMustBeSealed(pagesDirectory, userEnt.name, L.defaultStoreId, L);
+      if (sealed) {
+        logger.warn(`[private-store] not moving a legacy page of ${userEnt.name} into '${L.defaultStoreId}': that vault is encrypted and the page is not (#1836)`);
+        continue;
+      }
 
       const from = path.join(userDir, ent.name);
       const to = privatePageFilePath(pagesDirectory, userEnt.name, ent.name, L.defaultStoreId, L);
@@ -79,6 +87,11 @@ export async function migrateLegacyPrivateVersionBlobs(
     }
     const to = privateVersionDirectory(pagesDirectory, located.creator, uuid, located.store, L);
     if (path.resolve(from) === path.resolve(to)) continue;
+    // #1836: legacy history is plaintext; it never moves into a sealed vault.
+    if (await vaultMustBeSealed(pagesDirectory, located.creator, located.store, L)) {
+      logger.warn(`[private-store] leaving version dir ${from}: ${located.creator}'s vault '${located.store}' is encrypted and this history is not (#1836)`);
+      continue;
+    }
     if (await fs.pathExists(to)) {
       logger.warn(`[private-store] not moving ${from}: ${to} already exists`);
       continue;

@@ -13,7 +13,8 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import matter from 'gray-matter';
-import { transformFrontmatter, readManifestDateCreated } from '../migrate-page-created';
+import { transformFrontmatter, readManifestDateCreated, migrateFile } from '../migrate-page-created';
+import { sealBytes } from '../../src/utils/privateStoreCrypto';
 
 function fm(raw: string) {
   return matter(raw).data as Record<string, unknown>;
@@ -140,6 +141,25 @@ describe('readManifestDateCreated — layout discovery (#754)', () => {
       ]
     });
   }
+
+  test('#1836: a sealed vault page is left byte for byte, never rewritten with a plaintext header', async () => {
+    const file = path.join(pagesDir, 'vaults', 'molly', 'phr', 'p.md');
+    await fs.ensureDir(path.dirname(file));
+    const sealed = sealBytes(Buffer.alloc(32, 7), Buffer.from('---\ntitle: Labs\n---\nsecret\n'));
+    await fs.writeFile(file, sealed);
+
+    const result = await migrateFile(file, pagesDir, requiredDir, true);
+
+    expect(result.outcome).toBe('already');
+    expect((await fs.readFile(file)).equals(sealed)).toBe(true);
+  });
+
+  test('a plaintext page is still migrated', async () => {
+    const file = path.join(pagesDir, 'p.md');
+    await fs.writeFile(file, '---\ntitle: P\n---\nbody\n');
+    expect((await migrateFile(file, pagesDir, requiredDir, true)).outcome).toBe('migrated');
+    expect(await fs.readFile(file, 'utf8')).toMatch(/^---\n(.|\n)*created:/);
+  });
 
   test('finds v1.dateCreated for a page in pages/<uuid>.md', async () => {
     const uuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

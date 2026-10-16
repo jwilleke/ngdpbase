@@ -10,6 +10,7 @@ import fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import logger from '../utils/logger.js';
+import { isSealedBytes } from '../utils/privateStoreCrypto.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -1048,7 +1049,22 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
           return null;
         }
         await fs.ensureDir(path.dirname(target));
-        await fs.move(source, target, { overwrite: false });
+        if (location.io.sealed) {
+          // #1836: the shared pool is plaintext; into a sealed store the bytes
+          // go through its I/O, sealed with its DEK — never moved as they are.
+          if (await fs.pathExists(target)) {
+            throw new Error(`a file is already at its place in ${location.owner}'s store '${location.store}' (${id})`);
+          }
+          await location.io.writeBytes(target, await fs.readFile(source));
+          await fs.remove(source);
+        } else {
+          await fs.move(source, target, { overwrite: false });
+        }
+      } else if (location.io.sealed && await fs.pathExists(target)) {
+        // Already in place (#1386 put private bytes in the store folder), but
+        // not through its I/O: seal them where they are (#1836).
+        const bytes = await fs.readFile(target);
+        if (!isSealedBytes(bytes)) await location.io.writeBytes(target, bytes);
       }
       files[id] = {
         id,

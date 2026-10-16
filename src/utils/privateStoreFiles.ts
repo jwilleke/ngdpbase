@@ -17,7 +17,7 @@ import path from 'path';
 import { writeFileAtomic } from './atomicWrite.js';
 import logger from './logger.js';
 import { assertEncryptedStoreWritable, openBytes, sealBytes } from './privateStoreCrypto.js';
-import { readVaultSealState, readVaultSealStateSync, refuseUnsealedVault } from './privateStoreMeta.js';
+import { kindIsSealed, readVaultSealState, readVaultSealStateSync, refuseUnsealedVault } from './privateStoreMeta.js';
 import {
   isValidStoreId,
   parsePrivateStoreRel,
@@ -172,4 +172,78 @@ export async function storeFileIOForPath(ctx: ActorContext | undefined, args: {
     store: where.store,
     layout: args.layout
   });
+}
+
+/** The vault `file` lies in — `{privateroot}/{owner}/{store}/…` — or null for a file in no vault. */
+export function vaultOfFile(
+  pagesDirectory: string,
+  file: string,
+  layout: PrivateStoreLayout
+): { owner: string; store: string } | null {
+  const where = parsePrivateStoreRel(path.relative(pagesDirectory, file).split(path.sep), layout);
+  return where ? { owner: where.creator, store: where.store } : null;
+}
+
+/**
+ * Whether `owner`'s `store` holds, or must hold, only sealed bytes (#1836):
+ * its kind is sealed, or its `store.json` is. A `store.json` that cannot be
+ * read counts as sealed — the answer that never lets plaintext in.
+ *
+ * For the paths that put bytes into a vault without its store I/O (a backup
+ * restore, a legacy migration, a tombstone put back): they hold no DEK, so
+ * where this is true they write only bytes that are already sealed, or refuse.
+ */
+export async function vaultMustBeSealed(
+  pagesDirectory: string,
+  owner: string,
+  store: string,
+  layout: PrivateStoreLayout
+): Promise<boolean> {
+  if (kindIsSealed(layout, store)) return true;
+  try {
+    return (await readVaultSealState(pagesDirectory, owner, store, layout)).state !== 'plain';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Move a folder of store files — a page's history — from one place to another
+ * through each side's I/O (#1836): every file is read as its source stores it
+ * and written as its destination does, so history moved into a sealed vault
+ * is sealed with that vault's DEK, history moved out of one is opened, and a
+ * move between two sealed vaults is re-sealed. Two plain sides are a plain
+ * rename, as before.
+ *
+ * The copy is staged beside `toDir` and renamed into place only when every
+ * file is written, so a failure leaves the source whole and no half history
+ * at the destination. The source is removed last.
+ */
+export async function moveStoreFolder(
+  fromDir: string,
+  toDir: string,
+  fromIO: StoreFileIO,
+  toIO: StoreFileIO
+): Promise<void> {
+  await fs.ensureDir(path.dirname(toDir));
+  if (!fromIO.sealed && !toIO.sealed) {
+    await fs.move(fromDir, toDir);
+    return;
+  }
+  const staging = `${toDir}.moving-${process.pid}-${Date.now()}`;
+  try {
+    await fs.ensureDir(staging);
+    for (const ent of await fs.readdir(fromDir, { recursive: true, withFileTypes: true })) {
+      if (!ent.isFile()) continue;
+      const source = path.join(ent.parentPath, ent.name);
+      const target = path.join(staging, path.relative(fromDir, source));
+      await fs.ensureDir(path.dirname(target));
+      await toIO.writeBytes(target, await fromIO.readBytes(source));
+    }
+    await fs.rename(staging, toDir);
+  } catch (err) {
+    await fs.remove(staging);
+    throw err;
+  }
+  await fs.remove(fromDir);
 }
