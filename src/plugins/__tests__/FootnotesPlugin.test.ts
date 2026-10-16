@@ -10,7 +10,10 @@
  * @jest-environment node
  */
 
-import FootnotesPlugin from '../FootnotesPlugin';
+import FootnotesPluginModule from '../FootnotesPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const FootnotesPlugin = asExecuted(FootnotesPluginModule);
 
 // #1198: the plugin asks policy, not a role name. This stand-in answers as the
 // shipped policies do for the roles the tests use.

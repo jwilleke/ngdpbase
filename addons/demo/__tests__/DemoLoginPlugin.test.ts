@@ -12,7 +12,10 @@
  * the rendering.
  */
 
-import DemoLoginPlugin from '../plugins/DemoLoginPlugin';
+import DemoLoginPluginModule from '../plugins/DemoLoginPlugin';
+import { asExecuted } from '../../../dist/src/test-support/plugins.js';
+
+const DemoLoginPlugin = asExecuted(DemoLoginPluginModule);
 
 function makeContext(properties: Record<string, unknown>, opts: { throws?: boolean } = {}) {
   const configManager = {

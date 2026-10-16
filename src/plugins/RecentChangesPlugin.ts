@@ -18,17 +18,8 @@
  * authorised to view. No direct disk reads from this plugin.
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import { pageUrl } from '../utils/pageUrl.js';
-import {
-  escapeHtml,
-  formatDateTime,
-  formatRelativeTime,
-  parsePageParam,
-  parsePageSizeParam,
-  applyPagination,
-  formatPaginationLinks
-} from '../utils/pluginFormatters.js';
 
 interface RecentChangesParams extends PluginParams {
   since?: string | number;
@@ -109,7 +100,8 @@ function countLine(
  * @param total - Size of the whole change set, or null when the cap was applied
  *                at the manager and the true total was never counted.
  */
-function generateFullFormat(pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
+function generateFullFormat(f: PluginFormatters, pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
+  const { escapeHtml, formatDateTime } = f;
   let html = '<div class="recent-changes-plugin recent-changes-full">\n';
   html += `<h4>Recent Changes (${windowLabel(since)})</h4>\n`;
   html += '<div class="table-responsive">\n';
@@ -150,7 +142,8 @@ function generateFullFormat(pages: RecentChange[], since: number | null, total: 
  * Generate compact format output
  */
 /** @param total - As `generateFullFormat`: null when the total is not known. */
-function generateCompactFormat(pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
+function generateCompactFormat(f: PluginFormatters, pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
+  const { escapeHtml, formatRelativeTime } = f;
   let html = '<div class="recent-changes-plugin recent-changes-compact">\n';
   html += `<h5>Recent Changes (${windowLabel(since)})</h5>\n`;
   html += '<ul class="list-unstyled">\n';
@@ -178,6 +171,7 @@ const RecentChangesPlugin: SimplePlugin = {
   version: '2.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks } = context.formatters;
     const opts = (params || {}) as RecentChangesParams;
 
     try {
@@ -268,8 +262,8 @@ const RecentChangesPlugin: SimplePlugin = {
       // counting and claiming a total would be inventing one.
       const total = pageSize > 0 || shown.length < limit ? recentChanges.length : null;
       return (format === 'full'
-        ? generateFullFormat(shown, since, total)
-        : generateCompactFormat(shown, since, total)) + paginationHtml;
+        ? generateFullFormat(context.formatters, shown, since, total)
+        : generateCompactFormat(context.formatters, shown, since, total)) + paginationHtml;
 
     } catch (error) {
       const err = error as Error;

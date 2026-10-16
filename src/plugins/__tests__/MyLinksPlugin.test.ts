@@ -13,7 +13,10 @@
  * @jest-environment node
  */
 
-import MyLinksPlugin from '../MyLinksPlugin';
+import MyLinksPluginModule from '../MyLinksPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const MyLinksPlugin = asExecuted(MyLinksPluginModule);
 
 const authenticatedUser = (pinned: unknown[] = []) => ({
   username: 'alice',

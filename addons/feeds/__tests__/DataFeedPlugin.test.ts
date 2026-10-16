@@ -4,8 +4,11 @@
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import DataFeedPlugin from '../src/DataFeedPlugin';
+import DataFeedPluginModule from '../src/DataFeedPlugin';
+import { asExecuted } from '../../../dist/src/test-support/plugins.js';
 import type { NormalizedRecord } from '../src/adapters/types';
+
+const DataFeedPlugin = asExecuted(DataFeedPluginModule);
 
 const recs: NormalizedRecord[] = [
   { sourceRecordId: 'a', fetchedAt: 'x', properties: { place: 'Ridgecrest', magnitude: 5.2 } },

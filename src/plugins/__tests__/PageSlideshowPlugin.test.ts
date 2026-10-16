@@ -14,8 +14,11 @@
  * @jest-environment node
  */
 
-import PageSlideshowPlugin from '../PageSlideshowPlugin';
+import PageSlideshowPluginModule from '../PageSlideshowPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+
+const PageSlideshowPlugin = asExecuted(PageSlideshowPluginModule);
 
 /**
  * `allPages` is what the viewer may read (#1219); `denied` are pages that exist

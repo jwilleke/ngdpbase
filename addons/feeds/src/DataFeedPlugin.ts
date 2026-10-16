@@ -3,8 +3,8 @@
  *
  * Renders a feed source's records as a table (default) or list, at view time,
  * from the live RecordStore — no page write, no version churn (design §5.3).
- * Rendering reuses `pluginFormatters` (formatAsTable / parseMaxParam /
- * parseSortParam / escapeHtml); it does NOT go through NCM (#501 deferred — the
+ * Rendering reuses PluginManager's formatters, `context.formatters` (formatAsTable /
+ * parseMaxParam / parseSortParam / escapeHtml); it does NOT go through NCM (#501 deferred — the
  * formatAsTable-vs-NCM unification is tracked on #501).
  *
  * Usage:
@@ -56,15 +56,8 @@
  *   `\[\{([^}]+)\}\]`), so a brace placeholder truncates the token).
  */
 
-import {
-  escapeHtml,
-  parseMaxParam,
-  parseSortParam,
-  applyMax,
-  formatAsTable
-} from '../../../dist/src/utils/pluginFormatters.js';
 import logger from '../../../dist/src/utils/logger.js';
-import type { SimplePlugin, PluginContext, PluginParams } from '../../../dist/src/plugins/types.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/plugins/types.js';
 import type { NormalizedRecord } from './adapters/types.js';
 import { recordName } from './normalize.js';
 
@@ -79,7 +72,8 @@ interface FeedRecordSource {
   getRecords?: (sourceId: string) => Promise<NormalizedRecord[]>;
 }
 
-function muted(msg: string): string {
+function muted(f: PluginFormatters, msg: string): string {
+  const { escapeHtml } = f;
   return `<p class="text-muted"><em>${escapeHtml(msg)}</em></p>`;
 }
 
@@ -222,6 +216,7 @@ const DataFeedPlugin: SimplePlugin = {
   description: 'Render a feed source\'s records as a table or list (#685)',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parseMaxParam, parseSortParam, applyMax, formatAsTable } = context.formatters;
     // #963: page-supplied copy for the legitimate "there is nothing to show"
     // state. Deliberately NOT applied to the two failure branches below — a
     // page that rendered "No tsunami messages are currently active" when the
@@ -232,10 +227,10 @@ const DataFeedPlugin: SimplePlugin = {
       : null;
 
     const source = String(params.source ?? '').trim();
-    if (!source) return muted('DataFeed: a source parameter is required.');
+    if (!source) return muted(context.formatters, 'DataFeed: a source parameter is required.');
 
     const fm = context.engine?.getManager?.('FeedManager') as FeedRecordSource | undefined;
-    if (!fm?.getRecords) return muted('DataFeed: the feeds addon is not enabled on this site.');
+    if (!fm?.getRecords) return muted(context.formatters, 'DataFeed: the feeds addon is not enabled on this site.');
 
     let records = await fm.getRecords(source);
 
@@ -248,7 +243,7 @@ const DataFeedPlugin: SimplePlugin = {
     // alerts feed is empty precisely when nothing is wrong. The rendered copy
     // says so plainly and carries no internal source id (#963).
     if (records.length === 0) {
-      return muted(emptyOverride ?? 'No records are currently available for this feed.');
+      return muted(context.formatters, emptyOverride ?? 'No records are currently available for this feed.');
     }
 
     const columns = typeof params.columns === 'string' && params.columns.trim()
@@ -303,7 +298,7 @@ const DataFeedPlugin: SimplePlugin = {
           `[DataFeed] no mappable records for feed '${source}' — ` +
           `${records.length} record(s) had no finite value in both '${latCol}' and '${lonCol}'`
         );
-        return muted(emptyOverride ?? 'No mappable records are currently available for this feed.');
+        return muted(context.formatters, emptyOverride ?? 'No mappable records are currently available for this feed.');
       }
 
       const mapId = 'datafeed-map-' + Math.random().toString(36).slice(2, 8);

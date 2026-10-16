@@ -5,8 +5,9 @@
  */
 
 import MarqueePluginModule from '../MarqueePlugin' ;
+import { asExecuted } from '../../test-support/plugins';
 import type { SimplePlugin } from '../types';
-const MarqueePlugin = MarqueePluginModule as unknown as SimplePlugin;
+const MarqueePlugin = asExecuted(MarqueePluginModule) as unknown as SimplePlugin;
 const ctx = { pageName: 'TestPage', linkGraph: {} };
 
 describe('MarqueePlugin — metadata', () => {

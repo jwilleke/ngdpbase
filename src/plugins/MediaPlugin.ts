@@ -16,8 +16,7 @@
  *   [{MediaPlugin format='album-link' keyword='current'}]   — button linking to the keyword album page
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { formatAsCount, formatAsList, parseMaxParam, applyMax, escapeHtml, resolveCurrentKeyword, simpleSlug } from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import type { PageLink } from '../utils/pluginFormatters.js';
 
 interface MediaItem {
@@ -35,7 +34,8 @@ interface MediaManager {
   listByKeyword(keyword: string): Promise<MediaItem[]>;
 }
 
-function formatAsAlbum(items: MediaItem[], max: number, keyword?: string): string {
+function formatAsAlbum(f: PluginFormatters, items: MediaItem[], max: number, keyword?: string): string {
+  const { applyMax, escapeHtml } = f;
   const visible = applyMax(items, max);
   if (visible.length === 0) {
     return '<p><em>No media items found.</em></p>';
@@ -61,6 +61,7 @@ const MediaPlugin: SimplePlugin = {
   version: '1.2.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { formatAsCount, formatAsList, parseMaxParam, applyMax, escapeHtml, resolveCurrentKeyword, simpleSlug } = context.formatters;
     const engine = context.engine;
     if (!engine) return '0';
 
@@ -108,7 +109,7 @@ const MediaPlugin: SimplePlugin = {
       const max = parseMaxParam(typeof rawMax === 'boolean' ? undefined : rawMax);
 
       if (format === 'album') {
-        return formatAsAlbum(items, max, resolvedKeyword);
+        return formatAsAlbum(context.formatters, items, max, resolvedKeyword);
       }
 
       if (format === 'album-link') {

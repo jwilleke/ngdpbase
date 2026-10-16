@@ -15,7 +15,8 @@ import { RecordStore } from '../src/RecordStore';
 import { getByPath } from '../src/adapters/dotpath';
 import { geojsonAdapter } from '../src/adapters/geojson';
 import { recordToArticle } from '../src/normalize';
-import MarqueePlugin from '../../../dist/src/plugins/MarqueePlugin';
+import MarqueePluginModule from '../../../dist/src/plugins/MarqueePlugin';
+import { asExecuted } from '../../../dist/src/test-support/plugins.js';
 import type { SourceAdapter } from '../src/adapters/types';
 import type { FeedSourceConfig } from '../src/types';
 
@@ -25,6 +26,8 @@ import type { FeedSourceConfig } from '../src/types';
 vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../dist/src/http/ssrf.js';
+
+const MarqueePlugin = asExecuted(MarqueePluginModule);
 
 const mockGuardedFetch = vi.mocked(guardedFetch);
 const POLICY = {} as EgressPolicy;

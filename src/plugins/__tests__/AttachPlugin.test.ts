@@ -10,8 +10,9 @@
  */
 
 import AttachPluginModule from '../AttachPlugin' ;
+import { asExecuted } from '../../test-support/plugins';
 import type { SimplePlugin } from '../types';
-const AttachPlugin = AttachPluginModule as unknown as SimplePlugin;
+const AttachPlugin = asExecuted(AttachPluginModule) as unknown as SimplePlugin;
 const VIEWER = { username: 'molly', roles: ['editor'], isAuthenticated: true };
 
 function makeContext(resolvedValue) {

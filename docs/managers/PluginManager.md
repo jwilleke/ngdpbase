@@ -109,7 +109,8 @@ PluginManager owns the plugin formatter helpers in `src/utils/pluginFormatters.t
 - A plugin receives them in every run as `context.formatters`, for example `context.formatters.formatAsTable(headers, rows)`.
 - Code that is not a plugin, such as a route, reads `engine.getManager('PluginManager').formatters`.
 - Types (`PageLink`, `TableOptions`, `FormOption` and the rest) stay importable from the module with `import type`.
-- Importing the module by path still works. Switching the existing importers over is the next step of [#1820](https://github.com/jwilleke/ngdpbase/issues/1820), after which the path import goes.
+- Nothing else value-imports the module: `npm run lint:addons` fails on a value import of it from any file but `src/managers/PluginManager.ts`, in core and add-on code alike (tests are exempt). A plugin's module-level helper takes the formatters as a parameter from `execute`.
+- Tests get the same frozen object from `src/test-support/plugins.ts`: `asExecuted(plugin)` runs `execute` with `formatters` in the context, and `TEST_PLUGIN_MANAGER` is a mock engine's `PluginManager`.
 
 The helpers fall into four groups:
 

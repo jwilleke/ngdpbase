@@ -14,7 +14,10 @@
  * @jest-environment node
  */
 
-import AttachmentsPlugin from '../AttachmentsPlugin';
+import AttachmentsPluginModule from '../AttachmentsPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const AttachmentsPlugin = asExecuted(AttachmentsPluginModule);
 
 const makeAttachmentManager = (attachments: unknown[]) => ({
   getSharedPoolAttachments: vi.fn().mockResolvedValue(attachments)

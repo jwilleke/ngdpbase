@@ -27,7 +27,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
 
 interface ConfigManager {
   getProperty(key: string, defaultValue: string): string;
@@ -143,6 +142,7 @@ const LocationPlugin: SimplePlugin = {
    * @returns HTML output
    */
   execute(context: PluginContext, params: PluginParams): string {
+    const { escapeHtml } = context.formatters;
     try {
       const opts = params as LocationParams;
 

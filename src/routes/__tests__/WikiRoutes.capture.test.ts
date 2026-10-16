@@ -9,6 +9,7 @@ import { doorSaveResult } from './__fixtures__/pageDoor';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { vaultCategories } from '../../test-support/vaults';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const authedUser = { username: 'jim', isAuthenticated: true, roles: ['admin'] };
 
@@ -71,6 +72,7 @@ describe('WikiRoutes capture (#881)', () => {
 
     mockEngine = {
       getManager: vi.fn((name) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         if (name === 'PageManager') {
           return {
             getPage: mockGetPage,
@@ -476,6 +478,7 @@ describe('WikiRoutes capture (#881)', () => {
     beforeEach(() => {
       const gatedEngine = {
         getManager: vi.fn((name) => {
+          if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
           if (name === 'ConfigurationManager') {
             return { getProperty: vi.fn((key, def) => def) }; // enabled resolves to default: false
           }
@@ -532,6 +535,7 @@ describe('WikiRoutes capture (#881)', () => {
       ]);
       const engine = {
         getManager: vi.fn((name) => {
+          if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
           if (name === 'PageManager') return { getPagesByCreator: mockGetPagesByCreator };
           // #1198: /my/captures asks profile-manage of policy; the signed-in user holds it.
           // #1431 step 14: decisions are the PDP's.

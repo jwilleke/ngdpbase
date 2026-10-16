@@ -4,7 +4,10 @@
  * Plugin page showed anonymous visitors the session secret. Every path now
  * goes through the sensitive-values rule.
  */
-import ConfigAccessorPlugin from '../ConfigAccessorPlugin';
+import ConfigAccessorPluginModule from '../ConfigAccessorPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const ConfigAccessorPlugin = asExecuted(ConfigAccessorPluginModule);
 
 const CONFIG: Record<string, unknown> = {
   'ngdpbase.config.sensitive-values': { 'ngdpbase.session.secret': 'secret', 'ngdpbase.backup.directory': 'sensitive' },

@@ -9,6 +9,7 @@
 import express from 'express';
 import request from 'supertest';
 import apiRoutes from '../routes/api';
+import { TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 
 // Stub ApiContext.from so it doesn't need a real session in tests.
 // Must be at the top level — Vitest hoists vi.mock() but warns (and will
@@ -45,6 +46,7 @@ const testForm = {
 
 function makeEngine(overrides: Record<string, unknown> = {}) {
   const defaultManagers: Record<string, unknown> = {
+    PluginManager: TEST_PLUGIN_MANAGER,
     FormsDataManager: {
       getDefinition: () => testForm,
       saveSubmission: (s: object) => Promise.resolve({ ...s, id: 'sub-001' })

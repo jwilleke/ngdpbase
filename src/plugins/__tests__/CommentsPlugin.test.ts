@@ -13,7 +13,10 @@
  * @jest-environment node
  */
 
-import CommentsPlugin from '../CommentsPlugin';
+import CommentsPluginModule from '../CommentsPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const CommentsPlugin = asExecuted(CommentsPluginModule);
 
 const makeCommentManager = (enabled = true, comments: unknown[] = []) => ({
   isEnabled: () => enabled,

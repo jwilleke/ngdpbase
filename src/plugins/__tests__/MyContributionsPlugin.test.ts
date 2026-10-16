@@ -11,8 +11,11 @@
  */
 
 import { describe, expect, test, vi } from 'vitest';
-import MyContributionsPlugin from '../MyContributionsPlugin';
+import MyContributionsPluginModule from '../MyContributionsPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+
+const MyContributionsPlugin = asExecuted(MyContributionsPluginModule);
 
 function makeContext(opts: {
   username?: string;

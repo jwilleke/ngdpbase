@@ -4,7 +4,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { formatAsCount } from '../utils/pluginFormatters.js';
 
 interface PageManager {
   getAllPages(): Promise<unknown[]>;
@@ -24,6 +23,7 @@ const TotalPagesPlugin: SimplePlugin = {
    * @returns HTML output
    */
   async execute(context: PluginContext, _params: PluginParams): Promise<string> {
+    const { formatAsCount } = context.formatters;
     const engine = context.engine;
     if (!engine) {
       return '0';

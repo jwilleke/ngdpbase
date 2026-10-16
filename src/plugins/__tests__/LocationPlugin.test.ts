@@ -18,6 +18,7 @@ import path from 'path';
 import type { WikiEngine } from '../../types/WikiEngine';
 import fs from 'fs-extra';
 import PluginManager from '../../managers/PluginManager';
+import { asExecuted } from '../../test-support/plugins';
 describe('Location (via PluginManager)', () => {
   let LocationPlugin;
   let mockContext;
@@ -54,6 +55,7 @@ describe('Location (via PluginManager)', () => {
         `Location plugin not found. Loaded plugins: ${names.join(', ')}`
       );
     }
+    LocationPlugin = asExecuted(LocationPlugin);
   });
 
   beforeEach(() => {

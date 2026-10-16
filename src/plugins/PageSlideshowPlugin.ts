@@ -26,7 +26,6 @@
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
-import { escapeHtml, splitParam, parseBoolParam, extractExcerpt, shuffleArray } from '../utils/pluginFormatters.js';
 import { pageUrl } from '../utils/pageUrl.js';
 
 let _idCounter = 0;
@@ -56,6 +55,7 @@ const PageSlideshowPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, splitParam, parseBoolParam, extractExcerpt, shuffleArray } = context.formatters;
     const pageManager = context.engine?.getManager('PageManager') as PageManagerLike | undefined;
     const viewer = (context as { userContext?: unknown }).userContext ?? ANONYMOUS_SUBJECT;
     if (!pageManager) {

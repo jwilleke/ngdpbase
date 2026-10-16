@@ -13,6 +13,7 @@
  * neither is a chokepoint — so these read AuditManager.
  */
 import WikiRoutes from '../WikiRoutes';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const admin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 
@@ -35,6 +36,7 @@ const makeRes = () => ({
 function makeRoutes(audit: unknown, hasPermission = true) {
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'AuditManager') return audit;
       // #1431 step 13: the request subject is the PIP's.
       if (name === 'PolicyInformationPoint') return { currentSubject: vi.fn().mockResolvedValue(admin) };

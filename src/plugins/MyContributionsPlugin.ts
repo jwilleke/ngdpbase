@@ -16,8 +16,7 @@
  *   - Anonymous visitor with no explicit username → empty output.
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, formatAsCount, formatAsList, resolveUserParam } from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 
 interface UserManagerLike {
   getUser?: (username: string) => Promise<{ username: string } | undefined | null>;
@@ -68,6 +67,7 @@ const MyContributionsPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { resolveUserParam } = context.formatters;
     const ctx = context as ExtendedPluginContext;
     const viewer = ctx.userContext ?? ctx.currentUser;
     const viewerName = viewer?.username;
@@ -102,7 +102,7 @@ const MyContributionsPlugin: SimplePlugin = {
         try {
           const user = await userManager.getUser(target);
           if (!user) {
-            return renderNotFound(target);
+            return renderNotFound(context.formatters, target);
           }
         } catch (err) {
           ctx.engine?.logger?.error?.('[MyContributionsPlugin] user-existence check failed:', err);
@@ -117,7 +117,7 @@ const MyContributionsPlugin: SimplePlugin = {
     if (!viewer) throw new Error('MyContributionsPlugin: no requester to count for');
     const counts = await getContributionCounts(ctx, target, viewer, isSelfView ? viewer : undefined);
 
-    return renderCard(target, counts, isSelfView);
+    return renderCard(context.formatters, target, counts, isSelfView);
   },
 
   initialize(_engine: unknown): void {
@@ -209,7 +209,8 @@ interface CountRow {
   value: number | undefined;
 }
 
-function renderCard(target: string, counts: ContributionCounts, isSelfView: boolean): string {
+function renderCard(f: PluginFormatters, target: string, counts: ContributionCounts, isSelfView: boolean): string {
+  const { escapeHtml, formatAsCount, formatAsList } = f;
   const rows: CountRow[] = isSelfView
     ? [
       { href: '/my/vaults', icon: 'fa-eye-slash', label: 'Private Pages',       value: counts.private },
@@ -272,7 +273,8 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
   ].filter(Boolean).join('\n');
 }
 
-function renderNotFound(target: string): string {
+function renderNotFound(f: PluginFormatters, target: string): string {
+  const { escapeHtml } = f;
   return [
     '<div class="alert alert-warning my-contributions-plugin" role="alert">',
     `  <i class="fas fa-exclamation-triangle"></i> User <strong>${escapeHtml(target)}</strong> not found.`,

@@ -41,23 +41,8 @@
  * Related: GitHub Issue #111
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import {
-  escapeHtml,
-  parseMaxParam,
-  applyMax,
-  parsePageSizeParam,
-  parsePageParam,
-  applyPagination,
-  formatPaginationLinks,
-  formatAsTable,
-  formatAsList,
-  formatAsCount,
-  resolveUserParam,
-  resolveCurrentKeyword,
-  simpleSlug,
-  type PageLink
-} from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
+import type { PageLink } from '../utils/pluginFormatters.js';
 
 interface SearchParams extends PluginParams {
   query?: string;
@@ -138,7 +123,8 @@ function parseMultiValue(value: string | undefined): string[] {
  * @param results - Search results
  * @returns Count as text
  */
-function formatCount(results: SearchResult[]): string {
+function formatCount(f: PluginFormatters, results: SearchResult[]): string {
+  const { formatAsCount } = f;
   return `<span class="search-count">${formatAsCount(results ? results.length : 0)}</span>`;
 }
 
@@ -148,7 +134,8 @@ function formatCount(results: SearchResult[]): string {
  * @param options - Search options for display
  * @returns HTML bullet list
  */
-function formatTitles(results: SearchResult[], options: FormatOptions): string {
+function formatTitles(f: PluginFormatters, results: SearchResult[], options: FormatOptions): string {
+  const { escapeHtml, formatAsList } = f;
   if (!results || results.length === 0) {
     return `<div class="search-plugin">
   <p class="info">No results found${options.query !== '*' ? ` for query: "${escapeHtml(options.query)}"` : ''}</p>
@@ -170,7 +157,8 @@ function formatTitles(results: SearchResult[], options: FormatOptions): string {
  * @param options - Search options for display
  * @returns HTML list
  */
-function formatList(results: SearchResult[], options: FormatOptions): string {
+function formatList(f: PluginFormatters, results: SearchResult[], options: FormatOptions): string {
+  const { escapeHtml } = f;
   if (!results || results.length === 0) {
     return `<div class="search-plugin">
   <p class="info">No results found${options.query !== '*' ? ` for query: "${escapeHtml(options.query)}"` : ''}</p>
@@ -197,7 +185,8 @@ function formatList(results: SearchResult[], options: FormatOptions): string {
  * @param options - Search options for display
  * @returns HTML table
  */
-function formatResultsTable(results: SearchResult[], options: FormatOptions): string {
+function formatResultsTable(f: PluginFormatters, results: SearchResult[], options: FormatOptions): string {
+  const { escapeHtml, formatAsTable, formatAsCount } = f;
   if (!results || results.length === 0) {
     return `<div class="search-plugin">
   <p class="info">No results found${options.query !== '*' ? ` for query: "${escapeHtml(options.query)}"` : ''}</p>
@@ -243,17 +232,17 @@ function formatResultsTable(results: SearchResult[], options: FormatOptions): st
  * @param options - Search options for display
  * @returns Formatted output
  */
-function formatResults(results: SearchResult[], options: FormatOptions): string {
+function formatResults(f: PluginFormatters, results: SearchResult[], options: FormatOptions): string {
   switch (options.format) {
   case 'count':
-    return formatCount(results);
+    return formatCount(f, results);
   case 'titles':
-    return formatTitles(results, options);
+    return formatTitles(f, results, options);
   case 'list':
-    return formatList(results, options);
+    return formatList(f, results, options);
   case 'table':
   default:
-    return formatResultsTable(results, options);
+    return formatResultsTable(f, results, options);
   }
 }
 
@@ -273,6 +262,7 @@ const SearchPlugin: SimplePlugin = {
    * @returns HTML output
    */
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parseMaxParam, applyMax, parsePageSizeParam, parsePageParam, applyPagination, formatPaginationLinks, resolveUserParam, resolveCurrentKeyword, simpleSlug } = context.formatters;
     const opts = (params || {}) as SearchParams;
 
     try {
@@ -402,9 +392,9 @@ const SearchPlugin: SimplePlugin = {
       // Format results based on format parameter
       // count format uses the full result set; paginated formats use the sliced set
       if (format === 'count') {
-        return formatResults(results, { query, systemCategory, userKeywords, author, editor, maxResults, format });
+        return formatResults(context.formatters, results, { query, systemCategory, userKeywords, author, editor, maxResults, format });
       }
-      return formatResults(limited, { query, systemCategory, userKeywords, author, editor, maxResults, format }) + paginationHtml;
+      return formatResults(context.formatters, limited, { query, systemCategory, userKeywords, author, editor, maxResults, format }) + paginationHtml;
 
     } catch (error) {
       const err = error as Error;

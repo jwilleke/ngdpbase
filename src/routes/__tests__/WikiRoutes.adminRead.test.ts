@@ -14,6 +14,7 @@
 
 import WikiRoutes from '../WikiRoutes';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const readOnlyAdmin = { username: 'admindemo', isAuthenticated: true, roles: ['demo-admin'] };
 const fullAdmin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
@@ -47,6 +48,7 @@ const createMockRes = () => ({
 function makeRoutes(granted: string[]) {
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint') {
         return {

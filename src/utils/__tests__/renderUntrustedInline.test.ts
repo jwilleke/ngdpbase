@@ -13,6 +13,7 @@
 vi.unmock('../renderUntrustedInline');
 
 import { renderUntrustedInline } from '../renderUntrustedInline';
+import { TEST_FORMATTERS } from '../../test-support/plugins';
 
 function makeEngine(siteSecurityEnabled = false) {
   return {
@@ -29,6 +30,7 @@ function makeEngine(siteSecurityEnabled = false) {
 describe('markdown that should work in a comment', () => {
   test('emphasis, code, links, lists, blockquotes', async () => {
     const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
       '**bold** and `code`\n\n- item one\n- item two\n\n> quoted\n\n[a link](https://example.org/x)',
       makeEngine()
     );
@@ -40,7 +42,7 @@ describe('markdown that should work in a comment', () => {
   });
 
   test('single newlines become line breaks', async () => {
-    const html = await renderUntrustedInline('line one\nline two', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'line one\nline two', makeEngine());
     expect(html).toContain('<br');
   });
 });
@@ -49,23 +51,23 @@ describe('what a hostile commenter writes does not survive', () => {
   test('script tags are stripped even when the SITE filter is off', async () => {
     // The page path gates SecurityFilter on config because page authors are
     // trusted by config. Commenters never are: the profile forces it on.
-    const html = await renderUntrustedInline("<script>alert('x')</script>hello", makeEngine(false));
+    const html = await renderUntrustedInline(TEST_FORMATTERS, "<script>alert('x')</script>hello", makeEngine(false));
     expect(html).not.toContain('<script');
     expect(html).toContain('hello');
   });
 
   test('iframes are stripped — the page allow-list admits them, this profile does not', async () => {
-    const html = await renderUntrustedInline('<iframe src="https://evil.example"></iframe>ok', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '<iframe src="https://evil.example"></iframe>ok', makeEngine());
     expect(html).not.toContain('<iframe');
   });
 
   test('images are stripped — an external src is a tracking pixel aimed at every reader', async () => {
-    const html = await renderUntrustedInline('![x](https://evil.example/pixel.png) and <img src="https://evil.example/p.png">', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '![x](https://evil.example/pixel.png) and <img src="https://evil.example/p.png">', makeEngine());
     expect(html).not.toContain('<img');
   });
 
   test('event-handler attributes are stripped', async () => {
-    const html = await renderUntrustedInline('<b onclick="steal()">hi</b>', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '<b onclick="steal()">hi</b>', makeEngine());
     expect(html).not.toMatch(/onclick/i);
     expect(html).toContain('hi');
   });
@@ -74,25 +76,25 @@ describe('what a hostile commenter writes does not survive', () => {
     // markdown-it (#1273) refuses to build a link to a javascript: URL at all
     // (validateLink), so the markup stays inert text — nothing is clickable.
     // showdown built the <a> and SecurityFilter stripped the href.
-    const html = await renderUntrustedInline('[click](javascript:alert(1))', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '[click](javascript:alert(1))', makeEngine());
     expect(html).not.toMatch(/<a\b/);
     expect(html).not.toMatch(/href\s*=\s*["']?\s*javascript:/i);
   });
 
   test('a raw javascript: link in HTML is sanitized too', async () => {
-    const html = await renderUntrustedInline('<a href="javascript:alert(1)">x</a>', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '<a href="javascript:alert(1)">x</a>', makeEngine());
     expect(html).not.toMatch(/href\s*=\s*["']?\s*javascript:/i);
   });
 });
 
 describe('wiki machinery is inert by construction', () => {
   test('plugin syntax stays literal text', async () => {
-    const html = await renderUntrustedInline('[{SearchPlugin query=secret}]', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '[{SearchPlugin query=secret}]', makeEngine());
     expect(html).toContain('[{SearchPlugin query=secret}]');
   });
 
   test('variable syntax stays literal text', async () => {
-    const html = await renderUntrustedInline('[{$applicationname}]', makeEngine());
+    const html = await renderUntrustedInline(TEST_FORMATTERS, '[{$applicationname}]', makeEngine());
     expect(html).toContain('[{$applicationname}]');
   });
 });

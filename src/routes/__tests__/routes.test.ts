@@ -6,6 +6,7 @@ import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
 import { readDoor } from './__fixtures__/pageReadDoor';
 import { type MockInstance } from 'vitest';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 // Mock LocaleUtils
 vi.mock('../../utils/LocaleUtils', () => {
@@ -331,6 +332,7 @@ vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
       getManager: vi.fn((name) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         const mockManagers = {
           UserManager: mockUserManager,
           PolicyDecisionPoint: mockPolicyDecisionPoint,

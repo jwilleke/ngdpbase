@@ -5,8 +5,9 @@
  */
 
 import IndexPluginModule from '../IndexPlugin' ;
+import { asExecuted } from '../../test-support/plugins';
 import type { SimplePlugin } from '../types';
-const IndexPlugin = IndexPluginModule as unknown as SimplePlugin;
+const IndexPlugin = asExecuted(IndexPluginModule) as unknown as SimplePlugin;
 /** The viewer sees `pages`; the index holds those plus a page they may not open. */
 function makeContext(pages) {
   return {

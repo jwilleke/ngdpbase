@@ -9,7 +9,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, formatAsList } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems } from '../utils/pinnedItems.js';
 
 interface UserContext {
@@ -30,6 +29,7 @@ const MyLinksPlugin: SimplePlugin = {
   version: '1.0.0',
 
   execute(context: PluginContext, _params: PluginParams): string {
+    const { escapeHtml, formatAsList } = context.formatters;
     const ctx = context as ExtendedPluginContext;
     const user = ctx.userContext ?? ctx.currentUser;
 

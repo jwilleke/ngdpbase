@@ -6,6 +6,7 @@
 // vi.spyOn patches the live fs.promises object in-place so the spy is
 // observed regardless of whether the module used ESM import or CJS require.
 import * as fsMod from 'fs';
+import { asExecuted, TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 
 let readFileSpy: ReturnType<typeof vi.spyOn>;
 
@@ -15,7 +16,7 @@ let FormsPlugin: FormsPluginType;
 
 beforeAll(async () => {
   const mod = await import('../plugins/FormsPlugin');
-  FormsPlugin = ((mod as unknown as { default: FormsPluginType }).default ?? mod) as FormsPluginType;
+  FormsPlugin = asExecuted(((mod as unknown as { default: FormsPluginType }).default ?? mod) as FormsPluginType);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -395,6 +396,7 @@ describe('FormsPlugin — fetch options, amount, page name', () => {
     return {
       engine: {
         getManager: (name: string) => {
+          if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
           if (name === 'FormsDataManager') return { getDefinition: () => form };
           if (name === 'LedgerManager') return { toFormOptions };
           return undefined;

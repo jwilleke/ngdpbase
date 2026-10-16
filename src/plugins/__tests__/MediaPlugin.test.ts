@@ -18,7 +18,10 @@
  * @jest-environment node
  */
 
-import MediaPlugin from '../MediaPlugin';
+import MediaPluginModule from '../MediaPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const MediaPlugin = asExecuted(MediaPluginModule);
 
 const makeItem = (id: string, filename: string, mimeType = 'image/jpeg', year = 2024) => ({
   id,

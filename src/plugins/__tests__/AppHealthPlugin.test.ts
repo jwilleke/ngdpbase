@@ -4,8 +4,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import AppHealthPlugin from '../../plugins/AppHealthPlugin';
+import AppHealthPluginModule from '../../plugins/AppHealthPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+
+const AppHealthPlugin = asExecuted(AppHealthPluginModule);
 
 type LinkGraph = Record<string, string[]>;
 

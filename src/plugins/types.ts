@@ -7,6 +7,8 @@
 
 import type { PluginFormatters } from '../managers/PluginManager.js';
 
+export type { PluginFormatters };
+
 /**
  * Wiki engine interface for plugins
  */

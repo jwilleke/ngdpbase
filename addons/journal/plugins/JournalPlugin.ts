@@ -13,21 +13,13 @@
  *   limit  — max entries for timeline view (default: 10)
  */
 
-import type { PluginContext, PluginParams } from '../../../dist/src/managers/PluginManager.js';
+import type { PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/managers/PluginManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type { UserContext } from '../../../dist/src/context/WikiContext.js';
 import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function escHtml(str: string): string {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /** Format YYYY-MM-DD as a human-readable date string. */
 function formatDate(isoDate: string): string {
@@ -85,7 +77,8 @@ function getOnThisDay(entries: JournalEntry[]): JournalEntry[] {
 
 // ── Renderers ────────────────────────────────────────────────────────────────
 
-function renderTimeline(entries: JournalEntry[], limit: number): string {
+function renderTimeline(f: PluginFormatters, entries: JournalEntry[], limit: number): string {
+  const { escapeHtml: escHtml } = f;
   if (entries.length === 0) {
     return `<div class="journal-empty">
       <p>No journal entries yet.</p>
@@ -118,7 +111,8 @@ function renderStreak(streak: number, total: number): string {
   </div>`;
 }
 
-function renderOnThisDay(entries: JournalEntry[]): string {
+function renderOnThisDay(f: PluginFormatters, entries: JournalEntry[]): string {
+  const { escapeHtml: escHtml } = f;
   if (entries.length === 0) {
     return '<div class="journal-on-this-day journal-empty"><em>No entries from this date in previous years.</em></div>';
   }
@@ -139,6 +133,7 @@ const JournalPlugin = {
   name: 'Journal',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml: escHtml } = context.formatters;
     const userContext = context['userContext'] as UserContext | undefined;
     const username = userContext?.username;
     if (!userContext || !username) {
@@ -172,9 +167,9 @@ const JournalPlugin = {
         return renderStreak(computeStreak(entries), entries.length);
       }
       if (view === 'on-this-day') {
-        return renderOnThisDay(getOnThisDay(entries));
+        return renderOnThisDay(context.formatters, getOnThisDay(entries));
       }
-      return renderTimeline(entries, limit);
+      return renderTimeline(context.formatters, entries, limit);
 
     } catch (err) {
       return `<p class="plugin-error journal-error">Journal error: ${escHtml(String((err as Error).message ?? err))}</p>`;

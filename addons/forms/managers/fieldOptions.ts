@@ -10,7 +10,8 @@
  *                                                          — a manager, asked with the viewer's context
  */
 
-import { resolveManagerOptions, type FormOption } from '../../../dist/src/utils/pluginFormatters.js';
+import type { FormOption } from '../../../dist/src/utils/pluginFormatters.js';
+import type PluginManager from '../../../dist/src/managers/PluginManager.js';
 import type { FormField } from './FormsDataManager.js';
 
 interface EngineLike {
@@ -29,7 +30,10 @@ export async function resolveFieldOptions(
     return Array.isArray(list) ? list.filter((o): o is string => typeof o === 'string').map(o => ({ value: o, label: o })) : [];
   }
   if (source.startsWith('fetch:')) {
-    const result = await resolveManagerOptions(source.slice('fetch:'.length), { engine, userContext });
+    // #1820: the fetch convention is PluginManager's.
+    const pluginManager = engine.getManager<PluginManager>('PluginManager');
+    if (!pluginManager) throw new Error('forms: PluginManager is not available to resolve "fetch:" options');
+    const result = await pluginManager.formatters.resolveManagerOptions(source.slice('fetch:'.length), { engine, userContext });
     return result.status === 'ok' ? result.options : [];
   }
   return (field.options ?? []).map(o => ({ value: o, label: o }));
