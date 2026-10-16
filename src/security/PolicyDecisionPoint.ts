@@ -31,6 +31,7 @@ import type { PermissionSubject, JobSubject } from '../managers/UserManager.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { Decision, DecisionRequest, Policy } from '../types/Policy.js';
+import { STEP_UP_REASON } from '../types/Policy.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { normalizeUsername } from '../utils/username.js';
 import { roleGrants, type RoleGrant } from '../utils/roleGrants.js';
@@ -489,7 +490,7 @@ export class PolicyDecisionPoint extends BaseManager {
     if (ceiling && !ceiling.permit) return ceiling;
     if (ceiling && ceiling.reason === 'share') {
       // #1635: a share is delegated, so it never satisfies a step-up permission.
-      return applyStepUp && this.stepUpRefuses(subject, action) ? { permit: false, applicable: true, reason: 'step-up' } : ceiling;
+      return applyStepUp && this.stepUpRefuses(subject, action) ? { permit: false, applicable: true, reason: STEP_UP_REASON } : ceiling;
     }
 
     const policyEvaluator = this.engine.getManager<PolicyEvaluatorLike>('PolicyEvaluator');
@@ -536,7 +537,7 @@ export class PolicyDecisionPoint extends BaseManager {
     if (result.allowed && applyStepUp && this.stepUpRefuses(subject, action)) {
       // #1635: granted, but not fresh enough to act. Routes turn this reason
       // into the /auth/reauth prompt; a door just sees a refusal.
-      return { permit: false, applicable: true, reason: 'step-up' };
+      return { permit: false, applicable: true, reason: STEP_UP_REASON };
     }
     return {
       permit: result.allowed,

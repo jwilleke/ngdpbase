@@ -32,6 +32,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
 import type { ReauthMode, FreshSignInAnswer } from '../managers/AuthManager.js';
+import { STEP_UP_REASON, type Decision } from '../types/Policy.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -296,14 +297,43 @@ export class ApiContext extends BaseContext {
    * #1745: a refusal for someone who HOLDS the permission is the step-up one
    * (#1635) — their sign-in is not fresh enough. It carries `reauth`, built
    * where core routes build it (AuthManager.askForFreshSignIn, #1758), and the prompt is
-   * audited there; a delegated credential gets no `reauth`.
+   * audited there; a delegated credential gets no `reauth`. The refusal itself
+   * is {@link refuse}'s, shared with managers that ask the PDP directly.
    *
    * @example
    * await ctx.requirePermission('search-user'); // → 401 anonymous, 403 signed in
    */
   async requirePermission(permission: string): Promise<void> {
     if (await this.hasPermission(permission)) return;
-    if (this.request && await this.holdsPermission(permission)) {
+    // The boolean door carries no reason, so whether this "no" is the step-up
+    // one is asked as #1745 always has: holds the permission, may not act now —
+    // exactly the condition under which the PDP writes STEP_UP_REASON.
+    const stepUp = Boolean(this.request) && await this.holdsPermission(permission);
+    await this.refuse(permission, { permit: false, applicable: true, reason: stepUp ? STEP_UP_REASON : 'policy_deny' });
+  }
+
+  /**
+   * Turn a deny into the refusal (#1431) — the one implementation of refusal
+   * shaping, shared by {@link requirePermission} and every manager that asks
+   * the PDP itself. Always throws:
+   *
+   * - a step-up deny (`reason` {@link STEP_UP_REASON}) on a request:
+   *   `AuthManager.askForFreshSignIn` answers and records the reauth prompt —
+   *   `ApiError(403, …, reauth)`, or no `reauth` for a delegated credential
+   *   (agent token, share), which cannot give a fresh sign-in;
+   * - any other deny (policy, or a token, share or proxy ceiling): `ApiError(401)`
+   *   for a caller who has not signed in, `ApiError(403)` for one who has;
+   * - an allow: a programming error. A refusal never silently passes.
+   *
+   * @example
+   * const d = await pdp.decide(ctx.getActor(), { action: 'ledger-adjust', resource: { type: 'ledger-entry', id } });
+   * if (!d.permit) await ctx.refuse('ledger-adjust', d);
+   */
+  async refuse(permission: string, decision: Decision): Promise<never> {
+    if (decision.permit) {
+      throw new Error(`ApiContext.refuse('${permission}') was handed an allow decision: refuse only a deny`);
+    }
+    if (decision.reason === STEP_UP_REASON && this.request) {
       // #1758: step-up is AuthManager's — the answer and its reauth-prompt record.
       const authManager = this.engine.getManager<{ askForFreshSignIn(req: Request, u: unknown, p: string, m: ReauthMode): Promise<FreshSignInAnswer> }>('AuthManager');
       const answer = authManager
