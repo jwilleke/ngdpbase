@@ -275,6 +275,7 @@ import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
 import type AttachmentManager from './AttachmentManager.js';
 import type FootnoteManager from './FootnoteManager.js';
+import type CommentManager from './CommentManager.js';
 import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
 import type ShareManager from './ShareManager.js';
@@ -2652,7 +2653,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const footnotes = this.engine.getManager<FootnoteManager>('FootnoteManager');
     if (target.uuid && footnotes?.isEnabled?.()) {
-      const fn = await footnotes.transferFromContent(target.uuid, text, ctx, dryRun);
+      const fn = await footnotes.transferFromContent({ name: target.pageName, uuid: target.uuid }, text, ctx, dryRun);
       text = fn.content;
       warnings.push(...fn.warnings);
     }
@@ -2781,6 +2782,17 @@ class PageManager extends BaseManager implements CatalogSource {
     if (parsePrivatePageName(name ?? '') || parsePrivatePageName(previousName ?? '')) {
       await step('vault links', () => this.engine.getManager<ShareManager>('ShareManager')
         ?.refreshLockboxesForPage(change.ctx, { name, uuid: change.uuid, previousName }));
+    }
+
+    // #1839: a page's footnotes and comments go where it goes — into a vault,
+    // out of one, between two — through both sides' store I/O, as its history
+    // did. A rename in place moves nothing.
+    if (name && previousName && name !== previousName && change.uuid) {
+      const uuid = change.uuid;
+      await step('footnotes move', () => this.engine.getManager<FootnoteManager>('FootnoteManager')
+        ?.movePageFootnotes(uuid, previousName, name, change.ctx));
+      await step('comments move', () => this.engine.getManager<CommentManager>('CommentManager')
+        ?.movePageComments(uuid, previousName, name, change.ctx));
     }
 
     const referrers = new Set<string>();

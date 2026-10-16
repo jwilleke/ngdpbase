@@ -3,7 +3,7 @@
  * with a CRUD UI for authorised users. Falls back to reading the page body for legacy
  * pages not yet migrated to sidecar storage.
  *
- * Sidecar format: ${SLOW_STORAGE}/footnotes/{pageUuid}.json
+ * Sidecar format: ${SLOW_STORAGE}/footnotes/{pageUuid}.json; a vault page's are in its vault (#1839)
  * Definitions move from a body to the sidecar through Convert to NCM, ingest and
  * import (FootnoteManager.transferFromContent, #1125).
  * Tracking issue: #553 / #557
@@ -21,6 +21,9 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import type { PageFootnote } from '../managers/FootnoteManager.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type { PageRef } from '../utils/pageNotes.js';
+import { jsonForScript } from '../utils/jsonForScript.js';
 
 interface PageManagerLike {
   // #1422: the real signature takes the caller's context. Typed without it,
@@ -146,9 +149,11 @@ function renderFootnoteRow(f: PluginFormatters, fn: PageFootnote, canEdit: boole
 }
 
 /**
- * Render the inner footnote-list HTML for a page given its UUID and the
- * caller's identity. Shared between the plugin output and the
- * `GET /api/footnotes/:uuid/html` endpoint added in #590.
+ * Render the inner footnote-list HTML for a page given its name and UUID and
+ * the caller's identity. Shared between the plugin output and the
+ * `GET /api/footnotes/:uuid/html` endpoint added in #590. The name says where
+ * the footnotes are: a vault page's are in its vault (#1839). Whether the
+ * caller may read the page is decided before this is called.
  *
  * Returns either an `<ol class="footnote-list">…</ol>` or a "no footnotes"
  * paragraph — never wraps in the outer `<section>` or container.
@@ -156,17 +161,18 @@ function renderFootnoteRow(f: PluginFormatters, fn: PageFootnote, canEdit: boole
 export async function renderFootnoteListHtml(
   f: PluginFormatters,
   footnoteManager: FootnoteManager,
-  pageUuid: string,
+  page: PageRef,
   userContext: { isAuthenticated?: boolean; username?: string; roles?: string[] } | undefined,
   engine?: { getManager: (name: string) => unknown } | null
 ): Promise<string> {
+  const pageUuid = page.uuid;
   const isAuthenticated = userContext?.isAuthenticated === true;
   // #1198: the affordances mirror the routes' own gates — page-edit to edit,
   // admin-system to delete anyone's — asked of policy, not read off a role.
   const isEditor = await subjectMayDo(engine, userContext as never, 'page-edit');
   const isAdmin = await subjectMayDo(engine, userContext as never, 'admin-system');
 
-  const footnotes: PageFootnote[] = await footnoteManager.getFootnotes(pageUuid);
+  const footnotes: PageFootnote[] = await footnoteManager.getFootnotes(page, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext);
 
   if (footnotes.length === 0) {
     return '<p class="no-footnotes"><em>No footnotes on this page.</em></p>';
@@ -181,18 +187,21 @@ export async function renderFootnoteListHtml(
   return rows.join('\n');
 }
 
-function renderCrudScript(pageUuid: string): string {
+function renderCrudScript(page: PageRef): string {
   // #590: replace location.reload() with a fetch-and-swap of the
   // #footnote-list-host container. Event delegation on the host lets newly
   // rendered Edit/Delete buttons keep working without re-binding listeners.
+  // #1839: every call names the page, so a vault page's footnotes are found
+  // in its vault — its uuid alone says nothing about where it is.
   return `<script>
 (function() {
-  const _uuid = ${JSON.stringify(pageUuid)};
+  const _uuid = ${jsonForScript(page.uuid)};
+  const _q = '?page=' + encodeURIComponent(${jsonForScript(page.name)});
   const host = document.getElementById('footnote-list-host');
   const form = document.getElementById('footnote-add-form');
 
   function refreshList() {
-    return fetch('/api/footnotes/' + _uuid + '/html')
+    return fetch('/api/footnotes/' + _uuid + '/html' + _q)
       .then(r => r.text())
       .then(html => { if (host) host.innerHTML = html; })
       .catch(() => { /* swallow; user will see stale list until next view */ });
@@ -214,7 +223,7 @@ function renderCrudScript(pageUuid: string): string {
     const url = form.querySelector('[name=url]').value.trim();
     const note = form.querySelector('[name=note]').value.trim();
     const isEdit = !!editId;
-    const target = isEdit ? '/api/footnotes/' + _uuid + '/' + editId : '/api/footnotes/' + _uuid;
+    const target = (isEdit ? '/api/footnotes/' + _uuid + '/' + editId : '/api/footnotes/' + _uuid) + _q;
     // #709: state-changing requests must carry the CSRF token (#663
     // app-wide middleware). Raw fetch() got a text/plain 403 that
     // r.json() then choked on, surfacing only the opaque .catch()
@@ -242,7 +251,7 @@ function renderCrudScript(pageUuid: string): string {
       const id = delBtn.dataset.id;
       if (!confirm('Delete footnote [' + id + ']?')) return;
       // #709: DELETE is state-changing — needs the CSRF token too.
-      (window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id, { method: 'DELETE' })
+      (window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id + _q, { method: 'DELETE' })
         .then(r => r.json()).then(d => {
           if (d.success) return refreshList();
           alert(d.error || 'Failed');
@@ -301,9 +310,17 @@ const FootnotesPlugin: SimplePlugin = {
     const footnoteManager = engine.getManager('FootnoteManager') as FootnoteManager | undefined;
 
     if (footnoteManager?.isEnabled() && pageUuid) {
+      // #1839: the page's name says where its footnotes are — a vault page's
+      // are in its vault, and a locked vault shows none rather than failing the page.
+      const page: PageRef = { name: pageName || pageUuid, uuid: pageUuid };
+      let listHtml: string;
+      try {
+        listHtml = await renderFootnoteListHtml(context.formatters, footnoteManager, page, userContext, engine);
+      } catch {
+        return '';
+      }
       // List wrapped in a stable container so #590 can swap its innerHTML
       // after add/edit/delete instead of doing a full page reload.
-      const listHtml = await renderFootnoteListHtml(context.formatters, footnoteManager, pageUuid, userContext, engine);
       parts.push(`<div id="footnote-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
       parts.push(listHtml);
       parts.push('</div>');
@@ -327,7 +344,7 @@ const FootnotesPlugin: SimplePlugin = {
   </div>
   <button type="submit" class="btn btn-sm btn-primary mt-2">Add Footnote</button>
 </form>`);
-        parts.push(renderCrudScript(pageUuid));
+        parts.push(renderCrudScript(page));
       }
 
       parts.push('</section>');

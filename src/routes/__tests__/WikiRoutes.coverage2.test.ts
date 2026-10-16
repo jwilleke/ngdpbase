@@ -351,6 +351,17 @@ function buildApp() {
 
 // ── suite ─────────────────────────────────────────────────────────────────────
 
+
+/** #1839: the page the footnote and comment routes resolve — readable, and the page `uuid` names. */
+function notesPageIs(uuid: string) {
+  const page = { content: '# Page', metadata: { title: 'TestPage', uuid }, uuid, title: 'TestPage' };
+  mockPageManager.getPage.mockResolvedValue(page);
+  (mockPageManager as Record<string, unknown>).readPage = vi.fn(async (name: string) => {
+    const found = await mockPageManager.getPage(name);
+    return found ? { ok: true, name: 'TestPage', metadata: found.metadata, value: found } : { ok: false, refusal: 'not-found' };
+  });
+}
+
 describe('WikiRoutes — coverage batch 2', () => {
   let app: express.Application;
   let wikiRoutes: WikiRoutes;
@@ -713,6 +724,8 @@ describe('WikiRoutes — coverage batch 2', () => {
   // ── addComment ────────────────────────────────────────────────────────────
 
   describe('POST /api/comments/:pageUuid — addComment', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     const csrf = 'test-csrf-token';
 
     test('returns 401 when user is not authenticated', async () => {
@@ -769,6 +782,8 @@ describe('WikiRoutes — coverage batch 2', () => {
   // ── deleteComment ─────────────────────────────────────────────────────────
 
   describe('DELETE /api/comments/:pageUuid/:commentId — deleteComment', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     const csrf = 'test-csrf-token';
 
     test('returns 401 when user is not authenticated', async () => {

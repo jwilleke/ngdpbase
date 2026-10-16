@@ -1,7 +1,7 @@
 ---
 name: FootnotesPlugin
 description: Renders footnote definitions from sidecar storage (FootnoteManager) with a CRUD UI for authorised users
-dateModified: '2026-05-28'
+dateModified: '2026-10-16'
 category: plugins
 code: src/plugins/FootnotesPlugin.ts
 relatedModules:
@@ -14,7 +14,7 @@ Renders the footnote definitions for the current page from sidecar storage. Fall
 
 ## Storage
 
-- Sidecar: `${SLOW_STORAGE}/footnotes/{pageUuid}.json`
+- Sidecar: `${SLOW_STORAGE}/footnotes/{pageUuid}.json` for a public page; a vault page's are in its vault, sealed when it is ([FootnoteManager](../managers/FootnoteManager.md), [#1839](https://github.com/jwilleke/ngdpbase/issues/1839))
 - Managed by: `FootnoteManager`
 - Moving definitions out of a page body: Convert to NCM, ingest and import, through `FootnoteManager.transferFromContent` (#1125)
 - Tracking: #553, #557

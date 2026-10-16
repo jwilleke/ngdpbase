@@ -1,7 +1,7 @@
 ---
 name: CommentManager
 description: Per-page comment storage + CRUD; sidecar JSON keyed by page UUID
-dateModified: '2026-05-28'
+dateModified: '2026-10-16'
 category: managers
 code: src/managers/CommentManager.ts
 ---
@@ -12,15 +12,18 @@ Stores per-page comments in sidecar JSON files keyed by page UUID. Independent o
 
 ## Storage
 
-- Directory: `data/comments/{pageUuid}.json` (configurable via `ngdpbase.comments.storagedir`).
-- Format: array of `PageComment` records (id, author, authorDisplayName, body, createdAt).
+- Public page: `data/comments/{pageUuid}/{commentId}.json` (configurable via `ngdpbase.comments.storagedir`).
+- Vault page (`vaults/{owner}/{vault}/{title}`): `pages/vaults/{owner}/{vault}/comments/{pageUuid}/{commentId}.json`, read and written through the vault's store I/O, so sealed exactly when the page is, and refused when the vault is locked or not yet opened ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). See [private-stores.md](../private-stores.md#footnotes-and-comments).
+- A page that moves into or out of a vault takes its comments with it (`movePageComments`, called by the page door).
+- Format: one `PageComment` record per file (id, author, authorDisplayName, content, createdAt).
 - Enabled flag: `ngdpbase.comments.allow` (default `true`).
 
 ## Authorization
 
 - Anyone authenticated can post.
 - Comment authors and admins can delete their own; admins can delete any.
-- ACL gating mirrors page visibility — comments on a private page are private to the same audience.
+- Reading, posting and deleting are gated exactly like reading the page: the routes read the page first (`PageManager.readPage`, as the requester) and answer 404 when they may not ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). Until #1839 the comment routes asked nothing about the page.
+- Every call names the page as `{ name, uuid }` and carries the caller's context.
 
 ## See Also
 

@@ -26,6 +26,8 @@
  * private/{user}/{store}/versions/{uuid}/    that page's history
  * private/{user}/{store}/deleted/{uuid}.md   a deleted page, until it is purged
  * private/{user}/{store}/attachments/        its files (#1400)
+ * private/{user}/{store}/footnotes/{uuid}.json   a page's footnotes (#1839)
+ * private/{user}/{store}/comments/{uuid}/        a page's comments (#1839)
  * ```
  *
  * Every one of those names is DEFINED HERE, in
@@ -65,6 +67,10 @@ export type PrivateStoreLayout = {
   deletedDir: string;
   /** Non-page files inside a store: `{store}/{attachmentsDir}/{uuid}.ext` (#1400) */
   attachmentsDir: string;
+  /** A page's footnotes: `{store}/{footnotesDir}/{uuid}.json` (#1839) */
+  footnotesDir: string;
+  /** A page's comments: `{store}/{commentsDir}/{uuid}/{id}.json` (#1839) */
+  commentsDir: string;
   files: PrivateStoreLayoutFiles;
   /**
    * The vault ids whose kind is sealed: the system-category entries that
@@ -87,6 +93,8 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
   versionsDir: 'versions',
   deletedDir: 'deleted',
   attachmentsDir: 'attachments',
+  footnotesDir: 'footnotes',
+  commentsDir: 'comments',
   files: {
     userkeys: 'user-keys.json',
     userindex: 'user-index.json',
@@ -113,6 +121,8 @@ export function resolvePrivateStoreLayout(
     versionsDir: overrides.versionsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.versionsDir,
     deletedDir: overrides.deletedDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.deletedDir,
     attachmentsDir: overrides.attachmentsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.attachmentsDir,
+    footnotesDir: overrides.footnotesDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.footnotesDir,
+    commentsDir: overrides.commentsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.commentsDir,
     files: {
       ...DEFAULT_PRIVATE_STORE_LAYOUT.files,
       ...overrides.files
@@ -202,6 +212,8 @@ export function privateStoreLayoutFromConfig(
     versionsDir: str('ngdpbase.page.provider.filesystem.versionsdir', d.versionsDir),
     deletedDir: str('ngdpbase.page.provider.filesystem.deleteddir', d.deletedDir),
     attachmentsDir: str('ngdpbase.page.provider.filesystem.attachmentsdir', d.attachmentsDir),
+    footnotesDir: str('ngdpbase.page.provider.filesystem.footnotesdir', d.footnotesDir),
+    commentsDir: str('ngdpbase.page.provider.filesystem.commentsdir', d.commentsDir),
     files: {
       userkeys: str('ngdpbase.page.provider.filesystem.private.files.userkeys', d.files.userkeys),
       userindex: str('ngdpbase.page.provider.filesystem.private.files.userindex', d.files.userindex),
@@ -534,6 +546,26 @@ export function privateVersionDirectory(
     privateStoreRoot(pagesDirectory, creator, store, L),
     L.versionsDir,
     assertPathSegment(uuid, 'page id')
+  );
+}
+
+/**
+ * Where a vault page's footnotes or comments are kept (#1839): a folder of
+ * the vault, `{privateroot}/{user}/{store}/{footnotesDir|commentsDir}`, so
+ * they are written through the vault's store I/O and sealed exactly when its
+ * pages are. A public page's are in the managers' own folders.
+ */
+export function privateStoreNotesDir(
+  pagesDirectory: string,
+  creator: string,
+  store: string,
+  kind: 'footnotes' | 'comments',
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(
+    privateStoreRoot(pagesDirectory, creator, store, L),
+    kind === 'footnotes' ? L.footnotesDir : L.commentsDir
   );
 }
 

@@ -70,13 +70,13 @@ const SURFACES: Surface[] = [
   },
   {
     file: 'src/plugins/CommentsPlugin.ts',
-    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid,",
-    mustNotContain: ["fetch('/api/comments/' + pageUuid,"]
+    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid + ngdpCommentQuery(),",
+    mustNotContain: ["fetch('/api/comments/' + pageUuid + ngdpCommentQuery(),"]
   },
   {
     file: 'src/plugins/CommentsPlugin.ts',
-    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId,",
-    mustNotContain: ["fetch('/api/comments/' + pageUuid + '/' + commentId,"]
+    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId + ngdpCommentQuery(),",
+    mustNotContain: ["fetch('/api/comments/' + pageUuid + '/' + commentId + ngdpCommentQuery(),"]
   }
 ];
 

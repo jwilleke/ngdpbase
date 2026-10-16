@@ -221,6 +221,36 @@ export async function buildStoreTakeout(
     pageCount++;
   }
 
+  // ── Footnotes and comments (#1839) ───────────────────────────────────────
+  // A vault page's footnotes and comments are kept in its vault, so they come
+  // with its pages, opened like everything else: `footnotes/{uuid}.json` and
+  // `comments/{uuid}/{id}.json`, keyed by the page's uuid (in its frontmatter).
+  // Writing, not files, so a pages-only takeout has them too. The archive's
+  // folder names are fixed, as TAKEOUT_FILE_INDEX is.
+  for (const [dir, inArchive] of [[L.footnotesDir, 'footnotes'], [L.commentsDir, 'comments']] as const) {
+    const base = path.join(root, dir);
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.readdir(base, { recursive: true, withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      const abs = path.join(ent.parentPath, ent.name);
+      let bytes: Buffer;
+      let mtime: Date;
+      try {
+        bytes = await io.readBytes(abs);
+        mtime = (await fs.stat(abs)).mtime;
+      } catch {
+        continue;
+      }
+      const rel = path.relative(base, abs).split(path.sep).join('/');
+      files.push({ path: `${store}/${inArchive}/${rel}`, bytes, mtime });
+    }
+  }
+
   // ── Attachments ──────────────────────────────────────────────────────────
   if (!options.pagesOnly) {
     const index = await readFileIndex(io, storeFileIndexPath(pagesDirectory, owner, store, layout));
