@@ -1064,6 +1064,26 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).resolves.not.toThrow();
     });
 
+    test('#1830: an add-on installed in <data>/addons is known', async () => {
+      await seedAddonDir(path.join(tempDir, 'data', 'addons'), 'ledger');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.ledger.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('#1830: an enabled add-on named in ngdpbase.addons.install but not yet installed does not refuse the boot', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.install': { ledger: { package: '@acme/ledger-addon', version: '^1' } },
+        'ngdpbase.addons.ledger.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
     // ── failure cases ────────────────────────────────────────────────────
     test('enabled key with no matching directory throws and identifies the bad id', async () => {
       const addonsRoot = path.join(tempDir, 'addons');

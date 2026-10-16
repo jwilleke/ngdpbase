@@ -82,6 +82,27 @@ Three ways an addon reaches a running instance. The slug, the module, and `regis
 
 Enabled defaults to false for every addon, on every path. An addon copied into a non-default directory stays off until the enable key is set ([#686](https://github.com/jwilleke/ngdpbase/issues/686) is the open request to change that for non-default paths). The keys, the file they live in, and what `register()` is handed are [Configuration](#configuration).
 
+## Installed add-ons (provisional)
+
+A fourth way in, being built in [#1830](https://github.com/jwilleke/ngdpbase/issues/1830): the site's configuration names an npm package and a version range, and ngdpbase installs it into the data folder. Nothing in the code tree changes. __The key name and shape are provisional__ and may change before the installer is final.
+
+```json
+"ngdpbase.addons.install": {
+  "ledger": { "package": "@acme/ledger-addon", "version": "^1" }
+},
+"ngdpbase.addons.ledger.enabled": true
+```
+
+- __Where it goes:__ `<instance data folder>/addons/<slug>/`. That folder is always scanned by discovery, after the `addons-path` directories, so an installed add-on loads like a drop-in. Installing does not enable it: the enable key still decides.
+- __First start:__ the highest release in the range whose `ngdpbase.minVersion` this core meets ([#1757](https://github.com/jwilleke/ngdpbase/issues/1757)) is fetched from the registry (`registry.npmjs.org`) through the outbound guard. Its tarball's sha512 must match the registry's `dist.integrity`, and its own `package.json` must name the same package, version and slug. It is unpacked with no links and no path outside the folder, within the size limits, and pinned in `<data>/addons/addons-lock.json` (`package`, `version`, `integrity`, `installedAt`). The tarball is kept in `<data>/addons/.packages/`.
+- __Every later start:__ the stored tarball is checked against the lock's sha512 and the folder against the tarball. The registry is never asked. A newer release in the range is not picked up on a restart. A folder that differs from its tarball is rewritten from it, and admins are told. A tarball that fails its sha512 is not trusted: the folder is moved to `.rejected-<slug>-<time>` and the add-on is not loaded.
+- __Registry unreachable, or anything refused:__ the site starts without that add-on, the reason is logged, and admins get a notification such as "ledger not installed: registry unreachable". The next start tries again. A folder already at `<data>/addons/<slug>` that the installer did not put there is left alone.
+- __Ranges:__ exact, `^`, `~`, `1.x`, `*`, `>=`, `<`, hyphen ranges and `||`. No dist-tags (`latest`) and no prereleases.
+- __Packaging:__ the package is unpacked as published, and no `npm install` runs (the runtime image has no npm, [#956](https://github.com/jwilleke/ngdpbase/issues/956)). An add-on with runtime dependencies of its own has to bundle them.
+- __Tuning:__ `ngdpbase.managers.addons-manager.install.registry`, `.timeout-ms`, `.max-metadata-bytes`, `.max-tarball-bytes` and `.max-unpacked-bytes`. The registry must be `https`, and tarballs must come from the same origin.
+
+Not done yet: checking the package's provenance (that it was built from the expected repository), the admin Update action, audit events for install and update, and including the installed copies in the site backup. They are listed in [Known gaps](#known-gaps).
+
 ## Configuration
 
 An addon's settings are ordinary configuration keys. Three layers, and the later one wins: shipped `config/app-default-config.json`, then each enabled addon's `config/default-config.json`, then the operator file. `domainDefaults` is a separate boot-only write, at the end of this section.
@@ -1339,6 +1360,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports. No published types package for `AddonHost` yet.
+- [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons-provisional) are slice 1: the key is provisional; no provenance check, no admin Update action, no audit events, and the installed copies are not yet in the site backup.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

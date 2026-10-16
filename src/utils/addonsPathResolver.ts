@@ -42,6 +42,28 @@ export function splitAddonsPath(raw: unknown): SplitAddonsPath {
   };
 }
 
+/** The config key naming the add-ons to install (#1830, provisional). */
+export const ADDONS_INSTALL_KEY = 'ngdpbase.addons.install';
+
+/**
+ * Where installed add-ons live (#1830): `<data>/addons`, one folder per slug.
+ * Always part of discovery, after the configured addons-path directories, so
+ * an installed add-on loads like a drop-in (still only when enabled).
+ */
+export function installedAddonsDir(dataFolder: string, cwd: string = process.cwd()): string {
+  return path.resolve(cwd, dataFolder, 'addons');
+}
+
+/**
+ * The configured addons-path directories plus the installed-add-ons folder,
+ * resolved and without repeats, in discovery order.
+ */
+export function addonDirectoryRoots(directories: readonly string[], dataFolder: string | undefined, cwd: string = process.cwd()): string[] {
+  const roots = directories.map((d) => path.resolve(cwd, d));
+  if (dataFolder !== undefined) roots.push(installedAddonsDir(dataFolder, cwd));
+  return [...new Set(roots)];
+}
+
 /** Locate the `node_modules` directory to search for packaged addons (resolved from cwd). */
 export function findNodeModulesDir(cwd: string = process.cwd()): string | null {
   const nm = path.resolve(cwd, 'node_modules');

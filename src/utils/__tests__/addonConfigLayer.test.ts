@@ -50,6 +50,17 @@ describe('#1220 discovery follows the configured path and the enabled gate', () 
     expect(merged['ngdpbase.permissions.definitions']).toEqual(shipped['ngdpbase.permissions.definitions']);
   });
 
+  test('#1830: an add-on installed in <data>/addons is discovered after the configured path', () => {
+    const dir = path.join(root, 'site-data', 'addons', 'ledger');
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@acme/ledger-addon', ngdpbase: { slug: 'ledger' } }));
+    fs.writeFileSync(path.join(dir, 'config', 'default-config.json'), JSON.stringify({ 'ngdpbase.addons.ledger.colour': 'red' }));
+    addon('cal', calDefaults);
+    const base = { ...shipped, 'ngdpbase.addons.ledger.enabled': true };
+    expect(discoverAddonDefaults(base, root, './site-data').map((a) => a.slug)).toEqual(['cal', 'ledger']);
+    expect(mergeConfigWithAddons(base, {}, root, './site-data').merged['ngdpbase.addons.ledger.colour']).toBe('red');
+  });
+
   test('an enabled addon contributes its file with comment keys dropped', () => {
     addon('cal', calDefaults);
     const found = discoverAddonDefaults({ ...shipped, 'ngdpbase.addons.cal.enabled': true }, root);

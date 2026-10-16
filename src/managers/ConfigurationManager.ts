@@ -22,7 +22,9 @@ import { CONFIG_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /** The config key naming which other keys hold secrets (#1030). */
 import {
+  ADDONS_INSTALL_KEY,
   NPM_ADDON_PREFIX,
+  addonDirectoryRoots,
   splitAddonsPath,
   findNodeModulesDir,
   matchNpmPackageDirs,
@@ -292,7 +294,8 @@ class ConfigurationManager extends BaseManager {
     // matching AddonsManager.initialize().
     const raw = this.getProperty('ngdpbase.managers.addons-manager.addons-path', './addons');
     const { directories, npmPatterns } = splitAddonsPath(raw);
-    const resolvedPaths = directories.map(p => path.resolve(p));
+    // #1830: plus <data>/addons, where installed add-ons live.
+    const resolvedPaths = addonDirectoryRoots(directories, this.instanceDataFolder);
 
     // 3. Enumerate addon directories. Directory name + index.{js,ts} must
     // be present, matching AddonsManager.scanAddonsDirectory(). No module
@@ -338,6 +341,14 @@ class ConfigurationManager extends BaseManager {
           }
         }
       }
+    }
+
+    // 3c. #1830: an add-on named in ngdpbase.addons.install is known even
+    // before it is on disk. AddonsManager installs it after this check, and a
+    // first install with the registry down must not refuse the boot.
+    const toInstall = this.getProperty(ADDONS_INSTALL_KEY, {});
+    if (toInstall && typeof toInstall === 'object' && !Array.isArray(toInstall)) {
+      for (const slug of Object.keys(toInstall)) knownAddons.add(slug);
     }
 
     // 4. Diff. Any enabled id without a matching directory/package is a misconfig.
@@ -456,7 +467,7 @@ class ConfigurationManager extends BaseManager {
     // addon, enabled or not, so a turned-off addon's pages and vault stay
     // reachable. Its problems are logged here and posted to admins by
     // AddonsManager once notifications exist.
-    const { merged, declared, addons, problems, refused } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
+    const { merged, declared, addons, problems, refused } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
     this.addonLayers = addons;

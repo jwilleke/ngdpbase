@@ -21,11 +21,18 @@ import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } fro
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
 import {
+  ADDONS_INSTALL_KEY,
+  addonDirectoryRoots,
+  installedAddonsDir,
   splitAddonsPath,
   findNodeModulesDir,
   matchNpmPackageDirs,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
+import { installConfiguredAddons, type InstallOutcome } from '../utils/addonInstaller.js';
+import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { isPlainObject } from '../utils/configFiles.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -431,8 +438,17 @@ class AddonsManager extends BaseManager {
     // Shared with ConfigurationManager's boot-time addon-exists check (#924)
     // so the two can no longer drift.
     const { directories, npmPatterns } = splitAddonsPath(this.addonsPaths);
-    this.resolvedAddonsPaths = directories.map(p => path.resolve(p));
+    // #1830: <data>/addons, where installed add-ons live, is always scanned
+    // after the configured directories.
+    const dataFolder = configManager?.getInstanceDataFolder?.();
+    this.resolvedAddonsPaths = addonDirectoryRoots(directories, dataFolder);
     this.npmAddonPatterns = npmPatterns;
+
+    // #1830: install (first time) or verify (every start) the add-ons the
+    // configuration names, before discovery sees the folder.
+    if (configManager && dataFolder !== undefined) {
+      await this.installConfiguredAddons(configManager, installedAddonsDir(dataFolder));
+    }
 
     // Discover and load add-ons
     await this.discoverAddons();
@@ -454,6 +470,97 @@ class AddonsManager extends BaseManager {
       `Initialized with ${this.addons.size} add-on(s) discovered, ` +
         `${this.getLoadedCount()} loaded`
     );
+  }
+
+  /**
+   * #1830 (slice 1, provisional): install the add-ons `ngdpbase.addons.install`
+   * names into `<data>/addons`, or verify the ones already there. An empty map
+   * (the shipped default) does nothing at all. Outbound HTTP goes through the
+   * guarded client and the egress policy (#1139). A problem with one add-on
+   * never stops the boot: it is logged and posted to admins, and that add-on is
+   * simply not there to load. When anything on disk changed, the configuration
+   * is re-merged so the add-on's config/default-config.json layer applies on
+   * this boot, not the next.
+   */
+  private async installConfiguredAddons(configManager: ConfigurationManager, addonsDir: string): Promise<void> {
+    const specs = configManager.getProperty(ADDONS_INSTALL_KEY, {});
+    if (!isPlainObject(specs) || Object.keys(specs).length === 0) return;
+
+    const read = (key: string, fallback: unknown): unknown => configManager.getProperty(key, fallback);
+    const num = (key: string, fallback: number): number => {
+      const value = Number(read(key, fallback));
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    };
+    const prefix = 'ngdpbase.managers.addons-manager.install';
+    const registry = String(read(`${prefix}.registry`, 'https://registry.npmjs.org'));
+    const timeoutMs = num(`${prefix}.timeout-ms`, 30000);
+    const coreVersion = String(read('ngdpbase.version', ''));
+    const egress = resolveEgressPolicy(read);
+
+    let outcomes: InstallOutcome[];
+    try {
+      outcomes = await installConfiguredAddons(specs, {
+        addonsDir,
+        registry,
+        coreVersion,
+        maxPackumentBytes: num(`${prefix}.max-metadata-bytes`, 16 * 1024 * 1024),
+        maxTarballBytes: num(`${prefix}.max-tarball-bytes`, 50 * 1024 * 1024),
+        maxUnpackedBytes: num(`${prefix}.max-unpacked-bytes`, 200 * 1024 * 1024),
+        fetch: async (url, { maxBytes, accept }) => {
+          const res = await guardedFetch(url, {
+            policy: egress.policy,
+            timeoutMs,
+            maxBytes,
+            headers: { Accept: accept, 'User-Agent': `ngdpbase/${coreVersion || 'unknown'} (add-on installer)` }
+          });
+          return { status: res.status, body: res.body };
+        }
+      });
+    } catch (err) {
+      // The lock file or the folder itself could not be read or written.
+      logger.error(`[AddonsManager] Add-on installer could not run on ${addonsDir}:`, err);
+      this.notifyInstallProblem('installer', `the add-on installer could not run: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return;
+    }
+
+    let changed = false;
+    for (const outcome of outcomes) {
+      const what = `${outcome.slug}${outcome.version ? `@${outcome.version}` : ''}`;
+      if (outcome.status === 'verified') {
+        logger.info(`[AddonsManager] Installed add-on ${what} verified against the lock file`);
+        continue;
+      }
+      changed = true;
+      if (outcome.status === 'installed') {
+        logger.info(`[AddonsManager] Installed add-on ${what}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+        if (outcome.reason) this.notifyInstallProblem(outcome.slug, `${outcome.slug} installed at ${outcome.version}; ${outcome.reason}`, 'warning');
+      } else if (outcome.status === 'repaired') {
+        logger.warn(`[AddonsManager] Installed add-on ${what}: ${outcome.reason}`);
+        this.notifyInstallProblem(outcome.slug, `${outcome.slug}: ${outcome.reason}`, 'warning');
+      } else {
+        const reason = outcome.registryUnreachable ? 'registry unreachable' : outcome.reason;
+        logger.error(`[AddonsManager] ${outcome.slug} not installed: ${outcome.reason}`);
+        this.notifyInstallProblem(outcome.slug, `${outcome.slug} not installed: ${reason}${outcome.registryUnreachable ? '. It is tried again at the next start.' : ''}`, 'error');
+      }
+    }
+    if (changed) await configManager.reload?.();
+  }
+
+  /** Tell admins about an install problem (#1830). Best-effort, like recordSeedFailure. */
+  private notifyInstallProblem(slug: string, message: string, level: 'warning' | 'error'): void {
+    try {
+      const notificationManager = this.engine.getManager<{
+        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
+          }>('NotificationManager');
+      void notificationManager?.createNotification?.({
+        type: 'system',
+        level,
+        title: `Add-on install (${slug})`,
+        message
+      })?.catch?.(() => { /* non-fatal */ });
+    } catch {
+      // non-fatal
+    }
   }
 
   /**
