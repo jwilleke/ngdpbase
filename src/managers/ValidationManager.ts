@@ -12,6 +12,7 @@ import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
 import { parsePrivatestore, PRIVATE_SLUG_PREFIX } from '../utils/privateStorePath.js';
+import { SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from '../utils/systemCategoryRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -253,10 +254,12 @@ class ValidationManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
 
     // #1504: a system-category map that could misplace private pages never runs.
-    const problems = systemCategoryConfigProblems(configManager?.getProperty('ngdpbase.system-category', null));
+    const categories = configManager?.getProperty(SYSTEM_CATEGORY_KEY, null);
+    const problems = systemCategoryConfigProblems(categories);
     if (problems.length > 0) {
       throw new Error(`ngdpbase.system-category is not valid (#1504):\n- ${problems.join('\n- ')}`);
     }
+    await this.reportMistypedSiteValues(categories);
 
     // Load system categories and keywords from configuration
     this.loadSystemCategories(configManager);
@@ -267,6 +270,34 @@ class ValidationManager extends BaseManager {
     logger.info('ValidationManager initialized');
     logger.info(`Loaded ${this.validSystemCategories.length} system categories: ${this.validSystemCategories.join(', ')}`);
     logger.info(`Loaded ${this.validKnowledgeRoles.length} knowledge roles: ${this.validKnowledgeRoles.join(', ')}`);
+  }
+
+  /**
+   * #1559: a mistyped `defaultPrivate` or `encrypt` in the site's own entries
+   * reads as false and fails open (pages start public, a vault is created
+   * unsealed). Warn, never force (operator, 2026-10-16): the site keeps
+   * running, the log says it at error, and admins get the non-dismissible
+   * degraded-subsystem banner on the dashboard (#1155) plus a system
+   * notification — the same pair UserManager uses for shared emails. Add-on
+   * entries never reach here mistyped: the merge refuses them.
+   */
+  private async reportMistypedSiteValues(categories: unknown): Promise<void> {
+    if (!categories || typeof categories !== 'object') return;
+    const lines = Object.entries(categories as Record<string, unknown>)
+      .flatMap(([key, entry]) => systemCategoryValueProblems(key, entry))
+      .map((p) => `${p.message}; ${p.readAs}`);
+    if (lines.length === 0) return;
+    const reason = `${lines.join('. ')}. Fix ${SYSTEM_CATEGORY_KEY} in the configuration`;
+    logger.error(`[ValidationManager] ${reason}`);
+    if (this.markDegraded(reason, SYSTEM_CATEGORY_KEY)) {
+      try {
+        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
+          type: 'system', level: 'error', title: 'A system-category value has the wrong type', message: `${reason}.`
+        });
+      } catch (err) {
+        logger.warn('[ValidationManager] Could not post the system-category notification:', err);
+      }
+    }
   }
 
   /**

@@ -12,7 +12,7 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
-import { mergeConfigWithAddons, mergeWithAddonLayer, type AddonDefaults } from '../utils/addonConfigLayer.js';
+import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
@@ -77,6 +77,10 @@ class ConfigurationManager extends BaseManager {
   private declaredConfig: WikiConfig | null;
   /** #1813: each enabled addon's own default-config.json, as folded into the merge. */
   private addonLayers: AddonDefaults[];
+  /** #1559: add-on system-categories refused, and operator values an owner's declaration overrode. */
+  private systemCategoryProblems: string[];
+  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why. */
+  private refusedAddons: Map<string, string>;
   private environment: string;
   private defaultConfigPath: string;
   private customConfigPath: string;
@@ -96,6 +100,8 @@ class ConfigurationManager extends BaseManager {
     this.mergedConfig = null;
     this.declaredConfig = null;
     this.addonLayers = [];
+    this.systemCategoryProblems = [];
+    this.refusedAddons = new Map();
     this.environment = process.env.NODE_ENV || 'development';
 
     // #1214: one derivation of the data folder and both file paths, shared
@@ -446,10 +452,17 @@ class ConfigurationManager extends BaseManager {
     // definition or a policy to the catalogs additively and the operator can
     // still override any of it. Discovery follows addons-path and the
     // ngdpbase.addons.<slug>.enabled gate, bundled and external alike.
-    const { merged, addons } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
+    // #1559: ngdpbase.system-category is the one key taken from every installed
+    // addon, enabled or not, so a turned-off addon's pages and vault stay
+    // reachable. Its problems are logged here and posted to admins by
+    // AddonsManager once notifications exist.
+    const { merged, declared, addons, problems, refused } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
     this.mergedConfig = merged;
-    this.declaredConfig = mergeWithAddonLayer(this.defaultConfig, addons, {});
+    this.declaredConfig = declared;
     this.addonLayers = addons;
+    this.systemCategoryProblems = problems;
+    this.refusedAddons = refused;
+    for (const problem of problems) logger.warn(`[config] ${problem}`);
     for (const a of addons) {
       if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
       else logger.info(`[config] addon '${a.slug}' contributed ${Object.keys(a.defaults).length} default key(s)`);
@@ -602,6 +615,24 @@ class ConfigurationManager extends BaseManager {
    */
   getDeclaredProperty(key: string, defaultValue: unknown = null): unknown {
     return this.declaredConfig?.[key] ?? defaultValue;
+  }
+
+  /**
+   * #1559: what was wrong with the system-categories add-ons declare — each
+   * entry refused, and each operator value an owner's declaration overrode —
+   * one line per problem, naming the entry and the field.
+   */
+  getSystemCategoryProblems(): readonly string[] {
+    return [...this.systemCategoryProblems];
+  }
+
+  /**
+   * #1559: why this add-on must not load — an entry its default-config.json
+   * declares under `ngdpbase.system-category` was refused — or null. None of
+   * its other keys were merged.
+   */
+  getAddonRefusal(slug: string): string | null {
+    return this.refusedAddons.get(slug) ?? null;
   }
 
   /**

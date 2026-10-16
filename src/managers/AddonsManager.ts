@@ -307,7 +307,7 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
-  /** Why it is never loaded on this core (its `minVersion` is newer), or null. */
+  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), or its system-category declaration was refused (#1559); null otherwise. */
   incompatible: string | null;
 
 }
@@ -437,6 +437,7 @@ class AddonsManager extends BaseManager {
     // Discover and load add-ons
     await this.discoverAddons();
     await this.loadAddons();
+    this.notifySystemCategoryProblems(configManager);
 
     // Runs after loading so every enabled addon's pages/ dir is known. Cheap —
     // walks only addon source pages, never the whole page tree — and makes
@@ -563,9 +564,13 @@ class AddonsManager extends BaseManager {
 
       // #1757: an addon that needs a newer core is never imported — its imports
       // of core modules this release lacks would fail with no reason given.
-      const incompatible = this.incompatibility(manifest);
+      // #1559: nor is one whose system-category declaration the configuration
+      // merge refused (operator, 2026-10-16); its status says why.
+      const canonicalId = resolveAddonSlug(addonPath, source);
+      const incompatible = this.incompatibility(manifest)
+        ?? this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonRefusal?.(canonicalId)
+        ?? null;
       if (incompatible) {
-        const canonicalId = resolveAddonSlug(addonPath, source);
         if (this.addons.has(canonicalId)) return;
         this.addons.set(canonicalId, {
           path: addonPath,
@@ -598,7 +603,6 @@ class AddonsManager extends BaseManager {
       // module.name. The registry key, isEnabled config lookup, dedup and
       // dependency references all key off this. module.name is a display
       // label validated against it below.
-      const canonicalId = resolveAddonSlug(addonPath, source);
       if (addonModule.name !== canonicalId) {
         const msg =
           `[AddonsManager] Add-on identity mismatch in ${folderName}: module name ` +
@@ -852,6 +856,30 @@ class AddonsManager extends BaseManager {
       })?.catch?.(() => { /* non-fatal */ });
     } catch {
       // non-fatal
+    }
+  }
+
+  /**
+   * #1559: tell admins what the configuration merge refused in the add-ons'
+   * system-categories, or overrode in the operator's file — logged there at
+   * boot, surfaced here once notifications exist. Not fail-fast, for the
+   * reason recordSeedFailure gives: an add-on's file is not in the operator's
+   * control. A refused entry fails closed (its category and vault do not
+   * exist, so nothing is written unsealed or public by mistake). Best-effort.
+   */
+  private notifySystemCategoryProblems(configManager: ConfigurationManager | undefined): void {
+    const problems = configManager?.getSystemCategoryProblems?.() ?? [];
+    if (problems.length === 0) return;
+    const notificationManager = this.engine.getManager<{
+      createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
+        }>('NotificationManager');
+    for (const problem of problems) {
+      void notificationManager?.createNotification?.({
+        type: 'system',
+        level: 'warning',
+        title: 'Add-on system-category problem',
+        message: `${problem}.`
+      })?.catch?.(() => { /* non-fatal */ });
     }
   }
 
