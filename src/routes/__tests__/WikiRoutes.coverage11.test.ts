@@ -7,6 +7,7 @@ import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -203,6 +204,7 @@ vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
       getManager: vi.fn((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           PageManager: mockPageManager,

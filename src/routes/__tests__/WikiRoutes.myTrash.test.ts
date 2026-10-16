@@ -15,6 +15,7 @@
 
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import WikiRoutes from '../WikiRoutes';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const MOLLY = { username: 'molly', isAuthenticated: true, roles: ['reader'], privateStoreHandle: 'sid' };
 const ADMIN = { username: 'root', isAuthenticated: true, roles: ['admin'] };
@@ -62,6 +63,7 @@ function makeRoutes(opts: {
   };
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'PageManager') return pageManager;
       if (name === 'ConfigurationManager') {
         return {
@@ -134,6 +136,7 @@ describe('GET /my/trash (#1459)', () => {
     const engineRoutes = makeRoutes({ trash: mollyTrash });
     (engineRoutes.routes as unknown as { engine: { getManager: ReturnType<typeof vi.fn> } }).engine.getManager
       .mockImplementation((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         if (name === 'PageManager') return engineRoutes.pageManager;
         if (name === 'ConfigurationManager') return { getProperty: vi.fn((_k: string, _d: unknown) => 0) };
         if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(true) };

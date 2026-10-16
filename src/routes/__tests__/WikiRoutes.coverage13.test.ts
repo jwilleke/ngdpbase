@@ -7,6 +7,7 @@ import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { readDoor } from './__fixtures__/pageReadDoor';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -202,6 +203,7 @@ vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
       getManager: vi.fn((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           CatalogManager: mockCatalogManager,

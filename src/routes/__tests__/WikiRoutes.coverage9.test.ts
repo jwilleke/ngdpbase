@@ -20,6 +20,7 @@ import { doorSaveResult } from './__fixtures__/pageDoor';
 import { buildTestApp } from './__fixtures__/buildTestApp';
 import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 import { readDoor } from './__fixtures__/pageReadDoor';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -185,6 +186,7 @@ vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
       getManager: vi.fn((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           PageManager: mockPageManager,

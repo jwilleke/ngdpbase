@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { readDoor } from './__fixtures__/pageReadDoor';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const src = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8');
 
@@ -70,6 +71,7 @@ describe('#1219 the kiosk renders only what the read gate allows', () => {
     };
     const engine = {
       getManager: vi.fn((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         if (name === 'PageManager') return pageManager;
         if (name === 'PolicyInformationPoint') {
           return { checkPagePermissionWithContext: vi.fn(async (ctx: { pageName?: string }) => readable.includes(ctx.pageName ?? '')) };

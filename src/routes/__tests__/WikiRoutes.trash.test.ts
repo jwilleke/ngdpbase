@@ -12,6 +12,7 @@ import fs from 'fs';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const adminUser = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 const plainUser = { username: 'bob', isAuthenticated: true, roles: ['reader'] };
@@ -58,6 +59,7 @@ function makeRoutes(opts: {
 
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'PageManager') return { provider };
       if (name === 'ConfigurationManager') {
         return {

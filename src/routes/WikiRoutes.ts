@@ -48,13 +48,6 @@ import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { packZip } from '../utils/zipArchive.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
-import {
-  shuffleArray,
-  formatPaginationNav,
-  formatStatFilters,
-  applyPagination,
-  parsePageParam
-} from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type PluginManager from '../managers/PluginManager.js';
 import type { PluginFormatters } from '../managers/PluginManager.js';
@@ -5099,7 +5092,7 @@ ${panes}
         const count = Math.min(50, Math.max(1, parseInt(req.query.count as string, 10) || 10));
         // #1219: draw from the pages this viewer may read, not the whole index.
         const all   = await pageManager.listPagesFor(req.userContext, 'view');
-        names = shuffleArray([...all]).slice(0, count);
+        names = this.formatters.shuffleArray([...all]).slice(0, count);
       }
 
       // Render each page through the wiki engine (reader mode — full HTML).
@@ -11270,7 +11263,7 @@ ${panes}
       // were the only working instance of this interaction in the application,
       // hand-rolled in the template with four hardcoded ids; nine other
       // surfaces imitate their appearance and filter nothing.
-      const statFiltersHtml = formatStatFilters([
+      const statFiltersHtml = this.formatters.formatStatFilters([
         { label: 'Total Users', value: users.length, clears: true, tone: 'primary', title: 'Show all users' },
         { label: 'Active Users', value: users.filter((u) => (u as { isActive?: boolean }).isActive).length, match: 'status=active', tone: 'success', title: 'Filter: Active users' },
         // userHasRole rather than an inline roles.includes: this counts the
@@ -12304,7 +12297,7 @@ ${panes}
         // #1304: report-only. Three counts in a debug panel, with no list of
         // variables beside them to filter — a card that offered a click here
         // would have nothing to do with it.
-        variableStatsHtml: formatStatFilters([
+        variableStatsHtml: this.formatters.formatStatFilters([
           { label: 'System Variables', value: debugInfo.systemVariables.length, tone: 'primary' },
           { label: 'Contextual Variables', value: debugInfo.contextualVariables.length, tone: 'info' },
           { label: 'Total Variables', value: debugInfo.totalVariables, tone: 'secondary' }
@@ -16162,7 +16155,7 @@ ${panes}
       // #1304: report-only. This page already filters through its Active / All
       // / Expired tabs, and a second control over the same three sets is the
       // two-paginators problem from #1237 in another costume.
-      const notificationStatsHtml = formatStatFilters([
+      const notificationStatsHtml = this.formatters.formatStatFilters([
         { label: 'Total Notifications', value: stats.total, tone: 'primary' },
         { label: 'Active', value: stats.active, tone: 'success' },
         { label: 'Expired', value: stats.expired, tone: 'warning' },
@@ -16451,7 +16444,7 @@ ${panes}
     pageSize: number,
     label = 'Pagination'
   ): { items: T[]; paginationHtml: string; currentPage: number; totalItems: number } {
-    const paged = applyPagination(items, parsePageParam(req.query.page as string | undefined), pageSize);
+    const paged = this.formatters.applyPagination(items, this.formatters.parsePageParam(req.query.page as string | undefined), pageSize);
     const hrefFor = (page: number): string => {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(req.query)) {
@@ -16463,7 +16456,7 @@ ${panes}
     };
     return {
       items: paged.items,
-      paginationHtml: formatPaginationNav(paged.currentPage, paged.totalPages, hrefFor, label),
+      paginationHtml: this.formatters.formatPaginationNav(paged.currentPage, paged.totalPages, hrefFor, label),
       currentPage: paged.currentPage,
       totalItems: items.length
     };
@@ -16570,7 +16563,7 @@ ${panes}
       // keyboard and swipe without the view calling anything.
       const totals = auditLogs as { total?: number };
       const totalPages = Math.max(1, Math.ceil((totals.total || 0) / limit));
-      const paginationHtml = formatPaginationNav(
+      const paginationHtml = this.formatters.formatPaginationNav(
         page,
         totalPages,
         this.auditPageHref(filters, limit),
@@ -16589,7 +16582,7 @@ ${panes}
         if (limit !== 50) params.set('limit', String(limit));
         return `/admin/audit?${params.toString()}`;
       };
-      const statFiltersHtml = formatStatFilters([
+      const statFiltersHtml = this.formatters.formatStatFilters([
         { label: 'Total Events', value: stats.totalEvents ?? 0, href: auditFilterHref(1), tone: 'primary', title: 'Show all events', active: Object.keys(filters).length === 0 },
         { label: 'Access Allowed', value: stats.eventsByResult?.allow ?? 0, href: withResult('allow'), tone: 'success', title: 'Filter: allowed access decisions', active: filters.result === 'allow' },
         { label: 'Access Denied', value: stats.eventsByResult?.deny ?? 0, href: withResult('deny'), tone: 'danger', title: 'Filter: denied access decisions', active: filters.result === 'deny' },
@@ -18171,7 +18164,7 @@ ${description}
       // /admin/users and did nothing when clicked — the sharpest case of an
       // affordance that lies. Every keyword is on the page, so they filter the
       // loaded rows; the bar names them and does the hiding itself.
-      const keywordStatsHtml = formatStatFilters([
+      const keywordStatsHtml = this.formatters.formatStatFilters([
         { label: 'Total Keywords', value: totalKeywords, clears: true, tone: 'primary', title: 'Show all keywords' },
         { label: 'Enabled', value: enabledKeywords, match: 'enabled=true', tone: 'success', title: 'Filter: enabled keywords' },
         { label: 'With Pages', value: keywordsWithPages, match: 'haspage=true', tone: 'info', title: 'Filter: keywords that have a page' },
@@ -19589,7 +19582,7 @@ ${description}
       // badge. The counts are worth stating, and since every share is on the
       // page they can filter it too.
       const shareStatus = (value: string) => shares.filter((sh) => sh.status === value).length;
-      const shareStatsHtml = formatStatFilters([
+      const shareStatsHtml = this.formatters.formatStatFilters([
         { label: 'Total Shares', value: shares.length, clears: true, tone: 'primary', title: 'Show all shares' },
         { label: 'Active', value: shareStatus('active'), match: 'status=active', tone: 'success', title: 'Filter: active shares' },
         { label: 'Expired', value: shareStatus('expired'), match: 'status=expired', tone: 'secondary', title: 'Filter: expired shares' },

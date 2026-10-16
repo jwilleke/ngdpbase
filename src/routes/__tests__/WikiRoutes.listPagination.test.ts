@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { readDoor } from './__fixtures__/pageReadDoor';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 const admin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 
@@ -53,6 +54,7 @@ function makeRoutes(history: unknown[]) {
   };
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'PageManager') return pageManager;
       if (name === 'UserManager') return { hasPermission: async () => true };
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
@@ -134,6 +136,7 @@ describe('#1302 the log viewer pages through the file', () => {
     const content = Array.from({ length: lines }, (_, i) => `line ${String(i).padStart(4, '0')}`).join('\n');
     const engine = {
       getManager: vi.fn((name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
         if (name === 'ConfigurationManager') {
           return { getResolvedDataPath: () => tmpDir, getProperty: (_k: string, d: unknown) => d };
         }
