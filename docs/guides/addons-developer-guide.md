@@ -94,7 +94,7 @@ A fourth way in ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)): the
 ```
 
 - __Where it goes:__ `<instance data folder>/addons/<slug>/`. Installing does not enable it: the enable key still decides.
-- __What loads from there:__ only add-ons the installer installed and verified on this start, named in the install map and in the lock file. Any other folder there (copied in by hand, or left after its entry was removed from the install map) is not loaded, and admins are warned. This holds even if `addons-path` names the folder.
+- __What loads from there:__ only add-ons the installer installed and verified on this start, named in the install map and in the lock file. Any other folder there (copied in by hand, or left after its entry was removed from the install map) is not loaded, and admins are warned. It never stops the boot, even when its enable key is set. This holds even if `addons-path` names the folder.
 - __First start:__ the highest release in the range whose `ngdpbase.minVersion` this core meets ([#1757](https://github.com/jwilleke/ngdpbase/issues/1757)) is fetched from the registry (`registry.npmjs.org`) through the outbound guard. Then:
   - its tarball's sha512 must match the registry's `dist.integrity`;
   - its Sigstore provenance attestation must be valid for that exact tarball and come from a GitHub Actions or GitLab CI workflow of the configured `repository`. A release with no provenance, with provenance that does not verify, or with provenance from another repository is refused;

@@ -23,6 +23,7 @@ import { CONFIG_DATA_TOPIC } from '../cache/CacheDependencies.js';
 /** The config key naming which other keys hold secrets (#1030). */
 import {
   configuredInstallSlugs,
+  installedAddonsDir,
   NPM_ADDON_PREFIX,
   splitAddonsPath,
   findNodeModulesDir,
@@ -346,8 +347,27 @@ class ConfigurationManager extends BaseManager {
     // with the registry down must not refuse the boot.
     for (const slug of configuredInstallSlugs(this.mergedConfig)) knownAddons.add(slug);
 
+    // 3d. #1830: a folder in <data>/addons that the install map does not name
+    // is never an add-on, and never stops the boot either (operator: warn,
+    // never force). An enabled id that only such a folder answers is skipped
+    // here with a warning; AddonsManager does not load it and tells admins.
+    const strays = new Set<string>();
+    const installedDir = installedAddonsDir(this.instanceDataFolder);
+    if (!resolvedPaths.includes(installedDir) && fs.existsSync(installedDir)) {
+      for (const entry of fs.readdirSync(installedDir, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) strays.add(resolveAddonSlug(path.join(installedDir, entry.name), 'directory'));
+      }
+    }
+
     // 4. Diff. Any enabled id without a matching directory/package is a misconfig.
-    const unknown = enabledIds.filter(id => !knownAddons.has(id));
+    const unknown = enabledIds.filter(id => {
+      if (knownAddons.has(id)) return false;
+      if (strays.has(id)) {
+        logger.warn(`[ConfigurationManager] 'ngdpbase.addons.${id}.enabled' is true, but ${id} is only a folder in ${installedDir} that ngdpbase.addons.install does not name; it is not loaded (#1830)`);
+        return false;
+      }
+      return true;
+    });
     if (unknown.length === 0) return;
 
     // 5. Build error with did-you-mean suggestions for likely typos.
