@@ -80,7 +80,7 @@ The journal's entry in `config/app-default-config.json` has the same shape, and 
 - `"defaultPrivate": "true"` makes pages start __public__;
 - `"encrypt": "true"` leaves the vault __unsealed__.
 
-So a wrong type is refused. An add-on's entry with one is left out entirely, with a startup warning and an admin notification naming the entry and the field: its category and vault don't exist until the file is fixed. Write `true`, `false` or `"choice"` exactly. The same refusal applies to an entry whose `owner` isn't the add-on's slug, whose key is a site entry's or another add-on's, or whose vault id another entry already uses.
+So a wrong type is refused. An add-on's entry with one is left out entirely, with a startup warning and an admin notification naming the entry and the field. __The add-on itself is then not loaded__: none of its routes, plugins or other configuration keys apply, and `/admin/addons` shows it as not loaded with the reason. It loads again once its file is fixed. Write `true`, `false` or `"choice"` exactly. The same refusal applies to an entry whose `owner` isn't the add-on's slug, whose key is a site entry's or another add-on's, whose vault id another entry already uses, that sets `default: true`, or whose `privatestore` is malformed.
 
 The same mistake in one of the site's own entries (core's, or the site's `app-custom-config.json`) is not refused: the site keeps running and the value is still read as false. Startup logs an error, and admins get the dashboard's non-dismissible "subsystem not working" banner and a system notification. Both name the entry, the field, the bad value and what it is read as.
 

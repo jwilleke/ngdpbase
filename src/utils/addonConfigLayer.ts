@@ -30,7 +30,9 @@
  * stamped with its `owner`, the addon's slug, and the owner's declaration of
  * the fields in OWNER_DECIDED_FIELDS stands over the operator's file. An entry
  * that claims another owner, reuses another entry's key or vault, or has a
- * value of the wrong type is refused, with a problem line naming it.
+ * value of the wrong type is refused, with a problem line naming it, and its
+ * addon is then not loaded at all (operator, 2026-10-16): none of its other
+ * keys apply, and its sound entries are kept as a turned-off addon's are.
  */
 
 import fs from 'fs';
@@ -120,8 +122,10 @@ export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string
 interface AddonCategoryLayer {
   /** The accepted entries, by key, each stamped with its `owner`. */
   entries: Record<string, Record<string, unknown>>;
-  /** Keys whose addon is turned off: never offered, whatever the operator's file says. */
+  /** Keys whose addon is turned off or refused: never offered, whatever the operator's file says. */
   turnedOff: Set<string>;
+  /** Addons with a refused entry, by slug, with why: never loaded, none of their other keys apply. */
+  refused: Map<string, string>;
   problems: string[];
 }
 
@@ -146,16 +150,20 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
     }
   }
 
-  const layer: AddonCategoryLayer = { entries: {}, turnedOff: new Set(), problems: [] };
+  const layer: AddonCategoryLayer = { entries: {}, turnedOff: new Set(), refused: new Map(), problems: [] };
   const declaredBy = new Map<string, string>();
   for (const addon of addons) {
     const declared = addon.defaults[SYSTEM_CATEGORY_KEY];
     if (declared === undefined) continue;
     const who = `add-on '${addon.slug}'${addon.enabled ? '' : ' (turned off)'}`;
     if (!isPlainObject(declared)) {
-      layer.problems.push(`${who}: ${SYSTEM_CATEGORY_KEY} must be a map of entries; it is refused`);
+      const reason = `${SYSTEM_CATEGORY_KEY} must be a map of entries`;
+      layer.problems.push(`${who}: ${reason}; it is refused and the add-on is not loaded`);
+      layer.refused.set(addon.slug, `its system-category declaration was refused: ${reason}`);
       continue;
     }
+    const refusedHere: string[] = [];
+    const acceptedHere: string[] = [];
     for (const [key, entry] of Object.entries(declared)) {
       const reasons: string[] = [];
       if (!isPlainObject(entry)) {
@@ -177,18 +185,25 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
         reasons.push(...systemCategoryValueProblems(key, entry).map((p) => p.message));
       }
       if (reasons.length > 0) {
-        layer.problems.push(`${who}: system-category '${key}' is refused (${reasons.join('; ')})`);
+        layer.problems.push(`${who}: system-category '${key}' is refused (${reasons.join('; ')}); the add-on is not loaded`);
+        refusedHere.push(`'${key}' (${reasons.join('; ')})`);
         continue;
       }
-      const accepted: Record<string, unknown> = { ...(entry as Record<string, unknown>), owner: addon.slug };
-      if (!addon.enabled) {
-        accepted.enabled = false;
+      layer.entries[key] = { ...(entry as Record<string, unknown>), owner: addon.slug };
+      acceptedHere.push(key);
+      declaredBy.set(key, addon.slug);
+      const vaultId = vaultIdOf(entry);
+      if (vaultId) vaultKey.set(vaultId, key);
+    }
+    // An add-on with a refused entry is not loaded (operator, 2026-10-16), so
+    // its sound entries are kept as a turned-off add-on's are: readable, never
+    // offered.
+    if (refusedHere.length > 0) layer.refused.set(addon.slug, `its system-category declaration was refused: ${refusedHere.join('; ')}`);
+    if (!addon.enabled || refusedHere.length > 0) {
+      for (const key of acceptedHere) {
+        layer.entries[key].enabled = false;
         layer.turnedOff.add(key);
       }
-      layer.entries[key] = accepted;
-      declaredBy.set(key, addon.slug);
-      const vaultId = vaultIdOf(accepted);
-      if (vaultId) vaultKey.set(vaultId, key);
     }
   }
   return layer;
@@ -238,52 +253,54 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   shipped: T,
   addons: readonly AddonDefaults[],
   custom: Partial<T>
-): { merged: T; problems: string[] } {
+): { merged: T; problems: string[]; refused: Map<string, string> } {
   const customCategories = (custom as Record<string, unknown>)[SYSTEM_CATEGORY_KEY];
   const layer = addonCategoryLayer(shipped[SYSTEM_CATEGORY_KEY], customCategories, addons);
   const withAddons = addons
-    .filter((a) => a.enabled)
+    .filter((a) => a.enabled && !layer.refused.has(a.slug))
     .reduce<Record<string, unknown>>((acc, a) => {
       const rest = { ...a.defaults };
       delete rest[SYSTEM_CATEGORY_KEY];
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: layer.problems };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: layer.problems, refused: layer.refused };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems] };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems], refused: layer.refused };
 }
 
 /**
  * The full merge for a caller with the two files already read (the manager,
  * and the pre-engine reader): discover addons against the shipped+custom view,
  * then fold them in beneath custom. `declared` is the same merge without
- * custom (#1638); `addons` lists the enabled addons only; `problems` names
- * every addon system-category refused, every operator value an owner's
- * declaration overrode, and every turned-off addon whose file could not be
- * read (#1559).
+ * custom (#1638); `addons` lists the enabled addons whose keys apply;
+ * `problems` names every addon system-category refused, every operator value
+ * an owner's declaration overrode, and every turned-off addon whose file
+ * could not be read; `refused` names, by slug, each addon that must not load
+ * because an entry it declares was refused, and why (#1559).
  */
 export function mergeConfigWithAddons<T extends Record<string, unknown>>(
   shipped: T,
   custom: Partial<T>,
   cwd: string = process.cwd()
-): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[] } {
+): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string> } {
   const base = deepMergeConfigs(shipped, custom);
   const all = discoverAddonDefaults(base, cwd);
-  const { merged, problems } = mergeWithAddonLayer(shipped, all, custom);
+  const { merged, problems, refused } = mergeWithAddonLayer(shipped, all, custom);
   const unreadable = all
     .filter((a) => !a.enabled && a.error)
     .map((a) => `add-on '${a.slug}' (turned off): config/default-config.json could not be read (${a.error}); its system-categories are not known`);
   return {
     merged,
     declared: mergeWithAddonLayer(shipped, all, {}).merged,
-    addons: all.filter((a) => a.enabled),
-    problems: [...unreadable, ...problems]
+    addons: all.filter((a) => a.enabled && !refused.has(a.slug)),
+    problems: [...unreadable, ...problems],
+    refused
   };
 }
 

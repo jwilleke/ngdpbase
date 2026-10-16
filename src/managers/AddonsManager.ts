@@ -307,7 +307,7 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
-  /** Why it is never loaded on this core (its `minVersion` is newer), or null. */
+  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), or its system-category declaration was refused (#1559); null otherwise. */
   incompatible: string | null;
 
 }
@@ -564,9 +564,13 @@ class AddonsManager extends BaseManager {
 
       // #1757: an addon that needs a newer core is never imported — its imports
       // of core modules this release lacks would fail with no reason given.
-      const incompatible = this.incompatibility(manifest);
+      // #1559: nor is one whose system-category declaration the configuration
+      // merge refused (operator, 2026-10-16); its status says why.
+      const canonicalId = resolveAddonSlug(addonPath, source);
+      const incompatible = this.incompatibility(manifest)
+        ?? this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonRefusal?.(canonicalId)
+        ?? null;
       if (incompatible) {
-        const canonicalId = resolveAddonSlug(addonPath, source);
         if (this.addons.has(canonicalId)) return;
         this.addons.set(canonicalId, {
           path: addonPath,
@@ -599,7 +603,6 @@ class AddonsManager extends BaseManager {
       // module.name. The registry key, isEnabled config lookup, dedup and
       // dependency references all key off this. module.name is a display
       // label validated against it below.
-      const canonicalId = resolveAddonSlug(addonPath, source);
       if (addonModule.name !== canonicalId) {
         const msg =
           `[AddonsManager] Add-on identity mismatch in ${folderName}: module name ` +

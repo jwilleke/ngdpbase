@@ -275,3 +275,55 @@ describe('#1559 admins are told what was refused', () => {
     expect(String(createNotification.mock.calls[0][0].message)).toMatch(/system-category 'phr' is refused/);
   });
 });
+
+describe('#1559 an add-on with a refused entry is not loaded (operator, 2026-10-16)', () => {
+  const enabled = { 'ngdpbase.addons.phr.enabled': true };
+  const badPhr = { 'ngdpbase.addons.phr.colour': 'red', [SC]: { phr: { ...phrEntry, encrypt: 'true' }, phrnotes: { label: 'phrnotes', enabled: true } } };
+
+  test('none of its other keys apply; its sound entries stay readable, not offered', () => {
+    addon('phr', badPhr);
+    const { merged, addons, refused } = mergeConfigWithAddons(shipped, enabled, root);
+    expect(merged['ngdpbase.addons.phr.colour']).toBeUndefined();
+    expect(addons.map((a) => a.slug)).not.toContain('phr');
+    expect(categories(merged).phr).toBeUndefined();
+    expect(categories(merged).phrnotes).toMatchObject({ owner: 'phr', enabled: false });
+    expect(refused.get('phr')).toMatch(/system-category declaration was refused: 'phr' \(.*encrypt must be true or false, got "true"\)/);
+  });
+
+  test('a sound add-on is not refused', () => {
+    addon('phr', phrDefaults);
+    expect(mergeConfigWithAddons(shipped, enabled, root).refused.size).toBe(0);
+  });
+
+  test('AddonsManager never imports it, and its status names the reason', async () => {
+    addon('phr', badPhr);
+    // Throws if imported: its routes and plugins would be registered by register().
+    fs.writeFileSync(path.join(root, 'addons', 'phr', 'index.js'), "throw new Error('a refused add-on was imported');\n");
+    const { refused } = mergeConfigWithAddons(shipped, enabled, root);
+    const cm = {
+      getProperty: (key: string, def: unknown) => {
+        if (key === 'ngdpbase.managers.addons-manager.enabled') return true;
+        if (key === 'ngdpbase.managers.addons-manager.addons-path') return path.join(root, 'addons');
+        if (key === 'ngdpbase.page.provider.filesystem.storagedir') return path.join(root, 'pages');
+        if (key === 'ngdpbase.addons') return {};
+        if (key === 'ngdpbase.addons.phr.enabled') return true;
+        return def;
+      },
+      getAllProperties: () => ({}),
+      getResolvedDataPath: () => path.join(root, 'pages'),
+      getCustomProperty: () => null,
+      setRuntimeProperty: () => undefined,
+      getAddonRefusal: (slug: string) => refused.get(slug) ?? null
+    };
+    const mod = await import('../../managers/AddonsManager');
+    const AddonsManager = (mod.default ?? mod) as unknown as new (engine: unknown) => {
+      initialize(): Promise<void>;
+      getStatus(): Promise<Array<{ name: string; enabled: boolean; loaded: boolean; error?: string | null }>>;
+    };
+    const manager = new AddonsManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? cm : null) });
+    await manager.initialize();
+    const phr = (await manager.getStatus()).find((s) => s.name === 'phr');
+    expect(phr).toMatchObject({ enabled: true, loaded: false });
+    expect(phr?.error).toMatch(/system-category declaration was refused.*encrypt must be true or false/);
+  });
+});

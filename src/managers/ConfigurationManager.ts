@@ -79,6 +79,8 @@ class ConfigurationManager extends BaseManager {
   private addonLayers: AddonDefaults[];
   /** #1559: add-on system-categories refused, and operator values an owner's declaration overrode. */
   private systemCategoryProblems: string[];
+  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why. */
+  private refusedAddons: Map<string, string>;
   private environment: string;
   private defaultConfigPath: string;
   private customConfigPath: string;
@@ -99,7 +101,8 @@ class ConfigurationManager extends BaseManager {
     this.declaredConfig = null;
     this.addonLayers = [];
     this.systemCategoryProblems = [];
-    this.environment =process.env.NODE_ENV || 'development';
+    this.refusedAddons = new Map();
+    this.environment = process.env.NODE_ENV || 'development';
 
     // #1214: one derivation of the data folder and both file paths, shared
     // with the pre-engine reader in app.ts. Fast storage holds operational
@@ -453,11 +456,12 @@ class ConfigurationManager extends BaseManager {
     // addon, enabled or not, so a turned-off addon's pages and vault stay
     // reachable. Its problems are logged here and posted to admins by
     // AddonsManager once notifications exist.
-    const { merged, declared, addons, problems } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
+    const { merged, declared, addons, problems, refused } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
+    this.refusedAddons = refused;
     for (const problem of problems) logger.warn(`[config] ${problem}`);
     for (const a of addons) {
       if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
@@ -620,6 +624,15 @@ class ConfigurationManager extends BaseManager {
    */
   getSystemCategoryProblems(): readonly string[] {
     return [...this.systemCategoryProblems];
+  }
+
+  /**
+   * #1559: why this add-on must not load — an entry its default-config.json
+   * declares under `ngdpbase.system-category` was refused — or null. None of
+   * its other keys were merged.
+   */
+  getAddonRefusal(slug: string): string | null {
+    return this.refusedAddons.get(slug) ?? null;
   }
 
   /**
