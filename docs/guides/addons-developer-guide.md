@@ -810,7 +810,7 @@ module.exports = {
   name: 'MyPlugin',
 
   /**
-   * @param {object} context  - { engine, pageName, linkGraph }
+   * @param {object} context  - { engine, pageName, linkGraph, formatters }
    * @param {object} params   - key/value pairs from [{MyPlugin key='value'}]
    * @returns {string}        - HTML fragment
    */
@@ -825,6 +825,19 @@ module.exports = {
 ```
 
 Invoked in wiki markup: `[{MyPlugin id='42' style='compact'}]`
+
+### Formatting output
+
+`context.formatters` holds the plugin formatter helpers PluginManager owns: parameter parsers, `formatAsTable`, `formatAsList`, pagination, `escapeHtml` and the rest ([plugin-formatters.md](../plugins/plugin-formatters.md), [#1820](https://github.com/jwilleke/ngdpbase/issues/1820)). Use them rather than building markup by hand, and escape every value you interpolate:
+
+```javascript
+execute(context, params) {
+  const { escapeHtml } = context.formatters;
+  return `<div class="my-widget">${escapeHtml(params.id || '')}</div>`;
+}
+```
+
+An addon that imports them from `../../dist/src/utils/pluginFormatters.js` still works until the bundled importers are switched over; write new code against `context.formatters`. `import type` of their types stays allowed.
 
 ### Plugins and the page cache
 

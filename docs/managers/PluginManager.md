@@ -1,7 +1,7 @@
 ---
 name: PluginManager
 description: "Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output"
-dateModified: '2026-10-11'
+dateModified: '2026-10-16'
 category: managers
 code: src/managers/PluginManager.ts
 ---
@@ -98,6 +98,34 @@ module.exports = {
     const mgr = context.engine.getManager('MyDataManager');
     const items = mgr ? mgr.getItems() : [];
     return items.map(d => `<li>${d.title}</li>`).join('');
+  }
+};
+```
+
+## Formatters
+
+PluginManager owns the plugin formatter helpers in `src/utils/pluginFormatters.ts` ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)). It holds them as one frozen object, `formatters`, whose members are the module's exported functions and constants themselves, not wrappers. The reference for each helper is [plugin-formatters.md](../plugins/plugin-formatters.md).
+
+- A plugin receives them in every run as `context.formatters`, for example `context.formatters.formatAsTable(headers, rows)`.
+- Code that is not a plugin, such as a route, reads `engine.getManager('PluginManager').formatters`.
+- Types (`PageLink`, `TableOptions`, `FormOption` and the rest) stay importable from the module with `import type`.
+- Importing the module by path still works. Switching the existing importers over is the next step of [#1820](https://github.com/jwilleke/ngdpbase/issues/1820), after which the path import goes.
+
+The helpers fall into four groups:
+
+- __Parameter parsers__: `parseMaxParam`, `parseBoolParam`, `parseSortParam`, `parsePageParam`, `parsePageSizeParam`, `parsePlacementParam`, `splitParam`, `resolveUserParam`, `resolveCurrentKeyword`.
+- __Output builders__: `formatAsTable`, `formatAsList`, `formatAsCount`, `applyMax`, `applyPagination`, `formatPaginationNav`, `formatPaginationLinks`, `formatStatFilters`, `placementClass`.
+- __Value formatting__: `escapeHtml`, `formatMoney`, `formatDuration`, `formatDateTime`, `formatRelativeTime`, `extractExcerpt`, `simpleSlug`, `shuffleArray`.
+- __Plugin-to-manager conventions__: `resolveManagerFetch` reaches only a manager's `toMarqueeText` (`FETCHABLE_METHOD`), and `resolveManagerOptions` reaches only its `toFormOptions` (`FORM_OPTIONS_METHOD`). Page text names the manager, so no other method is reachable, and the viewer's context goes with each call.
+
+```ts
+module.exports = {
+  name: 'MyPlugin',
+
+  execute(context, params) {
+    const { escapeHtml, parseMaxParam } = context.formatters;
+    const max = parseMaxParam(params.max, 10);
+    return `<p>${escapeHtml(context.pageName)}: ${max}</p>`;
   }
 };
 ```

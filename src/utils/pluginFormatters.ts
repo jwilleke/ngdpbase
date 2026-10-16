@@ -4,6 +4,10 @@
  *
  * All plugins should use these helpers to ensure consistent behaviour for
  * `max`, `format`, `before`, and `after` parameters across the platform.
+ *
+ * Owned by PluginManager (#1820). Plugins use `context.formatters`; other
+ * callers use `engine.getManager('PluginManager').formatters`. Direct imports
+ * of this module are being retired; types stay importable with `import type`.
  */
 
 /** A renderable page link with href, display text, and optional styling */

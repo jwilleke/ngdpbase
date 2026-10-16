@@ -1,7 +1,7 @@
 ---
 name: plugin-formatters
 description: Shared utility functions for plugin authors — consistent parameter parsing, HTML output, pagination, and date formatting across the platform.
-dateModified: '2026-09-08'
+dateModified: '2026-10-16'
 category: plugins
 code: src/utils/pluginFormatters.ts
 ---
@@ -12,19 +12,22 @@ Shared utility functions for plugin authors — consistent parameter parsing, HT
 
 ## Usage
 
+PluginManager owns these helpers ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820), [PluginManager § Formatters](../managers/PluginManager.md#formatters)). A plugin uses the ones it is handed in its context:
+
 ```ts
-import {
-  escapeHtml,
-  parseMaxParam,
-  parseBoolParam,
-  formatAsList,
-  formatAsTable,
-  applyPagination,
-  formatPaginationLinks,
-} from '../../utils/pluginFormatters';
+execute(context, params) {
+  const { escapeHtml, parseMaxParam, formatAsList } = context.formatters;
+  // ...
+}
 ```
 
-Import only what you need. All exports are named; there is no default export.
+Code that is not a plugin uses `engine.getManager('PluginManager').formatters`. Types stay importable with `import type`:
+
+```ts
+import type { PageLink, TableOptions } from '../../utils/pluginFormatters';
+```
+
+Importing the functions by path still works until the existing importers are switched over, after which the path import goes. Write new code against `context.formatters`.
 
 ## Start here, not with a string of HTML
 

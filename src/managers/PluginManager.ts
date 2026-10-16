@@ -3,6 +3,7 @@ import BaseManager from './BaseManager.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
+import * as pluginFormatters from '../utils/pluginFormatters.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -95,12 +96,23 @@ function hasDefaultExport(obj: unknown): obj is { default: unknown } {
 }
 
 /**
+ * The plugin formatter helpers PluginManager owns (#1820): the functions and
+ * constants `src/utils/pluginFormatters.ts` exports, as the same objects.
+ * Their types stay importable from that module with `import type`.
+ */
+export type PluginFormatters = Readonly<typeof pluginFormatters>;
+
+const formatters: PluginFormatters = Object.freeze({ ...pluginFormatters });
+
+/**
  * Plugin context passed to plugins during execution
  */
 export interface PluginContext {
   engine: WikiEngine;
   pageName: string;
   linkGraph: Record<string, unknown>;
+  /** #1820: PluginManager's formatter helpers, e.g. `context.formatters.escapeHtml(s)`. */
+  formatters: PluginFormatters;
   /**
    * #1751: this render reads `topic`'s data (by convention the owning
    * manager's name, e.g. 'LedgerManager'). Call before reading; the cached
@@ -158,6 +170,11 @@ export interface PluginInfo {
 class PluginManager extends BaseManager {
   private plugins: Map<string, Plugin>;
   private allowedRoots: string[];
+  /**
+   * The plugin formatter helpers this manager owns (#1820), frozen. Plugins
+   * receive them as `context.formatters`; other callers read them here.
+   */
+  readonly formatters: PluginFormatters = formatters;
 
   /**
    * Creates a new PluginManager instance
@@ -392,6 +409,7 @@ class PluginManager extends BaseManager {
         engine: deps ? trackedEngine(this.engine, deps) : this.engine,
         pageName: pageName,
         linkGraph: (context.linkGraph as Record<string, unknown>) || {},
+        formatters: this.formatters,
         dependsOn: (topic: string) => deps?.dependsOn(topic),
         markVolatile: () => deps?.markVolatile()
       };
