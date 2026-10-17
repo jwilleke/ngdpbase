@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import matter from 'gray-matter';
+import yaml from 'js-yaml';
 import { validate as validateUuid, version as uuidVersion } from 'uuid';
 
 import {
@@ -397,6 +398,132 @@ describe('--repo (#1636) — a whole standalone repository', () => {
     expect(readme).not.toMatch(/docker build|\| `Dockerfile`/);
 
     expect(await fs.readFile(path.join(repoRoot(), 'LICENSE'), 'utf8')).toContain('Apache License');
+  });
+
+  describe('publish.yml (#1863) — npm trusted publishing with provenance on a version tag', () => {
+    interface Step { name?: string; uses?: string; run?: string; with?: Record<string, unknown> }
+    interface Workflow {
+      on: { push: { tags: string[] } };
+      permissions: Record<string, string>;
+      jobs: { publish: { 'runs-on': string; permissions: Record<string, string>; defaults: { run: { 'working-directory': string } }; steps: Step[] } };
+    }
+    const workflowPath = (): string => path.join(repoRoot(), '.github', 'workflows', 'publish.yml');
+    const load = async (): Promise<{ text: string; wf: Workflow }> => {
+      const text = await fs.readFile(workflowPath(), 'utf8');
+      return { text, wf: yaml.load(text) as Workflow };
+    };
+    const step = (wf: Workflow, name: string): Step => {
+      const found = wf.jobs.publish.steps.find(s => s.name === name);
+      if (!found) throw new Error(`no step '${name}'`);
+      return found;
+    };
+
+    /** Run one step's shell in a package dir holding `pkg`, as the runner would. */
+    function runStep(s: Step, pkg: Record<string, unknown>, env: Record<string, string> = {}): { status: number | null; out: string } {
+      const dir = path.join(tmp, `pkg-${Math.random().toString(36).slice(2)}`);
+      fs.ensureDirSync(dir);
+      fs.writeJsonSync(path.join(dir, 'package.json'), pkg);
+      const run = spawnSync('bash', ['-e', '-c', s.run!], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH ?? '', GITHUB_SERVER_URL: 'https://github.com', GITHUB_REPOSITORY: 'acme/volcano-watch', GITHUB_REF_NAME: 'v0.1.0', ...env }
+      });
+      return { status: run.status, out: run.stdout + run.stderr };
+    }
+
+    test('--repo writes it; it parses, runs on v* tags, from the addon directory', async () => {
+      const result = await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      expect(result.files).toContain('.github/workflows/publish.yml');
+      const { wf } = await load();
+      expect(wf.on).toEqual({ push: { tags: ['v*'] } });
+      expect(wf.jobs.publish['runs-on']).toBe('ubuntu-latest');
+      expect(wf.jobs.publish.defaults.run['working-directory']).toBe('addons/volcano-watch');
+      const uses = wf.jobs.publish.steps.map(s => s.uses).filter(Boolean);
+      expect(uses).toEqual(['actions/checkout@v7', 'actions/setup-node@v7']);
+      expect(wf.jobs.publish.steps[1].with).toEqual({ 'node-version': '24.x', 'registry-url': 'https://registry.npmjs.org' });
+    });
+
+    test('publishes with provenance on an OIDC token, never a stored NPM_TOKEN', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const { text, wf } = await load();
+      expect(wf.permissions).toEqual({ contents: 'read' });
+      expect(wf.jobs.publish.permissions).toEqual({ 'id-token': 'write', contents: 'read' });
+      const runs = wf.jobs.publish.steps.map(s => s.run?.trim()).filter(Boolean);
+      // Install, build and test come before the publish, and the publish is last.
+      expect(runs.slice(-4)).toEqual(['npm ci', 'npm run build --if-present', 'npm run test --if-present', 'npm publish --provenance --access public']);
+      expect(text).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./);
+    });
+
+    test('requires Node 24.15 and npm 11.5.1, and the check runs', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const s = step((await load()).wf, 'Node 24.15 or later, npm 11.5.1 or later');
+      expect(s.run).toContain('below(process.versions.node, "24.15.0")');
+      expect(s.run).toContain('below(npm, "11.5.1")');
+      // The engines this repository itself requires (>=24.15) pass it.
+      expect(runStep(s, {})).toEqual({ status: 0, out: '' });
+    });
+
+    test('the tag must equal v<package.json version>', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const s = step((await load()).wf, 'Tag matches package.json version');
+      expect(runStep(s, { version: '0.1.0' }).status).toBe(0);
+      const bad = runStep(s, { version: '0.2.0' });
+      expect(bad.status).not.toBe(0);
+      expect(bad.out).toContain('tag v0.1.0 does not match package.json version 0.2.0');
+    });
+
+    test('package.json must name this repository and not be private', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const s = step((await load()).wf, 'package.json names this repository and is not private');
+      const repository = { type: 'git', url: 'git+https://github.com/Acme/volcano-watch.git', directory: 'addons/volcano-watch' };
+      expect(runStep(s, { repository }).status).toBe(0);
+      expect(runStep(s, { repository: 'https://github.com/acme/volcano-watch' }).status).toBe(0);
+
+      const priv = runStep(s, { private: true, repository });
+      expect(priv.status).not.toBe(0);
+      expect(priv.out).toContain('"private": true');
+
+      const other = runStep(s, { repository: { type: 'git', url: 'git+https://github.com/someone/else.git' } });
+      expect(other.status).not.toBe(0);
+      expect(other.out).toContain('git+https://github.com/acme/volcano-watch.git');
+      expect(runStep(s, {}).status).not.toBe(0);
+    });
+
+    test('every runtime dependency must be bundled', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const s = step((await load()).wf, 'Runtime dependencies are bundled');
+      expect(runStep(s, {}).status).toBe(0);
+      expect(runStep(s, { dependencies: { a: '1' }, bundleDependencies: ['a'] }).status).toBe(0);
+      expect(runStep(s, { dependencies: { a: '1' }, bundledDependencies: ['a'] }).status).toBe(0);
+      expect(runStep(s, { dependencies: { a: '1' }, bundleDependencies: true }).status).toBe(0);
+
+      const missing = runStep(s, { dependencies: { a: '1', b: '1' }, bundleDependencies: ['a'] });
+      expect(missing.status).not.toBe(0);
+      expect(missing.out).toContain('not bundled: b.');
+      expect(missing.out).toContain('bundleDependencies');
+    });
+
+    test('the README explains the one-time npm setup, tagging, and the site\'s install entry', async () => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      const readme = await fs.readFile(path.join(repoRoot(), 'README.md'), 'utf8');
+      expect(readme).toContain('## Release it');
+      expect(readme).toContain('trusted publisher');
+      expect(readme).toContain('workflow `publish.yml`');
+      expect(readme).toContain('git push origin v0.2.0');
+      const entry = /```json\n(\{\n {2}"ngdpbase\.addons\.install"[\s\S]*?)```/.exec(readme);
+      expect(entry).not.toBeNull();
+      expect(JSON.parse(entry![1])).toEqual({
+        'ngdpbase.addons.install': {
+          'volcano-watch': { package: '@acme/volcano-watch-addon', version: '^0.1.0', repository: 'github.com/<owner>/<repo>' }
+        },
+        'ngdpbase.addons.volcano-watch.enabled': true
+      });
+    });
+
+    test('a plain (non-repo) scaffold writes no workflow', async () => {
+      const result = await scaffoldAddon(opts());
+      expect(result.files.some(f => f.includes('.github'))).toBe(false);
+    });
   });
 
   test('never says "wiki" in any file of the repository', async () => {

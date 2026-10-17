@@ -27,8 +27,8 @@
  *               Required unless the target is this checkout's addons/ (a bundled
  *               addon, named @ngdpbase/<id>) — the scaffold never guesses a scope (#1676)
  *   --repo      write a whole repository: the addon at <target>/addons/<id>/,
- *               plus renovate.json, .github/workflows/ci.yml, .gitignore,
- *               LICENSE and README.md at <target>. Nothing deployment-specific
+ *               plus renovate.json, .github/workflows/ci.yml and publish.yml,
+ *               .gitignore, LICENSE and README.md at <target>. Nothing deployment-specific
  *               (#1829): the Dockerfile that ships it lives in the site repo
  *               (addons-developer-guide.md section 12)
  *   --target    output directory (default: addons/<id>; with --repo, ../<id>)
@@ -741,6 +741,106 @@ jobs:
 `;
 }
 
+/**
+ * Publish to npm on a `v*` tag (#1863), with npm trusted publishing: the
+ * workflow's OIDC token stands in for a stored NPM_TOKEN, and `--provenance`
+ * has Sigstore sign a statement naming this workflow. That statement is what
+ * the installer checks (src/utils/addonProvenance.ts): a certificate issued to
+ * a GitHub Actions workflow under `https://github.com/<owner>/<repo>/`, for
+ * `pkg:npm/<name>@<version>` with this tarball's sha512. So the job publishes
+ * from GitHub-hosted runners, from the tag it was pushed with, and nothing
+ * else.
+ */
+function publishWorkflow(o: ScaffoldOptions): string {
+  const dir = `addons/${o.id}`;
+  return `name: Publish
+
+# Pushing a tag v<version> builds, tests and publishes ${dir}/ to npm with
+# signed provenance. No npm token is stored: npm trusts this workflow
+# (trusted publishing), set up once on npmjs.com. See README.md, "Release it".
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # The OIDC token npm takes instead of a token, and Sigstore signs the provenance with.
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: ${dir}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later; older npm fails with a
+      # bare authentication error.
+      - name: Node 24.15 or later, npm 11.5.1 or later
+        run: |
+          node -e '
+            const below = (v, min) => { const a = v.split(".").map(Number), b = min.split(".").map(Number); for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
+            const npm = require("child_process").execSync("npm --version").toString().trim();
+            if (below(process.versions.node, "24.15.0")) { console.error("::error::Node " + process.versions.node + " is older than 24.15.0"); process.exit(1); }
+            if (below(npm, "11.5.1")) { console.error("::error::npm " + npm + " is older than 11.5.1, which trusted publishing needs"); process.exit(1); }
+          '
+
+      - name: Tag matches package.json version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "\${GITHUB_REF_NAME}" != "v\${version}" ]; then
+            echo "::error::tag \${GITHUB_REF_NAME} does not match package.json version \${version}: tag v\${version}, or change the version"
+            exit 1
+          fi
+
+      # npm refuses provenance whose repository differs from package.json's,
+      # and a private package is never published.
+      - name: package.json names this repository and is not private
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const want = new URL(process.env.GITHUB_SERVER_URL).host + "/" + process.env.GITHUB_REPOSITORY;
+            const url = typeof pkg.repository === "string" ? pkg.repository : (pkg.repository && pkg.repository.url) || "";
+            const got = url.replace(/^git\\+/, "").replace(/^https?:\\/\\//, "").replace(/\\.git$/, "");
+            if (pkg.private) { console.error("::error::package.json has \\"private\\": true; remove it to publish"); process.exit(1); }
+            if (got.toLowerCase() !== want.toLowerCase()) {
+              console.error("::error::package.json repository is \\"" + url + "\\"; set it to { \\"type\\": \\"git\\", \\"url\\": \\"git+https://" + want + ".git\\", \\"directory\\": \\"${dir}\\" }");
+              process.exit(1);
+            }
+          '
+
+      # ngdpbase unpacks an add-on as published and runs no npm install, so a
+      # runtime dependency that is not bundled is missing on the site.
+      - name: Runtime dependencies are bundled
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const bundled = pkg.bundleDependencies ?? pkg.bundledDependencies ?? [];
+            const missing = bundled === true ? [] : Object.keys(pkg.dependencies ?? {}).filter((d) => !bundled.includes(d));
+            if (missing.length) {
+              console.error("::error::not bundled: " + missing.join(", ") + ". ngdpbase installs an add-on as published and runs no npm install, so every entry in dependencies must also be in bundleDependencies. A package the host provides belongs in peerDependencies.");
+              process.exit(1);
+            }
+          '
+
+      - run: npm ci
+      - run: npm run build --if-present
+      - run: npm run test --if-present
+
+      - run: npm publish --provenance --access public
+`;
+}
+
 function gitignore(): string {
   return ['node_modules/', 'dist/', '*.tsbuildinfo', '.env', '.DS_Store', 'data/', ''].join('\n');
 }
@@ -774,6 +874,48 @@ that layers it onto the ngdpbase image, and the Renovate rule that keeps that
 image current, live in the site repository that builds and deploys the site:
 see [Shipping Your Addon as a Container Image](${GUIDE_URL}#12-shipping-your-addon-as-a-container-image).
 
+## Release it
+
+Pushing a tag \`v<version>\` publishes \`addons/${o.id}/\` to npm as
+\`${packageName(o)}\`, from \`.github/workflows/publish.yml\`. The workflow
+installs (\`npm ci\`), builds and tests it, checks the tag matches the
+\`package.json\` version and every runtime dependency is bundled, and runs
+\`npm publish --provenance\`. No npm token is stored anywhere: npm trusts this
+repository's workflow instead (trusted publishing).
+
+Once, before the first release:
+
+- In \`addons/${o.id}/package.json\`, remove \`"private": true\` and add
+  \`"repository": { "type": "git", "url": "git+https://github.com/<owner>/<repo>.git", "directory": "addons/${o.id}" }\`.
+  npm refuses provenance from a repository other than this one.
+- Run \`npm install\` in \`addons/${o.id}/\` and commit \`package-lock.json\`.
+- On npmjs.com, in the package's settings, add a trusted publisher: GitHub
+  Actions, this repository, workflow \`publish.yml\`. npm adds one only to a
+  package that already exists. For a new name, publish one version by hand
+  first (\`npm publish --access public\`). That version has no provenance, so
+  sites refuse it: release the next version by tag.
+
+Each release: change \`version\` in \`addons/${o.id}/package.json\` (and in
+\`index.ts\`), commit, then tag that version and push the tag:
+
+\`\`\`bash
+git tag v0.2.0
+git push origin v0.2.0
+\`\`\`
+
+A site installs it from npm with this in its \`app-custom-config.json\`. The
+installer checks the release's provenance names \`repository\`, and refuses
+it otherwise:
+
+\`\`\`json
+{
+  "ngdpbase.addons.install": {
+    "${o.id}": { "package": "${packageName(o)}", "version": "^${SCAFFOLD_VERSION}", "repository": "github.com/<owner>/<repo>" }
+  },
+  "ngdpbase.addons.${o.id}.enabled": true
+}
+\`\`\`
+
 ## Layout
 
 | Path | What it is |
@@ -781,6 +923,7 @@ see [Shipping Your Addon as a Container Image](${GUIDE_URL}#12-shipping-your-add
 | \`addons/${o.id}/\` | The addon |
 | \`renovate.json\` | Keeps the dev dependencies and CI actions current |
 | \`.github/workflows/ci.yml\` | Typechecks the addon inside the ngdpbase image named by \`ngdpbase.minVersion\` |
+| \`.github/workflows/publish.yml\` | On a \`v*\` tag, publishes the addon to npm with provenance |
 
 ## Further reading
 
@@ -825,6 +968,7 @@ export async function scaffoldAddon(o: ScaffoldOptions): Promise<ScaffoldResult>
     files.push(
       ['renovate.json', renovateJson()],
       ['.github/workflows/ci.yml', ciWorkflow(o)],
+      ['.github/workflows/publish.yml', publishWorkflow(o)],
       ['.gitignore', gitignore()],
       // The licence ngdpbase itself carries (Apache-2.0), copied verbatim.
       ['LICENSE', await fs.readFile(path.join(NGDPBASE_ROOT, 'LICENSE'), 'utf8')],
@@ -937,6 +1081,7 @@ async function main(): Promise<void> {
     console.log(`  3. Enable it:  "ngdpbase.addons.${o.id}.enabled": true`);
     console.log('  4. Restart the server — the addon registers and its page seeds.');
     console.log(`  5. Put [{${o.plugins[0]}}] on a page to see the plugin render.`);
+    console.log('  6. To release to npm, follow "Release it" in its README.md.');
   } else {
     console.log(`  1. Enable it:  "ngdpbase.addons.${o.id}.enabled": true`);
     console.log('  2. Restart the server — the addon registers and its page seeds.');

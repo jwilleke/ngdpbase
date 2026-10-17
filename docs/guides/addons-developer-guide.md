@@ -18,7 +18,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 ### Choose a starting point
 
 - __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
-- __A whole repository__ (the addon at `addons/<slug>/`, plus CI, Renovate and a licence; nothing deployment-specific): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
+- __A whole repository__ (the addon at `addons/<slug>/`, plus CI, an npm publish workflow, Renovate and a licence; nothing deployment-specific): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
 
 Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
 
@@ -104,7 +104,7 @@ A fourth way in ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)): the
 - __Every later start:__ the stored tarball is checked against the lock's sha512 and the folder against the tarball. The registry is never asked. A newer release in the range is not picked up on a restart. A folder that differs from its tarball is rewritten from it, and admins are told. A tarball that fails its sha512 is not trusted: the folder is moved to `.rejected-<slug>-<time>` and the add-on is not loaded. Changing the configured package, range or repository so the pin no longer answers it installs again.
 - __Registry unreachable, or anything refused:__ the site starts without that add-on, the reason is logged, and admins get a notification such as "ledger not installed: registry unreachable". The next start tries again. A folder already at `<data>/addons/<slug>` that the installer did not put there is left alone.
 - __Audit:__ `addon-install` is recorded before an install is written (on-failure `refuse`), and `addon-verify-failed` whenever a sha512, provenance, tarball, package.json, lock or folder check refuses (on-failure `continue`). Both are attributed to the system principal. `addon-update` is declared, switched off, for the admin Update action.
-- __Publishing:__ publish from CI with npm trusted publishing and provenance (`npm publish --provenance`, or trusted publishing, which adds it). The package is unpacked as published, and no `npm install` runs (the runtime image has no npm, [#956](https://github.com/jwilleke/ngdpbase/issues/956)). An add-on with runtime dependencies of its own has to bundle them.
+- __Publishing:__ publish from CI with npm trusted publishing and provenance (`npm publish --provenance`, or trusted publishing, which adds it). The package is unpacked as published, and no `npm install` runs (the runtime image has no npm, [#956](https://github.com/jwilleke/ngdpbase/issues/956)). An add-on with runtime dependencies of its own has to bundle them. `create:addon --repo` writes the workflow that does this, `.github/workflows/publish.yml` ([#1863](https://github.com/jwilleke/ngdpbase/issues/1863)): on a `v*` tag it runs on Node 24.15 or later, refuses a tag that is not `v` + the `package.json` version, a `package.json` that is `private` or names another repository, and a `dependencies` entry missing from `bundleDependencies`; then `npm ci`, build, test, and `npm publish --provenance --access public` with `id-token: write` and no stored token. Its Sigstore certificate is issued to that workflow under `https://github.com/<owner>/<repo>/`, which is the `repository` the site's install entry names. The generated `README.md` has the one-time npmjs.com trusted-publisher setup and the site's `ngdpbase.addons.install` entry.
 - __Tuning:__ `ngdpbase.managers.addons-manager.install.registry`, `.sigstore-tuf-url`, `.timeout-ms`, `.max-metadata-bytes`, `.max-tarball-bytes` and `.max-unpacked-bytes`. The registry must be `https`, and tarballs and attestations must come from the same origin.
 
 Not done yet: the admin Update action, and including the installed copies in the site backup. They are listed in [Known gaps](#known-gaps).
@@ -293,9 +293,10 @@ The addon lands at `addons/volcano-watch/`, byte-for-byte what the command write
 |---|---|
 | `renovate.json` | `config:recommended`: keeps the dev dependencies and the CI actions current. No rule for the ngdpbase image |
 | `.github/workflows/ci.yml` | Typechecks the addon inside the `-devtools` image of the release in `ngdpbase.minVersion` (the oldest core it claims to run on), runs the audit-event check, checks the slug against the exported `name`, and checks seed page UUIDs. It builds no image |
+| `.github/workflows/publish.yml` | On a `v*` tag, publishes the addon to npm with provenance through npm trusted publishing, after its checks, build and tests. See [Installed add-ons](#installed-add-ons), Publishing |
 | `LICENSE` | Apache-2.0, as ngdpbase |
 | `.gitignore` | `node_modules/`, `dist/`, `data/`, `.env` and the like |
-| `README.md` | How to run it, and a link back to this guide |
+| `README.md` | How to run it, how to release it (the one-time npm setup, tagging, the site's install entry), and a link back to this guide |
 
 There is no rename step: every name comes from `--id`, `--plugins` and `--managers`. The repository replaces the retired `ngdpbase-addon-template`.
 
