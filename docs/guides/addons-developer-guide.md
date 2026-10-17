@@ -231,7 +231,7 @@ An addon under `addons/` is linted with the host. These run in `npm run lint`, i
 
 `npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
 
-Unit tests sit beside the addon (`addons/<slug>/__tests__/**/*.ts` or `addons/<slug>/*.test.ts`). `npm test` includes them. A test teardown removes only the directories that test created. It must not delete `./data/` wholesale.
+Unit tests sit beside the addon (`addons/<slug>/__tests__/**/*.ts` or `addons/<slug>/*.test.ts`). `npm test` includes them. An addon in its own repository gets core's host, an in-memory addon database, `toCsv` and the plugin formatters for its tests from `@jwilleke/ngdpbase-types/testing` ([Types and the test kit](#types-and-the-test-kit-jwillekengdpbase-types)). A test teardown removes only the directories that test created. It must not delete `./data/` wholesale.
 
 A TypeScript addon in this repo needs `npm run build:addons` before `./server.sh restart`. When `index.js` is present, that is the file discovery loads.
 
@@ -450,6 +450,30 @@ async register(engine, config, host) {
 ---
 
 ## 4. Using the Engine
+
+### Types and the test kit: `@jwilleke/ngdpbase-types`
+
+An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#1865](https://github.com/jwilleke/ngdpbase/issues/1865)), not its own copies of core's shapes and not `../../dist` type imports. It is published to npm with every ngdpbase release, at the same version, with provenance. It is a dev dependency only and never ships to a site.
+
+```sh
+npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
+```
+
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `Migration`, `ExportManager` and `PolicyDecisionPoint`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
+  - `buildAddonHost(slug, defaults)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot.
+  - `openAddonTestDatabase(owner, { migrations, ledgerTable })`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test.
+  - `toCsv(headers, rows)`: `ExportManager.toCsv`, the one CSV writer.
+  - `formatters`: the object a plugin gets as `context.formatters`.
+- __Pin it to `minVersion`.__ When the addon raises `ngdpbase.minVersion`, raise this dev dependency to the same version.
+- __`skipLibCheck: true`.__ Core's declarations name `better-sqlite3-multiple-ciphers`, whose `exports` map hides its types ([#1536](https://github.com/jwilleke/ngdpbase/issues/1536)). Without `skipLibCheck` the compiler reports that inside the package.
+
+```typescript
+import type { AddonModule, AddonHost, WikiEngine } from '@jwilleke/ngdpbase-types';
+import { buildAddonHost, openAddonTestDatabase } from '@jwilleke/ngdpbase-types/testing';
+```
+
+In this repository the package is built by `npm run build:types-package` into `packages/ngdpbase-types/dist/`. That build also checks that the main entry emits no JavaScript, that the test kit loads in Node, and that an addon importing both entries typechecks against the built package alone. `.github/workflows/publish-types.yml` publishes it on each `v*` release tag.
 
 ### Importing host code — through `dist/`, never `src/`
 
@@ -1378,7 +1402,8 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 ## Known gaps
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
-- [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports. No published types package for `AddonHost` yet.
+- [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
+- [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is not on npm until its first release: the name needs a one-time placeholder publish and a trusted publisher on npmjs.com. Until then `create:addon --repo` still generates the build-against-core step for an addon that imports `../../dist/`. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 

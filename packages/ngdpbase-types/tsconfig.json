@@ -1,0 +1,16 @@
+{
+  // The declarations of the public entry and the test kit, and everything they reach (#1865).
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "./dist/lib",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "emitDeclarationOnly": true,
+    "incremental": false
+  },
+  "files": ["index.ts", "testing.ts"],
+  // Core's ambient module declarations; tsc does not emit them, so the build ships copies.
+  "include": ["../../src/types/*.d.ts"]
+}

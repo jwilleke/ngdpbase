@@ -47,6 +47,23 @@ export interface AddonDatabaseOptions {
   ledgerTable: string;
 }
 
+/**
+ * The rules an add-on's database request is held to: the owner is a canonical
+ * slug, and the ledger table starts with that slug (dashes as underscores) and
+ * `_`. `openAddonDatabase` applies them, and so does the test kit's in-memory
+ * database (`@jwilleke/ngdpbase-types/testing`, #1865), so a test refuses what
+ * a site refuses.
+ */
+export function checkAddonDatabaseRequest(owner: string, options: AddonDatabaseOptions): void {
+  if (!SLUG.test(owner)) {
+    throw new Error(`'${owner}' is not an add-on slug — lowercase letters and digits, single dashes (ngdp-accounting-addons#13)`);
+  }
+  const prefix = `${owner.replace(/-/g, '_')}_`;
+  if (!options.ledgerTable.startsWith(prefix)) {
+    throw new Error(`Add-on '${owner}': migration ledger table '${options.ledgerTable}' must start with '${prefix}' (ngdp-accounting-addons#13)`);
+  }
+}
+
 interface AddonDatabase {
   provider: SqliteDatabaseProvider;
   ledgers: Set<string>;
@@ -131,13 +148,7 @@ class DatabaseManager extends BaseManager {
     if (!this.provider || !this.databaseFile) {
       throw new Error(`Add-on '${owner}' needs a database, but none is open — set ngdpbase.database.provider to 'sqlite' (ngdp-accounting-addons#13)`);
     }
-    if (!SLUG.test(owner)) {
-      throw new Error(`'${owner}' is not an add-on slug — lowercase letters and digits, single dashes (ngdp-accounting-addons#13)`);
-    }
-    const prefix = `${owner.replace(/-/g, '_')}_`;
-    if (!options.ledgerTable.startsWith(prefix)) {
-      throw new Error(`Add-on '${owner}': migration ledger table '${options.ledgerTable}' must start with '${prefix}' (ngdp-accounting-addons#13)`);
-    }
+    checkAddonDatabaseRequest(owner, options);
 
     const existing = this.addonDatabases.get(owner);
     if (existing) {

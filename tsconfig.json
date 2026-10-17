@@ -65,6 +65,7 @@
     "scripts/generate-docs-index.ts",
     "scripts/check-csrf-fetch.ts",
     "scripts/create-addon.ts",
+    "scripts/build-types-package.ts",
     "scripts/fix-page-markdown.ts",
     "scripts/lib/pageMigration.ts",
     "scripts/strip-stray-frontmatter.ts",

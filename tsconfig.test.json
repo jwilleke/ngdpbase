@@ -23,6 +23,7 @@
     "addons/**/__tests__/**/*.ts",
     "addons/**/*.test.ts",
     "scripts/**/__tests__/**/*.ts",
+    "packages/*/__tests__/**/*.ts",
     "tests/e2e/**/*.ts",
     "vitest.setup.ts",
     "vitest.config.ts",

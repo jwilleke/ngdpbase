@@ -1,0 +1,9 @@
+{
+  // The test kit's JavaScript, and the core modules it runs (#1865). The types entry has none.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "emitDeclarationOnly": false
+  },
+  "files": ["testing.ts"]
+}

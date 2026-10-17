@@ -10,7 +10,7 @@ export default tseslint.config(
     // Ignore config and common root files from type-aware linting
     // #1239: addons are linted like src/. Their compiled output beside the source
     // (declarations, dist/) and their vendored trees are not source.
-    ignores: ["eslint.config.mjs", "node_modules/", "dist/", "addons/*/public/", "addons/**/*.d.ts", "addons/*/dist/**", "addons/*/node_modules/**", "src/**/__fixtures__/**/*.js"],
+    ignores: ["eslint.config.mjs", "node_modules/", "dist/", "addons/*/public/", "addons/**/*.d.ts", "addons/*/dist/**", "addons/*/node_modules/**", "packages/*/dist/","src/**/__fixtures__/**/*.js"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -30,7 +30,8 @@ export default tseslint.config(
           "./addons/journal/tsconfig.json",
           "./addons/journal/tsconfig.test.json",
           "./addons/feeds/tsconfig.json",
-          "./addons/demo/tsconfig.json"
+          "./addons/demo/tsconfig.json",
+          "./packages/ngdpbase-types/tsconfig.json"
         ],
         tsconfigRootDir: import.meta.dirname,
       },
