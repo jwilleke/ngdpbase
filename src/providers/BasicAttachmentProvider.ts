@@ -1346,6 +1346,14 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     if (updates.filename !== undefined) {
       metadata.name = updates.filename;
     }
+    // #1842: a page's mention set by attach/detach (save-time sync) is kept.
+    // Ignoring it left a renamed or vaulted page's old name on the record
+    // forever (detach filters into a new array), so a stale mention kept a
+    // vault page's file in the shared pool.
+    if (Array.isArray(updates.mentions)) {
+      metadata.mentions = (updates.mentions as SchemaMention[])
+        .filter((m) => typeof m?.name === 'string' && m.name !== '');
+    }
     metadata.dateModified = new Date().toISOString();
 
     this.attachmentMetadata.set(attachmentId, metadata);
