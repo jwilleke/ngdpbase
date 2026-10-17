@@ -32,6 +32,19 @@ What a developer has to do so that an action leaves a record. The decisions behi
 8. __Regenerate the docs__: `npm run docs:audit`.
 9. __Test it, then sabotage it.__ One test that the record is written with the actor and the metadata; for `refuse`, one that a failing sink refuses the action and leaves the state untouched. Then break the emitter on purpose and watch the test go red before trusting it; write what you broke in the test's comment.
 
+## Who records what
+
+Decided by the operator on 2026-10-17 ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)):
+
+- __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the person acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, AttachmentManager for files, an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares.
+- __Core records every refusal.__ A refused attempt is never left to the enforcement point to remember:
+  - page doors record each denial as `authorization-deny` (`PolicyInformationPoint.logAccessDecision`);
+  - `ApiContext.enforceDeny`, the one refusal helper, records the same `authorization-deny` event: actor, the person acted for, action, the resource and its owner when given, and the reason. __Not built yet__ (see [Known gaps](#known-gaps)).
+- __The PDP records nothing.__ It decides; recording is the enforcement point's and the refusal helper's.
+- Which events are recorded at all is configuration: each event's `enabled` in its catalog entry.
+
+These records are what a person's read-only view of what happened to their own data is built from ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)).
+
 ## Addons
 
 An add-on audits its own actions without any core change (#1638):
@@ -73,6 +86,7 @@ At boot the log says which provider loaded and whether the posture changed since
 
 ## Known gaps
 
+- [#1825](https://github.com/jwilleke/ngdpbase/issues/1825) — `enforceDeny` does not record its refusals yet; until it does, a refusal by an add-on's manager or a capability check leaves no audit record (page doors already record theirs). Audit entries don't carry a resource `owner` yet (#1823), and most reads (`page-read`, `asset-read`, `vault-proxy`) are switched off by default.
 - [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — audit rows name both people (slice 3), and a session can act for someone (slice 4). `logSecurityEvent` takes the context (`subject`, null only for a sign-in throttle) and `audit-export` the caller's subject (slice 4). Emitters still recording a bare name, each listed in `scripts/check-audit-attribution.ts`: token mint and revoke (slice 6).
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209)
 - [#1237](https://github.com/jwilleke/ngdpbase/issues/1237)
