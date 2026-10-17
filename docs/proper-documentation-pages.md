@@ -1,7 +1,7 @@
 ---
 name: Proper Documentation Pages
 description: Contract for in-app pages in required-pages/ and addon pages/
-dateModified: 2026-09-07
+dateModified: 2026-10-16
 category: standards
 ---
 
@@ -137,7 +137,7 @@ Auto-numbered rows:
 |# | First item |
 ```
 
-See [Table Syntax Examples] for live rendered examples.
+See [Using Tables] for live rendered examples.
 
 ## Use Built-in Syntax
 
