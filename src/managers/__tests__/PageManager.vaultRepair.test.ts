@@ -33,6 +33,7 @@ import { actor } from '../../test-support/actors';
 import type { ActorContext } from '../../context/ActorContext';
 import { formatPrivatePageName, privateStoreRoot, privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
+import { PLAIN_FILE_IO } from '../../utils/privateStoreFiles';
 import {
   TEST_PRIVATE_STORE_KDF,
   createEncryptedStore,
@@ -44,6 +45,8 @@ import {
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
 
 const UUID = 'abababab-abab-4bab-8bab-abababababab';
+/** A public page that uses the same file. */
+const GUIDE = 'efefefef-efef-4fef-8fef-efefefefefef';
 const MOLLY: ActorContext = { ...actor('molly'), privateStoreHandle: 'sid' };
 /** Holds admin-system (see the PDP below); owns none of Molly's vaults. */
 const ADMIN: ActorContext = actor('admin', ['admin']);
@@ -191,6 +194,8 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
     await fs.writeJson(path.join(commentsDir, UUID, 'c1.json'), COMMENT);
   };
 
+  /** The configuration these tests run with, for a provider read afresh from disk. */
+  const configOf = () => engineFor().engine.getManager('ConfigurationManager');
   const vaultDir = (store: string, sub: string) => path.join(privateStoreRoot(pagesDir, 'molly', store), sub);
   const poolBytes = async () => (await fs.readdir(storageDir)).filter((f) => f.startsWith(ID));
   const degraded = () => [attachments, footnotes, comments].filter((m) => m.getManagerStatus().state === 'degraded');
@@ -284,6 +289,7 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
   });
 
   test('a file other public pages use is copied in and left in the pool for them', async () => {
+    await pages.savePage('Cholesterol Guide', CONTENT, { uuid: GUIDE }, MOLLY);
     await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
     await leaveOutside(NOTE, 'Cholesterol Guide');
     await build();
@@ -295,6 +301,109 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
     expect(await poolBytes()).toEqual([`${ID}.txt`]);
     expect((await pool.getAttachmentMetadata(ID))?.mentions?.map((m) => m.name)).toEqual(['Cholesterol Guide']);
     expect(attachments.vaultPagesUsingPoolFiles()).toEqual([]);
+
+    // Run again: the public page still uses the pool copy, so nothing changes.
+    expect(await pages.repairVaultPage({ owner: 'molly', vault: 'notes', page: UUID }, ADMIN))
+      .toMatchObject({ ok: true, filesMoved: 0, filesCopied: 0 });
+    expect(await poolBytes()).toEqual([`${ID}.txt`]);
+    expect(await attachments.findVaultPagesUsingPoolFiles()).toEqual([]);
+  });
+
+  // jimstest 2026-10-17: pages made private before #1842 left their files in
+  // the pool, named by the pages' former public titles. The first repair
+  // took those stale titles for other public pages: it copied the files in
+  // and kept the public copies, and the check then reported nothing.
+  describe('stale mentions: names no public page has any more', () => {
+    /** What that first repair left: the vault's own copy, and the pool copy named by the page's former public title. */
+    const leaveCopiedWithStaleMention = async (): Promise<void> => {
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await pool.storeAttachment(BYTES, FILE, {}, null);
+      await pool.copyRecordIntoStore({ owner: 'molly', store: 'notes', io: PLAIN_FILE_IO }, ID, NOTE);
+      await pool.setPoolMentions(ID, ['2026 JSW Knee']);
+      await build();
+    };
+
+    test('the check reports a pool copy left beside the vault\'s own copy', async () => {
+      await leaveCopiedWithStaleMention();
+
+      expect(attachments.vaultPagesUsingPoolFiles()).toEqual([{ owner: 'molly', vault: 'notes', page: UUID, files: 1 }]);
+      expect(degraded()).toEqual([attachments]);
+      expect(await pages.listVaultRepairs(MOLLY)).toEqual([expect.objectContaining({ owner: 'molly', vault: 'notes', page: UUID, files: 1 })]);
+    });
+
+    test('repairing it again removes the pool copy (record, bytes), and the check is then clean', async () => {
+      await leaveCopiedWithStaleMention();
+
+      const result = await pages.repairVaultPage({ owner: 'molly', vault: 'notes', page: UUID }, MOLLY);
+
+      expect(result).toMatchObject({ ok: true, filesMoved: 1, filesCopied: 0 });
+      expect(await poolBytes()).toEqual([]);
+      expect(await pool.getAttachmentMetadata(ID)).toBeNull();
+      expect(await fs.readFile(path.join(storageDir, 'attachment-metadata.json'), 'utf8')).not.toContain('2026 JSW Knee');
+      expect(await attachments.getAttachment(ID)).toBeNull();
+      // The vault page keeps its own copy.
+      expect((await filesUnder(vaultDir('notes', 'attachments'))).map((f) => path.basename(f))).toEqual([`${ID}.txt`]);
+      expect((await attachments.getAttachmentsForPage(NOTE, MOLLY)).map((a) => a.identifier)).toEqual([ID]);
+      expect(attachments.vaultPagesUsingPoolFiles()).toEqual([]);
+      expect(degraded()).toEqual([]);
+      expect(await pages.listVaultRepairs(MOLLY)).toEqual([]);
+    });
+
+    test('a first repair moves a file named only by the page itself and stale names, leaving no public copy', async () => {
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(NOTE, '2026 JSW Knee', UUID);
+      await build();
+
+      const result = await pages.repairVaultPage({ owner: 'molly', vault: 'notes', page: UUID }, MOLLY);
+
+      expect(result).toMatchObject({ ok: true, filesMoved: 1, filesCopied: 0 });
+      expect(await poolBytes()).toEqual([]);
+      expect(await pool.getAttachmentMetadata(ID)).toBeNull();
+      expect(degraded()).toEqual([]);
+    });
+
+    test('a pool copy a public page still uses stays; the stale names leave its record, on disk', async () => {
+      await pages.savePage('Cholesterol Guide', CONTENT, { uuid: GUIDE }, MOLLY);
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(NOTE, '2026 JSW Knee', 'Cholesterol Guide');
+      await build();
+
+      const result = await pages.repairVaultPage({ owner: 'molly', vault: 'notes', page: UUID }, MOLLY);
+
+      expect(result).toMatchObject({ ok: true, filesMoved: 0, filesCopied: 1 });
+      expect(await poolBytes()).toEqual([`${ID}.txt`]);
+      // Persisted: a provider read afresh from disk sees only the live sharer.
+      const fresh = new BasicAttachmentProvider({ getManager: (n: string) => (n === 'ConfigurationManager' ? configOf() : null) });
+      await fresh.initialize();
+      expect((await fresh.getAttachmentMetadata(ID))?.mentions?.map((m) => m.name)).toEqual(['Cholesterol Guide']);
+      expect(await attachments.findVaultPagesUsingPoolFiles()).toEqual([]);
+    });
+
+    test('a pool copy another vault page still names stays until that page\'s own repair', async () => {
+      const OTHER = formatPrivatePageName('molly', 'notes', 'Other Notes');
+      await pages.savePage(OTHER, 'other', { uuid: 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd' }, MOLLY);
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(NOTE, OTHER, '2026 JSW Knee');
+      await build();
+
+      expect(await pages.repairVaultPage({ owner: 'molly', vault: 'notes', page: UUID }, MOLLY))
+        .toMatchObject({ ok: true, filesMoved: 0, filesCopied: 1 });
+      expect(await poolBytes()).toEqual([`${ID}.txt`]);
+      expect((await pool.getAttachmentMetadata(ID))?.mentions?.map((m) => m.name)).toEqual([OTHER]);
+      // Still reported, for the vault the record names.
+      expect(attachments.vaultPagesUsingPoolFiles()).toEqual([{ owner: 'molly', vault: 'notes', page: null, files: 1 }]);
+    });
+  });
+
+  test('a page\'s mention removed by detach is removed on disk (it was not before #1842)', async () => {
+    await pool.storeAttachment(BYTES, FILE, {}, null);
+    await pool.setPoolMentions(ID, ['Old Title', 'Cholesterol Guide']);
+
+    await attachments.detachFromPage(ID, 'Old Title', MOLLY);
+
+    const fresh = new BasicAttachmentProvider({ getManager: (n: string) => (n === 'ConfigurationManager' ? configOf() : null) });
+    await fresh.initialize();
+    expect((await fresh.getAttachmentMetadata(ID))?.mentions?.map((m) => m.name)).toEqual(['Cholesterol Guide']);
   });
 
   test('the owner repairs a sealed vault in their open session: the file and the notes are sealed with its key', async () => {

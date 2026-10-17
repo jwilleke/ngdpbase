@@ -205,6 +205,7 @@ describe('a page\'s files go where the page goes (#1842)', () => {
 
   test('a file other public pages use is copied in; the public copy stays for them, without the vault page', async () => {
     const dek = await openSealedVault();
+    await pages.savePage('Cholesterol Guide', CONTENT, { uuid: 'abababab-abab-4bab-8bab-abababababab', author: 'molly' }, MOLLY);
     await pages.savePage('Lab Results', CONTENT, { uuid: UUID, author: 'molly' }, MOLLY);
     await poolFile('Lab Results', 'Cholesterol Guide');
 
@@ -217,6 +218,19 @@ describe('a page\'s files go where the page goes (#1842)', () => {
     // The vault page's file is the vault's.
     expect((await attachments.getAttachmentsForPage(LABS, MOLLY)).map((a) => a.identifier)).toEqual([ID]);
     expect(await attachments.isOwnPrivateStoreFile(ID, MOLLY)).toBe(true);
+  });
+
+  test('a mention naming no public page that exists now (a former title) keeps no public copy', async () => {
+    await openSealedVault();
+    await pages.savePage('Lab Results', CONTENT, { uuid: UUID, author: 'molly' }, MOLLY);
+    await poolFile('Lab Results', 'Lab Results 2025', UUID);
+
+    await pages.savePage('Lab Results', CONTENT, { uuid: UUID, author: 'molly', private: true, store: 'phr' }, MOLLY);
+
+    expect(await filesUnder(vaultAttachments('phr'))).toHaveLength(1);
+    expect(await poolBytes()).toEqual([]);
+    expect(await pool.getAttachmentMetadata(ID)).toBeNull();
+    expect(await attachments.getAttachment(ID)).toBeNull();
   });
 
   test('a file the page references but no mention names as its alone is copied in and left in the pool', async () => {
