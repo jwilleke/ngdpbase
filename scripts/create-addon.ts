@@ -757,7 +757,7 @@ jobs:
  * marker line, so `--update-publish` can tell an older generated file from the
  * current one and rewrite it.
  */
-export const PUBLISH_WORKFLOW_VERSION = 1;
+export const PUBLISH_WORKFLOW_VERSION = 2;
 
 const PUBLISH_MARKER = /^# ngdpbase-publish-workflow: (\d+)$/m;
 const PLAIN_TAGS_SETTING = /^ {2}NGDPBASE_PLAIN_TAGS: '(true|false)'$/m;
@@ -981,13 +981,21 @@ jobs:
           sha512sum "$tarball" > "$tarball.sha512"
           echo "TARBALL=$tarball" >> "$GITHUB_ENV"
 
+      # A <slug>-v<version> release is never the repository's Latest: in a
+      # repository that also releases an application on v* tags, Latest is
+      # the application's. A plain v<version> tag (--plain-tags) belongs to
+      # the one add-on, so GitHub decides as usual.
       - name: GitHub release for the tag
         env:
           GH_TOKEN: @{{ github.token }}
           SPEC: @{{ needs.publish.outputs.name }}@@{{ needs.publish.outputs.version }}
         run: |
+          case "$GITHUB_REF_NAME" in
+            v[0-9]*) set -- ;;
+            *) set -- --latest=false ;;
+          esac
           gh release create "$GITHUB_REF_NAME" "$TARBALL" "$TARBALL.sha512" \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" "$@" \
             --notes "Published to npm as $SPEC, with provenance. The tarball and its sha512 are attached."
 `.replaceAll('@{{', '${{')
     .replace('__VERSION__', String(PUBLISH_WORKFLOW_VERSION))
