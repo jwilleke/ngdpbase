@@ -19,12 +19,16 @@ vi.unmock('../../providers/FileSystemProvider');
 import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { fileURLToPath } from 'url';
+import ejs from 'ejs';
+import { JSDOM } from 'jsdom';
 import WikiRoutes from '../WikiRoutes';
 import PageManager from '../../managers/PageManager';
 import { SeededShippedPages } from '../../utils/seededShippedPages';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 
 const UUID = 'b780e809-d45b-4c4b-84ec-ad30a74a3605';
+const VIEWS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../views');
 
 const admin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 
@@ -294,5 +298,93 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     const source = await fs.readFile(path.join(dirs.requiredDir, `${UUID}.md`), 'utf8');
     expect(source).toContain('edited body');
     expect(source).not.toContain(REQUIRED_SOURCE_HASH_KEY);
+  });
+});
+
+/**
+ * #1871: "Sync All Outdated (N)" counted user-edited pages the bulk sync skips,
+ * so a site whose only outdated page was user-edited showed "(1)" and the click
+ * answered "No pages to sync." The route marks each row in or out of the bulk
+ * sync and counts from that same flag; the view renders both from it. These
+ * render the real template (header and footer stubbed) from the route's data.
+ */
+describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
+  const OTHER = '0c7a1b2e-5d4f-4e6a-9b8c-1d2e3f4a5b6c';
+  const otherPage = (body: string) =>
+    `---\ntitle: OtherExample\nuuid: ${OTHER}\nslug: otherexample\n---\n${body}\n`;
+  const includer = (original: string): { template: string } | undefined =>
+    original === 'header' || original === 'footer' ? { template: '<!-- stub -->' } : undefined;
+
+  let dirs: Awaited<ReturnType<typeof makeDirs>>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    dirs = await makeDirs();
+  });
+
+  afterEach(async () => {
+    // Scoped to the mkdtemp directory created above — never a project path.
+    await fs.rm(dirs.root, { recursive: true, force: true });
+  });
+
+  /** A user-edited outdated page: stamped at sync, body edited since. */
+  async function writeUserEdited() {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new source body'), 'utf8');
+    await fs.writeFile(
+      path.join(dirs.pagesDir, `${UUID}.md`),
+      page('locally edited body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('synced body')}\n`),
+      'utf8'
+    );
+  }
+
+  async function renderList() {
+    const { routes, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+    const res = createMockRes();
+    await routes.adminRequiredPages(createMockReq(), res);
+    const data = res.render.mock.calls[0][1] as Record<string, unknown> & {
+      counts: { new: number; modified: number; outdatedSyncable: number; outdatedUserEdited: number };
+    };
+    const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data, locals: {} }, { includer });
+    return { data, doc: new JSDOM(html).window.document };
+  }
+
+  test('only a user-edited page is outdated: count 0, button disabled and says why', async () => {
+    await writeUserEdited();
+    const { data, doc } = await renderList();
+
+    expect(data.counts).toMatchObject({ modified: 1, outdatedSyncable: 0, outdatedUserEdited: 1 });
+    const button = doc.querySelector('[data-testid="sync-all-outdated"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain("1 user-edited: use its row's Sync or diff");
+    expect(button.textContent).not.toContain('(1)');
+    // What the button's sync would select: nothing.
+    expect(doc.querySelectorAll('#pagesTable tr[data-bulk-outdated="true"]')).toHaveLength(0);
+  });
+
+  test('a user-edited and a plain outdated page: the count is the one it will sync', async () => {
+    await writeUserEdited();
+    await fs.writeFile(path.join(dirs.requiredDir, `${OTHER}.md`), otherPage('new body'), 'utf8');
+    await fs.writeFile(path.join(dirs.pagesDir, `${OTHER}.md`), otherPage('old body'), 'utf8');
+    const { data, doc } = await renderList();
+
+    expect(data.counts).toMatchObject({ modified: 2, outdatedSyncable: 1, outdatedUserEdited: 1 });
+    const button = doc.querySelector('[data-testid="sync-all-outdated"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('Sync All Outdated (1)');
+    const selected = [...doc.querySelectorAll('#pagesTable tr[data-bulk-outdated="true"]')]
+      .map((row) => row.getAttribute('data-uuid'));
+    expect(selected).toEqual([OTHER]);
+  });
+
+  test('the add-on rows use the same rule', () => {
+    const rows = [
+      { status: 'modified', userModified: true },
+      { status: 'new', userModified: false },
+      { status: 'current', userModified: true },
+      { status: 'uuid-mismatch', userModified: false }
+    ] as Array<{ status: string; userModified: boolean; bulkOutdated?: boolean }>;
+    expect(WikiRoutes.markBulkOutdated(rows)).toEqual({ outdatedSyncable: 1, outdatedUserEdited: 1 });
+    expect(rows.map((r) => r.bulkOutdated)).toEqual([false, true, false, false]);
   });
 });

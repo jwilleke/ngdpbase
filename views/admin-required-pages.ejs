@@ -123,9 +123,14 @@
                     <i class="fas fa-plus-circle me-1"></i> Sync All New (<%= counts.new %>)
                 </button>
                 <% } %>
-                <% if (counts.new > 0 || counts.modified > 0) { %>
-                <button class="btn btn-warning" onclick="syncByStatus('outdated')">
-                    <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= counts.new + counts.modified %>)
+                <% if (counts.outdatedSyncable > 0) { %>
+                <button class="btn btn-warning" onclick="syncByStatus('outdated')" data-testid="sync-all-outdated"
+                        title="<%= counts.outdatedUserEdited > 0 ? `${counts.outdatedUserEdited} user-edited page${counts.outdatedUserEdited !== 1 ? 's are' : ' is'} skipped` : 'Sync all new and modified pages' %>">
+                    <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= counts.outdatedSyncable %>)
+                </button>
+                <% } else if (counts.outdatedUserEdited > 0) { %>
+                <button class="btn btn-warning" disabled data-testid="sync-all-outdated">
+                    <i class="fas fa-sync me-1"></i> Sync All Outdated — <%= counts.outdatedUserEdited %> user-edited: use <%= counts.outdatedUserEdited !== 1 ? "their rows'" : "its row's" %> Sync or diff
                 </button>
                 <% } %>
                 <button class="btn btn-outline-secondary" onclick="syncSelected()">
@@ -167,7 +172,7 @@
                             </thead>
                             <tbody>
                                 <% comparison.forEach(page => { %>
-                                <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>" data-live-uuid="<%= page.liveUuid || '' %>" data-user-modified="<%= page.userModified ? 'true' : 'false' %>">
+                                <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>" data-live-uuid="<%= page.liveUuid || '' %>" data-user-modified="<%= page.userModified ? 'true' : 'false' %>" data-bulk-outdated="<%= page.bulkOutdated ? 'true' : 'false' %>">
                                     <td>
                                         <% if (page.status !== 'current') { %>
                                         <input type="checkbox" class="page-checkbox" value="<%= page.uuid %>">
@@ -356,10 +361,14 @@
                             <span class="badge bg-success"><%= addonCounts.current %> Current</span>
                         </small>
                     </div>
-                    <% if (addonCounts.new > 0 || addonCounts.modified > 0) { %>
-                    <button class="btn btn-sm btn-warning" onclick="syncAddonOutdated()"
-                            title="Sync all new and modified addon pages">
-                        <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= addonCounts.new + addonCounts.modified %>)
+                    <% if (addonCounts.outdatedSyncable > 0) { %>
+                    <button class="btn btn-sm btn-warning" onclick="syncAddonOutdated()" data-testid="sync-addon-outdated"
+                            title="<%= addonCounts.outdatedUserEdited > 0 ? `${addonCounts.outdatedUserEdited} user-edited addon page${addonCounts.outdatedUserEdited !== 1 ? 's are' : ' is'} skipped` : 'Sync all new and modified addon pages' %>">
+                        <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= addonCounts.outdatedSyncable %>)
+                    </button>
+                    <% } else if (addonCounts.outdatedUserEdited > 0) { %>
+                    <button class="btn btn-sm btn-warning" disabled data-testid="sync-addon-outdated">
+                        <i class="fas fa-sync me-1"></i> Sync All Outdated — <%= addonCounts.outdatedUserEdited %> user-edited: use <%= addonCounts.outdatedUserEdited !== 1 ? "their rows'" : "its row's" %> Sync or diff
                     </button>
                     <% } %>
                 </div>
@@ -384,6 +393,7 @@
                                 <% addonComparison.forEach(page => { %>
                                 <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>"
                                     data-user-modified="<%= page.userModified ? 'true' : 'false' %>"
+                                    data-bulk-outdated="<%= page.bulkOutdated ? 'true' : 'false' %>"
                                     class="addon-row">
                                     <td>
                                         <% if (page.status !== 'current') { %>
@@ -698,8 +708,9 @@ function selectAllAddon(checked) {
 }
 
 async function syncAddonOutdated() {
-    const uuids = Array.from(document.querySelectorAll('.addon-row[data-status="new"], .addon-row[data-status="modified"]'))
-        .filter(row => row.dataset.userModified !== 'true')
+    // #1871: the server marks the rows the bulk sync takes (user-edited pages
+    // are protected) — the same flag the button's count is built from.
+    const uuids = Array.from(document.querySelectorAll('.addon-row[data-bulk-outdated="true"]'))
         .map(row => row.dataset.uuid);
     if (uuids.length === 0) { showToast('No addon pages to sync.'); return; }
     await doSync(uuids, `Syncing ${uuids.length} addon page${uuids.length !== 1 ? 's' : ''}…`);
@@ -707,13 +718,12 @@ async function syncAddonOutdated() {
 
 function getUuidsByStatus(status) {
     const uuids = [];
-    document.querySelectorAll('tr[data-status]').forEach(row => {
+    // #1871: required-pages rows only — the add-on table has its own button and
+    // count. 'outdated' takes the rows the server marked for the bulk sync
+    // (user-edited pages are protected), the same flag the count is built from.
+    document.querySelectorAll('#pagesTable tr[data-status]').forEach(row => {
         if (status === 'outdated') {
-            if (row.dataset.status === 'new' || row.dataset.status === 'modified') {
-                // Skip user-edited pages — they are protected from bulk sync
-                if (row.dataset.userModified === 'true') return;
-                uuids.push(row.dataset.uuid);
-            }
+            if (row.dataset.bulkOutdated === 'true') uuids.push(row.dataset.uuid);
         } else if (row.dataset.status === status) {
             uuids.push(row.dataset.uuid);
         }
