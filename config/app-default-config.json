@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.13.0",
+  "ngdpbase.version": "5.13.4",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -127,6 +127,10 @@
   "ngdpbase.page.provider.filesystem.versionsdir": "versions",
   "ngdpbase.page.provider.filesystem.deleteddir": "deleted",
   "ngdpbase.page.provider.filesystem.attachmentsdir": "attachments",
+  "_comment_page_private_store_footnotesdir": "#1839: the folder inside each vault that holds its pages' footnotes, one {uuid}.json per page, written through the vault's store I/O (sealed when the vault is). A public page's footnotes stay in ngdpbase.footnotes.storagedir. A folder name, not a path; not sensitive, like the other segment names here.",
+  "ngdpbase.page.provider.filesystem.footnotesdir": "footnotes",
+  "_comment_page_private_store_commentsdir": "#1839: the folder inside each vault that holds its pages' comments, {uuid}/{id}.json, written through the vault's store I/O (sealed when the vault is). A public page's comments stay in ngdpbase.comments.storagedir. A folder name, not a path; not sensitive, like the other segment names here.",
+  "ngdpbase.page.provider.filesystem.commentsdir": "comments",
   "ngdpbase.page.provider.filesystem.private.files.userkeys": "user-keys.json",
   "ngdpbase.page.provider.filesystem.private.files.userindex": "user-index.json",
   "ngdpbase.page.provider.filesystem.private.files.storemeta": "store.json",
@@ -1989,6 +1993,13 @@
       "grantable": false,
       "audit": {
         "on-failure": "continue"
+      }
+    },
+    "vault-repair": {
+      "description": "A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
       }
     },
     "footnote-edit": {

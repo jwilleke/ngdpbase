@@ -51,7 +51,7 @@ import { DEFAULT_SHARE_MAX_DAYS } from './ValidationManager.js';
 import { formatPrivatePageName, isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
-import { readStoreMeta } from '../utils/privateStoreMeta.js';
+import { kindIsSealed, readStoreMeta } from '../utils/privateStoreMeta.js';
 import { isLockbox, sealForLink, type LinkPublicKey, type Lockbox } from '../utils/shareLockbox.js';
 import WikiContext from '../context/WikiContext.js';
 import type RenderingManager from './RenderingManager.js';
@@ -216,10 +216,15 @@ export default class ShareManager extends BaseManager {
     );
   }
 
-  /** Whether `owner`'s vault is encrypted: read from its `store.json`, the one file of a vault that is never sealed. */
+  /**
+   * Whether `owner`'s vault is encrypted: read from its `store.json`, the one
+   * file of a vault that is never sealed — or its kind is sealed (#1834), so a
+   * link into a sealed kind's vault is never issued as if it were plain.
+   */
   async isEncryptedVault(owner: string, vault: string): Promise<boolean> {
     const place = this.vaultPlace();
     if (!place) return false;
+    if (kindIsSealed(place.layout, vault)) return true;
     return (await readStoreMeta(place.pagesDirectory, owner, vault, place.layout)).encrypt === true;
   }
 

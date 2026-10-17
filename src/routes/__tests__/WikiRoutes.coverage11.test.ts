@@ -160,7 +160,8 @@ const mockCommentManager = {
   isEnabled: vi.fn().mockReturnValue(true),
   addComment: vi.fn().mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' }),
   getComment: vi.fn().mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' }),
-  deleteComment: vi.fn().mockResolvedValue(undefined)
+  deleteComment: vi.fn().mockResolvedValue(undefined),
+  getComments: vi.fn().mockResolvedValue([])
 };
 
 const mockConfigManager = {
@@ -368,6 +369,17 @@ function buildApp() {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+
+/** #1839: the page the footnote and comment routes resolve — readable, and the page `uuid` names. */
+function notesPageIs(uuid: string) {
+  const page = { content: '# Page', metadata: { title: 'TestPage', uuid }, uuid, title: 'TestPage' };
+  mockPageManager.getPage.mockResolvedValue(page);
+  (mockPageManager as Record<string, unknown>).readPage = vi.fn(async (name: string) => {
+    const found = await mockPageManager.getPage(name);
+    return found ? { ok: true, name: 'TestPage', metadata: found.metadata, value: found } : { ok: false, refusal: 'not-found' };
+  });
+}
 
 describe('WikiRoutes — coverage batch 11', () => {
   let app: express.Application;
@@ -760,6 +772,8 @@ describe('WikiRoutes — coverage batch 11', () => {
   // ── Comments ─────────────────────────────────────────────────────────────────
 
   describe('POST /api/comments/:pageUuid (addComment)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 401 when not authenticated', async () => {
       mockUserContext = { isAuthenticated: false };
       const res = await request(app)
@@ -797,6 +811,8 @@ describe('WikiRoutes — coverage batch 11', () => {
   });
 
   describe('DELETE /api/comments/:pageUuid/:commentId (deleteComment)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 401 when not authenticated', async () => {
       mockUserContext = { isAuthenticated: false };
       const res = await request(app)
@@ -819,6 +835,60 @@ describe('WikiRoutes — coverage batch 11', () => {
         .set('x-csrf-token', 'test-csrf-token');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+  });
+
+  // #1839: a page's comments are read and written only by whoever may read the page.
+  describe('comments are gated exactly like their page (#1839)', () => {
+    const VAULT_PAGE = 'vaults/molly/phr/Lab Results';
+    const refuseRead = () => {
+      (mockPageManager as Record<string, unknown>).readPage = vi.fn(async () => ({ ok: false, refusal: 'denied' }));
+    };
+    beforeEach(() => {
+      notesPageIs('uuid-1');
+      mockCommentManager.getComments.mockClear();
+      mockCommentManager.addComment.mockClear();
+      mockCommentManager.deleteComment.mockClear();
+    });
+
+    test('the list of a page the reader may not read: 404, and the comments are never read', async () => {
+      refuseRead();
+      const res = await request(app).get(`/api/comments/uuid-1/html?page=${encodeURIComponent(VAULT_PAGE)}`);
+      expect(res.status).toBe(404);
+      expect(mockCommentManager.getComments).not.toHaveBeenCalled();
+    });
+
+    test('a comment on a page the reader may not read: 404, nothing written', async () => {
+      refuseRead();
+      const res = await request(app)
+        .post(`/api/comments/uuid-1?page=${encodeURIComponent(VAULT_PAGE)}`)
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: 'hello' });
+      expect(res.status).toBe(404);
+      expect(mockCommentManager.addComment).not.toHaveBeenCalled();
+    });
+
+    test('deleting on a page the reader may not read: 404, nothing changed', async () => {
+      refuseRead();
+      const res = await request(app)
+        .delete(`/api/comments/uuid-1/c1?page=${encodeURIComponent(VAULT_PAGE)}`)
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(404);
+      expect(mockCommentManager.deleteComment).not.toHaveBeenCalled();
+    });
+
+    test('a readable page named with another page\'s uuid: 404 — the name decides where the comments are', async () => {
+      const res = await request(app).get('/api/comments/someone-elses-uuid/html?page=TestPage');
+      expect(res.status).toBe(404);
+      expect(mockCommentManager.getComments).not.toHaveBeenCalled();
+    });
+
+    test('the page is read by its vault name as the requester, and the manager is handed that name', async () => {
+      const res = await request(app).get(`/api/comments/uuid-1/html?page=${encodeURIComponent(VAULT_PAGE)}`);
+      expect(res.status).toBe(200);
+      const readPage = (mockPageManager as unknown as { readPage: ReturnType<typeof vi.fn> }).readPage;
+      expect(readPage).toHaveBeenCalledWith(VAULT_PAGE, expect.anything());
+      expect(mockCommentManager.getComments).toHaveBeenCalledWith({ name: 'TestPage', uuid: 'uuid-1' }, expect.anything());
     });
   });
 

@@ -39,7 +39,7 @@ import {
   privateStoreRoot,
   resolvePrivateStoreLayout,
   storeFileIndexPath,
-  type PrivateStoreLayoutOverrides
+  type PrivateStoreLayout
 } from './privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { StoreFileEntry } from '../types/Provider.js';
@@ -60,7 +60,7 @@ export type TakeoutOptions = {
   store: string;
   /** Leave the attachments out — someone who wants their writing, not gigabytes of photos. */
   pagesOnly?: boolean;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 };
 
 /**
@@ -219,6 +219,36 @@ export async function buildStoreTakeout(
 
     files.push({ path: `${store}/${uniqueName(pageFileName(title), taken)}`, bytes, mtime });
     pageCount++;
+  }
+
+  // ── Footnotes and comments (#1839) ───────────────────────────────────────
+  // A vault page's footnotes and comments are kept in its vault, so they come
+  // with its pages, opened like everything else: `footnotes/{uuid}.json` and
+  // `comments/{uuid}/{id}.json`, keyed by the page's uuid (in its frontmatter).
+  // Writing, not files, so a pages-only takeout has them too. The archive's
+  // folder names are fixed, as TAKEOUT_FILE_INDEX is.
+  for (const [dir, inArchive] of [[L.footnotesDir, 'footnotes'], [L.commentsDir, 'comments']] as const) {
+    const base = path.join(root, dir);
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.readdir(base, { recursive: true, withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      const abs = path.join(ent.parentPath, ent.name);
+      let bytes: Buffer;
+      let mtime: Date;
+      try {
+        bytes = await io.readBytes(abs);
+        mtime = (await fs.stat(abs)).mtime;
+      } catch {
+        continue;
+      }
+      const rel = path.relative(base, abs).split(path.sep).join('/');
+      files.push({ path: `${store}/${inArchive}/${rel}`, bytes, mtime });
+    }
   }
 
   // ── Attachments ──────────────────────────────────────────────────────────

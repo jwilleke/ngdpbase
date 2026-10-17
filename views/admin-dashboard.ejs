@@ -62,6 +62,59 @@
         </div>
     <% } %>
 
+    <%# #1842 — vault pages the startup checks found with files in the shared
+        pool, or footnotes and comments in the public folders, left by moves
+        before #1839 / #1842. Named by owner, vault and page uuid; a page's
+        title and its outside files' names only to whoever may read it. An
+        administrator moves an unsealed vault's in; a sealed vault needs its
+        owner, who sees their own on their profile. %>
+    <% if (typeof vaultRepairs !== 'undefined' && vaultRepairs && vaultRepairs.length > 0) { %>
+        <div class="alert alert-warning" role="alert" id="vault-repairs">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                    <strong><i class="fas fa-lock-open me-1" aria-hidden="true"></i> Vault pages with data outside their vault</strong>
+                    <div class="small">Their files in the shared pool are served like any public attachment. "Move into vault" copies each file in under the same id and removes the public copy unless another public page uses it, and moves footnotes and comments in, sealed when the vault is.</div>
+                </div>
+                <% if (vaultRepairs.some(function (r) { return r.may; })) { %>
+                    <form method="POST" action="/vault-repair/all" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-sm btn-primary"<%- lockedUnless('admin-system') %>><i class="fas fa-box-archive"></i> Repair all I can</button>
+                    </form>
+                <% } %>
+            </div>
+            <table class="table table-sm small mt-2 mb-0">
+                <thead><tr><th>Owner / vault</th><th>Page</th><th>Outside the vault</th><th></th></tr></thead>
+                <tbody>
+                    <% vaultRepairs.forEach(function (r) { %>
+                        <tr>
+                            <td><code><%= r.owner %>/<%= r.vault %></code></td>
+                            <td>
+                                <% if (r.page) { %><code><%= r.page %></code><% } else { %>pages named by shared records<% } %>
+                                <%- include('_vault-repair-pages', { repair: r }) %>
+                            </td>
+                            <td>
+                                <%= [r.files ? r.files + ' file(s)' : null, r.footnotes ? 'footnotes' : null, r.comments ? 'comments' : null].filter(Boolean).join(', ') %>
+                            </td>
+                            <td class="text-end">
+                                <% if (r.may) { %>
+                                    <form method="POST" action="/vault-repair" class="d-inline">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <input type="hidden" name="owner" value="<%= r.owner %>">
+                                        <input type="hidden" name="vault" value="<%= r.vault %>">
+                                        <input type="hidden" name="page" value="<%= r.page || '' %>">
+                                        <button type="submit" class="btn btn-sm btn-outline-primary"<%- lockedUnless('admin-system') %>>Move into vault</button>
+                                    </form>
+                                <% } else { %>
+                                    <span class="text-muted"><%= r.refusal %></span>
+                                <% } %>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+
     <%# #1109 — audit writes are fire-and-forget: a failed log must not fail the
         write it describes, so the log goes incomplete rather than the request
         breaking. That trade is deliberate, but it is invisible unless shown

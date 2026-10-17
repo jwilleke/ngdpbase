@@ -26,6 +26,8 @@
  * private/{user}/{store}/versions/{uuid}/    that page's history
  * private/{user}/{store}/deleted/{uuid}.md   a deleted page, until it is purged
  * private/{user}/{store}/attachments/        its files (#1400)
+ * private/{user}/{store}/footnotes/{uuid}.json   a page's footnotes (#1839)
+ * private/{user}/{store}/comments/{uuid}/        a page's comments (#1839)
  * ```
  *
  * Every one of those names is DEFINED HERE, in
@@ -65,7 +67,20 @@ export type PrivateStoreLayout = {
   deletedDir: string;
   /** Non-page files inside a store: `{store}/{attachmentsDir}/{uuid}.ext` (#1400) */
   attachmentsDir: string;
+  /** A page's footnotes: `{store}/{footnotesDir}/{uuid}.json` (#1839) */
+  footnotesDir: string;
+  /** A page's comments: `{store}/{commentsDir}/{uuid}/{id}.json` (#1839) */
+  commentsDir: string;
   files: PrivateStoreLayoutFiles;
+  /**
+   * The vault ids whose kind is sealed: the system-category entries that
+   * declare the vault with `encrypt: true` (#1834). Read from configuration
+   * with the rest of the layout, so every store I/O decision — which already
+   * carries the layout — consults the kind as well as the vault's
+   * `store.json`, and a sealed kind's vault without a sealed `store.json`
+   * fails closed instead of being read and written in the clear.
+   */
+  sealedVaults: readonly string[];
 };
 
 export type PrivateStoreLayoutOverrides = Partial<Omit<PrivateStoreLayout, 'files'>> & {
@@ -78,6 +93,8 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
   versionsDir: 'versions',
   deletedDir: 'deleted',
   attachmentsDir: 'attachments',
+  footnotesDir: 'footnotes',
+  commentsDir: 'comments',
   files: {
     userkeys: 'user-keys.json',
     userindex: 'user-index.json',
@@ -87,7 +104,8 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
     storesearch: 'search-index.json',
     storemigrations: 'migrations.json',
     storedeleted: 'deleted-index.json'
-  }
+  },
+  sealedVaults: []
 };
 
 export const DEFAULT_PRIVATE_STORE = DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId;
@@ -103,10 +121,13 @@ export function resolvePrivateStoreLayout(
     versionsDir: overrides.versionsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.versionsDir,
     deletedDir: overrides.deletedDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.deletedDir,
     attachmentsDir: overrides.attachmentsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.attachmentsDir,
+    footnotesDir: overrides.footnotesDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.footnotesDir,
+    commentsDir: overrides.commentsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.commentsDir,
     files: {
       ...DEFAULT_PRIVATE_STORE_LAYOUT.files,
       ...overrides.files
-    }
+    },
+    sealedVaults: overrides.sealedVaults ?? DEFAULT_PRIVATE_STORE_LAYOUT.sealedVaults
   };
 }
 
@@ -134,16 +155,42 @@ export function parsePrivatestore(value: unknown): { root: string; vaultId: stri
   return { root, vaultId };
 }
 
+/** One `ngdpbase.system-category` entry that declares a vault. */
+export interface SystemCategoryVault {
+  key: string;
+  root: string;
+  vaultId: string;
+  isDefault: boolean;
+  /** Whether a copy of this vault is sealed: the entry's own `encrypt`. */
+  encrypt: boolean;
+}
+
 /** The entries of `ngdpbase.system-category` that declare a vault, in config order. */
-export function systemCategoryVaults(categories: unknown): Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> {
+export function systemCategoryVaults(categories: unknown): SystemCategoryVault[] {
   if (!categories || typeof categories !== 'object') return [];
-  const vaults: Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> = [];
+  const vaults: SystemCategoryVault[] = [];
   for (const [key, entry] of Object.entries(categories as Record<string, unknown>)) {
-    const e = entry as { default?: unknown; storageLocation?: { privatestore?: unknown } } | null;
+    const e = entry as { default?: unknown; encrypt?: unknown; storageLocation?: { privatestore?: unknown } } | null;
     const parsed = parsePrivatestore(e?.storageLocation?.privatestore);
-    if (parsed) vaults.push({ key, ...parsed, isDefault: e?.default === true });
+    // `encrypt` is read as the boolean it is and nothing else: a string "true" is not a switch.
+    if (parsed) vaults.push({ key, ...parsed, isDefault: e?.default === true, encrypt: e?.encrypt === true });
   }
   return vaults;
+}
+
+/**
+ * The vault ids whose kind is sealed (#1834). Where two entries name the
+ * same vault, the first is the kind, as `storeKindFromConfig` reads it.
+ */
+function sealedVaultIds(vaults: SystemCategoryVault[]): string[] {
+  const seen = new Set<string>();
+  const sealed: string[] = [];
+  for (const v of vaults) {
+    if (seen.has(v.vaultId)) continue;
+    seen.add(v.vaultId);
+    if (v.encrypt) sealed.push(v.vaultId);
+  }
+  return sealed;
 }
 
 export function privateStoreLayoutFromConfig(
@@ -165,6 +212,8 @@ export function privateStoreLayoutFromConfig(
     versionsDir: str('ngdpbase.page.provider.filesystem.versionsdir', d.versionsDir),
     deletedDir: str('ngdpbase.page.provider.filesystem.deleteddir', d.deletedDir),
     attachmentsDir: str('ngdpbase.page.provider.filesystem.attachmentsdir', d.attachmentsDir),
+    footnotesDir: str('ngdpbase.page.provider.filesystem.footnotesdir', d.footnotesDir),
+    commentsDir: str('ngdpbase.page.provider.filesystem.commentsdir', d.commentsDir),
     files: {
       userkeys: str('ngdpbase.page.provider.filesystem.private.files.userkeys', d.files.userkeys),
       userindex: str('ngdpbase.page.provider.filesystem.private.files.userindex', d.files.userindex),
@@ -180,7 +229,8 @@ export function privateStoreLayoutFromConfig(
         'ngdpbase.page.provider.filesystem.private.files.storedeleted',
         d.files.storedeleted
       )
-    }
+    },
+    sealedVaults: sealedVaultIds(vaults)
   };
 }
 
@@ -496,6 +546,26 @@ export function privateVersionDirectory(
     privateStoreRoot(pagesDirectory, creator, store, L),
     L.versionsDir,
     assertPathSegment(uuid, 'page id')
+  );
+}
+
+/**
+ * Where a vault page's footnotes or comments are kept (#1839): a folder of
+ * the vault, `{privateroot}/{user}/{store}/{footnotesDir|commentsDir}`, so
+ * they are written through the vault's store I/O and sealed exactly when its
+ * pages are. A public page's are in the managers' own folders.
+ */
+export function privateStoreNotesDir(
+  pagesDirectory: string,
+  creator: string,
+  store: string,
+  kind: 'footnotes' | 'comments',
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(
+    privateStoreRoot(pagesDirectory, creator, store, L),
+    kind === 'footnotes' ? L.footnotesDir : L.commentsDir
   );
 }
 

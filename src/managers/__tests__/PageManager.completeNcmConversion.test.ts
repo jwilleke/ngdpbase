@@ -34,14 +34,14 @@ describe('PageManager.completeNcmConversion (#1486)', () => {
     expect(full.content).toBe('body[img][fn]');
     expect(full.warnings).toEqual(['image-localized: x', 'footnote-transferred: [^1]']);
     expect(localizeRemoteImages).toHaveBeenCalledWith('body', 'P', subject, false);
-    expect(transferFromContent).toHaveBeenLastCalledWith('u1', 'body[img]', subject, false);
+    expect(transferFromContent).toHaveBeenLastCalledWith({ name: 'P', uuid: 'u1' }, 'body[img]', subject, false);
   });
 
   test('a dry run reaches both managers as a dry run', async () => {
     const door = makeDoor({ attachments, footnotes });
     await door.completeNcmConversion('body', { pageName: 'P', uuid: 'u1' }, subject, { dryRun: true, localizeImages: true });
     expect(localizeRemoteImages).toHaveBeenCalledWith('body', 'P', subject, true);
-    expect(transferFromContent).toHaveBeenCalledWith('u1', 'body[img]', subject, true);
+    expect(transferFromContent).toHaveBeenCalledWith({ name: 'P', uuid: 'u1' }, 'body[img]', subject, true);
   });
 
   test('no uuid, or footnotes disabled, leaves the footnotes where they are', async () => {

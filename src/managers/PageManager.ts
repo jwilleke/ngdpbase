@@ -52,6 +52,7 @@ import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { findPlaintextInSealedVaults, findUnsealedVaults } from '../utils/privateStoreDoor.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -274,9 +275,72 @@ import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
 import type AttachmentManager from './AttachmentManager.js';
 import type FootnoteManager from './FootnoteManager.js';
+import type CommentManager from './CommentManager.js';
 import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
 import type ShareManager from './ShareManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import { isJobContext } from '../context/ActorContext.js';
+import { toPermissionSubject } from '../context/JobContext.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { isVaultPageUuid } from '../utils/pageNotes.js';
+import { isSafePathSegment } from '../utils/privateStorePath.js';
+import { pageUrl } from '../utils/pageUrl.js';
+import { readVaultSealState } from '../utils/privateStoreMeta.js';
+import { permitsInVault } from '../utils/privateStoreAccess.js';
+import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
+
+/** One vault page with data outside its vault (#1842), as the repair actions offer it. */
+export interface VaultRepairItem {
+  owner: string;
+  vault: string;
+  /** The page's uuid; null for the pages of this vault that shared-pool records name. */
+  page: string | null;
+  /** Shared-pool files it uses. */
+  files: number;
+  /** Footnotes in the public folder. */
+  footnotes: boolean;
+  /** Comments in the public folder. */
+  comments: boolean;
+  /** Whether the asking context may repair it here. */
+  may: boolean;
+  /** Why not, in plain words. */
+  refusal?: string;
+  /**
+   * The vault page(s) as their reader sees them — title, link and the outside
+   * files by name — only when asked for (`listVaultRepairs(ctx, { details })`)
+   * and only those `ctx` may read; absent otherwise. Shown, never logged or
+   * recorded.
+   */
+  pages?: VaultRepairPage[];
+}
+
+/** One vault page of a repair item, for the reader of that page only (#1842). */
+export interface VaultRepairPage {
+  title: string;
+  /** The page's view URL. */
+  href: string;
+  /** Its shared-pool files, by name, with the URL that serves each today. */
+  files: Array<{ name: string; href: string }>;
+}
+
+/** What one repair moved (#1842). */
+export interface VaultRepairCounts {
+  /** Shared-pool files moved in, no public copy left. */
+  filesMoved: number;
+  /** Shared-pool files copied in, the public copy left for the other pages that use it. */
+  filesCopied: number;
+  footnotes: number;
+  /** Comment files. */
+  comments: number;
+}
+
+export type VaultRepairRefusal = 'not-found' | 'vault-not-open' | 'denied' | 'locked' | 'owner-only';
+
+export type VaultRepairResult =
+  | ({ ok: true; as: 'owner' | 'admin' } & VaultRepairCounts)
+  | { ok: false; refusal: VaultRepairRefusal; message: string };
+
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
@@ -500,6 +564,8 @@ class PageManager extends BaseManager implements CatalogSource {
       throw error;
     }
 
+    await this.reportUnsealedVaults(configManager);
+
     // Slice 4 of #755 (#772) — register as a CatalogSource so CatalogManager
     // can fan out cross-source queries. Mirrors MediaManager (Slice 3 / #758)
     // and AttachmentManager (Slice 5 / #759). CatalogManager is initialised
@@ -509,6 +575,53 @@ class PageManager extends BaseManager implements CatalogSource {
       catalog.registerSource(this);
     } else {
       logger.warn('📄 CatalogManager not available at initialize — skipping CatalogSource registration');
+    }
+  }
+
+  /**
+   * Startup check (#1834): every vault of a sealed kind whose files are in the
+   * clear — written before its door was opened, or under a `store.json` that
+   * is not sealed. Such a vault is closed (its store I/O refuses it); this
+   * makes it visible: an error in the log, the degraded-subsystem banner and a
+   * system notification, each naming owner and vault. Nothing is moved, sealed
+   * or deleted; an administrator decides what to do with the files.
+   */
+  private async reportUnsealedVaults(configManager: ConfigurationManager): Promise<void> {
+    try {
+      const pagesDirectory = configManager.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+      if (!pagesDirectory) return;
+      const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+      const found = await findUnsealedVaults(pagesDirectory, layout);
+      // #1836: and sealed vaults holding files in the clear — history or
+      // attachments moved in, or a backup restored, without the store I/O.
+      const mixed = await findPlaintextInSealedVaults(pagesDirectory, layout);
+      if (found.length === 0 && mixed.length === 0) return;
+      const reasons: string[] = [];
+      if (found.length > 0) {
+        const detail = found
+          .map((v) => `${v.owner}/${v.vault} (${v.state === 'unopened' ? 'files but no store.json' : 'store.json not sealed'})`)
+          .join(', ');
+        reasons.push(`${found.length} vault(s) of an encrypted system-category hold files that are not encrypted, so they stay closed: ${detail}. Their files were left as they are; move or remove them, then have the owner open the vault (#1834)`);
+      }
+      if (mixed.length > 0) {
+        const detail = mixed
+          .map((v) => `${v.owner}/${v.vault} (${v.files} file(s) in ${v.areas.join(', ')})`)
+          .join(', ');
+        reasons.push(`${mixed.length} encrypted vault(s) hold files that are not encrypted: ${detail}. They were left as they are; an administrator decides what to do with them (#1836)`);
+      }
+      const reason = reasons.join('. ');
+      logger.error(`📄 ${reason}`);
+      if (this.markDegraded(reason)) {
+        try {
+          await this.engine.getManager<NotificationManager>('NotificationManager')?.addNotification({
+            type: 'system', level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
+          });
+        } catch (err) {
+          logger.warn('📄 Could not post the unsealed-vault notification:', err);
+        }
+      }
+    } catch (err) {
+      logger.error('📄 The unsealed-vault check could not run (#1834):', err);
     }
   }
 
@@ -2602,7 +2715,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const footnotes = this.engine.getManager<FootnoteManager>('FootnoteManager');
     if (target.uuid && footnotes?.isEnabled?.()) {
-      const fn = await footnotes.transferFromContent(target.uuid, text, ctx, dryRun);
+      const fn = await footnotes.transferFromContent({ name: target.pageName, uuid: target.uuid }, text, ctx, dryRun);
       text = fn.content;
       warnings.push(...fn.warnings);
     }
@@ -2731,6 +2844,23 @@ class PageManager extends BaseManager implements CatalogSource {
     if (parsePrivatePageName(name ?? '') || parsePrivatePageName(previousName ?? '')) {
       await step('vault links', () => this.engine.getManager<ShareManager>('ShareManager')
         ?.refreshLockboxesForPage(change.ctx, { name, uuid: change.uuid, previousName }));
+    }
+
+    // #1839: a page's footnotes and comments go where it goes — into a vault,
+    // out of one, between two — through both sides' store I/O, as its history
+    // did. A rename in place moves nothing.
+    if (name && previousName && name !== previousName && change.uuid) {
+      const uuid = change.uuid;
+      await step('footnotes move', () => this.engine.getManager<FootnoteManager>('FootnoteManager')
+        ?.movePageFootnotes(uuid, previousName, name, change.ctx));
+      await step('comments move', () => this.engine.getManager<CommentManager>('CommentManager')
+        ?.movePageComments(uuid, previousName, name, change.ctx));
+    }
+    // #1842: and so do the files it uses — before the mention sync below, so a
+    // page made public finds its files in the shared pool.
+    if (name && previousName && name !== previousName && change.content !== undefined) {
+      const content = change.content;
+      await step('attachments move', () => attachments?.movePageAttachments(previousName, name, content, change.ctx));
     }
 
     const referrers = new Set<string>();
@@ -3709,6 +3839,285 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
     return written;
+  }
+
+  // ── Moving what earlier moves left outside a vault into it (#1842) ────────
+
+  /**
+   * Every vault page the startup checks found with data outside its vault —
+   * files in the shared pool (#1842), footnotes or comments in the public
+   * folders (#1839) — as one list for the repair actions, with whether `ctx`
+   * may repair each one here and, if not, why. Read from the checks' last
+   * findings, so listing opens no vault. Only what `ctx` may see: every item
+   * for someone holding `admin-system` (owner, vault and page uuid, as the
+   * subsystem banner already shows), otherwise the items of their own vaults.
+   */
+  async listVaultRepairs(ctx: ActorContext, opts: { details?: boolean } = {}): Promise<VaultRepairItem[]> {
+    if (!ctx) throw new Error('PageManager.listVaultRepairs requires an ActorContext');
+    const { attachments, footnotes, comments } = this.repairManagers();
+    const items = new Map<string, VaultRepairItem>();
+    const item = (owner: string, vault: string, page: string | null): VaultRepairItem => {
+      const key = `${owner}/${vault}/${page ?? ''}`;
+      const found = items.get(key) ?? { owner, vault, page, files: 0, footnotes: false, comments: false, may: false };
+      items.set(key, found);
+      return found;
+    };
+    for (const f of attachments?.vaultPagesUsingPoolFiles() ?? []) item(f.owner, f.vault, f.page).files += f.files;
+    for (const f of footnotes?.vaultPageNotesOutside() ?? []) item(f.owner, f.vault, f.uuid).footnotes = true;
+    for (const f of comments?.vaultPageNotesOutside() ?? []) item(f.owner, f.vault, f.uuid).comments = true;
+
+    // An affordance: held, never recorded (#1635, #1668). Acting asks the door.
+    const admin = await this.adminSystem(ctx, 'holds');
+    const out: VaultRepairItem[] = [];
+    for (const found of items.values()) {
+      if (!admin && !mayActInPrivateContainer(ctx, found.owner, { vault: found.vault })) continue;
+      const decided = await this.repairAuthority(ctx, found.owner, found.vault, 'holds');
+      const listed: VaultRepairItem = decided.ok ? { ...found, may: true } : { ...found, may: false, refusal: decided.message };
+      // Only the vault's own people can read its pages: no one else is asked.
+      if (opts.details && mayActInPrivateContainer(ctx, found.owner, { vault: found.vault })) {
+        const pages = await this.vaultRepairPages(found, ctx);
+        if (pages.length > 0) listed.pages = pages;
+      }
+      out.push(listed);
+    }
+    return out;
+  }
+
+  /**
+   * The pages of one repair item that `ctx` may read, as the reader sees
+   * them (#1842): each one read as `ctx` through {@link readPage}, the same
+   * door as viewing it, after the unrecorded {@link mayShowPage}, so a refusal
+   * never records a page name. Found through the vault stores `ctx` can open,
+   * so a sealed vault contributes nothing without its owner's key. Its
+   * outside files come from `AttachmentManager.poolFilesOfVaultPage`.
+   * Best-effort: a failure shows no details, and is logged without a title.
+   */
+  private async vaultRepairPages(item: { owner: string; vault: string; page: string | null }, ctx: ActorContext): Promise<VaultRepairPage[]> {
+    try {
+      if (!this.provider?.listPrivateStorePages) return [];
+      const listed = (await this.provider.listPrivateStorePages(ctx, item.owner)).filter((p) => p.store === item.vault);
+      const names = item.page !== null
+        ? listed.filter((p) => p.uuid === item.page).map((p) => formatPrivatePageName(item.owner, item.vault, p.title))
+        : (await this.repairManagers().attachments?.poolMentionedVaultPages(item.owner, item.vault) ?? [])
+          .filter((name) => listed.some((p) => p.title === parsePrivatePageName(name)?.title));
+      const attachments = this.repairManagers().attachments;
+      const out: VaultRepairPage[] = [];
+      for (const name of names) {
+        if (!(await this.mayShowPage(name, ctx))) continue;
+        const read = await this.readPage(name, ctx);
+        if (!read.ok) continue;
+        const files = await attachments?.poolFilesOfVaultPage(name, read.value.content, ctx) ?? [];
+        out.push({
+          title: parsePrivatePageName(name)?.title ?? name,
+          href: pageUrl(name),
+          files: files.map((f) => ({ name: f.name, href: f.url }))
+        });
+      }
+      return out;
+    } catch (err) {
+      // #1461: owner, vault and uuid; never a title or a file name.
+      logger.warn(`[PageManager] Vault repair (#1842): the details of ${item.owner}/${item.vault}${item.page ? ` page ${item.page}` : ''} could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  /**
+   * Move one vault page's leftovers into its vault (#1842): the shared-pool
+   * files it uses (`AttachmentManager.movePoolFilesIntoVault`) and its
+   * footnotes and comments from the public folders
+   * (`FootnoteManager` / `CommentManager.moveOutside…IntoVault`), each by its
+   * own manager through the vault's store I/O — sealed when the vault is. A
+   * pool file another public page uses is copied, never taken from it.
+   *
+   * `page` null is the startup check's "pages named by shared records": every
+   * page of that vault a shared-pool record still names, files only.
+   *
+   * Who may: the vault's owner, in their own session (a sealed vault needs its
+   * key, so it must be open); for a vault that isn't sealed, also someone
+   * holding `admin-system`. A sealed vault asked for by anyone but its owner
+   * is refused, and nothing changes.
+   *
+   * Recorded as `vault-repair` before anything moves (on-failure refuse), with
+   * the counts it is about to move. Then the three checks run again, so the
+   * subsystem banner clears once nothing is left.
+   */
+  async repairVaultPage(
+    target: { owner: string; vault: string; page: string | null },
+    ctx: ActorContext,
+    opts: { recheck?: boolean } = {}
+  ): Promise<VaultRepairResult> {
+    if (!ctx) throw new Error('PageManager.repairVaultPage requires an ActorContext');
+    const { owner, vault, page } = target;
+    if (!this.provider?.listPrivateStorePages || !isSafePathSegment(owner) || !isValidStoreId(vault) || (page !== null && !isSafePathSegment(page))) {
+      return { ok: false, refusal: 'not-found', message: 'There is no such vault page.' };
+    }
+    const decided = await this.repairAuthority(ctx, owner, vault, 'permits');
+    if (!decided.ok) return decided;
+
+    const { attachments, footnotes, comments } = this.repairManagers();
+    const { pagesDirectory, layout } = this.vaultPaths();
+    const where = { owner, store: vault };
+    const listed = (await this.provider.listPrivateStorePages(ctx, owner)).filter((p) => p.store === vault);
+    const contentOf = async (name: string): Promise<string> => (await this.provider?.getPage(name, ctx))?.content ?? '';
+
+    // What to repair: the page asked for, or every page shared records name.
+    const work: Array<{ name: string | null; content: string; notesOf: string | null }> = [];
+    if (page !== null) {
+      const hit = listed.find((p) => p.uuid === page);
+      if (!hit && !(await isVaultPageUuid(pagesDirectory, layout, where, page))) {
+        return { ok: false, refusal: 'not-found', message: 'There is no such page in this vault.' };
+      }
+      // A page in the vault's trash has no live name: only its notes move.
+      const name = hit ? formatPrivatePageName(owner, vault, hit.title) : null;
+      work.push({ name, content: name ? await contentOf(name) : '', notesOf: page });
+    } else {
+      for (const name of await attachments?.poolMentionedVaultPages(owner, vault) ?? []) {
+        const title = parsePrivatePageName(name)?.title;
+        work.push({ name, content: listed.some((p) => p.title === title) ? await contentOf(name) : '', notesOf: null });
+      }
+    }
+
+    const run = async (dryRun: boolean): Promise<VaultRepairCounts> => {
+      const counts: VaultRepairCounts = { filesMoved: 0, filesCopied: 0, footnotes: 0, comments: 0 };
+      for (const w of work) {
+        if (w.name && attachments) {
+          const files = await attachments.movePoolFilesIntoVault(w.name, w.content, ctx, { dryRun });
+          counts.filesMoved += files.moved;
+          counts.filesCopied += files.copied;
+        }
+        if (w.notesOf) {
+          counts.footnotes += await footnotes?.moveOutsideFootnotesIntoVault(where, w.notesOf, ctx, { dryRun }) ?? 0;
+          counts.comments += await comments?.moveOutsideCommentsIntoVault(where, w.notesOf, ctx, { dryRun }) ?? 0;
+        }
+      }
+      return counts;
+    };
+
+    let counts = await run(true);
+    if (counts.filesMoved + counts.filesCopied + counts.footnotes + counts.comments > 0) {
+      // Recorded first (on-failure refuse): a repair that can't be recorded doesn't happen.
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.engine.getManager('AuditManager'), {
+        eventType: AUDIT_EVENT.VAULT_REPAIR,
+        ...who,
+        action: 'repair',
+        result: 'success',
+        severity: 'medium',
+        resource: page ?? `${owner}/${vault}`,
+        resourceType: page ? 'page' : 'vault',
+        metadata: { ...who.metadata, owner, vault, pageUuid: page, as: decided.as, sealed: decided.sealed, pages: work.length, ...counts }
+      });
+      counts = await run(false);
+      // #1461: owner, vault and uuid; never a title or a file name.
+      logger.info(`[PageManager] Vault repair (#1842) in ${owner}/${vault}${page ? ` page ${page}` : ''}: ${counts.filesMoved} file(s) moved, ${counts.filesCopied} copied, ${counts.footnotes} footnote(s), ${counts.comments} comment file(s)`);
+    }
+    if (opts.recheck !== false) await this.recheckVaultRepairs();
+    return { ok: true, as: decided.as, ...counts };
+  }
+
+  /**
+   * "Repair all I can" (#1842): every listed item `ctx` may repair, one by
+   * one through {@link repairVaultPage}; one item's failure never stops the
+   * rest. The checks run again once, at the end.
+   *
+   * @param opts.ownOnly - Only `ctx`'s own vaults (the profile's "Move all into my vaults")
+   */
+  async repairAllVaultPages(
+    ctx: ActorContext,
+    opts: { ownOnly?: boolean } = {}
+  ): Promise<{ repaired: number; refused: number; failed: number } & VaultRepairCounts> {
+    const total = { repaired: 0, refused: 0, failed: 0, filesMoved: 0, filesCopied: 0, footnotes: 0, comments: 0 };
+    try {
+      const items = (await this.listVaultRepairs(ctx))
+        .filter((it) => !opts.ownOnly || mayActInPrivateContainer(ctx, it.owner, { vault: it.vault }));
+      for (const it of items) {
+        if (!it.may) { total.refused++; continue; }
+        try {
+          const result = await this.repairVaultPage({ owner: it.owner, vault: it.vault, page: it.page }, ctx, { recheck: false });
+          if (!result.ok) { total.refused++; continue; }
+          total.repaired++;
+          total.filesMoved += result.filesMoved;
+          total.filesCopied += result.filesCopied;
+          total.footnotes += result.footnotes;
+          total.comments += result.comments;
+        } catch (err) {
+          total.failed++;
+          logger.error(`[PageManager] Vault repair (#1842) failed for ${it.owner}/${it.vault}${it.page ? ` page ${it.page}` : ''}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } finally {
+      await this.recheckVaultRepairs();
+    }
+    return total;
+  }
+
+  /** The three startup checks, run again (#1842). */
+  private async recheckVaultRepairs(): Promise<void> {
+    const { attachments, footnotes, comments } = this.repairManagers();
+    await attachments?.recheckVaultPagesUsingPoolFiles();
+    await footnotes?.recheckVaultPageNotesOutside();
+    await comments?.recheckVaultPageNotesOutside();
+  }
+
+  private repairManagers(): { attachments: AttachmentManager | null; footnotes: FootnoteManager | null; comments: CommentManager | null } {
+    return {
+      attachments: this.engine.getManager<AttachmentManager>('AttachmentManager') ?? null,
+      footnotes: this.engine.getManager<FootnoteManager>('FootnoteManager') ?? null,
+      comments: this.engine.getManager<CommentManager>('CommentManager') ?? null
+    };
+  }
+
+  private vaultPaths(): { pagesDirectory: string; layout: ReturnType<typeof privateStoreLayoutFromConfig> } {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    return {
+      pagesDirectory: configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages') ?? './data/pages',
+      layout: privateStoreLayoutFromConfig((key, fallback) => configManager ? configManager.getProperty(key, fallback) : fallback)
+    };
+  }
+
+  /** `admin-system`, asked of the PDP: `permits` at the door, `holds` for an affordance (#1635). */
+  private async adminSystem(ctx: ActorContext, ask: 'permits' | 'holds'): Promise<boolean> {
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) return false;
+    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+    return ask === 'permits' ? pdp.permits(subject, 'admin-system') : pdp.holds(subject, 'admin-system');
+  }
+
+  /**
+   * Who may move leftovers into `owner`'s vault `vault` (#1842). The owner (the
+   * container rule, then `page-edit` in the vault, which `vault-owner` gives),
+   * with the vault open when it is sealed; for a vault that isn't sealed, also
+   * someone holding `admin-system` — the boot migration's reach (#1460),
+   * which writes into unsealed vaults with no owner present. A sealed vault
+   * needs its owner's key, so no one else can.
+   */
+  private async repairAuthority(
+    ctx: ActorContext,
+    owner: string,
+    vault: string,
+    ask: 'permits' | 'holds'
+  ): Promise<{ ok: true; as: 'owner' | 'admin'; sealed: boolean } | { ok: false; refusal: VaultRepairRefusal; message: string }> {
+    const { pagesDirectory, layout } = this.vaultPaths();
+    const state = (await readVaultSealState(pagesDirectory, owner, vault, layout).catch(() => null))?.state ?? 'mismatch';
+    if (state === 'unopened' || state === 'mismatch') {
+      return { ok: false, refusal: 'vault-not-open', message: `Vault '${vault}' is of a sealed kind but isn't sealed yet, so nothing can be written into it until its owner opens it at /stores/${vault}. Nothing was changed.` };
+    }
+    const sealed = state === 'sealed';
+    if (mayActInPrivateContainer(ctx, owner, { vault })) {
+      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      if (!(await permitsInVault(pdp, ctx, 'page-edit', { owner, vault, resource: `repair:${vault}` }))) {
+        return { ok: false, refusal: 'denied', message: 'You may not change pages in this vault. Nothing was changed.' };
+      }
+      if (sealed && !unlockedStoreIdsFor(ctx).includes(vault)) {
+        return { ok: false, refusal: 'locked', message: `Your vault '${vault}' is locked. Unlock it with your password first; nothing was changed.` };
+      }
+      return { ok: true, as: 'owner', sealed };
+    }
+    if (sealed) {
+      return { ok: false, refusal: 'owner-only', message: `${owner}'s vault '${vault}' is sealed: only ${owner} can move these into it, signed in with the vault open. Nothing was changed.` };
+    }
+    if (await this.adminSystem(ctx, ask)) return { ok: true, as: 'admin', sealed: false };
+    return { ok: false, refusal: 'denied', message: 'Moving these into the vault needs its owner, or admin-system for a vault that isn\'t sealed. Nothing was changed.' };
   }
 
   /**

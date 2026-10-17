@@ -20,7 +20,7 @@
 import fs from 'fs-extra';
 import type { ActorContext } from '../context/ActorContext.js';
 import { storeFileIO } from './privateStoreFiles.js';
-import { storeMigrationsPath, type PrivateStoreLayoutOverrides } from './privateStorePath.js';
+import { storeMigrationsPath, type PrivateStoreLayout } from './privateStorePath.js';
 
 /** The link migration of #1457: `[Title]` → `[store/Title]` within a store. */
 export const PRIVATE_LINK_MIGRATION = 'private-links';
@@ -34,7 +34,7 @@ export interface StoreMigrationTarget {
   pagesDirectory: string;
   owner: string;
   store: string;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 }
 
 async function readRecord(ctx: ActorContext, where: StoreMigrationTarget): Promise<StoreMigrationRecord> {

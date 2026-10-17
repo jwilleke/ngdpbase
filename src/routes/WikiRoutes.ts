@@ -64,6 +64,7 @@ import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
 import type { Policy } from '../types/Policy.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { SealedVaultRefusedError } from '../utils/privateStoreMeta.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
@@ -130,6 +131,7 @@ import {
 import {
   canonicalPageName,
   formatPrivatePageName,
+  isSafePathSegment,
   parsePrivatePageName,
   PRIVATE_URL_SEGMENT,
   privateStoreLayoutFromConfig,
@@ -146,7 +148,7 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
+import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -173,6 +175,7 @@ import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
+import type { PageRef } from '../utils/pageNotes.js';
 import type NotificationManager from '../managers/NotificationManager.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -4105,6 +4108,12 @@ ${panes}
       // #1455: a title the rule refuses is the caller's mistake, not ours.
       if (errorMessage === TITLE_RULE_MESSAGE) {
         return await fail(400, 'Invalid Title', errorMessage);
+      }
+
+      // #1834: an encrypted vault that is not open (or not sealed) refuses the
+      // write rather than storing it in the clear; say so, and what to do.
+      if (err instanceof SealedVaultRefusedError) {
+        return await fail(409, 'Vault Not Open', `${errorMessage} Nothing was saved.`);
       }
 
       return await fail(500, 'Error Saving Page', `Failed to save page: ${errorMessage}`);
@@ -8343,6 +8352,12 @@ ${panes}
         offerEmailSecondFactor, // #1523
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
+        // #1842: the person's own vault pages with data still outside the vault.
+        vaultRepairs: currentUser?.username
+          ? (await this.vaultRepairsFor(currentUser)).filter((r) => r.owner === currentUser.username)
+          : [],
+        vaultRepairNotice: typeof req.query.vaultRepair === 'string' ? req.query.vaultRepair : null,
+        vaultRepairError: typeof req.query.vaultRepairError === 'string' ? req.query.vaultRepairError : null,
         agentTokensEnabled, // #946
         agentTokensCanExtend, // #1734
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
@@ -10244,8 +10259,12 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comments are not enabled' });
       }
 
+      // #1839: only on a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+
       // #1232: the subject goes to the door; the manager reads author and display name from it and records the write.
-      const comment = await commentManager.addComment(pageUuid, currentUser, content.trim());
+      const comment = await commentManager.addComment(page, currentUser, content.trim());
       return res.json({ success: true, comment });
     } catch (err: unknown) {
       logger.error('Error adding comment:', err);
@@ -10657,7 +10676,11 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comments are not enabled' });
       }
 
-      const comment = await commentManager.getComment(pageUuid, commentId);
+      // #1839: only on a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+
+      const comment = await commentManager.getComment(page, commentId, currentUser);
       if (!comment) {
         return res.status(404).json({ success: false, error: 'Comment not found' });
       }
@@ -10667,7 +10690,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
 
-      await commentManager.deleteComment(pageUuid, commentId, currentUser);
+      await commentManager.deleteComment(page, commentId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting comment:', err);
@@ -10682,7 +10705,10 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).json({ success: false, error: 'Footnotes are not enabled' });
       }
-      const footnotes = await footnoteManager.getFootnotes(pageUuid);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+      const footnotes = await footnoteManager.getFootnotes(page, req.userContext ?? ANONYMOUS_SUBJECT);
       return res.json({ success: true, footnotes });
     } catch (err: unknown) {
       logger.error('Error fetching footnotes:', err);
@@ -10698,8 +10724,8 @@ ${panes}
    * client-side script swaps this into `#footnote-list-host` after a
    * successful add/edit/delete, replacing the old `location.reload()` flow.
    *
-   * GET /api/footnotes/:pageUuid/html — text/html. No auth required to
-   * read; the underlying buttons enforce per-row permissions.
+   * GET /api/footnotes/:pageUuid/html — text/html. Whoever may read the page
+   * may read its footnotes (#1839); the buttons enforce per-row permissions.
    */
   async getFootnoteListHtml(req: Request, res: Response) {
     try {
@@ -10708,7 +10734,10 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-footnotes"><em>Footnotes are not enabled.</em></p>');
       }
-      const html = await renderFootnoteListHtml(this.formatters, footnoteManager, pageUuid, req.userContext, this.engine);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'html');
+      if (!page) return;
+      const html = await renderFootnoteListHtml(this.formatters, footnoteManager, page, req.userContext, this.engine);
       return res.type('text/html').send(html);
     } catch (err: unknown) {
       logger.error('Error rendering footnote list HTML:', err);
@@ -10731,7 +10760,10 @@ ${panes}
       if (!commentManager || !commentManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-comments"><em>Comments are not enabled.</em></p>');
       }
-      const comments = await commentManager.getComments(pageUuid);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'html');
+      if (!page) return;
+      const comments = await commentManager.getComments(page, req.userContext ?? ANONYMOUS_SUBJECT);
       // #1198: the affordances mirror the routes' own gates — comment-create
       // to add, admin-system to delete anyone's — asked of policy, not read
       // off a session flag or a role name.
@@ -10753,17 +10785,38 @@ ${panes}
   }
 
   /**
-   * Refuse a footnote change the page's own rules forbid (#1542): the page is
-   * found by uuid and asked through `writeRefusal`, as the editor asks. Sends
-   * the 404 / 403 itself and returns true when it did.
+   * The page a footnote or comment request is about (#1839), when this request
+   * may read it. The page is named by `?page=` — a vault page is found only by
+   * its name, never by its uuid — else by the uuid in the path, and it must be
+   * the page that uuid names: the name decides where the notes are, so a
+   * readable page's name with another page's uuid would read that page's.
+   * Answers 404 itself — one answer for a page that isn't there and one this
+   * reader may not read — and returns null when it did.
    */
-  private async footnotePageRefusal(req: Request, res: Response, pageUuid: string): Promise<boolean> {
+  private async notesPage(req: Request, res: Response, pageUuid: string, mode: 'json' | 'html'): Promise<PageRef | null> {
+    const named = typeof req.query.page === 'string' && req.query.page ? req.query.page : pageUuid;
+    const read = await this.engine.getManager('PageManager')?.readPage(named, req.userContext ?? ANONYMOUS_SUBJECT);
+    if (read?.ok && read.metadata?.uuid === pageUuid) return { name: read.name, uuid: pageUuid };
+    if (mode === 'html') res.status(404).type('text/html').send('<p class="text-muted"><em>Page not found.</em></p>');
+    else res.status(404).json({ success: false, error: 'Page not found' });
+    return null;
+  }
+
+  /**
+   * Refuse a footnote change the page's own rules forbid (#1542): the page is
+   * found by its name (`?page=`, #1839) or uuid and asked through
+   * `writeRefusal`, as the editor asks. Sends the 404 / 403 itself and returns
+   * the page when it may be changed, null when it sent a refusal.
+   */
+  private async footnotePage(req: Request, res: Response, pageUuid: string): Promise<PageRef | null> {
+    const named = typeof req.query.page === 'string' && req.query.page ? req.query.page : pageUuid;
     // page-door-ignore: the footnote's page — the editor's write door decides next.
-    const page = await this.engine.getManager('PageManager')?.getPage(pageUuid, req.userContext);
-    if (!page) { res.status(404).json({ success: false, error: 'Page not found' }); return true; }
-    const refusal = await this.writeRefusal(req, canonicalPageName(pageUuid, page.metadata), page);
-    if (refusal) { res.status(403).json({ success: false, error: refusal }); return true; }
-    return false;
+    const page = await this.engine.getManager('PageManager')?.getPage(named, req.userContext);
+    if (!page || page.metadata?.uuid !== pageUuid) { res.status(404).json({ success: false, error: 'Page not found' }); return null; }
+    const name = canonicalPageName(named, page.metadata);
+    const refusal = await this.writeRefusal(req, name, page);
+    if (refusal) { res.status(403).json({ success: false, error: refusal }); return null; }
+    return { name, uuid: pageUuid };
   }
 
   async addFootnote(req: Request, res: Response) {
@@ -10772,9 +10825,9 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
       if (!display?.trim() || !url?.trim()) {
         return res.status(400).json({ success: false, error: 'display and url are required' });
@@ -10786,7 +10839,7 @@ ${panes}
       }
 
       const footnote = await footnoteManager.addFootnote(
-        pageUuid, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
+        page, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
         currentUser
       );
       return res.json({ success: true, footnote });
@@ -10805,9 +10858,10 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid, footnoteId } = req.params;
+      const { footnoteId } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
       if (!display?.trim() || !url?.trim()) {
         return res.status(400).json({ success: false, error: 'display and url are required' });
@@ -10819,7 +10873,7 @@ ${panes}
       }
 
       const footnote = await footnoteManager.updateFootnote(
-        pageUuid, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
+        page, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
       );
       if (!footnote) return res.status(404).json({ success: false, error: 'Footnote not found' });
       return res.json({ success: true, footnote });
@@ -10838,16 +10892,17 @@ ${panes}
       // #1198: page-edit is the door; own-or-admin decides below.
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid, footnoteId } = req.params;
+      const { footnoteId } = req.params;
       const footnoteManager = this.engine.getManager('FootnoteManager');
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).json({ success: false, error: 'Footnotes are not enabled' });
       }
 
       // Only admin or the footnote's creator may delete
-      const footnotes = await footnoteManager.getFootnotes(pageUuid);
+      const footnotes = await footnoteManager.getFootnotes(page, currentUser);
       const target = footnotes.find((f: { id: string }) => f.id === footnoteId);
       if (!target) return res.status(404).json({ success: false, error: 'Footnote not found' });
 
@@ -10856,7 +10911,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
 
-      await footnoteManager.deleteFootnote(pageUuid, footnoteId, currentUser);
+      await footnoteManager.deleteFootnote(page, footnoteId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting footnote:', err);
@@ -11108,7 +11163,10 @@ ${panes}
         // deliberate choice rather than a fault.
         degradedManagers: (this.engine as unknown as {
           getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string }>;
-        }).getDegradedManagers?.() ?? []
+        }).getDegradedManagers?.() ?? [],
+        // #1842: what the startup checks found outside its vault, each with
+        // a "Move into vault" action where this admin may (unsealed vaults).
+        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
       };
 
       res.render('admin-dashboard', templateData);
@@ -12608,6 +12666,71 @@ ${panes}
   }
 
   /**
+   * POST /vault-repair — "Move into vault" for one vault page the startup
+   * checks found with data outside its vault (#1842), or POST
+   * /vault-repair/all — "Repair all I can". A form post (CSRF from the app-wide
+   * middleware). Who may is the door's (`PageManager.repairVaultPage`): the
+   * vault's owner, in their own session with the vault open; for a vault that
+   * isn't sealed, also `admin-system`. Answers by redirecting back to the
+   * admin dashboard or the profile, with what was moved or why not.
+   */
+  /**
+   * The repair items `ctx` may see (#1842), each with the title, link and
+   * outside file names of the pages `ctx` may read (the page door decides;
+   * another admin gets owner, vault and uuid only). Best-effort: a failure
+   * leaves the section out, not the page.
+   */
+  private async vaultRepairsFor(ctx: NonNullable<Request['userContext']>): Promise<VaultRepairItem[]> {
+    try {
+      const pageManager = this.engine.getManager<Partial<Pick<PageManagerClass, 'listVaultRepairs'>>>('PageManager');
+      return await pageManager?.listVaultRepairs?.(ctx, { details: true }) ?? [];
+    } catch (err) {
+      logger.warn('[vault-repair] The repair list could not be read (#1842):', err);
+      return [];
+    }
+  }
+
+  async vaultRepair(req: Request, res: Response, all: boolean) {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const back = body.return === 'profile' ? '/profile' : '/admin';
+    // The dashboard shows ?success / ?error; the profile its own card's notice.
+    const answer = (kind: 'success' | 'error', text: string) => res.redirect(303, back === '/profile'
+      ? `/profile?vaultRepair${kind === 'error' ? 'Error' : ''}=${encodeURIComponent(text)}#vault-repairs`
+      : `/admin?${kind}=${encodeURIComponent(text)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser) return await this.refuse(wikiContext, req, res, 'page');
+      const pageManager = this.engine.getManager<PageManagerClass>('PageManager');
+      if (!pageManager) return answer('error', 'Pages are not available.');
+      const describe = (c: { filesMoved: number; filesCopied: number; footnotes: number; comments: number }) =>
+        `${c.filesMoved} file(s) moved, ${c.filesCopied} copied (other public pages use them), ${c.footnotes} footnote(s) and ${c.comments} comment(s) moved into the vault.`;
+
+      if (all) {
+        const total = await pageManager.repairAllVaultPages(currentUser, { ownOnly: back === '/profile' });
+        const skipped = total.refused + total.failed > 0
+          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed (see the log)` : ''}.`
+          : '';
+        return answer(total.failed > 0 ? 'error' : 'success', `Repaired ${total.repaired} item(s): ${describe(total)}${skipped}`);
+      }
+
+      const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+      const page = str(body.page);
+      const result = await pageManager.repairVaultPage(
+        { owner: str(body.owner), vault: str(body.vault), page: page === '' ? null : page },
+        currentUser
+      );
+      // The door refused; refuse() answers an anonymous subject 401 (#1198).
+      if (!result.ok && result.refusal === 'denied') return await this.refuse(wikiContext, req, res, 'page');
+      if (!result.ok) return answer('error', result.message);
+      return answer('success', describe(result));
+    } catch (err: unknown) {
+      logger.error('[vault-repair] The repair did not complete (#1842):', err);
+      return answer('error', `The repair did not complete: ${getErrorMessage(err)}. Anything not moved is still where it was.`);
+    }
+  }
+
+  /**
    * SSE endpoint for admin real-time events (e.g. required-page-modified).
    * Keeps the connection open and pushes events via pushAdminEvent().
    * Only accessible to authenticated admins.
@@ -13077,6 +13200,20 @@ ${panes}
 
       if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0 && removeOrphanUuids.length === 0 && declineItems.length === 0 && allowItems.length === 0) {
         return res.status(400).json({ success: false, error: 'No pages selected' });
+      }
+
+      // #1836: every id below becomes a file name (`{id}.md`, `versions/{id}`)
+      // under the pages or required-pages folder. One that is not a single
+      // path segment could name a file in a vault, a sealed one included,
+      // and write a public page's plaintext there. Refused before anything.
+      const fileIds: unknown[] = [
+        ...uuids,
+        ...pushToSourceUuids,
+        ...reconcileItems.flatMap((r) => [r?.sourceUuid, r?.liveUuid]),
+        ...adoptItems.flatMap((a) => [a?.sourceUuid, a?.liveUuid])
+      ];
+      if (fileIds.some((id) => typeof id !== 'string' || !isSafePathSegment(id))) {
+        return res.status(400).json({ success: false, error: 'A page id is not valid. Nothing was changed.' });
       }
 
       await fse.ensureDir(pagesDirResolved);
@@ -15769,6 +15906,9 @@ ${panes}
     app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
+    // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
+    app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
+    app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));
     // #969 — human surface over the #947 deleted-pages API
     app.get('/admin/trash', (req: Request, res: Response) => this.adminTrash(req, res));

@@ -255,4 +255,37 @@ describe('CommentsPlugin', () => {
       expect(result).toContain('charlie');
     });
   });
+
+  // #1839: a vault page's comments are in its vault, found by its name.
+  describe('a vault page (#1839)', () => {
+    const VAULT_PAGE = 'vaults/molly/phr/Lab Results';
+    const molly = { isAuthenticated: true, username: 'molly', roles: ['editor'] };
+
+    test('comments are read by the page name, and the script names the page on every request', async () => {
+      const cm = makeCommentManager(true, []);
+      const result = await CommentsPlugin.execute({
+        engine: makeEngine({ CommentManager: cm }),
+        pageName: VAULT_PAGE,
+        pageMetadata: { uuid: 'uuid-v' },
+        userContext: molly
+      }, {});
+      expect(cm.getComments).toHaveBeenCalledWith({ name: VAULT_PAGE, uuid: 'uuid-v' }, molly);
+      expect(result).toContain(`data-page-name="${VAULT_PAGE}"`);
+      expect(result).toContain("fetch('/api/comments/' + pageUuid + '/html' + ngdpCommentQuery())");
+      expect(result).toContain("('/api/comments/' + pageUuid + ngdpCommentQuery(), {");
+      expect(result).toContain("('/api/comments/' + pageUuid + '/' + commentId + ngdpCommentQuery(), {");
+    });
+
+    test('a vault that cannot be opened renders nothing rather than failing the page', async () => {
+      const cm = makeCommentManager(true, []);
+      cm.getComments.mockRejectedValueOnce(new Error('locked'));
+      const result = await CommentsPlugin.execute({
+        engine: makeEngine({ CommentManager: cm }),
+        pageName: VAULT_PAGE,
+        pageMetadata: { uuid: 'uuid-v' },
+        userContext: molly
+      }, {});
+      expect(result).toBe('');
+    });
+  });
 });

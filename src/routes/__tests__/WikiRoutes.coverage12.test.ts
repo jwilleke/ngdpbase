@@ -369,6 +369,17 @@ function buildApp() {
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
+
+/** #1839: the page the footnote and comment routes resolve — readable, and the page `uuid` names. */
+function notesPageIs(uuid: string) {
+  const page = { content: '# Page', metadata: { title: 'TestPage', uuid }, uuid, title: 'TestPage' };
+  mockPageManager.getPage.mockResolvedValue(page);
+  (mockPageManager as Record<string, unknown>).readPage = vi.fn(async (name: string) => {
+    const found = await mockPageManager.getPage(name);
+    return found ? { ok: true, name: 'TestPage', metadata: found.metadata, value: found } : { ok: false, refusal: 'not-found' };
+  });
+}
+
 describe('WikiRoutes — coverage batch 12', () => {
   let app: express.Application;
 
@@ -633,6 +644,8 @@ describe('WikiRoutes — coverage batch 12', () => {
   // ── Footnote Handlers ────────────────────────────────────────────────────────
 
   describe('GET /api/footnotes/:pageUuid (getFootnotes)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 404 when footnotes not enabled', async () => {
       mockFootnoteManager.isEnabled.mockReturnValue(false);
       const res = await request(app).get('/api/footnotes/uuid-1');
@@ -647,6 +660,8 @@ describe('WikiRoutes — coverage batch 12', () => {
   });
 
   describe('POST /api/footnotes/:pageUuid (addFootnote)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 401 when not authenticated', async () => {
       mockUserContext = { isAuthenticated: false };
       const res = await request(app)
@@ -700,6 +715,8 @@ describe('WikiRoutes — coverage batch 12', () => {
   });
 
   describe('PUT /api/footnotes/:pageUuid/:footnoteId (updateFootnote)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 401 when not authenticated', async () => {
       mockUserContext = { isAuthenticated: false };
       const res = await request(app)
@@ -729,6 +746,8 @@ describe('WikiRoutes — coverage batch 12', () => {
   });
 
   describe('DELETE /api/footnotes/:pageUuid/:footnoteId (deleteFootnote)', () => {
+
+    beforeEach(() => notesPageIs('uuid-1'));
     test('returns 401 when not authenticated', async () => {
       mockUserContext = { isAuthenticated: false };
       const res = await request(app)
@@ -744,6 +763,68 @@ describe('WikiRoutes — coverage batch 12', () => {
         .set('x-csrf-token', 'test-csrf-token');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+  });
+
+  // #1839: a page's footnotes are read only by whoever may read the page, and
+  // found by its name — a vault page's uuid alone does not say where they are.
+  describe('footnotes are gated exactly like their page (#1839)', () => {
+    const VAULT_PAGE = 'vaults/molly/phr/Lab Results';
+    const refuseRead = () => {
+      (mockPageManager as Record<string, unknown>).readPage = vi.fn(async () => ({ ok: false, refusal: 'denied' }));
+    };
+    beforeEach(() => {
+      notesPageIs('uuid-1');
+      mockFootnoteManager.getFootnotes.mockClear();
+      mockFootnoteManager.addFootnote.mockClear();
+    });
+
+    test('GET of a page the reader may not read: 404, and the footnotes are never read', async () => {
+      refuseRead();
+      const res = await request(app).get(`/api/footnotes/uuid-1?page=${encodeURIComponent(VAULT_PAGE)}`);
+      expect(res.status).toBe(404);
+      expect(mockFootnoteManager.getFootnotes).not.toHaveBeenCalled();
+    });
+
+    test('the HTML list of a page the reader may not read: 404, and the footnotes are never read', async () => {
+      refuseRead();
+      const res = await request(app).get(`/api/footnotes/uuid-1/html?page=${encodeURIComponent(VAULT_PAGE)}`);
+      expect(res.status).toBe(404);
+      expect(mockFootnoteManager.getFootnotes).not.toHaveBeenCalled();
+    });
+
+    test('a readable page named with another page\'s uuid: 404 — the name decides where the footnotes are', async () => {
+      const res = await request(app).get('/api/footnotes/someone-elses-uuid?page=TestPage');
+      expect(res.status).toBe(404);
+      expect(mockFootnoteManager.getFootnotes).not.toHaveBeenCalled();
+    });
+
+    test('adding to a page found by name whose uuid is another page\'s: 404, nothing written', async () => {
+      const res = await request(app)
+        .post('/api/footnotes/someone-elses-uuid?page=TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Note 1', url: 'http://example.com' });
+      expect(res.status).toBe(404);
+      expect(mockFootnoteManager.addFootnote).not.toHaveBeenCalled();
+    });
+
+    test('the page is read by its vault name as the requester, and the manager is handed that name', async () => {
+      const res = await request(app).get(`/api/footnotes/uuid-1?page=${encodeURIComponent(VAULT_PAGE)}`);
+      expect(res.status).toBe(200);
+      const readPage = (mockPageManager as unknown as { readPage: ReturnType<typeof vi.fn> }).readPage;
+      expect(readPage).toHaveBeenCalledWith(VAULT_PAGE, expect.anything());
+      expect(mockFootnoteManager.getFootnotes).toHaveBeenCalledWith({ name: 'TestPage', uuid: 'uuid-1' }, expect.anything());
+    });
+
+    test('an edit names the vault page to the write door, not its bare title', async () => {
+      mockPageManager.getPage.mockResolvedValue({ content: '#', metadata: { title: 'Lab Results', uuid: 'uuid-1' } });
+      const res = await request(app)
+        .post(`/api/footnotes/uuid-1?page=${encodeURIComponent(VAULT_PAGE)}`)
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Note 1', url: 'http://example.com' });
+      expect(res.status).toBe(200);
+      expect(mockPageManager.getPage).toHaveBeenCalledWith(VAULT_PAGE, expect.anything());
+      expect(mockFootnoteManager.addFootnote).toHaveBeenCalledWith({ name: VAULT_PAGE, uuid: 'uuid-1' }, expect.anything(), expect.anything());
     });
   });
 

@@ -9,7 +9,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import logger from './logger.js';
-import { readStoreMeta } from './privateStoreMeta.js';
+import { kindIsSealed, readStoreMeta } from './privateStoreMeta.js';
 import {
   privateStoreFilePath,
   resolvePrivateStoreLayout,
@@ -34,7 +34,8 @@ export async function migrateLegacyPrivateAttachments(opts: {
       L.defaultStoreId,
       L
     )).encrypt === true;
-    if (sealed) continue;
+    // #1834: a sealed kind's vault takes no plaintext either, opened or not.
+    if (sealed || kindIsSealed(L, L.defaultStoreId)) continue;
 
     const userDir = path.join(opts.attachmentsPrivateDir, userEnt.name);
     const files = await fs.readdir(userDir, { withFileTypes: true });

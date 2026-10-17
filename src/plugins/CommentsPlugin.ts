@@ -3,6 +3,8 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type { PageComment } from '../types/Comment.js';
 import { renderUntrustedInline } from '../utils/renderUntrustedInline.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /** Engine shape the untrusted-inline profile needs; kept loose for tests. */
 type WikiEngineLike = { getManager: (name: string) => unknown };
@@ -94,14 +96,22 @@ const CommentsPlugin: SimplePlugin = {
 
     const noheader = parseBoolParam(params?.['noheader'], false);
 
-    const comments: PageComment[] = await commentManager.getComments(pageUuid);
+    // #1839: the page's name says where its comments are — a vault page's are
+    // in its vault, and a locked vault shows none rather than failing the page.
+    const pageName = context.pageName || pageUuid;
+    let comments: PageComment[];
+    try {
+      comments = await commentManager.getComments({ name: pageName, uuid: pageUuid }, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext);
+    } catch {
+      return '';
+    }
 
     const parts: string[] = ['<section class="page-comments">'];
     if (!noheader) parts.push('<h2>Comments</h2>');
 
     // Wrap the list in a stable container so #590 can swap its innerHTML
     // after add/delete instead of doing a full page reload.
-    parts.push(`<div id="comment-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
+    parts.push(`<div id="comment-list-host" data-page-uuid="${escapeHtml(pageUuid)}" data-page-name="${escapeHtml(pageName)}">`);
     parts.push(await renderCommentListHtml(context.formatters, comments, isAuthenticated, username, isAdmin, pageUuid, engine));
     parts.push('</div>');
 
@@ -119,11 +129,17 @@ const CommentsPlugin: SimplePlugin = {
       // #comment-list-host container. Inline onclick/onsubmit handlers in the
       // rendered HTML continue to work after replacement because they call
       // global functions defined here.
+      // #1839: every call names the page (the host's data-page-name), so a
+      // vault page's comments are found in its vault.
       parts.push(`<script>
+function ngdpCommentQuery() {
+  const host = document.getElementById('comment-list-host');
+  return host && host.dataset.pageName ? '?page=' + encodeURIComponent(host.dataset.pageName) : '';
+}
 function ngdpRefreshCommentList(pageUuid) {
   const host = document.getElementById('comment-list-host');
   if (!host) return Promise.resolve();
-  return fetch('/api/comments/' + pageUuid + '/html')
+  return fetch('/api/comments/' + pageUuid + '/html' + ngdpCommentQuery())
     .then(r => r.text())
     .then(html => { host.innerHTML = html; })
     .catch(() => { /* leave stale until next view */ });
@@ -136,7 +152,7 @@ function ngdpSubmitComment(e, pageUuid) {
   // #727: comment add is state-changing — needs the CSRF token (#663
   // app-wide middleware). csrfFetch injects X-CSRF-Token; without it
   // the POST gets a text/plain 403 that r.json() then chokes on.
-  (window.csrfFetch || fetch)('/api/comments/' + pageUuid, {
+  (window.csrfFetch || fetch)('/api/comments/' + pageUuid + ngdpCommentQuery(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content })
@@ -148,7 +164,7 @@ function ngdpSubmitComment(e, pageUuid) {
 function ngdpDeleteComment(pageUuid, commentId) {
   if (!confirm('Delete this comment?')) return;
   // #727: comment delete is state-changing — needs the CSRF token.
-  (window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId, {
+  (window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId + ngdpCommentQuery(), {
     method: 'DELETE'
   }).then(r => r.json()).then(data => {
     if (data.success) return ngdpRefreshCommentList(pageUuid);

@@ -158,7 +158,9 @@ export const AUDIT_EVENT = {
   /** User profile read; not recorded, read volume */
   USER_READ: 'user-read',
   /** Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant */
-  VAULT_PROXY: 'vault-proxy'
+  VAULT_PROXY: 'vault-proxy',
+  /** A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system */
+  VAULT_REPAIR: 'vault-repair'
 } as const;
 
 /** A name core code may emit. */

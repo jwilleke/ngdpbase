@@ -19,9 +19,14 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import FileSystemProvider from '../FileSystemProvider';
+import { sealBytes } from '../../utils/privateStoreCrypto';
 
-/** Bytes no encoding survives — what a sealed store's pages look like. */
-const CIPHERTEXT = Buffer.from([0x00, 0xff, 0xfe, 0x80, 0x01, 0x92, 0xc3, 0x28, 0x7f]);
+/**
+ * Bytes no encoding survives — what a sealed store's pages look like. A real
+ * sealed envelope: since #1836 a restore writes only sealed bytes into a
+ * sealed vault.
+ */
+const CIPHERTEXT = sealBytes(Buffer.alloc(32, 1), Buffer.from([0x00, 0xff, 0xfe, 0x80, 0x01, 0x92, 0xc3, 0x28, 0x7f]));
 
 let tmp: string;
 let pagesDir: string;

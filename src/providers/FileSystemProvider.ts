@@ -16,14 +16,17 @@ import {
   type PrivatePageName
 } from '../utils/privateStorePath.js';
 import { collectUser, listPrivateOwners } from '../utils/privateStoreTakeout.js';
-import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import { kindIsSealed, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
   storeFileIO,
   storeFileIOForPath,
+  vaultMustBeSealed,
+  vaultOfFile,
   type StoreFileIO
 } from '../utils/privateStoreFiles.js';
+import { isSealedBytes } from '../utils/privateStoreCrypto.js';
 import type { StoreSearchDocument } from '../utils/storeSearchIndex.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import { moveVaultRoot } from '../utils/moveVaultRoot.js';
@@ -1148,6 +1151,8 @@ class FileSystemProvider extends BasePageProvider {
       for (const store of await fs.readdir(userDir, { withFileTypes: true })) {
         if (!store.isDirectory() || !isValidStoreId(store.name)) continue;
         if (await storeDirectoryIsEncrypted(path.join(userDir, store.name), this.privateStoreLayout.files.storemeta)) continue;
+        // #1834: a sealed kind's vault is never indexed in the clear, opened or not.
+        if (kindIsSealed(this.privateStoreLayout, store.name)) continue;
         const where: StoreFileLocation = { owner: user.name, store: store.name, io: PLAIN_FILE_IO };
         const pages = await this.readStorePages(this.pagesDirectory, where);
         const files = (await fs.readdir(path.join(userDir, store.name))).filter((f) => f.endsWith('.md'));
@@ -1949,6 +1954,56 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
+   * The vaults a restore must treat as sealed (#1836), as `owner/store`: the
+   * kind is sealed, the `store.json` on disk is, or the one in the backup is.
+   * Asked of every vault the backup writes into, before anything is written.
+   */
+  private async vaultsSealedAfterRestore(backupData: BackupData): Promise<Set<string>> {
+    const sealed = new Set<string>();
+    if (!this.pagesDirectory) return sealed;
+    const targets = [
+      ...(Array.isArray(backupData.privateFiles) ? backupData.privateFiles : []).map((f) => ({ relativePath: f.relativePath, base64: f.base64 })),
+      ...(Array.isArray(backupData.pages) ? backupData.pages : []).map((p) => ({ relativePath: p.relativePath, base64: undefined }))
+    ];
+    for (const { relativePath, base64 } of targets) {
+      const file = path.resolve(this.pagesDirectory, relativePath);
+      const vault = vaultOfFile(this.pagesDirectory, file, this.privateStoreLayout);
+      if (!vault) continue;
+      const key = `${vault.owner}/${vault.store}`;
+      if (sealed.has(key)) continue;
+      if (await vaultMustBeSealed(this.pagesDirectory, vault.owner, vault.store, this.privateStoreLayout)
+        || (base64 !== undefined && this.isStoreMetaFile(file) && this.storeMetaIsSealed(Buffer.from(base64, 'base64')))) {
+        sealed.add(key);
+      }
+    }
+    return sealed;
+  }
+
+  /** `file` is a vault's own `store.json`: `{privateroot}/{owner}/{store}/store.json`. */
+  private isStoreMetaFile(file: string): boolean {
+    if (!this.pagesDirectory) return false;
+    const rel = path.relative(this.pagesDirectory, file).split(path.sep);
+    return rel.length === 4 && rel[3] === this.privateStoreLayout.files.storemeta;
+  }
+
+  private storeMetaIsSealed(bytes: Buffer): boolean {
+    try {
+      return (JSON.parse(bytes.toString('utf8')) as { encrypt?: unknown } | null)?.encrypt === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Whether a backed-up file may go back into a sealed vault as it is (#1836):
+   * every file there is sealed bytes, except `store.json`, which must itself
+   * say sealed — one that does not would replace the wrapped DEK.
+   */
+  private isSealedRestoreFile(file: string, bytes: Buffer): boolean {
+    return this.isStoreMetaFile(file) ? this.storeMetaIsSealed(bytes) : isSealedBytes(bytes);
+  }
+
+  /**
    * Restore pages from backup data
    *
    * Recreates all page files from the backup data.
@@ -1974,6 +2029,9 @@ class FileSystemProvider extends BasePageProvider {
 
     try {
       let restoredCount = 0;
+      // #1836: which vaults are sealed, decided before anything is written.
+      const sealedVaults = await this.vaultsSealedAfterRestore(backupData);
+      const refused: string[] = [];
 
       // Restore regular pages
       if (backupData.pages && Array.isArray(backupData.pages)) {
@@ -1981,6 +2039,12 @@ class FileSystemProvider extends BasePageProvider {
           try {
             const targetPath = path.join(this.pagesDirectory, page.relativePath);
             const targetDir = path.dirname(targetPath);
+            // A page entry is text: never written into a sealed vault (#1836).
+            const vault = vaultOfFile(this.pagesDirectory, targetPath, this.privateStoreLayout);
+            if (vault && sealedVaults.has(`${vault.owner}/${vault.store}`)) {
+              refused.push(`${vault.owner}/${vault.store}`);
+              continue;
+            }
 
             // Ensure directory exists
             await fs.ensureDir(targetDir);
@@ -2027,8 +2091,19 @@ class FileSystemProvider extends BasePageProvider {
               logger.error(`[FileSystemProvider] Refusing private file outside the pages directory: ${file.relativePath}`);
               continue;
             }
+            const bytes = Buffer.from(file.base64, 'base64');
+            // #1836: a backup is written back as it was taken. One taken
+            // before its vault was sealed is plaintext; written into the
+            // vault as it is now, that is plaintext beside sealed files, and a
+            // `store.json` that is not sealed would replace the wrapped DEK.
+            const vault = vaultOfFile(this.pagesDirectory, targetPath, this.privateStoreLayout);
+            if (vault && sealedVaults.has(`${vault.owner}/${vault.store}`)
+              && !this.isSealedRestoreFile(targetPath, bytes)) {
+              refused.push(`${vault.owner}/${vault.store}`);
+              continue;
+            }
             await fs.ensureDir(path.dirname(targetPath));
-            await writeFileAtomic(targetPath, Buffer.from(file.base64, 'base64'));
+            await writeFileAtomic(targetPath, bytes);
             privateCount++;
           } catch (error) {
             logger.error(`[FileSystemProvider] Failed to restore private file: ${file.relativePath}`, error);
@@ -2039,6 +2114,14 @@ class FileSystemProvider extends BasePageProvider {
         logger.warn(
           `[FileSystemProvider] This backup carries NO private stores — ${backupData.privateOmitted.reason} ` +
           `(${backupData.privateOmitted.files} file(s), ${(backupData.privateOmitted.bytes / 1024 / 1024).toFixed(1)} MB).`
+        );
+      }
+
+      if (refused.length > 0) {
+        logger.error(
+          `[FileSystemProvider] ${refused.length} file(s) were NOT restored: they are not encrypted and their vault is ` +
+          `(${[...new Set(refused)].join(', ')}). The backup was probably taken before the vault was sealed; ` +
+          'the vault keeps what it has (#1836).'
         );
       }
 

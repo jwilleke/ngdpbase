@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'fs-extra';
 import path from 'path';
 import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -7,6 +7,17 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import {
+  movePageNotes,
+  pageNotesPlace,
+  pageNotesRoots,
+  moveOutsideNotesIntoVault,
+  VaultPageNotesCheck,
+  type VaultPageNotesOutside,
+  type PageNotesRoots,
+  type PageRef
+} from '../utils/pageNotes.js';
+import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 
 export interface PageFootnote {
   id: string;
@@ -19,9 +30,20 @@ export interface PageFootnote {
 
 type FootnoteMap = Record<string, PageFootnote>;
 
+/** Where one page's footnotes are, and the I/O to read and write them there (#1839). */
+interface FootnotePlace {
+  path: string;
+  io: StoreFileIO;
+}
+
 export default class FootnoteManager extends BaseManager {
   private storageDir: string = './data/footnotes';
   private enabled: boolean = true;
+  /** Vault pages whose footnotes are still in the public folder (#1839), and the repair's re-check (#1842). */
+  private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
+    markDegraded: (reason) => this.markDegraded(reason),
+    markReadyIfDegradedBy: (reason) => this.markReadyIfDegradedBy(reason)
+  });
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -47,6 +69,7 @@ export default class FootnoteManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.storageDir, { recursive: true });
+      await this.outsideCheck.run({ notify: true });
       logger.debug('FootnoteManager initialized');
     }
   }
@@ -55,26 +78,44 @@ export default class FootnoteManager extends BaseManager {
     return this.enabled;
   }
 
-  private filePath(pageUuid: string): string {
-    return path.join(this.storageDir, `${pageUuid}.json`);
+  /** The public folder and the vaults, as configured now (#1839). */
+  private roots(): PageNotesRoots {
+    return pageNotesRoots(this.engine, 'footnotes', this.storageDir);
   }
 
-  private readMap(pageUuid: string): FootnoteMap {
-    const fp = this.filePath(pageUuid);
-    if (!fs.existsSync(fp)) return {};
+  /**
+   * Where `page`'s footnotes are (#1839): the public folder for a public page,
+   * the page's own vault for a vault page, read and written through that
+   * vault's store I/O. A locked vault, or a sealed kind's vault not yet
+   * opened, throws: a vault page's footnotes are never read or written in
+   * the clear.
+   */
+  private place(page: PageRef, ctx: ActorContext): Promise<FootnotePlace> {
+    return pageNotesPlace(ctx, page, this.roots());
+  }
+
+  private async readMap(place: FootnotePlace): Promise<FootnoteMap> {
+    if (!await fs.pathExists(place.path)) return {};
+    const text = await place.io.readText(place.path);
     try {
-      return JSON.parse(fs.readFileSync(fp, 'utf-8')) as FootnoteMap;
+      return JSON.parse(text) as FootnoteMap;
     } catch {
       return {};
     }
   }
 
-  private writeMap(pageUuid: string, map: FootnoteMap): void {
-    fs.writeFileSync(this.filePath(pageUuid), JSON.stringify(map, null, 2), 'utf-8');
+  private async writeMap(place: FootnotePlace, map: FootnoteMap): Promise<void> {
+    await fs.ensureDir(path.dirname(place.path));
+    await place.io.writeText(place.path, JSON.stringify(map, null, 2));
   }
 
-  async getFootnotes(pageUuid: string): Promise<PageFootnote[]> {
-    const map = this.readMap(pageUuid);
+  /**
+   * A page's footnotes, read as `ctx` may (#1839). Whether `ctx` may read the
+   * page is the caller's to decide, as for the page itself; this finds and
+   * opens them.
+   */
+  async getFootnotes(page: PageRef, ctx: ActorContext): Promise<PageFootnote[]> {
+    const map = await this.readMap(await this.place(page, ctx));
     return Object.values(map).sort((a, b) => {
       const na = parseInt(a.id, 10), nb = parseInt(b.id, 10);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -90,12 +131,14 @@ export default class FootnoteManager extends BaseManager {
    * it, and the write is recorded as `footnote-edit` / `add`.
    */
   async addFootnote(
-    pageUuid: string,
+    page: PageRef,
     data: { display: string; url: string; note: string },
     ctx: ActorContext
   ): Promise<PageFootnote> {
+    const pageUuid = page.uuid;
     const createdBy = ctx.username;
-    const map = this.readMap(pageUuid);
+    const place = await this.place(page, ctx);
+    const map = await this.readMap(place);
 
     // Assign next sequential numeric id
     const numericIds = Object.keys(map).map(k => parseInt(k, 10)).filter(n => !isNaN(n));
@@ -111,7 +154,7 @@ export default class FootnoteManager extends BaseManager {
     };
 
     map[nextId] = footnote;
-    this.writeMap(pageUuid, map);
+    await this.writeMap(place, map);
     this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('add', pageUuid, ctx, { footnoteId: nextId });
     return footnote;
@@ -127,20 +170,21 @@ export default class FootnoteManager extends BaseManager {
    * caller surfaces that as a warning and leaves the body definition alone.
    */
   async importFootnote(
-    pageUuid: string,
+    page: PageRef,
     id: string,
     data: { display: string; url: string; note: string },
     ctx: ActorContext
   ): Promise<boolean> {
-    const ok = this.putImported(pageUuid, id, data, ctx);
-    if (ok) await this.recordEdit('import', pageUuid, ctx, { footnoteId: id });
+    const ok = await this.putImported(page, id, data, ctx);
+    if (ok) await this.recordEdit('import', page.uuid, ctx, { footnoteId: id });
     return ok;
   }
 
   /** The write behind `importFootnote` and `transferFromContent`; the callers record it, once each. */
-  private putImported(pageUuid: string, id: string, data: { display: string; url: string; note: string }, ctx: ActorContext): boolean {
+  private async putImported(page: PageRef, id: string, data: { display: string; url: string; note: string }, ctx: ActorContext): Promise<boolean> {
     const createdBy = ctx.username;
-    const map = this.readMap(pageUuid);
+    const place = await this.place(page, ctx);
+    const map = await this.readMap(place);
     if (map[id]) return false;
 
     map[id] = {
@@ -151,8 +195,8 @@ export default class FootnoteManager extends BaseManager {
       createdBy,
       createdAt: new Date().toISOString()
     };
-    this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid);
+    await this.writeMap(place, map);
+    this.invalidateHandlerCache(page.uuid);
     return true;
   }
 
@@ -164,7 +208,7 @@ export default class FootnoteManager extends BaseManager {
    * writing. A colliding id keeps its body definition and warns.
    */
   async transferFromContent(
-    pageUuid: string,
+    page: PageRef,
     content: string,
     ctx: ActorContext,
     dryRun: boolean
@@ -183,7 +227,7 @@ export default class FootnoteManager extends BaseManager {
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
         continue;
       }
-      const ok = this.putImported(pageUuid, def.id, def, ctx);
+      const ok = await this.putImported(page, def.id, def, ctx);
       if (ok) {
         transferred.push(def.id);
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
@@ -198,18 +242,20 @@ export default class FootnoteManager extends BaseManager {
       : extracted.content;
     // One record for the whole transfer; a dry run writes nothing and records nothing.
     if (!dryRun && transferred.length > 0) {
-      await this.recordEdit('transfer', pageUuid, ctx, { footnoteIds: transferred, skipped });
+      await this.recordEdit('transfer', page.uuid, ctx, { footnoteIds: transferred, skipped });
     }
     return { content: ensureFootnotesPlugin(body), warnings };
   }
 
   async updateFootnote(
-    pageUuid: string,
+    page: PageRef,
     id: string,
     data: { display: string; url: string; note: string },
     ctx: ActorContext
   ): Promise<PageFootnote | null> {
-    const map = this.readMap(pageUuid);
+    const pageUuid = page.uuid;
+    const place = await this.place(page, ctx);
+    const map = await this.readMap(place);
     if (!map[id]) return null;
 
     map[id] = {
@@ -218,14 +264,16 @@ export default class FootnoteManager extends BaseManager {
       url: data.url.trim(),
       note: data.note.trim()
     };
-    this.writeMap(pageUuid, map);
+    await this.writeMap(place, map);
     this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
     return map[id];
   }
 
-  async deleteFootnote(pageUuid: string, id: string, ctx: ActorContext): Promise<boolean> {
-    const map = this.readMap(pageUuid);
+  async deleteFootnote(page: PageRef, id: string, ctx: ActorContext): Promise<boolean> {
+    const pageUuid = page.uuid;
+    const place = await this.place(page, ctx);
+    const map = await this.readMap(place);
     if (!map[id]) return false;
     const createdBy = map[id].createdBy;
 
@@ -233,10 +281,9 @@ export default class FootnoteManager extends BaseManager {
 
     if (Object.keys(map).length === 0) {
       // Remove the file entirely when no footnotes remain
-      const fp = this.filePath(pageUuid);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      await fs.remove(place.path);
     } else {
-      this.writeMap(pageUuid, map);
+      await this.writeMap(place, map);
     }
     this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote: createdBy === ctx.username });
@@ -268,15 +315,46 @@ export default class FootnoteManager extends BaseManager {
     }, (err) => logger.warn(`[FootnoteManager] Audit record failed for footnote-edit/${action} on ${pageUuid}:`, err));
   }
 
-  hasFootnotes(pageUuid: string): boolean {
-    const fp = this.filePath(pageUuid);
-    if (!fs.existsSync(fp)) return false;
-    try {
-      const map = JSON.parse(fs.readFileSync(fp, 'utf-8')) as FootnoteMap;
-      return Object.keys(map).length > 0;
-    } catch {
-      return false;
-    }
+  async hasFootnotes(page: PageRef, ctx: ActorContext): Promise<boolean> {
+    return Object.keys(await this.readMap(await this.place(page, ctx))).length > 0;
+  }
+
+  /**
+   * Take a page's footnotes with it when it changes place (#1839): into a
+   * vault, out of one, or between two, through both sides' store I/O as its
+   * history goes, sealed into a sealed vault and opened coming out. The page
+   * door calls this after the page itself has moved; a rename in place moves
+   * nothing.
+   */
+  async movePageFootnotes(uuid: string, fromName: string, toName: string, ctx: ActorContext): Promise<boolean> {
+    return movePageNotes(ctx, uuid, fromName, toName, this.roots());
+  }
+
+  /** Vault pages whose footnotes the last check found in the public folder (#1839): owner, vault, page uuid. */
+  vaultPageNotesOutside(): VaultPageNotesOutside[] {
+    return this.outsideCheck.findings();
+  }
+
+  /** Run that check again (#1842): after a repair, so the subsystem banner clears once nothing is left. */
+  async recheckVaultPageNotesOutside(): Promise<VaultPageNotesOutside[]> {
+    return this.outsideCheck.run({ notify: false });
+  }
+
+  /**
+   * Move vault page `uuid`'s footnotes left in the public folder into its
+   * vault (#1842), sealed when the vault is; merged with any the vault already
+   * has. Who may ask, and that `uuid` is a page of `vault`, is the caller's
+   * (`PageManager.repairVaultPage`) to decide.
+   *
+   * @returns how many footnotes were (or, with `dryRun`, would be) moved
+   */
+  async moveOutsideFootnotesIntoVault(
+    vault: { owner: string; store: string },
+    uuid: string,
+    ctx: ActorContext,
+    opts: { dryRun?: boolean } = {}
+  ): Promise<number> {
+    return moveOutsideNotesIntoVault(ctx, vault, uuid, this.roots(), opts);
   }
 
   async shutdown(): Promise<void> {}
