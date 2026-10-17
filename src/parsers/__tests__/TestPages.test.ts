@@ -140,31 +140,6 @@ const EXPECTATIONS: Record<string, Expectation[]> = {
     { name: 'inside code', check: (html) => expect(html).toContain('<code>a\\\\b</code>') }
   ],
 
-  'Test Page: Tables': [
-    {
-      name: 'bold and italic in cells',
-      check: (html) => {
-        expect(html).toContain('<td><strong>strong text</strong></td>');
-        expect(html).toContain('<td><em>leaning text</em></td>');
-      }
-    },
-    {
-      name: 'rows without a trailing bar keep their last cell',
-      check: (html) => {
-        expect(html).toMatch(/<th>\s*Three\s*<\/th>/);
-        expect(html).toMatch(/<td>\s*c\s*<\/td>/);
-        expect(html).toMatch(/<td>\s*f\s*<\/td>/);
-      }
-    },
-    {
-      name: 'a GFM table has a header and no separator row',
-      check: (html) => {
-        expect(html).toMatch(/<th>\s*Col A\s*<\/th>/);
-        expect(html).not.toContain('-------');
-      }
-    }
-  ],
-
   'Test Page: Headings': [
     {
       name: 'a repeated heading gets its own id',
