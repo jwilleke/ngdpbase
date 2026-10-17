@@ -231,6 +231,8 @@ An addon under `addons/` is linted with the host. These run in `npm run lint`, i
 
 `npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
 
+`src/__tests__/viewsScriptNonce.test.ts` (in `npm test`) checks every bundled addon's `views/`: each inline `<script>` carries the CSP nonce, and there is no inline event handler or `javascript:` URL. The contract is [Scripts in a view](#scripts-in-a-view-the-csp-nonce-contract).
+
 Unit tests sit beside the addon (`addons/<slug>/__tests__/**/*.ts` or `addons/<slug>/*.test.ts`). `npm test` includes them. A test teardown removes only the directories that test created. It must not delete `./data/` wholesale.
 
 A TypeScript addon in this repo needs `npm run build:addons` before `./server.sh restart`. When `index.js` is present, that is the file discovery loads.
@@ -836,6 +838,17 @@ router.post('/thing', (req, res) => {
 
 Decisions, step-up and the step-up audit record all come from core this way. Do not call `PolicyInformationPoint` or `PolicyDecisionPoint` from a route to make your own gate.
 
+### Scripts in a view: the CSP nonce contract
+
+The site is moving to a strict, nonce-based script Content-Security-Policy ([#1489](https://github.com/jwilleke/ngdpbase/issues/1489)). Under it the browser runs an inline script only when it carries the nonce of the response it came in, and never runs an inline event handler or a `javascript:` URL. An add-on view follows the same contract as core's views ([#1706](https://github.com/jwilleke/ngdpbase/issues/1706)):
+
+- __Every inline `<script>` carries the response's nonce__, exactly as written here: `<script nonce="<%= locals.cspNonce %>">`. Core sets `res.locals.cspNonce` on every response, so a view rendered with `res.render()` has it. `locals.` makes a render outside a request produce an empty nonce instead of throwing. A script loaded from a file (`<script src="/addons/<slug>/js/x.js">`) and a data block (`type="application/json"`) need no nonce.
+- __No inline event handler__: no `onclick=`, `onsubmit=`, `onchange=`, `oninput=` or any other `on*=` attribute, in markup or in a string your script writes into `innerHTML`. Put the data on the element (`data-action="remove"`, `data-confirm="Delete it?"`) and attach one listener with `addEventListener`, in the nonce-bearing script or a script file. `addons/forms/views/forms-builder.ejs` is a worked example.
+- __No `javascript:` URL__ in an `href`, `src`, `action` or `formaction`. Use a `<button type="button">` with a listener.
+- __A partial rendered outside the request has no nonce__ (for example the HTML `profileSection()` returns, which the add-on renders with `ejs.renderFile`). Its script goes in a file the add-on serves (`engine.serveStatic`) and is loaded with `<script src>`. `addons/journal/views/_profile-section.ejs` does this.
+
+The script policy itself is not sent yet: [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) adds `script-src` in report-only mode, then enforces it. Until then a view that breaks the contract still works; once the policy is report-only the browser console reports what it would block, and once it is enforced that script does not run. `npm run create:addon` writes views that follow the contract. A bundled add-on's views are checked by `src/__tests__/viewsScriptNonce.test.ts`, which is part of `npm test`.
+
 ---
 
 ## 5. Writing a Plugin
@@ -1215,6 +1228,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Recurring work is a scheduled job with an id `<slug>.<job>`, safe to run again for the same slot, honouring `ctx.signal` — no `setInterval`
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another, or in `optionalDependencies[]` if it only uses another when present
 - [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
+- [ ] Every inline `<script>` in a view carries `nonce="<%= locals.cspNonce %>"`; no `on*=` handler or `javascript:` URL anywhere in a view ([Scripts in a view](#scripts-in-a-view-the-csp-nonce-contract))
 - [ ] Core values come from `host`; anything still imported comes through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
@@ -1380,6 +1394,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports. No published types package for `AddonHost` yet.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
+- [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
