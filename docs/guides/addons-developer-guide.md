@@ -219,7 +219,7 @@ Worked examples: `addons/journal/config/default-config.json` declares `journal-r
 An addon under `addons/` is linted with the host. These run in `npm run lint`, in `lint:ci`, and (for the ones named) on the pre-commit hook:
 
 - `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
-- `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, and no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)). On the pre-commit hook.
+- `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)), and no value import of `express` in addon runtime code ([#1861](https://github.com/jwilleke/ngdpbase/issues/1861); types and tests exempt). On the pre-commit hook.
 - `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
 - `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
 
@@ -477,22 +477,20 @@ Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `Att
 
 ### Mount Express Routes
 
-```javascript
-const path = require('path');
+```typescript
+import path from 'path';
+import apiRoutes from './routes/api.js';
 
 async register(engine, config) {
-  const app = engine.app;
+  // Serve static assets (add-on public/ folder) with core's express.static
+  engine.app?.use('/addons/my-addon', engine.serveStatic(path.join(__dirname, 'public')));
 
-  // Serve static assets (add-on public/ folder)
-  app.use('/addons/my-addon', require('express').static(
-    path.join(__dirname, 'public')
-  ));
-
-  // API routes
-  const apiRouter = require('./routes/api');
-  app.use('/api/my-addon', apiRouter(engine, config));
+  // API routes — the router inside comes from engine.createRouter()
+  engine.app?.use('/api/my-addon', apiRoutes(engine, config));
 }
 ```
+
+Express is core's. An add-on gets a Router from `engine.createRouter(options?)` and static-file middleware from `engine.serveStatic(dir, options?)`, and never value-imports `express` ([Writing Routes](#7-writing-routes)).
 
 > __Note:__ When your add-on lives in an external repo, the core's automatic static
 > serving at `/addons/...` only covers the ngdpbase `addons/` directory. You must
@@ -923,6 +921,12 @@ async register(engine, config) {
 
 ## 7. Writing Routes
 
+### The router comes from core ([#1861](https://github.com/jwilleke/ngdpbase/issues/1861))
+
+Build every router with `engine.createRouter(options?)`. It returns `express.Router(options)` from core's own Express. Mount it with `engine.app.use(...)` in `register()`. For files under `public/`, use `engine.serveStatic(dir, options?)` (core's `express.static`).
+
+Never value-import `express` in add-on runtime code: no `import { Router } from 'express'`, no `import express from 'express'`. An add-on installed into `<data>/addons` resolves imports from its own folder, where there is no Express and no npm at runtime. Bundling its own copy would miss core's security fixes. Types are fine, because they are erased at compile: `import type { Router, Request, Response } from 'express'`, with `@types/express` as a dev dependency. Tests are exempt, since they build their own app around the router (a mock engine gives `createRouter: () => express.Router()`). `npm run lint:addons` refuses a value import of `express` in add-on code.
+
 ### ApiContext — authentication and authorisation
 
 All addon API routes __MUST__ use `ApiContext` for any route that restricts access.
@@ -954,12 +958,12 @@ router.get('/feed.ics', async (req, res) => {
 
 ```typescript
 // routes/api.ts
-import express from 'express';
+import type { Router } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 
-export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>) {
-  const router = express.Router();
+export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
+  const router = engine.createRouter();
 
   // Public route — SHOULD use ApiContext for consistent caller identity
   router.get('/search', async (req, res) => {
@@ -1194,7 +1198,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] `name` exported from `index.ts` or `index.js` matches `ngdpbase.slug` and the `ngdpbase.addons.<slug>` config key
 - [ ] `"ngdpbase.addons.my-addon.enabled": true` in instance config
 - [ ] `addons-path` in instance config points to the repo's `addons/` directory (string or array of strings)
-- [ ] Static assets mounted via `engine.app.use()` in `register()`
+- [ ] Routers from `engine.createRouter()`, static assets from `engine.serveStatic()`, both mounted via `engine.app.use()` in `register()`; `express` imported for types only
 - [ ] `engine.setCapability('my-addon', true)` called if you have admin UI sections
 - [ ] `addonsManager.registerDashboardCard(...)` called if you have an admin UI page
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
@@ -1371,4 +1375,4 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 ---
 
-Last updated: 2026-10-16
+Last updated: 2026-10-17

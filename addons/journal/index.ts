@@ -36,7 +36,6 @@
  */
 
 import path from 'path';
-import express from 'express';
 import ejs from 'ejs';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails, AddonProfileSection, AddonProfileUser } from '../../dist/src/managers/AddonsManager.js';
@@ -99,7 +98,7 @@ const journalAddon = {
     // ── 3. Serve static assets ───────────────────────────────────────────────
     engine.app?.use(
       '/addons/journal',
-      express.static(path.join(__dirname, 'public'))
+      engine.serveStatic(path.join(__dirname, 'public'))
     );
 
     // ── 4. Register stylesheet ───────────────────────────────────────────────

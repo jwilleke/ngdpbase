@@ -18,7 +18,7 @@
  * `journal-tags`).
  */
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
@@ -29,7 +29,7 @@ import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
 import { findJournalEntryName, createJournalEntry, journalPrivacy, mayOnEntry } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function jdm(): JournalDataManager | undefined {
     return engine.getManager<JournalDataManager>('JournalDataManager');

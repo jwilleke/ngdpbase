@@ -7,7 +7,8 @@
 
 import { WikiConfig } from './Config.js';
 import type { Logger } from 'winston';
-import type { Application, Request } from 'express';
+import type { Application, Request, RequestHandler, Router, RouterOptions } from 'express';
+import type express from 'express';
 
 /**
  * All known manager names as a union type
@@ -83,6 +84,19 @@ export interface WikiEngine {
    * exist; add-ons call it per request.
    */
   templateData?: (req: Request) => Promise<Record<string, unknown>>;
+
+  /**
+   * An Express `Router` from core's own Express (#1861). Add-ons build routers
+   * here and mount them with `engine.app.use(...)`; they never value-import
+   * `express` (an installed add-on has none to resolve). `lint:addons` enforces it.
+   */
+  createRouter(options?: RouterOptions): Router;
+
+  /**
+   * `express.static` from core's own Express, for an add-on's `public/`
+   * folder (#1861): `engine.app?.use('/addons/x', engine.serveStatic(dir))`.
+   */
+  serveStatic(root: string, options?: Parameters<typeof express.static>[1]): RequestHandler;
 
   /**
    * Initialize the wiki engine

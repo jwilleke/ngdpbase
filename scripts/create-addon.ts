@@ -294,6 +294,7 @@ function indexSource(o: ScaffoldOptions): string {
 
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { Router } from 'express';
 import { guardedFetch } from '../../dist/src/http/guardedFetch.js';
 import { resolveEgressPolicy } from '../../dist/src/http/egressPolicy.js';
 import apiRoutes from './routes/api.js';
@@ -306,6 +307,10 @@ const __dirname = path.dirname(__filename);
 interface Engine {
   getManager<T = unknown>(name: string): T | null;
   registerManager(name: string, manager: unknown): void;
+  /** A Router from core's own Express (#1861). Never value-import express. */
+  createRouter(): Router;
+  /** \`express.static\` from core's own Express, for files under public/ (#1861). */
+  serveStatic(root: string): unknown;
   /** The Express app, present once the host has built it; routes and views mount here. */
   app?: {
     use(route: string, handler: unknown): void;
@@ -359,7 +364,7 @@ ${pluginWiring}
     engine.app?.use('/api/${o.id}', apiRoutes(engine));
 
     // Static assets, if this addon ships any under public/.
-    // engine.app?.use('/addons/${o.id}', express.static(path.join(__dirname, 'public')));
+    // engine.app?.use('/addons/${o.id}', engine.serveStatic(path.join(__dirname, 'public')));
     void __dirname;
   },
 
@@ -461,14 +466,22 @@ function routesSource(o: ScaffoldOptions): string {
  * source pulls it into this addon's compilation and emits a \`.js\` beside it —
  * which exists on a developer's machine and does not exist in the container,
  * where the image carries \`dist/\` and \`addons/\` but no \`src/\` (#1192).
+ *
+ * The router comes from core: \`engine.createRouter()\`. Express is imported
+ * for its types only — an installed addon has no express of its own to load,
+ * and \`npm run lint:addons\` refuses a value import of it (#1861).
  */
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 ${manager ? `import type ${manager}Manager from '../managers/${manager}Manager.js';\n` : ''}
-interface Engine { getManager<T = unknown>(name: string): T | null }
+interface Engine {
+  getManager<T = unknown>(name: string): T | null;
+  /** A Router from core's own Express (#1861). */
+  createRouter(): Router;
+}
 
 export default function apiRoutes(engine: Engine): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   /** Status, for the addon dashboard and the admin view. */
   router.get('/status', async (req: Request, res: Response) => {

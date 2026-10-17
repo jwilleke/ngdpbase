@@ -1,5 +1,5 @@
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { generateIcsCalendar } from 'ts-ics';
 import type { IcsEvent } from 'ts-ics';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
@@ -36,7 +36,7 @@ import type { CalendarEvent } from '../managers/CalendarDataManager.js';
  *   GET    /api/calendar/:calendarId/feed.ics     — RFC 5545 .ics feed
  */
 export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {
     return engine.getManager<CalendarDataManager>('CalendarDataManager');
