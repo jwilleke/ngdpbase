@@ -82,6 +82,8 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
   let commentsDir: string;
   let audit: Array<Record<string, unknown>>;
   let failAudit: boolean;
+  /** Page names the recording door was asked about. */
+  let doorAsked: string[];
   let pages: PageManager;
   let attachments: AttachmentManager;
   let footnotes: FootnoteManager;
@@ -130,7 +132,11 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
       PolicyDecisionPoint: { decide: () => Promise.resolve({ permit: true }), permits: adminSystem, holds: adminSystem },
       PolicyInformationPoint: {
         canAccessPrivateContainer: (subject: ActorContext, owner: string) => mayActInPrivateContainer(subject, owner),
-        canUserAccessPage: (subject: ActorContext, name: string) =>
+        canUserAccessPage: (subject: ActorContext, name: string) => {
+          doorAsked.push(name);
+          return Promise.resolve(name.startsWith('vaults/molly/') ? mayActInPrivateContainer(subject, 'molly') : true);
+        },
+        pageAffordanceFor: (subject: ActorContext, name: string) =>
           Promise.resolve(name.startsWith('vaults/molly/') ? mayActInPrivateContainer(subject, 'molly') : true)
       }
     };
@@ -197,6 +203,7 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
     commentsDir = path.join(testDir, 'comments');
     audit = [];
     failAudit = false;
+    doorAsked = [];
     await fs.ensureDir(pagesDir);
     await fs.ensureDir(storageDir);
     clearUnlockedPrivateStores();
@@ -380,5 +387,60 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
     expect((await footnotes.getFootnotes({ name: NOTE, uuid: UUID }, MOLLY)).map((f) => f.note).sort())
       .toEqual(['cholesterol 240 secret', 'written since #1839']);
     expect(await fs.pathExists(path.join(footnotesDir, `${UUID}.json`))).toBe(false);
+  });
+
+  // Operator request 2026-10-17: links to look at what will move, for the page's reader only.
+  describe('the list\'s page details (title, link, outside files)', () => {
+    const DETAIL = { title: 'Lab Results', href: '/vaults/molly/notes/Lab%20Results', files: [{ name: 'labs.txt', href: `/attachments/${ID}` }] };
+
+    test('the owner sees the page title linked to its view URL, and each outside file linked where it is served today', async () => {
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(NOTE);
+      await build();
+
+      const listed = await pages.listVaultRepairs(MOLLY, { details: true });
+
+      expect(listed.find((r) => r.page === UUID)?.pages).toEqual([DETAIL]);
+      // The vault's row for pages shared records name lists the pages they name.
+      expect(listed.find((r) => r.page === null)?.pages).toEqual([DETAIL]);
+      // Without asking for details, nothing changes.
+      expect((await pages.listVaultRepairs(MOLLY)).every((r) => r.pages === undefined)).toBe(true);
+    });
+
+    test('another administrator gets owner, vault, uuid and counts only: no title or file name, and no page read is recorded', async () => {
+      await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(NOTE);
+      await build();
+      audit = [];
+      doorAsked = [];
+
+      const listed = await pages.listVaultRepairs(ADMIN, { details: true });
+
+      expect(listed.length).toBeGreaterThan(0);
+      expect(listed.every((r) => r.pages === undefined)).toBe(true);
+      expect(JSON.stringify(listed)).not.toContain('Lab Results');
+      expect(JSON.stringify(listed)).not.toContain('labs.txt');
+      expect(doorAsked).toEqual([]);
+      expect(JSON.stringify(audit)).not.toContain('Lab Results');
+    });
+
+    test('a sealed vault shows its details to its owner with the key in the session, and none once it is locked', async () => {
+      await openSealedVault();
+      await pages.savePage(LABS, CONTENT, { uuid: UUID }, MOLLY);
+      await leaveOutside(LABS);
+      await build();
+
+      const open = await pages.listVaultRepairs(MOLLY, { details: true });
+      expect(open.find((r) => r.page === UUID)?.pages).toEqual([{ ...DETAIL, href: '/vaults/molly/phr/Lab%20Results' }]);
+      // Not for an administrator, even while it is open in its owner's session.
+      expect(JSON.stringify(await pages.listVaultRepairs(ADMIN, { details: true }))).not.toContain('Lab Results');
+
+      clearUnlockedPrivateStores();
+      const locked = await pages.listVaultRepairs(MOLLY, { details: true });
+      expect(locked.length).toBeGreaterThan(0);
+      expect(locked.every((r) => r.pages === undefined)).toBe(true);
+      expect(JSON.stringify(locked)).not.toContain('Lab Results');
+      expect(JSON.stringify(locked)).not.toContain('labs.txt');
+    });
   });
 });

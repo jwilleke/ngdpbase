@@ -1493,12 +1493,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const provider = this.attachmentProvider;
     const vault = parsePrivatePageName(name);
     if (!provider || !vault) return { moved: 0, copied: 0 };
-    const to = await this.vaultLocation(ctx, vault.owner, vault.store);
-    const own = await provider.listFilesInStore(to);
-    const ids = await this.poolFilesOfPage(provider, name, content, {
-      ids: new Set(own.map((f) => f.id)),
-      names: new Set(own.map((f) => f.name))
-    });
+    const { to, ids } = await this.vaultPagePoolIds(provider, name, content, ctx);
     const counts = { moved: 0, copied: 0 };
     if (opts.dryRun) {
       for (const id of ids) {
@@ -1518,6 +1513,50 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       logger.info(`📎 Repair: ${counts.moved} file(s) moved and ${counts.copied} copied from the shared pool into ${vault.owner}'s vault '${vault.store}' (#1842)`);
     }
     return counts;
+  }
+
+  /**
+   * The shared-pool files {@link movePoolFilesIntoVault} would bring into
+   * vault page `name`'s vault, by id with their file name and the URL that
+   * serves them today (#1842's repair list, for the owner to check what will
+   * move). Changes nothing and logs nothing. The vault's I/O is resolved as
+   * for the move, so a locked vault throws. Whether `ctx` may see these is the
+   * caller's (`PageManager.vaultRepairDetails`) to decide: names are shown to
+   * the page's reader only, never logged or recorded.
+   */
+  async poolFilesOfVaultPage(
+    name: string,
+    content: string,
+    ctx: ActorContext
+  ): Promise<Array<{ id: string; name: string; url: string }>> {
+    const provider = this.attachmentProvider;
+    if (!provider || !parsePrivatePageName(name)) return [];
+    const { ids } = await this.vaultPagePoolIds(provider, name, content, ctx);
+    const out: Array<{ id: string; name: string; url: string }> = [];
+    for (const id of ids) {
+      const record = await provider.getAttachmentMetadata(id);
+      if (!record) continue;
+      out.push({ id, name: typeof record.filename === 'string' && record.filename ? record.filename : id, url: this.getAttachmentUrl(id) });
+    }
+    return out;
+  }
+
+  /** The vault page's location and the shared-pool ids it uses that its vault does not hold (#1842). */
+  private async vaultPagePoolIds(
+    provider: BaseAttachmentProvider,
+    name: string,
+    content: string,
+    ctx: ActorContext
+  ): Promise<{ to: StoreFileLocation; ids: Set<string> }> {
+    const vault = parsePrivatePageName(name);
+    if (!vault) throw new Error('AttachmentManager: not a vault page name');
+    const to = await this.vaultLocation(ctx, vault.owner, vault.store);
+    const own = await provider.listFilesInStore(to);
+    const ids = await this.poolFilesOfPage(provider, name, content, {
+      ids: new Set(own.map((f) => f.id)),
+      names: new Set(own.map((f) => f.name))
+    });
+    return { to, ids };
   }
 
   /**

@@ -285,6 +285,7 @@ import { toPermissionSubject } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
+import { pageUrl } from '../utils/pageUrl.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
@@ -305,6 +306,22 @@ export interface VaultRepairItem {
   may: boolean;
   /** Why not, in plain words. */
   refusal?: string;
+  /**
+   * The vault page(s) as their reader sees them — title, link and the outside
+   * files by name — only when asked for (`listVaultRepairs(ctx, { details })`)
+   * and only those `ctx` may read; absent otherwise. Shown, never logged or
+   * recorded.
+   */
+  pages?: VaultRepairPage[];
+}
+
+/** One vault page of a repair item, for the reader of that page only (#1842). */
+export interface VaultRepairPage {
+  title: string;
+  /** The page's view URL. */
+  href: string;
+  /** Its shared-pool files, by name, with the URL that serves each today. */
+  files: Array<{ name: string; href: string }>;
 }
 
 /** What one repair moved (#1842). */
@@ -3835,7 +3852,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * for someone holding `admin-system` (owner, vault and page uuid, as the
    * subsystem banner already shows), otherwise the items of their own vaults.
    */
-  async listVaultRepairs(ctx: ActorContext): Promise<VaultRepairItem[]> {
+  async listVaultRepairs(ctx: ActorContext, opts: { details?: boolean } = {}): Promise<VaultRepairItem[]> {
     if (!ctx) throw new Error('PageManager.listVaultRepairs requires an ActorContext');
     const { attachments, footnotes, comments } = this.repairManagers();
     const items = new Map<string, VaultRepairItem>();
@@ -3855,9 +3872,53 @@ class PageManager extends BaseManager implements CatalogSource {
     for (const found of items.values()) {
       if (!admin && !mayActInPrivateContainer(ctx, found.owner, { vault: found.vault })) continue;
       const decided = await this.repairAuthority(ctx, found.owner, found.vault, 'holds');
-      out.push(decided.ok ? { ...found, may: true } : { ...found, may: false, refusal: decided.message });
+      const listed: VaultRepairItem = decided.ok ? { ...found, may: true } : { ...found, may: false, refusal: decided.message };
+      // Only the vault's own people can read its pages: no one else is asked.
+      if (opts.details && mayActInPrivateContainer(ctx, found.owner, { vault: found.vault })) {
+        const pages = await this.vaultRepairPages(found, ctx);
+        if (pages.length > 0) listed.pages = pages;
+      }
+      out.push(listed);
     }
     return out;
+  }
+
+  /**
+   * The pages of one repair item that `ctx` may read, as the reader sees
+   * them (#1842): each one read as `ctx` through {@link readPage}, the same
+   * door as viewing it, after the unrecorded {@link mayShowPage}, so a refusal
+   * never records a page name. Found through the vault stores `ctx` can open,
+   * so a sealed vault contributes nothing without its owner's key. Its
+   * outside files come from `AttachmentManager.poolFilesOfVaultPage`.
+   * Best-effort: a failure shows no details, and is logged without a title.
+   */
+  private async vaultRepairPages(item: { owner: string; vault: string; page: string | null }, ctx: ActorContext): Promise<VaultRepairPage[]> {
+    try {
+      if (!this.provider?.listPrivateStorePages) return [];
+      const listed = (await this.provider.listPrivateStorePages(ctx, item.owner)).filter((p) => p.store === item.vault);
+      const names = item.page !== null
+        ? listed.filter((p) => p.uuid === item.page).map((p) => formatPrivatePageName(item.owner, item.vault, p.title))
+        : (await this.repairManagers().attachments?.poolMentionedVaultPages(item.owner, item.vault) ?? [])
+          .filter((name) => listed.some((p) => p.title === parsePrivatePageName(name)?.title));
+      const attachments = this.repairManagers().attachments;
+      const out: VaultRepairPage[] = [];
+      for (const name of names) {
+        if (!(await this.mayShowPage(name, ctx))) continue;
+        const read = await this.readPage(name, ctx);
+        if (!read.ok) continue;
+        const files = await attachments?.poolFilesOfVaultPage(name, read.value.content, ctx) ?? [];
+        out.push({
+          title: parsePrivatePageName(name)?.title ?? name,
+          href: pageUrl(name),
+          files: files.map((f) => ({ name: f.name, href: f.url }))
+        });
+      }
+      return out;
+    } catch (err) {
+      // #1461: owner, vault and uuid; never a title or a file name.
+      logger.warn(`[PageManager] Vault repair (#1842): the details of ${item.owner}/${item.vault}${item.page ? ` page ${item.page}` : ''} could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
   }
 
   /**
