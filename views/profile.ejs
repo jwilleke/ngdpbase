@@ -186,6 +186,59 @@
                     </div>
                     <% } %>
 
+                    <!-- #1842: your vault pages whose files, footnotes or comments are still outside the vault -->
+                    <% const ownRepairs = typeof vaultRepairs !== 'undefined' ? vaultRepairs : []; %>
+                    <% const repairNotice = typeof vaultRepairNotice !== 'undefined' ? vaultRepairNotice : null; %>
+                    <% const repairError = typeof vaultRepairError !== 'undefined' ? vaultRepairError : null; %>
+                    <% if (ownRepairs.length > 0 || repairNotice || repairError) { %>
+                    <div class="row mb-4" id="vault-repairs">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-lock-open"></i> Vault pages with data outside their vault</h6>
+                                </div>
+                                <div class="card-body">
+                                    <% if (repairNotice) { %><div class="alert alert-success small"><%= repairNotice %></div><% } %>
+                                    <% if (repairError) { %><div class="alert alert-danger small"><%= repairError %></div><% } %>
+                                    <% if (ownRepairs.length > 0) { %>
+                                    <p class="small text-muted">Saved before your vaults kept everything of a page inside them, these are still outside: files in the shared pool, where anyone allowed to see attachments can open them, or footnotes and comments stored unencrypted. "Move into vault" moves them in, sealed when the vault is. A file another public page uses is copied, and stays for that page.</p>
+                                    <ul class="list-group list-group-flush">
+                                        <% ownRepairs.forEach(function (r) { %>
+                                            <li class="list-group-item d-flex align-items-center justify-content-between">
+                                                <span>
+                                                    <i class="fas fa-lock"></i> <%= r.vault %> &middot;
+                                                    <% if (r.page) { %>page <code><%= r.page %></code><% } else { %>pages its shared files name<% } %>
+                                                    <small class="text-muted ms-2"><%= [r.files ? r.files + ' file(s)' : null, r.footnotes ? 'footnotes' : null, r.comments ? 'comments' : null].filter(Boolean).join(', ') %></small>
+                                                </span>
+                                                <% if (r.may) { %>
+                                                    <form method="POST" action="/vault-repair" class="d-inline">
+                                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                        <input type="hidden" name="return" value="profile">
+                                                        <input type="hidden" name="owner" value="<%= r.owner %>">
+                                                        <input type="hidden" name="vault" value="<%= r.vault %>">
+                                                        <input type="hidden" name="page" value="<%= r.page || '' %>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary">Move into vault</button>
+                                                    </form>
+                                                <% } else { %>
+                                                    <small class="text-muted"><%= r.refusal %></small>
+                                                <% } %>
+                                            </li>
+                                        <% }); %>
+                                    </ul>
+                                    <% if (ownRepairs.some(function (r) { return r.may; })) { %>
+                                    <form method="POST" action="/vault-repair/all" class="mt-2">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <input type="hidden" name="return" value="profile">
+                                        <button type="submit" class="btn btn-sm btn-primary">Move all into my vaults</button>
+                                    </form>
+                                    <% } %>
+                                    <% } %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #1517: files in your own vaults that no page there uses -->
                     <% if (typeof unusedVaultFiles !== 'undefined' && unusedVaultFiles.length > 0) { %>
                     <div class="row mb-4">

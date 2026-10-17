@@ -1,7 +1,7 @@
 ---
 name: Private stores
 description: Developer and operator reference for private stores — layout, kinds, keys, access, pages, links, search, trash and files
-dateModified: 2026-10-16
+dateModified: 2026-10-17
 category: architecture
 relatedModules: [PageManager, AttachmentManager, SearchManager, PolicyInformationPoint, FileSystemProvider, VersioningFileProvider]
 ---
@@ -186,7 +186,7 @@ A vault page's footnotes and comments are kept in its vault ([#1839](https://git
 
 Who may read them is who may read the page. The routes (`/api/footnotes/:uuid…`, `/api/comments/:uuid…`) take the page's name as `?page=`, read the page as the requester (`PageManager.readPage`), require it to be the page the uuid names, and answer 404 otherwise; adding, editing and deleting a footnote also asks the editor's write door. Until #1839 the read routes and the comment routes asked nothing about the page, so anyone who knew a uuid could read a private page's comments and footnotes. The plugins render only inside a page view, which has already been decided, and render nothing when the vault can't be opened.
 
-At startup, `FootnoteManager` and `CommentManager` each look for vault pages whose notes are still in their public folder (`findVaultPageNotesOutside`): written there in the clear before #1839. A vault page is known by its file name, `{uuid}.md`, live or in `deleted/`, so the check needs no key and reads no page. Each one is reported by owner, vault and page uuid, never title: an error in the log, the manager's degraded state (the subsystem banner) and a system notification. Nothing is moved, sealed or deleted, and those files are no longer shown on the page; an administrator decides what to do with them.
+At startup, `FootnoteManager` and `CommentManager` each look for vault pages whose notes are still in their public folder (`findVaultPageNotesOutside`): written there in the clear before #1839. A vault page is known by its file name, `{uuid}.md`, live or in `deleted/`, so the check needs no key and reads no page. Each one is reported by owner, vault and page uuid, never title: an error in the log, the manager's degraded state (the subsystem banner) and a system notification. The check itself moves, seals and deletes nothing, and those files are no longer shown on the page; "Move into vault" moves them in ([Repairing what earlier moves left outside](#repairing-what-earlier-moves-left-outside), #1842).
 
 Because encryption is per file rather than a container, anyone with disk or backup access can still see how many items a store holds, their sizes and their dates. Names disclose nothing — pages are `{uuid}.md`, files `{uuid}.ext`.
 
@@ -414,7 +414,25 @@ __A page's files follow the page__ ([#1842](https://github.com/jwilleke/ngdpbase
 
 __Who could read a vault page's shared-pool file__ (before #1842): anyone the shared pool serves. `GET /attachments/{id}` and its thumbnail ask only the site-wide `asset-read`, which the shipped policies give to anonymous visitors; the attachment browser and asset search (the editors' surface, `asset-upload`) list the shared pool with the file's name. Whether the vault page itself could be read was never asked. So a file a page took into a vault stayed readable by anyone with its id, and findable by name by any editor. (`/media` serves the media library, not attachments.)
 
-At startup, after the boot migration, `AttachmentManager.reportVaultPagesUsingPoolFilesAtBoot()` looks for what earlier moves left (`findVaultPagesUsingPoolFiles`): shared records whose mentions name a vault page, and, in each vault that isn't sealed, pages whose content references a shared-pool file the vault doesn't hold. Each is reported by owner, vault and page uuid (never a title or a file name), with the same log error, degraded state and system notification as the vault checks above. Nothing is moved, copied or deleted. A sealed vault's pages can't be read without their owner's key, so they are not checked.
+At startup, after the boot migration, `AttachmentManager.reportVaultPagesUsingPoolFilesAtBoot()` looks for what earlier moves left (`findVaultPagesUsingPoolFiles`): shared records whose mentions name a vault page, and, in each vault that isn't sealed, pages whose content references a shared-pool file the vault doesn't hold. Each is reported by owner, vault and page uuid (never a title or a file name), with the same log error, degraded state and system notification as the vault checks above. The check itself moves, copies and deletes nothing. A sealed vault's pages can't be read without their owner's key, so they are not checked.
+
+### Repairing what earlier moves left outside
+
+"Move into vault" ([#1842](https://github.com/jwilleke/ngdpbase/issues/1842)) moves what the two checks above report into the vault, one reported item at a time, or every item the caller may with "Repair all I can". `PageManager.repairVaultPage` orchestrates it, as the page door orchestrates a move, and each manager moves its own data with the code its moves already use:
+
+- __Files__: `AttachmentManager.movePoolFilesIntoVault` takes the shared-pool files the page uses (its mentions, and what its content references that the vault doesn't hold) by `movePageAttachments`' rule: copied in under the same id through the vault's I/O, sealed when the vault is, and the pool copy removed only when no other public page uses it. A file other public pages use stays in the pool for them, without the vault page's mention. An item for "pages named by shared records" repairs each page of that vault a shared record names.
+- __Footnotes and comments__: `FootnoteManager.moveOutsideFootnotesIntoVault` and `CommentManager.moveOutsideCommentsIntoVault` (`moveOutsideNotesIntoVault()` in `src/utils/pageNotes.ts`) move them in like `movePageNotes()`. Where the vault already has some, written since #1839, the two are merged and the vault's own entries win. The page must be one of that vault (`{uuid}.md`, live or in its trash), so no public page's notes can be pulled into a vault by naming its uuid.
+- __Order__: the vault side is written before the source is removed, so a failure leaves two copies, never none.
+
+Who may:
+
+- __The vault's owner__, in their own session: the container rule, then `page-edit` in the vault (`vault-owner`). A sealed vault needs its key, so it must be unlocked; a locked one is refused with "unlock it first".
+- __Someone holding `admin-system`__, for a vault that isn't sealed: the reach of the boot migration (#1460), which already writes into unsealed vaults with no owner present. The administrator sees only owner, vault, page uuid and counts, never the content.
+- __Nobody else for a sealed vault.__ Asked by anyone but its owner, it is refused ("only {owner} can move these into it") and nothing changes. A sealed kind's vault that isn't sealed yet is refused for everyone until its owner opens it.
+
+Each repair is recorded as `vault-repair` (on-failure refuse) before anything moves: who, owner, vault, page uuid, and the counts (files moved, files copied, footnotes, comment files), never a title or a file name. Afterwards the three checks run again and keep what they found; a subsystem whose findings are gone leaves the degraded state the check set, so the banner clears without a restart. A different fault the subsystem reported meanwhile stays.
+
+Where: the admin dashboard lists every item under the subsystem banner, with "Move into vault" where the administrator may and the reason where they may not. The owner sees their own on their profile, with "Move all into my vaults". Both are CSRF-protected form posts to `POST /vault-repair` and `POST /vault-repair/all`.
 
 The condition for a store's own catalogue is "this page is in a private store", not "the store is sealed": encryption decides whether the bytes are ciphertext at rest, not who owns the catalogue.
 

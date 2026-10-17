@@ -21,6 +21,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import { PLAIN_FILE_IO, moveStoreFile, moveStoreFolder, storeFileIO, type StoreFileIO } from './privateStoreFiles.js';
 import {
   assertPathSegment,
+  isSafePathSegment,
   isValidStoreId,
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
@@ -83,15 +84,17 @@ export function pageNotesRoots(engine: EngineLike, kind: PageNotesKind, publicDi
 
 /** Where `page`'s notes of this kind are on disk. Pure: no I/O, no key. */
 export function pageNotesPath(page: PageRef, roots: PageNotesRoots): PageNotesPath {
-  const uuid = assertPathSegment(page.uuid, 'page id');
   const vault = parsePrivatePageName(page.name);
+  return notesPathIn(vault ? { owner: vault.owner, store: vault.store } : null, page.uuid, roots);
+}
+
+/** The notes of page `uuid` in `vault` (null: the public folder). The vault decides the place, never the title. */
+function notesPathIn(vault: { owner: string; store: string } | null, pageUuid: string, roots: PageNotesRoots): PageNotesPath {
+  const uuid = assertPathSegment(pageUuid, 'page id');
   const dir = vault
     ? privateStoreNotesDir(roots.pagesDirectory, vault.owner, vault.store, roots.kind, roots.layout)
     : roots.publicDir;
-  return {
-    path: path.join(dir, roots.kind === 'footnotes' ? `${uuid}.json` : uuid),
-    vault: vault ? { owner: vault.owner, store: vault.store } : null
-  };
+  return { path: path.join(dir, roots.kind === 'footnotes' ? `${uuid}.json` : uuid), vault };
 }
 
 async function ioFor(ctx: ActorContext, place: PageNotesPath, roots: PageNotesRoots): Promise<StoreFileIO> {
@@ -142,6 +145,75 @@ export async function movePageNotes(
   if (roots.kind === 'footnotes') await moveStoreFile(from.path, to.path, fromIO, toIO);
   else await moveStoreFolder(from.path, to.path, fromIO, toIO);
   return true;
+}
+
+/**
+ * Move a vault page's notes left in the public folder before #1839 into its
+ * vault (the #1842 repair), through the vault's I/O: sealed when the vault is.
+ * Where the vault has none of this kind yet, this is the move
+ * {@link movePageNotes} makes. Where it already has some (written since
+ * #1839), the two are merged and the vault's own entries win; a comment file
+ * the vault already holds is never overwritten. The vault side is written
+ * before the public copy is removed, so a failure leaves two copies, never none.
+ *
+ * The vault's I/O is resolved first, so a locked vault, or a sealed kind's
+ * vault not yet opened, throws and nothing moves. Who may ask is the caller's
+ * to decide, and so is that `uuid` is a page of that vault.
+ *
+ * @param opts.dryRun - Count what would move, and move nothing
+ * @returns how many notes were (or would be) moved: footnotes, or comment files
+ */
+export async function moveOutsideNotesIntoVault(
+  ctx: ActorContext,
+  vault: { owner: string; store: string },
+  uuid: string,
+  roots: PageNotesRoots,
+  opts: { dryRun?: boolean } = {}
+): Promise<number> {
+  const from = notesPathIn(null, uuid, roots);
+  const to = notesPathIn(vault, uuid, roots);
+  if (!await fs.pathExists(from.path)) return 0;
+  const toIO = await ioFor(ctx, to, roots);
+  const footnotes = roots.kind === 'footnotes';
+  const outsideFiles = footnotes ? [] : await filesIn(from.path);
+  let outsideMap: Record<string, unknown> = {};
+  if (footnotes) {
+    try {
+      outsideMap = JSON.parse(await PLAIN_FILE_IO.readText(from.path)) as Record<string, unknown>;
+    } catch {
+      outsideMap = {};
+    }
+  }
+  const count = footnotes ? Object.keys(outsideMap).length : outsideFiles.length;
+  if (opts.dryRun) return count;
+
+  if (!await fs.pathExists(to.path)) {
+    if (footnotes) await moveStoreFile(from.path, to.path, PLAIN_FILE_IO, toIO);
+    else await moveStoreFolder(from.path, to.path, PLAIN_FILE_IO, toIO);
+    return count;
+  }
+  if (footnotes) {
+    const inside = JSON.parse(await toIO.readText(to.path)) as Record<string, unknown>;
+    await toIO.writeText(to.path, JSON.stringify({ ...outsideMap, ...inside }, null, 2));
+  } else {
+    for (const source of outsideFiles) {
+      const target = path.join(to.path, path.relative(from.path, source));
+      if (await fs.pathExists(target)) continue;
+      await fs.ensureDir(path.dirname(target));
+      await toIO.writeBytes(target, await PLAIN_FILE_IO.readBytes(source));
+    }
+  }
+  await fs.remove(from.path);
+  return count;
+}
+
+/** Every regular file under `dir`, recursively. */
+async function filesIn(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const ent of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (ent.isFile()) out.push(path.join(ent.parentPath, ent.name));
+  }
+  return out;
 }
 
 /** A vault page whose notes of one kind are outside its vault (#1839). */
@@ -208,32 +280,81 @@ export async function findVaultPageNotesOutside(roots: PageNotesRoots): Promise<
   return found;
 }
 
+/** Whether `uuid` is a page of `owner`'s vault `store`, live or in its trash: known by its file name, no key needed. */
+export async function isVaultPageUuid(
+  pagesDirectory: string,
+  layout: PrivateStoreLayout,
+  vault: { owner: string; store: string },
+  uuid: string
+): Promise<boolean> {
+  if (!isValidStoreId(vault.store) || !isSafePathSegment(vault.owner) || !isSafePathSegment(uuid)) return false;
+  const root = privateStoreRoot(pagesDirectory, vault.owner, vault.store, layout);
+  return (await vaultPageUuids(root, layout)).includes(uuid);
+}
+
+/** The manager state a startup check sets and clears: the manager's own (BaseManager). */
+export interface CheckStateHooks {
+  /** True when this is a new state. */
+  markDegraded(reason: string): boolean;
+  /** Clears the degraded state only while it is still `reason`, so another fault stays reported. */
+  markReadyIfDegradedBy(reason: string): boolean;
+}
+
 /**
- * The startup report for {@link findVaultPageNotesOutside}, made the way the
+ * The check for {@link findVaultPageNotesOutside}, made the way the
  * unsealed-vault check reports (#1834, #1836): an error in the log naming each
  * owner, vault and page uuid, the manager's degraded state (the subsystem
- * banner) and a system notification. Nothing is moved or deleted. A failing
- * check is logged, never thrown: it must not stop the manager starting.
+ * banner) and, at startup, a system notification. Nothing is moved or
+ * deleted. A failing check is logged, never thrown: it must not stop the
+ * manager starting.
  *
- * @param markDegraded - The manager's own; true when this is a new state
+ * Run again after a repair (#1842), it keeps what it found for the repair
+ * actions to offer, and clears the degraded state it set once nothing is left.
  */
-export async function reportVaultPageNotesOutside(
-  engine: EngineLike,
-  roots: PageNotesRoots,
-  markDegraded: (reason: string) => boolean
-): Promise<void> {
-  try {
-    const found = await findVaultPageNotesOutside(roots);
-    if (found.length === 0) return;
-    const detail = found.map((f) => `${f.owner}/${f.vault} page ${f.uuid}`).join(', ');
-    const reason = `${found.length} vault page(s) have ${roots.kind} stored outside their vault, unencrypted, in ${roots.publicDir}: ${detail}. ` +
-      'They are not shown on the page and were left as they are; an administrator decides what to do with them (#1839)';
-    logger.error(`📄 ${reason}`);
-    if (markDegraded(reason)) {
-      await engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
-        ?.addNotification({ type: 'system', level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });
+export class VaultPageNotesCheck {
+  private found: VaultPageNotesOutside[] = [];
+  private reason: string | null = null;
+
+  constructor(
+    private readonly engine: EngineLike,
+    private readonly roots: () => PageNotesRoots,
+    private readonly state: CheckStateHooks
+  ) {}
+
+  /** What the last run found. */
+  findings(): VaultPageNotesOutside[] {
+    return [...this.found];
+  }
+
+  /**
+   * @param opts.notify - Send the system notification on a new state: at startup; a re-run after a repair does not
+   */
+  async run(opts: { notify: boolean }): Promise<VaultPageNotesOutside[]> {
+    const roots = this.roots();
+    try {
+      this.found = await findVaultPageNotesOutside(roots);
+    } catch (err) {
+      logger.error(`📄 The check for vault pages' ${roots.kind} outside their vault could not run (#1839):`, err);
+      return this.findings();
     }
-  } catch (err) {
-    logger.error(`📄 The check for vault pages' ${roots.kind} outside their vault could not run (#1839):`, err);
+    if (this.found.length === 0) {
+      if (this.reason !== null) this.state.markReadyIfDegradedBy(this.reason);
+      this.reason = null;
+      return [];
+    }
+    const detail = this.found.map((f) => `${f.owner}/${f.vault} page ${f.uuid}`).join(', ');
+    const reason = `${this.found.length} vault page(s) have ${roots.kind} stored outside their vault, unencrypted, in ${roots.publicDir}: ${detail}. ` +
+      'They are not shown on the page and were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1839, #1842)';
+    logger.error(`📄 ${reason}`);
+    this.reason = reason;
+    if (this.state.markDegraded(reason) && opts.notify) {
+      try {
+        await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
+          ?.addNotification({ type: 'system', level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });
+      } catch (err) {
+        logger.error(`📄 The notification for vault pages' ${roots.kind} outside their vault could not be sent (#1839):`, err);
+      }
+    }
+    return this.findings();
   }
 }

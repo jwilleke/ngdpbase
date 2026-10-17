@@ -99,6 +99,18 @@ interface BaseAttachmentProvider {
 }
 
 /**
+ * A vault page that still uses files in the shared pool (#1842): `page` is its
+ * uuid, or null for the pages a shared record names (whose titles are never
+ * repeated).
+ */
+export interface VaultPagePoolFiles {
+  owner: string;
+  vault: string;
+  page: string | null;
+  files: number;
+}
+
+/**
  * File information interface
  */
 export interface FileInfo {
@@ -246,6 +258,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
   private attachmentProvider: BaseAttachmentProvider | null;
   private providerClass: string | null;
+  /** What the last check for vault pages using shared-pool files found, and the degraded reason it set (#1842). */
+  private poolFileFindings: VaultPagePoolFiles[] = [];
+  private poolFileReason: string | null = null;
   private maxSize!: number;
   private allowedTypes!: string;
 
@@ -1319,9 +1334,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const from = fromVault ? await this.vaultLocation(ctx, fromVault.owner, fromVault.store) : null;
     const to = toVault ? await this.vaultLocation(ctx, toVault.owner, toVault.store) : null;
 
-    const names = AttachmentManager.extractLocalAttachmentRefs(content);
-    const refNames = new Set([...names, ...[...names].map((n) => AttachmentManager.basenameOf(n))]);
-    const refIds = new Set([...content.matchAll(/\/attachments\/([A-Za-z0-9-]+)/g)].map((m) => m[1]));
+    const { refNames, refIds } = AttachmentManager.contentRefs(content);
 
     // The vault it left: files this page is named by, or that its content references.
     const vaultFiles = from
@@ -1332,20 +1345,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const inVaultByName = new Set(vaultFiles.map((f) => f.name));
 
     // The shared pool: records naming the page, and references the vault did not answer.
-    const poolIds = new Set<string>();
-    for (const a of await provider.getAttachmentsForPage(previousName)) {
-      // The provider also matches a page whose URL merely contains the name.
-      const record = await provider.getAttachmentMetadata(a.identifier);
-      if ((record?.mentions ?? []).some((m) => m.name === previousName)) poolIds.add(a.identifier);
-    }
-    for (const ref of refNames) {
-      if (inVaultByName.has(ref)) continue;
-      const hit = await provider.getAttachmentByFilename(ref);
-      if (hit?.identifier) poolIds.add(hit.identifier);
-    }
-    for (const id of refIds) {
-      if (await provider.attachmentExists(id)) poolIds.add(id);
-    }
+    const poolIds = await this.poolFilesOfPage(provider, previousName, content, { ids: new Set(), names: inVaultByName });
 
     let moved = 0;
     await this.writeAttachments((async () => {
@@ -1363,21 +1363,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
       for (const id of poolIds) {
         if (taken.has(id)) continue;
-        const record = await provider.getAttachmentMetadata(id);
-        if (!record) continue;
-        const mentionNames = (record.mentions ?? []).map((m) => m.name ?? '').filter(Boolean);
-        const others = mentionNames.filter((m) => m !== previousName && m !== name);
         if (!to) {
           // Out to the public space: the pool copy is the page's now. Only the
           // vault name leaves the shared record; the save adds the public one.
-          if (others.length !== mentionNames.length) await provider.setPoolMentions(id, others);
+          const share = await this.poolFileShare(provider, id, previousName, name);
+          if (share && share.others.length !== share.mentionNames.length) await provider.setPoolMentions(id, share.others);
           continue;
         }
-        if (!(await provider.copyRecordIntoStore(to, id, name))) continue;
-        moved++;
-        const onlyThisPage = mentionNames.length > 0 && others.length === 0;
-        if (onlyThisPage) await provider.removeRecordFromPool(id);
-        else if (others.length !== mentionNames.length) await provider.setPoolMentions(id, others);
+        if (await this.takePoolFileIntoVault(provider, to, id, previousName, name)) moved++;
       }
     })());
 
@@ -1387,6 +1380,163 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       logger.info(`📎 Moved ${moved} file(s) with their page from ${place(fromVault)} to ${place(toVault)} (#1842)`);
     }
     return moved;
+  }
+
+  /** The file names (with their basenames) and `/attachments/{id}` ids `content` references. */
+  private static contentRefs(content: string): { refNames: Set<string>; refIds: Set<string> } {
+    const names = AttachmentManager.extractLocalAttachmentRefs(content);
+    return {
+      refNames: new Set([...names, ...[...names].map((n) => AttachmentManager.basenameOf(n))]),
+      refIds: new Set([...content.matchAll(/\/attachments\/([A-Za-z0-9-]+)/g)].map((m) => m[1]))
+    };
+  }
+
+  /**
+   * The shared-pool files page `pageName` uses: records whose mentions name it,
+   * and those `content` references that `held` (a vault's own files) does not
+   * answer.
+   */
+  private async poolFilesOfPage(
+    provider: BaseAttachmentProvider,
+    pageName: string,
+    content: string,
+    held: { ids: Set<string>; names: Set<string> }
+  ): Promise<Set<string>> {
+    const { refNames, refIds } = AttachmentManager.contentRefs(content);
+    const poolIds = new Set<string>();
+    for (const a of await provider.getAttachmentsForPage(pageName)) {
+      // The provider also matches a page whose URL merely contains the name.
+      const record = await provider.getAttachmentMetadata(a.identifier);
+      if ((record?.mentions ?? []).some((m) => m.name === pageName)) poolIds.add(a.identifier);
+    }
+    for (const ref of refNames) {
+      if (held.names.has(ref)) continue;
+      const hit = await provider.getAttachmentByFilename(ref);
+      if (hit?.identifier) poolIds.add(hit.identifier);
+    }
+    for (const id of refIds) {
+      if (await provider.attachmentExists(id)) poolIds.add(id);
+    }
+    for (const id of held.ids) poolIds.delete(id);
+    return poolIds;
+  }
+
+  /**
+   * Who else uses shared-pool file `id`, besides the page known as
+   * `previousName` before and `name` now. It is this page's alone only when its
+   * mentions name this page and nothing else; a file other public pages use,
+   * or that only the content references, is never taken from them.
+   */
+  private async poolFileShare(
+    provider: BaseAttachmentProvider,
+    id: string,
+    previousName: string,
+    name: string
+  ): Promise<{ mentionNames: string[]; others: string[]; onlyThisPage: boolean } | null> {
+    const record = await provider.getAttachmentMetadata(id);
+    if (!record) return null;
+    const mentionNames = (record.mentions ?? []).map((m) => m.name ?? '').filter(Boolean);
+    const others = mentionNames.filter((m) => m !== previousName && m !== name);
+    return { mentionNames, others, onlyThisPage: mentionNames.length > 0 && others.length === 0 };
+  }
+
+  /**
+   * Copy shared-pool file `id` into vault `to` for page `name`, under the same
+   * id, through the vault's I/O; then the pool copy: removed when the file was
+   * this page's alone, otherwise left for the others without this page's
+   * mention. Copy first, so a failure leaves two copies, never none.
+   *
+   * @returns 'moved' (no pool copy left), 'copied' (left for other pages), or null when nothing was copied
+   */
+  private async takePoolFileIntoVault(
+    provider: BaseAttachmentProvider,
+    to: StoreFileLocation,
+    id: string,
+    previousName: string,
+    name: string
+  ): Promise<'moved' | 'copied' | null> {
+    const share = await this.poolFileShare(provider, id, previousName, name);
+    if (!share) return null;
+    if (!(await provider.copyRecordIntoStore(to, id, name))) return null;
+    if (share.onlyThisPage) {
+      await provider.removeRecordFromPool(id);
+      return 'moved';
+    }
+    if (share.others.length !== share.mentionNames.length) await provider.setPoolMentions(id, share.others);
+    return 'copied';
+  }
+
+  /**
+   * Bring the shared-pool files vault page `name` still uses into its vault
+   * (#1842's repair, for files a move before #1842 left in the pool): the
+   * files its mentions name and those `content` references that the vault
+   * doesn't hold, each by {@link movePageAttachments}'s rule — copied in under
+   * the same id, sealed when the vault is, and removed from the pool only
+   * when no other public page uses it.
+   *
+   * The vault's I/O is resolved first, so a locked vault, or a sealed kind's
+   * vault not yet opened, throws and nothing moves. Who may ask is the
+   * caller's (`PageManager.repairVaultPage`) to decide.
+   *
+   * @param name - The page's vault name, `vaults/{owner}/{store}/{title}`
+   * @param content - Its content; '' when only its mentions are to be followed
+   * @param ctx - Whose I/O this is: the owner's session for a sealed vault
+   * @param opts.dryRun - Count what would happen, and change nothing
+   * @returns how many files were (or would be) moved out of the pool, and copied with a pool copy left for other pages
+   */
+  async movePoolFilesIntoVault(
+    name: string,
+    content: string,
+    ctx: ActorContext,
+    opts: { dryRun?: boolean } = {}
+  ): Promise<{ moved: number; copied: number }> {
+    const provider = this.attachmentProvider;
+    const vault = parsePrivatePageName(name);
+    if (!provider || !vault) return { moved: 0, copied: 0 };
+    const to = await this.vaultLocation(ctx, vault.owner, vault.store);
+    const own = await provider.listFilesInStore(to);
+    const ids = await this.poolFilesOfPage(provider, name, content, {
+      ids: new Set(own.map((f) => f.id)),
+      names: new Set(own.map((f) => f.name))
+    });
+    const counts = { moved: 0, copied: 0 };
+    if (opts.dryRun) {
+      for (const id of ids) {
+        const share = await this.poolFileShare(provider, id, name, name);
+        if (share) counts[share.onlyThisPage ? 'moved' : 'copied']++;
+      }
+      return counts;
+    }
+    await this.writeAttachments((async () => {
+      for (const id of ids) {
+        const took = await this.takePoolFileIntoVault(provider, to, id, name, name);
+        if (took) counts[took]++;
+      }
+    })());
+    if (counts.moved + counts.copied > 0) {
+      // #1461: a vault is named, never a page title or a file name.
+      logger.info(`📎 Repair: ${counts.moved} file(s) moved and ${counts.copied} copied from the shared pool into ${vault.owner}'s vault '${vault.store}' (#1842)`);
+    }
+    return counts;
+  }
+
+  /**
+   * The vault page names in `owner`'s vault `store` that shared-pool records
+   * still mention (#1842): what the startup check reports as "pages named by
+   * shared records". Used by the repair; never logged.
+   */
+  async poolMentionedVaultPages(owner: string, store: string): Promise<string[]> {
+    const provider = this.attachmentProvider;
+    if (!provider) return [];
+    const names = new Set<string>();
+    for (const record of await provider.getAllAttachments()) {
+      const meta = await provider.getAttachmentMetadata(record.identifier);
+      for (const m of meta?.mentions ?? []) {
+        const vault = parsePrivatePageName(m.name ?? '');
+        if (vault && vault.owner === owner && vault.store === store) names.add(m.name);
+      }
+    }
+    return [...names];
   }
 
   /**
@@ -1402,13 +1552,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * A sealed vault's pages can't be read without their owner's key, so they are
    * not checked here.
    */
-  async findVaultPagesUsingPoolFiles(): Promise<Array<{ owner: string; vault: string; page: string | null; files: number }>> {
+  async findVaultPagesUsingPoolFiles(): Promise<VaultPagePoolFiles[]> {
     const provider = this.attachmentProvider;
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
     if (!provider || !configManager || !pagesDirectory) return [];
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
-    const found: Array<{ owner: string; vault: string; page: string | null; files: number }> = [];
+    const found: VaultPagePoolFiles[] = [];
 
     const mentioned = new Map<string, number>();
     for (const record of await provider.getAllAttachments()) {
@@ -1461,22 +1611,50 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * what it moved into plain stores is not reported.
    */
   async reportVaultPagesUsingPoolFilesAtBoot(): Promise<void> {
+    await this.checkVaultPagesUsingPoolFiles({ notify: true });
+  }
+
+  /**
+   * Run that check again (#1842): after a repair, so the subsystem banner
+   * clears once nothing is left. No notification.
+   */
+  async recheckVaultPagesUsingPoolFiles(): Promise<VaultPagePoolFiles[]> {
+    return this.checkVaultPagesUsingPoolFiles({ notify: false });
+  }
+
+  /** What the last check found (#1842): owner, vault, page uuid (null: pages named by shared records), file count. */
+  vaultPagesUsingPoolFiles(): VaultPagePoolFiles[] {
+    return [...this.poolFileFindings];
+  }
+
+  private async checkVaultPagesUsingPoolFiles(opts: { notify: boolean }): Promise<VaultPagePoolFiles[]> {
     try {
-      const found = await this.findVaultPagesUsingPoolFiles();
-      if (found.length === 0) return;
-      const detail = found
-        .map((f) => `${f.owner}/${f.vault} ${f.page ? `page ${f.page}` : 'pages named by shared records'} (${f.files} file(s))`)
-        .join(', ');
-      const reason = `Vault pages use files in the shared attachment pool, which is served like any public attachment: ${detail}. ` +
-        'They were left as they are; an administrator decides what to do with them (#1842)';
-      logger.error(`📎 ${reason}`);
-      if (this.markDegraded(reason)) {
-        await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
-          ?.addNotification({ type: 'system', level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });
-      }
+      this.poolFileFindings = await this.findVaultPagesUsingPoolFiles();
     } catch (err) {
       logger.error('📎 The check for vault pages using shared-pool files could not run (#1842):', err);
+      return this.vaultPagesUsingPoolFiles();
     }
+    if (this.poolFileFindings.length === 0) {
+      if (this.poolFileReason !== null) this.markReadyIfDegradedBy(this.poolFileReason);
+      this.poolFileReason = null;
+      return [];
+    }
+    const detail = this.poolFileFindings
+      .map((f) => `${f.owner}/${f.vault} ${f.page ? `page ${f.page}` : 'pages named by shared records'} (${f.files} file(s))`)
+      .join(', ');
+    const reason = `Vault pages use files in the shared attachment pool, which is served like any public attachment: ${detail}. ` +
+      'They were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1842)';
+    logger.error(`📎 ${reason}`);
+    this.poolFileReason = reason;
+    if (this.markDegraded(reason) && opts.notify) {
+      try {
+        await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
+          ?.addNotification({ type: 'system', level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });
+      } catch (err) {
+        logger.error('📎 The notification for vault pages using shared-pool files could not be sent (#1842):', err);
+      }
+    }
+    return this.vaultPagesUsingPoolFiles();
   }
 
   /**
