@@ -18,6 +18,29 @@
   "ngdpbase.addons.journal.dailyReminderUsers": [],
   "ngdpbase.addons.journal.exportEnabled": true,
   "ngdpbase.addons.journal.showStreakLeaderboard": false,
+  "_comment_system_category": "#1507 — the journal's own system-category and vault, pages/vaults/{user}/journal/, declared here rather than in core config. Core reads this entry live whether the add-on is on or off (#1559), so journal pages and vaults stay reachable when it is turned off. owner, encrypt, defaultPrivate and shareMaxDays are the journal's declaration: a site's app-custom-config.json cannot change them (it gets a warning). Values unchanged from the entry core shipped before #1507.",
+  "ngdpbase.system-category": {
+    "journal": {
+      "label": "journal",
+      "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
+      "default": false,
+      "source": "site",
+      "enabled": true,
+      "owner": "journal",
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/journal/"
+      },
+      "defaultPrivate": "choice",
+      "encrypt": false,
+      "shareMaxDays": 15,
+      "page-badge": {
+        "color": "bg-info",
+        "label": "Journal",
+        "title": "Journal entry"
+      }
+    }
+  },
   "_comment_journal_permissions": "#1430 — the journal declares the permissions its routes ask for: journal-read (list and view one's own entries), journal-write (create, edit, delete, settings) and journal-export (bulk JSON/Markdown export, separable like core's page-export). Delegated on day one to every role that can sign in, so nobody loses access; a deployment narrows it in app-custom-config.json by overriding journal-access or adding a deny policy.",
   "ngdpbase.permissions.definitions": {
     "journal-read": {
@@ -82,6 +105,48 @@
         "journal-read",
         "journal-write",
         "journal-export"
+      ]
+    },
+    {
+      "id": "journal-page-public",
+      "name": "Make journal entries public",
+      "description": "Move one's own journal entries out of the journal vault (#1504, #1507): the roles that can have private pages. Was part of core's page-public-access; the journal declares it now, so it applies only while the add-on is enabled",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "reader"
+        },
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        },
+        {
+          "type": "role",
+          "value": "user-admin"
+        },
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        }
+      ],
+      "actions": [
+        "page-public"
       ]
     }
   ]

@@ -1065,7 +1065,7 @@
   "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
-  "_comment_system_category": "System category definitions (docs/system-category.md). source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). Exactly one entry has default: true; its vault is where a private page goes when nothing names another.",
+  "_comment_system_category": "System category definitions (docs/system-category.md). source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). Exactly one entry has default: true; its vault is where a private page goes when nothing names another. Add-ons declare their own entries in their own config/default-config.json (the journal's is there, #1507); core reads them live from the installed add-ons, whether on or off, and never persists them here (#1559).",
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
@@ -1146,25 +1146,6 @@
         "color": "bg-success",
         "label": "Profile",
         "title": "User profile page"
-      }
-    },
-    "journal": {
-      "label": "journal",
-      "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
-      "default": false,
-      "source": "site",
-      "enabled": true,
-      "storageLocation": {
-        "defaultstore": "pages/",
-        "privatestore": "pages/vaults/{user}/journal/"
-      },
-      "defaultPrivate": "choice",
-      "encrypt": false,
-      "shareMaxDays": 15,
-      "page-badge": {
-        "color": "bg-info",
-        "label": "Journal",
-        "title": "Journal entry"
       }
     },
     "capture": {
@@ -2749,7 +2730,7 @@
     {
       "id": "page-public-access",
       "name": "Make pages public",
-      "description": "Move one's own general, journal and capture pages out of their vault (#1504): the roles that can have private pages today",
+      "description": "Move one's own general and capture pages out of their vault (#1504): the roles that can have private pages today. The journal add-on grants the same for journal pages in its own policy, journal-page-public (#1507)",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -2782,10 +2763,6 @@
         {
           "type": "system-category",
           "pattern": "general"
-        },
-        {
-          "type": "system-category",
-          "pattern": "journal"
         },
         {
           "type": "system-category",
