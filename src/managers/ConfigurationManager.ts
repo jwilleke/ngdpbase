@@ -13,6 +13,7 @@ import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
+import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
@@ -79,10 +80,12 @@ class ConfigurationManager extends BaseManager {
   private declaredConfig: WikiConfig | null;
   /** #1813: each enabled addon's own default-config.json, as folded into the merge. */
   private addonLayers: AddonDefaults[];
-  /** #1559: add-on system-categories refused, and operator values an owner's declaration overrode. */
+  /** #1559: add-on system-categories refused, and operator values an owner's declaration overrode; #1860: database declarations refused or overridden. */
   private systemCategoryProblems: string[];
-  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why. */
+  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why; #1860: or their database declaration. */
   private refusedAddons: Map<string, string>;
+  /** #1860: every installed add-on's sound database declaration, on or off. */
+  private addonDatabases: AddonDatabaseDeclaration[];
   private environment: string;
   private defaultConfigPath: string;
   private customConfigPath: string;
@@ -104,6 +107,7 @@ class ConfigurationManager extends BaseManager {
     this.addonLayers = [];
     this.systemCategoryProblems = [];
     this.refusedAddons = new Map();
+    this.addonDatabases = [];
     this.environment = process.env.NODE_ENV || 'development';
 
     // #1214: one derivation of the data folder and both file paths, shared
@@ -482,12 +486,14 @@ class ConfigurationManager extends BaseManager {
     // addon, enabled or not, so a turned-off addon's pages and vault stay
     // reachable. Its problems are logged here and posted to admins by
     // AddonsManager once notifications exist.
-    const { merged, declared, addons, problems, refused } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
+    // #1860: so is ngdpbase.addons.<slug>.database, kept apart from the merge.
+    const { merged, declared, addons, problems, refused, databases } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
     this.refusedAddons = refused;
+    this.addonDatabases = databases;
     for (const problem of problems) logger.warn(`[config] ${problem}`);
     for (const a of addons) {
       if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
@@ -646,7 +652,8 @@ class ConfigurationManager extends BaseManager {
   /**
    * #1559: what was wrong with the system-categories add-ons declare — each
    * entry refused, and each operator value an owner's declaration overrode —
-   * one line per problem, naming the entry and the field.
+   * one line per problem, naming the entry and the field. #1860: the same for
+   * add-on database declarations.
    */
   getSystemCategoryProblems(): readonly string[] {
     return [...this.systemCategoryProblems];
@@ -654,11 +661,21 @@ class ConfigurationManager extends BaseManager {
 
   /**
    * #1559: why this add-on must not load — an entry its default-config.json
-   * declares under `ngdpbase.system-category` was refused — or null. None of
-   * its other keys were merged.
+   * declares under `ngdpbase.system-category` was refused, or its database
+   * declaration was (#1860) — or null. None of its other keys were merged.
    */
   getAddonRefusal(slug: string): string | null {
     return this.refusedAddons.get(slug) ?? null;
+  }
+
+  /**
+   * #1860: the database each installed add-on declares in its
+   * default-config.json (`ngdpbase.addons.<slug>.database`), whether or not it
+   * is turned on. A refused declaration is not here; its add-on is refused
+   * ({@link getAddonRefusal}). DatabaseManager is the reader.
+   */
+  getAddonDatabaseDeclarations(): readonly AddonDatabaseDeclaration[] {
+    return this.addonDatabases.map((d) => ({ ...d }));
   }
 
   /**
