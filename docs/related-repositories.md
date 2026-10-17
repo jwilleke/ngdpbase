@@ -58,7 +58,7 @@ The sharpest form of that difference is environment: a value baked into `docker/
 
 <https://github.com/jwilleke/ngdpbase-addon-template>
 
-A working reference addon (`addons/hello-ngdp`) in a repository, copied rather than depended on. It was a hand-kept second copy of what `npm run create:addon` generates, and the two drifted ([#1636](https://github.com/jwilleke/ngdpbase/issues/1636)). It is retired: `npm run create:addon -- --id <slug> --repo` now writes the whole repository — the addon at `addons/<slug>/`, the wrapper `Dockerfile`, Renovate, CI and the licence — from the one generator in this repository. The [addons developer guide](guides/addons-developer-guide.md#a-whole-repository---repo) describes it.
+A working reference addon (`addons/hello-ngdp`) in a repository, copied rather than depended on. It was a hand-kept second copy of what `npm run create:addon` generates, and the two drifted ([#1636](https://github.com/jwilleke/ngdpbase/issues/1636)). It is retired: `npm run create:addon -- --id <slug> --repo` now writes the whole repository — the addon at `addons/<slug>/`, CI, Renovate and the licence, with nothing deployment-specific — from the one generator in this repository. The [addons developer guide](guides/addons-developer-guide.md#a-whole-repository---repo) describes it.
 
 The pattern it taught still holds: a generated addon declares no runtime dependencies at all — an addon receives what it needs from the host, and the generated route imports Express without claiming to own it. An addon that declares its own copy of something the host already provides is drifting from that pattern.
 

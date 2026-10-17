@@ -18,7 +18,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 ### Choose a starting point
 
 - __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
-- __A whole repository__ (the addon at `addons/<slug>/`, plus a wrapper `Dockerfile`, Renovate, CI and a licence): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
+- __A whole repository__ (the addon at `addons/<slug>/`, plus CI, Renovate and a licence; nothing deployment-specific): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
 
 Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
 
@@ -231,7 +231,7 @@ npm run create:addon -- --id volcano-watch --type domain \
 | `--plugins` | one, named from the id | Comma-separated plugin names |
 | `--managers` | one, named from the id | Comma-separated manager names |
 | `--scope` | *(required outside this checkout's `addons/`)* | npm scope: the package is `<scope>/<id>-addon`. A bundled addon (in `addons/`) needs none and is `@ngdpbase/<id>` |
-| `--repo` | off | Write a whole repository, with the addon at `addons/<id>/` |
+| `--repo` | off | Write a whole repository, with the addon at `addons/<id>/`. No `Dockerfile`: deployment files live in the site repo |
 | `--target` | `addons/<id>`; with `--repo`, `../<id>` | Output directory |
 | `--force` | off | Write into a non-empty directory |
 
@@ -264,14 +264,17 @@ The addon lands at `addons/volcano-watch/`, byte-for-byte what the command write
 
 | File | What it does |
 |---|---|
-| `Dockerfile` | Wrapper image: the published ngdpbase image with the addon copied into its default `addons/`. `ARG NGDPBASE_VERSION` starts at the ngdpbase release you generated from |
-| `renovate.json` | Bumps `NGDPBASE_VERSION` on each ngdpbase release; minor and patch auto-merge, a major waits for review |
-| `.github/workflows/ci.yml` | Typechecks the addon inside the matching `-devtools` image (the version comes from the Dockerfile ARG), checks the slug against the exported `name`, checks seed page UUIDs, and builds the image |
+| `renovate.json` | `config:recommended`: keeps the dev dependencies and the CI actions current. No rule for the ngdpbase image |
+| `.github/workflows/ci.yml` | Typechecks the addon inside the `-devtools` image of the release in `ngdpbase.minVersion` (the oldest core it claims to run on), runs the audit-event check, checks the slug against the exported `name`, and checks seed page UUIDs. It builds no image |
 | `LICENSE` | Apache-2.0, as ngdpbase |
 | `.gitignore` | `node_modules/`, `dist/`, `data/`, `.env` and the like |
 | `README.md` | How to run it, and a link back to this guide |
 
-There is no rename step: every name comes from `--id`, `--plugins` and `--managers`. The repository replaces the retired `ngdpbase-addon-template`. Shipping the image is [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image); for production prefer the packaged model in [addon-packaged.md](../platform/deployment/addon-packaged.md).
+There is no rename step: every name comes from `--id`, `--plugins` and `--managers`. The repository replaces the retired `ngdpbase-addon-template`.
+
+The repository holds nothing deployment-specific ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)): no `Dockerfile`, no `.dockerignore`, no Renovate rule for the ngdpbase image. Those belong to the site repo that builds and deploys the site, described in [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image); the generated `README.md` points there. For production prefer the packaged model in [addon-packaged.md](../platform/deployment/addon-packaged.md).
+
+The scaffolder needs no `.env` and no run-as user (`PUID`/`PGID`): it reads only this checkout's `package.json` and `LICENSE`, so it runs in a fresh clone.
 
 ---
 

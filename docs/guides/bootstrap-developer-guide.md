@@ -116,7 +116,7 @@ That was not always true, and the ways it failed are worth knowing:
 - Eight npm scripts used `tsx --env-file-if-exists=.env`, which reads only the root file and silently ignores `<FAST_STORAGE>/.env`.
 - `app.ts` carried a second hand-rolled parser that duplicated `bootstrap-env` and could never fire.
 
-All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/ngdpbase/issues/1088)). The four repo-only tools — `check-csrf-fetch`, `check-docs-coverage`, `generate-docs-index`, `version` — deliberately load nothing; they read the tree they are run in.
+All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/ngdpbase/issues/1088)). The repo-only tools — `check-csrf-fetch`, `check-docs-coverage`, `generate-docs-index`, `version`, `create-addon` — deliberately load nothing; they read the tree they are run in. Loading `bootstrap-env` would make them refuse without `PUID` (the run-as check) and backfill instance secrets, and neither belongs in a tool that touches no instance ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)).
 
 __If you add an entry point that reads instance data, import `bootstrap-env` first.__ Without it the process silently operates on `./data`.
 

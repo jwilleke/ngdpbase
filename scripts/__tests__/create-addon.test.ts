@@ -13,6 +13,7 @@
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import matter from 'gray-matter';
 import { validate as validateUuid, version as uuidVersion } from 'uuid';
 
@@ -329,13 +330,17 @@ describe('--repo (#1636) — a whole standalone repository', () => {
 
   test('writes the repository files at the root and the addon under addons/<id>/', async () => {
     const result = await scaffoldAddon(opts({ repo: true, target: repoRoot() }));
-    for (const rel of ['Dockerfile', 'renovate.json', '.github/workflows/ci.yml', '.gitignore', 'LICENSE', 'README.md']) {
+    for (const rel of ['renovate.json', '.github/workflows/ci.yml', '.gitignore', 'LICENSE', 'README.md']) {
       expect(result.files).toContain(rel);
       expect(await fs.pathExists(path.join(repoRoot(), rel))).toBe(true);
     }
     expect(await fs.pathExists(path.join(repoRoot(), 'addons', 'volcano-watch', 'index.ts'))).toBe(true);
     // No rename machinery: the generator names everything correctly from the start.
     expect(await fs.pathExists(path.join(repoRoot(), 'CONTRIBUTING.md'))).toBe(false);
+    // #1829: nothing deployment-specific — the Dockerfile lives in the site repo.
+    expect(await fs.pathExists(path.join(repoRoot(), 'Dockerfile'))).toBe(false);
+    expect(await fs.pathExists(path.join(repoRoot(), '.dockerignore'))).toBe(false);
+    expect(result.files).not.toContain('Dockerfile');
     expect(await fs.pathExists(path.join(repoRoot(), '.github', 'workflows', 'addon-rename-detector.yml'))).toBe(false);
   });
 
@@ -353,26 +358,27 @@ describe('--repo (#1636) — a whole standalone repository', () => {
     const { version } = await fs.readJson(path.resolve('package.json'));
     expect(ngdpbaseVersion()).toBe(version);
 
-    const dockerfile = await fs.readFile(path.join(repoRoot(), 'Dockerfile'), 'utf8');
-    expect(dockerfile).toContain(`ARG NGDPBASE_VERSION=${version}\n`);
-    expect(dockerfile).toContain('FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}');
-    expect(dockerfile).toContain('COPY addons/volcano-watch/ ./addons/volcano-watch/');
-    expect(dockerfile).toContain('"ngdpbase.addons.volcano-watch.enabled": true');
-
     const ci = await fs.readFile(path.join(repoRoot(), '.github', 'workflows', 'ci.yml'), 'utf8');
-    // CI reads the base version from the Dockerfile ARG — one source, no drift.
-    expect(ci).toContain("sed -n 's/^ARG NGDPBASE_VERSION=//p' Dockerfile");
+    // CI reads the base version from the manifest's minVersion — one source, no drift.
+    const manifest = await fs.readJson(path.join(repoRoot(), 'addons', 'volcano-watch', 'package.json'));
+    expect(manifest.ngdpbase.minVersion).toBe(version);
+    expect(ci).toContain('require(\'./addons/volcano-watch/package.json\').ngdpbase.minVersion');
     expect(ci).toContain('ngdpbase:${NGDPBASE_VERSION}-devtools');
     expect(ci).toContain('$PWD/addons/volcano-watch:/app/addons/volcano-watch:ro');
     expect(ci).toContain('addons/volcano-watch/index.ts');
-    expect(ci).toContain('docker build -t volcano-watch:ci .');
+    // #1829: no image build and no Dockerfile reference.
+    expect(ci).not.toMatch(/docker build|Dockerfile/);
 
+    // #1829: Renovate keeps the repo's own dependencies current, with no rule for the ngdpbase image.
     const renovate = await fs.readJson(path.join(repoRoot(), 'renovate.json'));
-    expect(renovate.regexManagers[0].matchStrings).toEqual(['ARG NGDPBASE_VERSION=(?<currentValue>[0-9.]+)']);
+    expect(renovate.extends).toEqual(['config:recommended']);
+    expect(JSON.stringify(renovate)).not.toMatch(/ngdpbase|docker|regexManagers|customManagers/);
 
     const readme = await fs.readFile(path.join(repoRoot(), 'README.md'), 'utf8');
     expect(readme).toContain('"ngdpbase.addons.volcano-watch.enabled": true');
     expect(readme).toContain('docs/guides/addons-developer-guide.md');
+    expect(readme).toContain('addons-developer-guide.md#12-shipping-your-addon-as-a-container-image');
+    expect(readme).not.toMatch(/docker build|\| `Dockerfile`/);
 
     expect(await fs.readFile(path.join(repoRoot(), 'LICENSE'), 'utf8')).toContain('Apache License');
   });
@@ -384,4 +390,23 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect({ rel, wiki: /wiki/i.test(content) }).toEqual({ rel, wiki: false });
     }
   });
+});
+
+describe('#1829 — the CLI runs in a clone with no .env and no run-as user', () => {
+  test('scaffolds with PUID/PGID unset, from a cwd with no .env, and writes nothing else there', () => {
+    const root = path.resolve(__dirname, '..', '..');
+    const tsx = path.join(root, 'node_modules', '.bin', 'tsx');
+    const cwd = path.join(tmp, 'clone');
+    fs.ensureDirSync(cwd);
+    // A cleaned environment: no PUID, PGID, FAST_STORAGE or anything from this shell's .env.
+    const env = { PATH: process.env.PATH ?? '', HOME: tmp };
+    const run = spawnSync(tsx, [path.join(root, 'scripts', 'create-addon.ts'),
+      '--id', 'volcano-watch', '--repo', '--target', 'vw', '--scope', '@acme'], { cwd, env, encoding: 'utf8' });
+
+    expect({ status: run.status, stderr: run.stderr }).toEqual({ status: 0, stderr: '' });
+    expect(run.stdout).toContain("Scaffolded 'volcano-watch'");
+    expect(fs.pathExistsSync(path.join(cwd, 'vw', 'addons', 'volcano-watch', 'index.ts'))).toBe(true);
+    // No instance bootstrap ran: no data folder, no backfilled secrets.
+    expect(fs.readdirSync(cwd)).toEqual(['vw']);
+  }, 60_000);
 });

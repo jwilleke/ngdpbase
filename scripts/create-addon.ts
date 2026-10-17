@@ -3,7 +3,7 @@
  *
  * The one source for a new addon. Generates a working, enable-able addon from
  * templates held in this file and, with --repo, the standalone repository
- * around it (wrapper Dockerfile, Renovate, CI, licence). There is no template
+ * around it (CI, Renovate, licence). There is no template
  * repository to copy: a second hand-kept copy of this output drifted from it
  * (#1636), and generating in place keeps the scaffolder testable here and free
  * of a network dependency at the moment someone is trying to start work.
@@ -27,8 +27,10 @@
  *               Required unless the target is this checkout's addons/ (a bundled
  *               addon, named @ngdpbase/<id>) — the scaffold never guesses a scope (#1676)
  *   --repo      write a whole repository: the addon at <target>/addons/<id>/,
- *               plus Dockerfile, renovate.json, .github/workflows/ci.yml,
- *               .gitignore, LICENSE and README.md at <target>
+ *               plus renovate.json, .github/workflows/ci.yml, .gitignore,
+ *               LICENSE and README.md at <target>. Nothing deployment-specific
+ *               (#1829): the Dockerfile that ships it lives in the site repo
+ *               (addons-developer-guide.md section 12)
  *   --target    output directory (default: addons/<id>; with --repo, ../<id>)
  *   --force     write into a non-empty target directory
  *
@@ -37,11 +39,11 @@
  *   1 = bad arguments, or target exists without --force
  */
 
-// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
-// else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
-// docs/bootstrap-methodology.md. Without it this script resolves instance
-// paths against an empty environment (#1091).
-import '../src/bootstrap-env.js';
+// Deliberately no bootstrap-env (#1829). This is a repo-only tool: it reads
+// this checkout's package.json and LICENSE and writes a target directory, and
+// touches no instance data, so it needs no .env, no run-as user (#1693) and
+// must not backfill instance secrets. A fresh clone with no .env can run it.
+// See "Every entry point loads it" in docs/guides/bootstrap-developer-guide.md.
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -615,75 +617,21 @@ restart. For production, see the platform's \`packaged\` distribution model.
 // Repository templates (--repo)
 // ---------------------------------------------------------------------------
 
-/** The ngdpbase release this checkout is — the base image a new repo starts on. */
+/** The ngdpbase release this checkout is: a new addon's ngdpbase.minVersion, which its CI checks against. */
 export function ngdpbaseVersion(): string {
   return (fs.readJsonSync(path.join(NGDPBASE_ROOT, 'package.json')) as { version: string }).version;
 }
 
-function dockerfile(o: ScaffoldOptions): string {
-  return `# Wrapper image: ngdpbase + this addon, layered in as a drop-in.
-#
-# This is the simplest of the deployment shapes: the addon is COPY'd into the
-# image's default \`addons/\` directory, so no addons-path configuration is
-# needed — only the enable key.
-#
-# NOTE: ngdpbase's runtime image ships no npm (removed to close a bundled-npm
-# CVE). This addon declares no dependencies of its own — it takes express and
-# the guarded host helpers from the instance it runs inside — so no install
-# stage is required. The moment you add one, switch to the two-stage build in
-# ngdpbase's docs/platform/deployment/addon-packaged.md: install in a stage that
-# still has npm, then copy node_modules into the runtime image.
-#
-# For production, prefer the \`packaged\` (npm) model over this drop-in: it
-# version-pins the addon independently of the base image.
-#
-# The version floor is not cosmetic. The addon imports ApiContext, guardedFetch
-# and resolveEgressPolicy from the host's dist/, so an older base image fails to
-# load it. CI reads this ARG as the single source of the base version, so
-# bumping it here moves the typecheck with it; Renovate bumps it for you.
-
-ARG NGDPBASE_VERSION=${ngdpbaseVersion()}
-
-FROM ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}
-WORKDIR /app
-
-# Lands in the DEFAULT addons directory, so AddonsManager discovers it with no
-# config change. Enabling is still explicit — discovery never implies consent.
-COPY addons/${o.id}/ ./addons/${o.id}/
-
-# Enable the addon in your instance config (app-custom-config.json):
-#   { "ngdpbase.addons.${o.id}.enabled": true }
-`;
-}
-
+/**
+ * Renovate for the repository's own dependencies: the devDependencies and the
+ * GitHub Actions in CI. No rule for the ngdpbase image — the add-on repo holds
+ * nothing deployment-specific, and the image a site runs is the site repo's to
+ * bump (#1829, addons-developer-guide.md section 12).
+ */
 function renovateJson(): string {
   return JSON.stringify({
     $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-    extends: ['config:recommended'],
-    packageRules: [
-      {
-        description: 'Track the ngdpbase base image. Minor/patch may auto-merge; a major is a platform contract change and gets human review.',
-        matchDatasources: ['docker'],
-        matchPackageNames: ['ghcr.io/jwilleke/ngdpbase'],
-        matchUpdateTypes: ['minor', 'patch'],
-        automerge: true
-      },
-      {
-        matchDatasources: ['docker'],
-        matchPackageNames: ['ghcr.io/jwilleke/ngdpbase'],
-        matchUpdateTypes: ['major'],
-        automerge: false
-      }
-    ],
-    regexManagers: [
-      {
-        description: 'Bump the NGDPBASE_VERSION build arg in the Dockerfile',
-        fileMatch: ['(^|/)Dockerfile$'],
-        matchStrings: ['ARG NGDPBASE_VERSION=(?<currentValue>[0-9.]+)'],
-        depNameTemplate: 'ghcr.io/jwilleke/ngdpbase',
-        datasourceTemplate: 'docker'
-      }
-    ]
+    extends: ['config:recommended']
   }, null, 2) + '\n';
 }
 
@@ -715,9 +663,10 @@ jobs:
       # where module resolution will find them.
       - name: Typecheck the addon against a real ngdpbase
         run: |
-          # The Dockerfile's ARG is the single source of the base version, so
-          # the check and the image it documents cannot drift apart.
-          NGDPBASE_VERSION=$(sed -n 's/^ARG NGDPBASE_VERSION=//p' Dockerfile)
+          # The manifest's ngdpbase.minVersion is the single source of the
+          # base version: the check runs against the oldest core the addon
+          # claims to support, so the claim and the check cannot drift apart.
+          NGDPBASE_VERSION=$(node -p "require('./${dir}/package.json').ngdpbase.minVersion")
           echo "Checking against ngdpbase \${NGDPBASE_VERSION}"
           docker run --rm -v "$PWD/${dir}:/app/${dir}:ro" \\
             --entrypoint sh "ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}-devtools" -c '
@@ -737,7 +686,7 @@ jobs:
       # host's own lint, compiled into the image, run over this directory.
       - name: Audit events declared and emitted agree
         run: |
-          NGDPBASE_VERSION=$(sed -n 's/^ARG NGDPBASE_VERSION=//p' Dockerfile)
+          NGDPBASE_VERSION=$(node -p "require('./${dir}/package.json').ngdpbase.minVersion")
           docker run --rm -v "$PWD/${dir}:/app/${dir}:ro" -w /app \\
             --entrypoint node "ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}" \\
             dist/scripts/audit-coverage.js --check --addon ${dir}
@@ -776,13 +725,6 @@ jobs:
             fi
           done
           exit $fail
-
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Build the wrapper image
-        run: docker build -t ${o.id}:ci .
 `;
 }
 
@@ -812,21 +754,20 @@ Against a local ngdpbase checkout, point the instance at this repository's
 Restart the instance. The addon registers, its seed page appears, and
 \`[{${o.plugins[0] ?? toPascalCase(o.id)}}]\` renders on any page.
 
-As a container, build the wrapper image — ngdpbase with this addon layered in —
-and run it as you would ngdpbase itself, with the enable key set:
+## Deploy it
 
-\`\`\`bash
-docker build -t ${o.id} .
-\`\`\`
+This repository holds the addon and nothing deployment-specific. The Dockerfile
+that layers it onto the ngdpbase image, and the Renovate rule that keeps that
+image current, live in the site repository that builds and deploys the site:
+see [Shipping Your Addon as a Container Image](${GUIDE_URL}#12-shipping-your-addon-as-a-container-image).
 
 ## Layout
 
 | Path | What it is |
 |---|---|
 | \`addons/${o.id}/\` | The addon |
-| \`Dockerfile\` | Wrapper image; \`ARG NGDPBASE_VERSION\` is the base release |
-| \`renovate.json\` | Keeps \`NGDPBASE_VERSION\` current |
-| \`.github/workflows/ci.yml\` | Typechecks the addon inside the matching ngdpbase image |
+| \`renovate.json\` | Keeps the dev dependencies and CI actions current |
+| \`.github/workflows/ci.yml\` | Typechecks the addon inside the ngdpbase image named by \`ngdpbase.minVersion\` |
 
 ## Further reading
 
@@ -869,7 +810,6 @@ export async function scaffoldAddon(o: ScaffoldOptions): Promise<ScaffoldResult>
   if (o.repo) {
     for (const f of files) f[0] = path.join('addons', o.id, f[0]);
     files.push(
-      ['Dockerfile', dockerfile(o)],
       ['renovate.json', renovateJson()],
       ['.github/workflows/ci.yml', ciWorkflow(o)],
       ['.gitignore', gitignore()],
