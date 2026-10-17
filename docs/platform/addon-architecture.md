@@ -151,8 +151,9 @@ Other addons, plugins, and routes can then retrieve it with `engine.getManager('
 
 ```typescript
 engine.app          // Express.Application
+const router = engine.createRouter()   // core's Express; never import express in add-on code (#1861)
 engine.app?.use('/api/my-addon', router)
-engine.app?.use('/addons/my-addon', express.static(path.join(__dirname, 'public')))
+engine.app?.use('/addons/my-addon', engine.serveStatic(path.join(__dirname, 'public')))
 
 // Register addon-local EJS views directory
 const views = (engine.app?.get('views') as string | string[]) ?? [];

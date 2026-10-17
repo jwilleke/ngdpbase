@@ -8,14 +8,14 @@
  *   POST  /addons/journal/settings  — save config (placeholder — config stored externally)
  */
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import { journalPrivacy } from './helpers.js';
 
 export default function adminRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function jdm(): JournalDataManager | undefined {
     return engine.getManager<JournalDataManager>('JournalDataManager');

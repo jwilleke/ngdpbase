@@ -155,6 +155,22 @@ describe('#1244 — the generated addon has the guarded defaults, and passes eve
     expect(config['ngdpbase.access.policies'][0].actions).toEqual(['volcano-watch-manage']);
   });
 
+  // #1861: an installed addon has no express of its own; core hands out the router.
+  test('routes come from engine.createRouter(), and express is imported for types only', async () => {
+    await scaffoldAddon(opts());
+    const dir = path.join(tmp, 'volcano-watch');
+    const route = await fs.readFile(path.join(dir, 'routes', 'api.ts'), 'utf8');
+    const index = await fs.readFile(path.join(dir, 'index.ts'), 'utf8');
+
+    expect(route).toContain('engine.createRouter()');
+    expect(route).not.toMatch(/(?<![.\w])Router\(\)/);
+    for (const source of [route, index]) {
+      const expressImports = source.split('\n').filter((l) => /^\s*import\b.*from\s+['"]express['"]/.test(l));
+      for (const line of expressImports) expect(line).toMatch(/^\s*import\s+type\s/);
+      expect(source).not.toMatch(/\bexpress\.static\(/);
+    }
+  });
+
   test('the host guards report nothing over a freshly generated addon', async () => {
     // Scaffold into <repo>/addons/<id> so each guard sees it where an addon lives.
     const repo = path.join(tmp, 'repo');

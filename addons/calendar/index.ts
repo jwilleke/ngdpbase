@@ -34,7 +34,6 @@
  */
 
 import path from 'path';
-import express from 'express';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
@@ -81,7 +80,7 @@ const calendarAddon = {
     // ── 3. Serve static assets ───────────────────────────────────────────────
     engine.app?.use(
       '/addons/calendar',
-      express.static(path.join(__dirname, 'public'))
+      engine.serveStatic(path.join(__dirname, 'public'))
     );
 
     // ── 4. Register stylesheet + dashboard card ──────────────────────────────

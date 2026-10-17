@@ -28,7 +28,9 @@ function makeApp(existing: string[] = []) {
         getDefinition: (id: string) => (existing.includes(id) ? { id } : undefined),
         saveDefinition: async (d: unknown) => { saved.push(d); }
       }
-      : undefined)
+      : undefined),
+    // Core hands add-ons their Router (#1861).
+    createRouter: () => express.Router()
   };
   const app = express();
   app.use(express.urlencoded({ extended: false }));

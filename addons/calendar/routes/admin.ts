@@ -1,5 +1,5 @@
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
@@ -16,7 +16,7 @@ export default function adminRoutes(
   engine: WikiEngine,
   config: Record<string, unknown>
 ): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {
     return engine.getManager<CalendarDataManager>('CalendarDataManager');

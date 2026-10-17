@@ -55,7 +55,9 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
   };
 
   return {
-    getManager: (name: string) => defaultManagers[name]
+    getManager: (name: string) => defaultManagers[name],
+    // Core hands add-ons their Router (#1861).
+    createRouter: () => express.Router()
   };
 }
 
@@ -85,7 +87,8 @@ describe('POST /api/forms/submit/:formId — guards', () => {
       getManager: (name: string) =>
         name === 'FormsDataManager'
           ? { getDefinition: () => null, saveSubmission: async (s: object) => s }
-          : undefined
+          : undefined,
+      createRouter: () => express.Router()
     };
     const app = makeContext(engine);
     const res = await request(app).post('/api/forms/submit/no-such-form').send({ name: 'Alice' });

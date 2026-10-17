@@ -3,6 +3,7 @@ import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
 import type { WikiConfig } from './types/Config.js';
+import express, { type Router, type RouterOptions, type RequestHandler } from 'express';
 
 // Managers
 import ConfigurationManager from './managers/ConfigurationManager.js';
@@ -453,6 +454,43 @@ class WikiEngine extends Engine {
     }
     await addonsManager.initialize();
     logger.info('[WikiEngine] Addons initialized');
+  }
+
+  /**
+   * An Express `Router` built from core's own Express (#1861).
+   *
+   * Add-ons build their routers here and mount them with `engine.app.use(...)`.
+   * They never value-import `express`: an add-on installed into `<data>/addons`
+   * resolves imports from its own folder, where there is no Express (and no npm
+   * at runtime), and a second bundled copy would miss core's security patches.
+   * `import type { Request, Response } from 'express'` stays fine — it is erased.
+   * `npm run lint:addons` refuses a value import of `express` in add-on code.
+   *
+   * @param options - Passed to `express.Router(options)` unchanged
+   * @returns A new Router
+   *
+   * @example
+   * const router = engine.createRouter();
+   * router.get('/status', (req, res) => { res.json({ ok: true }); });
+   * engine.app?.use('/api/my-addon', router);
+   */
+  createRouter(options?: RouterOptions): Router {
+    return express.Router(options);
+  }
+
+  /**
+   * Static-file middleware from core's own Express (`express.static`), for an
+   * add-on's `public/` folder (#1861) — the same reason as {@link createRouter}.
+   *
+   * @param root - Directory to serve
+   * @param options - Passed to `express.static(root, options)` unchanged
+   * @returns The middleware
+   *
+   * @example
+   * engine.app?.use('/addons/my-addon', engine.serveStatic(path.join(__dirname, 'public')));
+   */
+  serveStatic(root: string, options?: Parameters<typeof express.static>[1]): RequestHandler {
+    return express.static(root, options);
   }
 
   /**

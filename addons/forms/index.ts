@@ -39,7 +39,6 @@
  */
 
 import path from 'path';
-import express from 'express';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
@@ -124,7 +123,7 @@ const formsAddon = {
     }
 
     // ── 4. Serve static assets ───────────────────────────────────────────────
-    engine.app?.use('/addons/forms', express.static(path.join(__dirname, 'public')));
+    engine.app?.use('/addons/forms', engine.serveStatic(path.join(__dirname, 'public')));
 
     // ── 5. Register stylesheet + dashboard card ──────────────────────────────
     const addonsManager = engine.getManager<AddonsManager>('AddonsManager');

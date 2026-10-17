@@ -43,6 +43,14 @@
  *    `src/managers/PluginManager.ts`, which builds them. That covers addon
  *    runtime code and the host's own `src/`. `import type` stays allowed (the
  *    types live there), and tests are exempt: they check the module itself.
+ *
+ * 4. (#1861) No addon runtime file value-imports `express`. An addon installed
+ *    into `<data>/addons` resolves imports from its own folder, where there is
+ *    no Express and no npm at runtime; a bundled copy would miss core's
+ *    security patches. Core hands it out: `engine.createRouter()` for a Router,
+ *    `engine.serveStatic(dir)` for `express.static`. `import type { Request,
+ *    Response } from 'express'` is erased and allowed; tests are exempt (they
+ *    build their own app around the router).
  */
 
 import { readFileSync, readdirSync, statSync } from 'fs';
@@ -153,10 +161,27 @@ for (const file of [...addonFiles, ...srcFiles]) {
   }
 }
 
+// 4. Value imports of express in addon runtime code (#1861).
+const isExpress = (spec: string): boolean => spec === 'express' || spec.startsWith('express/');
+for (const file of addonFiles) {
+  if (isTestFile(file)) continue;
+  const source = readFileSync(file, 'utf8');
+  for (const { line, spec } of valueImportSpecifiers(source)) {
+    if (!isExpress(spec)) continue;
+    findings.push({
+      file: path.relative(REPO, file),
+      line,
+      detail: 'value-imports express (#1861). An installed addon has no express to resolve. Use ' +
+        '`engine.createRouter()` for a Router and `engine.serveStatic(dir)` for static files; ' +
+        "types stay importable with `import type { Request, Response } from 'express'`."
+    });
+  }
+}
+
 console.log('Addon/host import boundary (#1192)');
 console.log('==================================');
 if (findings.length === 0) {
-  console.log(`No addon value-imports host source; no compiled .js under src/; only PluginManager value-imports pluginFormatters (scanned ${addonFiles.length} addon files, ${srcFiles.length} src files).`);
+  console.log(`No addon value-imports host source; no compiled .js under src/; only PluginManager value-imports pluginFormatters; no addon runtime file value-imports express (scanned ${addonFiles.length} addon files, ${srcFiles.length} src files).`);
   process.exit(0);
 }
 for (const f of findings) {

@@ -7,7 +7,7 @@
  *   GET  /addons/elasticsearch  — connection status and config summary
  */
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { Sist2AssetProvider } from '../src/Sist2AssetProvider.js';
@@ -25,7 +25,7 @@ export default function adminRoutes(
   getProvider: () => Sist2AssetProvider | null,
   config: ElasticsearchAdminConfig
 ): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   // ── GET /addons/elasticsearch ─────────────────────────────────────────────
   router.get('/', async (req: Request, res: Response) => {

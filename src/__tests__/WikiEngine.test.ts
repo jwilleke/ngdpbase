@@ -82,4 +82,31 @@ describe('WikiEngine', () => {
       expect(engine.initialized).toBe(false);
     });
   });
+
+  // #1861: add-ons get core's Express through the engine, never their own import.
+  describe('createRouter / serveStatic', () => {
+    test('createRouter returns a working Express Router that honours its options', async () => {
+      engine = new WikiEngine();
+      const express = (await import('express')).default;
+      const request = (await import('supertest')).default;
+      const router = engine.createRouter({ caseSensitive: true });
+      router.get('/Ping', (_req, res) => { res.json({ ok: true }); });
+      const app = express();
+      app.use('/api', router);
+      expect((await request(app).get('/api/Ping')).body).toEqual({ ok: true });
+      expect((await request(app).get('/api/ping')).status).toBe(404);
+    });
+
+    test('serveStatic serves files from the folder it is given', async () => {
+      engine = new WikiEngine();
+      const express = (await import('express')).default;
+      const request = (await import('supertest')).default;
+      await fs.writeFile(path.join(testDir, 'hello.txt'), 'hi');
+      const app = express();
+      app.use('/static', engine.serveStatic(testDir));
+      const res = await request(app).get('/static/hello.txt');
+      expect(res.status).toBe(200);
+      expect(res.text).toBe('hi');
+    });
+  });
 });

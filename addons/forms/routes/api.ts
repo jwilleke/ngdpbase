@@ -1,5 +1,5 @@
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
@@ -13,7 +13,7 @@ import { resolveChoices } from '../managers/fieldOptions.js';
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
 export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function fdm(): FormsDataManager | undefined {
     return engine.getManager<FormsDataManager>('FormsDataManager');

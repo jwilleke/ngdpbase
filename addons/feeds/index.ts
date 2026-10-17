@@ -22,7 +22,6 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import express from 'express';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type CatalogManager from '../../dist/src/managers/CatalogManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
@@ -84,7 +83,7 @@ const feedsAddon = {
     // the calendar/journal/forms addon convention of serving each addon's own
     // public/ dir at /addons/<name>, so map rendering works for any consumer of
     // this addon with no per-consumer vendoring required.
-    engine.app?.use('/addons/feeds', express.static(path.join(__dirname, 'public')));
+    engine.app?.use('/addons/feeds', engine.serveStatic(path.join(__dirname, 'public')));
 
     // Start the poll scheduler; stale-feed warnings route to /admin/notifications.
     const nm = engine.getManager('NotificationManager') as

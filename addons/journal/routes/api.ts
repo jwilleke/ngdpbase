@@ -12,7 +12,7 @@
  *   GET  /api/journal/export/markdown   — download all own entries as Markdown archive
  */
 
-import { Router, type Request, type Response } from 'express';
+import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
@@ -21,7 +21,7 @@ import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
 import { findJournalEntryName, createJournalEntry } from './helpers.js';
 
 export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
-  const router = Router();
+  const router = engine.createRouter();
 
   function pm(): PageManager | undefined {
     return engine.getManager<PageManager>('PageManager');
