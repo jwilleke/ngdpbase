@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-08'
+dateModified: '2026-10-17'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -33,7 +33,15 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 
 ## Add-on databases
 
-An add-on that keeps rows gets its own database through the same door ([ngdp-accounting-addons#13](https://github.com/jwilleke/ngdp-accounting-addons/issues/13)):
+An add-on that keeps rows gets its own database through the same door ([ngdp-accounting-addons#13](https://github.com/jwilleke/ngdp-accounting-addons/issues/13)). It first declares the database in its own `config/default-config.json` ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860)):
+
+```json
+{
+  "ngdpbase.addons.accounting.database": { "owner": "accounting", "ledgerTable": "accounting_schema_migrations", "encrypt": "optional" }
+}
+```
+
+Then it opens it from `register()`:
 
 ```ts
 const databaseManager = engine.getManager<DatabaseManager>('DatabaseManager');
@@ -43,10 +51,14 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 });
 ```
 
+- Only a declared database opens. `openAddonDatabase(owner, { ledgerTable })` throws unless an enabled add-on declares that `owner` with that `ledgerTable`. The key is always `ngdpbase.addons.<the declaring add-on's slug>.database`; the three fields are required and nothing else is allowed.
+- `encrypt` is `"required"` or `"optional"`. A `"required"` database is never opened without `NGDPBASE_DATABASE_KEY`: the add-on is not loaded at all (checked before it is imported), and `/admin/addons` shows why. `"optional"` opens unencrypted without a key, with the warning.
+- An invalid declaration (a missing or mistyped field, a ledger outside the owner's prefix, a key under another add-on's slug, a ledger another add-on already declares) stops that add-on loading, as a refused system-category does ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). It is logged at startup and posted to admins.
+- The declaration is read from every installed add-on, on or off, and is never part of the merged configuration, so the site's `app-custom-config.json` cannot change it (a value there is ignored, with a warning). `getDeclaredDatabases()` lists every declaration with its file and whether it is open; Admin → Add-ons shows the list. A turned-off add-on's database stays listed, so the backup ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)) can include it.
 - Call it from `register()`. It needs the application database: when `ngdpbase.database.provider` is `none` it throws, naming the key, and the add-on should mount nothing and say why in `status()`.
 - The file is `<owner>.db` beside `ngdpbase.database.file`, opened by `SqliteDatabaseProvider` under `NGDPBASE_DATABASE_KEY`, so everything in [What boot refuses](#what-boot-refuses) applies to it too.
 - Its migrations follow the rules in [Migrations](#migrations), recorded in the add-on's own ledger table. The table name must start with the owner's slug, dashes as underscores, then `_`. Prefix the add-on's tables the same way, so several databases can later be told apart by table name in one backup.
-- An add-on that depends on the owner calls `openAddonDatabase` with the owner's slug and its own ledger table (`accounting_dues_schema_migrations`). Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
+- An add-on that depends on the owner declares the owner's slug and its own ledger table (`"owner": "accounting", "ledgerTable": "accounting_dues_schema_migrations"`, under `ngdpbase.addons.accounting-dues.database`), and calls `openAddonDatabase` with them. Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
 - `integrityOk()` covers every open database, and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
 
 ## Providers

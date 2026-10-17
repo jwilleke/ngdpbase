@@ -40,6 +40,7 @@ import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type DatabaseManager from './DatabaseManager.js';
 import type PageManager from './PageManager.js';
 import logger from '../utils/logger.js';
 import type { User } from '../types/User.js';
@@ -317,7 +318,7 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
-  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), or its system-category declaration was refused (#1559); null otherwise. */
+  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration was refused (#1559, #1860), or its required-encryption database has no key (#1860); null otherwise. */
   incompatible: string | null;
 
 }
@@ -772,10 +773,13 @@ class AddonsManager extends BaseManager {
       // #1757: an addon that needs a newer core is never imported — its imports
       // of core modules this release lacks would fail with no reason given.
       // #1559: nor is one whose system-category declaration the configuration
-      // merge refused (operator, 2026-10-16); its status says why.
+      // merge refused (operator, 2026-10-16); its status says why. #1860: nor
+      // one that declares a database DatabaseManager would refuse to open
+      // (encrypt "required" with no key).
       const canonicalId = resolveAddonSlug(addonPath, source);
       const incompatible = this.incompatibility(manifest)
         ?? this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonRefusal?.(canonicalId)
+        ?? this.engine.getManager<DatabaseManager>('DatabaseManager')?.addonRefusal?.(canonicalId)
         ?? null;
       if (incompatible) {
         if (this.addons.has(canonicalId)) return;
@@ -1084,7 +1088,7 @@ class AddonsManager extends BaseManager {
       void notificationManager?.createNotification?.({
         type: 'system',
         level: 'warning',
-        title: 'Add-on system-category problem',
+        title: 'Add-on declaration problem',
         message: `${problem}.`
       })?.catch?.(() => { /* non-fatal */ });
     }

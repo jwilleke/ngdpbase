@@ -17,7 +17,7 @@ What a developer, above all an add-on author, has to know about where things are
 | Pages the add-on __seeds__ (its own documentation) | System-category `addon`, public, no vault | The add-on |
 | Content the add-on __generates for a person__ (journal entries, health records, their files) | The add-on's __own system-category__, with its __own vault__ `pages/vaults/{user}/{vaultid}/` | That person |
 | A `general` page the add-on only helps someone create (a template) | `general`, and the person's `default` vault if they make it private | That person; no add-on rules afterwards |
-| Data the add-on keeps for itself (submissions, ledgers, indexes) | Its own database (`DatabaseManager.openAddonDatabase`) or files under its own `dataPath`; never a vault | The system; read with `admin-system`, or handed to another add-on through a hook |
+| Data the add-on keeps for itself (submissions, ledgers, indexes) | Its own [declared database](#declaring-a-database) (`DatabaseManager.openAddonDatabase`) or files under its own `dataPath`; never a vault | The system; read with `admin-system`, or handed to another add-on through a hook |
 
 Never put an add-on's own content in `general` or a person's `default` vault. There it can't be told apart from the person's own pages, the add-on's rules (such as `encrypt`) don't apply, and turning the add-on off, retiring it ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)) or a takeout can't find it.
 
@@ -84,6 +84,23 @@ So a wrong type is refused. An add-on's entry with one is left out entirely, wit
 
 The same mistake in one of the site's own entries (core's, or the site's `app-custom-config.json`) is not refused: the site keeps running and the value is still read as false. Startup logs an error, and admins get the dashboard's non-dismissible "subsystem not working" banner and a system notification. Both name the entry, the field, the bad value and what it is read as.
 
+## Declaring a database
+
+An add-on that keeps rows of its own declares its database in its `config/default-config.json`, then opens it from `register()` with `engine.getManager('DatabaseManager').openAddonDatabase(owner, { migrations, ledgerTable })` ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860); the API is in [DatabaseManager.md](../managers/DatabaseManager.md#add-on-databases)). The PHR example:
+
+```json
+{
+  "ngdpbase.addons.phr.database": { "owner": "phr", "ledgerTable": "phr_schema_migrations", "encrypt": "required" }
+}
+```
+
+- __Only a declared database opens.__ `openAddonDatabase` throws for an owner and ledger no enabled add-on declares. Migrations stay in code: pass them when you open.
+- __The key is your own slug__: `ngdpbase.addons.<slug>.database`. `owner` is the file (`<owner>.db`); a dependent add-on declares the owner's slug with a ledger of its own.
+- __`ledgerTable`__ starts with the owner's slug, dashes as underscores, then `_`. One add-on declares one ledger; two add-ons can't declare the same one.
+- __`encrypt`__ is exactly `"required"` or `"optional"`. Use `"required"` for anything personal, such as health records: without `NGDPBASE_DATABASE_KEY` the add-on isn't loaded at all, and `/admin/addons` says why. `"optional"` opens unencrypted when no key is set, with a startup warning.
+- __An invalid declaration stops the add-on loading__, like a refused system-category: a missing or mistyped field, any other field, a ledger outside the owner's prefix, a key under another add-on's slug, or a ledger another add-on already declares. Startup logs it and admins get a notification.
+- __It stays known while the add-on is off.__ Admin → Add-ons lists every declared database, on or off, so its file isn't forgotten. The site's `app-custom-config.json` can't change a declaration; a value there is ignored, with a warning.
+
 ## Writing pages and files
 
 - __Pages__ go through `PageManager`, with the caller's context. A private page's name is `vaults/{owner}/{vaultid}/{title}`. `npm run lint:page-door` fails on any other page write.
@@ -106,7 +123,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 ## Known gaps
 
 - __Removing the add-on removes its category__ ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)). The category is read from the add-on's files, so with them gone its pages carry an unknown system-category and its vault door answers "no such store". The data stays on disk. Retiring an add-on properly is #1490.
-- __Backups don't cover add-on databases yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Vault pages sit under `pages/`, which the page backup walks. That vault files (PDFs, images) are covered too hasn't been checked; do it before relying on it.
+- __Backups don't cover add-on databases yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). The declared ones are known, on or off (`DatabaseManager.getDeclaredDatabases()`, #1860), for the backup to use. Vault pages sit under `pages/`, which the page backup walks. That vault files (PDFs, images) are covered too hasn't been checked; do it before relying on it.
 - __Plaintext written before [#1834](https://github.com/jwilleke/ngdpbase/issues/1834)__: a page saved into an `encrypt: true` vault before its door was opened was stored in the clear. Such vaults are closed and listed at startup; moving or sealing their files is still an administrator's job, with no tool for it yet.
 - __Plaintext moved into sealed vaults before [#1836](https://github.com/jwilleke/ngdpbase/issues/1836)__: a page made private into a sealed vault kept its history in the clear, and adopted attachments landed in the clear. New moves are sealed. What is already on disk is listed at startup (owner, vault, count and folder), and nothing re-seals it yet.
 - __A backup taken before a vault was sealed can't put its files back into it__ (#1836). Its plaintext files, and a `store.json` that isn't sealed, are skipped and logged as an error. Restoring that vault means opening the old backup's contents through the page door.
@@ -117,6 +134,9 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __`ImportManager` `targetDir`__ writes raw files to any folder it is given, and no caller passes it today. Pointing it into a vault would bypass store I/O (#1836).
 - __A site override of the journal's owner fields is now ignored__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)). The journal's entry moved from core config to the add-on, so a site whose `app-custom-config.json` sets `encrypt`, `defaultPrivate` or `shareMaxDays` on `journal` gets the journal's value and a startup warning. Vaults already sealed stay sealed; new ones follow the journal.
 
+- __An add-on that catches `openAddonDatabase`'s error still loads__ (#1860). It gets no connection, so nothing is written, but its status shows it as loaded. A `"required"` database with no key is caught before import and never gets this far; an undeclared owner or ledger is refused only when opened. Let the error leave `register()`.
+- __A declared database that is never opened__ (the add-on is off, or it opens lazily) is listed as not open; nothing checks that its file exists or passes its integrity check until it is opened.
+
 ## Checklist
 
 - [ ] Generated content is in the add-on's own system-category, never `general`
@@ -126,3 +146,4 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - [ ] `encrypt` decided before the first page is written
 - [ ] Every page write goes through `PageManager`, every file through `AttachmentManager`
 - [ ] The add-on's own data is in its database or `dataPath`, never a vault
+- [ ] Its database is declared under `ngdpbase.addons.<slug>.database`, with `encrypt` `"required"` for anything personal

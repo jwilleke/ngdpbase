@@ -51,6 +51,7 @@ import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type PluginManager from '../managers/PluginManager.js';
 import type { PluginFormatters } from '../managers/PluginManager.js';
+import type { DeclaredAddonDatabase } from '../managers/DatabaseManager.js';
 import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
@@ -15109,11 +15110,14 @@ ${panes}
       }
       const addonsManager = this.engine.getManager('AddonsManager');
       const addons = addonsManager ? await addonsManager.getStatus() : [];
+      // #1860: every declared add-on database, the add-on on or off.
+      const databases = this.engine.getManager<{ getDeclaredDatabases?: () => DeclaredAddonDatabase[] }>('DatabaseManager')?.getDeclaredDatabases?.() ?? [];
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-addons', {
         ...commonData,
         title: 'Add-ons',
         addons,
+        databases,
         csrfToken: req.session.csrfToken,
         success: req.query.success as string | undefined,
         error: req.query.error as string | undefined

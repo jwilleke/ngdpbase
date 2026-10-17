@@ -9,15 +9,27 @@ import os from 'node:os';
 import path from 'node:path';
 import DatabaseManager, { DATABASE_KEY_ENV } from '../DatabaseManager';
 import type { Migration } from '../../providers/sqliteMigrations';
+import type { AddonDatabaseDeclaration } from '../../utils/addonDatabaseRules';
+
+/** #1860: the databases the add-ons of these tests declare; each test may replace them. */
+const declared = (owner: string, ledgerTable: string, extra: Partial<AddonDatabaseDeclaration> = {}): AddonDatabaseDeclaration =>
+  ({ owner, ledgerTable, encrypt: 'optional', declaredBy: owner, enabled: true, ...extra });
+const DEFAULT_DECLARATIONS: AddonDatabaseDeclaration[] = [
+  declared('accounting', 'accounting_schema_migrations'),
+  declared('accounting', 'accounting_dues_schema_migrations', { declaredBy: 'accounting-dues' }),
+  declared('i18n', 'i18n_schema_migrations'),
+  declared('ngdpbase', 'ngdpbase_schema_migrations')
+];
 
 describe('DatabaseManager (#1536)', () => {
   let dir: string;
   const savedKey = process.env[DATABASE_KEY_ENV];
 
-  const started = async (props: Record<string, unknown>): Promise<DatabaseManager> => {
+  const started = async (props: Record<string, unknown>, declarations: AddonDatabaseDeclaration[] = DEFAULT_DECLARATIONS): Promise<DatabaseManager> => {
     const configManager = {
       getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
-      getResolvedDataPath: (_key: string, def: string) => (props['ngdpbase.database.file'] as string | undefined) ?? def
+      getResolvedDataPath: (_key: string, def: string) => (props['ngdpbase.database.file'] as string | undefined) ?? def,
+      getAddonDatabaseDeclarations: () => declarations
     };
     const manager = new DatabaseManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
     await manager.initialize();
@@ -78,9 +90,9 @@ describe('DatabaseManager (#1536)', () => {
     type Db = { prepare(sql: string): { get(): unknown; all(): unknown[]; run(...a: unknown[]): unknown }; open: boolean };
     const LEDGER: Migration = { id: '20261007090000', description: 'ledger table', up: (db) => db.exec('CREATE TABLE accounting_transactions (id INTEGER PRIMARY KEY, amount INTEGER NOT NULL)') };
     const DUES: Migration = { id: '20261007100000', description: 'dues tiers', up: (db) => db.exec('CREATE TABLE accounting_dues_tiers (id INTEGER PRIMARY KEY)') };
-    const withDatabase = (): Promise<DatabaseManager> => {
+    const withDatabase = (declarations?: AddonDatabaseDeclaration[]): Promise<DatabaseManager> => {
       process.env[DATABASE_KEY_ENV] = 'test-key-not-a-secret';
-      return started({ 'ngdpbase.database.provider': 'sqlite', 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db') });
+      return started({ 'ngdpbase.database.provider': 'sqlite', 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db') }, declarations);
     };
 
     test('refused when the operator has not turned the database on, naming the key', async () => {
@@ -145,6 +157,75 @@ describe('DatabaseManager (#1536)', () => {
       await manager.shutdown();
       expect(db.open).toBe(false);
       expect(manager.isEnabled()).toBe(false);
+    });
+    describe('declared databases only (#1860)', () => {
+      const withoutKey = (declarations: AddonDatabaseDeclaration[]): Promise<DatabaseManager> =>
+        started({ 'ngdpbase.database.provider': 'sqlite', 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db') }, declarations);
+
+      test('an owner no add-on declares is refused, and no file is made', async () => {
+        const manager = await withDatabase([declared('accounting', 'accounting_schema_migrations')]);
+        expect(() => manager.openAddonDatabase('payroll', { migrations: [], ledgerTable: 'payroll_schema_migrations' })).toThrow(/No add-on declares database 'payroll'/);
+        expect(fs.existsSync(path.join(dir, 'payroll.db'))).toBe(false);
+        await manager.shutdown();
+      });
+
+      test('a declared owner with a ledger nobody declares is refused', async () => {
+        const manager = await withDatabase([declared('accounting', 'accounting_schema_migrations')]);
+        expect(() => manager.openAddonDatabase('accounting', { migrations: [DUES], ledgerTable: 'accounting_dues_schema_migrations' })).toThrow(/not with ledger 'accounting_dues_schema_migrations'/);
+        await manager.shutdown();
+      });
+
+      test('a declaration whose add-on is off is known but not opened', async () => {
+        const manager = await withDatabase([declared('accounting', 'accounting_schema_migrations', { enabled: false })]);
+        expect(() => manager.openAddonDatabase('accounting', { migrations: [LEDGER], ledgerTable: 'accounting_schema_migrations' })).toThrow(/turned off or not loaded/);
+        expect(fs.existsSync(path.join(dir, 'accounting.db'))).toBe(false);
+        expect(manager.getDeclaredDatabases()).toEqual([
+          expect.objectContaining({ owner: 'accounting', enabled: false, open: false, file: path.join(dir, 'accounting.db') })
+        ]);
+        await manager.shutdown();
+      });
+
+      test('"required" with no key is refused, and nothing is written in the clear', async () => {
+        const manager = await withoutKey([declared('phr', 'phr_schema_migrations', { encrypt: 'required' })]);
+        expect(() => manager.openAddonDatabase('phr', { migrations: [], ledgerTable: 'phr_schema_migrations' })).toThrow(/encrypt "required", but NGDPBASE_DATABASE_KEY is not set/);
+        expect(fs.existsSync(path.join(dir, 'phr.db'))).toBe(false);
+        expect(manager.addonRefusal('phr')).toMatch(/NGDPBASE_DATABASE_KEY is not set/);
+        await manager.shutdown();
+      });
+
+      test('a dependent ledger declared "required" is refused even after its owner opened unencrypted', async () => {
+        const manager = await withoutKey([
+          declared('accounting', 'accounting_schema_migrations'),
+          declared('accounting', 'accounting_dues_schema_migrations', { declaredBy: 'accounting-dues', encrypt: 'required' })
+        ]);
+        manager.openAddonDatabase('accounting', { migrations: [LEDGER], ledgerTable: 'accounting_schema_migrations' });
+        expect(() => manager.openAddonDatabase('accounting', { migrations: [DUES], ledgerTable: 'accounting_dues_schema_migrations' })).toThrow(/accounting-dues.*NGDPBASE_DATABASE_KEY is not set/);
+        expect(manager.addonRefusal('accounting')).toBeNull();
+        expect(manager.addonRefusal('accounting-dues')).toMatch(/NGDPBASE_DATABASE_KEY/);
+        await manager.shutdown();
+      });
+
+      test('"required" with the key opens encrypted', async () => {
+        const keyed = await withDatabase([declared('phr', 'phr_schema_migrations', { encrypt: 'required' })]);
+        expect(keyed.addonRefusal('phr')).toBeNull();
+        keyed.openAddonDatabase('phr', { migrations: [], ledgerTable: 'phr_schema_migrations' });
+        expect(fs.readFileSync(path.join(dir, 'phr.db')).subarray(0, 15).toString('latin1')).not.toBe('SQLite format 3');
+        expect(keyed.getDeclaredDatabases()).toEqual([expect.objectContaining({ owner: 'phr', open: true, encrypt: 'required' })]);
+        await keyed.shutdown();
+      });
+
+      test('"optional" without a key opens in the clear', async () => {
+        const plain = await withoutKey([declared('notes', 'notes_schema_migrations', { encrypt: 'optional' })]);
+        expect(plain.addonRefusal('notes')).toBeNull();
+        plain.openAddonDatabase('notes', { migrations: [], ledgerTable: 'notes_schema_migrations' });
+        expect(fs.readFileSync(path.join(dir, 'notes.db')).subarray(0, 15).toString('latin1')).toBe('SQLite format 3');
+        await plain.shutdown();
+      });
+
+      test('with no application database the declarations are still listed, with no file', async () => {
+        const manager = await started({ 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db') }, [declared('phr', 'phr_schema_migrations', { encrypt: 'required' })]);
+        expect(manager.getDeclaredDatabases()).toEqual([expect.objectContaining({ owner: 'phr', file: null, open: false })]);
+      });
     });
   });
 });
