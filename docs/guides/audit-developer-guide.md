@@ -1,7 +1,7 @@
 ---
 name: Audit developer guide
 description: How to add or change an audit event — the configuration entry, the names module, the emitter, the on-failure rule, the actor, the tests, and the checks that fail
-dateModified: 2026-09-06
+dateModified: 2026-10-17
 category: guides
 relatedModules: [AuditManager, FileAuditProvider]
 ---
@@ -14,8 +14,8 @@ What a developer has to do so that an action leaves a record. The decisions behi
 
 | Part | Where | Owns |
 | --- | --- | --- |
-| The declaration | the permission's entry in `ngdpbase.permissions.definitions` (its `audit` field) when the event records that permission's action; otherwise `ngdpbase.audit.events` (#1638) | The name, `on-failure` (`refuse` or `continue`), `enabled`, `description`. Configuration is authoritative; an operator may change any of it and the change is itself recorded. |
-| The name in code | `src/utils/auditEventNames.generated.ts`, generated from the map (#1638) | Never written by hand: `npm run generate:permissions` writes it and `npm run lint:permissions` fails when it is stale. `AuditEvent.eventType` is typed, so a core typo or an undeclared name does not compile. |
+| The declaration | an entry in `ngdpbase.permissions.definitions`, its `audit` field (#1638). An event that records something nobody is granted (`system-start`, `authentication-failed`, `job-failed`) is an entry with `"grantable": false` | The name, `on-failure` (`refuse` or `continue`), `enabled`, `description`. Configuration is authoritative; an operator may change any of it and the change is itself recorded. |
+| The name in code | `src/utils/auditEventNames.generated.ts`, generated from the catalog (#1638) | Never written by hand: `npm run generate:permissions` writes it and `npm run lint:permissions` fails when it is stale. `AuditEvent.eventType` is typed, so a core typo or an undeclared name does not compile. |
 | The emitter | The manager door for the action, or the route only where no manager can tell the action apart (`page-read`, `page-export`, `secret-reveal`) | Building the record and calling `recordAuditEvent`. |
 
 `npm run lint:audit` holds the three together: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, or an emitter the script cannot resolve is red. `npm run docs:audit:check` holds the generated tables to the map. Both run in `lint`, `lint:ci` and the pre-commit hook.
@@ -23,11 +23,11 @@ What a developer has to do so that an action leaves a record. The decisions behi
 ## Adding an event
 
 1. __Name it__ `{target}-{action}`, hyphens only. Where the action is the one a permission authorizes, use the permission's slug: `page-read` authorizes, `page-read` records. Never a dot, never an underscore, never a role name.
-2. __Declare it__ in one place, in the same change as the emitter, never a later one. If it records a permission's action (`page-edit`, `token-mint`), declare it on that permission's entry: `ngdpbase.permissions.definitions.<name>.audit = { on-failure, enabled, description }` (#1638; `description` defaults to the permission's). Otherwise, in `ngdpbase.audit.events`: `on-failure`, `enabled` if it should ship switched off, `description` (one line, shown in the admin filter). `npm run lint:audit` fails on a name declared in both.
-3. __Regenerate__ with `npm run generate:permissions`: `AUDIT_EVENT.<NAME>` (the name upper-cased with underscores) now exists. An add-on instead declares the event in its own `config/default-config.json` and emits it as `addonAuditEventName('ledger-post')` — see [Addons](#addons) below.
+2. __Declare it__ in one place, in the same change as the emitter, never a later one: `ngdpbase.permissions.definitions.<name>.audit = { on-failure, enabled, description }` (#1638). `enabled: false` if it should ship switched off; `description` is one line, shown in the admin filter, and defaults to the permission's. If it records a permission's action (`page-edit`, `token-mint`), it goes on that permission's entry. If it records something nobody is granted, it is a new entry with `"grantable": false` (`src/utils/permissionCatalog.ts`): never offered as an app scope, never a row in the roles matrix, never in `CorePermission`, and no policy grants it. `ngdpbase.audit.events` ships empty; it is still read so an operator's custom file written before #1638 can override an event or remove it (`null`), and a name set there and on a permission entry is warned at boot. `npm run lint:audit` fails on a name declared in both in a shipped or add-on file.
+3. __Regenerate__ with `npm run generate:permissions`: `AUDIT_EVENT.<NAME>` (the name upper-cased with underscores) now exists. An add-on instead declares the event in its own `config/default-config.json` and emits it through `host` — see [Addons](#addons) below.
 4. __Emit it__ through `recordAuditEvent(sink, event, onError)`, where the sink is `engine.getManager('AuditManager')`. Never call `logAuditEvent` directly: that skips the `enabled` switch, the on-failure rule and the outcome.
 5. __Decide `on-failure`.__ `refuse` means the action must not complete unless the record does: record first, then act, so a failed record refuses the action rather than leaving it done and unrecorded (`AgentTokenManager.mint`, `ShareManager.issue`, `UserManager.deleteUser` are the pattern). `continue` means the action proceeds and the loss is counted. This is failure handling, not importance; importance is `severity` on the record.
-6. __Carry the actor.__ The record's "who" comes from the context the caller was given ([security-posture.md](../security-posture.md) P1), built in one place: spread `actorOf(ctx)` (`{ eventType, ...who, …, metadata: { ...who.metadata, … } }`), never copy `user: ctx.username` across. A content builder (`buildPageMutationAuditEvent` and the rest) takes `viaProxy` beside `viaToken`. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that gives `user` = the person represented and a top-level `actor` = who actually did it, plus `metadata.delegated: 'proxy'` and `proxyGrantId`; with no proxy there is no `actor` field at all. `npm run lint:audit-attribution` fails on an audit row that sets `user` from anything else, or a builder call without `viaProxy`, unless the script lists it with a reason. Where nothing was given, say so: `user: 'unknown'` and `actorMissing: true` in metadata. Never invent an identity from imported content or a default.
+6. __Carry the actor.__ The record's "who" comes from the context the caller was given ([Every security-relevant call carries a context](security-developer-guide.md#every-security-relevant-call-carries-a-context)), built in one place: spread `actorOf(ctx)` (`{ eventType, ...who, …, metadata: { ...who.metadata, … } }`), never copy `user: ctx.username` across. A content builder (`buildPageMutationAuditEvent` and the rest) takes `viaProxy` beside `viaToken`. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that gives `user` = the person represented and a top-level `actor` = who actually did it, plus `metadata.delegated: 'proxy'` and `proxyGrantId`; with no proxy there is no `actor` field at all. `npm run lint:audit-attribution` fails on an audit row that sets `user` from anything else, or a builder call without `viaProxy`, unless the script lists it with a reason. There is no "nothing was given": a door that records takes the context as a mandatory parameter, so a job records its `JobContext` (origin and reason) and a boot path the system principal, never `unknown`. Never invent an identity from imported content or a default.
 7. __Record names, never values.__ A password field changed is `fields: ['password']`; a secret revealed is the key, not the value; an audit export is who, format and filter, never the content.
 8. __Regenerate the docs__: `npm run docs:audit`.
 9. __Test it, then sabotage it.__ One test that the record is written with the actor and the metadata; for `refuse`, one that a failing sink refuses the action and leaves the state untouched. Then break the emitter on purpose and watch the test go red before trusting it; write what you broke in the test's comment.
@@ -38,7 +38,7 @@ Decided by the operator on 2026-10-17 ([#1825](https://github.com/jwilleke/ngdpb
 
 - __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the person acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, AttachmentManager for files, an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares.
 - __Core records every refusal.__ A refused attempt is never left to the enforcement point to remember:
-  - page doors record each denial as `authorization-deny` (`PolicyInformationPoint.logAccessDecision`);
+  - page and media doors record each denial as `authorization-deny` (`PolicyInformationPoint.logAccessDecision`); an affordance records nothing;
   - `ApiContext.enforceDeny`, the one refusal helper, records the same `authorization-deny` event: actor, the person acted for, action, the resource and its owner when given, and the reason. __Not built yet__ (see [Known gaps](#known-gaps)).
 - __The PDP records nothing.__ It decides; recording is the enforcement point's and the refusal helper's.
 - Which events are recorded at all is configuration: each event's `enabled` in its catalog entry.
@@ -49,8 +49,8 @@ These records are what a person's read-only view of what happened to their own d
 
 An add-on audits its own actions without any core change (#1638):
 
-- Declare the event in the add-on's `config/default-config.json` exactly as core does: on the add-on's permission entry (`audit`) when it records that permission's action, otherwise under `ngdpbase.audit.events`. It reaches the registry through the configuration merge while the add-on is enabled.
-- Emit it as `recordAuditEvent(sink, { eventType: addonAuditEventName('ledger-post'), … })`, passing a string literal. The core union cannot name an add-on's events, so `addonAuditEventName` checks the `{target}-{action}` form, and `recordAuditEvent` refuses (throws) a name the merged registry does not declare.
+- Declare the event in the add-on's `config/default-config.json` exactly as core does: an `audit` field on a permission entry, the add-on's own permission when it records that permission's action, otherwise an entry with `"grantable": false`. It reaches the registry through the configuration merge while the add-on is enabled.
+- Emit it with the two functions `host` hands the add-on ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)): `host.recordAuditEvent(sink, { eventType: host.addonAuditEventName('ledger-post'), ...host.actorOf(ctx), … })`, passing a string literal. The core union cannot name an add-on's events, so `addonAuditEventName` checks the `{target}-{action}` form. Both `host` functions accept only the events this add-on declares in its own `config/default-config.json` and throw on any other name, core's or another add-on's, so one add-on cannot write records that look like another's. `recordAuditEvent` itself also refuses (throws) a name the merged registry does not declare, such as one whose add-on is disabled.
 - At boot, an enabled name that neither the shipped map nor an enabled add-on declares is a fatal configuration entry, as before.
 - `npm run lint:audit` reads every bundled add-on's map and treats each `addonAuditEventName('…')` literal as an emitter, so a declared, enabled add-on event with no emitter is red. An external add-on's CI has to hold that itself.
 
@@ -82,7 +82,7 @@ At boot the log says which provider loaded and whether the posture changed since
 - [audit-posture.md](../audit-posture.md)
 - [security-developer-guide.md](security-developer-guide.md)
 - [AuditManager](../managers/AuditManager.md)
-- `src/utils/auditEventNames.ts` (with `auditEventNames.generated.ts`), `src/utils/auditRegistry.ts`
+- `src/utils/auditEventNames.ts` (with `auditEventNames.generated.ts`), `src/utils/auditRegistry.ts`, `src/utils/permissionCatalog.ts`, `src/utils/addonHost.ts`
 
 ## Known gaps
 

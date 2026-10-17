@@ -12,7 +12,7 @@ code: src/managers/AuditManager.ts
 
 The `AuditManager` is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, and user actions. The AuditManager uses a __provider pattern__ to support multiple audit storage backends, making it flexible for different deployment scenarios from single-instance development to enterprise cloud deployments.
 
-What auditing actually implements — the hash chain, the event registry, critical-event durability, the off-box witness, and how to verify a log — is inventoried in [Audit posture](../audit-posture.md). This page is the manager API.
+What auditing actually implements — the hash chain, the event registry, durability for `refuse` events, the off-box witness, and how to verify a log — is inventoried in [Audit posture](../audit-posture.md). This page is the manager API. How to declare and emit an event — and that every emitter goes through `recordAuditEvent`, never `logAuditEvent` directly — is the [audit developer guide](../guides/audit-developer-guide.md).
 
 __Key Features:__
 
@@ -301,60 +301,31 @@ Place your provider file in `src/providers/CustomAuditProvider.js`. The AuditMan
 
 ### Basic Audit Logging
 
-```javascript
-const auditManager = engine.getManager('AuditManager');
+Every emitter records through `recordAuditEvent(sink, event, onError)`, with `AuditManager` as the sink. It honours the event's `enabled` switch and its `on-failure` rule and returns the outcome; calling `logAuditEvent` directly skips all three. The "who" comes from the caller's context through `actorOf(ctx)`, never `user: ctx.username`.
 
-// Log a page edit
-await auditManager.logAuditEvent({
-  eventType: 'page-edit',
-  user: 'john.doe',
-  userId: 'user-123',
-  sessionId: 'session-456',
-  ipAddress: '192.168.1.100',
-  resource: '/view/HomePage',
+```typescript
+import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { actorOf } from '../context/ActorContext.js';
+
+const sink = engine.getManager('AuditManager');
+const who = actorOf(ctx);
+
+// A `refuse` event: record first, then act. A failed record throws, and the
+// caller lets it propagate so the action does not happen unrecorded.
+await recordAuditEvent(sink, {
+  eventType: AUDIT_EVENT.PAGE_DELETE,
+  ...who,
+  action: 'delete',
+  resource: pageUuid,
   resourceType: 'page',
-  action: 'read',
-  result: 'allow',
-  severity: 'low',
-  metadata: {
-    pageId: 'page-789',
-    version: 5
-  }
-});
-
-// Log an access denied event
-await auditManager.logAuditEvent({
-  eventType: 'authorization-deny',
-  user: 'jane.smith',
-  resource: '/view/PrivatePage',
-  action: 'edit',
-  result: 'deny',
-  reason: 'Insufficient permissions',
-  policyId: 'policy-admin-only',
-  policyName: 'Admin Only Edit',
-  severity: 'medium',
-  context: {
-    requiredRole: 'admin',
-    userRole: 'viewer'
-  }
-});
-
-// Log a security incident
-await auditManager.logAuditEvent({
-  eventType: 'security-event',   // the specific kind goes in metadata.securityEventType
-  user: 'attacker',
-  ipAddress: '192.168.1.200',
-  resource: '/admin/users',
-  action: 'access',
-  result: 'deny',
-  reason: 'SQL injection attempt detected',
-  severity: 'critical',
-  metadata: {
-    attackVector: 'sql_injection',
-    payload: "' OR '1'='1"
-  }
+  result: 'success',
+  severity: 'high',
+  metadata: { ...who.metadata, pageUuid }
 });
 ```
+
+The page, attachment and token events have builders in `src/utils/auditEvents.ts` (`buildPageMutationAuditEvent`, `buildAttachmentAuditEvent`, `buildTokenAuditEvent`), which take `viaToken` and `viaProxy` from the context. Refusals at a page or media door are recorded by `PolicyInformationPoint` as `authorization-deny`; an emitter never records them itself ([Who records what](../guides/audit-developer-guide.md#who-records-what)).
 
 ### Searching Audit Logs
 
@@ -479,11 +450,12 @@ registry: target first, hyphen separated, URL-safe. Where an event is the action
 a permission authorizes, the two share the slug — `page-read` authorizes,
 `page-read` records — and the containing map says which is meant (#1201).
 
-__This table is generated from `ngdpbase.audit.events` in
-`config/app-default-config.json` by `npm run docs:audit` (#1207) and checked by
-`npm run docs:audit:check` and `auditVocabulary.test.ts`.__ Editing it by hand fails CI. The code
-lists the same names once in `src/utils/auditEventNames.ts`, typed, and
-`auditEventNames.test.ts` holds the two equal. `On failure` is what happens when the
+__This table is generated from the declarations in
+`config/app-default-config.json` — each `ngdpbase.permissions.definitions` entry's
+`audit` field (#1638) — by `npm run docs:audit` (#1207) and checked by
+`npm run docs:audit:check` and `auditVocabulary.test.ts`.__ Editing it by hand fails CI. The code's
+names are generated from the same declarations into `src/utils/auditEventNames.generated.ts`
+by `npm run generate:permissions`, typed; `npm run lint:permissions` fails when it is stale. `On failure` is what happens when the
 record cannot be written (`refuse` — the action does not complete unless the
 record does; `continue` — the action proceeds and the loss is counted), and
 `Recorded` is the `enabled` switch. Importance is `severity` on each record. An operator's `app-custom-config.json`
@@ -575,21 +547,22 @@ audited.
 Two earlier conventions are retired: the bare snake_case names (`access_decision`,
 `authentication`, `policy_evaluation`, `security_event`, `share_access`,
 `share_create`, `share_revoke`, retired by #1115) and the dotted names
-(`page-delete`, `token-mint`, `session-revoke`, retired by #1201). Records
+(`page.delete`, `token.mint`, `admin.sessions.revoke`, retired by #1201). Records
 already on disk keep the name they were written with and are __not__ mapped
-forward: a filter for `security-event` does not return `security-event` rows.
+forward: a filter for `security-event` does not return `security.event` or `security_event` rows.
 The #1115 resolver that mapped the snake_case names is gone with #1201, on the
 decision that the trail was days old and may die.
 
 #### What is deliberately not recorded
 
 `authorization-allow` has an emitter but nothing reaches it: `PolicyInformationPoint`
-records denials only. An allow fires on every page view, which is the
+records denials only; what was allowed is recorded by the enforcement point as the
+action's own event (`page-edit`, `asset-upload`). An allow fires on every page view, which is the
 read-volume `auditRegistry` exempts `page-read` for and that #334 was filed
 about. A denial is rare and is the half a security assessment asks about.
 
 `page-read` ships switched off (#1129, #1203): the emitter exists
-unconditionally, and `enabled` on the event in `ngdpbase.audit.events` decides
+unconditionally, and `enabled` on its permission entry's `audit` field decides
 at runtime whether it fires. Off — the default — a general-purpose deployment
 does not drown its log in reads; on, a records-style deployment gets access
 accounting, recorded at the moment view access is granted. The same switch is
@@ -666,7 +639,7 @@ __Returns:__ `Promise<void>`
 
 #### logAuditEvent(auditEvent)
 
-Log an audit event to the configured provider.
+Hand a record to the configured provider. This is the sink method `recordAuditEvent` calls; an emitter never calls it directly, because that skips the `enabled` switch, the `on-failure` rule and the outcome (see [Basic Audit Logging](#basic-audit-logging)).
 
 ```javascript
 const eventId = await auditManager.logAuditEvent({
@@ -712,6 +685,7 @@ __Parameters:__
   - `offset` (number): Result offset (default: 0)
   - `sortBy` (string): Sort field (default: 'timestamp')
   - `sortOrder` (string): Sort order 'asc' or 'desc' (default: 'desc')
+- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A person's read-only view of what happened to their own data ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)) is not built; until it is, only those permissions read the log.
 
 __Returns:__ `Promise<Object>`
 
@@ -820,119 +794,13 @@ __Returns:__ `Promise<void>`
 
 ## Integration with Other Managers
 
-### AuthorizationManager Integration
+Who records what is decided once ([audit developer guide — Who records what](../guides/audit-developer-guide.md#who-records-what)):
 
-```javascript
-// In AuthorizationManager
-class AuthorizationManager {
-  async checkPermission(user, resource, action) {
-    const auditManager = this.engine.getManager('AuditManager');
+- The manager that guards a resource records each action it carried out, at its own door, with the actor from the caller's context: `PageManager` the `page-*` events, `AttachmentManager` the `asset-*` events, `AgentTokenManager` the `token-*` events, an add-on's manager its own declared events.
+- Every refusal is core's: page and media doors record `authorization-deny` through `PolicyInformationPoint`; `ApiContext.enforceDeny` will record the same for every other refusal (not built yet, #1825).
+- `PolicyDecisionPoint` decides and records nothing.
 
-    const decision = await this.evaluatePolicy(user, resource, action);
-
-    // Log the authorization decision
-    await auditManager.logAuditEvent({
-      eventType: decision.allow ? 'authorization-allow' : 'authorization-deny',
-      user: user.username,
-      userId: user.id,
-      resource: resource,
-      action: action,
-      result: decision.allow ? 'allow' : 'deny',
-      reason: decision.reason,
-      policyId: decision.policyId,
-      policyName: decision.policyName,
-      severity: decision.allow ? 'low' : 'medium',
-      context: {
-        userRoles: user.roles,
-        requiredPermission: action
-      }
-    });
-
-    return decision;
-  }
-}
-```
-
-### PageManager Integration
-
-```javascript
-// In PageManager
-class PageManager {
-  async savePage(pageId, content, user) {
-    const auditManager = this.engine.getManager('AuditManager');
-    const startTime = Date.now();
-
-    try {
-      await this.storage.save(pageId, content);
-      const duration = Date.now() - startTime;
-
-      // Log successful page save
-      await auditManager.logAuditEvent({
-        eventType: 'page-edit',
-        user: user.username,
-        resource: `/view/${pageId}`,
-        resourceType: 'page',
-        action: 'edit',
-        result: 'success',
-        severity: 'low',
-        duration: duration,
-        metadata: {
-          pageId: pageId,
-          contentLength: content.length
-        }
-      });
-
-      return true;
-    } catch (error) {
-      // Log failed page save
-      await auditManager.logAuditEvent({
-        eventType: 'page-edit',
-        user: user.username,
-        resource: `/view/${pageId}`,
-        action: 'edit',
-        result: 'error',
-        reason: error.message,
-        severity: 'medium',
-        metadata: { error: error.message }
-      });
-
-      throw error;
-    }
-  }
-}
-```
-
-### AttachmentManager Integration
-
-```javascript
-// In AttachmentManager
-class AttachmentManager {
-  async uploadAttachment(file, user, sessionId, ipAddress) {
-    const auditManager = this.engine.getManager('AuditManager');
-
-    // Log attachment upload
-    await auditManager.logAuditEvent({
-      eventType: 'asset-upload',
-      user: user.username,
-      userId: user.id,
-      sessionId: sessionId,
-      ipAddress: ipAddress,
-      resource: `/attachments/${file.name}`,
-      resourceType: 'attachment',
-      action: 'upload',
-      result: 'success',
-      severity: 'low',
-      metadata: {
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type
-      }
-    });
-
-    return await this.storage.save(file);
-  }
-}
-```
+Each records through `recordAuditEvent`, as in [Basic Audit Logging](#basic-audit-logging). A `refuse` event is recorded before the action and its failure is let propagate, so the action does not complete unrecorded (`AgentTokenManager.mint`, `ShareManager.issue`, `UserManager.deleteUser`).
 
 ## Best Practices
 
@@ -1007,8 +875,8 @@ __Poor Event:__
 ### 4. Performance Considerations
 
 ```javascript
-// Use async logging - don't block operations
-await auditManager.logAuditEvent(event);  // Non-blocking
+// Emit through recordAuditEvent (never logAuditEvent directly)
+await recordAuditEvent(sink, event);
 
 // Batch flush for high-volume scenarios
 // FileAuditProvider queues events and flushes periodically
@@ -1050,22 +918,12 @@ await auditManager.logAuditEvent(event);  // Non-blocking
 
 ### 6. Error Handling
 
-```javascript
-// Always wrap audit calls in try-catch
-try {
-  await auditManager.logAuditEvent(event);
-} catch (error) {
-  // Audit logging should never break app functionality
-  logger.error('Failed to log audit event:', error);
-  // Continue with application logic
-}
+What happens when a record cannot be written is the event's declared `on-failure`, not the call site's choice:
 
-// Provider health checks with failover
-if (!await auditManager.isHealthy()) {
-  logger.warn('Audit provider unhealthy, using fallback');
-  // AuditManager automatically falls back to NullAuditProvider
-}
-```
+- `continue`: `recordAuditEvent` returns `dropped`, counts the loss and surfaces it on the dashboard; the action proceeds. Do not wrap it in another try/catch.
+- `refuse`: `recordAuditEvent` throws. Let it propagate; never catch-and-continue, because that completes the action without its record.
+
+If the provider cannot be used at all, AuditManager falls back to `NullAuditProvider` and marks the instance degraded (`ngdpbase.audit.on-failure: continue`), or holds the instance in maintenance mode (`refuse-boot`).
 
 ## Troubleshooting
 

@@ -31,7 +31,7 @@ Nothing else is an allow or a deny:
 
 ## A door records, an affordance does not
 
-A door is a check made before the action is performed or the content is served on its answer. Every door decision is recorded, and a refusal becomes an `authorization-deny` audit record with the subject's `user` and the request's `ipAddress`. An affordance only decides whether to show a button, link or menu item; it is not an attempt, so it is never recorded. Asking a door to decide an affordance writes a denial for every visitor who cannot act — the view's Edit button did this for every anonymous view until [#1668](https://github.com/jwilleke/ngdpbase/issues/1668). Page markup that hides a block is an affordance too: `<wiki:If test="hasPermission:edit">` asks `mayShow`, and `<wiki:If test="exists:Page">` asks `mayShowPage`, so a hidden block writes nothing. `<wiki:Include>` serves the other page's content, so it reads through the door (`readPage`) and a refusal is recorded; `resaveForKeywordChange` writes a page, so it asks `canAccess`. When it is unclear which a call is, it is a door.
+A door is a check made before the action is performed or the content is served on its answer. Every door decision is written to the application log, and a refusal becomes an `authorization-deny` audit record with the subject's `user` and the request's `ipAddress`. An allow is not an audit record of its own: the enforcement point records the action it then carries out ([Who records what](audit-developer-guide.md#who-records-what)). An affordance only decides whether to show a button, link or menu item; it is not an attempt, so it is never recorded. Asking a door to decide an affordance writes a denial for every visitor who cannot act — the view's Edit button did this for every anonymous view until [#1668](https://github.com/jwilleke/ngdpbase/issues/1668). Page markup that hides a block is an affordance too: `<wiki:If test="hasPermission:edit">` asks `mayShow`, and `<wiki:If test="exists:Page">` asks `mayShowPage`, so a hidden block writes nothing. `<wiki:Include>` serves the other page's content, so it reads through the door (`readPage`) and a refusal is recorded; `resaveForKeywordChange` writes a page, so it asks `canAccess`. When it is unclear which a call is, it is a door.
 
 ## Every security-relevant call carries a context
 
@@ -43,7 +43,7 @@ A manager method that decides access, writes an audit record, or acts on someone
 - `ngdpbase.access.policies` grants permissions to subjects. `hasPermission` resolves through `PolicyEvaluator` over these; a permission that appears in a policy is honoured whether or not anything else names it.
 - Roles are lists in `ngdpbase.roles.definitions`, additive, unordered, never gating anything. A role change is a configuration change and is recorded as `config-change`.
 
-__Adding a permission for a new action:__ declare it in the catalog with description, icon and colour; grant it in a policy; ask for it at the door. The registry-drift test fails when a permission is declared and checked nowhere, or checked and declared nowhere.
+__Adding a permission for a new action:__ declare it in the catalog with description, icon and colour; grant it in a policy; ask for it at the door. A catalog entry that only declares an audit event is `"grantable": false` and is never granted ([audit-developer-guide.md](audit-developer-guide.md)). The registry-drift test fails when a permission is declared and checked nowhere, or checked and declared nowhere.
 
 ## Addons
 

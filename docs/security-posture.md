@@ -328,7 +328,7 @@ What remains, grouped as the admin section would group them:
 | Identity and registration | `auth.password.enabled`, `auth.factors`, `application.registration`, `application.registration.password`, `auth.user.default-external`, `auth.magic-link.auto-provision`, `auth.magic-link.ttl-minutes`, `auth.google-oidc.auto-provision`, `auth.oidc.auto-provision` |
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
-| Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
+| Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `permissions.definitions` (each entry's `audit` field declares an event, #1638), `audit.retentiondays` |
 | Access control | `access.policies` (which role holds which permission), `roles.definitions` (each role's `required-aal`). A hand edit that gives a sensitive permission to a weaker role, or lowers a role's required level, shows in the boot-to-boot comparison |
 | Content sanitisation | `markup.html-policy`, `filters.security.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
@@ -408,9 +408,9 @@ __Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145)
 
 Every change to `ngdpbase.security.posture` or to any ingredient's value is recorded in the audit log: what changed, from what to what, by whom.
 
-This is not covered today. `src/utils/auditRegistry.ts` marks `admin-system` as `exempt: 'not-implemented'`, with the note that `page-raw-edit` and `admin.sessions.*` exist while the permission itself is not covered. So __no configuration change is audited at all__ — the posture is simply the first place that gap becomes intolerable, because the whole point of the section is that an operator can alter the instance's defences from a web form.
+When this was decided it was not covered: `src/utils/auditRegistry.ts` marked `admin-system` as `exempt: 'not-implemented'`, with the note that `page-raw-edit` and `admin.sessions.*` existed while the permission itself was not covered. So __no configuration change was audited at all__ — the posture is simply the first place that gap becomes intolerable, because the whole point of the section is that an operator can alter the instance's defences from a web form.
 
-It needs a new event type in the registry. That file is a __contract in code rather than configuration__ (`auditRegistry.ts:13`), which is what makes an unimplemented event visible as an exemption instead of an absence, so the event is declared there whether or not the emitting code lands in the same change.
+It needed a new event type in the registry (`config-change`, landed in [#1150](https://github.com/jwilleke/ngdpbase/issues/1150)). The registry was then a contract in code; since [#1200](https://github.com/jwilleke/ngdpbase/issues/1200) it is configuration, and since [#1638](https://github.com/jwilleke/ngdpbase/issues/1638) each event is declared on its permission entry's `audit` field, in the same change as its emitter ([audit developer guide](guides/audit-developer-guide.md)).
 
 Two properties follow from the rest of this document:
 
@@ -431,7 +431,7 @@ __One limit worth knowing__, found while implementing this: only the last 1000 l
 
 __The previous posture is read back from the audit log, not from a side file.__ Every storing provider reports `queryable: true` and is tamper-evident when the chain is on (`BaseAuditProvider.ts:219`), so the comparison inherits the integrity the log already has and there is one place the history lives. `NullAuditProvider` guarantees nothing and is not queryable — so an instance deliberately running without auditing has nothing to compare and records nothing, which is the correct outcome rather than a gap: that operator chose no audit trail, and the choice is itself on the record.
 
-The wider gap — that no administrative configuration change is audited — is larger than this epic and belongs in its own issue.
+The wider gap — that no administrative configuration change was audited — was larger than this epic and got its own issue, [#1150](https://github.com/jwilleke/ngdpbase/issues/1150) (landed: `config-change`).
 
 __Issues:__ __Landed 2026-09-01__ across [#1148](https://github.com/jwilleke/ngdpbase/issues/1148) (durability reported, not asserted), [#1149](https://github.com/jwilleke/ngdpbase/issues/1149) (lifecycle events), [#1150](https://github.com/jwilleke/ngdpbase/issues/1150) (configuration changes audited), [#1156](https://github.com/jwilleke/ngdpbase/issues/1156) (the boot record and previous-boot comparison) and [#1138](https://github.com/jwilleke/ngdpbase/issues/1138) (the off-box witness its strongest claim depended on).
 

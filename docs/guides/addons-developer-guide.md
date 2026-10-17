@@ -194,7 +194,7 @@ An addon under `addons/` is linted with the host. These run in `npm run lint`, i
 - `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
 - `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, and no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)). On the pre-commit hook.
 - `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
-- `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
+- `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `host.recordAuditEvent` and `host.addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
 
 `npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
 
@@ -403,7 +403,7 @@ async register(engine, config, host) {
 }
 ```
 
-- `host.recordAuditEvent` and `host.addonAuditEventName` accept only the audit events this addon declares in its own `config/default-config.json`: a permission entry's `audit` block, or an entry in `ngdpbase.audit.events`. Any other name, core's or another addon's, throws, so one addon cannot write records that look like another's.
+- `host.recordAuditEvent` and `host.addonAuditEventName` accept only the audit events this addon declares in its own `config/default-config.json`, as a permission entry's `audit` field (an entry with `"grantable": false` when it records something nobody is granted; [audit-developer-guide.md](audit-developer-guide.md#addons)). Any other name, core's or another addon's, throws, so one addon cannot write records that look like another's.
 - `host` is frozen. Nothing in it is removed or renamed without a major release; raise `minVersion` when the addon starts using a name core added.
 - An addon whose `register` takes two arguments still loads.
 - Anything an addon needs that `host` does not offer is added to core by pull request; the addon does not import it.
