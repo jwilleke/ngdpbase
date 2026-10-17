@@ -883,25 +883,38 @@ installs (\`npm ci\`), builds and tests it, checks the tag matches the
 \`npm publish --provenance\`. No npm token is stored anywhere: npm trusts this
 repository's workflow instead (trusted publishing).
 
-Once, before the first release:
+The first release, once. npm adds a trusted publisher only to a package that
+already exists, so nobody can take over a name by pointing a workflow at it.
+Adding one also needs your interactive npm login with 2FA, not a token. So
+you claim the name first with an empty placeholder:
 
-- In \`addons/${o.id}/package.json\`, remove \`"private": true\` and add
+- 1 Claim the name by hand with a placeholder \`0.0.0\`. In an empty directory
+  outside this repository, write a \`package.json\` holding only
+  \`{ "name": "${packageName(o)}", "version": "0.0.0" }\` and a \`README.md\`
+  saying "placeholder, not installable". Then run \`npm login\` and
+  \`npm publish --access public\`. No site installs it: it has no provenance,
+  so the installer refuses it, and a range such as \`^${SCAFFOLD_VERSION}\`
+  excludes \`0.0.0\` anyway.
+- 2 Add the trusted publisher on npmjs.com, in the package's settings, or with
+  \`npm trust\`, which needs npm 11.15.0 or later on your machine. Choose
+  GitHub Actions, this repository and workflow \`publish.yml\`. The workflow
+  itself needs only npm 11.5.1 to publish, and checks for it.
+- 3 In \`addons/${o.id}/package.json\`, remove \`"private": true\` and add
   \`"repository": { "type": "git", "url": "git+https://github.com/<owner>/<repo>.git", "directory": "addons/${o.id}" }\`.
-  npm refuses provenance from a repository other than this one.
-- Run \`npm install\` in \`addons/${o.id}/\` and commit \`package-lock.json\`.
-- On npmjs.com, in the package's settings, add a trusted publisher: GitHub
-  Actions, this repository, workflow \`publish.yml\`. npm adds one only to a
-  package that already exists. For a new name, publish one version by hand
-  first (\`npm publish --access public\`). That version has no provenance, so
-  sites refuse it: release the next version by tag.
-
-Each release: change \`version\` in \`addons/${o.id}/package.json\` (and in
-\`index.ts\`), commit, then tag that version and push the tag:
+  npm refuses provenance from any other repository. Run \`npm install\` in
+  \`addons/${o.id}/\`, then commit \`package.json\` and \`package-lock.json\`.
+  The workflow refuses to publish until this is done.
+- 4 Tag the version in \`package.json\` and push the tag. This is the first
+  real, signed release:
 
 \`\`\`bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v${SCAFFOLD_VERSION}
+git push origin v${SCAFFOLD_VERSION}
 \`\`\`
+
+Every later release: change \`version\` in \`addons/${o.id}/package.json\` (and
+in \`index.ts\`) and commit. Then tag that version and push the tag, for
+example \`git tag v0.2.0\` and \`git push origin v0.2.0\`.
 
 A site installs it from npm with this in its \`app-custom-config.json\`. The
 installer checks the release's provenance names \`repository\`, and refuses

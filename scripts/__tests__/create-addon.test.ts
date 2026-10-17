@@ -509,7 +509,20 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect(readme).toContain('## Release it');
       expect(readme).toContain('trusted publisher');
       expect(readme).toContain('workflow `publish.yml`');
-      expect(readme).toContain('git push origin v0.2.0');
+      // The bootstrap, in order: claim the name with an uninstallable 0.0.0,
+      // add the trusted publisher, make the package publishable, tag the first release.
+      const order = [
+        '{ "name": "@acme/volcano-watch-addon", "version": "0.0.0" }',
+        'placeholder, not installable',
+        'npm publish --access public',
+        '`npm trust`, which needs npm 11.15.0',
+        'remove `"private": true`',
+        'commit `package.json` and `package-lock.json`',
+        'git tag v0.1.0\ngit push origin v0.1.0'
+      ].map(t => readme.indexOf(t));
+      expect(order.every(i => i >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(readme).toContain('`git push origin v0.2.0`');
       const entry = /```json\n(\{\n {2}"ngdpbase\.addons\.install"[\s\S]*?)```/.exec(readme);
       expect(entry).not.toBeNull();
       expect(JSON.parse(entry![1])).toEqual({
