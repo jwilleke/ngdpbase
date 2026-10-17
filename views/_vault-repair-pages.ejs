@@ -1,0 +1,16 @@
+<%# #1842 — a repair item's pages, for their reader only: the route sets
+    `pages` just for the pages the viewer may read (the page door decides), so
+    another administrator never gets a title or a file name here. Footnotes
+    and comments are only said to be there, in the counts. %>
+<% (repair.pages || []).forEach(function (p) { %>
+    <div class="vault-repair-page">
+        <a href="<%= p.href %>"><%= p.title %></a>
+        <% if (p.files.length > 0) { %>
+            <ul class="mb-0 ps-3">
+                <% p.files.forEach(function (f) { %>
+                    <li><a href="<%= f.href %>" target="_blank" rel="noopener"><%= f.name %></a></li>
+                <% }); %>
+            </ul>
+        <% } %>
+    </div>
+<% }); %>

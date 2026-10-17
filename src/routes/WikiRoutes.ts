@@ -12674,11 +12674,16 @@ ${panes}
    * isn't sealed, also `admin-system`. Answers by redirecting back to the
    * admin dashboard or the profile, with what was moved or why not.
    */
-  /** The repair items `ctx` may see (#1842). Best-effort: a failure leaves the section out, not the page. */
+  /**
+   * The repair items `ctx` may see (#1842), each with the title, link and
+   * outside file names of the pages `ctx` may read (the page door decides;
+   * another admin gets owner, vault and uuid only). Best-effort: a failure
+   * leaves the section out, not the page.
+   */
   private async vaultRepairsFor(ctx: NonNullable<Request['userContext']>): Promise<VaultRepairItem[]> {
     try {
       const pageManager = this.engine.getManager<Partial<Pick<PageManagerClass, 'listVaultRepairs'>>>('PageManager');
-      return await pageManager?.listVaultRepairs?.(ctx) ?? [];
+      return await pageManager?.listVaultRepairs?.(ctx, { details: true }) ?? [];
     } catch (err) {
       logger.warn('[vault-repair] The repair list could not be read (#1842):', err);
       return [];

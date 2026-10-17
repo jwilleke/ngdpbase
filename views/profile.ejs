@@ -209,6 +209,7 @@
                                                     <i class="fas fa-lock"></i> <%= r.vault %> &middot;
                                                     <% if (r.page) { %>page <code><%= r.page %></code><% } else { %>pages its shared files name<% } %>
                                                     <small class="text-muted ms-2"><%= [r.files ? r.files + ' file(s)' : null, r.footnotes ? 'footnotes' : null, r.comments ? 'comments' : null].filter(Boolean).join(', ') %></small>
+                                                    <%- include('_vault-repair-pages', { repair: r }) %>
                                                 </span>
                                                 <% if (r.may) { %>
                                                     <form method="POST" action="/vault-repair" class="d-inline">

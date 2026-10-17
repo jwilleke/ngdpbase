@@ -64,7 +64,8 @@
 
     <%# #1842 — vault pages the startup checks found with files in the shared
         pool, or footnotes and comments in the public folders, left by moves
-        before #1839 / #1842. Named by owner, vault and page uuid only. An
+        before #1839 / #1842. Named by owner, vault and page uuid; a page's
+        title and its outside files' names only to whoever may read it. An
         administrator moves an unsealed vault's in; a sealed vault needs its
         owner, who sees their own on their profile. %>
     <% if (typeof vaultRepairs !== 'undefined' && vaultRepairs && vaultRepairs.length > 0) { %>
@@ -87,7 +88,10 @@
                     <% vaultRepairs.forEach(function (r) { %>
                         <tr>
                             <td><code><%= r.owner %>/<%= r.vault %></code></td>
-                            <td><% if (r.page) { %><code><%= r.page %></code><% } else { %>pages named by shared records<% } %></td>
+                            <td>
+                                <% if (r.page) { %><code><%= r.page %></code><% } else { %>pages named by shared records<% } %>
+                                <%- include('_vault-repair-pages', { repair: r }) %>
+                            </td>
                             <td>
                                 <%= [r.files ? r.files + ' file(s)' : null, r.footnotes ? 'footnotes' : null, r.comments ? 'comments' : null].filter(Boolean).join(', ') %>
                             </td>
