@@ -148,7 +148,7 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
+import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -8352,6 +8352,12 @@ ${panes}
         offerEmailSecondFactor, // #1523
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
+        // #1842: the person's own vault pages with data still outside the vault.
+        vaultRepairs: currentUser?.username
+          ? (await this.vaultRepairsFor(currentUser)).filter((r) => r.owner === currentUser.username)
+          : [],
+        vaultRepairNotice: typeof req.query.vaultRepair === 'string' ? req.query.vaultRepair : null,
+        vaultRepairError: typeof req.query.vaultRepairError === 'string' ? req.query.vaultRepairError : null,
         agentTokensEnabled, // #946
         agentTokensCanExtend, // #1734
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
@@ -11157,7 +11163,10 @@ ${panes}
         // deliberate choice rather than a fault.
         degradedManagers: (this.engine as unknown as {
           getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string }>;
-        }).getDegradedManagers?.() ?? []
+        }).getDegradedManagers?.() ?? [],
+        // #1842: what the startup checks found outside its vault, each with
+        // a "Move into vault" action where this admin may (unsealed vaults).
+        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
       };
 
       res.render('admin-dashboard', templateData);
@@ -12653,6 +12662,66 @@ ${panes}
         success: false,
         error: getErrorMessage(err) || 'Error starting reindex'
       });
+    }
+  }
+
+  /**
+   * POST /vault-repair — "Move into vault" for one vault page the startup
+   * checks found with data outside its vault (#1842), or POST
+   * /vault-repair/all — "Repair all I can". A form post (CSRF from the app-wide
+   * middleware). Who may is the door's (`PageManager.repairVaultPage`): the
+   * vault's owner, in their own session with the vault open; for a vault that
+   * isn't sealed, also `admin-system`. Answers by redirecting back to the
+   * admin dashboard or the profile, with what was moved or why not.
+   */
+  /** The repair items `ctx` may see (#1842). Best-effort: a failure leaves the section out, not the page. */
+  private async vaultRepairsFor(ctx: NonNullable<Request['userContext']>): Promise<VaultRepairItem[]> {
+    try {
+      const pageManager = this.engine.getManager<Partial<Pick<PageManagerClass, 'listVaultRepairs'>>>('PageManager');
+      return await pageManager?.listVaultRepairs?.(ctx) ?? [];
+    } catch (err) {
+      logger.warn('[vault-repair] The repair list could not be read (#1842):', err);
+      return [];
+    }
+  }
+
+  async vaultRepair(req: Request, res: Response, all: boolean) {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const back = body.return === 'profile' ? '/profile' : '/admin';
+    // The dashboard shows ?success / ?error; the profile its own card's notice.
+    const answer = (kind: 'success' | 'error', text: string) => res.redirect(303, back === '/profile'
+      ? `/profile?vaultRepair${kind === 'error' ? 'Error' : ''}=${encodeURIComponent(text)}#vault-repairs`
+      : `/admin?${kind}=${encodeURIComponent(text)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser) return await this.refuse(wikiContext, req, res, 'page');
+      const pageManager = this.engine.getManager<PageManagerClass>('PageManager');
+      if (!pageManager) return answer('error', 'Pages are not available.');
+      const describe = (c: { filesMoved: number; filesCopied: number; footnotes: number; comments: number }) =>
+        `${c.filesMoved} file(s) moved, ${c.filesCopied} copied (other public pages use them), ${c.footnotes} footnote(s) and ${c.comments} comment(s) moved into the vault.`;
+
+      if (all) {
+        const total = await pageManager.repairAllVaultPages(currentUser, { ownOnly: back === '/profile' });
+        const skipped = total.refused + total.failed > 0
+          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed (see the log)` : ''}.`
+          : '';
+        return answer(total.failed > 0 ? 'error' : 'success', `Repaired ${total.repaired} item(s): ${describe(total)}${skipped}`);
+      }
+
+      const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+      const page = str(body.page);
+      const result = await pageManager.repairVaultPage(
+        { owner: str(body.owner), vault: str(body.vault), page: page === '' ? null : page },
+        currentUser
+      );
+      // The door refused; refuse() answers an anonymous subject 401 (#1198).
+      if (!result.ok && result.refusal === 'denied') return await this.refuse(wikiContext, req, res, 'page');
+      if (!result.ok) return answer('error', result.message);
+      return answer('success', describe(result));
+    } catch (err: unknown) {
+      logger.error('[vault-repair] The repair did not complete (#1842):', err);
+      return answer('error', `The repair did not complete: ${getErrorMessage(err)}. Anything not moved is still where it was.`);
     }
   }
 
@@ -15832,6 +15901,9 @@ ${panes}
     app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
+    // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
+    app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
+    app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));
     // #969 — human surface over the #947 deleted-pages API
     app.get('/admin/trash', (req: Request, res: Response) => this.adminTrash(req, res));

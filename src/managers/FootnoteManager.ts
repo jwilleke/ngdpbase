@@ -11,7 +11,9 @@ import {
   movePageNotes,
   pageNotesPlace,
   pageNotesRoots,
-  reportVaultPageNotesOutside,
+  moveOutsideNotesIntoVault,
+  VaultPageNotesCheck,
+  type VaultPageNotesOutside,
   type PageNotesRoots,
   type PageRef
 } from '../utils/pageNotes.js';
@@ -37,6 +39,11 @@ interface FootnotePlace {
 export default class FootnoteManager extends BaseManager {
   private storageDir: string = './data/footnotes';
   private enabled: boolean = true;
+  /** Vault pages whose footnotes are still in the public folder (#1839), and the repair's re-check (#1842). */
+  private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
+    markDegraded: (reason) => this.markDegraded(reason),
+    markReadyIfDegradedBy: (reason) => this.markReadyIfDegradedBy(reason)
+  });
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -62,7 +69,7 @@ export default class FootnoteManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.storageDir, { recursive: true });
-      await reportVaultPageNotesOutside(this.engine, this.roots(), (reason) => this.markDegraded(reason));
+      await this.outsideCheck.run({ notify: true });
       logger.debug('FootnoteManager initialized');
     }
   }
@@ -321,6 +328,33 @@ export default class FootnoteManager extends BaseManager {
    */
   async movePageFootnotes(uuid: string, fromName: string, toName: string, ctx: ActorContext): Promise<boolean> {
     return movePageNotes(ctx, uuid, fromName, toName, this.roots());
+  }
+
+  /** Vault pages whose footnotes the last check found in the public folder (#1839): owner, vault, page uuid. */
+  vaultPageNotesOutside(): VaultPageNotesOutside[] {
+    return this.outsideCheck.findings();
+  }
+
+  /** Run that check again (#1842): after a repair, so the subsystem banner clears once nothing is left. */
+  async recheckVaultPageNotesOutside(): Promise<VaultPageNotesOutside[]> {
+    return this.outsideCheck.run({ notify: false });
+  }
+
+  /**
+   * Move vault page `uuid`'s footnotes left in the public folder into its
+   * vault (#1842), sealed when the vault is; merged with any the vault already
+   * has. Who may ask, and that `uuid` is a page of `vault`, is the caller's
+   * (`PageManager.repairVaultPage`) to decide.
+   *
+   * @returns how many footnotes were (or, with `dryRun`, would be) moved
+   */
+  async moveOutsideFootnotesIntoVault(
+    vault: { owner: string; store: string },
+    uuid: string,
+    ctx: ActorContext,
+    opts: { dryRun?: boolean } = {}
+  ): Promise<number> {
+    return moveOutsideNotesIntoVault(ctx, vault, uuid, this.roots(), opts);
   }
 
   async shutdown(): Promise<void> {}

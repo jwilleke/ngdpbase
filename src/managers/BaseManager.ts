@@ -302,6 +302,16 @@ abstract class BaseManager {
   }
 
   /**
+   * Record that this manager is working again, but only while it is still
+   * degraded for `reason` — the one a check set, now cleared by re-running
+   * it (#1842). A different fault set since stays reported.
+   */
+  protected markReadyIfDegradedBy(reason: string): boolean {
+    if (this.status.state !== 'degraded' || this.status.reason !== reason) return false;
+    return this.markReady();
+  }
+
+  /**
    * Apply a state and audit it if it CHANGED.
    *
    * Only a transition is an event. A manager that starts degraded and stays
