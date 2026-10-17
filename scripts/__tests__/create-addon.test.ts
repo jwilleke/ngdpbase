@@ -32,6 +32,7 @@ import {
   PUBLISH_WORKFLOW_VERSION,
   type ScaffoldOptions
 } from '../create-addon';
+import { NONCE, scriptsWithoutNonce, inlineHandlers, javascriptUrls } from '../../src/__tests__/__fixtures__/viewCspContract';
 
 let tmp: string;
 
@@ -188,6 +189,21 @@ describe('#1244 — the generated addon has the guarded defaults, and passes eve
     expect(subject.run(repo)).toEqual([]);
     // And the view IS in the csrf guard's scope — a tokenless POST there would be reported.
     expect(csrf.collectFiles(repo)).toContain(path.join('addons', 'volcano-watch', 'views', 'volcano-watch-status.ejs'));
+  });
+
+  // #1706: the scaffold's views follow the CSP contract the host's own views are held to.
+  test('every generated view carries the nonce, and has no inline handler or javascript: URL', async () => {
+    await scaffoldAddon(opts());
+    const viewsDir = path.join(tmp, 'volcano-watch', 'views');
+    const views = (await fs.readdir(viewsDir)).filter((f) => f.endsWith('.ejs'));
+    expect(views.length).toBeGreaterThan(0);
+    for (const name of views) {
+      const source = await fs.readFile(path.join(viewsDir, name), 'utf8');
+      expect(source).toContain(NONCE);
+      expect(scriptsWithoutNonce(source)).toEqual([]);
+      expect(inlineHandlers(source)).toEqual([]);
+      expect(javascriptUrls(source)).toEqual([]);
+    }
   });
 });
 

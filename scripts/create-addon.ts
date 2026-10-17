@@ -537,7 +537,9 @@ function statusView(o: ScaffoldOptions): string {
   </form>
   <div id="${o.id}-result" class="mt-2"></div>
 </div>
-<script>
+<script nonce="<%= locals.cspNonce %>">
+  // The response's nonce lets this run under a strict script policy; an
+  // inline on*= handler or a javascript: URL never would (#1706).
   // A mutating request carries the CSRF token: csrfFetch is loaded by the
   // shared header (/js/csrf.js). A bare fetch here is refused by the host
   // and reads as "Network error" to the user (#727, #1176).

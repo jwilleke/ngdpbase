@@ -102,7 +102,7 @@ const PREFILL_PATHS = [
     <div class="card mb-4">
       <div class="card-header d-flex align-items-center justify-content-between fw-semibold">
         <span>Fields</span>
-        <button type="button" class="btn btn-sm btn-success" onclick="addField()">
+        <button type="button" class="btn btn-sm btn-success" id="add-field">
           <i class="fas fa-plus me-1"></i>Add Field
         </button>
       </div>
@@ -122,8 +122,8 @@ const PREFILL_PATHS = [
       </button>
       <a href="/addons/forms" class="btn btn-outline-secondary">Cancel</a>
       <% if (!isNew) { %>
-        <button type="button" class="btn btn-outline-danger ms-auto"
-          onclick="if(confirm('Delete this form definition? This cannot be undone.\n\nNote: deletion is blocked if any submissions exist.')) { document.getElementById('delete-form').submit(); }">
+        <button type="button" class="btn btn-outline-danger ms-auto" id="delete-form-btn"
+          data-confirm="Delete this form definition? This cannot be undone.&#10;&#10;Note: deletion is blocked if any submissions exist.">
           <i class="fas fa-trash me-1"></i>Delete Form
         </button>
       <% } %>
@@ -175,42 +175,42 @@ function renderFields() {
     }).join('');
 
     var reorderBtns =
-      '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (isFirst ? 'disabled' : '') + ' onclick="moveUp(' + i + ')" title="Move up">▲</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (isLast ? 'disabled' : '') + ' onclick="moveDown(' + i + ')" title="Move down">▼</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeField(' + i + ')" title="Remove">&times;</button>';
+      '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (isFirst ? 'disabled' : '') + ' data-action="move-up" title="Move up">▲</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (isLast ? 'disabled' : '') + ' data-action="move-down" title="Move down">▼</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger" data-action="remove" title="Remove">&times;</button>';
 
     var requiredCheck = isSection
       ? '<span class="text-muted small">(section)</span>'
-      : '<div class="form-check"><input class="form-check-input" type="checkbox" id="req-' + i + '"' + (f.required ? ' checked' : '') + ' onchange="updateField(' + i + ',\'required\',this.checked)">' +
+      : '<div class="form-check"><input class="form-check-input" type="checkbox" id="req-' + i + '"' + (f.required ? ' checked' : '') + ' data-key="required">' +
         '<label class="form-check-label small" for="req-' + i + '">Required</label></div>';
 
     var extraFields = isSection ? '' :
       '<div class="col-md-4"><label class="form-label form-label-sm mb-1">Placeholder</label>' +
-      '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.placeholder ?? '') + '" oninput="updateField(' + i + ',\'placeholder\',this.value)"></div>' +
+      '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.placeholder ?? '') + '" data-key="placeholder"></div>' +
 
       '<div class="col-md-4"><label class="form-label form-label-sm mb-1">Description / Help text</label>' +
-      '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.description ?? '') + '" oninput="updateField(' + i + ',\'description\',this.value)"></div>' +
+      '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.description ?? '') + '" data-key="description"></div>' +
 
       '<div class="col-md-4"><label class="form-label form-label-sm mb-1">Prefill path</label>' +
-      '<input type="text" class="form-control form-control-sm" list="prefill-list" value="' + escAttr(f.prefill ?? '') + '" oninput="updateField(' + i + ',\'prefill\',this.value)" placeholder="e.g. user.email"></div>' +
+      '<input type="text" class="form-control form-control-sm" list="prefill-list" value="' + escAttr(f.prefill ?? '') + '" data-key="prefill" placeholder="e.g. user.email"></div>' +
 
       (isDropdown
         ? '<div class="col-12"><label class="form-label form-label-sm mb-1">Options <span class="text-muted">(one per line)</span></label>' +
-          '<textarea class="form-control form-control-sm" rows="3" oninput="updateFieldOptions(' + i + ',this.value)">' + escHtml(optionsText) + '</textarea></div>'
+          '<textarea class="form-control form-control-sm" rows="3" data-key="options">' + escHtml(optionsText) + '</textarea></div>'
         : '');
 
     return '<div class="border rounded p-3 mb-2 bg-light field-row" data-idx="' + i + '">' +
       '<div class="d-flex align-items-center gap-2 mb-2">' +
         '<span class="badge bg-secondary me-1">' + (i + 1) + '</span>' +
-        '<div style="min-width:140px"><select class="form-select form-select-sm" onchange="updateField(' + i + ',\'type\',this.value);renderFields()">' + typeOptions + '</select></div>' +
+        '<div style="min-width:140px"><select class="form-select form-select-sm" data-key="type">' + typeOptions + '</select></div>' +
         '<div class="ms-auto d-flex gap-1">' + reorderBtns + '</div>' +
       '</div>' +
       '<div class="row g-2">' +
         '<div class="col-md-3"><label class="form-label form-label-sm mb-1">Name</label>' +
-        '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.name ?? '') + '" oninput="updateField(' + i + ',\'name\',this.value)" placeholder="machine-name"></div>' +
+        '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.name ?? '') + '" data-key="name" placeholder="machine-name"></div>' +
 
         '<div class="col-md-5"><label class="form-label form-label-sm mb-1">Label</label>' +
-        '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.label ?? '') + '" oninput="updateField(' + i + ',\'label\',this.value)" placeholder="Display label"></div>' +
+        '<input type="text" class="form-control form-control-sm" value="' + escAttr(f.label ?? '') + '" data-key="label" placeholder="Display label"></div>' +
 
         '<div class="col-md-2 d-flex align-items-end pb-1">' + requiredCheck + '</div>' +
         extraFields +
@@ -259,6 +259,50 @@ function moveDown(idx) {
   fields[idx + 1] = fields[idx];
   fields[idx] = tmp;
   renderFields();
+}
+
+// Listeners, not inline handlers: a strict script policy runs no on*= attribute (#1706).
+var fieldsContainer = document.getElementById('fields-container');
+function rowIndex(el) {
+  return Number(el.closest('.field-row').dataset.idx);
+}
+
+fieldsContainer.addEventListener('click', function(e) {
+  var btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  var idx = rowIndex(btn);
+  var action = btn.dataset.action;
+  if (action === 'move-up') moveUp(idx);
+  else if (action === 'move-down') moveDown(idx);
+  else if (action === 'remove') removeField(idx);
+});
+
+// Text as it is typed; the checkbox and the type select on change.
+fieldsContainer.addEventListener('input', function(e) {
+  var el = e.target;
+  var key = el.dataset.key;
+  if (!key || key === 'required' || key === 'type') return;
+  if (key === 'options') updateFieldOptions(rowIndex(el), el.value);
+  else updateField(rowIndex(el), key, el.value);
+});
+
+fieldsContainer.addEventListener('change', function(e) {
+  var el = e.target;
+  if (el.dataset.key === 'required') {
+    updateField(rowIndex(el), 'required', el.checked);
+  } else if (el.dataset.key === 'type') {
+    updateField(rowIndex(el), 'type', el.value);
+    renderFields();
+  }
+});
+
+document.getElementById('add-field').addEventListener('click', addField);
+
+var deleteFormBtn = document.getElementById('delete-form-btn');
+if (deleteFormBtn) {
+  deleteFormBtn.addEventListener('click', function() {
+    if (confirm(deleteFormBtn.dataset.confirm)) document.getElementById('delete-form').submit();
+  });
 }
 
 document.getElementById('builder-form').addEventListener('submit', function() {
