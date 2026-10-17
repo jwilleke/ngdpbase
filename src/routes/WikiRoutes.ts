@@ -63,6 +63,7 @@ import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
 import type { Policy } from '../types/Policy.js';
+import type { JournalAuthorCounter } from '../types/Journal.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
 import { SealedVaultRefusedError } from '../utils/privateStoreMeta.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
@@ -8450,11 +8451,9 @@ ${panes}
     }
 
     try {
-      const journalManager = this.engine.getManager('JournalDataManager') as {
-        countByAuthor?: (u: string) => number;
-      };
+      const journalManager = this.engine.getManager<Partial<JournalAuthorCounter>>('JournalDataManager');
       if (journalManager?.countByAuthor) {
-        counts.journal = journalManager.countByAuthor(username);
+        counts.journal = await journalManager.countByAuthor(username, ctx);
       }
     } catch (err) {
       logger.warn('[/profile] getMyContributionsCounts: journal count failed', { error: err instanceof Error ? err.message : String(err) });
