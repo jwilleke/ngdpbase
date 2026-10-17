@@ -26,6 +26,10 @@ import {
   toTitleCase,
   SLUG_PATTERN,
   ngdpbaseVersion,
+  publishWorkflow,
+  readPublishWorkflow,
+  updatePublishWorkflow,
+  PUBLISH_WORKFLOW_VERSION,
   type ScaffoldOptions
 } from '../create-addon';
 
@@ -400,15 +404,15 @@ describe('--repo (#1636) — a whole standalone repository', () => {
     expect(await fs.readFile(path.join(repoRoot(), 'LICENSE'), 'utf8')).toContain('Apache License');
   });
 
-  describe('publish.yml (#1863) — npm trusted publishing with provenance on a version tag', () => {
-    interface Step { name?: string; uses?: string; run?: string; with?: Record<string, unknown> }
-    interface Workflow {
-      on: { push: { tags: string[] } };
-      permissions: Record<string, string>;
-      jobs: { publish: { 'runs-on': string; permissions: Record<string, string>; defaults: { run: { 'working-directory': string } }; steps: Step[] } };
-    }
+  describe('publish.yml (#1863) — npm trusted publishing with provenance on a release tag', () => {
+    interface Step { name?: string; id?: string; uses?: string; run?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string>; 'working-directory'?: string }
+    interface Job { 'runs-on': string; needs?: string; permissions: Record<string, string>; outputs?: Record<string, string>; steps: Step[] }
+    interface Workflow { on: { push: { tags: string[] } }; env: Record<string, string>; permissions: Record<string, string>; jobs: { publish: Job; release: Job } }
+
+    const REPO = 'acme/volcano-repo';
     const workflowPath = (): string => path.join(repoRoot(), '.github', 'workflows', 'publish.yml');
-    const load = async (): Promise<{ text: string; wf: Workflow }> => {
+    const load = async (over: Partial<ScaffoldOptions> = {}): Promise<{ text: string; wf: Workflow }> => {
+      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme', ...over }));
       const text = await fs.readFile(workflowPath(), 'utf8');
       return { text, wf: yaml.load(text) as Workflow };
     };
@@ -418,111 +422,291 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       return found;
     };
 
-    /** Run one step's shell in a package dir holding `pkg`, as the runner would. */
-    function runStep(s: Step, pkg: Record<string, unknown>, env: Record<string, string> = {}): { status: number | null; out: string } {
-      const dir = path.join(tmp, `pkg-${Math.random().toString(36).slice(2)}`);
-      fs.ensureDirSync(dir);
-      fs.writeJsonSync(path.join(dir, 'package.json'), pkg);
-      const run = spawnSync('bash', ['-e', '-c', s.run!], {
-        cwd: dir,
-        encoding: 'utf8',
-        env: { PATH: process.env.PATH ?? '', GITHUB_SERVER_URL: 'https://github.com', GITHUB_REPOSITORY: 'acme/volcano-watch', GITHUB_REF_NAME: 'v0.1.0', ...env }
-      });
-      return { status: run.status, out: run.stdout + run.stderr };
-    }
-
-    test('--repo writes it; it parses, runs on v* tags, from the addon directory', async () => {
-      const result = await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
-      expect(result.files).toContain('.github/workflows/publish.yml');
-      const { wf } = await load();
-      expect(wf.on).toEqual({ push: { tags: ['v*'] } });
-      expect(wf.jobs.publish['runs-on']).toBe('ubuntu-latest');
-      expect(wf.jobs.publish.defaults.run['working-directory']).toBe('addons/volcano-watch');
-      const uses = wf.jobs.publish.steps.map(s => s.uses).filter(Boolean);
-      expect(uses).toEqual(['actions/checkout@v7', 'actions/setup-node@v7']);
-      expect(wf.jobs.publish.steps[1].with).toEqual({ 'node-version': '24.x', 'registry-url': 'https://registry.npmjs.org' });
+    /** A package.json that follows every publishing rule, for add-on `slug` in REPO. */
+    const goodPkg = (slug = 'volcano-watch', over: Record<string, unknown> = {}): Record<string, unknown> => ({
+      name: `@acme/${slug}-addon`,
+      version: '0.1.0',
+      license: 'Apache-2.0',
+      engines: { node: '>=24.15.0' },
+      files: ['index.js'],
+      repository: { type: 'git', url: `https://github.com/${REPO}.git`, directory: `addons/${slug}` },
+      ngdpbase: { slug, minVersion: '5.14.0' },
+      ...over
     });
 
-    test('publishes with provenance on an OIDC token, never a stored NPM_TOKEN', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+    /** An add-on repository holding `addons` (slug → package.json, plus extra files). */
+    function makeRepo(addons: Record<string, { pkg?: Record<string, unknown>; files?: Record<string, string> }>): string {
+      const root = path.join(tmp, `gh-${Math.random().toString(36).slice(2)}`);
+      for (const [slug, a] of Object.entries(addons)) {
+        const dir = path.join(root, 'addons', slug);
+        fs.ensureDirSync(dir);
+        if (a.pkg) fs.writeJsonSync(path.join(dir, 'package.json'), a.pkg);
+        for (const [rel, content] of Object.entries(a.files ?? {})) {
+          fs.ensureDirSync(path.dirname(path.join(dir, rel)));
+          fs.writeFileSync(path.join(dir, rel), content);
+        }
+      }
+      fs.ensureDirSync(root);
+      return root;
+    }
+
+    /** Run one step's shell as the runner would: in `cwd`, with GITHUB_OUTPUT and RUNNER_TEMP, and the step's env given as values. */
+    function runStep(s: Step, cwd: string, env: Record<string, string> = {}): { status: number | null; out: string; outputs: Record<string, string> } {
+      const runnerTemp = fs.mkdtempSync(path.join(tmp, 'runner-'));
+      const outputFile = path.join(runnerTemp, 'output');
+      fs.writeFileSync(outputFile, '');
+      const run = spawnSync('bash', ['-e', '-c', s.run!], {
+        cwd,
+        encoding: 'utf8',
+        env: {
+          PATH: process.env.PATH ?? '', HOME: tmp, RUNNER_TEMP: runnerTemp, GITHUB_OUTPUT: outputFile,
+          GITHUB_SERVER_URL: 'https://github.com', GITHUB_REPOSITORY: REPO, GITHUB_REF_NAME: 'volcano-watch-v0.1.0',
+          NGDPBASE_PLAIN_TAGS: 'false', ...env
+        }
+      });
+      const outputs = Object.fromEntries(fs.readFileSync(outputFile, 'utf8').split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+      return { status: run.status, out: run.stdout + run.stderr, outputs };
+    }
+
+    test('--repo writes it with a version marker; it parses; publish then release', async () => {
+      const result = await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+      expect(result.files).toContain('.github/workflows/publish.yml');
+      const { text, wf } = await load();
+      expect(text.split('\n')[0]).toBe(`# ngdpbase-publish-workflow: ${PUBLISH_WORKFLOW_VERSION}`);
+      expect(Object.keys(wf.jobs)).toEqual(['publish', 'release']);
+      expect(wf.jobs.publish['runs-on']).toBe('ubuntu-latest');
+      expect(wf.jobs.publish.steps.slice(0, 2).map(s => s.uses)).toEqual(['actions/checkout@v7', 'actions/setup-node@v7']);
+      expect(wf.jobs.publish.steps[1].with).toEqual({ 'node-version': '24.x', 'registry-url': 'https://registry.npmjs.org' });
+      // The order agreed on #1863: rules, core, install, build, test, pack check, publish.
+      expect(wf.jobs.publish.steps.slice(2).map(s => s.name)).toEqual([
+        'Node 24.15 or later, npm 11.5.1 or later',
+        'Resolve the add-on from the tag',
+        'package.json follows the publishing rules',
+        'Does the add-on import ngdpbase core?',
+        'Build ngdpbase core at ngdpbase.minVersion',
+        'Install',
+        'Build',
+        'Test',
+        'The package ships no .ts sources or tests',
+        'Publish with provenance'
+      ]);
+      expect(wf.jobs.release.needs).toBe('publish');
+    });
+
+    test('by default only <slug>-v<version> tags trigger it', async () => {
+      const { wf } = await load();
+      expect(wf.on).toEqual({ push: { tags: ['*-v[0-9]*'] } });
+      expect(wf.env).toEqual({ NGDPBASE_PLAIN_TAGS: 'false' });
+    });
+
+    test('--plain-tags opts in to v<version> tags, and needs --repo', async () => {
+      expect(parseArgs(['--id', 'volcano-watch', '--repo', '--scope', '@acme', '--plain-tags']).options!.plainTags).toBe(true);
+      expect(parseArgs(['--id', 'volcano-watch', '--repo', '--scope', '@acme']).options!.plainTags).toBeUndefined();
+      expect(parseArgs(['--id', 'volcano-watch', '--scope', '@acme', '--plain-tags']).error).toContain('--plain-tags only applies with --repo');
+      const { wf } = await load({ plainTags: true });
+      expect(wf.on).toEqual({ push: { tags: ['*-v[0-9]*', 'v[0-9]*'] } });
+      expect(wf.env).toEqual({ NGDPBASE_PLAIN_TAGS: 'true' });
+      const readme = await fs.readFile(path.join(repoRoot(), 'README.md'), 'utf8');
+      expect(readme).toContain('git tag v0.1.0\n');
+    });
+
+    test('OIDC publish with provenance and no stored token; only the release job writes', async () => {
       const { text, wf } = await load();
       expect(wf.permissions).toEqual({ contents: 'read' });
       expect(wf.jobs.publish.permissions).toEqual({ 'id-token': 'write', contents: 'read' });
-      const runs = wf.jobs.publish.steps.map(s => s.run?.trim()).filter(Boolean);
-      // Install, build and test come before the publish, and the publish is last.
-      expect(runs.slice(-4)).toEqual(['npm ci', 'npm run build --if-present', 'npm run test --if-present', 'npm publish --provenance --access public']);
+      expect(wf.jobs.release.permissions).toEqual({ contents: 'write' });
+      expect(step(wf, 'Publish with provenance').run!.trim()).toBe('npm publish --provenance --access public');
       expect(text).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./);
+      // Values reach scripts through env, never as an expression inside the script.
+      for (const s of [...wf.jobs.publish.steps, ...wf.jobs.release.steps]) expect(s.run ?? '').not.toContain('${{');
     });
 
-    test('requires Node 24.15 and npm 11.5.1, and the check runs', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
-      const s = step((await load()).wf, 'Node 24.15 or later, npm 11.5.1 or later');
+    test('the release job attaches the published tarball and its sha512 to a release for the tag', async () => {
+      const { wf } = await load();
+      const [fetch, release] = wf.jobs.release.steps.slice(1);
+      expect(fetch.env).toEqual({ SPEC: '${{ needs.publish.outputs.name }}@${{ needs.publish.outputs.version }}' });
+      expect(fetch.run).toContain('npm pack "$SPEC" --json');
+      expect(fetch.run).toContain('sha512sum "$tarball" > "$tarball.sha512"');
+      expect(release.env!.GH_TOKEN).toBe('${{ github.token }}');
+      expect(release.run).toContain('gh release create "$GITHUB_REF_NAME" "$TARBALL" "$TARBALL.sha512"');
+      expect(release.run).toContain('--verify-tag');
+      expect(wf.jobs.publish.outputs).toEqual({ name: '${{ steps.tag.outputs.name }}', version: '${{ steps.tag.outputs.version }}' });
+    });
+
+    test('the Node/npm check runs and passes on this repository\'s engines (>=24.15)', async () => {
+      const { wf } = await load();
+      const s = step(wf, 'Node 24.15 or later, npm 11.5.1 or later');
       expect(s.run).toContain('below(process.versions.node, "24.15.0")');
       expect(s.run).toContain('below(npm, "11.5.1")');
-      // The engines this repository itself requires (>=24.15) pass it.
-      expect(runStep(s, {})).toEqual({ status: 0, out: '' });
+      expect(runStep(s, tmp)).toMatchObject({ status: 0, out: '' });
     });
 
-    test('the tag must equal v<package.json version>', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
-      const s = step((await load()).wf, 'Tag matches package.json version');
-      expect(runStep(s, { version: '0.1.0' }).status).toBe(0);
-      const bad = runStep(s, { version: '0.2.0' });
-      expect(bad.status).not.toBe(0);
-      expect(bad.out).toContain('tag v0.1.0 does not match package.json version 0.2.0');
+    describe('the tag names the add-on folder', () => {
+      let resolve: Step;
+      beforeEach(async () => { resolve = step((await load()).wf, 'Resolve the add-on from the tag'); });
+
+      test('<slug>-v<version> resolves addons/<slug>, with the package name from its package.json', () => {
+        // A multi-add-on repository: the slug and the package name differ.
+        const root = makeRepo({
+          accounting: { pkg: goodPkg('accounting', { name: '@jwilleke/accounting-addon', version: '0.2.0' }) },
+          'volcano-watch': { pkg: goodPkg() }
+        });
+        const r = runStep(resolve, root, { GITHUB_REF_NAME: 'accounting-v0.2.0' });
+        expect(r.status).toBe(0);
+        expect(r.outputs).toEqual({ slug: 'accounting', dir: 'addons/accounting', name: '@jwilleke/accounting-addon', version: '0.2.0' });
+        expect(runStep(resolve, root, { GITHUB_REF_NAME: 'volcano-watch-v0.1.0' }).outputs.dir).toBe('addons/volcano-watch');
+      });
+
+      test('refuses a slug with no addons/<slug>/package.json', () => {
+        const r = runStep(resolve, makeRepo({ 'volcano-watch': { pkg: goodPkg() } }), { GITHUB_REF_NAME: 'ledger-v0.1.0' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('names add-on ledger, but there is no addons/ledger/package.json');
+      });
+
+      test('refuses a folder whose ngdpbase.slug differs', () => {
+        const root = makeRepo({ 'volcano-watch': { pkg: goodPkg('volcano-watch', { ngdpbase: { slug: 'volcano', minVersion: '5.14.0' } }) } });
+        const r = runStep(resolve, root);
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('addons/volcano-watch/package.json has ngdpbase.slug "volcano", not volcano-watch');
+      });
+
+      test('refuses a tag version that is not package.json\'s', () => {
+        const r = runStep(resolve, makeRepo({ 'volcano-watch': { pkg: goodPkg() } }), { GITHUB_REF_NAME: 'volcano-watch-v0.2.0' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('tag volcano-watch-v0.2.0 is version 0.2.0, but addons/volcano-watch/package.json is 0.1.0');
+      });
+
+      test('refuses a tag that is neither form', () => {
+        const r = runStep(resolve, makeRepo({ 'volcano-watch': { pkg: goodPkg() } }), { GITHUB_REF_NAME: 'release-1' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('is not <slug>-v<version>');
+      });
+
+      test('a plain v<version> tag is refused unless the repository opted in, then names its one add-on', () => {
+        const one = makeRepo({ 'volcano-watch': { pkg: goodPkg() } });
+        const refused = runStep(resolve, one, { GITHUB_REF_NAME: 'v0.1.0' });
+        expect(refused.status).not.toBe(0);
+        expect(refused.out).toContain('--plain-tags');
+
+        const ok = runStep(resolve, one, { GITHUB_REF_NAME: 'v0.1.0', NGDPBASE_PLAIN_TAGS: 'true' });
+        expect(ok.status).toBe(0);
+        expect(ok.outputs.dir).toBe('addons/volcano-watch');
+
+        const two = makeRepo({ 'volcano-watch': { pkg: goodPkg() }, accounting: { pkg: goodPkg('accounting') } });
+        const ambiguous = runStep(resolve, two, { GITHUB_REF_NAME: 'v0.1.0', NGDPBASE_PLAIN_TAGS: 'true' });
+        expect(ambiguous.status).not.toBe(0);
+        expect(ambiguous.out).toContain('addons/ holds 2');
+      });
     });
 
-    test('package.json must name this repository and not be private', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
-      const s = step((await load()).wf, 'package.json names this repository and is not private');
-      const repository = { type: 'git', url: 'git+https://github.com/Acme/volcano-watch.git', directory: 'addons/volcano-watch' };
-      expect(runStep(s, { repository }).status).toBe(0);
-      expect(runStep(s, { repository: 'https://github.com/acme/volcano-watch' }).status).toBe(0);
+    describe('package.json follows the publishing rules', () => {
+      let rules: Step;
+      beforeEach(async () => { rules = step((await load()).wf, 'package.json follows the publishing rules'); });
+      const check = (pkg: Record<string, unknown>): { status: number | null; out: string } => {
+        const root = makeRepo({ 'volcano-watch': { pkg } });
+        return runStep(rules, path.join(root, 'addons', 'volcano-watch'), { DIR: 'addons/volcano-watch' });
+      };
 
-      const priv = runStep(s, { private: true, repository });
-      expect(priv.status).not.toBe(0);
-      expect(priv.out).toContain('"private": true');
+      test('a package that follows them passes, with the repository URL in any of npm\'s spellings', () => {
+        expect(check(goodPkg())).toMatchObject({ status: 0 });
+        for (const url of [`git+https://github.com/${REPO}.git`, `https://github.com/${REPO}`, 'https://github.com/Acme/Volcano-Repo.git']) {
+          expect(check(goodPkg('volcano-watch', { repository: { type: 'git', url, directory: 'addons/volcano-watch' } }))).toMatchObject({ status: 0 });
+        }
+        expect(check(goodPkg('volcano-watch', { engines: { node: '>=25' } }))).toMatchObject({ status: 0 });
+        expect(check(goodPkg('volcano-watch', { dependencies: { a: '1' }, bundleDependencies: ['a'] }))).toMatchObject({ status: 0 });
+      });
 
-      const other = runStep(s, { repository: { type: 'git', url: 'git+https://github.com/someone/else.git' } });
-      expect(other.status).not.toBe(0);
-      expect(other.out).toContain('git+https://github.com/acme/volcano-watch.git');
-      expect(runStep(s, {}).status).not.toBe(0);
+      test.each([
+        ['private', { private: true }, '"private": true'],
+        ['another repository', { repository: { type: 'git', url: 'https://github.com/someone/else.git', directory: 'addons/volcano-watch' } }, `"url": "https://github.com/${REPO}.git"`],
+        ['no directory', { repository: { type: 'git', url: `https://github.com/${REPO}.git` } }, '"directory": "addons/volcano-watch"'],
+        ['a string repository', { repository: `github:${REPO}` }, 'repository must be'],
+        ['no files', { files: undefined }, 'files must list'],
+        ['an empty files', { files: [] }, 'files must list'],
+        ['no minVersion', { ngdpbase: { slug: 'volcano-watch' } }, 'ngdpbase.minVersion'],
+        ['an old engines.node', { engines: { node: '>=24' } }, 'engines.node must be ">=24.15.0"'],
+        ['no engines', { engines: undefined }, 'engines.node'],
+        ['no license', { license: undefined }, 'license must be set'],
+        ['an unbundled dependency', { dependencies: { a: '1', b: '1' }, bundleDependencies: ['a'] }, 'not bundled: b.']
+      ])('refuses %s', (_label, over, message) => {
+        const r = check(goodPkg('volcano-watch', over));
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('::error::');
+        expect(r.out).toContain(message);
+      });
     });
 
-    test('every runtime dependency must be bundled', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
-      const s = step((await load()).wf, 'Runtime dependencies are bundled');
-      expect(runStep(s, {}).status).toBe(0);
-      expect(runStep(s, { dependencies: { a: '1' }, bundleDependencies: ['a'] }).status).toBe(0);
-      expect(runStep(s, { dependencies: { a: '1' }, bundledDependencies: ['a'] }).status).toBe(0);
-      expect(runStep(s, { dependencies: { a: '1' }, bundleDependencies: true }).status).toBe(0);
+    describe('building against core', () => {
+      test('an add-on importing ../../dist/ builds ngdpbase at its minVersion; one that does not, skips it', async () => {
+        const { wf } = await load();
+        const detect = step(wf, 'Does the add-on import ngdpbase core?');
+        const env = { DIR: 'addons/volcano-watch' };
 
-      const missing = runStep(s, { dependencies: { a: '1', b: '1' }, bundleDependencies: ['a'] });
-      expect(missing.status).not.toBe(0);
-      expect(missing.out).toContain('not bundled: b.');
-      expect(missing.out).toContain('bundleDependencies');
+        const importing = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'routes/api.ts': "import { ApiContext } from '../../../dist/src/context/ApiContext.js';\n" } } });
+        expect(runStep(detect, importing, env).outputs).toEqual({ needed: 'true', version: '5.14.0' });
+
+        const standalone = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'index.js': 'export default {};\n', 'node_modules/x/index.js': "import '../../dist/x.js';\n" } } });
+        expect(runStep(detect, standalone, env).outputs).toEqual({ needed: 'false' });
+
+        // The scaffold's own add-on imports core.
+        expect(runStep(detect, repoRoot(), env).outputs.needed).toBe('true');
+
+        const build = step(wf, 'Build ngdpbase core at ngdpbase.minVersion');
+        expect(build.if).toBe("steps.core.outputs.needed == 'true'");
+        expect(build.env).toEqual({ VERSION: '${{ steps.core.outputs.version }}' });
+        expect(build.run).toContain('git clone --depth 1 --branch "v$VERSION" https://github.com/jwilleke/ngdpbase.git "$RUNNER_TEMP/ngdpbase"');
+        expect(build.run).toContain('npm ci\n');
+        expect(build.run).toContain('npm run build\n');
+        expect(build.run).toContain('ln -s "$RUNNER_TEMP/ngdpbase/dist" "$GITHUB_WORKSPACE/dist"');
+      });
     });
 
-    test('the README explains the one-time npm setup, tagging, and the site\'s install entry', async () => {
-      await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme' }));
+    describe('the package ships no .ts sources or tests', () => {
+      let packCheck: Step;
+      beforeEach(async () => { packCheck = step((await load()).wf, 'The package ships no .ts sources or tests'); });
+      const pack = (files: string[], present: Record<string, string>): { status: number | null; out: string } => {
+        const root = makeRepo({ 'volcano-watch': { pkg: goodPkg('volcano-watch', { files }), files: present } });
+        return runStep(packCheck, path.join(root, 'addons', 'volcano-watch'));
+      };
+
+      test('compiled .js and .d.ts pass', () => {
+        const r = pack(['index.js', 'index.d.ts', 'pages/'], { 'index.js': '', 'index.d.ts': '', 'index.ts': '', 'pages/a.md': '' });
+        expect(r.status).toBe(0);
+        expect(r.out).toContain('@acme/volcano-watch-addon@0.1.0:');
+      }, 30_000);
+
+      test('a .ts source in the tarball is refused', () => {
+        const r = pack(['index.js', 'index.ts'], { 'index.js': '', 'index.ts': '' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('the package would ship sources or tests: index.ts');
+      }, 30_000);
+
+      test('__tests__ in the tarball is refused', () => {
+        const r = pack(['*.js', '__tests__/'], { 'index.js': '', '__tests__/a.test.js': '' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('__tests__/a.test.js');
+      }, 30_000);
+    });
+
+    test('the README gives the safe bootstrap, the slug tag, and the site\'s install entry', async () => {
+      await load();
       const readme = await fs.readFile(path.join(repoRoot(), 'README.md'), 'utf8');
       expect(readme).toContain('## Release it');
-      expect(readme).toContain('trusted publisher');
-      expect(readme).toContain('workflow `publish.yml`');
-      // The bootstrap, in order: claim the name with an uninstallable 0.0.0,
-      // add the trusted publisher, make the package publishable, tag the first release.
       const order = [
         '{ "name": "@acme/volcano-watch-addon", "version": "0.0.0" }',
         'placeholder, not installable',
         'npm publish --access public',
+        'npm deprecate @acme/volcano-watch-addon@0.0.0 "placeholder, do not install"',
         '`npm trust`, which needs npm 11.15.0',
-        'remove `"private": true`',
-        'commit `package.json` and `package-lock.json`',
-        'git tag v0.1.0\ngit push origin v0.1.0'
+        'no `"private": true`',
+        '"url": "https://github.com/<owner>/<repo>.git", "directory": "addons/volcano-watch"',
+        'commit `package.json`\n  and `package-lock.json`',
+        'git tag volcano-watch-v0.1.0\ngit push origin volcano-watch-v0.1.0'
       ].map(t => readme.indexOf(t));
       expect(order.every(i => i >= 0)).toBe(true);
       expect([...order].sort((a, b) => a - b)).toEqual(order);
-      expect(readme).toContain('`git push origin v0.2.0`');
+      expect(readme).toContain('`git push origin volcano-watch-v0.2.0`');
+      expect(readme).toContain('--update-publish');
       const entry = /```json\n(\{\n {2}"ngdpbase\.addons\.install"[\s\S]*?)```/.exec(readme);
       expect(entry).not.toBeNull();
       expect(JSON.parse(entry![1])).toEqual({
@@ -531,6 +715,47 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         },
         'ngdpbase.addons.volcano-watch.enabled': true
       });
+    });
+
+    describe('--update-publish', () => {
+      const file = (): string => path.join(repoRoot(), '.github', 'workflows', 'publish.yml');
+
+      test('rewrites an older marker to the current version, keeping its plain-tags choice', async () => {
+        await fs.outputFile(file(), "# ngdpbase-publish-workflow: 0\nenv:\n  NGDPBASE_PLAIN_TAGS: 'true'\n");
+        expect(readPublishWorkflow(await fs.readFile(file(), 'utf8'))).toEqual({ version: 0, plainTags: true });
+        const r = await updatePublishWorkflow(repoRoot());
+        expect(r).toMatchObject({ from: 0, to: PUBLISH_WORKFLOW_VERSION, plainTags: true });
+        expect(await fs.readFile(file(), 'utf8')).toBe(publishWorkflow({ plainTags: true }));
+      });
+
+      test('keeps a default (slug-tag) file default, reads a pre-marker v* file as plain, and writes a missing one', async () => {
+        await fs.outputFile(file(), publishWorkflow({}).replace(/: \d+\n/, ': 0\n'));
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 0, plainTags: false });
+        expect(await fs.readFile(file(), 'utf8')).toBe(publishWorkflow({}));
+
+        await fs.outputFile(file(), "name: Publish\non:\n  push:\n    tags: ['v*']\n");
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 0, plainTags: true });
+
+        await fs.remove(file());
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: null, plainTags: false });
+        expect(await fs.readFile(file(), 'utf8')).toBe(publishWorkflow({}));
+      });
+
+      test('the CLI rewrites an existing repository\'s file and touches nothing else', async () => {
+        await scaffoldAddon(opts({ repo: true, target: repoRoot(), scope: '@acme', plainTags: true }));
+        await fs.writeFile(file(), "# ngdpbase-publish-workflow: 0\nenv:\n  NGDPBASE_PLAIN_TAGS: 'true'\n");
+        const before = await readTree(repoRoot());
+        const root = path.resolve(__dirname, '..', '..');
+        const run = spawnSync(path.join(root, 'node_modules', '.bin', 'tsx'), [path.join(root, 'scripts', 'create-addon.ts'),
+          '--update-publish', '--target', repoRoot()], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: tmp } });
+        expect({ status: run.status, stderr: run.stderr }).toEqual({ status: 0, stderr: '' });
+        expect(run.stdout).toContain(`version 0 → ${PUBLISH_WORKFLOW_VERSION}`);
+        const after = await readTree(repoRoot());
+        const publishRel = path.join('.github', 'workflows', 'publish.yml');
+        expect(after[publishRel]).toBe(publishWorkflow({ plainTags: true }));
+        delete before[publishRel]; delete after[publishRel];
+        expect(after).toEqual(before);
+      }, 60_000);
     });
 
     test('a plain (non-repo) scaffold writes no workflow', async () => {
