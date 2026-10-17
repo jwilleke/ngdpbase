@@ -19,6 +19,7 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 import ConfigurationManager from '../ConfigurationManager';
+import logger from '../../utils/logger';
 
 describe('ConfigurationManager', () => {
   let configManager;
@@ -1059,6 +1060,40 @@ describe('ConfigurationManager', () => {
         'ngdpbase.managers.addons-manager.addons-path': [a, b],
         'ngdpbase.addons.calendar.enabled': true,
         'ngdpbase.addons.forms.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('#1830: an enabled stray folder in <data>/addons (not in the install map) never stops the boot; it is warned about', async () => {
+      await seedAddonDir(path.join(tempDir, 'data', 'addons'), 'ledger');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.ledger.enabled': true
+      });
+      vi.mocked(logger.warn).mockClear();
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+      expect(vi.mocked(logger.warn).mock.calls.some(([m]) => /ngdpbase\.addons\.ledger\.enabled.*only a folder in .*not loaded/.test(String(m)))).toBe(true);
+    });
+
+    test('#1830: a stray folder in <data>/addons does not excuse a genuinely missing add-on', async () => {
+      await seedAddonDir(path.join(tempDir, 'data', 'addons'), 'ledger');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.ledger.enabled': true,
+        'ngdpbase.addons.does-not-exist.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      const error = await cm.initialize().then(() => null, (e: Error) => e);
+      expect(error?.message).toMatch(/Refusing to start.*references unknown addon\(s\): "does-not-exist"\./s);
+    });
+
+    test('#1830: an enabled add-on named in ngdpbase.addons.install but not yet installed does not refuse the boot', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.install': { ledger: { package: '@acme/ledger-addon', version: '^1' } },
+        'ngdpbase.addons.ledger.enabled': true
       });
       const cm = new ConfigurationManager(mockEngine);
       await expect(cm.initialize()).resolves.not.toThrow();

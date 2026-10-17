@@ -42,6 +42,24 @@ export function splitAddonsPath(raw: unknown): SplitAddonsPath {
   };
 }
 
+/** The config key naming the add-ons to install (#1830). */
+export const ADDONS_INSTALL_KEY = 'ngdpbase.addons.install';
+
+/**
+ * Where installed add-ons live (#1830): `<data>/addons`, one folder per slug.
+ * Only a folder the lock file names, for a slug still in the install map, is
+ * an add-on (see `addonLock.ts`); anything else there is never loaded.
+ */
+export function installedAddonsDir(dataFolder: string, cwd: string = process.cwd()): string {
+  return path.resolve(cwd, dataFolder, 'addons');
+}
+
+/** The slugs `ngdpbase.addons.install` names, from a merged or shipped+custom view. */
+export function configuredInstallSlugs(config: Record<string, unknown>): string[] {
+  const map = config[ADDONS_INSTALL_KEY];
+  return map && typeof map === 'object' && !Array.isArray(map) ? Object.keys(map) : [];
+}
+
 /** Locate the `node_modules` directory to search for packaged addons (resolved from cwd). */
 export function findNodeModulesDir(cwd: string = process.cwd()): string | null {
   const nm = path.resolve(cwd, 'node_modules');

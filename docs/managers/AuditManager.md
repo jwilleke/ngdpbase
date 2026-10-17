@@ -554,6 +554,9 @@ audited.
 | `store-import` | A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped | continue | yes |
 | `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | refuse | yes |
 | `backup-create` | A full backup written; where it went and who asked | continue | yes |
+| `addon-install` | An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830) | refuse | yes |
+| `addon-update` | An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet) | refuse | no |
+| `addon-verify-failed` | An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830) | continue | yes |
 | `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | continue | yes |
 | `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | refuse | yes |
 | `oidcauthorize-allow` | OpenID Connect: an app's sign-in request was allowed and a code issued (#1575) | continue | yes |

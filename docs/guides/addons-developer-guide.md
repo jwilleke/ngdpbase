@@ -82,6 +82,33 @@ Three ways an addon reaches a running instance. The slug, the module, and `regis
 
 Enabled defaults to false for every addon, on every path. An addon copied into a non-default directory stays off until the enable key is set ([#686](https://github.com/jwilleke/ngdpbase/issues/686) is the open request to change that for non-default paths). The keys, the file they live in, and what `register()` is handed are [Configuration](#configuration).
 
+## Installed add-ons
+
+A fourth way in ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)): the site's configuration names an npm package, a version range and the repository it is built from, and ngdpbase installs it into the data folder. Nothing in the code tree changes.
+
+```json
+"ngdpbase.addons.install": {
+  "ledger": { "package": "@acme/ledger-addon", "version": "^1", "repository": "github.com/acme/ledger" }
+},
+"ngdpbase.addons.ledger.enabled": true
+```
+
+- __Where it goes:__ `<instance data folder>/addons/<slug>/`. Installing does not enable it: the enable key still decides.
+- __What loads from there:__ only add-ons the installer installed and verified on this start, named in the install map and in the lock file. Any other folder there (copied in by hand, or left after its entry was removed from the install map) is not loaded, and admins are warned. It never stops the boot, even when its enable key is set. This holds even if `addons-path` names the folder.
+- __First start:__ the highest release in the range whose `ngdpbase.minVersion` this core meets ([#1757](https://github.com/jwilleke/ngdpbase/issues/1757)) is fetched from the registry (`registry.npmjs.org`) through the outbound guard. Then:
+  - its tarball's sha512 must match the registry's `dist.integrity`;
+  - its Sigstore provenance attestation must be valid for that exact tarball and come from a GitHub Actions or GitLab CI workflow of the configured `repository`. A release with no provenance, with provenance that does not verify, or with provenance from another repository is refused;
+  - its own `package.json` must name the same package, version and slug;
+  - it is unpacked with no links and no path outside the folder, within the size limits, into a staging folder that is renamed into place;
+  - it is pinned in `<data>/addons/addons-lock.json` (`package`, `version`, `integrity`, `installedAt`, `provenance: { repository, verifiedAt }`), and the tarball is kept in `<data>/addons/.packages/`.
+- __Every later start:__ the stored tarball is checked against the lock's sha512 and the folder against the tarball. The registry is never asked. A newer release in the range is not picked up on a restart. A folder that differs from its tarball is rewritten from it, and admins are told. A tarball that fails its sha512 is not trusted: the folder is moved to `.rejected-<slug>-<time>` and the add-on is not loaded. Changing the configured package, range or repository so the pin no longer answers it installs again.
+- __Registry unreachable, or anything refused:__ the site starts without that add-on, the reason is logged, and admins get a notification such as "ledger not installed: registry unreachable". The next start tries again. A folder already at `<data>/addons/<slug>` that the installer did not put there is left alone.
+- __Audit:__ `addon-install` is recorded before an install is written (on-failure `refuse`), and `addon-verify-failed` whenever a sha512, provenance, tarball, package.json, lock or folder check refuses (on-failure `continue`). Both are attributed to the system principal. `addon-update` is declared, switched off, for the admin Update action.
+- __Publishing:__ publish from CI with npm trusted publishing and provenance (`npm publish --provenance`, or trusted publishing, which adds it). The package is unpacked as published, and no `npm install` runs (the runtime image has no npm, [#956](https://github.com/jwilleke/ngdpbase/issues/956)). An add-on with runtime dependencies of its own has to bundle them.
+- __Tuning:__ `ngdpbase.managers.addons-manager.install.registry`, `.sigstore-tuf-url`, `.timeout-ms`, `.max-metadata-bytes`, `.max-tarball-bytes` and `.max-unpacked-bytes`. The registry must be `https`, and tarballs and attestations must come from the same origin.
+
+Not done yet: the admin Update action, and including the installed copies in the site backup. They are listed in [Known gaps](#known-gaps).
+
 ## Configuration
 
 An addon's settings are ordinary configuration keys. Three layers, and the later one wins: shipped `config/app-default-config.json`, then each enabled addon's `config/default-config.json`, then the operator file. `domainDefaults` is a separate boot-only write, at the end of this section.
@@ -1339,6 +1366,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports. No published types package for `AddonHost` yet.
+- [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

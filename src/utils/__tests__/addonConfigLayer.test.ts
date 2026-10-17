@@ -50,6 +50,30 @@ describe('#1220 discovery follows the configured path and the enabled gate', () 
     expect(merged['ngdpbase.permissions.definitions']).toEqual(shipped['ngdpbase.permissions.definitions']);
   });
 
+  test('#1830: an add-on installed in <data>/addons is discovered after the configured path, only when the lock and the install map name it', () => {
+    const installed = path.join(root, 'site-data', 'addons');
+    for (const slug of ['ledger', 'stray']) {
+      const dir = path.join(installed, slug);
+      fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: `@acme/${slug}-addon`, ngdpbase: { slug } }));
+      fs.writeFileSync(path.join(dir, 'config', 'default-config.json'), JSON.stringify({ [`ngdpbase.addons.${slug}.colour`]: 'red' }));
+    }
+    addon('cal', calDefaults);
+    const base = { ...shipped, 'ngdpbase.addons.ledger.enabled': true, 'ngdpbase.addons.stray.enabled': true };
+    // Not in the lock: nothing there is an add-on.
+    expect(discoverAddonDefaults(base, root, './site-data').map((a) => a.slug)).toEqual(['cal']);
+
+    fs.writeFileSync(path.join(installed, 'addons-lock.json'), JSON.stringify({ lockfileVersion: 1, addons: { ledger: { package: '@acme/ledger-addon', version: '1.0.0' } } }));
+    // In the lock but not in the install map: still not.
+    expect(discoverAddonDefaults(base, root, './site-data').map((a) => a.slug)).toEqual(['cal']);
+
+    const configured = { ...base, 'ngdpbase.addons.install': { ledger: { package: '@acme/ledger-addon', version: '^1', repository: 'github.com/acme/ledger' } } };
+    expect(discoverAddonDefaults(configured, root, './site-data').map((a) => a.slug)).toEqual(['cal', 'ledger']);
+    const { merged } = mergeConfigWithAddons(configured, {}, root, './site-data');
+    expect(merged['ngdpbase.addons.ledger.colour']).toBe('red');
+    expect(merged['ngdpbase.addons.stray.colour']).toBeUndefined();
+  });
+
   test('an enabled addon contributes its file with comment keys dropped', () => {
     addon('cal', calDefaults);
     const found = discoverAddonDefaults({ ...shipped, 'ngdpbase.addons.cal.enabled': true }, root);

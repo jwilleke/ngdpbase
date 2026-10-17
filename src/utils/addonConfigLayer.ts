@@ -38,8 +38,9 @@
 import fs from 'fs';
 import path from 'path';
 import { isDeepStrictEqual } from 'util';
-import { configFilePaths, deepMergeConfigs, deepMergeObjects, isPlainObject, readConfigFilesSync } from './configFiles.js';
-import { findNodeModulesDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
+import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder, isPlainObject, readConfigFilesSync } from './configFiles.js';
+import { configuredInstallSlugs, findNodeModulesDir, installedAddonsDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
+import { lockedAddonDirsSync } from './addonLock.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
 
@@ -66,8 +67,16 @@ export function isAddonEnabled(base: Record<string, unknown>, slug: string): boo
   return base[`ngdpbase.addons.${slug}.enabled`] === true;
 }
 
-/** Every addon directory the configured path names, whether or not it is enabled. */
-export function discoverAddonDirs(base: Record<string, unknown>, cwd: string = process.cwd()): Array<{ dir: string; source: 'directory' | 'npm' }> {
+/**
+ * Every addon directory the configured path names, plus the installed add-ons
+ * in `<data>/addons` (#1830: only those the lock file names for a slug in the
+ * install map), whether or not it is enabled.
+ */
+export function discoverAddonDirs(
+  base: Record<string, unknown>,
+  cwd: string = process.cwd(),
+  dataFolder: string = instanceDataFolder()
+): Array<{ dir: string; source: 'directory' | 'npm' }> {
   if (base[ADDONS_MANAGER_ENABLED_KEY] === false) return [];
   const { directories, npmPatterns } = splitAddonsPath(base[ADDONS_PATH_KEY] ?? './addons');
   const found: Array<{ dir: string; source: 'directory' | 'npm' }> = [];
@@ -80,6 +89,10 @@ export function discoverAddonDirs(base: Record<string, unknown>, cwd: string = p
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'shared') continue;
       found.push({ dir: path.join(root, entry.name), source: 'directory' });
     }
+  }
+  const installed = installedAddonsDir(dataFolder, cwd);
+  if (!found.some((f) => path.dirname(f.dir) === installed)) {
+    for (const dir of lockedAddonDirsSync(installed, configuredInstallSlugs(base))) found.push({ dir, source: 'directory' });
   }
 
   const nmRoot = npmPatterns.length > 0 ? findNodeModulesDir(cwd) : null;
@@ -99,9 +112,9 @@ export function discoverAddonDirs(base: Record<string, unknown>, cwd: string = p
  * cannot be parsed is returned with `error` set so the caller can say so
  * rather than silently skip it.
  */
-export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string = process.cwd()): AddonDefaults[] {
+export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string = process.cwd(), dataFolder: string = instanceDataFolder()): AddonDefaults[] {
   const out: AddonDefaults[] = [];
-  for (const { dir, source } of discoverAddonDirs(base, cwd)) {
+  for (const { dir, source } of discoverAddonDirs(base, cwd, dataFolder)) {
     const slug = resolveAddonSlug(dir, source);
     const enabled = isAddonEnabled(base, slug);
     const file = path.join(dir, 'config', 'default-config.json');
@@ -287,10 +300,11 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
 export function mergeConfigWithAddons<T extends Record<string, unknown>>(
   shipped: T,
   custom: Partial<T>,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  dataFolder: string = instanceDataFolder()
 ): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string> } {
   const base = deepMergeConfigs(shipped, custom);
-  const all = discoverAddonDefaults(base, cwd);
+  const all = discoverAddonDefaults(base, cwd, dataFolder);
   const { merged, problems, refused } = mergeWithAddonLayer(shipped, all, custom);
   const unreadable = all
     .filter((a) => !a.enabled && a.error)
@@ -319,8 +333,9 @@ export interface MergedConfigFiles {
  */
 export function loadMergedConfigSync(env: Record<string, string | undefined> = process.env, cwd: string = process.cwd()): MergedConfigFiles | null {
   try {
-    const files = readConfigFilesSync(configFilePaths(env, cwd));
-    const { merged, addons } = mergeConfigWithAddons(files.defaultConfig ?? {}, files.customConfig, cwd);
+    const paths = configFilePaths(env, cwd);
+    const files = readConfigFilesSync(paths);
+    const { merged, addons } = mergeConfigWithAddons(files.defaultConfig ?? {}, files.customConfig, cwd, paths.instanceDataFolder);
     return { merged, customKeys: files.customKeys, addons };
   } catch {
     return null;

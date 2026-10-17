@@ -21,11 +21,21 @@ import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } fro
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
 import {
+  ADDONS_INSTALL_KEY,
+  installedAddonsDir,
   splitAddonsPath,
   findNodeModulesDir,
   matchNpmPackageDirs,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
+import { installConfiguredAddons, type InstallOutcome, type InstallRecord } from '../utils/addonInstaller.js';
+import { verifyProvenance } from '../utils/addonProvenance.js';
+import { DEFAULT_TUF_MIRROR, fetchTrustedRoot } from '../utils/sigstoreTrustedRoot.js';
+import { recordSystemAction } from '../context/bootActions.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { isPlainObject } from '../utils/configFiles.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -367,6 +377,10 @@ class AddonsManager extends BaseManager {
   private resolvedAddonsPaths: string[];
   /** #673: npm package globs (from `node_modules:` addons-path entries) to discover from node_modules. */
   private npmAddonPatterns: string[] = [];
+  /** #1830: `<data>/addons`, where installed add-ons live; null when there is no data folder. */
+  private installedDir: string | null = null;
+  /** #1830: the installed add-ons verified this boot — the only ones loaded from `installedDir`. */
+  private verifiedInstalled = new Set<string>();
 
   /** Stylesheets registered by add-ons via registerStylesheet() */
   private registeredStylesheets: Array<{ url: string; addonName: string }>;
@@ -434,6 +448,15 @@ class AddonsManager extends BaseManager {
     this.resolvedAddonsPaths = directories.map(p => path.resolve(p));
     this.npmAddonPatterns = npmPatterns;
 
+    // #1830: install (first time) or verify (every start) the add-ons the
+    // configuration names, before discovery sees <data>/addons. Only those
+    // verified here are loaded from it.
+    const dataFolder = configManager?.getInstanceDataFolder?.();
+    if (configManager && dataFolder !== undefined) {
+      this.installedDir = installedAddonsDir(dataFolder);
+      await this.installConfiguredAddons(configManager, this.installedDir);
+    }
+
     // Discover and load add-ons
     await this.discoverAddons();
     await this.loadAddons();
@@ -457,16 +480,200 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * #1830: install the add-ons `ngdpbase.addons.install` names into
+   * `<data>/addons` (sha512 and Sigstore provenance checked), or verify the
+   * ones already there. An empty map (the shipped default) does nothing at all.
+   * Every request — registry, attestations, the Sigstore TUF repository — goes
+   * through the guarded client and the egress policy (#1139). A problem with one add-on
+   * never stops the boot: it is logged and posted to admins, and that add-on is
+   * simply not there to load. When anything on disk changed, the configuration
+   * is re-merged so the add-on's config/default-config.json layer applies on
+   * this boot, not the next.
+   */
+  private async installConfiguredAddons(configManager: ConfigurationManager, addonsDir: string): Promise<void> {
+    const specs = configManager.getProperty(ADDONS_INSTALL_KEY, {});
+    if (!isPlainObject(specs) || Object.keys(specs).length === 0) return;
+
+    const read = (key: string, fallback: unknown): unknown => configManager.getProperty(key, fallback);
+    const num = (key: string, fallback: number): number => {
+      const value = Number(read(key, fallback));
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    };
+    const prefix = 'ngdpbase.managers.addons-manager.install';
+    const registry = String(read(`${prefix}.registry`, 'https://registry.npmjs.org'));
+    const tufMirror = String(read(`${prefix}.sigstore-tuf-url`, DEFAULT_TUF_MIRROR));
+    const timeoutMs = num(`${prefix}.timeout-ms`, 30000);
+    const maxPackumentBytes = num(`${prefix}.max-metadata-bytes`, 16 * 1024 * 1024);
+    const coreVersion = String(read('ngdpbase.version', ''));
+    const egress = resolveEgressPolicy(read);
+    const get = async (url: string, maxBytes: number, accept: string): Promise<{ status: number; body: Buffer }> => {
+      const res = await guardedFetch(url, {
+        policy: egress.policy,
+        timeoutMs,
+        maxBytes,
+        headers: { Accept: accept, 'User-Agent': `ngdpbase/${coreVersion || 'unknown'} (add-on installer)` }
+      });
+      return { status: res.status, body: res.body };
+    };
+    // The Sigstore trusted root, fetched (through TUF and the guarded client)
+    // at most once per boot, and only when something is being installed.
+    let trustedRoot: Promise<unknown> | null = null;
+    const trustRoot = (): Promise<unknown> => (trustedRoot ??= fetchTrustedRoot({
+      cacheDir: path.join(addonsDir, '.sigstore'),
+      mirrorUrl: tufMirror,
+      maxBytes: maxPackumentBytes,
+      download: (url, maxBytes) => get(url, maxBytes, 'application/json')
+    }));
+
+    let outcomes: InstallOutcome[];
+    try {
+      outcomes = await installConfiguredAddons(specs, {
+        addonsDir,
+        registry,
+        coreVersion,
+        maxPackumentBytes,
+        maxTarballBytes: num(`${prefix}.max-tarball-bytes`, 50 * 1024 * 1024),
+        maxUnpackedBytes: num(`${prefix}.max-unpacked-bytes`, 200 * 1024 * 1024),
+        fetch: (url, { maxBytes, accept }) => get(url, maxBytes, accept),
+        checkProvenance: async (input) => verifyProvenance({ ...input, trustedRoot: await trustRoot() }),
+        beforeInstall: (record) => this.recordAddonInstall(record)
+      });
+    } catch (err) {
+      // The lock file or the folder itself could not be read or written.
+      logger.error(`[AddonsManager] Add-on installer could not run on ${addonsDir}:`, err);
+      this.notifyInstallProblem('installer', `the add-on installer could not run: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return;
+    }
+
+    let changed = false;
+    for (const outcome of outcomes) {
+      const what = `${outcome.slug}${outcome.version ? `@${outcome.version}` : ''}`;
+      if (outcome.status !== 'skipped') this.verifiedInstalled.add(outcome.slug);
+      if (outcome.failedCheck) await this.recordVerifyFailed(outcome);
+      if (outcome.status === 'verified') {
+        logger.info(`[AddonsManager] Installed add-on ${what} verified against the lock file`);
+        continue;
+      }
+      changed = true;
+      if (outcome.status === 'installed') {
+        logger.info(`[AddonsManager] Installed add-on ${what}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+        if (outcome.reason) this.notifyInstallProblem(outcome.slug, `${outcome.slug} installed at ${outcome.version}; ${outcome.reason}`, 'warning');
+      } else if (outcome.status === 'repaired') {
+        logger.warn(`[AddonsManager] Installed add-on ${what}: ${outcome.reason}`);
+        this.notifyInstallProblem(outcome.slug, `${outcome.slug}: ${outcome.reason}`, 'warning');
+      } else {
+        const reason = outcome.registryUnreachable ? 'registry unreachable' : outcome.reason;
+        logger.error(`[AddonsManager] ${outcome.slug} not installed: ${outcome.reason}`);
+        this.notifyInstallProblem(outcome.slug, `${outcome.slug} not installed: ${reason}${outcome.registryUnreachable ? '. It is tried again at the next start.' : ''}`, 'error');
+      }
+    }
+    if (changed) await configManager.reload?.();
+  }
+
+  /**
+   * `addon-install` (#1830): written after every check passed and before
+   * anything is written to disk. on-failure: refuse — code does not join the
+   * site unrecorded, so a record that cannot be written stops the install
+   * (recordSystemAction throws, and the installer writes nothing).
+   */
+  private async recordAddonInstall(record: InstallRecord): Promise<void> {
+    await recordSystemAction(this.engine, systemContext(this.engine, `install add-on ${record.slug} named in ngdpbase.addons.install (#1830)`), {
+      eventType: AUDIT_EVENT.ADDON_INSTALL,
+      action: 'addon-install',
+      result: 'success',
+      severity: 'high',
+      resource: record.slug,
+      resourceType: 'addon',
+      metadata: {
+        package: record.package,
+        version: record.version,
+        integrity: record.integrity,
+        repository: record.repository,
+        ...(record.previousVersion ? { previousVersion: record.previousVersion } : {})
+      }
+    });
+  }
+
+  /**
+   * `addon-verify-failed` (#1830): an integrity, provenance, tarball, manifest,
+   * lock or folder check refused (or, for a repaired folder, found it changed).
+   * on-failure: continue — the refusal has already happened; a lost record
+   * must not change it.
+   */
+  private async recordVerifyFailed(outcome: InstallOutcome): Promise<void> {
+    try {
+      await recordSystemAction(this.engine, systemContext(this.engine, `verify add-on ${outcome.slug} (#1830)`), {
+        eventType: AUDIT_EVENT.ADDON_VERIFY_FAILED,
+        action: 'addon-verify-failed',
+        result: outcome.status === 'repaired' ? 'success' : 'failure',
+        severity: 'high',
+        resource: outcome.slug,
+        resourceType: 'addon',
+        metadata: {
+          check: outcome.failedCheck,
+          outcome: outcome.status,
+          ...(outcome.package ? { package: outcome.package } : {}),
+          ...(outcome.version ? { version: outcome.version } : {}),
+          reason: outcome.reason ?? null
+        }
+      });
+    } catch (err) {
+      logger.warn(`[AddonsManager] Audit record failed for addon-verify-failed (${outcome.slug}):`, err);
+    }
+  }
+
+  /** Tell admins about an install problem (#1830). Best-effort, like recordSeedFailure. */
+  private notifyInstallProblem(slug: string, message: string, level: 'warning' | 'error'): void {
+    try {
+      const notificationManager = this.engine.getManager<{
+        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
+          }>('NotificationManager');
+      void notificationManager?.createNotification?.({
+        type: 'system',
+        level,
+        title: `Add-on install (${slug})`,
+        message
+      })?.catch?.(() => { /* non-fatal */ });
+    } catch {
+      // non-fatal
+    }
+  }
+
+  /**
    * Discover available add-ons by scanning all configured addons directories.
    */
   async discoverAddons(): Promise<void> {
     for (const dirPath of this.resolvedAddonsPaths) {
+      // #1830: <data>/addons is scanned only through the verified path below,
+      // even when addons-path names it.
+      if (dirPath === this.installedDir) continue;
       await this.scanAddonsDirectory(dirPath);
     }
+    await this.scanInstalledAddons();
     // #673: packaged (npm) discovery — runs after directory scans, so a
     // bundled/drop-in addon of the same name wins the duplicate-skip.
     for (const pattern of this.npmAddonPatterns) {
       await this.scanNpmAddons(pattern);
+    }
+  }
+
+  /**
+   * #1830: register the add-ons in `<data>/addons` that the installer verified
+   * this boot. Anything else there — a folder copied in by hand, or one whose
+   * entry left the install map — is not loaded, and admins are told.
+   */
+  private async scanInstalledAddons(): Promise<void> {
+    const dir = this.installedDir;
+    if (!dir || !fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      if (this.verifiedInstalled.has(entry.name)) {
+        await this.registerAddonFromDir(path.join(dir, entry.name), 'installed', 'directory');
+        continue;
+      }
+      const message = `${entry.name} in ${dir} is not loaded: only add-ons the installer installed and verified (named in ngdpbase.addons.install and in the lock file) load from there`;
+      logger.warn(`[AddonsManager] ${message}`);
+      this.notifyInstallProblem(entry.name, message, 'warning');
     }
   }
 
