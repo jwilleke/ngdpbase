@@ -4312,6 +4312,29 @@ ${panes}
   }
 
   /**
+   * The one rule for "Sync All Outdated" (#1871): a new or modified page is in
+   * the bulk sync unless a user edited it — those are protected and only synced
+   * from their own row. Marks each row `bulkOutdated` (the button's sync reads
+   * that flag) and returns the counts the button shows, so the number on the
+   * button is exactly what a click will sync.
+   *
+   * @param pages - Comparison rows; each gets `bulkOutdated` set
+   */
+  static markBulkOutdated(
+    pages: Array<{ status: string; userModified: boolean; bulkOutdated?: boolean }>
+  ): { outdatedSyncable: number; outdatedUserEdited: number } {
+    let outdatedSyncable = 0;
+    let outdatedUserEdited = 0;
+    for (const page of pages) {
+      const outdated = page.status === 'new' || page.status === 'modified';
+      page.bulkOutdated = outdated && !page.userModified;
+      if (page.bulkOutdated) outdatedSyncable++;
+      else if (outdated) outdatedUserEdited++;
+    }
+    return { outdatedSyncable, outdatedUserEdited };
+  }
+
+  /**
    * Sync status of a required page whose live copy exists (#1395): the source
    * body, the live body and the live copy's `required-source-hash` stamp, by the
    * same rule as addon pages (#931). Frontmatter is not compared.
@@ -12815,6 +12838,7 @@ ${panes}
         titleDrift?: boolean;
         liveTitle?: string;
         affectedLinks?: number;
+        bulkOutdated?: boolean;
       }> = [];
 
       // Pre-load all required-pages source contents for link-drift scanning
@@ -12926,7 +12950,8 @@ ${panes}
         new: comparison.filter(p => p.status === 'new').length,
         modified: comparison.filter(p => p.status === 'modified').length,
         current: comparison.filter(p => p.status === 'current').length,
-        titleDrift: comparison.filter(p => p.titleDrift).length
+        titleDrift: comparison.filter(p => p.titleDrift).length,
+        ...WikiRoutes.markBulkOutdated(comparison)
       };
 
       // Scan enabled addon pages/ directories using the same comparison logic
@@ -12940,6 +12965,7 @@ ${panes}
         status: 'new' | 'modified' | 'current' | 'uuid-mismatch';
         userModified: boolean;
         liveUuid?: string;
+        bulkOutdated?: boolean;
       }> = [];
 
       const addonsManager = this.engine.getManager('AddonsManager');
@@ -13032,7 +13058,8 @@ ${panes}
         uuidMismatch: addonComparison.filter(p => p.status === 'uuid-mismatch').length,
         new: addonComparison.filter(p => p.status === 'new').length,
         modified: addonComparison.filter(p => p.status === 'modified').length,
-        current: addonComparison.filter(p => p.status === 'current').length
+        current: addonComparison.filter(p => p.status === 'current').length,
+        ...WikiRoutes.markBulkOutdated(addonComparison)
       };
 
       // #930: addon pages whose source the addon no longer ships ("source
