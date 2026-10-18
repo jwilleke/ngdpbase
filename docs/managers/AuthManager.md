@@ -58,10 +58,10 @@ A few permissions ask for a __fresh__ sign-in even inside a valid session, so a 
 
 ```json
 "ngdpbase.permissions.definitions": { "config-manage": { "description": "…", "step-up": true } },
-"ngdpbase.auth.step-up": { "max-age-minutes": 15 }
+"ngdpbase.auth.step-up": { "max-age-minutes": 60 }
 ```
 
-The window is one site-wide value for every step-up permission, shipped at 15 minutes ([#1767](https://github.com/jwilleke/ngdpbase/issues/1767)); there is no per-action window. A site wanting "prove it now" sets 1; 0 turns step-up off.
+The window is one site-wide value for every step-up permission, shipped at 60 minutes (operator, 2026-10-18; 15 before, [#1767](https://github.com/jwilleke/ngdpbase/issues/1767)); there is no per-action window. A site wanting "prove it now" sets 1; 0 turns step-up off.
 
 Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-reveal`, `token-mint`, `token-extend`, `proxy-grant`. An add-on marks its own permissions the same way. A `permissions` list still set under `ngdpbase.auth.step-up` in a custom config (the shape before #1638) is honoured, with a warning naming where it moved.
 

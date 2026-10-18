@@ -114,10 +114,10 @@ describe('checkSessionLimits', () => {
 describe('shipped defaults (#1767)', () => {
   const shipped = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
-  test('idle 7 days, absolute cap 30 days, step-up window 15 minutes', () => {
+  test('idle 7 days, absolute cap 30 days, step-up window 60 minutes (operator, 2026-10-18)', () => {
     expect(shipped['ngdpbase.session.idle-timeout-minutes']).toBe(7 * 24 * 60);
     expect(shipped['ngdpbase.session.max-age']).toBe(30 * DAY);
     expect(shipped['ngdpbase.session.max-age']).toBe(DEFAULT_SESSION_MAX_AGE_MS);
-    expect((shipped['ngdpbase.auth.step-up'] as { 'max-age-minutes': number })['max-age-minutes']).toBe(15);
+    expect((shipped['ngdpbase.auth.step-up'] as { 'max-age-minutes': number })['max-age-minutes']).toBe(60);
   });
 });
