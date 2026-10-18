@@ -456,6 +456,8 @@ void (async (): Promise<void> => {
     // fixed.
     for (const reason of tlsBlockedReasons) engine.blockConfiguration(reason);
     blockedReasons = [...engine.getBlockingConditions()];
+    // #1892: an application database that cannot be opened is known now, and its reason is for administrators only.
+    blockedPublicMessage = engine.getPublicBlockingMessage();
     if (blockedReasons.length > 0) {
       logger.error(`🚨 ${describeBlocked(blockedReasons)}`);
       logger.error(

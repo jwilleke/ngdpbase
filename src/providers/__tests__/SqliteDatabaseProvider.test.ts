@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import SqliteDatabaseProvider from '../SqliteDatabaseProvider';
 import { addColumnWithDefault, runMigrations, type Migration } from '../sqliteMigrations';
+import { damage } from './__fixtures__/damagedDatabase';
 
 const KEY = 'test-key-not-a-secret';
 const CREATE: Migration = { id: '20261002120000', description: 'notes table', up: (db) => db.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)') };
@@ -71,6 +72,14 @@ describe('SqliteDatabaseProvider (#1536)', () => {
     const p = new SqliteDatabaseProvider(file, KEY, [CREATE]);
     expect(p.handle.prepare("SELECT name FROM sqlite_master WHERE name = 'half'").get()).toBeUndefined();
     p.close();
+  });
+
+  test('a damaged file fails its integrity check before anything is migrated or written (#1892)', () => {
+    damage(file);
+    const before = fs.readFileSync(file);
+    expect(() => new SqliteDatabaseProvider(file, '', [CREATE])).toThrow(/failed its integrity check/);
+    expect(fs.readFileSync(file).equals(before)).toBe(true);
+    expect(fs.existsSync(`${file}-wal`)).toBe(false);
   });
 
   test('a database from a newer build is refused, naming the unknown migration', () => {

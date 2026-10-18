@@ -48,6 +48,11 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
         this.db.pragma(`key='${key.replace(/'/g, "''")}'`);
       }
       // The first read: a wrong key fails here, before anything is written.
+      // #1892: and so does a damaged file — checked before the journal mode or
+      // a migration writes anything to it.
+      if (!this.quickCheckOk()) {
+        throw new Error(`The database ${file} failed its integrity check — nothing was migrated or written`);
+      }
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('synchronous = FULL');
       this.migrations = runMigrations(this.db, ledger, ledgerTable);
@@ -77,11 +82,16 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
 
   integrityOk(): boolean {
     try {
-      const rows = this.db.pragma('quick_check') as { quick_check: string }[];
-      return String(rows[0]?.quick_check ?? '').toLowerCase() === 'ok';
+      return this.quickCheckOk();
     } catch {
       return false;
     }
+  }
+
+  /** SQLite's quick check; throws what the driver throws (a wrong key: "file is not a database"). */
+  private quickCheckOk(): boolean {
+    const rows = this.db.pragma('quick_check') as { quick_check: string }[];
+    return String(rows[0]?.quick_check ?? '').toLowerCase() === 'ok';
   }
 
   override getDurability(): ProviderDurability {

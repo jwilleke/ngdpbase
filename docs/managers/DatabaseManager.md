@@ -27,7 +27,21 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 - A database file on a network filesystem (NFS, SMB, CIFS on Linux): WAL mode needs shared memory those do not provide. Unknown filesystem types and non-Linux hosts are allowed. Backups may still go to a NAS.
 - A database whose schema records a migration this build does not know — it belongs to a newer build.
 - A migration that fails; it is rolled back and named.
-- A database that fails SQLite's `quick_check`, or a wrong key.
+- A database that fails SQLite's `quick_check`, or a wrong key, or no key on an encrypted file (SQLite says "file is not a database"). The check runs before the journal mode is set or any migration runs, so a damaged or unreadable file is never written.
+- A staged restore ([below](#restore-staged)) whose files can't be put in place.
+
+### When the application database can't be opened: maintenance mode
+
+The process does not stop ([#1892](https://github.com/jwilleke/ngdpbase/issues/1892), operator, 2026-10-18). For any of the refusals above, on the application database:
+
+- `initialize()` resolves. Nothing is opened unencrypted, and nothing further is migrated or written. `isEnabled()` is false, `getUnavailableReason()` returns the reason, and the manager's status is `failed`.
+- The site is put in maintenance mode through `engine.blockConfiguration` (#1152) with the public message `ngdpbase.managers.addons-manager.site-critical.public-message` (#1883). Visitors, and `/health/readiness`, get only that message (503); `/admin`, `/login` and `/logout` stay reachable.
+- `reportAtBoot()` sends administrators an `error` notification, "Critical: the application database is not available", with the reason and the fix: set (no key) or correct (a key that doesn't open it) `NGDPBASE_DATABASE_KEY` in `<FAST_STORAGE>/.env` and restart, or, for a damaged file or a failed migration, put a good copy of the file back with the server stopped (after a restore the previous one is kept as `*.pre-restore`) and restart.
+- What needs it is held, not run on a substitute: `addonRefusal()` refuses every enabled add-on that declares a database (before it is imported, so the #1883 notification and site-critical rule apply), `openAddonDatabase()` throws, `backup()` throws (the backup is reported incomplete, never silently without the databases), `restore()` stages nothing, and `BackgroundJobManager` runs no job, scheduled or by hand ([BackgroundJobManager](BackgroundJobManager.md#when-the-application-database-is-unavailable-1892)).
+- What still works: sign-in, sessions, users, notifications and `/admin`. None of them use the application database. Admin → Backup and Admin → Jobs open; a backup taken there is reported incomplete, and jobs show as held.
+- `ngdpbase.database.provider` `none` is unaffected: no file is opened and nothing is held.
+
+Configuration errors in the keys themselves (an unknown provider, a malformed `busy-timeout-ms`) still stop the boot. A failure on an add-on's own database is the add-on's load failure (#1883), not this.
 
 ## Migrations
 
@@ -61,7 +75,7 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 - The file is `<owner>.db` beside `ngdpbase.database.file`, opened by `SqliteDatabaseProvider` under `NGDPBASE_DATABASE_KEY`, so everything in [What boot refuses](#what-boot-refuses) applies to it too.
 - Its migrations follow the rules in [Migrations](#migrations), recorded in the add-on's own ledger table. The table name must start with the owner's slug, dashes as underscores, then `_`. Prefix the add-on's tables the same way, so several databases can later be told apart by table name in one backup.
 - An add-on that depends on the owner declares the owner's slug and its own ledger table (`"owner": "accounting", "ledgerTable": "accounting_dues_schema_migrations"`, under `ngdpbase.addons.accounting-dues.database`), and calls `openAddonDatabase` with them. Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
-- `integrityOk()` covers every open database, and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
+- `integrityOk()` covers every open database (and is false while the application database is unavailable), and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
 
 ## Backup and restore
 
@@ -90,12 +104,13 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 
 ### Known gaps
 
+- __No restore while the application database is unavailable__ (#1892). The restore's safety backup must be complete, and it can't include a database that does not open, so Admin → Backup refuses to stage one. A damaged file is replaced by hand, with the server stopped. Allowing the restore (its safety backup would leave the unopenable file out, kept as `*.pre-restore` anyway) is a decision for the operator, recorded on #1892.
 - __Restore needs a site that starts.__ The restore is on Admin → Backup; there is no command line for a site that will not start (deferred until needed).
 - __Only the databases are restored from the page.__ The rest of a backup document (settings, users) is not restored by the button; `restoreFromFile` without a filter still restores every manager, and nothing calls it that way.
 - __Key rotation:__ an old backup needs the key it was made with; nothing re-encrypts old backups under a new key.
 - __Download:__ Admin → Backup downloads each backup as one streamed `.tar` (the document and its database files, `BackupManager.backupArchive`). The backup key is not in it.
 - __Only a file backup provider.__ The database files are written straight into the backup directory, which `FileBackupProvider` (the only provider) uses. A provider storing elsewhere would need them uploaded.
-- __A crash in the middle of applying__ (between the renames) leaves the databases already moved restored and the rest staged; the next start finds staged files missing, sets the rest aside as `*.incomplete` and says so.
+- __A crash in the middle of applying__ (between the renames) leaves the databases already moved restored and the rest staged; the next start finds staged files missing, sets the rest aside as `*.incomplete` and says so. A rename that fails while applying (#1892) opens no database and puts the site in maintenance mode; the files are left as they were at the failure, for the administrator to put back.
 - __A second process__ (a pod in a rolling update) that has a database open while the next start applies a restore is not detected.
 - __Changing the database key__ through a backup and a restore under a new key works by the same path, but has not been made a documented procedure.
 
