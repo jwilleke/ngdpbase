@@ -307,8 +307,12 @@ export function runOffThread(job: SqliteBackupJob, timeoutMs: number): Promise<E
 export interface StagedRestoreManifest {
   version: 1;
   stagedAt: string;
-  /** The backup document it came from. */
+  /** When the backup it came from was taken. */
   backup: string;
+  /** The backup document's filename. */
+  source: string;
+  /** Who staged it: the account named by the request's context. */
+  stagedBy: string;
   databases: Array<{ name: string; live: string; staged: string }>;
 }
 

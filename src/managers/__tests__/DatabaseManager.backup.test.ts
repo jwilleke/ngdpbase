@@ -17,6 +17,8 @@ import type { BackupData } from '../BaseManager';
 import type { Migration } from '../../providers/sqliteMigrations';
 import type { AddonDatabaseDeclaration } from '../../utils/addonDatabaseRules';
 import { manifestPath } from '../../providers/sqliteBackup';
+import { list as listTar } from 'tar';
+import { backupKeyFingerprint } from '../DatabaseManager';
 
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 const MARKER = 'PLAINTEXT-MARKER-1723';
@@ -46,6 +48,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
   let dataDir: string;
   let backupDir: string;
   let notifications: Array<{ level: string; title: string; message: string }>;
+  let audits: Array<Record<string, unknown>>;
+  let auditFails: boolean;
   const saved = { db: process.env[DATABASE_KEY_ENV], backup: process.env[BACKUP_KEY_ENV] };
 
   const engineFor = (props: Record<string, unknown>, declarations: AddonDatabaseDeclaration[], extra: Record<string, unknown> = {}) => {
@@ -56,11 +60,12 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       setProperty: async () => undefined
     };
     const notificationManager = { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } };
-    const managers: Record<string, unknown> = { ConfigurationManager: configManager, NotificationManager: notificationManager, ...extra };
+    const auditManager = { logAuditEvent: async (e: Record<string, unknown>) => { if (auditFails) throw new Error('audit sink down'); audits.push(e); }, flushAuditQueue: async () => undefined };
+    const managers: Record<string, unknown> = { ConfigurationManager: configManager, NotificationManager: notificationManager, AuditManager: auditManager, ...extra };
     return {
       managers,
       getManager: (n: string) => managers[n] ?? null,
-      getRegisteredManagers: () => Object.keys(managers).filter((n) => n !== 'ConfigurationManager' && n !== 'NotificationManager')
+      getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager'].includes(n))
     };
   };
 
@@ -97,6 +102,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     fs.mkdirSync(dataDir);
     fs.mkdirSync(backupDir);
     notifications = [];
+    audits = [];
+    auditFails = false;
     process.env[DATABASE_KEY_ENV] = 'database-key-not-a-secret';
     process.env[BACKUP_KEY_ENV] = 'backup-key-not-a-secret';
   });
@@ -136,7 +143,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.pre-restore'))).toBe(true);
     expect(fs.existsSync(path.join(dataDir, 'accounting.db.pre-restore'))).toBe(true);
     expect(fs.existsSync(manifestPath(path.join(dataDir, 'ngdpbase.db')))).toBe(false);
-    await restarted.reportRestoreAtBoot();
+    await restarted.reportAtBoot();
     expect(notifications.at(-1)).toMatchObject({ level: 'success', title: 'A database restore was applied' });
     await restarted.shutdown();
   });
@@ -159,9 +166,23 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     await manager.shutdown();
   });
 
-  test('a wrong backup key is refused, and nothing is staged', async () => {
+  test('a backup records its key\'s fingerprint, and a restore under another key says so plainly (D3)', async () => {
     const manager = await populated();
     const backup = await backupInto(manager);
+    const data = backup.data as DatabaseBackupData;
+    expect(data.keyFingerprint).toBe(backupKeyFingerprint('backup-key-not-a-secret'));
+    expect(data.keyFingerprint).toMatch(/^[0-9a-f]{16}$/);
+    expect(JSON.stringify(backup)).not.toContain('backup-key-not-a-secret');
+    process.env[BACKUP_KEY_ENV] = 'some-other-key';
+    await expect(manager.restore(backup, { ctx: CTX, directory: backupDir })).rejects.toThrow(/made with a different backup key/);
+    expect(fs.readdirSync(dataDir).filter((f) => f.includes('.staged') || f.includes('.restore'))).toEqual([]);
+    await manager.shutdown();
+  });
+
+  test('a wrong backup key is refused, and nothing is staged (a backup with no fingerprint)', async () => {
+    const manager = await populated();
+    const backup = await backupInto(manager);
+    delete (backup.data as DatabaseBackupData).keyFingerprint;
     process.env[BACKUP_KEY_ENV] = 'some-other-key';
     await expect(manager.restore(backup, { ctx: CTX, directory: backupDir })).rejects.toThrow(/cannot be read — wrong backup key/);
     expect(fs.readdirSync(dataDir).filter((f) => f.includes('.staged') || f.includes('.restore'))).toEqual([]);
@@ -244,7 +265,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.staged.incomplete'))).toBe(true);
     expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.pre-restore'))).toBe(false);
     expect(restarted.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/NOT applied: only 1 of 2/) });
-    await restarted.reportRestoreAtBoot();
+    await restarted.reportAtBoot();
     expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'A database restore was not applied' });
     await restarted.shutdown();
   });
@@ -364,6 +385,55 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     await manager.shutdown();
   });
 
+  test('a backup key equal to the database key still backs up, as loudly as a missing key (D3)', async () => {
+    process.env[BACKUP_KEY_ENV] = process.env[DATABASE_KEY_ENV]!;
+    const manager = await populated();
+    expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/NGDPBASE_BACKUP_KEY is the same as NGDPBASE_DATABASE_KEY/) });
+    await manager.reportAtBoot();
+    expect(notifications.at(-1)).toMatchObject({ level: 'error', message: expect.stringMatching(/same as NGDPBASE_DATABASE_KEY/) });
+    const data = (await backupInto(manager)).data as DatabaseBackupData;
+    expect(data.databases.length).toBe(2);
+    expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'The backup key is the database key' });
+    expect(manager.getManagerStatus().state).toBe('degraded');
+    process.env[BACKUP_KEY_ENV] = 'backup-key-not-a-secret';
+    await backupInto(manager, 'b2');
+    expect(manager.getManagerStatus().state).toBe('ready');
+    await manager.shutdown();
+  });
+
+  test('a second restore before the restart is refused unless it says to replace; the manifest names the backup and who staged it (D5)', async () => {
+    const manager = await populated();
+    const first = await backupInto(manager, 'first');
+    const second = await backupInto(manager, 'second');
+    await manager.restore(first, { ctx: CTX, directory: backupDir, source: 'first.json.gz' });
+    expect(manager.getStagedRestore()).toMatchObject({ source: 'first.json.gz', stagedBy: 'admin' });
+    await expect(manager.restore(second, { ctx: CTX, directory: backupDir, source: 'second.json.gz' })).rejects.toThrow(/already staged .*Cancel it, or replace it/);
+    expect(manager.getStagedRestore()?.source).toBe('first.json.gz');
+    await manager.restore(second, { ctx: CTX, directory: backupDir, source: 'second.json.gz', replaceStaged: true });
+    expect(manager.getStagedRestore()?.source).toBe('second.json.gz');
+    await manager.shutdown();
+  });
+
+  test('cancelling a staged restore removes it, leaves the live databases, and is recorded first (D5)', async () => {
+    const manager = await populated();
+    await manager.restore(await backupInto(manager), { ctx: CTX, directory: backupDir, source: 'b1.json.gz' });
+    auditFails = true;
+    await expect(manager.cancelStagedRestore(CTX)).rejects.toThrow(/audit sink down/);
+    expect(manager.getStagedRestore()).not.toBeNull();
+    auditFails = false;
+    const cancelled = await manager.cancelStagedRestore(CTX);
+    expect(cancelled.source).toBe('b1.json.gz');
+    expect(manager.getStagedRestore()).toBeNull();
+    expect(fs.readdirSync(dataDir).filter((f) => f.includes('.staged') || f.includes('.restore'))).toEqual([]);
+    expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore-cancel', user: 'admin', resource: 'b1.json.gz', metadata: { stagedBy: 'admin' } });
+    await expect(manager.cancelStagedRestore(CTX)).rejects.toThrow(/No database restore is staged/);
+    await manager.shutdown();
+    // The next start applies nothing.
+    const restarted = await start();
+    expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.pre-restore'))).toBe(false);
+    await restarted.shutdown();
+  });
+
   describe('through BackupManager', () => {
     const site = async (props: Record<string, unknown> = {}) => {
       const engine = engineFor({ ...PROPS(), 'ngdpbase.backup.max-backups': 10, ...props }, DECLARATIONS);
@@ -454,8 +524,78 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const file = await backups.createBackup(CTX);
       expect(other.backup).toHaveBeenCalled();
       process.env[BACKUP_KEY_ENV] = 'the-wrong-key';
-      await expect(backups.restoreFromFile(CTX, file)).rejects.toThrow(/not staged/);
+      await expect(backups.restoreFromFile(CTX, file)).rejects.toThrow(/different backup key/);
       expect(other.restore).not.toHaveBeenCalled();
+      await backups.shutdown();
+      await database.shutdown();
+    });
+
+    test('stored backups list the databases beside each, and one downloads as a .tar holding them all (D2)', async () => {
+      const { database, backups } = await site();
+      database.openAddonDatabase('accounting', { migrations: [LEDGER], ledgerTable: 'accounting_schema_migrations' });
+      const file = await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      const stored = await backups.listStoredBackups();
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ filename: '2026-01-01-ngdpbase-backup.json.gz', databases: ['addon-accounting', 'application'] });
+      expect(stored[0].totalSize).toBeGreaterThan(stored[0].size);
+
+      const { name, stream } = await backups.backupArchive(path.basename(file));
+      expect(name).toBe('2026-01-01-ngdpbase-backup.tar');
+      const out = path.join(dir, name);
+      await new Promise<void>((resolve, reject) => stream.pipe(fs.createWriteStream(out)).on('finish', resolve).on('error', reject));
+      const entries: string[] = [];
+      await listTar({ file: out, onReadEntry: (e) => { entries.push(e.path); } });
+      expect(entries.sort()).toEqual(['2026-01-01-ngdpbase-backup.addon-accounting.db', '2026-01-01-ngdpbase-backup.application.db', '2026-01-01-ngdpbase-backup.json.gz']);
+      expect(fs.readFileSync(out).includes(process.env[BACKUP_KEY_ENV])).toBe(false);
+      await expect(backups.backupArchive('../data/ngdpbase.db')).rejects.toThrow(/No backup named/);
+      await backups.shutdown();
+      await database.shutdown();
+    });
+
+    test('startRestore records who asked, restores the databases only, and refuses a second one unless it replaces (D1, D5)', async () => {
+      const { database, backups, engine } = await site();
+      const other = { backup: vi.fn(async () => ({ managerName: 'Other', timestamp: '', data: 1 })), restore: vi.fn() };
+      engine.managers.Other = other;
+      database.getHandle<Db>().exec('CREATE TABLE app_notes (body TEXT)');
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz' });
+
+      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz');
+      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore', user: 'admin', resource: '2026-01-01-ngdpbase-backup.json.gz' });
+      expect(await done).not.toBeNull();
+      expect(other.restore).not.toHaveBeenCalled();
+      expect(database.getStagedRestore()).toMatchObject({ source: '2026-01-01-ngdpbase-backup.json.gz', stagedBy: 'admin' });
+      expect(backups.isRestoreRunning()).toBe(false);
+
+      await expect(backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz')).rejects.toThrow(/already staged; cancel it or replace it/);
+      const replaced = await backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz', { replace: true });
+      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore-replace', metadata: { replaces: '2026-01-01-ngdpbase-backup.json.gz' } });
+      await replaced.done;
+      expect(database.getStagedRestore()?.source).toBe('2026-01-02-ngdpbase-backup.json.gz');
+      await expect(backups.startRestore(CTX, '../../etc/passwd')).rejects.toThrow(/No backup named/);
+      await backups.shutdown();
+      await database.shutdown();
+    });
+
+    test('a restore that cannot be recorded does not start: no fresh backup, nothing staged (D1)', async () => {
+      const { database, backups } = await site();
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      auditFails = true;
+      await expect(backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz')).rejects.toThrow(/audit sink down/);
+      expect(fs.readdirSync(backupDir).filter((f) => f.endsWith('.json.gz'))).toEqual(['2026-01-01-ngdpbase-backup.json.gz']);
+      expect(database.getStagedRestore()).toBeNull();
+      await backups.shutdown();
+      await database.shutdown();
+    });
+
+    test('a restore that fails while staging tells the admins and changes nothing (D1)', async () => {
+      const { database, backups } = await site();
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      process.env[BACKUP_KEY_ENV] = 'another-key';
+      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz');
+      expect(await done).toBeNull();
+      expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'Restore of 2026-01-01-ngdpbase-backup.json.gz was not staged', message: expect.stringMatching(/different backup key/) });
+      expect(database.getStagedRestore()).toBeNull();
       await backups.shutdown();
       await database.shutdown();
     });

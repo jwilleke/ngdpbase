@@ -30,7 +30,7 @@
             <h5 class="mb-0"><i class="fas fa-download"></i> Manual Backup</h5>
         </div>
         <div class="card-body">
-            <p>Creates a compressed backup file (<code>.json.gz</code>) and downloads it to your browser immediately.</p>
+            <p>Creates a backup and downloads it to your browser immediately, as one <code>.tar</code> file: the backup document (<code>.json.gz</code>) and, when the site keeps databases, an encrypted copy of each.</p>
 
             <h6 class="mt-3">What is included</h6>
             <ul>
@@ -55,23 +55,34 @@
                 See the <a href="/view/Backup" class="alert-link">Backup wiki page</a> for the full recommended backup process.
             </div>
 
-            <form method="POST" action="/admin/backup/create">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                    <i class="fas fa-database"></i> Create &amp; Download Backup
-                </button>
-            </form>
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <form method="POST" action="/admin/backup/create">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-database"></i> Create &amp; Download Backup
+                    </button>
+                </form>
+                <% if (databasesEnabled) { %>
+                <p class="small text-muted mb-0" id="backup-key-note">
+                    <i class="fas fa-key"></i> The databases in the download are encrypted with the backup key (<code>NGDPBASE_BACKUP_KEY</code>), which is <strong>not</strong> in the file. Keep a copy of the key somewhere other than this server: without it the databases cannot be restored.
+                </p>
+                <% } %>
+            </div>
 
             <% if (recentBackups && recentBackups.length > 0) { %>
-            <h6 class="mt-4">Recent Backups (stored on server)</h6>
-            <table class="table table-sm table-striped mt-2">
-                <thead><tr><th>Filename</th><th>Size</th><th>Created</th></tr></thead>
+            <h6 class="mt-4">Backups stored on the server</h6>
+            <table class="table table-sm table-striped mt-2" id="stored-backups">
+                <thead><tr><th>Backup</th><th>Created</th><th>Size</th><th>Databases</th><th></th></tr></thead>
                 <tbody>
-                <% recentBackups.slice(0, 5).forEach(function(b) { %>
-                    <tr>
+                <% recentBackups.forEach(function(b) { %>
+                    <tr data-backup="<%= b.filename %>">
                         <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
-                        <td><%= Math.round(b.size / 1024) %> KB</td>
                         <td><%= new Date(b.created).toLocaleString() %></td>
+                        <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
+                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %></td>
+                        <td class="text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
+                        </td>
                     </tr>
                 <% }); %>
                 </tbody>
@@ -79,6 +90,74 @@
             <% } %>
         </div>
     </div>
+
+    <!-- ================================================================ -->
+    <!-- Restore databases                                                -->
+    <!-- ================================================================ -->
+    <% if (databasesEnabled) { %>
+    <div class="card mb-4" id="restore-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-undo"></i> Restore Databases</h5>
+        </div>
+        <div class="card-body">
+            <p>Puts the site's databases back as they were in a backup stored on this server. The databases only: settings, users and pages are not changed.</p>
+            <ul>
+                <li>A fresh backup of the current data is taken first.</li>
+                <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
+                <li>At the restart the prepared databases take the place of the current ones, which are kept beside them.</li>
+            </ul>
+
+            <% if (restoreRunning) { %>
+            <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
+            <% } %>
+
+            <% if (stagedRestore) { %>
+            <div class="alert alert-warning" id="staged-restore">
+                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> A restore is staged and waits for the restart</h6>
+                <table class="table table-sm mb-2" style="max-width:640px;">
+                    <tr><th>Backup</th><td><code><%= stagedRestore.source || stagedRestore.backup %></code></td></tr>
+                    <tr><th>Backup taken</th><td><%= stagedRestore.backup ? new Date(stagedRestore.backup).toLocaleString() : '—' %></td></tr>
+                    <tr><th>Staged</th><td><%= new Date(stagedRestore.stagedAt).toLocaleString() %></td></tr>
+                    <tr><th>Staged by</th><td><%= stagedRestore.stagedBy || '—' %></td></tr>
+                    <tr><th>Databases</th><td><%= stagedRestore.databases.map(function(d) { return d.name; }).join(', ') %></td></tr>
+                </table>
+                <p class="mb-2">Restart the site to apply it, or cancel it. To restore a different backup instead, use <strong>Replace it</strong> below.</p>
+                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-restore">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-times"></i> Cancel staged restore
+                    </button>
+                </form>
+            </div>
+            <% } %>
+
+            <% const restorable = (recentBackups || []).filter(function(b) { return b.databases.length > 0; }); %>
+            <% if (restorable.length === 0) { %>
+            <p class="text-muted mb-0"><em>No backup on this server holds databases yet.</em></p>
+            <% } else { %>
+            <form method="POST" action="/admin/backup/restore" id="restore-form" class="border rounded p-3" style="max-width:640px;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <% if (stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
+                <div class="mb-3">
+                    <label for="restoreBackup" class="form-label">Backup to restore</label>
+                    <select class="form-select" id="restoreBackup" name="backup">
+                        <% restorable.forEach(function(b) { %>
+                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %> — <%= b.databases.join(', ') %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="restoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
+                    <input type="text" class="form-control" id="restoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>">
+                </div>
+                <button type="submit" class="btn btn-danger" id="restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
+                    <i class="fas fa-undo"></i> <%= stagedRestore ? 'Replace it' : 'Restore' %>
+                </button>
+            </form>
+            <% } %>
+        </div>
+    </div>
+    <% } %>
 
     <!-- ================================================================ -->
     <!-- Auto Backup                                                       -->
@@ -197,6 +276,15 @@
 </div>
 
 <script nonce="<%= locals.cspNonce %>">
+// #1723: the restore button waits for the site name; the server checks it again.
+(function () {
+    const input = document.getElementById('restoreConfirm');
+    const button = document.getElementById('restore-submit');
+    if (!input || !button || button.getAttribute('aria-disabled') === 'true') return;
+    const update = function () { button.disabled = input.value.trim() !== input.dataset.expected; };
+    input.addEventListener('input', update);
+    update();
+})();
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');

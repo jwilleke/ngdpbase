@@ -85,7 +85,9 @@ Each manager's `backup(options)` receives `{ ctx, directory, stem }`: who asked,
 
 A part that fails is named in the entry's `warnings` (or the entry is an `error`); the backup is still written, and admins get an "A backup is incomplete" notification.
 
-`restoreFromFile(ctx, backupPath, options)` takes the caller's context. When the backup holds databases it takes a complete backup of the live data first (`skipCleanup`, `requireComplete`), then has `DatabaseManager` stage them for the next start; if either fails, no manager is restored. Details in [DatabaseManager.md](DatabaseManager.md#backup-and-restore).
+Admin → Backup (#1723): `listStoredBackups()` lists the backups with the database files beside each; `backupArchive(filename)` streams one as a `.tar` (document and database files, read as the stream is consumed); `startRestore(ctx, filename, { replace })` records `backup-restore` / `backup-restore-replace` (refuse), then restores the databases only, in the background, and notifies admins when it fails. A filename is always matched against the stored list, never used as a path.
+
+`restoreFromFile(ctx, backupPath, options)` takes the caller's context. When the backup holds databases it takes a complete backup of the live data first (`skipCleanup`, `requireComplete`), then has `DatabaseManager` stage them for the next start; if either fails, no manager is restored. A restore already staged is refused unless `replaceStaged` is set. Details in [DatabaseManager.md](DatabaseManager.md#backup-and-restore).
 
 ### Encrypted private stores
 

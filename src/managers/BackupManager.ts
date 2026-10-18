@@ -1,5 +1,8 @@
 import path from 'path';
+import type { Readable } from 'stream';
+import { create as createTar } from 'tar';
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
+import type DatabaseManager from './DatabaseManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
 import { promisify } from 'util';
@@ -38,6 +41,16 @@ export interface BackupOptions {
 export interface RestoreOptions {
   skipValidation?: boolean;
   managerFilter?: string[];
+  /** Replace a database restore staged earlier and not applied yet (#1723, D5); refused without it. */
+  replaceStaged?: boolean;
+}
+
+/** A backup in the backup directory, as Admin → Backup lists it for download and restore (#1723). */
+export interface StoredBackup extends BackupFileInfo {
+  /** The database files beside the document, by name (`application`, `addon-<owner>`). */
+  databases: string[];
+  /** The document and its database files together, in bytes. */
+  totalSize: number;
 }
 
 /**
@@ -175,6 +188,8 @@ class BackupManager extends BaseManager {
   // FileBackupProvider). Orchestration/serialization stays in this manager.
   private provider: BaseBackupProvider | null;
   private providerClass: string;
+  /** A restore started from Admin → Backup, while it runs (#1723). */
+  private restoreRunning: Promise<RestoreResults | null> | null = null;
 
   /**
    * Creates a new BackupManager instance
@@ -568,12 +583,17 @@ class BackupManager extends BaseManager {
       const databaseList = (databases?.data as { databases?: unknown } | null | undefined)?.databases;
       const hasDatabases = Array.isArray(databaseList) && databaseList.length > 0;
       if (hasDatabases && (!options.managerFilter || options.managerFilter.includes('DatabaseManager'))) {
-        const databaseManager = this.engine.getManager<BaseManager>('DatabaseManager');
+        const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
         if (!databaseManager) throw new Error('The backup holds databases, but DatabaseManager is not available; nothing was restored');
+        // D5: never replaced silently — refused before the fresh backup is taken.
+        const staged = databaseManager.getStagedRestore?.();
+        if (staged && !options.replaceStaged) {
+          throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it. Nothing was restored`);
+        }
         logger.info('📦 Taking a backup of the live data before staging the databases...');
         const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true });
         logger.info(`✅ Live data backed up to ${before}`);
-        await databaseManager.restore(databases!, { ctx, directory });
+        await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged });
         results.success.push('DatabaseManager');
       }
 
@@ -646,6 +666,96 @@ class BackupManager extends BaseManager {
       throw new Error('Invalid backup: missing or invalid managers data');
     }
     logger.info('✅ Backup validation passed');
+  }
+
+  /**
+   * The backups in the backup directory with the database files beside each
+   * (#1723): what Admin → Backup offers to download and restore. Read from
+   * the file names, so no document is opened to list them.
+   */
+  async listStoredBackups(): Promise<StoredBackup[]> {
+    const backups = await this.listBackups();
+    if (!this.provider || backups.length === 0) return [];
+    const objects = await this.provider.listBackupObjects();
+    return backups.map((b) => {
+      const companions = objects.filter((o) => isCompanionOf(o.filename, b.filename));
+      const stem = backupStem(b.filename);
+      return {
+        ...b,
+        databases: companions.map((o) => o.filename.slice(stem.length + 1, -'.db'.length)).sort(),
+        totalSize: b.size + companions.reduce((n, o) => n + o.size, 0)
+      };
+    });
+  }
+
+  /** A backup in the backup directory by its bare filename, or null: never a path the caller made up. */
+  async findStoredBackup(filename: string): Promise<StoredBackup | null> {
+    return (await this.listStoredBackups()).find((b) => b.filename === filename) ?? null;
+  }
+
+  /**
+   * One backup as a `.tar` stream (#1723, D2): the document and every database
+   * file beside it, read from disk as the stream is consumed, never built in
+   * memory. The database files are already encrypted under the backup key,
+   * which is never in the archive.
+   */
+  async backupArchive(filename: string): Promise<{ name: string; stream: Readable }> {
+    const backup = await this.findStoredBackup(filename);
+    if (!backup || !this.backupDirectory) throw new Error(`No backup named ${filename} in the backup directory`);
+    const stem = backupStem(backup.filename);
+    const files = [backup.filename, ...backup.databases.map((d) => `${stem}.${d}.db`)];
+    const stream = createTar({ cwd: this.backupDirectory, portable: true, noDirRecurse: true }, files) as unknown as Readable;
+    return { name: `${stem}.tar`, stream };
+  }
+
+  /** Whether a restore started from Admin → Backup is still taking its fresh backup or staging. */
+  isRestoreRunning(): boolean {
+    return this.restoreRunning !== null;
+  }
+
+  /**
+   * Start a restore of a stored backup's databases (#1723, D1): recorded,
+   * then a fresh backup of the live data and the staging run in the
+   * background, and admins are told when it is staged or why it was not. The
+   * databases only: nothing else in the backup is restored, and nothing
+   * changes until the next restart. Refused while another is running, and
+   * when a restore is already staged unless `replace` says to replace it.
+   *
+   * @returns the running restore, for a caller (a test) that waits on it.
+   */
+  async startRestore(ctx: ActorContext, filename: string, options: { replace?: boolean } = {}): Promise<{ done: Promise<RestoreResults | null> }> {
+    if (this.restoreRunning) throw new Error('A restore is already being prepared; wait for it to finish');
+    const backup = await this.findStoredBackup(filename);
+    if (!backup) throw new Error(`No backup named ${filename} in the backup directory`);
+    if (backup.databases.length === 0) throw new Error(`Backup ${filename} holds no database to restore`);
+    const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
+    if (!databaseManager) throw new Error('DatabaseManager is not available');
+    const staged = databaseManager.getStagedRestore();
+    if (staged && !options.replace) throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it`);
+    if (!staged && options.replace) throw new Error('There is no staged restore to replace');
+
+    // Recorded before anything happens (refuse): a restore that cannot be recorded does not start.
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: staged ? AUDIT_EVENT.BACKUP_RESTORE_REPLACE : AUDIT_EVENT.BACKUP_RESTORE,
+      ...who,
+      action: staged ? 'backup-restore-replace' : 'backup-restore',
+      result: 'success',
+      severity: 'high',
+      resource: backup.filename,
+      resourceType: 'backup',
+      metadata: { ...who.metadata, databases: backup.databases, ...(staged ? { replaces: staged.source || staged.backup, replacesStagedBy: staged.stagedBy } : {}) }
+    });
+
+    const done = this.restoreFromFile(ctx, backup.path, { managerFilter: ['DatabaseManager'], replaceStaged: Boolean(staged) })
+      .catch(async (err: Error) => {
+        logger.error(`❌ Restore of ${filename} was not staged:`, err);
+        await this.notifyAdmins('error', `Restore of ${filename} was not staged`, `${err.message}. The current databases stay as they are.`);
+        return null;
+      })
+      .finally(() => { this.restoreRunning = null; });
+    this.restoreRunning = done;
+    return { done };
   }
 
   /**

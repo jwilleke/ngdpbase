@@ -52,10 +52,11 @@ When `ngdpbase.database.provider` is `sqlite`, every backup also copies the appl
 - Encrypted under `NGDPBASE_BACKUP_KEY` (environment or instance `.env`, never config; use a value different from `NGDPBASE_DATABASE_KEY`). Keep a copy of the key outside the backups.
 - Without the key no database is backed up and nothing unencrypted is written; the dashboard shows the database manager degraded and each backup notifies admins that it is incomplete.
 - All databases are copied at one point in time, on a worker thread, while the site runs.
-- Each database is its own file beside the document: `<timestamp>-ngdpbase-backup.application.db`, `<timestamp>-ngdpbase-backup.addon-<owner>.db`. Retention removes them with their document. The download from Admin → Backup is the `.json.gz` only; copy the backup directory to keep the databases.
+- Each database is its own file beside the document: `<timestamp>-ngdpbase-backup.application.db`, `<timestamp>-ngdpbase-backup.addon-<owner>.db`. Retention removes them with their document. Admin → Backup downloads each backup as one `.tar` holding the document and its database files; the backup key is never in it.
+- A backup key equal to `NGDPBASE_DATABASE_KEY` still backs up, but the dashboard and a notification say so, as for a missing key. Each backup records a short fingerprint of its key (never the key), so restoring under another key is refused plainly.
 - `ngdpbase.database.backup.worker-timeout-ms` (default `3600000`) caps how long the copy may run.
 
-A database restore is staged: a fresh backup of the live data is taken, the backup's databases are prepared as `<file>.staged` beside the live files, all or nothing, and the next start puts them in place before any database opens, keeping the old files (and their `-wal`/`-shm`) as `*.pre-restore`. There is no restore screen yet. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
+A database restore is staged: a fresh backup of the live data is taken, the backup's databases are prepared as `<file>.staged` beside the live files, all or nothing, and the next start puts them in place before any database opens, keeping the old files (and their `-wal`/`-shm`) as `*.pre-restore`. It is started from Admin → Backup → Restore Databases: pick a backup stored on the server, type the site name, and restart when the notification says it is staged. A staged restore is shown there (which backup, when, by whom) and can be cancelled or replaced. Only the databases are restored. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
 
 ---
 

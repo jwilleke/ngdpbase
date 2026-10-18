@@ -42,7 +42,11 @@ import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
 import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
+import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
@@ -65,6 +69,15 @@ export const BACKUP_KEY_ENV = 'NGDPBASE_BACKUP_KEY';
 /** How long a database backup or restore staging may run on its worker before it is stopped, when not configured. */
 export const DEFAULT_BACKUP_WORKER_TIMEOUT_MS = 3_600_000;
 
+/**
+ * A short fingerprint of a backup key (#1723, D3): the first 16 hex digits of
+ * an HMAC of a fixed label under the key. Recorded in each backup so a restore
+ * under another key says so plainly; it never reveals the key.
+ */
+export function backupKeyFingerprint(key: string): string {
+  return createHmac('sha256', key).update('ngdpbase backup key fingerprint v1').digest('hex').slice(0, 16);
+}
+
 /** The backup's name for the application database; an add-on's is `addon-<owner>`. */
 const APPLICATION = 'application';
 const addonName = (owner: string): string => `addon-${owner}`;
@@ -84,6 +97,8 @@ export interface DatabaseBackupEntry {
 /** DatabaseManager's `data` in a backup document. */
 export interface DatabaseBackupData {
   format: 1;
+  /** `backupKeyFingerprint()` of the key the files are encrypted under. */
+  keyFingerprint?: string;
   databases: DatabaseBackupEntry[];
   /** Declared databases with no file yet (an add-on that never opened it). */
   absent: string[];
@@ -208,10 +223,10 @@ class DatabaseManager extends BaseManager {
     if (!key) {
       logger.warn(`[DatabaseManager] ${DATABASE_KEY_ENV} is not set, so the application database is stored unencrypted (#1536)`);
     }
-    if (!this.backupKey()) {
-      const reason = `${BACKUP_KEY_ENV} is not set, so no database is backed up — set it in the environment or the instance .env (#1723)`;
-      logger.error(`[DatabaseManager] ${reason}`);
-      this.fault('backup-key', reason);
+    const keyProblem = this.backupKeyProblem();
+    if (keyProblem) {
+      logger.error(`[DatabaseManager] ${keyProblem}`);
+      this.fault('backup-key', keyProblem);
     }
   }
 
@@ -350,10 +365,15 @@ class DatabaseManager extends BaseManager {
       this.fault('backup-key', reason);
       throw new Error(reason);
     }
-    this.clearFault('backup-key');
     const key = process.env[DATABASE_KEY_ENV] ?? '';
-    if (key && key === backupKey) {
-      logger.warn(`[DatabaseManager] ${BACKUP_KEY_ENV} is the same as ${DATABASE_KEY_ENV}: a stolen backup and a stolen data disk then fall to one secret (#1723)`);
+    const keyProblem = this.backupKeyProblem();
+    if (keyProblem) {
+      // D3: still backed up, but as loudly as a missing key.
+      logger.error(`[DatabaseManager] ${keyProblem}`);
+      this.fault('backup-key', keyProblem);
+      await this.notify('error', 'The backup key is the database key', `${keyProblem}. This backup was still taken.`);
+    } else {
+      this.clearFault('backup-key');
     }
 
     const sources = this.backupSources(this.databaseFile);
@@ -372,6 +392,7 @@ class DatabaseManager extends BaseManager {
     const byName = new Map(sources.map((s) => [s.name, s]));
     const data: DatabaseBackupData = {
       format: 1,
+      keyFingerprint: backupKeyFingerprint(backupKey),
       databases: outcome.written.map((w) => {
         const s = byName.get(w.name)!;
         return { name: w.name, kind: s.kind, ...(s.owner ? { owner: s.owner } : {}), file: path.basename(w.target), sizeBytes: w.sizeBytes, tables: w.tables };
@@ -412,6 +433,13 @@ class DatabaseManager extends BaseManager {
     const backupKey = this.backupKey();
     if (!backupKey) {
       throw new Error(`${BACKUP_KEY_ENV} is not set, so the databases in this backup cannot be read; nothing was staged (#1723)`);
+    }
+    if (data.keyFingerprint && data.keyFingerprint !== backupKeyFingerprint(backupKey)) {
+      throw new Error(`This backup was made with a different backup key (fingerprint ${data.keyFingerprint}; ${BACKUP_KEY_ENV} now has ${backupKeyFingerprint(backupKey)}). Set ${BACKUP_KEY_ENV} to the key it was made with; nothing was staged (#1723)`);
+    }
+    const staged = this.getStagedRestore();
+    if (staged && !options.replaceStaged) {
+      throw new Error(`A restore from ${staged.source || staged.backup} is already staged (by ${staged.stagedBy || 'unknown'}, ${staged.stagedAt}). Cancel it, or replace it; nothing was changed (#1723)`);
     }
     const targetKey = process.env[DATABASE_KEY_ENV] ?? '';
     const dir = path.dirname(this.databaseFile);
@@ -464,6 +492,8 @@ class DatabaseManager extends BaseManager {
       version: 1,
       stagedAt: new Date().toISOString(),
       backup: String(backupData.timestamp ?? ''),
+      source: options.source ?? '',
+      stagedBy: actorOf(options.ctx).user,
       databases: stages.map((s) => ({ name: s.name, live: s.live, staged: stagedPath(s.live) }))
     };
     writeManifest(manifestFile, manifest);
@@ -490,11 +520,40 @@ class DatabaseManager extends BaseManager {
   }
 
   /**
-   * Tell admins what the start did with a staged restore (#1723). Called by
+   * Throw away a staged restore before the restart applies it (#1723, D5):
+   * the staged files and the manifest are removed, the live databases are
+   * untouched. Recorded first (`backup-restore-cancel`, refuse): a cancel that
+   * cannot be recorded does not happen.
+   */
+  async cancelStagedRestore(ctx: ActorContext): Promise<StagedRestoreManifest> {
+    const staged = this.getStagedRestore();
+    if (!staged || !this.databaseFile) throw new Error('No database restore is staged');
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.BACKUP_RESTORE_CANCEL,
+      ...who,
+      action: 'backup-restore-cancel',
+      result: 'success',
+      severity: 'high',
+      resource: staged.source || staged.backup,
+      resourceType: 'backup',
+      metadata: { ...who.metadata, stagedAt: staged.stagedAt, stagedBy: staged.stagedBy, databases: staged.databases.map((d) => d.name) }
+    });
+    for (const d of staged.databases) rmSync(stagedPath(d.live), { force: true });
+    rmSync(manifestPath(this.databaseFile), { force: true });
+    logger.warn(`[DatabaseManager] Staged restore from ${staged.source || staged.backup} cancelled by ${who.user} (#1723)`);
+    return staged;
+  }
+
+  /**
+   * Tell admins what the start found (#1723): what it did with a staged
+   * restore, and a backup key that is missing or the database key. Called by
    * the engine once every manager exists: DatabaseManager starts before the
    * notifications do.
    */
-  async reportRestoreAtBoot(): Promise<void> {
+  async reportAtBoot(): Promise<void> {
+    const keyProblem = this.provider ? this.backupKeyProblem() : null;
+    if (keyProblem) await this.notify('error', 'Databases are not safely backed up', keyProblem);
     const outcome = this.restoreAtStart;
     this.restoreAtStart = null;
     if (!outcome) return;
@@ -539,6 +598,17 @@ class DatabaseManager extends BaseManager {
 
   private backupKey(): string {
     return (process.env[BACKUP_KEY_ENV] ?? '').trim();
+  }
+
+  /** What is wrong with the backup key: missing, or the database key itself (D3). Null when sound. */
+  private backupKeyProblem(): string | null {
+    const backupKey = this.backupKey();
+    if (!backupKey) return `${BACKUP_KEY_ENV} is not set, so no database is backed up — set it in the environment or the instance .env (#1723)`;
+    const key = process.env[DATABASE_KEY_ENV] ?? '';
+    if (key && key.trim() === backupKey) {
+      return `${BACKUP_KEY_ENV} is the same as ${DATABASE_KEY_ENV}: a stolen backup and a stolen data disk then fall to one secret — give the backups a key of their own (#1723)`;
+    }
+    return null;
   }
 
   /** `ngdpbase.database.backup.worker-timeout-ms`, read at use. */

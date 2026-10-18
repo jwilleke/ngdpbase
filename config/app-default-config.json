@@ -2227,6 +2227,27 @@
         "on-failure": "continue"
       }
     },
+    "backup-restore": {
+      "description": "A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "backup-restore-replace": {
+      "description": "A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "backup-restore-cancel": {
+      "description": "A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "addon-install": {
       "description": "An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830)",
       "grantable": false,

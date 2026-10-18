@@ -423,8 +423,9 @@ class WikiEngine extends Engine {
     await attachmentManager.reportVaultPagesUsingPoolFilesAtBoot();
 
     // #1723: a staged database restore was applied (or refused) before any
-    // database opened, when the notifications did not exist yet. Say so now.
-    await databaseManager.reportRestoreAtBoot();
+    // database opened, and the backup key was checked, when the notifications
+    // did not exist yet. Say so now.
+    await databaseManager.reportAtBoot();
 
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;

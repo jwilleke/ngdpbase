@@ -76,6 +76,14 @@ export interface ManagerBackupOptions {
 export interface ManagerRestoreOptions {
   ctx: ActorContext;
   directory: string;
+  /** The backup document's filename. */
+  source?: string;
+  /**
+   * Replace what an earlier restore staged and the restart has not applied
+   * yet (#1723, D5). Without it a manager that stages refuses, so a staged
+   * restore is never replaced silently.
+   */
+  replaceStaged?: boolean;
 }
 
 /**
