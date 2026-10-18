@@ -12,6 +12,7 @@
 
 import fs from 'fs-extra';
 import os from 'os';
+import crypto from 'crypto';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import matter from 'gray-matter';
@@ -437,6 +438,11 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       if (!found) throw new Error(`no step '${name}'`);
       return found;
     };
+    const releaseStep = (wf: Workflow, name: string): Step => {
+      const found = wf.jobs.release.steps.find(s => s.name === name);
+      if (!found) throw new Error(`no release step '${name}'`);
+      return found;
+    };
 
     /** A package.json that follows every publishing rule, for add-on `slug` in REPO. */
     const goodPkg = (slug = 'volcano-watch', over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -504,7 +510,9 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         'Build',
         'Test',
         'The package ships no .ts sources or tests',
-        'Publish with provenance'
+        'Pack the tarball',
+        'Publish with provenance',
+        'Keep the published tarball for the release'
       ]);
       expect(wf.jobs.release.needs).toBe('publish');
     });
@@ -531,22 +539,122 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect(wf.permissions).toEqual({ contents: 'read' });
       expect(wf.jobs.publish.permissions).toEqual({ 'id-token': 'write', contents: 'read' });
       expect(wf.jobs.release.permissions).toEqual({ contents: 'write' });
-      expect(step(wf, 'Publish with provenance').run!.trim()).toBe('npm publish --provenance --access public');
+      // It publishes the tarball it packed, the one the release attaches.
+      const publish = step(wf, 'Publish with provenance');
+      expect(publish.run!.trim()).toBe('npm publish "$TARBALL" --provenance --access public');
+      expect(publish.env).toEqual({ TARBALL: '${{ steps.pack.outputs.tarball }}' });
       expect(text).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./);
       // Values reach scripts through env, never as an expression inside the script.
       for (const s of [...wf.jobs.publish.steps, ...wf.jobs.release.steps]) expect(s.run ?? '').not.toContain('${{');
     });
 
-    test('the release job attaches the published tarball and its sha512 to a release for the tag', async () => {
+    test('the release job attaches the artifact the publish job uploaded, with no registry round-trip', async () => {
       const { wf } = await load();
-      const [fetch, release] = wf.jobs.release.steps.slice(1);
-      expect(fetch.env).toEqual({ SPEC: '${{ needs.publish.outputs.name }}@${{ needs.publish.outputs.version }}' });
-      expect(fetch.run).toContain('npm pack "$SPEC" --json');
-      expect(fetch.run).toContain('sha512sum "$tarball" > "$tarball.sha512"');
+      const upload = step(wf, 'Keep the published tarball for the release');
+      expect(upload.uses).toBe('actions/upload-artifact@v7');
+      expect(upload.with).toEqual({ name: 'tarball', path: '${{ runner.temp }}/release/', 'if-no-files-found': 'error' });
+      expect(wf.jobs.release.steps.map(s => s.name ?? s.uses)).toEqual([
+        'actions/setup-node@v7', 'Fetch the published tarball', 'npm serves the published tarball', 'GitHub release for the tag'
+      ]);
+      const fetch = releaseStep(wf, 'Fetch the published tarball');
+      expect(fetch.uses).toBe('actions/download-artifact@v8');
+      expect(fetch.with).toEqual({ name: 'tarball', path: 'release' });
+      for (const s of wf.jobs.release.steps) expect(s.run ?? '').not.toMatch(/npm pack/);
+      const release = releaseStep(wf, 'GitHub release for the tag');
       expect(release.env!.GH_TOKEN).toBe('${{ github.token }}');
       expect(release.run).toContain('gh release create "$GITHUB_REF_NAME" "$TARBALL" "$TARBALL.sha512"');
       expect(release.run).toContain('--verify-tag');
       expect(wf.jobs.publish.outputs).toEqual({ name: '${{ steps.tag.outputs.name }}', version: '${{ steps.tag.outputs.version }}' });
+    });
+
+    test('the pack step packs the add-on into RUNNER_TEMP/release with its sha512, and outputs its path', async () => {
+      const { wf } = await load();
+      const root = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'index.js': 'module.exports = {};\n' } } });
+      const r = runStep(step(wf, 'Pack the tarball'), path.join(root, 'addons', 'volcano-watch'));
+      expect(r.status).toBe(0);
+      const tarball = r.outputs.tarball;
+      expect(path.basename(tarball)).toBe('acme-volcano-watch-addon-0.1.0.tgz');
+      expect(path.basename(path.dirname(tarball))).toBe('release');
+      const hex = crypto.createHash('sha512').update(fs.readFileSync(tarball)).digest('hex');
+      expect(fs.readFileSync(`${tarball}.sha512`, 'utf8').trim().split(/\s+/)).toEqual([hex, path.basename(tarball)]);
+    }, 30_000);
+
+    describe('the release job checks that npm serves the published tarball', () => {
+      const SPEC = '@acme/volcano-watch-addon@0.1.0';
+      /**
+       * Runs the check in a workspace holding the artifact, with a stub npm
+       * whose `view` prints nothing for the first `misses` calls and then
+       * `served` (the artifact's own integrity by default), and a stub sleep
+       * that only records how long it was asked to wait.
+       */
+      function check(o: { misses: number; served?: string; wait?: string }): { status: number | null; out: string; views: number; sleeps: number[]; env: string } {
+        const ws = fs.mkdtempSync(path.join(tmp, 'ws-'));
+        const bin = fs.mkdtempSync(path.join(tmp, 'bin-'));
+        const tgzName = 'acme-volcano-watch-addon-0.1.0.tgz';
+        const content = Buffer.from('a tarball');
+        fs.ensureDirSync(path.join(ws, 'release'));
+        fs.writeFileSync(path.join(ws, 'release', tgzName), content);
+        fs.writeFileSync(path.join(ws, 'release', `${tgzName}.sha512`), `${crypto.createHash('sha512').update(content).digest('hex')}  ${tgzName}\n`);
+        const integrity = `sha512-${crypto.createHash('sha512').update(content).digest('base64')}`;
+        const count = path.join(bin, 'views');
+        const sleeps = path.join(bin, 'sleeps');
+        fs.writeFileSync(count, '');
+        fs.writeFileSync(sleeps, '');
+        fs.writeFileSync(path.join(bin, 'npm'), [
+          '#!/bin/sh',
+          `[ "$1 $2 $3" = "view ${SPEC} dist.integrity" ] || { echo "unexpected npm $*" >&2; exit 2; }`,
+          `echo x >> '${count}'`,
+          `[ "$(wc -l < '${count}')" -gt ${o.misses} ] && echo '${o.served ?? integrity}'`,
+          'exit 0', ''
+        ].join('\n'), { mode: 0o755 });
+        fs.writeFileSync(path.join(bin, 'sleep'), `#!/bin/sh\necho "$1" >> '${sleeps}'\n`, { mode: 0o755 });
+        const githubEnv = path.join(bin, 'github-env');
+        fs.writeFileSync(githubEnv, '');
+        const s = releaseStep(yaml.load(publishWorkflow({})) as Workflow, 'npm serves the published tarball');
+        expect(s.env!.NPM_WAIT_SECONDS).toBe('300');
+        const r = runStep(s, ws, {
+          ...s.env, SPEC, PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_ENV: githubEnv,
+          ...(o.wait ? { NPM_WAIT_SECONDS: o.wait } : {})
+        });
+        return {
+          ...r,
+          views: fs.readFileSync(count, 'utf8').split('\n').filter(Boolean).length,
+          sleeps: fs.readFileSync(sleeps, 'utf8').split('\n').filter(Boolean).map(Number),
+          env: fs.readFileSync(githubEnv, 'utf8')
+        };
+      }
+
+      test('succeeds once npm serves the version, after misses, backing off', () => {
+        const r = check({ misses: 4 });
+        expect(r.status).toBe(0);
+        expect(r.views).toBe(5);
+        expect(r.sleeps).toEqual([5, 10, 20, 40]);
+        expect(r.out).toContain(`npm serves ${SPEC} with integrity sha512-`);
+        expect(r.env).toBe('TARBALL=release/acme-volcano-watch-addon-0.1.0.tgz\n');
+      });
+
+      test('times out with ::error:: and a nonzero exit, and never makes the release', () => {
+        const r = check({ misses: 1000 });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain(`::error::npm did not serve ${SPEC} within 300 seconds`);
+        // 5 + 10 + 20 + 40 + 60 + 60 + 60 + 60 = 315: the backoff caps at 60 and stops past the limit.
+        expect(r.sleeps).toEqual([5, 10, 20, 40, 60, 60, 60, 60]);
+        expect(r.env).toBe('');
+      });
+
+      test('the limit is the step\'s NPM_WAIT_SECONDS', () => {
+        const r = check({ misses: 1000, wait: '30' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain('within 30 seconds');
+        expect(r.sleeps).toEqual([5, 10, 20]);
+      });
+
+      test('a different integrity from npm fails with ::error::', () => {
+        const r = check({ misses: 0, served: 'sha512-c29tZXRoaW5nIGVsc2U=' });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain(`::error::npm serves ${SPEC} with integrity sha512-c29tZXRoaW5nIGVsc2U=, but the published tarball is sha512-`);
+        expect(r.env).toBe('');
+      });
     });
 
     describe('the release is the repository\'s Latest only for a plain v<version> tag', () => {
@@ -556,7 +664,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         const log = path.join(bin, 'args');
         fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\n`, { mode: 0o755 });
         const wf = yaml.load(publishWorkflow({ plainTags })) as Workflow;
-        const r = runStep(wf.jobs.release.steps[2], tmp, {
+        const r = runStep(releaseStep(wf, 'GitHub release for the tag'), tmp, {
           PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_REF_NAME: tag, TARBALL: 'x.tgz', SPEC: 'x@0.1.0', GH_TOKEN: 't',
           NGDPBASE_PLAIN_TAGS: String(plainTags)
         });
@@ -776,15 +884,26 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         expect(await fs.readFile(file(), 'utf8')).toBe(publishWorkflow({ plainTags: true }));
       });
 
-      test('rewrites a version-1 file, which let a <slug>-v* release become Latest, to version 2', async () => {
-        expect(PUBLISH_WORKFLOW_VERSION).toBe(2);
+      test('rewrites a version-1 file, which let a <slug>-v* release become Latest, to the current version', async () => {
         const v1 = publishWorkflow({}).replace(/: \d+\n/, ': 1\n').replace(' "$@" \\', ' \\');
         expect(v1).not.toContain('"$@"');
         await fs.outputFile(file(), v1);
-        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 1, to: 2, plainTags: false });
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 1, to: 3, plainTags: false });
         const now = await fs.readFile(file(), 'utf8');
         expect(now).toBe(publishWorkflow({}));
         expect(now).toContain('set -- --latest=false');
+      });
+
+      test('rewrites a version-2 file, whose release fetched the tarball back from npm, to version 3', async () => {
+        expect(PUBLISH_WORKFLOW_VERSION).toBe(3);
+        const v2 = publishWorkflow({}).replace(/: \d+\n/, ': 2\n');
+        await fs.outputFile(file(), v2);
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 2, to: 3, plainTags: false });
+        const now = await fs.readFile(file(), 'utf8');
+        expect(now.split('\n')[0]).toBe('# ngdpbase-publish-workflow: 3');
+        expect(now).toBe(publishWorkflow({}));
+        expect(now).toContain('actions/download-artifact@v8');
+        expect(now).not.toContain('npm pack "$SPEC"');
       });
 
       test('keeps a default (slug-tag) file default, reads a pre-marker v* file as plain, and writes a missing one', async () => {
