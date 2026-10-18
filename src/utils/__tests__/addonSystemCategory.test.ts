@@ -263,8 +263,10 @@ describe('#1559 admins are told what was refused', () => {
     const AddonsManager = (mod.default ?? mod) as unknown as { prototype: object };
     const manager = Object.create(AddonsManager.prototype) as {
       engine: unknown;
+      loadFailures: Map<string, string>;
       notifySystemCategoryProblems(cm: unknown): void;
     };
+    manager.loadFailures = new Map(); // #1883: no add-on failed to load here
     const createNotification = vi.fn().mockResolvedValue(undefined);
     manager.engine = { getManager: (n: string) => (n === 'NotificationManager' ? { createNotification } : null) };
     addon('phr', { [SC]: { phr: { ...phrEntry, encrypt: 'true' } } });

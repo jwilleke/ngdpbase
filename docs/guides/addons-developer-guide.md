@@ -39,6 +39,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
   - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); the string `"true"` is read as false. Turning the addon off removes the category until #1559.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - An addon that keeps rows declares its database under `ngdpbase.addons.<slug>.database` in its `config/default-config.json` before it calls `DatabaseManager.openAddonDatabase`; an undeclared one is refused, and an invalid declaration stops the addon loading ([storage guide](storage-developer-guide.md#declaring-a-database), #1860).
+- An addon that does not load, for any reason, is reported to admins at the most severe level. One the site cannot work without declares `ngdpbase.addons.<slug>.site-critical: true`, and then any failure to load puts the whole site in maintenance mode ([When an addon does not load](#when-an-addon-does-not-load-site-critical), #1883).
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
 - `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts importing something core added (a `dist/src/...` module, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
@@ -184,6 +185,41 @@ Point the config key at the variable with a bare whole-value reference. The name
 ```
 
 Any addon may set the field. The operator file wins.
+
+### When an addon does not load: `site-critical`
+
+Every enabled addon that does not load sends admins a notification at the most severe level, `error`, titled "Critical: add-on `<slug>` did not load", naming the reason and, where the reason knows it, the fix ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883), operator 2026-10-18). Any reason counts:
+
+- a database declared `encrypt: "required"` with no `NGDPBASE_DATABASE_KEY` (the fix: set the key in `<FAST_STORAGE>/.env` and restart);
+- a refused declaration: its system-category, its database, or its `site-critical` value;
+- a `minVersion` newer than the core;
+- an import that throws, or a module with no `register()`;
+- `register()` throwing, which includes a database you open there failing its migrations or its integrity check;
+- a dependency that is not installed or not enabled (then no addon loads);
+- an enabled addon that was never found, such as one whose install failed.
+
+Its status on `/admin/addons` shows the same reason. A turned-off addon is never reported.
+
+Most addons stop there: the site runs without them. An addon the site can't work without declares itself __site-critical__ in its `config/default-config.json`:
+
+```json
+{
+  "ngdpbase.addons.phr.site-critical": true
+}
+```
+
+When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the same path a broken configuration value takes (#1152):
+
+- __Visitors__ get a short page saying "We're having temporary issues. Please try again later." with no details. `/health/readiness` answers 503 with that sentence only. The sentence is `ngdpbase.managers.addons-manager.site-critical.public-message`.
+- __Admins__ can still sign in and reach `/admin`, where the notification says which addon failed, why, and how to fix it. Fix the cause and restart.
+- Nothing is opened or written in its place: an addon whose encrypted database has no key stays off, and its database stays closed.
+
+The rules for the value:
+
+- It is exactly `true` or `false`. Anything else, the string `"true"` included, refuses the addon and counts as `true`, so a mistyped value fails closed.
+- An addon declares only its own key. A `site-critical` key for another slug in your file is ignored.
+- The site's `app-custom-config.json` wins in both directions: an operator can make any addon site-critical, or turn yours off.
+- Declare it only when the site is wrong without you: a health-record addon whose records are the site. A calendar, a feed or a search addon is not site-critical.
 
 ## Permissions
 
@@ -1432,6 +1468,12 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) — a [shipped form definition](#ship-form-definitions) never refreshes on upgrade: the forms add-on records no version and no "edited on the site" flag, so there is no outdated status, no sync, and an add-on can only save a form once or overwrite site edits.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
+- [#1883](https://github.com/jwilleke/ngdpbase/issues/1883) — [site-critical addons](#when-an-addon-does-not-load-site-critical):
+  - There is no notification level above `error`, so "critical" is `error` with "Critical:" in the title. `error` is also the level email escalation sends by default, when it is on (`ngdpbase.notifications.escalation.levels`).
+  - `/admin/addons` shows the reason an addon did not load, but not whether it is site-critical.
+  - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
+  - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
+  - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

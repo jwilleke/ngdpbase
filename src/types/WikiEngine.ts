@@ -147,11 +147,21 @@ export interface WikiEngine {
    * the repair, instead of exiting and leaving the filesystem as the only way
    * back. Only for values an administrator can fix through the admin UI; a
    * failure of the machinery needed to serve that UI is fatal and still throws.
+   * Also a site-critical add-on that did not load (#1883, operator
+   * 2026-10-18): its fix may lie outside the UI (a key in the instance .env),
+   * and the admin notification says so.
    */
-  blockConfiguration(reason: string): void;
+  blockConfiguration(reason: string, options?: { publicMessage?: string }): void;
 
   /** Configuration values that could not be used, in the order found (#1152). */
   getBlockingConditions(): readonly string[];
+
+  /**
+   * What visitors see in place of the reasons, when a reason was recorded with
+   * a `publicMessage` (#1883: a site-critical add-on that did not load); null
+   * when every reason may be shown.
+   */
+  getPublicBlockingMessage(): string | null;
 
   /**
    * Get all registered manager names

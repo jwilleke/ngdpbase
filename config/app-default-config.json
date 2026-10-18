@@ -439,6 +439,8 @@
   "ngdpbase.managers.addons-manager.install.max-metadata-bytes": 16777216,
   "ngdpbase.managers.addons-manager.install.max-tarball-bytes": 52428800,
   "ngdpbase.managers.addons-manager.install.max-unpacked-bytes": 209715200,
+  "_comment_addons_site_critical": "#1883 — an add-on is site-critical when ngdpbase.addons.<slug>.site-critical is true (exactly true or false; set in the add-on's config/default-config.json, and app-custom-config.json wins either way). When a site-critical add-on does not load, for any reason, the whole site starts in maintenance mode: visitors see only this message, with no details; administrators can still sign in and reach /admin, and get a notification naming the add-on, the reason and the fix. Empty shows only the page's heading.",
+  "ngdpbase.managers.addons-manager.site-critical.public-message": "We're having temporary issues. Please try again later.",
   "_comment_addons": "Add-on system configuration - individual add-ons configured under ngdpbase.addons.<name>",
   "ngdpbase.addons": {},
   "_comment_cache_storage": "Cache storage configuration (ALL LOWERCASE)",

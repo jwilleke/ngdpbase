@@ -336,7 +336,7 @@ class DatabaseManager extends BaseManager {
   /** The one rule: a database declared `encrypt: "required"` is never opened without the key. */
   private static keyRefusal(declaration: AddonDatabaseDeclaration, key: string): string | null {
     if (declaration.encrypt !== 'required' || key) return null;
-    return `Add-on '${declaration.declaredBy}' declares database '${declaration.owner}' with encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never opened unencrypted (#1860)`;
+    return `Add-on '${declaration.declaredBy}' declares database '${declaration.owner}' with encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never opened unencrypted. Set ${DATABASE_KEY_ENV} in the environment or the instance .env (<FAST_STORAGE>/.env) and restart (#1860, #1883)`;
   }
 
   // ---- Backup and restore (#1723) ------------------------------------------

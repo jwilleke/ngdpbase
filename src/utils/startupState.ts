@@ -97,3 +97,21 @@ export function describeBlocked(reasons: readonly string[]): string {
   const list = reasons.map((r) => `• ${r}`).join('\n');
   return `The instance is not serving because its configuration could not be used:\n${list}`;
 }
+
+/**
+ * What a visitor is told about a blocked instance: on the maintenance page and
+ * in `/health/readiness`, both served without sign-in (#1883).
+ *
+ * Every reason, as {@link describeBlocked} words them, unless one was recorded
+ * for administrators only (a site-critical add-on that did not load): then
+ * only `publicMessage`, and no reason at all — not even the ones that could be
+ * shown, since one detail beside a vague notice still says what failed.
+ * Administrators get the reasons in the log and the admin notification.
+ */
+export function blockedForVisitors(
+  reasons: readonly string[],
+  publicMessage: string | null
+): { message: string; detail: readonly string[] } {
+  if (publicMessage !== null) return { message: publicMessage, detail: [publicMessage] };
+  return { message: describeBlocked(reasons), detail: reasons };
+}
