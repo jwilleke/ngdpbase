@@ -1,6 +1,6 @@
 ---
 name: Backup and restore guide
-description: How a site is backed up and restored today — triggers, file, retention, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
+description: How a site is backed up and restored today — triggers, files, retention, the staged databases-only restore, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
 dateModified: 2026-10-18
 category: guides
 relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManager, PageManager, AttachmentManager, UserManager, ConfigurationManager]
@@ -8,37 +8,38 @@ relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManag
 
 # Backup and restore guide
 
-The one place that says how a site is backed up and restored, for operators and for developers, add-on authors included. Every statement here was checked against the code on master (v5.18.0) and against a backup taken on a throwaway instance on 2026-10-18, not against older documents. Where something could not be checked it says "not verified".
+The one place that says how a site is backed up and restored, for operators and for developers, add-on authors included. Every statement here was checked against the code on master (v5.18.0 plus the database backup and restore of #1723, merged as 26a11b58) and against a backup taken on a throwaway instance on 2026-10-18, not against older documents. Where something could not be checked it says "not verified".
 
-In short: __a site can be backed up, but it cannot be restored.__ The backup file leaves out several kinds of data, and nothing on master reads a backup back in ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). Until that is fixed, a restorable site means a copy of the data folders, taken while the server is stopped, plus the keys kept somewhere else.
+In short: __a site can be backed up, but only its databases can be restored.__ The backup leaves out several kinds of data. Admin → Backup can restore the databases, staged for the next start ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)), and nothing restores anything else ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). Until that is fixed, a restorable site means a copy of the data folders, taken while the server is stopped, plus the keys kept somewhere else.
 
 ## Where a site's data lives
 
 - __`FAST_STORAGE`__ is the instance data folder (falling back to the legacy `INSTANCE_DATA_FOLDER`, then `./data`; `src/utils/configFiles.ts` `instanceDataFolder`). It holds `config/app-custom-config.json`, `users/` (users and the credentials store), `roles/`, `persons/`, `organizations/`, `sessions/`, `logs/` (including `audit.log`), `search-index/`, `page-index.json`, `media-index.json`, `oidc/`, `shares/`, `notifications/`, `jobs/`, the database file `ngdpbase.db`, and the generated `.env`.
 - __`SLOW_STORAGE`__ holds `pages/` (with `pages/vaults/`, the private stores), `attachments/`, `footnotes/`, `comments/` and, by default, `backups/`.
-- __`<FAST_STORAGE>/.env`__ holds the keys the site generates for itself: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, and the OpenID Connect provider's `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` when that provider is on. `NGDPBASE_DATABASE_KEY` is set there or in the environment by the operator.
+- __`<FAST_STORAGE>/.env`__ holds the keys the site generates for itself: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, and the OpenID Connect provider's `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` when that provider is on. `NGDPBASE_DATABASE_KEY` and `NGDPBASE_BACKUP_KEY` are set there or in the environment by the operator; the site never generates them.
 - Each path is a config key; the defaults are in `config/app-default-config.json`, and a site can move any of them.
 
 ## How a backup is made
 
-- __By hand:__ Admin → Backup (`/admin/backup`) → __Create & Download Backup__ (`POST /admin/backup/create`, `WikiRoutes.adminBackup`). It needs `config-manage` and a fresh sign-in when that permission is listed in `ngdpbase.auth.step-up`. The file is written to the backup folder and then downloaded to the browser; the server keeps its copy.
+- __By hand:__ Admin → Backup (`/admin/backup`) → __Create & Download Backup__ (`POST /admin/backup/create`, `WikiRoutes.adminBackup`). It needs `config-manage` and a fresh sign-in when that permission is listed in `ngdpbase.auth.step-up`. The backup is written to the backup folder and then downloaded as one streamed `.tar` holding the document and its database files (`BackupManager.backupArchive`); the server keeps its copy. Any stored backup can be downloaded the same way from the list (`GET /admin/backup/download/:filename`). The backup key is never in the `.tar`.
 - __On a schedule:__ automatic backups are the scheduled job `backup.auto` (`BackupManager.scheduleAutoBackup`, #1720). They are off by default (`ngdpbase.backup.auto-backup: false`). `ngdpbase.backup.auto-backup-time` is `HH:MM` in the server's time zone; `ngdpbase.backup.auto-backup-days` is `daily`, `monthly` (the 1st), `weekdays` or day names such as `Mon,Wed,Fri` (`autoBackupSchedule`). A backup missed while the server was down runs once when it is back, one still running is not doubled, and a failed run is tried up to three times (again after 1 and 5 minutes). The settings are saved from Admin → Backup (`POST /admin/backup/config`, `config-manage`) into `app-custom-config.json`.
 - __Where:__ `ngdpbase.backup.directory`, default `${SLOW_STORAGE}/backups`, through the storage provider `ngdpbase.backup.provider` (`filebackupprovider`, the only one). The folder is made owner-only and each file `0600` where the filesystem allows (`FileBackupProvider.writeBackup`, #1560).
-- __The file:__ one gzipped JSON document, `{timestamp}-ngdpbase-backup.json.gz`, shaped `{ version: "1.0.0", timestamp, application: "ngdpbase", managers: { <ManagerName>: <that manager's backup()> } }` (`BackupManager.createBackup`). It is built whole in memory and __it is not encrypted__: it holds password hashes, every user record and the custom configuration as written, secrets included.
-- __How it is filled:__ `createBackup` calls `backup()` on every registered manager, core and add-on, in registration order. A manager that throws gets `{ error, timestamp }` in its slot and the backup carries on and counts as a success (#1213).
-- __Retention:__ after each backup the oldest files beyond `ngdpbase.backup.max-backups` (default 10) are deleted, by-hand and automatic alike (`BackupManager.cleanupOldBackups`). A failed cleanup is only a log warning.
+- __The files:__ a backup is one gzipped JSON document, `{timestamp}-ngdpbase-backup.json.gz`, shaped `{ version: "1.0.0", timestamp, application: "ngdpbase", managers: { <ManagerName>: <that manager's backup()> } }` (`BackupManager.createBackup`), plus one file per database beside it, `<stem>.<name>.db`, which the document references. The document is built whole in memory and __it is not encrypted__: it holds password hashes, every user record and the custom configuration as written, secrets included. The database files are encrypted (below).
+- __Databases:__ `DatabaseManager.backup` copies the application database and every declared add-on database ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860)), on or off, at one point in time, on a worker thread (`src/providers/sqliteBackupWorker.ts`), each encrypted under `NGDPBASE_BACKUP_KEY` (environment or instance `.env` only, never config). Each backup records a `keyFingerprint` of that key, never the key. Without the key no database is written: `DatabaseManager` is degraded and the backup is reported incomplete. A backup key equal to `NGDPBASE_DATABASE_KEY` still backs up, but degrades `DatabaseManager` and notifies admins the same way. `ngdpbase.database.backup.worker-timeout-ms` (default `3600000`) limits the worker's copy, and a restore's staging. With `ngdpbase.database.provider` `none` (the default) there is no database and nothing to copy.
+- __How it is filled:__ `createBackup` calls `backup()` on every registered manager, core and add-on, in registration order. A manager that throws gets `{ error, timestamp }` in its slot, and a manager can report a part it missed in `warnings`. The backup carries on and is written, and then admins get an error notification "A backup is incomplete" naming each missing part. It is still not a snapshot (#1213).
+- __Retention:__ after each backup the oldest backups beyond `ngdpbase.backup.max-backups` (default 10) are deleted with their database files, by-hand and automatic alike (`BackupManager.cleanupOldBackups`). A failed cleanup is only a log warning.
 - __Record:__ a successful backup writes the `backup-create` audit event, naming who asked and where the file went.
 - __Failure:__
   - A scheduled backup that fails posts an admin error notification ("Automatic backup failed") on each failed attempt, and the job records `job-failed` after the last (`BackgroundJobManager`). A success posts an "Automatic backup complete" notification.
   - Automatic backups switched on with a time or days setting that can't be read: an admin error notification ("Automatic backups are not running") and an error log line; nothing runs until it is fixed.
   - A backup folder that can't be used at start (for example an unmounted volume): `BackupManager` is marked degraded, which the `/admin` dashboard shows, and backups are off until restart (`BaseManager.preflightConfiguredPath`).
-  - A backup by hand that fails returns an error page. No notification is sent.
+  - A backup by hand that fails outright returns an error page. No notification is sent. One that is written with a part missing notifies admins, as above.
   - Not yet: no warning when backups stop happening, no free-space check before writing, no read-back check after writing ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)).
 - `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` are in the default config but nothing reads them. Compression is always on and the schedule is the time and days settings.
 
 ## What a backup holds
 
-"Yes" means the data is in the `.json.gz`. "No" means the file has nothing of it, so a copy of the folder is the only backup there is. Rows marked "probe" were confirmed in a backup taken on a throwaway instance.
+"Yes" means the data is in the backup: the `.json.gz`, or for databases the encrypted files beside it. "No" means the backup has nothing of it, so a copy of the folder is the only backup there is. Rows marked "probe" were confirmed in a backup taken on a throwaway instance.
 
 | Data | In the backup | Manager | Evidence |
 | --- | --- | --- | --- |
@@ -61,7 +62,7 @@ In short: __a site can be backed up, but it cannot be restored.__ The backup fil
 | Search index | Yes, the shared Lunr documents; private page text is left out (probe). Elasticsearch: at most the first 10,000 documents. Either can be rebuilt from the pages | SearchManager | `LunrSearchProvider.backup`, `ElasticsearchSearchProvider.backup` (`size: 10000`) |
 | Media index and media library | No. The library is the operator's own read-only source files; the index is rebuilt by a rescan | MediaManager | no `backup()` |
 | User keywords vocabulary | Yes | CatalogManager | `CatalogManager.backup` |
-| Application database and add-on databases | No; pending [#1723](https://github.com/jwilleke/ngdpbase/issues/1723) | DatabaseManager | no `backup()` on master |
+| Application database and add-on databases | Yes, every declared one, on or off, encrypted under `NGDPBASE_BACKUP_KEY`, one `<stem>.<name>.db` file each beside the document ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). None without the key; the backup is then reported incomplete. Not seen in the probe, which ran before #1723 merged | DatabaseManager | `DatabaseManager.backup`, `src/providers/sqliteBackup.ts` |
 | Add-on data in files under its `dataPath` | No. Of the bundled add-ons, the journal's and calendar's managers return `data: null`; the forms and feeds managers have no `backup()`, so their slot holds an error (not verified on a running add-on) | the add-on's manager | `BackupManager.createBackup` catch |
 | Agent tokens | The list only, without the hashes; can't be restored (`restorable: false`) | AgentTokenManager | `AgentTokenManager.backup`, `restore` throws |
 | OpenID Connect provider | Client registrations are configuration (`oidc-auth-server.clients`), so they travel with it. Live grants: a list for incident response, can't be restored. Signing and cookie keys: no (`.env`) | OidcManager | `OidcManager.backup`, `restore` throws |
@@ -70,55 +71,64 @@ In short: __a site can be backed up, but it cannot be restored.__ The backup fil
 
 ## Restore today
 
-__There is no restore.__ No route, button, view or script on master has ever called `BackupManager.restoreFromFile` (`git log -S restoreFromFile` finds only the method, its tests and documents). The "Restore Data" button and `POST /api/admin/restore` that older documents describe were never built.
+__Only the databases can be restored__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723), merged as 26a11b58). __Nothing else in a backup has a restore__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), P0): pages, attachments, users, settings and every other manager's data. The "Restore Data" button and `POST /api/admin/restore` that older documents describe were never built.
 
-If `restoreFromFile` were called, it would not be safe to rely on:
+### Restoring the databases
 
-- It writes straight into the live site, not staged, and nothing is taken first.
+The operator's decisions D1 to D6 are in the [decision log](https://github.com/jwilleke/ngdpbase/issues/1723#issuecomment-6248360904). As shipped:
+
+- __Where:__ Admin → Backup → __Restore Databases__ (`POST /admin/backup/restore`, `WikiRoutes.adminBackupRestore`). It needs `config-manage`, with its fresh sign-in when listed in `ngdpbase.auth.step-up`. The card says "Restores the databases only. Pages, users and settings are not changed." (D6).
+- __Which backup:__ one already in the backup folder, picked from a list (D1, `BackupManager.findStoredBackup`). There is no upload. A backup that holds no database can't be picked.
+- __Confirm:__ type the site name (`ngdpbase.application-name`). The server checks it again and restores nothing when it doesn't match.
+- __What happens:__ `BackupManager.startRestore` records `backup-restore` before anything else, and refuses to start if that can't be recorded. In the background it then:
+  - 1 takes a complete safety backup of the live data, or stops if any part of it is missing (`restoreFromFile`, `requireComplete`);
+  - 2 has `DatabaseManager.restore` check the backup key's fingerprint, refusing a backup made with another key;
+  - 3 stages each database as `<live>.staged` under the site's database key, all or nothing, with a manifest.
+- __Undeclared databases:__ a backed-up add-on database this site doesn't declare is skipped, and admins are told (D4).
+- __Notifications:__ admins are notified when the restore is staged, naming the safety backup, or why it wasn't. If it fails, the databases in use are not changed.
+- __At the next start:__ before any database opens, each live file and its `-wal`/`-shm` are moved aside as `*.pre-restore` and the staged file takes its place (`sqliteBackup.applyStagedRestore`). A partial set, an orphan staged file, or a manifest naming a path it shouldn't is set aside as `*.incomplete`, and admins are told. The site never restarts itself; the admin restarts it.
+- __A staged restore is shown__ on the card: which backup, when it was taken, when staged, by whom, and the safety backup (restoring that undoes this restore). __Cancel staged restore__ (`POST /admin/backup/restore/cancel`) is recorded as `backup-restore-cancel`. __Replace it__ uses the same typed confirmation and is recorded as `backup-restore-replace`. A second restore without replacing is refused (D5).
+- __Key:__ the backup needs the `NGDPBASE_BACKUP_KEY` it was made with (D3).
+
+### Everything else
+
+`restoreFromFile` is called only with `managerFilter: ['DatabaseManager']`. Nothing calls it for anything else. If it were, it would not be safe to rely on:
+
+- It writes the other managers' data straight into the live site, not staged.
 - Each manager's `restore()` runs in turn and a failure is listed, not rolled back. `AgentTokenManager` and `OidcManager` refuse by design.
 - Pages, history, trash and vault files go back. Attachment metadata goes back without the files it describes.
 - The data in the "No" rows above has nothing to come back from.
 
-Restoring the whole site, staged, all or nothing, is [#1876](https://github.com/jwilleke/ngdpbase/issues/1876) (P0).
-
-## Pending: database backup and restore (not merged)
-
-[PR #1875](https://github.com/jwilleke/ngdpbase/pull/1875) for [#1723](https://github.com/jwilleke/ngdpbase/issues/1723) is a draft, not on master. It is described here so nobody builds around it. The operator's decisions D1 to D6 are in the [decision log](https://github.com/jwilleke/ngdpbase/issues/1723#issuecomment-6248360904):
-
-- Every database, the application's and each declared add-on's, on or off, copied at one point in time and encrypted under `NGDPBASE_BACKUP_KEY`. Without the key nothing is written, and the site says so.
-- D1: a restore button on Admin → Backup. It picks a stored backup (no upload), is confirmed by typing the site name, takes a fresh backup first, and stages the restore for the next start. The site never restarts itself. A command line for a site that won't start is deferred.
-- D2: each backup downloads as one streamed `.tar`; the key is never in it.
-- D3: a backup key equal to the database key still backs up, with a loud warning. Each backup records a fingerprint of its key. Key rotation stays a gap: an old backup needs the key it was made with.
-- D4: a backed-up add-on database this site doesn't declare is skipped, and admins are told.
-- D5: a staged restore is shown, and can be cancelled or replaced, each recorded.
-- D6: the button restores __the databases only__. Pages, users and settings are not changed.
+Restoring the whole site, staged, all or nothing, is [#1876](https://github.com/jwilleke/ngdpbase/issues/1876).
 
 ## What an operator must do today
 
 Only what the code supports:
 
 - __Copy the data folders while the server is stopped.__ Stop with `./server.sh stop`, copy all of `FAST_STORAGE` and `SLOW_STORAGE`, then start again. That copy is the only complete backup: it holds every "No" row above. Stopped matters: the database (SQLite, WAL) and the JSON stores are not safe to copy while they are being written.
-- __Keep the keys off the server.__ Save `<FAST_STORAGE>/.env` (or wherever your deployment sets these variables) in a password manager or your cluster's secret store whenever it changes. Without `NGDPBASE_DATABASE_KEY` an encrypted database can't be opened; without `NGDPBASE_CREDENTIALS_KEY` the credentials store's rows don't verify. Vaults are sealed with each owner's own key in `user-keys.json`, which opens with their password or recovery words, so a copy restores to the password they had when it was taken.
-- __Treat the `.json.gz` as a partial copy.__ Turn on automatic backups if you like, but a `.json.gz` can't be restored. It holds password hashes and secrets unencrypted, so keep it as safe as the data folder.
-- __Restoring means putting the copy back.__ Stop the server, put the copied folders back where they were, with the same `.env`, then start.
+- __Keep the keys off the server.__ Save `<FAST_STORAGE>/.env` (or wherever your deployment sets these variables) in a password manager or your cluster's secret store whenever it changes. Without `NGDPBASE_DATABASE_KEY` an encrypted database can't be opened. Without the `NGDPBASE_BACKUP_KEY` a backup was made with, its databases can't be restored; give it a value of its own, not the database key. Without `NGDPBASE_CREDENTIALS_KEY` the credentials store's rows don't verify. Vaults are sealed with each owner's own key in `user-keys.json`, which opens with their password or recovery words, so a copy restores to the password they had when it was taken.
+- __Set `NGDPBASE_BACKUP_KEY` if the site has databases__, or no database is backed up at all.
+- __Treat a backup as a partial copy.__ Turn on automatic backups: the databases in them can be restored from Admin → Backup. Nothing else in them can be. The document holds password hashes and secrets unencrypted, so keep it as safe as the data folder.
+- __Restoring anything but the databases means putting the copy back.__ Stop the server, put the copied folders back where they were, with the same `.env`, then start.
 - __Media__ is never part of the site's data: back up the library at the storage level.
 
 ## Rules for developers and add-on authors
 
 - __A manager that keeps data owns its backup.__ Override `backup()` and `restore()` from `BaseManager`. The default `backup()` returns `data: null`, so a manager that keeps state and doesn't override it is silently left out. Say what is missing as the row in this guide.
 - __A manager registered with the engine must have `backup()`.__ `BackupManager` calls it on everything `getRegisteredManagers()` returns. An add-on manager that doesn't extend `BaseManager` (or provide the method) becomes an error slot in every backup.
-- __Rows in a database: declare it, don't back it up yourself.__ An add-on that keeps rows declares `ngdpbase.addons.<slug>.database` and opens it with `openAddonDatabase` ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860), [storage guide](storage-developer-guide.md#declaring-a-database)). Its backup is `DatabaseManager`'s job, pending [#1723](https://github.com/jwilleke/ngdpbase/issues/1723). Don't write your own copy of a database file.
-- __Never write a database backup unencrypted.__ The decided design writes database backups only under `NGDPBASE_BACKUP_KEY`, and writes nothing without it (#1723).
+- __Rows in a database: declare it, don't back it up yourself.__ An add-on that keeps rows declares `ngdpbase.addons.<slug>.database` and opens it with `openAddonDatabase` ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860), [storage guide](storage-developer-guide.md#declaring-a-database)). `DatabaseManager` then backs it up and restores it, on or off ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)); the add-on writes no backup code. Don't write your own copy of a database file.
+- __Never write a database backup unencrypted.__ `DatabaseManager` writes database backups only under `NGDPBASE_BACKUP_KEY`, and nothing without it (#1723).
+- __A part you couldn't back up goes in `warnings`.__ `BackupData.warnings` is turned into the "A backup is incomplete" admin notification (`DatabaseManager.backup` names each database that failed).
 - __A backup never carries anything that could be presented.__ Token hashes, session ids and grant secrets stay out, and `restore()` refuses instead of bringing back half a credential. `AgentTokenManager` and `OidcManager` are the pattern (#1111).
 - __Private text stays sealed.__ Vault files go into a backup as stored bytes, never decrypted. A restore never writes plaintext into a sealed vault (`FileSystemProvider.restore`, #1836). Search backups leave private page text out (#1458).
 - __Paths in a backup are data.__ A `restore()` resolves every relative path and refuses one that leaves its folder, as `FileSystemProvider` and `VersioningFileProvider` do.
 - __Backups are never silent__ (#1563). A part that can't be backed up says so: in the backup itself (like `privateOmitted`), in the log at error level, and to admins.
-- __A restore is staged__ (#1723 D1, #1876). New restore code stages for the next start, all or nothing, after a fresh backup of the live data. It never writes into the running site.
+- __A restore is staged__ (#1723 D1, #1876). New restore code stages for the next start, all or nothing, after a fresh backup of the live data, as `DatabaseManager.restore` does. It never writes into the running site.
 
 ## Known gaps
 
 - __A backup file is a secret: treat it like one__ ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)). The `.json.gz` is not encrypted. It carries the custom configuration with its secrets in plain text (the probe's backup held the SMTP password as written), every user record with its password hash, and the text of vaults that aren't sealed. Keep it as safe as the data folder and `.env`: never on a share others can read, and never sent where you wouldn't send the keys.
-- __A site backup can't be restored__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), P0). Nothing calls `restoreFromFile`. The other managers' `restore()` methods have never run on a real site, and they write live, not staged. Restoring anything but the databases must be staged as #1723 does for the databases.
+- __Only the databases can be restored__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), P0). Nothing restores pages, attachments, users, settings or any other manager's data. Those managers' `restore()` methods have never run on a real site, and they write live, not staged. Restoring them must be staged as #1723 does for the databases.
 - __A backup's completeness is not checked__ (#1876). The inventory above is the first pass. Every "No" row is missing from the `.json.gz`:
   - Attachment files in the shared pool (#1876).
   - Footnotes and comments on public pages ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
@@ -127,11 +137,10 @@ Only what the code supports:
   - The audit log ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
   - Shares, notifications and scheduled-job state ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
   - Add-on files under `dataPath`; the forms and feeds managers have no `backup()` at all ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
-- __Databases are not backed up yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723), [PR #1875](https://github.com/jwilleke/ngdpbase/pull/1875) pending): neither the application database nor any add-on's.
-- __Key rotation__: once #1723 lands, an old backup needs the backup key it was made with (#1723 D3).
+- __Key rotation__: an old backup's databases need the backup key they were made with; a restore under another key is refused ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723) D3).
 - __No command-line restore for a site that won't start__ (deferred, #1723 D1).
-- __A backup is not a snapshot__ ([#1213](https://github.com/jwilleke/ngdpbase/issues/1213)). Managers are asked one after another while the site keeps writing. A manager that fails leaves an error in its slot, and the backup still counts as a success.
-- __Stale, unverified, out of space__ ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). Nothing says when backups stop. Nothing checks free space first or reads the file back after. A backup by hand that fails tells no admin.
+- __A backup is not a snapshot__ ([#1213](https://github.com/jwilleke/ngdpbase/issues/1213)). The databases are copied at one point in time, but the managers are asked one after another while the site keeps writing. A manager that fails leaves an error in its slot. The backup is still written, and admins are told it is incomplete.
+- __Stale, unverified, out of space__ ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). Nothing says when backups stop. Nothing checks free space first or reads the file back after. A backup by hand that fails outright tells no admin.
 - __Private stores over 256 MB are left out whole__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238); #1387 closed). The backup is built in memory. Over that size `privateOmitted` is set and an error logged, but no admin is notified, and every vault is missing from the backup.
 - __Elasticsearch search backups stop at 10,000 documents__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)). It can be rebuilt from the pages.
 - __A leftover legacy `pages/private/` folder is not backed up__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
