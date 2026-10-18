@@ -203,7 +203,8 @@ describe('MagicLinkAuthProvider', () => {
 
     beforeEach(() => {
       mockUserManager.getUser = vi.fn().mockResolvedValue(undefined);
-      mockUserManager.createUser = vi.fn().mockResolvedValue(undefined);
+      // The account as stored, as UserManager.createUser returns it (#1882).
+      mockUserManager.createUser = vi.fn((input: { username: string }) => Promise.resolve({ username: input.username }));
     });
 
     test('stays silent for an unknown email when auto-provision is off', async () => {
@@ -266,6 +267,18 @@ describe('MagicLinkAuthProvider', () => {
       await provider.provisionIfNew(token);
 
       expect(await provider.verify({ token })).toEqual({ username: 'newbie' });
+    });
+
+    test('verify() names the account as stored, not the name derived for it (#1882)', async () => {
+      withConfig({ 'ngdpbase.auth.magic-link.auto-provision': true });
+      mockUserManager.getUserByEmail.mockResolvedValue(undefined);
+      mockUserManager.createUser = vi.fn().mockResolvedValue({ username: 'Newbie' });
+      await provider.initiate({ email: 'newbie@example.com' });
+
+      const token = tokenFrom();
+      await provider.provisionIfNew(token);
+
+      expect(await provider.verify({ token })).toEqual({ username: 'Newbie' });
     });
 
     test('an unknown configured role falls back to reader', async () => {

@@ -6926,7 +6926,7 @@ ${panes}
         ? await authManager.authenticate('password', { username, password }, this.attemptFrom(req, 'sign-in'))
         : { success: false };
 
-      if (!result.success) {
+      if (!result.success || !result.username) {
         if (debugLogin)
           logger.debug('DEBUG: Authentication failed for:', username);
 
@@ -6968,10 +6968,11 @@ ${panes}
       // #1523: a person with a second factor enrolled signs in in two steps.
       // The password has passed; no session yet. The keys it opens are held
       // with the pending sign-in until the second factor completes it.
-      const signedInAs = result.username || username;
+      // #1882: the stored username AuthManager returned, never the typed one.
+      const signedInAs = result.username;
       if (authManager?.secondFactorsFor?.(signedInAs).length) {
         const binding = randomBytes(24).toString('base64url');
-        const handle = authManager.beginTwoStep(result, {
+        const handle = await authManager.beginTwoStep(result, {
           binding,
           ip: req.ip,
           userAgent: req.get('user-agent'),
@@ -6993,13 +6994,13 @@ ${panes}
       // how it signed in, and the stores unlocked with the password. KEK/DEK
       // live in the process bag keyed by a random handle (#1391), never in
       // the session JSON.
-      const completed = await authManager.completeSignIn(req, { ...result, username: result.username || username }, {
+      const completed = await authManager.completeSignIn(req, result, {
         method: 'password',
         returnTo: redirect,
         ...(typeof password === 'string' && password ? { unlockWith: { password } } : {})
       });
 
-      logger.info(`👤 User logged in: ${result.username || username}`);
+      logger.info(`👤 User logged in: ${signedInAs}`);
 
       if (debugLogin) {
         logger.debug('DEBUG: Session ID:', req.sessionID);

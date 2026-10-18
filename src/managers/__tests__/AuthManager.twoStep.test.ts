@@ -102,7 +102,7 @@ describe('two-step sign-in (#1523)', () => {
 
   test('approve from the link: the sign-in completes with both factors, once, for the browser that started it', async () => {
     const am = await enrolled();
-    const handle = am.beginTwoStep(FIRST, { binding: 'browser-1', ip: '1.2.3.4', userAgent: 'Chrome' });
+    const handle = await am.beginTwoStep(FIRST, { binding: 'browser-1', ip: '1.2.3.4', userAgent: 'Chrome' });
     expect(am.pendingSignIn(handle, 'another-browser')).toBeNull();
     expect(await am.sendEmailApproval(handle, 'browser-1')).toBe('sent');
     expect(sent.at(-1).to).toBe('molly@example.com');
@@ -123,7 +123,7 @@ describe('two-step sign-in (#1523)', () => {
 
   test('"this wasn\'t me" refuses the waiting sign-in for good', async () => {
     const am = await enrolled();
-    const handle = am.beginTwoStep(FIRST, { binding: 'b' });
+    const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
     await am.sendEmailApproval(handle, 'b');
     const token = linkToken();
     expect(am.denyByToken(token)).toBe('molly');
@@ -136,7 +136,7 @@ describe('two-step sign-in (#1523)', () => {
     vi.useFakeTimers();
     try {
       const am = await enrolled();
-      const handle = am.beginTwoStep(FIRST, { binding: 'b' });
+      const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
       vi.advanceTimersByTime(10 * 60_000 + 1);
       expect(am.pendingSignIn(handle, 'b')).toBeNull();
     } finally {

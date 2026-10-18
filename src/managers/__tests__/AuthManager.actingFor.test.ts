@@ -86,7 +86,8 @@ describe('AuthManager — acting for someone, slice 4 (#1762)', () => {
         subjectFor: (u: string) => Promise.resolve(HOLDS[u] ? subject(u, { ipAddress: undefined }) : null)
       },
       UserManager: {
-        getUser: () => Promise.resolve(undefined),
+        // #1882: a sign-in completes only for a stored account; the record names it.
+        getUser: (u: string) => Promise.resolve(HOLDS[u] ? { username: u } : undefined),
         hasPassword: () => Promise.resolve(true),
         deleteUserSessions: () => Promise.resolve()
       },

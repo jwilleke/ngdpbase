@@ -54,6 +54,30 @@ describe('two-step sign-in routes (#1523)', () => {
     expect(out.redirect).toHaveBeenCalledWith('/login/second-factor');
   });
 
+  test('typed "MOLLY": every step after the check uses the stored name AuthManager returned (#1882)', async () => {
+    const secondFactorsFor = vi.fn(() => [{ id: 'email-link', label: 'Email link', target: 'm***@example.com' }]);
+    const unlockVaults = vi.fn().mockResolvedValue('psh');
+    const beginTwoStep = vi.fn(() => Promise.resolve('h1'));
+    const { r } = routes({
+      authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
+      secondFactorsFor, unlockVaults, beginTwoStep
+    });
+    const s = session();
+    await r.processLogin(req(s, { body: { username: 'MOLLY', password: 'x', redirect: '/' } }), res());
+    expect(secondFactorsFor).toHaveBeenCalledWith('molly');
+    expect(unlockVaults).toHaveBeenCalledWith('molly', 'x');
+    expect(beginTwoStep).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), expect.objectContaining({ privateStoreHandle: 'psh' }));
+    expect(s.pendingSignIn).toBe('h1');
+
+    const completeSignIn = vi.fn().mockResolvedValue({});
+    const one = routes({
+      authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
+      secondFactorsFor: vi.fn(() => []), completeSignIn
+    });
+    await one.r.processLogin(req(session(), { body: { username: 'MOLLY', password: 'x', redirect: '/' } }), res());
+    expect(completeSignIn).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ username: 'molly' }), expect.anything());
+  });
+
   test('no second factor enrolled: the sign-in is one step, as before', async () => {
     const { r } = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),

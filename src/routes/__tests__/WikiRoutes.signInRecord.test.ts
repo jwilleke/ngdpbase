@@ -37,7 +37,8 @@ describe('sign-in recorded on the session (#1523)', () => {
   afterEach(async () => { vi.restoreAllMocks(); await fs.remove(tmp); });
 
   const routesWith = (authResult: Record<string, unknown>) => {
-    const real = new AuthManager({ getManager: () => null });
+    // #1882: completion asks the user store for the stored name; every sign-in here is a stored account.
+    const real = new AuthManager({ getManager: (n: string) => (n === 'UserManager' ? { getUser: (u: string) => Promise.resolve({ username: u }) } : null) });
     const authManager = {
       authenticate: vi.fn().mockResolvedValue(authResult),
       signInRecord: (r: never) => real.signInRecord(r),

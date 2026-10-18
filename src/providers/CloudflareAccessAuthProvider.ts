@@ -147,7 +147,7 @@ export class CloudflareAccessAuthProvider implements AuthProvider {
     const roles = this.mapGroupsToRoles(payload.identity?.groups ?? []);
 
     try {
-      await userManager.createUser({
+      const created = await userManager.createUser({
         username,
         email,
         displayName,
@@ -160,7 +160,7 @@ export class CloudflareAccessAuthProvider implements AuthProvider {
         isActive: true
       }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by cloudflare-access')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
       logger.info(`[CloudflareAccessAuthProvider] JIT-provisioned user: ${username} (${email}) with roles=[${roles.join(', ')}]`);
-      return { username };
+      return { username: created.username }; // #1882: the account as stored
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[CloudflareAccessAuthProvider] JIT provision failed for ${username}:`, message);
