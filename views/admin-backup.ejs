@@ -100,7 +100,8 @@
             <h5 class="mb-0"><i class="fas fa-undo"></i> Restore Databases</h5>
         </div>
         <div class="card-body">
-            <p>Puts the site's databases back as they were in a backup stored on this server. The databases only: settings, users and pages are not changed.</p>
+            <p class="fw-bold" id="restore-scope">Restores the databases only. Pages, users and settings are not changed.</p>
+            <p>Puts the site's databases back as they were in a backup stored on this server.</p>
             <ul>
                 <li>A fresh backup of the current data is taken first.</li>
                 <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
@@ -119,6 +120,9 @@
                     <tr><th>Backup taken</th><td><%= stagedRestore.backup ? new Date(stagedRestore.backup).toLocaleString() : '—' %></td></tr>
                     <tr><th>Staged</th><td><%= new Date(stagedRestore.stagedAt).toLocaleString() %></td></tr>
                     <tr><th>Staged by</th><td><%= stagedRestore.stagedBy || '—' %></td></tr>
+                    <% if (stagedRestore.safetyBackup) { const safety = (recentBackups || []).find(function(b) { return b.filename === stagedRestore.safetyBackup; }); %>
+                    <tr id="safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedRestore.safetyBackup %></code><%= safety ? ' (' + new Date(safety.created).toLocaleString() + ')' : '' %>. It is in the list above; restore it to undo this restore.</td></tr>
+                    <% } %>
                     <tr><th>Databases</th><td><%= stagedRestore.databases.map(function(d) { return d.name; }).join(', ') %></td></tr>
                 </table>
                 <p class="mb-2">Restart the site to apply it, or cancel it. To restore a different backup instead, use <strong>Replace it</strong> below.</p>

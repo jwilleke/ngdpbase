@@ -313,6 +313,8 @@ export interface StagedRestoreManifest {
   source: string;
   /** Who staged it: the account named by the request's context. */
   stagedBy: string;
+  /** The backup of the live data taken just before staging (D6): what to restore to undo this one. */
+  safetyBackup?: string;
   databases: Array<{ name: string; live: string; staged: string }>;
 }
 

@@ -61,6 +61,7 @@ test.describe('Admin Backup', () => {
     await page.goto('/admin/backup');
     test.skip((await page.locator('#restore-card').count()) === 0, 'this instance keeps no databases');
     test.skip((await page.locator('#restore-form').count()) === 0, 'no backup on this instance holds databases yet');
+    await expect(page.locator('#restore-scope')).toHaveText('Restores the databases only. Pages, users and settings are not changed.');
     const input = page.locator('#restoreConfirm');
     const button = page.locator('#restore-submit');
     await expect(button).toBeDisabled();
@@ -86,6 +87,10 @@ test.describe('Admin Backup', () => {
       await expect(page.locator('#staged-restore')).toBeVisible();
     }).toPass({ timeout: 60000 });
     await expect(page.locator('#staged-restore')).toContainText('Staged by');
+    // D6: the safety backup taken first is named, and is in the stored list.
+    const safety = (await page.locator('#safety-backup code').textContent()).trim();
+    expect(safety).toMatch(/-ngdpbase-backup\.json\.gz$/);
+    await expect(page.locator(`#stored-backups tr[data-backup="${safety}"]`)).toHaveCount(1);
     await expect(page.locator('#restore-submit')).toContainText('Replace it');
 
     await page.locator('#cancel-staged-restore button').click();

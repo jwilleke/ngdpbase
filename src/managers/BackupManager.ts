@@ -593,7 +593,7 @@ class BackupManager extends BaseManager {
         logger.info('📦 Taking a backup of the live data before staging the databases...');
         const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true });
         logger.info(`✅ Live data backed up to ${before}`);
-        await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged });
+        await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged, safetyBackup: path.basename(before) });
         results.success.push('DatabaseManager');
       }
 

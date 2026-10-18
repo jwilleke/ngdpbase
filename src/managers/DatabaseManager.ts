@@ -494,12 +494,13 @@ class DatabaseManager extends BaseManager {
       backup: String(backupData.timestamp ?? ''),
       source: options.source ?? '',
       stagedBy: actorOf(options.ctx).user,
+      ...(options.safetyBackup ? { safetyBackup: options.safetyBackup } : {}),
       databases: stages.map((s) => ({ name: s.name, live: s.live, staged: stagedPath(s.live) }))
     };
     writeManifest(manifestFile, manifest);
     const names = stages.map((s) => s.name).join(', ');
     logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
-    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.`);
+    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.${manifest.safetyBackup ? ` The current data was backed up first, as ${manifest.safetyBackup}.` : ''}`);
     if (skipped.length > 0) {
       const message = `The backup also holds ${skipped.join(', ')}, which no add-on on this site declares, so they were not restored. Install the add-on and restore again to bring them back.`;
       logger.error(`[DatabaseManager] ${message}`);

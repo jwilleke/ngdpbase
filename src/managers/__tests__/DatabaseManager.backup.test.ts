@@ -565,6 +565,12 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       expect(await done).not.toBeNull();
       expect(other.restore).not.toHaveBeenCalled();
       expect(database.getStagedRestore()).toMatchObject({ source: '2026-01-01-ngdpbase-backup.json.gz', stagedBy: 'admin' });
+      // D6: the safety backup it took first is named, and is one of the stored backups.
+      const safety = database.getStagedRestore()!.safetyBackup!;
+      expect(safety).toMatch(/-ngdpbase-backup\.json\.gz$/);
+      expect(safety).not.toMatch(/^2026-01-0[12]/);
+      expect((await backups.listStoredBackups()).map((b) => b.filename)).toContain(safety);
+      expect(notifications.find((n) => n.title === 'A database restore is staged')?.message).toContain(`backed up first, as ${safety}`);
       expect(backups.isRestoreRunning()).toBe(false);
 
       await expect(backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz')).rejects.toThrow(/already staged; cancel it or replace it/);

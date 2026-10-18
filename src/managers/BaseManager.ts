@@ -84,6 +84,8 @@ export interface ManagerRestoreOptions {
    * restore is never replaced silently.
    */
   replaceStaged?: boolean;
+  /** The backup of the live data BackupManager took just before this restore (#1723, D6), by filename. */
+  safetyBackup?: string;
 }
 
 /**
