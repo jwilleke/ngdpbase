@@ -40,6 +40,12 @@
  * never merged into the configuration: DatabaseManager reads the declarations
  * from here, so the operator's file cannot change one. An invalid declaration
  * stops its addon loading, as a refused system-category does.
+ *
+ * A third, `ngdpbase.addons.<slug>.site-critical` (#1883): whether a failure of
+ * the addon to load puts the whole site in maintenance mode. Read from the
+ * addon's own file and from the operator's, which wins either way, and kept
+ * apart from the merge so a refused addon's value is still known. A value that
+ * is not exactly `true` or `false` refuses the addon and counts as `true`.
  */
 
 import fs from 'fs';
@@ -140,6 +146,11 @@ export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string
   return out;
 }
 
+/** How a problem line names an addon; AddonsManager matches it to fold a refusal into its load-failure notice (#1883). */
+export function addonProblemSubject(slug: string, enabled: boolean): string {
+  return `add-on '${slug}'${enabled ? '' : ' (turned off)'}`;
+}
+
 interface AddonCategoryLayer {
   /** The accepted entries, by key, each stamped with its `owner`. */
   entries: Record<string, Record<string, unknown>>;
@@ -176,7 +187,7 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
   for (const addon of addons) {
     const declared = addon.defaults[SYSTEM_CATEGORY_KEY];
     if (declared === undefined) continue;
-    const who = `add-on '${addon.slug}'${addon.enabled ? '' : ' (turned off)'}`;
+    const who = addonProblemSubject(addon.slug, addon.enabled);
     if (!isPlainObject(declared)) {
       const reason = `${SYSTEM_CATEGORY_KEY} must be a map of entries`;
       layer.problems.push(`${who}: ${reason}; it is refused and the add-on is not loaded`);
@@ -266,7 +277,7 @@ export function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Rec
       }
     }
     if (reasons.length > 0) {
-      const who = `add-on '${addon.slug}'${addon.enabled ? '' : ' (turned off)'}`;
+      const who = addonProblemSubject(addon.slug, addon.enabled);
       layer.problems.push(`${who}: its database declaration is refused (${reasons.join('; ')}); the add-on is not loaded`);
       layer.refused.set(addon.slug, `its database declaration was refused: ${reasons.join('; ')}`);
       continue;
@@ -278,6 +289,52 @@ export function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Rec
     if (custom[addonDatabaseKey(addon.slug)] !== undefined) {
       layer.problems.push(`app-custom-config.json sets ${addonDatabaseKey(addon.slug)}, which is the declaration of add-on '${addon.slug}'; the site's value is ignored`);
     }
+  }
+  return layer;
+}
+
+/** The configuration key that makes an addon site-critical (#1883). */
+export function addonSiteCriticalKey(slug: string): string {
+  return `ngdpbase.addons.${slug}.site-critical`;
+}
+
+export interface AddonSiteCriticalLayer {
+  /** Each addon with a value, by slug: true when its failure to load puts the site in maintenance mode. */
+  siteCritical: Map<string, boolean>;
+  /** Addons whose value is not exactly `true` or `false`, by slug, with why: never loaded. */
+  refused: Map<string, string>;
+  problems: string[];
+}
+
+/**
+ * Which addons are site-critical (#1883): the operator's value if the
+ * operator's file sets one, else the addon's own (only under its own slug),
+ * else not. The operator's file wins in both directions, as for every addon
+ * key. The value is exactly `true` or `false`; anything else (the string
+ * `"true"` included) refuses the addon and counts as site-critical, so a
+ * mistyped value fails closed. `custom` keys for an addon with no file, or
+ * one that is not installed, count too.
+ */
+export function addonSiteCriticalLayer(addons: readonly AddonDefaults[], custom: Record<string, unknown>): AddonSiteCriticalLayer {
+  const layer: AddonSiteCriticalLayer = { siteCritical: new Map(), refused: new Map(), problems: [] };
+  const take = (slug: string, enabled: boolean, own: unknown): void => {
+    const key = addonSiteCriticalKey(slug);
+    const fromSite = custom[key] !== undefined;
+    const value = fromSite ? custom[key] : own;
+    if (value === undefined) return;
+    if (typeof value === 'boolean') {
+      layer.siteCritical.set(slug, value);
+      return;
+    }
+    const reason = `${key} must be true or false, got ${JSON.stringify(value)} in ${fromSite ? 'app-custom-config.json' : 'its config/default-config.json'}; it is treated as true`;
+    layer.siteCritical.set(slug, true);
+    layer.refused.set(slug, reason);
+    layer.problems.push(`${addonProblemSubject(slug, enabled)}: ${reason}; the add-on is not loaded`);
+  };
+  for (const addon of addons) take(addon.slug, addon.enabled, addon.defaults[addonSiteCriticalKey(addon.slug)]);
+  for (const key of Object.keys(custom)) {
+    const slug = /^ngdpbase\.addons\.([^.]+)\.site-critical$/.exec(key)?.[1];
+    if (slug && !layer.siteCritical.has(slug)) take(slug, custom[`ngdpbase.addons.${slug}.enabled`] === true, undefined);
   }
   return layer;
 }
@@ -326,12 +383,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   shipped: T,
   addons: readonly AddonDefaults[],
   custom: Partial<T>
-): { merged: T; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[] } {
+): { merged: T; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[]; siteCritical: Map<string, boolean> } {
   const customCategories = (custom as Record<string, unknown>)[SYSTEM_CATEGORY_KEY];
   const layer = addonCategoryLayer(shipped[SYSTEM_CATEGORY_KEY], customCategories, addons);
   const databaseLayer = addonDatabaseLayer(addons, custom);
+  const criticalLayer = addonSiteCriticalLayer(addons, custom);
+  const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
-  for (const [slug, reason] of databaseLayer.refused) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
   const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
     .filter((a) => a.enabled && !refused.has(a.slug))
@@ -342,14 +401,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems], refused, databases };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems], refused, databases, siteCritical };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems], refused, databases };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems], refused, databases, siteCritical };
 }
 
 /**
@@ -362,17 +421,19 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
  * could not be read; `refused` names, by slug, each addon that must not load
  * because an entry it declares was refused, and why (#1559), or because its
  * database declaration was (#1860); `databases` is every sound database
- * declaration of every installed addon, on or off (#1860).
+ * declaration of every installed addon, on or off (#1860); `siteCritical`
+ * says, by slug, which addons put the site in maintenance mode when they fail
+ * to load (#1883).
  */
 export function mergeConfigWithAddons<T extends Record<string, unknown>>(
   shipped: T,
   custom: Partial<T>,
   cwd: string = process.cwd(),
   dataFolder: string = instanceDataFolder()
-): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[] } {
+): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[]; siteCritical: Map<string, boolean> } {
   const base = deepMergeConfigs(shipped, custom);
   const all = discoverAddonDefaults(base, cwd, dataFolder);
-  const { merged, problems, refused, databases } = mergeWithAddonLayer(shipped, all, custom);
+  const { merged, problems, refused, databases, siteCritical } = mergeWithAddonLayer(shipped, all, custom);
   const unreadable = all
     .filter((a) => !a.enabled && a.error)
     .map((a) => `add-on '${a.slug}' (turned off): config/default-config.json could not be read (${a.error}); its system-categories and database are not known`);
@@ -382,7 +443,8 @@ export function mergeConfigWithAddons<T extends Record<string, unknown>>(
     addons: all.filter((a) => a.enabled && !refused.has(a.slug)),
     problems: [...unreadable, ...problems],
     refused,
-    databases
+    databases,
+    siteCritical
   };
 }
 

@@ -36,7 +36,7 @@ import { resolveTlsConfig } from './utils/tlsConfig.js';
 import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js';
 import https from 'https';
 import net from 'net';
-import { gateDecision, describeBlocked } from './utils/startupState.js';
+import { gateDecision, describeBlocked, blockedForVisitors } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -201,6 +201,8 @@ void (async (): Promise<void> => {
   // and a configuration value turned out to be unusable, which is what decides
   // if /admin is reachable.
   let blockedReasons: string[] = [];
+  // #1883: set when a reason is for administrators only; visitors then see this instead.
+  let blockedPublicMessage: string | null = null;
   // #1153: collected before the engine exists, so it cannot go through
   // engine.blockConfiguration() at the point it is found.
   let tlsBlockedReasons: string[] = [];
@@ -286,7 +288,7 @@ void (async (): Promise<void> => {
     if (blockedReasons.length > 0) {
       res.status(503).json({
         status: 'not-ready' satisfies ReadinessReport['status'],
-        checks: { configuration: { ok: false, detail: blockedReasons } }
+        checks: { configuration: { ok: false, detail: blockedForVisitors(blockedReasons, blockedPublicMessage).detail } }
       });
       return;
     }
@@ -324,7 +326,7 @@ void (async (): Promise<void> => {
 
     res.status(503).render('maintenance', {
       message: blocked
-        ? describeBlocked(blockedReasons)
+        ? blockedForVisitors(blockedReasons, blockedPublicMessage).message
         : 'The system is starting up. This may take a moment while pages are indexed.',
       estimatedDuration: null,
       notifications: [],
@@ -1170,6 +1172,16 @@ void (async (): Promise<void> => {
   //     — so addon route handlers can read req.session and req.userContext
   //     normally and inherit CSRF protection on their own POST routes.
   await engine.initializeAddons();
+
+  // #1883: a site-critical add-on that did not load blocks the instance the
+  // same way (#1152), and is only known now that the add-ons have loaded.
+  const addonBlocks = engine.getBlockingConditions().slice(blockedReasons.length);
+  blockedReasons = [...engine.getBlockingConditions()];
+  blockedPublicMessage = engine.getPublicBlockingMessage();
+  if (addonBlocks.length > 0) {
+    logger.error(`🚨 ${describeBlocked(addonBlocks)}`);
+    logger.error('[startup] The instance is NOT serving content. Sign in at /admin for the notification that says how to fix it, then restart.');
+  }
 
   // #1523: every role's required-aal must be reachable by the sign-in factors
   // actually available — checked here, once add-ons have registered theirs. A

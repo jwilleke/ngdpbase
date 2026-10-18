@@ -201,7 +201,7 @@ class Engine {
    * failure of the machinery needed to SERVE that UI is fatal and still
    * throws — see D10 of docs/security-posture.md.
    */
-  private blockingConditions: string[] = [];
+  private blockingConditions: Array<{ reason: string; publicMessage?: string }> = [];
 
   /**
    * Every manager that is not `ready`, with its reason (#1155).
@@ -229,14 +229,23 @@ class Engine {
     return out;
   }
 
-  /** Record a configuration value that cannot be used (#1152). */
-  blockConfiguration(reason: string): void {
-    this.blockingConditions.push(reason);
+  /**
+   * Record a configuration value that cannot be used (#1152). With
+   * `publicMessage` (#1883) the reason is for administrators only: visitors
+   * see that message instead of any reason.
+   */
+  blockConfiguration(reason: string, options: { publicMessage?: string } = {}): void {
+    this.blockingConditions.push({ reason, ...(options.publicMessage !== undefined ? { publicMessage: options.publicMessage } : {}) });
   }
 
   /** Configuration values that could not be used, in the order found. */
   getBlockingConditions(): readonly string[] {
-    return [...this.blockingConditions];
+    return this.blockingConditions.map((c) => c.reason);
+  }
+
+  /** What visitors see in place of the reasons, when any reason is for administrators only (#1883); null when none is. */
+  getPublicBlockingMessage(): string | null {
+    return this.blockingConditions.find((c) => c.publicMessage !== undefined)?.publicMessage ?? null;
   }
 
   async shutdown(): Promise<void> {

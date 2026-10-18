@@ -215,6 +215,10 @@ See [Headless deployment gotchas §7](../../../docker/HEADLESS-DEPLOYMENT-NOTES.
 
 If addons in a non-default directory aren't loading at all, you may have hit [§4](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#4-addons-path-string-replaces-array-supplements) — a string `addons-path` replaces the default `./addons` rather than supplementing it. Use the array form.
 
+### An add-on did not load, or visitors see "We're having temporary issues"
+
+Every enabled add-on that does not load raises an admin notification, "Critical: add-on `<slug>` did not load", with the reason; `/admin/addons` shows the same reason. If the add-on is site-critical (`ngdpbase.addons.<slug>.site-critical`), the whole site is in maintenance mode: visitors see only "We're having temporary issues. Please try again later.", and you can still sign in and open `/admin` to read the notification. Fix what it names and restart with `./server.sh restart`. The most common one is a missing `NGDPBASE_DATABASE_KEY` for an add-on whose database must be encrypted: set it in `<FAST_STORAGE>/.env`. The full list of reasons is in the [addons developer guide](../../guides/addons-developer-guide.md#when-an-addon-does-not-load-site-critical).
+
 ### Logged-in users get bumped to Anonymous after a restart
 
 The session secret changed — see [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret). ngdpbase generates `NGDPBASE_SESSION_SECRET` on first boot and saves it to `<FAST_STORAGE>/.env`, so check that file still holds it and that `FAST_STORAGE` points where it did. To manage it yourself, set it in that `.env` (generate a value with `openssl rand -base64 32`):

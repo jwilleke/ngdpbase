@@ -82,10 +82,12 @@ class ConfigurationManager extends BaseManager {
   private addonLayers: AddonDefaults[];
   /** #1559: add-on system-categories refused, and operator values an owner's declaration overrode; #1860: database declarations refused or overridden. */
   private systemCategoryProblems: string[];
-  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why; #1860: or their database declaration. */
+  /** #1559: add-ons that must not load because an entry they declare was refused, by slug, with why; #1860: or their database declaration; #1883: or a site-critical value that is not a boolean. */
   private refusedAddons: Map<string, string>;
   /** #1860: every installed add-on's sound database declaration, on or off. */
   private addonDatabases: AddonDatabaseDeclaration[];
+  /** #1883: which add-ons put the site in maintenance mode when they fail to load, by slug. */
+  private siteCriticalAddons: Map<string, boolean>;
   private environment: string;
   private defaultConfigPath: string;
   private customConfigPath: string;
@@ -108,6 +110,7 @@ class ConfigurationManager extends BaseManager {
     this.systemCategoryProblems = [];
     this.refusedAddons = new Map();
     this.addonDatabases = [];
+    this.siteCriticalAddons = new Map();
     this.environment = process.env.NODE_ENV || 'development';
 
     // #1214: one derivation of the data folder and both file paths, shared
@@ -487,13 +490,14 @@ class ConfigurationManager extends BaseManager {
     // reachable. Its problems are logged here and posted to admins by
     // AddonsManager once notifications exist.
     // #1860: so is ngdpbase.addons.<slug>.database, kept apart from the merge.
-    const { merged, declared, addons, problems, refused, databases } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
+    const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
     this.refusedAddons = refused;
     this.addonDatabases = databases;
+    this.siteCriticalAddons = siteCritical;
     for (const problem of problems) logger.warn(`[config] ${problem}`);
     for (const a of addons) {
       if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
@@ -676,6 +680,17 @@ class ConfigurationManager extends BaseManager {
    */
   getAddonDatabaseDeclarations(): readonly AddonDatabaseDeclaration[] {
     return this.addonDatabases.map((d) => ({ ...d }));
+  }
+
+  /**
+   * #1883: whether this add-on's failure to load puts the whole site in
+   * maintenance mode — `ngdpbase.addons.<slug>.site-critical`, from the
+   * operator's file or else the add-on's own, read even when the add-on was
+   * refused. A value that is not exactly true or false counts as true (and
+   * refuses the add-on, {@link getAddonRefusal}).
+   */
+  isAddonSiteCritical(slug: string): boolean {
+    return this.siteCriticalAddons.get(slug) === true;
   }
 
   /**
