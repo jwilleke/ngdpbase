@@ -166,7 +166,7 @@ __In the Docker image the name is baked.__ `docker/Dockerfile` sets `ENV NGDPBAS
 
 ### Env references inside config values
 
-__Only a key's whole top-level value is resolved today.__ A `$VAR` inside an object, map or array (for example an add-on's account map) comes back as the literal text, and `ngdpbase.config.sensitive-values` can only hide top-level keys; both are [#1889](https://github.com/jwilleke/ngdpbase/issues/1889).
+__Inside a map or list too ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)).__ The bare `$VAR` form and the `$$` escape apply to every string at any depth of an object, map or array value (an add-on's account map), by the same strict rule; an unset variable throws naming the full path (`ngdpbase.addons.accounting.accounts.checking.account-number`). The brace form applies to a top-level value only. A secret inside a map is hidden by a path entry in `ngdpbase.config.sensitive-values`, with `*` for a map key; see [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules).
 
 Any config value may reference an environment variable. Resolution happens __at lookup time__, per `getProperty()` call — not at config load — so a test that mutates `process.env` mid-run sees the new value on the next read (`ConfigurationManager.resolveEnvRef()`).
 
@@ -367,7 +367,7 @@ Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [doc
 ## Known gaps
 
 - [#1878](https://github.com/jwilleke/ngdpbase/issues/1878) — nothing warns when an instance still uses the shipped name, favicon or base URL.
-- [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — `$VAR` is not resolved inside nested config values, and `sensitive-values` takes no nested paths.
+- [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — an unset `$VAR` anywhere inside a map makes the whole key unreadable (it throws), so an add-on's `register()` config omits that whole key, with a warning; the other gaps are in [configuration-developer-guide.md](configuration-developer-guide.md#known-gaps).
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645)
 
 ## History
