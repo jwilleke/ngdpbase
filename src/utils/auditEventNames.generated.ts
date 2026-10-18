@@ -43,6 +43,12 @@ export const AUDIT_EVENT = {
   AUTHORIZATION_DENY: 'authorization-deny',
   /** A full backup written; where it went and who asked */
   BACKUP_CREATE: 'backup-create',
+  /** A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) */
+  BACKUP_RESTORE: 'backup-restore',
+  /** A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) */
+  BACKUP_RESTORE_CANCEL: 'backup-restore-cancel',
+  /** A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723) */
+  BACKUP_RESTORE_REPLACE: 'backup-restore-replace',
   /** Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) */
   COMMENT_CREATE: 'comment-create',
   /** Comment marked deleted; who removed it and whose it was (#1232) */
