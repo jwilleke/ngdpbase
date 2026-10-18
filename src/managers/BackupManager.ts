@@ -1,3 +1,4 @@
+import path from 'path';
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
@@ -21,6 +22,14 @@ const gunzip = promisify(zlib.gunzip);
 export interface BackupOptions {
   filename?: string;
   compress?: boolean;
+  /**
+   * Leave retention for the next backup (#1723). The backup a restore takes
+   * of the live data first sets it, so that backup can never prune the very
+   * backup being restored.
+   */
+  skipCleanup?: boolean;
+  /** Throw when any part of the backup failed, after saying so (#1723): a restore stages nothing without a whole copy of the live data. */
+  requireComplete?: boolean;
 }
 
 /**
@@ -99,6 +108,20 @@ export interface AutoBackupConfig {
   days: string;       // "daily" | "monthly" | comma-separated day names e.g. "Mon,Wed,Fri"
   maxBackups: number;
   directory: string;
+}
+
+/**
+ * A backup document's filename without `.json.gz` / `.json` (#1723). A
+ * manager's own files beside the document are named `<stem>.<something>.db`,
+ * and are pruned with it.
+ */
+export function backupStem(filename: string): string {
+  return filename.replace(/\.json(\.gz)?$/, '');
+}
+
+/** Whether `filename` is one of the files a manager wrote beside the document named `documentFilename` (#1723). */
+export function isCompanionOf(filename: string, documentFilename: string): boolean {
+  return filename.startsWith(`${backupStem(documentFilename)}.`) && filename.endsWith('.db');
 }
 
 /** The scheduled job automatic backups run as (#1720). */
@@ -322,6 +345,7 @@ class BackupManager extends BaseManager {
   async createBackup(ctx: ActorContext, options: BackupOptions = {}): Promise<string> {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
+    let pending: { filename: string; existing: Set<string> } | null = null;
 
     try {
       if (!this.backupDirectory || !this.provider) {
@@ -344,6 +368,12 @@ class BackupManager extends BaseManager {
       const managerNames = this.engine.getRegisteredManagers();
       logger.info(`📋 Found ${managerNames.length} registered managers`);
 
+      // #1723: a manager may write its own files (the databases) beside the
+      // document; they share its stem and are pruned with it.
+      const managerOptions = { ctx, directory: this.backupDirectory, stem: backupStem(filename) };
+      const failures: string[] = [];
+      pending = { filename, existing: new Set(await this.companionsOf(filename)) };
+
       // Call backup() on each manager
 
       for (const managerName of managerNames) {
@@ -360,12 +390,14 @@ class BackupManager extends BaseManager {
           }
 
           logger.info(`📦 Backing up ${managerName}...`);
-          const managerBackup = await manager.backup();
+          const managerBackup = await manager.backup(managerOptions);
 
           backupData.managers[managerName] = managerBackup;
-          logger.info(`✅ ${managerName} backed up successfully`);
+          for (const warning of managerBackup?.warnings ?? []) failures.push(`${managerName}: ${warning}`);
+          logger.info(`✅ ${managerName} backed up${managerBackup?.warnings?.length ? ' in part' : ' successfully'}`);
         } catch (error) {
           logger.error(`❌ Failed to backup ${managerName}:`, error);
+          failures.push(`${managerName}: ${(error as Error).message}`);
           // Continue with other managers even if one fails
           backupData.managers[managerName] = {
             error: (error as Error).message,
@@ -388,6 +420,7 @@ class BackupManager extends BaseManager {
 
       // Write via the storage provider (#170)
       const backupPath = await this.provider.writeBackup(filename, finalData);
+      pending = null;
 
       const duration = Date.now() - startTime;
       logger.info(`✅ Backup completed successfully in ${duration}ms`);
@@ -408,13 +441,49 @@ class BackupManager extends BaseManager {
         metadata: { ...who.metadata, filename, bytes: finalData.length, managers: managerNames.length }
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
+      // #1723, #1563: a backup with a part missing is said, not just logged.
+      if (failures.length > 0) {
+        const message = `Backup ${filename} was written, but without: ${failures.join('; ')}`;
+        logger.error(`❌ ${message}`);
+        await this.notifyAdmins('error', 'A backup is incomplete', message);
+        if (options.requireComplete) throw new Error(message);
+      }
+
       // Clean up old backups
-      await this.cleanupOldBackups();
+      if (!options.skipCleanup) await this.cleanupOldBackups();
 
       return backupPath;
     } catch (error) {
       logger.error('❌ Backup operation failed:', error);
+      // #1723: files the managers wrote for a document that was never written are removed.
+      if (pending) await this.removeCompanions(pending.filename, pending.existing);
       throw error;
+    }
+  }
+
+  /** The files the managers wrote beside one backup document (#1723). */
+  private async companionsOf(documentFilename: string): Promise<string[]> {
+    return (await this.provider?.listBackupObjects() ?? []).filter((o) => isCompanionOf(o.filename, documentFilename)).map((o) => o.filename);
+  }
+
+  /** Remove the files the managers wrote beside one backup document (#1723), except those in `keep`. */
+  private async removeCompanions(documentFilename: string, keep: Set<string> = new Set()): Promise<void> {
+    if (!this.provider) return;
+    try {
+      for (const filename of await this.companionsOf(documentFilename)) {
+        if (!keep.has(filename)) await this.provider.removeBackup(filename);
+      }
+    } catch (err) {
+      logger.warn(`⚠️  Failed to remove the files beside ${documentFilename}:`, err);
+    }
+  }
+
+  private async notifyAdmins(level: 'error' | 'warning', title: string, message: string): Promise<void> {
+    try {
+      await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
+        ?.addNotification({ type: 'system', level, title, message });
+    } catch (err) {
+      logger.error(`❌ The notification '${title}' could not be sent:`, err);
     }
   }
 
@@ -427,13 +496,19 @@ class BackupManager extends BaseManager {
    * 3. Validate backup structure
    * 4. Call restore() on each manager with its data
    *
+   * The databases (#1723) go first, and are staged for the next start rather
+   * than restored in place: a fresh backup of the live data is taken, then
+   * DatabaseManager stages every database in the backup. If either fails,
+   * nothing at all is restored.
+   *
+   * @param ctx - Who asked (#1179): a restore takes a backup and replaces the instance's data on someone's behalf.
    * @param {string} backupPath - Path to backup file
    * @param {RestoreOptions} options - Restore options
    * @param {boolean} options.skipValidation - Skip validation (default: false)
    * @param {string[]} options.managerFilter - Only restore specific managers
    * @returns {Promise<RestoreResults>} Restore results
    */
-  async restoreFromFile(backupPath: string, options: RestoreOptions = {}): Promise<RestoreResults> {
+  async restoreFromFile(ctx: ActorContext, backupPath: string, options: RestoreOptions = {}): Promise<RestoreResults> {
     const startTime = Date.now();
     logger.info(`🔄 Starting restore operation from: ${backupPath}`);
 
@@ -483,8 +558,31 @@ class BackupManager extends BaseManager {
       const managerNames = Object.keys(backupData.managers);
       logger.info(`📋 Found ${managerNames.length} managers in backup`);
 
+      // Where the document is, so a manager finds the files it wrote beside it (#1723).
+      const directory = path.dirname(path.isAbsolute(backupPath) ? backupPath : path.join(this.backupDirectory ?? '', backupPath));
+
+      // #1723: the databases first, all or nothing — if they cannot be staged,
+      // nothing else is restored either. A fresh backup of the live data is
+      // taken before anything is touched.
+      const databases = backupData.managers.DatabaseManager as BaseBackupData | undefined;
+      const databaseList = (databases?.data as { databases?: unknown } | null | undefined)?.databases;
+      const hasDatabases = Array.isArray(databaseList) && databaseList.length > 0;
+      if (hasDatabases && (!options.managerFilter || options.managerFilter.includes('DatabaseManager'))) {
+        const databaseManager = this.engine.getManager<BaseManager>('DatabaseManager');
+        if (!databaseManager) throw new Error('The backup holds databases, but DatabaseManager is not available; nothing was restored');
+        logger.info('📦 Taking a backup of the live data before staging the databases...');
+        const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true });
+        logger.info(`✅ Live data backed up to ${before}`);
+        await databaseManager.restore(databases!, { ctx, directory });
+        results.success.push('DatabaseManager');
+      }
+
       // Restore each manager
       for (const managerName of managerNames) {
+        if (managerName === 'DatabaseManager' && hasDatabases) {
+          if (options.managerFilter && !options.managerFilter.includes(managerName)) results.skipped.push(managerName);
+          continue;
+        }
         // Check if manager filter is applied
         if (options.managerFilter && !options.managerFilter.includes(managerName)) {
           logger.info(`⏭️  Skipping ${managerName} (filtered)`);
@@ -510,7 +608,7 @@ class BackupManager extends BaseManager {
           }
 
           logger.info(`📦 Restoring ${managerName}...`);
-          await manager.restore(managerBackupData as BaseBackupData);
+          await manager.restore(managerBackupData as BaseBackupData, { ctx, directory });
 
           results.success.push(managerName);
           logger.info(`✅ ${managerName} restored successfully`);
@@ -606,6 +704,7 @@ class BackupManager extends BaseManager {
 
       for (const backup of toDelete) {
         await this.provider?.removeBackup(backup.path);
+        await this.removeCompanions(backup.filename);
         logger.info(`🗑️  Deleted: ${backup.filename}`);
       }
     } catch (error) {

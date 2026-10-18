@@ -77,6 +77,8 @@
   "ngdpbase.database.file": "${FAST_STORAGE}/ngdpbase.db",
   "_comment_database_busy_timeout": "#1710 — how long a database statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with SQLITE_BUSY. Applies to the application database and every add-on database. 5000 is the SQLite driver's own default, now stated. A whole number, 0 or more; anything else refuses to start.",
   "ngdpbase.database.busy-timeout-ms": 5000,
+  "_comment_database_backup": "#1723 — every database (the application database and each declared add-on database, on or off) is copied into each backup, encrypted under NGDPBASE_BACKUP_KEY from the environment or the instance .env (never config; never the database key). Without it no database is backed up and admins are told. worker-timeout-ms: how long a backup's database copy, or a restore's staging, may run on its worker thread before it is stopped and reported as failed. A whole number, more than 0.",
+  "ngdpbase.database.backup.worker-timeout-ms": 3600000,
   "_comment_jobs_state": "#1715 — where scheduled jobs keep their slots, run history and locks. auto: the application database when it is open, else files under ngdpbase.jobs.state.dir. file | sqlite to choose; sqlite with no database open refuses to start. Switching carries nothing across: next slots are recomputed and nothing is caught up. The file backend refuses NFS/SMB.",
   "ngdpbase.jobs.state.provider": "auto",
   "ngdpbase.jobs.state.dir": "${FAST_STORAGE}/jobs",

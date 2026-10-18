@@ -25,6 +25,14 @@
  * Only a declared database is opened (#1860): the add-on names it in its own
  * config/default-config.json (`ngdpbase.addons.<slug>.database`), and one
  * declared `encrypt: "required"` is never opened without the key.
+ *
+ * Backup and restore (#1723): `backup()` and `restore()` are the ones
+ * BackupManager calls on every manager, so add-ons write no backup code. A
+ * backup copies the application database and every declared add-on database,
+ * on or off, at one point in time, on a worker thread, each into its own file
+ * beside BackupManager's document, encrypted under `NGDPBASE_BACKUP_KEY`. A
+ * restore stages `<file>.staged` beside each database, all or nothing, and the
+ * next start puts them in place before any database opens.
  */
 import path from 'node:path';
 import BaseManager from './BaseManager.js';
@@ -34,11 +42,63 @@ import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
 import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
+import {
+  applyStagedRestore, manifestPath, runOffThread, stagedPath, writeManifest,
+  type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
+} from '../providers/sqliteBackup.js';
 
 /** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
 export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
+
+/**
+ * The environment variable holding the key every database backup is encrypted
+ * under (#1723). Its own secret, not the database key: the copy that travels
+ * and the copy that stays should not fall to the same compromise. Never a
+ * config key. Unset, no database is backed up, and admins are told.
+ */
+export const BACKUP_KEY_ENV = 'NGDPBASE_BACKUP_KEY';
+
+/** How long a database backup or restore staging may run on its worker before it is stopped, when not configured. */
+export const DEFAULT_BACKUP_WORKER_TIMEOUT_MS = 3_600_000;
+
+/** The backup's name for the application database; an add-on's is `addon-<owner>`. */
+const APPLICATION = 'application';
+const addonName = (owner: string): string => `addon-${owner}`;
+
+/** One database in a backup, as DatabaseManager's entry in the backup document lists it. */
+export interface DatabaseBackupEntry {
+  /** `application`, or `addon-<owner>`. */
+  name: string;
+  kind: 'application' | 'addon';
+  owner?: string;
+  /** The encrypted file beside the backup document: `<stem>.<name>.db`. */
+  file: string;
+  sizeBytes: number;
+  tables: number;
+}
+
+/** DatabaseManager's `data` in a backup document. */
+export interface DatabaseBackupData {
+  format: 1;
+  databases: DatabaseBackupEntry[];
+  /** Declared databases with no file yet (an add-on that never opened it). */
+  absent: string[];
+  /** Databases that could not be copied; the backup carries the others. */
+  failed: Array<{ name: string; error: string }>;
+}
+
+interface BackupSource {
+  name: string;
+  kind: 'application' | 'addon';
+  owner?: string;
+  file: string;
+}
+
+type Fault = 'backup-key' | 'restore';
 
 /** What an add-on hands over to have its database opened and migrated. */
 export interface AddonDatabaseOptions {
@@ -102,6 +162,10 @@ class DatabaseManager extends BaseManager {
   private databaseFile: string | null = null;
   private busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS;
   private readonly addonDatabases = new Map<string, AddonDatabase>();
+  /** What the start did with a staged restore (#1723), reported once the notifications exist. */
+  private restoreAtStart: ApplyOutcome | null = null;
+  /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
+  private readonly faults = new Map<Fault, string>();
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -129,6 +193,8 @@ class DatabaseManager extends BaseManager {
 
     const file = configManager.getResolvedDataPath('ngdpbase.database.file', './data/ngdpbase.db');
     const key = process.env[DATABASE_KEY_ENV] ?? '';
+    // #1723: a staged restore goes in now, before any database opens.
+    this.applyRestoreAtStart(file);
     const provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS, 'schema_migrations', { busyTimeoutMs: this.busyTimeoutMs });
     if (!provider.integrityOk()) {
       provider.close();
@@ -141,6 +207,11 @@ class DatabaseManager extends BaseManager {
     logger.info(`[DatabaseManager] Opened ${file} (${key ? 'encrypted' : 'NOT encrypted'}, lock wait ${this.busyTimeoutMs} ms) — migrations applied ${applied.length}, already present ${skipped}`);
     if (!key) {
       logger.warn(`[DatabaseManager] ${DATABASE_KEY_ENV} is not set, so the application database is stored unencrypted (#1536)`);
+    }
+    if (!this.backupKey()) {
+      const reason = `${BACKUP_KEY_ENV} is not set, so no database is backed up — set it in the environment or the instance .env (#1723)`;
+      logger.error(`[DatabaseManager] ${reason}`);
+      this.fault('backup-key', reason);
     }
   }
 
@@ -251,6 +322,254 @@ class DatabaseManager extends BaseManager {
   private static keyRefusal(declaration: AddonDatabaseDeclaration, key: string): string | null {
     if (declaration.encrypt !== 'required' || key) return null;
     return `Add-on '${declaration.declaredBy}' declares database '${declaration.owner}' with encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never opened unencrypted (#1860)`;
+  }
+
+  // ---- Backup and restore (#1723) ------------------------------------------
+
+  /**
+   * Copy every database into the backup BackupManager is writing: the
+   * application database and every declared add-on database, on or off, at
+   * one point in time, on a worker thread. Each goes into its own file,
+   * `<stem>.<name>.db`, beside the document, encrypted under
+   * `NGDPBASE_BACKUP_KEY`; the document references them. A database that
+   * fails is named in `warnings`, and the others are still written.
+   *
+   * Throws when there is no backup key: nothing is ever written unencrypted.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    const base = { managerName: 'DatabaseManager', timestamp: new Date().toISOString() };
+    if (!this.provider || !this.databaseFile) {
+      return { ...base, data: null, note: 'No application database (ngdpbase.database.provider is none)' };
+    }
+    if (!options?.directory || !options.stem) {
+      throw new Error('DatabaseManager writes its databases beside the backup document, so it is backed up through BackupManager (#1723)');
+    }
+    const backupKey = this.backupKey();
+    if (!backupKey) {
+      const reason = `${BACKUP_KEY_ENV} is not set, so no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
+      this.fault('backup-key', reason);
+      throw new Error(reason);
+    }
+    this.clearFault('backup-key');
+    const key = process.env[DATABASE_KEY_ENV] ?? '';
+    if (key && key === backupKey) {
+      logger.warn(`[DatabaseManager] ${BACKUP_KEY_ENV} is the same as ${DATABASE_KEY_ENV}: a stolen backup and a stolen data disk then fall to one secret (#1723)`);
+    }
+
+    const sources = this.backupSources(this.databaseFile);
+    const absent = sources.filter((s) => !existsSync(s.file)).map((s) => s.name);
+    const exports: DatabaseExport[] = sources
+      .filter((s) => existsSync(s.file))
+      .map((s) => ({ name: s.name, source: s.file, sourceKey: key, target: path.join(options.directory, `${options.stem}.${s.name}.db`) }));
+
+    let outcome;
+    try {
+      outcome = await runOffThread({ kind: 'export', exports, backupKey }, this.workerTimeoutMs());
+    } catch (err) {
+      for (const e of exports) rmSync(e.target, { force: true });
+      throw err;
+    }
+    const byName = new Map(sources.map((s) => [s.name, s]));
+    const data: DatabaseBackupData = {
+      format: 1,
+      databases: outcome.written.map((w) => {
+        const s = byName.get(w.name)!;
+        return { name: w.name, kind: s.kind, ...(s.owner ? { owner: s.owner } : {}), file: path.basename(w.target), sizeBytes: w.sizeBytes, tables: w.tables };
+      }),
+      absent,
+      failed: outcome.failed
+    };
+    logger.info(`[DatabaseManager] Backed up ${data.databases.length} database(s): ${data.databases.map((d) => d.name).join(', ')}${absent.length ? `; not created yet: ${absent.join(', ')}` : ''} (#1723)`);
+    const warnings = outcome.failed.map((f) => `database ${f.name} was not backed up: ${f.error}`);
+    for (const w of warnings) logger.error(`[DatabaseManager] ${w}`);
+    return { ...base, data, ...(warnings.length > 0 ? { warnings } : {}) };
+  }
+
+  /**
+   * Stage a restore of the databases in a backup, for the next start. Each
+   * backed-up database is opened under the backup key, integrity-checked, and
+   * copied into `<live>.staged` under this site's database key. All or
+   * nothing: if any fails, none is staged. A database the backup does not
+   * contain is left as it is. Live files are never touched here.
+   *
+   * BackupManager takes a fresh backup of the live data before calling this.
+   * A backed-up add-on database that no add-on on this site declares is not
+   * staged, and admins are told.
+   */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    const data = backupData.data as DatabaseBackupData | null | undefined;
+    if (!data || !Array.isArray(data.databases) || data.databases.length === 0) {
+      logger.info('[DatabaseManager] The backup holds no database; every database is left as it is (#1723)');
+      return;
+    }
+    if (!this.provider || !this.databaseFile) {
+      throw new Error("The backup holds databases, but this site has none open — set ngdpbase.database.provider to 'sqlite' first (#1723)");
+    }
+    if (!options?.directory) {
+      throw new Error('DatabaseManager reads its databases from beside the backup document, so it is restored through BackupManager (#1723)');
+    }
+    const backupKey = this.backupKey();
+    if (!backupKey) {
+      throw new Error(`${BACKUP_KEY_ENV} is not set, so the databases in this backup cannot be read; nothing was staged (#1723)`);
+    }
+    const targetKey = process.env[DATABASE_KEY_ENV] ?? '';
+    const dir = path.dirname(this.databaseFile);
+    const declarations = this.declarations();
+    const stages: DatabaseStage[] = [];
+    const skipped: string[] = [];
+    for (const entry of data.databases) {
+      if (typeof entry?.file !== 'string' || path.basename(entry.file) !== entry.file || entry.file.startsWith('.')) {
+        throw new Error(`The backup names a database file '${String(entry?.file)}' outside its directory; nothing was staged (#1723)`);
+      }
+      let live: string;
+      if (entry.name === APPLICATION) {
+        live = this.databaseFile;
+      } else {
+        const owner = entry.name.startsWith('addon-') ? entry.name.slice('addon-'.length) : '';
+        if (!ADDON_SLUG.test(owner)) {
+          throw new Error(`The backup holds a database '${entry.name}' this build does not know; nothing was staged (#1723)`);
+        }
+        const declared = declarations.filter((d) => d.owner === owner);
+        if (declared.length === 0) {
+          skipped.push(entry.name);
+          continue;
+        }
+        if (!targetKey && declared.some((d) => d.encrypt === 'required')) {
+          throw new Error(`Database '${owner}' is declared encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never restored unencrypted; nothing was staged (#1723)`);
+        }
+        live = path.join(dir, `${owner}.db`);
+      }
+      const backupFile = path.join(options.directory, entry.file);
+      if (!existsSync(backupFile)) {
+        throw new Error(`The backup's database file ${entry.file} is missing from ${options.directory}; nothing was staged (#1723)`);
+      }
+      stages.push({ name: entry.name, backupFile, live, targetKey });
+    }
+    if (stages.length === 0) {
+      throw new Error(`None of the databases in this backup belongs to this site (${skipped.join(', ')}); nothing was staged (#1723)`);
+    }
+
+    // A restore staged earlier and not yet applied is replaced by this one.
+    const manifestFile = manifestPath(this.databaseFile);
+    for (const previous of this.getStagedRestore()?.databases ?? []) rmSync(stagedPath(previous.live), { force: true });
+    rmSync(manifestFile, { force: true });
+    try {
+      await runOffThread({ kind: 'stage', stages, backupKey }, this.workerTimeoutMs());
+    } catch (err) {
+      for (const s of stages) rmSync(stagedPath(s.live), { force: true });
+      throw new Error(`The databases were not staged, and nothing was changed: ${(err as Error).message}`, { cause: err });
+    }
+    const manifest: StagedRestoreManifest = {
+      version: 1,
+      stagedAt: new Date().toISOString(),
+      backup: String(backupData.timestamp ?? ''),
+      databases: stages.map((s) => ({ name: s.name, live: s.live, staged: stagedPath(s.live) }))
+    };
+    writeManifest(manifestFile, manifest);
+    const names = stages.map((s) => s.name).join(', ');
+    logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
+    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.`);
+    if (skipped.length > 0) {
+      const message = `The backup also holds ${skipped.join(', ')}, which no add-on on this site declares, so they were not restored. Install the add-on and restore again to bring them back.`;
+      logger.error(`[DatabaseManager] ${message}`);
+      await this.notify('error', 'Some databases in the backup were not restored', message);
+    }
+  }
+
+  /** The restore staged and waiting for the next start, or null. */
+  getStagedRestore(): StagedRestoreManifest | null {
+    if (!this.databaseFile) return null;
+    const file = manifestPath(this.databaseFile);
+    if (!existsSync(file)) return null;
+    try {
+      return JSON.parse(readFileSync(file, 'utf8')) as StagedRestoreManifest;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Tell admins what the start did with a staged restore (#1723). Called by
+   * the engine once every manager exists: DatabaseManager starts before the
+   * notifications do.
+   */
+  async reportRestoreAtBoot(): Promise<void> {
+    const outcome = this.restoreAtStart;
+    this.restoreAtStart = null;
+    if (!outcome) return;
+    if (outcome.refused) {
+      await this.notify('error', 'A database restore was not applied', `${outcome.refused}. The site started on its current databases.`);
+      return;
+    }
+    await this.notify('success', 'A database restore was applied', `Restored at start: ${outcome.applied.map((a) => a.name).join(', ')}. The previous files are kept as *.pre-restore.`);
+  }
+
+  /** The application database and every declared add-on database (one per owner), on or off. */
+  private backupSources(applicationFile: string): BackupSource[] {
+    const sources: BackupSource[] = [{ name: APPLICATION, kind: 'application', file: applicationFile }];
+    for (const owner of new Set(this.declarations().map((d) => d.owner))) {
+      sources.push({ name: addonName(owner), kind: 'addon', owner, file: path.join(path.dirname(applicationFile), `${owner}.db`) });
+    }
+    return sources;
+  }
+
+  /** Put a staged restore in place, before any database opens; loud when it cannot. */
+  private applyRestoreAtStart(file: string): void {
+    const dir = path.resolve(path.dirname(file));
+    const allowed = (live: string): boolean => {
+      const resolved = path.resolve(live);
+      if (resolved === path.resolve(file)) return true;
+      const name = path.basename(resolved);
+      return path.dirname(resolved) === dir && name.endsWith('.db') && ADDON_SLUG.test(name.slice(0, -3));
+    };
+    const outcome = applyStagedRestore(file, allowed);
+    if (!outcome) return;
+    this.restoreAtStart = outcome;
+    if (outcome.refused) {
+      const reason = `A staged database restore was NOT applied: ${outcome.refused}. The site started on its current databases (#1723)`;
+      logger.error(`[DatabaseManager] ${reason}`);
+      this.fault('restore', reason);
+      return;
+    }
+    for (const a of outcome.applied) {
+      logger.warn(`[DatabaseManager] Restore applied: ${a.name} -> ${a.live} (previous kept as ${path.basename(a.kept)}) (#1723)`);
+    }
+  }
+
+  private backupKey(): string {
+    return (process.env[BACKUP_KEY_ENV] ?? '').trim();
+  }
+
+  /** `ngdpbase.database.backup.worker-timeout-ms`, read at use. */
+  private workerTimeoutMs(): number {
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.database.backup.worker-timeout-ms', DEFAULT_BACKUP_WORKER_TIMEOUT_MS) ?? DEFAULT_BACKUP_WORKER_TIMEOUT_MS;
+    if (typeof configured !== 'number' || !Number.isInteger(configured) || configured <= 0) {
+      throw new Error(`ngdpbase.database.backup.worker-timeout-ms must be a whole number of milliseconds, more than 0 — got ${JSON.stringify(configured)} (#1723)`);
+    }
+    return configured;
+  }
+
+  /** Degrade for one cause; the dashboard shows every cause still standing. */
+  private fault(cause: Fault, reason: string): void {
+    this.faults.set(cause, reason);
+    this.markDegraded([...this.faults.values()].join('; '));
+  }
+
+  private clearFault(cause: Fault): void {
+    if (!this.faults.delete(cause)) return;
+    if (this.faults.size === 0) this.markReady();
+    else this.markDegraded([...this.faults.values()].join('; '));
+  }
+
+  private async notify(level: 'success' | 'warning' | 'error', title: string, message: string): Promise<void> {
+    try {
+      await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
+        ?.addNotification({ type: 'system', level, title, message });
+    } catch (err) {
+      logger.error(`[DatabaseManager] The notification '${title}' could not be sent (#1723):`, err);
+    }
   }
 
   /** Whether every open database passes SQLite's quick check; true when none is configured. */

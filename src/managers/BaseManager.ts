@@ -22,6 +22,7 @@ import type { ManagerFetchOptions } from '../utils/managerUtils.js';
 import type { FormOption } from '../utils/pluginFormatters.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -45,8 +46,36 @@ export interface BackupData {
   /** Optional note about the backup */
   note?: string;
 
+  /**
+   * Parts of this manager's backup that failed while the rest was written
+   * (#1723) — a database that could not be copied, say. BackupManager tells the
+   * admins about each one: a backup is never silently partial.
+   */
+  warnings?: string[];
+
   /** Allow additional properties */
   [key: string]: unknown;
+}
+
+/**
+ * What BackupManager hands each manager's `backup()` (#1723): who asked, and
+ * where the backup document is being written. A manager whose data is too
+ * large for the JSON document (the databases) writes its own files into
+ * `directory`, each named `<stem>.<something>`, and references them from its
+ * entry; BackupManager prunes them with the document.
+ */
+export interface ManagerBackupOptions {
+  ctx: ActorContext;
+  /** The backup directory the document is written to. */
+  directory: string;
+  /** The document's filename without `.json.gz` / `.json`. */
+  stem: string;
+}
+
+/** What BackupManager hands each manager's `restore()` (#1723): who asked, and the directory the backup document was read from. */
+export interface ManagerRestoreOptions {
+  ctx: ActorContext;
+  directory: string;
 }
 
 /**
@@ -389,7 +418,7 @@ abstract class BaseManager {
    *   };
    * }
    */
-  async backup(): Promise<BackupData> {
+  async backup(_options?: ManagerBackupOptions): Promise<BackupData> {
     // Default implementation returns empty object
     // Managers with data MUST override this method
     return {
@@ -417,7 +446,7 @@ abstract class BaseManager {
    *   this.settings = backupData.data.settings;
    * }
    */
-  async restore(backupData: BackupData): Promise<void> {
+  async restore(backupData: BackupData, _options?: ManagerRestoreOptions): Promise<void> {
     // Default implementation does nothing
     // Managers with data MUST override this method
     if (!backupData) {

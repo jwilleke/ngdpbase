@@ -1,7 +1,7 @@
 ---
 name: BackupManager
 description: "System-wide backup and restore — pages, attachments, config, search indices"
-dateModified: '2026-05-14'
+dateModified: '2026-10-18'
 category: managers
 code: src/managers/BackupManager.ts
 ---
@@ -78,6 +78,14 @@ await backupManager.restore(backupPath, {
   managers: ['PageManager']       // Restore only specific managers (optional)
 });
 ```
+
+### Databases
+
+Each manager's `backup(options)` receives `{ ctx, directory, stem }`: who asked, the backup directory, and the document's name without `.json.gz`. `DatabaseManager` uses it to write each database as its own encrypted file, `<stem>.<name>.db`, beside the document, and lists them in its entry ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Retention removes those files with their document, and a backup whose document is never written removes the files it made.
+
+A part that fails is named in the entry's `warnings` (or the entry is an `error`); the backup is still written, and admins get an "A backup is incomplete" notification.
+
+`restoreFromFile(ctx, backupPath, options)` takes the caller's context. When the backup holds databases it takes a complete backup of the live data first (`skipCleanup`, `requireComplete`), then has `DatabaseManager` stage them for the next start; if either fails, no manager is restored. Details in [DatabaseManager.md](DatabaseManager.md#backup-and-restore).
 
 ### Encrypted private stores
 

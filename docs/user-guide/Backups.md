@@ -45,6 +45,18 @@ The server also retains the last 10 backup files in its backup directory (config
 
 > __Important:__ The Backup Data button is __not a complete backup__. Without a filesystem-level copy of your pages and attachments, you cannot fully restore the wiki from the `.json.gz` file alone.
 
+### Databases
+
+When `ngdpbase.database.provider` is `sqlite`, every backup also copies the application database and every declared add-on database, on or off ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)):
+
+- Encrypted under `NGDPBASE_BACKUP_KEY` (environment or instance `.env`, never config; use a value different from `NGDPBASE_DATABASE_KEY`). Keep a copy of the key outside the backups.
+- Without the key no database is backed up and nothing unencrypted is written; the dashboard shows the database manager degraded and each backup notifies admins that it is incomplete.
+- All databases are copied at one point in time, on a worker thread, while the site runs.
+- Each database is its own file beside the document: `<timestamp>-ngdpbase-backup.application.db`, `<timestamp>-ngdpbase-backup.addon-<owner>.db`. Retention removes them with their document. The download from Admin → Backup is the `.json.gz` only; copy the backup directory to keep the databases.
+- `ngdpbase.database.backup.worker-timeout-ms` (default `3600000`) caps how long the copy may run.
+
+A database restore is staged: a fresh backup of the live data is taken, the backup's databases are prepared as `<file>.staged` beside the live files, all or nothing, and the next start puts them in place before any database opens, keeping the old files (and their `-wal`/`-shm`) as `*.pre-restore`. There is no restore screen yet. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
+
 ---
 
 ## Recommended Backup Strategy

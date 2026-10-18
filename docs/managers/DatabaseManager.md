@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-17'
+dateModified: '2026-10-18'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -19,6 +19,8 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 - `ngdpbase.database.file` — the SQLite file, default `${FAST_STORAGE}/ngdpbase.db`.
 - `ngdpbase.database.busy-timeout-ms` — how long a statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with `SQLITE_BUSY`. Default `5000`, the driver's own default, stated ([#1710](https://github.com/jwilleke/ngdpbase/issues/1710)). Applies to the application database and every add-on database. A value that is not a whole number, 0 or more, refuses to start.
 - `NGDPBASE_DATABASE_KEY` — the SQLCipher key, from the environment or the instance `.env`, never from config. Without it the file is plain SQLite and boot logs a warning.
+- `NGDPBASE_BACKUP_KEY` — the key every database backup is encrypted under ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)), from the environment or the instance `.env`, never from config. Its own secret, not `NGDPBASE_DATABASE_KEY` (the same value works, with a warning). Without it no database is backed up: see [Backup and restore](#backup-and-restore).
+- `ngdpbase.database.backup.worker-timeout-ms` — how long a backup's database copy, or a restore's staging, may run on its worker thread before it is stopped and reported as failed. Default `3600000` (an hour). Read at each backup; a value that is not a whole number above 0 fails that backup, naming the key.
 
 ## What boot refuses
 
@@ -61,11 +63,39 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 - An add-on that depends on the owner declares the owner's slug and its own ledger table (`"owner": "accounting", "ledgerTable": "accounting_dues_schema_migrations"`, under `ngdpbase.addons.accounting-dues.database`), and calls `openAddonDatabase` with them. Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
 - `integrityOk()` covers every open database, and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
 
+## Backup and restore
+
+`DatabaseManager` overrides `backup()` and `restore()`, the methods `BackupManager` calls on every manager ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Add-ons write no backup code: their databases are in every backup because they are declared.
+
+### Backup
+
+- __What:__ the application database and every declared add-on database (`getDeclaredDatabases()`), whether or not its add-on is on. A turned-off add-on's file is read without being opened for use: no migrations, no `openAddonDatabase`. A declared database whose file was never created is listed in the backup as `absent`.
+- __One point in time:__ each database gets its own connection; a read transaction is opened on every one, back to back, before any copying starts. The live files are in WAL mode, so the copy never blocks the site's writes, and a write committed after the snapshot is in none of the copies.
+- __Off the request thread:__ the copy runs on a worker thread (`src/providers/sqliteBackup.ts`, `sqliteBackupWorker.ts`), so a large database stalls neither requests nor the liveness probe. Keys travel to the worker in memory, never in argv or the environment.
+- __Always encrypted__ under `NGDPBASE_BACKUP_KEY`, from the first byte: the copy is SQLite writing into a file attached under that key, with no plaintext intermediate. A database stored unencrypted is still backed up encrypted. Each copy is reopened under the backup key and integrity-checked before it counts.
+- __Beside the document, not inside it:__ each database is its own file, `<stem>.<name>.db`, in the backup directory next to `<stem>.json.gz`; `name` is `application` or `addon-<owner>`. The document's `DatabaseManager` entry lists each file with its size and table count. Retention removes the files with their document.
+- __Loud failures:__ with no backup key, `backup()` throws and writes nothing, the manager is degraded (the dashboard's banner) from the start, and the backup's admins get a "backup is incomplete" notification. A database that cannot be copied is named in the entry's `failed` list and in `warnings`; the others are still written, and admins are told.
+- Copied with each database: every table and its rows, indexes, triggers, views, FTS5 tables (with their rowids), `sqlite_sequence` (AUTOINCREMENT counters) and `user_version`.
+
+### Restore (staged)
+
+- `BackupManager.restoreFromFile(ctx, path)` restores the databases __first__: it takes a fresh backup of the live data, which must be complete, then calls `restore()`. If either fails, no manager is restored at all.
+- Staging opens each database's file under the backup key, runs `integrity_check`, and copies it into `<live>.staged` beside the live file, under `NGDPBASE_DATABASE_KEY`. Each staged copy is reopened and checked. __All or nothing:__ if any database fails, every staged file is removed. Only then is the manifest written, `<application file>.restore.json`.
+- A database the backup does not contain is never touched. An add-on database that no add-on on this site declares is not staged, and admins are told. One declared `encrypt: "required"` is never staged without `NGDPBASE_DATABASE_KEY`. A file name in the document that is not a bare name in the backup directory is refused.
+- A second restore before the restart replaces the first.
+- __At the next start__, before any database opens, each live file and its `-wal` and `-shm` step aside as `*.pre-restore` (`*.pre-restore-wal`, `*.pre-restore-shm`, so the kept copy still opens as it was), and the staged file takes its name. Migrations then run on the restored file as on any other. If any database the manifest names is not staged, nothing is applied: the staged files are renamed `*.incomplete`, the manager is degraded and admins are told. A staged file with no manifest (staging interrupted) is set aside the same way. A manifest naming a file other than the application database or an `<owner>.db` beside it is refused.
+- `getStagedRestore()` returns the manifest of a restore waiting for the restart. `reportRestoreAtBoot()`, called by the engine once notifications exist, tells admins what the start did.
+
+### Known gaps
+
+- __No restore screen.__ Admin → Backup creates and downloads backups; nothing in the UI or the scripts calls `restoreFromFile` yet, for databases or anything else.
+- __The download is the document only.__ Admin → Backup's download sends the `.json.gz`; the database files stay in the backup directory beside it. Copy the directory to keep a whole backup.
+- __Only a file backup provider.__ The database files are written straight into the backup directory, which `FileBackupProvider` (the only provider) uses. A provider storing elsewhere would need them uploaded.
+- __A crash in the middle of applying__ (between the renames) leaves the databases already moved restored and the rest staged; the next start finds staged files missing, sets the rest aside as `*.incomplete` and says so.
+- __A second process__ (a pod in a rolling update) that has a database open while the next start applies a restore is not detected.
+- __Changing the database key__ through a backup and a restore under a new key works by the same path, but has not been made a documented procedure.
+
 ## Providers
 
 - [BaseDatabaseProvider](../../src/providers/BaseDatabaseProvider.ts) — `handle`, `integrityOk()`, `storage()`, `close()`.
 - [SqliteDatabaseProvider](../../src/providers/SqliteDatabaseProvider.ts) — `better-sqlite3-multiple-ciphers`, WAL mode, `synchronous = FULL`; durability: unbuffered and fsynced. Its constructor takes the ledger table name (default `schema_migrations`), and `migrate(ledger, ledgerTable)` runs a further ledger on the same connection.
-
-## Not yet
-
-- The encrypted file-level backup and staged restore from yourPHR (`sqlite-backup.ts`).
