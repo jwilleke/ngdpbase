@@ -1,6 +1,11 @@
 'use strict';
 
 (function () {
+  // #1893: FormsPlugin writes a <script> tag per form, so on a page with N
+  // forms this file runs N times. Only the first run sets the page up.
+  if (window.__ngdpFormsSubmitLoaded) return;
+  window.__ngdpFormsSubmitLoaded = true;
+
   // Messages are set as text, never as HTML: a handler's error may echo what was typed.
   function showAlert(result, kind, icon, message, reauth) {
     result.replaceChildren();
@@ -40,9 +45,17 @@
     const form   = formWrapper.closest('.ngdp-form')?.querySelector('form') ?? formWrapper.querySelector('form');
     const result = document.getElementById('form-result-' + formId);
     if (!form || !result) return;
+    // #1893: bind each form once, whichever path (page load or the
+    // MutationObserver) reaches it, however often.
+    if (form.dataset.ngdpBound) return;
+    form.dataset.ngdpBound = '1';
+    let inFlight = false;
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      // One request at a time: a second click, Enter or requestSubmit() while
+      // the first is in flight posts nothing (#1893).
+      if (inFlight) return;
 
       // Client-side HTML5 validation
       if (!form.checkValidity()) {
@@ -65,6 +78,7 @@
       }
 
       clearFieldErrors(form);
+      inFlight = true;
       const btn = form.querySelector('[type=submit]');
       if (btn) btn.disabled = true;
       result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
@@ -93,6 +107,8 @@
       } catch {
         showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
         if (btn) btn.disabled = false;
+      } finally {
+        inFlight = false;
       }
     });
   }
