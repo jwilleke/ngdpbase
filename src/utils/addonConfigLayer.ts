@@ -46,6 +46,11 @@
  * addon's own file and from the operator's, which wins either way, and kept
  * apart from the merge so a refused addon's value is still known. A value that
  * is not exactly `true` or `false` refuses the addon and counts as `true`.
+ *
+ * A fourth, `ngdpbase.config.sensitive-values` (#1889): an enabled addon may
+ * classify only its own keys, `ngdpbase.addons.<slug>` and what is under it
+ * (paths inside its values included). An entry for any other key refuses the
+ * addon, since it could unhide core's or another addon's secret.
  */
 
 import fs from 'fs';
@@ -54,6 +59,7 @@ import { isDeepStrictEqual } from 'util';
 import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder, isPlainObject, readConfigFilesSync } from './configFiles.js';
 import { configuredInstallSlugs, findNodeModulesDir, installedAddonsDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
 import { lockedAddonDirsSync } from './addonLock.js';
+import { LEGACY_SECRET_KEYS_KEY, SENSITIVE_VALUES_KEY } from './sensitiveValues.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
 import { addonDatabaseKey, addonDatabaseKeySlug, addonDatabaseProblems, type AddonDatabaseDeclaration, type DatabaseEncrypt } from './addonDatabaseRules.js';
@@ -293,6 +299,45 @@ export function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Rec
   return layer;
 }
 
+export interface AddonSensitiveValuesLayer {
+  /** Addons with an entry for a key that is not their own, by slug, with why: never loaded. */
+  refused: Map<string, string>;
+  problems: string[];
+}
+
+/** Every entry an addon's file names in a sensitive-values map or the legacy list, whatever its level. */
+function sensitiveEntriesOf(defaults: Record<string, unknown>): string[] {
+  const names: string[] = [];
+  for (const listKey of [SENSITIVE_VALUES_KEY, LEGACY_SECRET_KEYS_KEY]) {
+    const declared = defaults[listKey];
+    if (Array.isArray(declared)) names.push(...declared.filter((v): v is string => typeof v === 'string'));
+    else if (isPlainObject(declared)) names.push(...Object.keys(declared));
+  }
+  return names;
+}
+
+/**
+ * Which values an addon may classify (#1889): its own, `ngdpbase.addons.<slug>`
+ * and anything under it, top-level keys and paths alike. An entry for core's
+ * keys or another addon's could unhide them (`false`, or `sensitive` for a
+ * `secret`), so it refuses the addon, as a database declaration under another
+ * slug does (#1860): it is not loaded and none of its keys apply. Only an
+ * enabled addon's entries reach the merge, so only an enabled addon is checked.
+ */
+export function addonSensitiveValuesLayer(addons: readonly AddonDefaults[]): AddonSensitiveValuesLayer {
+  const layer: AddonSensitiveValuesLayer = { refused: new Map(), problems: [] };
+  for (const addon of addons) {
+    if (!addon.enabled) continue;
+    const own = `ngdpbase.addons.${addon.slug}`;
+    const foreign = sensitiveEntriesOf(addon.defaults).filter((entry) => entry.trim() !== own && !entry.trim().startsWith(`${own}.`));
+    if (foreign.length === 0) continue;
+    const reason = `its sensitive-values entries ${foreign.map((e) => `'${e}'`).join(', ')} are not its own; an add-on classifies only ${own} and what is under it`;
+    layer.refused.set(addon.slug, reason);
+    layer.problems.push(`${addonProblemSubject(addon.slug, addon.enabled)}: ${reason}; the add-on is not loaded`);
+  }
+  return layer;
+}
+
 /** The configuration key that makes an addon site-critical (#1883). */
 export function addonSiteCriticalKey(slug: string): string {
   return `ngdpbase.addons.${slug}.site-critical`;
@@ -388,9 +433,10 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   const layer = addonCategoryLayer(shipped[SYSTEM_CATEGORY_KEY], customCategories, addons);
   const databaseLayer = addonDatabaseLayer(addons, custom);
   const criticalLayer = addonSiteCriticalLayer(addons, custom);
+  const sensitiveLayer = addonSensitiveValuesLayer(addons);
   const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
-  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
   const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
     .filter((a) => a.enabled && !refused.has(a.slug))
@@ -401,14 +447,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems], refused, databases, siteCritical };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems], refused, databases, siteCritical };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems], refused, databases, siteCritical };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems], refused, databases, siteCritical };
 }
 
 /**

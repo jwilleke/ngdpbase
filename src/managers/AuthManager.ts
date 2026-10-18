@@ -87,6 +87,7 @@ import { proxyAttribution } from '../utils/proxyClaim.js';
 import { lackingScopes, requireScopeList, VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
+import { envRefName } from '../utils/configPaths.js';
 import { describeScopes, grantablePermissionNames, type ScopeDescription } from '../utils/permissionCatalog.js';
 import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
@@ -845,7 +846,9 @@ class AuthManager extends BaseManager {
    */
   private registerOidcProviders(configManager: ConfigurationManager | null | undefined): void {
     if (!configManager) return;
-    const raw = configManager.getProperty('ngdpbase.auth.oidc.providers', {});
+    // #1889: unresolved, since getProperty now resolves a `$NAME` inside the
+    // map, and the rule here is that a client secret IS such a reference.
+    const raw = configManager.getUnresolvedProperty?.('ngdpbase.auth.oidc.providers', {});
     const entries: Record<string, OidcProviderEntry> =
       raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, OidcProviderEntry>) } : {};
     // The old keys: their secret is read through the configuration, which resolves a `$NAME` reference itself.
@@ -905,13 +908,13 @@ class AuthManager extends BaseManager {
 
   /** A secret from its environment reference (`$NAME`); never the secret written into configuration. */
   private secretFromEnvironment(ref: unknown, field: string, refuse: (why: string) => void): string {
-    const match = typeof ref === 'string' ? /^\$([A-Z_][A-Z0-9_]*)$/.exec(ref) : null;
-    if (!match) {
+    const name = envRefName(ref);
+    if (!name) {
       refuse(`${field} must be an environment reference ($NAME), never the secret itself`);
       return '';
     }
-    const value = process.env[match[1]] ?? '';
-    if (!value) refuse(`the environment variable ${match[1]} named by its ${field} is not set`);
+    const value = process.env[name] ?? '';
+    if (!value) refuse(`the environment variable ${name} named by its ${field} is not set`);
     return value;
   }
 
@@ -1141,7 +1144,7 @@ class AuthManager extends BaseManager {
   /** The provider's entry in `ngdpbase.auth.oidc.providers` as configured now, or null. */
   private oidcEntry(provider: OidcAuthProvider): OidcProviderEntry | null {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const entries = cm?.getProperty('ngdpbase.auth.oidc.providers', {}) as Record<string, OidcProviderEntry | undefined> | null | undefined;
+    const entries = cm?.getUnresolvedProperty?.('ngdpbase.auth.oidc.providers', {}) as Record<string, OidcProviderEntry | undefined> | null | undefined;
     const entry = entries?.[provider.name];
     return entry && typeof entry === 'object' ? entry : null;
   }

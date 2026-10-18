@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-13
+dateModified: 2026-10-18
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -44,6 +44,13 @@ A manager method that decides access, writes an audit record, or acts on someone
 - Roles are lists in `ngdpbase.roles.definitions`, additive, unordered, never gating anything. A role change is a configuration change and is recorded as `config-change`.
 
 __Adding a permission for a new action:__ declare it in the catalog with description, icon and colour; grant it in a policy; ask for it at the door. A catalog entry that only declares an audit event is `"grantable": false` and is never granted ([audit-developer-guide.md](audit-developer-guide.md)). The registry-drift test fails when a permission is declared and checked nowhere, or checked and declared nowhere.
+
+## Secrets in configuration
+
+A secret in configuration is a `$NAME` reference to an environment variable, at the top level of a key or anywhere inside a map or list, and it is declared `secret` in `ngdpbase.config.sensitive-values`, by key or by a path with `*` for a map key ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)). The rules, and every place a value is shown and so hidden, are in [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules). Two that bind code:
+
+- Show, log or record a configuration value only through `utils/sensitiveValues.ts` (`shownValue` for a viewer; `hideDeclaredPaths` with `NO_SECRETS` for an admin screen, a log line or an audit record). A new screen or record that renders a value with neither leaks what a path entry names.
+- `getUnresolvedProperty` returns the reference, not the secret. Use it only to check that a secret is a reference; a literal secret comes back as itself.
 
 ## Addons
 

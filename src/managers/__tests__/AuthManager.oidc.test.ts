@@ -22,6 +22,11 @@ import { fakeIssuer, flowFrom, type FakeIssuer } from '../../providers/__tests__
 import { UserCreateError } from '../../utils/userCreateError';
 import { endSession } from '../../utils/sessionEnd';
 import { decodeProtectedHeader, exportPKCS8, generateKeyPair } from 'jose';
+import { envRefName, mapConfigValue } from '../../utils/configPaths';
+
+// #1889: getProperty resolves a $NAME anywhere in a value, as the real one does, so a
+// provider map read through it would hold the secret itself, never the reference.
+const resolved = (value: unknown): unknown => mapConfigValue(value, (node) => (envRefName(node) ? process.env[envRefName(node) as string] ?? '' : undefined));
 
 /** A client-secret value written straight into config (not a $NAME reference), made up per run. */
 const NOT_AN_ENV_REFERENCE = `literal-${crypto.randomUUID()}`;
@@ -51,7 +56,8 @@ describe('AuthManager outside sign-in (#1743)', () => {
   const started = async (): Promise<AuthManager> => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
-        getProperty: (k: string, d: unknown) => (k in config ? config[k] : d),
+        getProperty: (k: string, d: unknown) => resolved(k in config ? config[k] : d),
+        getUnresolvedProperty: (k: string, d: unknown) => (k in config ? config[k] : d),
         getCustomProperty: () => undefined,
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.auth.credentials.file' ? file : d),
         isBaseUrlExplicit: () => true,

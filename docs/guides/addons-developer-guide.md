@@ -171,6 +171,21 @@ Point the config key at the variable with a bare whole-value reference. The name
 
 `${VAR}` is the other form, for a path inside a longer string (`"${FAST_STORAGE}/my-addon"`). An unset variable is left as the literal `${VAR}`. A value that should start with a dollar sign is written `$$`.
 
+#### A secret inside a map
+
+A map of entries the site adds to, each holding a secret (bank accounts, each with an account number), keeps the secret as a `$NAME` reference inside the entry and declares it `secret` by its path, with `*` for the map key ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)). One entry covers every account a site adds, so a forgotten entry cannot leak a new one:
+
+```json
+"ngdpbase.config.sensitive-values": {
+  "ngdpbase.addons.accounting.accounts.*.account-number": "secret"
+},
+"ngdpbase.addons.accounting.accounts": {
+  "checking": { "name": "Checking", "kind": "bank", "account-number": "$CHECKING_ACCOUNT_NUMBER" }
+}
+```
+
+`config.accounts.checking['account-number']` in `register()` is the variable's value. The account number is hidden on the admin screen, in page plugins, log lines and config-change audit records; the reference `$CHECKING_ACCOUNT_NUMBER` is shown, since it is not the secret. If any account's variable is unset, the whole `accounts` key is omitted from `config` with a warning, as an unset top-level reference is; treat a missing map as "not configured". Your file may classify only `ngdpbase.addons.<slug>` and what is under it: an entry for core's keys or another add-on's refuses your add-on, and it is not loaded. The rules are in [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules).
+
 ### `domainDefaults`
 
 `package.json` `ngdpbase.domainDefaults` is a map of fully qualified keys applied at load, before `register()`, when the operator file does not already set that key. The write is `setRuntimeProperty`: this boot only, not saved to the operator file. A domain addon uses it for a site default such as the active theme:

@@ -1,4 +1,4 @@
-import { usesLegacyName } from './utils/sensitiveValues.js';
+import { sensitiveValueProblems, usesLegacyName } from './utils/sensitiveValues.js';
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
@@ -163,6 +163,10 @@ class WikiEngine extends Engine {
     // unmasked, but it should be moved.
     if (usesLegacyName((k, d) => configManager.getProperty(k, d))) {
       logger.warn('[config] ngdpbase.config.secret-keys is still set — rename it to ngdpbase.config.sensitive-values, each entry "secret" (#1750). It is still honoured.');
+    }
+    // #1889: an entry that is no key or path, or has no level, hides nothing.
+    for (const problem of sensitiveValueProblems((k, d) => configManager.getProperty(k, d))) {
+      logger.warn(`[config] ${problem}`);
     }
 
     // 1a. DatabaseManager (#1536) — the one door to the application database,

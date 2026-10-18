@@ -19,7 +19,7 @@
  * See docs/security-posture.md.
  */
 
-import { secretKeys } from './sensitiveValues.js';
+import { hideDeclaredPaths, NO_SECRETS, secretKeys, valueLevels } from './sensitiveValues.js';
 
 /** The shape of `ConfigurationManager.getProperty`. */
 export type ConfigReader = (key: string, fallback?: unknown) => unknown;
@@ -85,6 +85,7 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
   if (!isPlainObject(declared)) return [];
 
   const secrets = new Set(secretKeys(read));
+  const levels = valueLevels(read);
 
   const byGroup = new Map<string, PostureItem[]>();
 
@@ -106,7 +107,8 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
     // Never read a secret's value into the view. The section would otherwise
     // reintroduce, through a different route, the disclosure that
     // ngdpbase.config.sensitive-values exists to prevent (D15).
-    if (!secret) item.value = read(key, undefined);
+    // #1889: and what its declared secret paths name inside it.
+    if (!secret) item.value = hideDeclaredPaths(key, read(key, undefined), levels, NO_SECRETS);
     const note = NOTES[key]?.(read);
     if (note) item.note = note;
 
