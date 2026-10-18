@@ -48,7 +48,7 @@ Run E2E against an instance you start for the run, never against one an operator
 - Pick a free port (`lsof -ti tcp:<port>` prints nothing) and a fresh data folder from `mktemp -d`. Never point it at `./data` or a live `FAST_STORAGE`.
 - Build first: `npm run build`. The instance runs `dist/`.
 - Seed the folder: `FAST_STORAGE=<dir> SLOW_STORAGE=<dir> PUID=$(id -u) PGID=$(id -g) npx tsx scripts/seed-e2e-test-data.ts`.
-- Start it with `node dist/src/app.js`, the way CI does, not `./server.sh`: `server.sh` reads the checkout's `.env` and names the pm2 process from config, so it can drive a different instance. Set `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, `NGDPBASE_BASE_URL=http://localhost:<port>`, `NGDPBASE_SYSTEM_USER`, `PUID` and `PGID`.
+- Start it with `node dist/src/app.js`, the way CI does, and stop it by its own PID. `./server.sh` is for long-running pm2-managed instances; from a worktree it can reach another instance by pm2 name or by path — the reasons are in the [bootstrap guide](bootstrap-developer-guide.md#multiple-instances-on-one-machine). Set `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, `NGDPBASE_BASE_URL=http://localhost:<port>`, `NGDPBASE_SYSTEM_USER`, `PUID` and `PGID`.
 - Run `PORT=<port> npm run test:e2e`, then stop the server and remove the folder.
 
 The admin password has one source:
