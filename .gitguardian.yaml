@@ -1,0 +1,10 @@
+# GitGuardian: test code generates its credentials at run time
+# (e.g. `pw-${randomUUID()}`) and never holds a real secret, but the
+# username/password detector matches the shape of the code. Skipping test
+# paths stops those false positives on every pull request (operator,
+# 2026-10-18). A real secret must never be committed anywhere, tests included.
+version: 2
+secret:
+  ignored_paths:
+    - "**/__tests__/**"
+    - "tests/**"
