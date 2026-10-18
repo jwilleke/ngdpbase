@@ -36,9 +36,13 @@ export class PasswordAuthProvider implements AuthProvider {
       ?.getProperty('ngdpbase.user.security.passwordsalt', 'amdwiki-salt') as string | undefined;
     if (!(await verifyPassword(password, stored, legacySalt || 'amdwiki-salt'))) return null;
 
-    // #1042: upgrade the stored hash now, while the plaintext is known to be right.
-    if (needsRehash(stored)) await userManager.upgradePasswordHash(username, await hashPassword(password), isLegacyHash(stored));
+    // #1882: the account as stored, never the casing typed — lookups ignore case (#1436).
+    const account = await userManager.getUser(username);
+    if (!account?.username) return null;
 
-    return { username };
+    // #1042: upgrade the stored hash now, while the plaintext is known to be right.
+    if (needsRehash(stored)) await userManager.upgradePasswordHash(account.username, await hashPassword(password), isLegacyHash(stored));
+
+    return { username: account.username };
   }
 }

@@ -111,6 +111,14 @@ describe('CloudflareAccessAuthProvider (#649)', () => {
     expect(created).toHaveLength(0);
   });
 
+  test('a JIT-provisioned account signs in by its name as stored, not the name derived for it (#1882)', async () => {
+    const { engine, userManager } = buildEngine([]);
+    userManager.createUser = (input: Record<string, unknown>) => Promise.resolve({ ...input, username: 'NewUser' });
+    const provider = buildProvider(engine);
+    const token = await mintJwt({ email: 'newuser@example.com', name: 'New User' });
+    expect(await provider.verify({ token })).toEqual({ username: 'NewUser' });
+  });
+
   test('valid JWT + unknown user → JIT-provisions with default role', async () => {
     const { engine, created } = buildEngine([]);
     const provider = buildProvider(engine);

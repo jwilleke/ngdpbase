@@ -63,7 +63,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       },
       UserManager: {
         // undefined for nobody, as UserManager answers (deriveUsername relies on it).
-        getUser: (u: string) => Promise.resolve(users[u] ? { ...users[u] } : undefined),
+        getUser: (u: string) => Promise.resolve(users[u] ? { username: u, ...users[u] } : undefined),
         hasPassword: (u: string) => Promise.resolve(Boolean(users[u]?.passwordSet)),
         getUserByEmail: () => { emailLookups++; return Promise.resolve(undefined); },
         // The account-creation door: one email, one account (#1748), as UserManager refuses it.

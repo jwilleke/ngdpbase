@@ -2215,8 +2215,13 @@ class AuthManager extends BaseManager {
     };
 
     try {
-      const result = await provider.verify(credentials);
-      if (!result) return await refused(typeof credentials.username === 'string' ? credentials.username : undefined);
+      const verified = await provider.verify(credentials);
+      if (!verified) return await refused(typeof credentials.username === 'string' ? credentials.username : undefined);
+
+      // #1882: a sign-in method names the stored account, never the typed casing.
+      const username = factor ? await this.storedUsername(verified.username) : verified.username;
+      if (!username) return await refused(verified.username);
+      const result = { ...verified, username };
 
       if (!(await this.userMayUseProvider(result.username, providerId))) {
         logger.warn(`[AuthManager] User ${result.username} not allowed to use provider: ${providerId}`);
@@ -2526,8 +2531,10 @@ class AuthManager extends BaseManager {
     result: AuthenticateResult,
     how: { method: string; unlockWith?: { password: string }; privateStoreHandle?: string; returnTo?: string }
   ): Promise<SignInCompleted> {
-    const username = result.username;
-    if (!username) throw new Error('completeSignIn needs a signed-in username');
+    if (!result.username) throw new Error('completeSignIn needs a signed-in username');
+    const username = await this.storedUsername(result.username);
+    if (!username) throw new Error('completeSignIn: no stored account has that username (#1882)');
+    result = { ...result, username };
     const pending = req.session?.pendingConnection;
     await this.regenerate(req);
     req.session.username = username;
@@ -2605,6 +2612,20 @@ class AuthManager extends BaseManager {
 
   private vaultUnlocker: ((username: string, password: string) => Promise<string>) | null = null;
   private warnedNoUnlocker = false;
+
+  /**
+   * The stored spelling of a username a sign-in brought (#1882), or null when
+   * no account has it. Lookups compare normalized (#1436), so "ADMIN" finds
+   * admin's record; the session, the audit record, the roles and the vault
+   * paths must carry the stored name, never the typed variant, which is a
+   * roleless twin. The one rule, asked by every door a sign-in passes:
+   * `authenticate`, `beginTwoStep` and `completeSignIn`.
+   */
+  private async storedUsername(username: string | undefined): Promise<string | null> {
+    if (!username) return null;
+    const account = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
+    return typeof account?.username === 'string' && account.username !== '' ? account.username : null;
+  }
 
   /** A fresh session for a sign-in (#1043); the one already on it ends first (#1626, #1670). */
   private regenerate(req: Request): Promise<void> {
@@ -2724,14 +2745,17 @@ class AuthManager extends BaseManager {
   }
 
   /** Hold a sign-in whose first factor passed, until a second factor completes it. Returns its handle. */
-  beginTwoStep(first: AuthenticateResult, ctx: { binding: string; ip?: string; userAgent?: string; privateStoreHandle?: string }): string {
+  async beginTwoStep(first: AuthenticateResult, ctx: { binding: string; ip?: string; userAgent?: string; privateStoreHandle?: string }): Promise<string> {
     if (!first.success || !first.username) throw new Error('No first factor to continue from');
+    const username = await this.storedUsername(first.username);
+    if (!username) throw new Error('beginTwoStep: no stored account has that username (#1882)');
+    first = { ...first, username };
     this.sweepPending();
     const handle = randomBytes(24).toString('base64url');
     const now = Date.now();
     this.pendingSignIns.set(handle, {
       handle,
-      username: first.username,
+      username,
       first,
       binding: ctx.binding,
       requestedAt: now,

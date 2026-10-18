@@ -18,9 +18,11 @@ const WRONG_PW = `pw-${randomUUID()}`;
 const legacyHash = (password: string, salt = 'amdwiki-salt'): string =>
   createHash('sha256').update(password + salt).digest('hex');
 
-function setup(stored: string | null, salt?: string) {
+function setup(stored: string | null, salt?: string, storedName = 'molly') {
   const userManager = {
     storedPasswordHash: vi.fn().mockResolvedValue(stored),
+    // Lookups ignore case (#1436): any casing finds the one stored record.
+    getUser: vi.fn().mockResolvedValue({ username: storedName }),
     upgradePasswordHash: vi.fn().mockResolvedValue(undefined)
   };
   const configManager = {
@@ -40,6 +42,13 @@ describe('PasswordAuthProvider (#1758)', () => {
     const { provider, userManager } = setup(currentHash);
     expect(await provider.verify({ username: 'molly', password: RIGHT_PW })).toEqual({ username: 'molly' });
     expect(userManager.storedPasswordHash).toHaveBeenCalledWith('molly');
+  });
+
+  test('a differently-cased name signs in as the account as stored, never as typed (#1882)', async () => {
+    const { provider, userManager } = setup(legacyHash(RIGHT_PW));
+    expect(await provider.verify({ username: 'MOLLY', password: RIGHT_PW })).toEqual({ username: 'molly' });
+    expect(userManager.getUser).toHaveBeenCalledWith('MOLLY');
+    expect(userManager.upgradePasswordHash).toHaveBeenCalledWith('molly', expect.any(String), true);
   });
 
   test('a current hash is not rewritten', async () => {

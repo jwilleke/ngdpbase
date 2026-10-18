@@ -279,8 +279,9 @@ export class MagicLinkAuthProvider implements AuthProvider {
     const username = await deriveUsername(entry.email, userManager);
     const role = this.resolveDefaultRole();
 
+    let created: { username: string };
     try {
-      await userManager.createUser({
+      created = await userManager.createUser({
         username,
         email: entry.email,
         displayName: username,
@@ -294,7 +295,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
       return false;
     }
 
-    entry.username = username;
+    entry.username = created.username; // #1882: the account as stored
     entry.isNewUser = false;
     logger.info(`[MagicLinkAuthProvider] Provisioned new user: ${username} (${entry.email}) role=${role}`);
     return true;
