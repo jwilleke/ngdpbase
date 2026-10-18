@@ -11662,12 +11662,19 @@ ${panes}
         return await this.renderError(req, res, 500, 'Backup Unavailable', 'BackupManager is not available');
       }
       const status = await backupManager.getAutoBackupStatus();
-      const recentBackups = await backupManager.listBackups();
+      const recentBackups = await backupManager.listStoredBackups();
+      // #1723: what a restore needs on the page — the staged one, whether one
+      // is being prepared, and the name an admin types to confirm.
+      const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown }>('DatabaseManager');
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-backup', {
         ...commonData,
         status,
         recentBackups,
+        databasesEnabled: databaseManager?.isEnabled() ?? false,
+        stagedRestore: databaseManager?.getStagedRestore() ?? null,
+        restoreRunning: backupManager.isRestoreRunning(),
+        siteName: this.siteName(),
         success: req.query.success as string | undefined,
         error: req.query.error as string | undefined,
         title: 'Backup Management'
@@ -11756,22 +11763,93 @@ ${panes}
       const backupPath = await backupManager.createBackup(currentUser);
       logger.debug(`✅ Backup created: ${backupPath}`);
 
-      // Get backup filename
-      const filename = path.basename(backupPath);
-
-      // Send backup file as download
-      res.download(backupPath, filename, (err) => {
-        if (err) {
-          logger.error('Error downloading backup:', err);
-          // Don't send response here as headers may already be sent
-        } else {
-          logger.debug(`✅ Backup downloaded by: ${currentUser.username}`);
-        }
-      });
+      // #1723 D2: the download is the document and its database files, one streamed .tar.
+      await this.sendBackupArchive(backupManager, path.basename(backupPath), res);
 
     } catch (err: unknown) {
       logger.error('Error creating backup:', err);
       res.status(500).send('Error creating backup: ' + getErrorMessage(err));
+    }
+  }
+
+  /** The name an admin types to confirm a restore (#1723): the site's application name. */
+  private siteName(): string {
+    const name = this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.application-name', '');
+    return typeof name === 'string' ? name : '';
+  }
+
+  /** Stream one stored backup as a .tar (#1723 D2): never built in memory. */
+  private async sendBackupArchive(backupManager: BackupManager, filename: string, res: Response): Promise<void> {
+    const { name, stream } = await backupManager.backupArchive(filename);
+    res.setHeader('Content-Type', 'application/x-tar');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    stream.on('error', (err) => {
+      logger.error('Error streaming backup archive:', err);
+      res.destroy(err);
+    });
+    stream.pipe(res);
+  }
+
+  /**
+   * GET /admin/backup/download/:filename — one stored backup as a .tar (#1723 D2).
+   */
+  async adminBackupDownload(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const backupManager = this.engine.getManager('BackupManager');
+      const filename = String(req.params.filename ?? '');
+      if (!backupManager || !(await backupManager.findStoredBackup(filename))) {
+        return await this.renderError(req, res, 404, 'Not Found', 'No such backup in the backup directory');
+      }
+      await this.sendBackupArchive(backupManager, filename, res);
+    } catch (err: unknown) {
+      logger.error('Error downloading backup:', err);
+      if (!res.headersSent) res.status(500).send('Error downloading backup');
+    }
+  }
+
+  /**
+   * POST /admin/backup/restore — restore a stored backup's databases (#1723 D1, D5).
+   * The admin types the site name to confirm. A fresh backup is taken and the
+   * databases are staged in the background; the restart applies them. A
+   * staged restore is replaced only when `replace` says so.
+   */
+  async adminBackupRestore(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const currentUser = wikiContext.userContext;
+      const backupManager = this.engine.getManager('BackupManager');
+      if (!currentUser || !backupManager) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      const body = req.body as Record<string, string | undefined>;
+      const expected = this.siteName();
+      if (!expected || (body.confirm ?? '').trim() !== expected) {
+        return res.redirect('/admin/backup?error=' + encodeURIComponent('Nothing was restored: type the site name exactly to confirm'));
+      }
+      await backupManager.startRestore(currentUser, String(body.backup ?? ''), { replace: body.replace === 'true' });
+      return res.redirect('/admin/backup?success=' + encodeURIComponent('Restore started: a fresh backup is being taken, then the databases are staged. You will be notified when it is ready. Restart the site to apply it.'));
+    } catch (err: unknown) {
+      logger.error('Error starting restore:', err);
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+    }
+  }
+
+  /**
+   * POST /admin/backup/restore/cancel — throw away a staged restore (#1723 D5).
+   */
+  async adminBackupRestoreCancel(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const currentUser = wikiContext.userContext;
+      const databaseManager = this.engine.getManager<{ cancelStagedRestore(ctx: unknown): Promise<{ source: string; backup: string }> }>('DatabaseManager');
+      if (!currentUser || !databaseManager) return res.redirect('/admin/backup?error=DatabaseManager+not+available');
+      const cancelled = await databaseManager.cancelStagedRestore(currentUser);
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source || cancelled.backup} cancelled; the current databases stay as they are.`));
+    } catch (err: unknown) {
+      logger.error('Error cancelling staged restore:', err);
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
     }
   }
 
@@ -15882,6 +15960,9 @@ ${panes}
     app.get('/admin/backup', (req: Request, res: Response) => void this.adminBackupPage(req, res));
     app.post('/admin/backup/create', (req: Request, res: Response) => this.adminBackup(req, res));
     app.post('/admin/backup/config', (req: Request, res: Response) => void this.adminBackupConfig(req, res));
+    app.get('/admin/backup/download/:filename', (req: Request, res: Response) => void this.adminBackupDownload(req, res));
+    app.post('/admin/backup/restore', (req: Request, res: Response) => void this.adminBackupRestore(req, res));
+    app.post('/admin/backup/restore/cancel', (req: Request, res: Response) => void this.adminBackupRestoreCancel(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

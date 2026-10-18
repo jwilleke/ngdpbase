@@ -526,6 +526,9 @@ audited.
 | `store-import` | A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped | continue | yes |
 | `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | refuse | yes |
 | `backup-create` | A full backup written; where it went and who asked | continue | yes |
+| `backup-restore` | A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) | refuse | yes |
+| `backup-restore-replace` | A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723) | refuse | yes |
+| `backup-restore-cancel` | A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) | refuse | yes |
 | `addon-install` | An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830) | refuse | yes |
 | `addon-update` | An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet) | refuse | no |
 | `addon-verify-failed` | An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830) | continue | yes |

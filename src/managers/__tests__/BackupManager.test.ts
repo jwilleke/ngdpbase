@@ -191,7 +191,7 @@ describe('BackupManager', () => {
 
   describe('restoreFromFile()', () => {
     test('throws when backup file does not exist', async () => {
-      await expect(bm.restoreFromFile('/nonexistent/path/backup.json.gz'))
+      await expect(bm.restoreFromFile(ADMIN_CTX, '/nonexistent/path/backup.json.gz'))
         .rejects.toThrow('Backup file not found');
     });
 
@@ -221,7 +221,7 @@ describe('BackupManager', () => {
       const recompressed = await gzipAsync(JSON.stringify(data, null, 2));
       await fs.writeFile(backupPath, recompressed);
 
-      const results = await bm.restoreFromFile(backupPath);
+      const results = await bm.restoreFromFile(ADMIN_CTX, backupPath);
 
       expect(results.success).toContain('SomeManager');
       expect(mockTargetManager.restore).toHaveBeenCalled();
@@ -243,7 +243,7 @@ describe('BackupManager', () => {
       const recompressed = await gzipAsync(JSON.stringify(data, null, 2));
       await fs.writeFile(backupPath, recompressed);
 
-      const results = await bm.restoreFromFile(backupPath);
+      const results = await bm.restoreFromFile(ADMIN_CTX, backupPath);
 
       expect(results.skipped).toContain('GhostManager');
     });
@@ -271,7 +271,7 @@ describe('BackupManager', () => {
         return null;
       });
 
-      const results = await bm.restoreFromFile(backupPath);
+      const results = await bm.restoreFromFile(ADMIN_CTX, backupPath);
       expect(results.skipped).toContain('ErroredManager');
       expect(mockErroredManager.restore).not.toHaveBeenCalled();
     });
@@ -293,7 +293,7 @@ describe('BackupManager', () => {
       const recompressed = await gzipAsync(JSON.stringify(data, null, 2));
       await fs.writeFile(backupPath, recompressed);
 
-      const results = await bm.restoreFromFile(backupPath, { managerFilter: ['ManagerA'] });
+      const results = await bm.restoreFromFile(ADMIN_CTX, backupPath, { managerFilter: ['ManagerA'] });
 
       expect(results.skipped).toContain('ManagerB');
     });
@@ -307,7 +307,7 @@ describe('BackupManager', () => {
       const invalidData = { timestamp: new Date().toISOString(), managers: {} }; // no version
       await fs.writeFile(badBackupPath, await gzipAsync(JSON.stringify(invalidData)));
 
-      await expect(bm.restoreFromFile(badBackupPath)).rejects.toThrow('Invalid backup: missing version');
+      await expect(bm.restoreFromFile(ADMIN_CTX, badBackupPath)).rejects.toThrow('Invalid backup: missing version');
     });
   });
 
