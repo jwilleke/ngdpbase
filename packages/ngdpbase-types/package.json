@@ -1,0 +1,35 @@
+{
+  "//": "Source template (#1865). `npm run build:types-package` writes dist/package.json from it, adding core's version and the dependencies the shipped files import, and dropping private. Publish dist/, never this folder.",
+  "name": "@jwilleke/ngdpbase-types",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TypeScript types for ngdpbase add-ons, and a test kit of core's own values. A dev dependency, versioned with ngdpbase.",
+  "license": "Apache-2.0",
+  "author": "Jim Willeke",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jwilleke/ngdpbase.git",
+    "directory": "packages/ngdpbase-types"
+  },
+  "homepage": "https://github.com/jwilleke/ngdpbase/blob/master/docs/guides/addons-developer-guide.md",
+  "type": "module",
+  "types": "./lib/packages/ngdpbase-types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/packages/ngdpbase-types/index.d.ts"
+    },
+    "./testing": {
+      "types": "./lib/packages/ngdpbase-types/testing.d.ts",
+      "default": "./lib/packages/ngdpbase-types/testing.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  }
+}

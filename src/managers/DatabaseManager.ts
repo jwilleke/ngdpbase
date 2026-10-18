@@ -56,6 +56,42 @@ export interface DeclaredAddonDatabase extends AddonDatabaseDeclaration {
   open: boolean;
 }
 
+/**
+ * The request rules (addonDatabaseRules): the owner is a canonical slug, and
+ * the ledger table starts with its prefix. `openAddonDatabase` applies them,
+ * and so does the test kit's in-memory database
+ * (`@jwilleke/ngdpbase-types/testing`, #1865), so a test refuses what a site
+ * refuses.
+ */
+export function checkAddonDatabaseRequest(owner: string, options: AddonDatabaseOptions): void {
+  if (!ADDON_SLUG.test(owner)) {
+    throw new Error(`'${owner}' is not an add-on slug — lowercase letters and digits, single dashes (ngdp-accounting-addons#13)`);
+  }
+  const prefix = ledgerPrefix(owner);
+  if (!options.ledgerTable.startsWith(prefix)) {
+    throw new Error(`Add-on '${owner}': migration ledger table '${options.ledgerTable}' must start with '${prefix}' (ngdp-accounting-addons#13)`);
+  }
+}
+
+/**
+ * The declaration of this owner's ledger among `declarations`, or a refusal
+ * naming what is missing (#1860). `openAddonDatabase` asks it of the site's
+ * declarations; the test kit asks it of the add-on's own (#1865).
+ */
+export function addonDatabaseDeclarationFor(declarations: readonly AddonDatabaseDeclaration[], owner: string, ledgerTable: string): AddonDatabaseDeclaration {
+  const forOwner = declarations.filter((d) => d.owner === owner);
+  const declaration = forOwner.find((d) => d.ledgerTable === ledgerTable);
+  if (!declaration) {
+    throw new Error(forOwner.length === 0
+      ? `No add-on declares database '${owner}' — declare ngdpbase.addons.<slug>.database { owner, ledgerTable, encrypt } in the add-on's config/default-config.json (#1860)`
+      : `Database '${owner}' is declared, but not with ledger '${ledgerTable}' — the add-on that opens it declares that ledger (#1860)`);
+  }
+  if (!declaration.enabled) {
+    throw new Error(`Database '${owner}' ledger '${ledgerTable}' is declared by add-on '${declaration.declaredBy}', which is turned off or not loaded (#1860)`);
+  }
+  return declaration;
+}
+
 interface AddonDatabase {
   provider: SqliteDatabaseProvider;
   ledgers: Set<string>;
@@ -145,14 +181,8 @@ class DatabaseManager extends BaseManager {
     if (!this.provider || !this.databaseFile) {
       throw new Error(`Add-on '${owner}' needs a database, but none is open — set ngdpbase.database.provider to 'sqlite' (ngdp-accounting-addons#13)`);
     }
-    if (!ADDON_SLUG.test(owner)) {
-      throw new Error(`'${owner}' is not an add-on slug — lowercase letters and digits, single dashes (ngdp-accounting-addons#13)`);
-    }
-    const prefix = ledgerPrefix(owner);
-    if (!options.ledgerTable.startsWith(prefix)) {
-      throw new Error(`Add-on '${owner}': migration ledger table '${options.ledgerTable}' must start with '${prefix}' (ngdp-accounting-addons#13)`);
-    }
-    const declaration = this.declarationFor(owner, options.ledgerTable);
+    checkAddonDatabaseRequest(owner, options);
+    const declaration = addonDatabaseDeclarationFor(this.declarations(), owner, options.ledgerTable);
     const key = process.env[DATABASE_KEY_ENV] ?? '';
     const refusal = DatabaseManager.keyRefusal(declaration, key);
     if (refusal) throw new Error(refusal);
@@ -215,21 +245,6 @@ class DatabaseManager extends BaseManager {
 
   private declarations(): readonly AddonDatabaseDeclaration[] {
     return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonDatabaseDeclarations?.() ?? [];
-  }
-
-  /** The declaration of this owner's ledger, or a refusal naming what is missing (#1860). */
-  private declarationFor(owner: string, ledgerTable: string): AddonDatabaseDeclaration {
-    const forOwner = this.declarations().filter((d) => d.owner === owner);
-    const declaration = forOwner.find((d) => d.ledgerTable === ledgerTable);
-    if (!declaration) {
-      throw new Error(forOwner.length === 0
-        ? `No add-on declares database '${owner}' — declare ngdpbase.addons.<slug>.database { owner, ledgerTable, encrypt } in the add-on's config/default-config.json (#1860)`
-        : `Database '${owner}' is declared, but not with ledger '${ledgerTable}' — the add-on that opens it declares that ledger (#1860)`);
-    }
-    if (!declaration.enabled) {
-      throw new Error(`Database '${owner}' ledger '${ledgerTable}' is declared by add-on '${declaration.declaredBy}', which is turned off or not loaded (#1860)`);
-    }
-    return declaration;
   }
 
   /** The one rule: a database declared `encrypt: "required"` is never opened without the key. */

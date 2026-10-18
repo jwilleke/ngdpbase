@@ -1,0 +1,96 @@
+name: Publish types package
+
+# @jwilleke/ngdpbase-types (#1865): the add-on API's types and test kit,
+# published to npm at core's version on each core release tag, with signed
+# provenance. No npm token is stored: npm trusts this workflow (trusted
+# publishing), set up once on npmjs.com for publish-types.yml. Modelled on the
+# add-on publish workflow create:addon --repo writes (#1863, #1864).
+#
+# A pull request that touches the package builds, checks and packs it, and
+# never publishes.
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  pull_request:
+    paths:
+      - 'packages/ngdpbase-types/**'
+      - 'scripts/build-types-package.ts'
+      - '.github/workflows/publish-types.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-types-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # The OIDC token npm takes instead of a token, and Sigstore signs the provenance with.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later; older npm fails with a
+      # bare authentication error.
+      - name: Node 24.15 or later, npm 11.5.1 or later
+        run: |
+          node -e '
+            const below = (v, min) => { const a = v.split(".").map(Number), b = min.split(".").map(Number); for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
+            const npm = require("child_process").execSync("npm --version").toString().trim();
+            if (below(process.versions.node, "24.15.0")) { console.error("::error::Node " + process.versions.node + " is older than 24.15.0"); process.exit(1); }
+            if (below(npm, "11.5.1")) { console.error("::error::npm " + npm + " is older than 11.5.1, which trusted publishing needs"); process.exit(1); }
+          '
+
+      # The package is versioned with core: the tag is v + core's version.
+      - name: The tag is core's version
+        if: github.event_name == 'push'
+        run: |
+          node -e '
+            const version = require("./package.json").version;
+            const tag = process.env.GITHUB_REF_NAME;
+            if (tag !== "v" + version) { console.error("::error::tag " + tag + " is not v" + version + ", the version in package.json"); process.exit(1); }
+          '
+
+      - name: Install
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+
+      # Builds packages/ngdpbase-types/dist and checks it: no JavaScript in the
+      # main entry, the test kit loads in Node, an add-on typechecks against it.
+      - name: Build the package
+        run: npm run build:types-package
+
+      - name: Test
+        run: NODE_ENV=test npx vitest run packages/
+
+      # What is published is declarations and the test kit's compiled JavaScript.
+      - name: The package ships no .ts sources or tests
+        working-directory: packages/ngdpbase-types/dist
+        run: |
+          npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/pack.json"
+          node -e '
+            const [pack] = require(process.env.RUNNER_TEMP + "/pack.json");
+            const bad = pack.files.map((f) => f.path).filter((p) => (/[.][cm]?ts$/.test(p) && !/[.]d[.][cm]?ts$/.test(p)) || p.split("/").includes("__tests__"));
+            if (bad.length) { console.error("::error::the package would ship sources or tests: " + bad.join(", ")); process.exit(1); }
+            console.log(pack.name + "@" + pack.version + ": " + pack.files.length + " files, " + pack.size + " bytes");
+          '
+
+      # A prerelease goes to the next dist-tag, never latest.
+      - name: Publish with provenance
+        if: github.event_name == 'push'
+        working-directory: packages/ngdpbase-types/dist
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          case "$version" in
+            *-*) npm publish --provenance --access public --tag next ;;
+            *) npm publish --provenance --access public ;;
+          esac

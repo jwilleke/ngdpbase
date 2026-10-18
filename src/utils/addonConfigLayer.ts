@@ -230,7 +230,7 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
   return layer;
 }
 
-interface AddonDatabaseLayer {
+export interface AddonDatabaseLayer {
   /** Every sound declaration, of every installed addon, `enabled` as its addon is. */
   declarations: AddonDatabaseDeclaration[];
   /** Addons whose declaration was refused, by slug, with why: never loaded. */
@@ -244,7 +244,7 @@ interface AddonDatabaseLayer {
  * declaration of one owner's ledger is refused. `custom` is the operator's
  * file: a value there for a declaration's key is ignored, and said so.
  */
-function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Record<string, unknown>): AddonDatabaseLayer {
+export function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Record<string, unknown>): AddonDatabaseLayer {
   const layer: AddonDatabaseLayer = { declarations: [], refused: new Map(), problems: [] };
   const ledgerBy = new Map<string, string>();
   for (const addon of addons) {

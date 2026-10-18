@@ -102,7 +102,7 @@ function hasDefaultExport(obj: unknown): obj is { default: unknown } {
  */
 export type PluginFormatters = Readonly<typeof pluginFormatters>;
 
-const formatters: PluginFormatters = Object.freeze({ ...pluginFormatters });
+export const formatters: PluginFormatters = Object.freeze({ ...pluginFormatters });
 
 /**
  * Plugin context passed to plugins during execution
