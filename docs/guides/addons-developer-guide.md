@@ -697,6 +697,14 @@ author: my-addon
 
 ---
 
+### Ship form definitions
+
+An add-on that ships forms for the bundled forms add-on saves each definition through `FormsDataManager.saveDefinition(definition)` in its `register()`. The forms add-on stores it as `data/forms/definitions/<id>.json`; `saveDefinition` always overwrites.
+
+- __Today, save a shipped form only when the site has none__: `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)`. Saving it at every start would wipe out what the site changed in the form builder.
+- __The cost:__ a changed definition never reaches a site that already has the form. After an upgrade the site keeps its first-saved copy, with the old fields and labels, and nothing shows it as outdated. Until [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) ships, a site gets a changed form only when an admin deletes the old one in the forms admin and the add-on saves it again at the next start, which loses any edits made in the builder. Say so in your add-on's release notes whenever a shipped form changes.
+- Shipped pages don't have this problem: Admin → Required Pages shows an outdated add-on page and syncs it, protecting pages the site edited.
+
 ### Ship a Theme
 
 Since v3.17.0 (issue #443): if your add-on ships a `theme/` subdirectory, ngdpbase auto-deploys it to the
@@ -1420,11 +1428,12 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
-- [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is not on npm until its first release: the name needs a one-time placeholder publish and a trusted publisher on npmjs.com. Until then `create:addon --repo` still generates the build-against-core step for an addon that imports `../../dist/`. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
+- [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
+- [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) — a [shipped form definition](#ship-form-definitions) never refreshes on upgrade: the forms add-on records no version and no "edited on the site" flag, so there is no outdated status, no sync, and an add-on can only save a form once or overwrite site edits.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
 
-Last updated: 2026-10-17
+Last updated: 2026-10-18
