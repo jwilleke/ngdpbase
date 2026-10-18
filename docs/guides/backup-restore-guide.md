@@ -1,0 +1,150 @@
+---
+name: Backup and restore guide
+description: How a site is backed up and restored today — triggers, file, retention, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
+dateModified: 2026-10-18
+category: guides
+relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManager, PageManager, AttachmentManager, UserManager, ConfigurationManager]
+---
+
+# Backup and restore guide
+
+The one place that says how a site is backed up and restored, for operators and for developers, add-on authors included. Every statement here was checked against the code on master (v5.18.0) and against a backup taken on a throwaway instance on 2026-10-18, not against older documents. Where something could not be checked it says "not verified".
+
+In short: __a site can be backed up, but it cannot be restored.__ The backup file leaves out several kinds of data, and nothing on master reads a backup back in ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). Until that is fixed, a restorable site means a copy of the data folders, taken while the server is stopped, plus the keys kept somewhere else.
+
+## Where a site's data lives
+
+- __`FAST_STORAGE`__ is the instance data folder (falling back to the legacy `INSTANCE_DATA_FOLDER`, then `./data`; `src/utils/configFiles.ts` `instanceDataFolder`). It holds `config/app-custom-config.json`, `users/` (users and the credentials store), `roles/`, `persons/`, `organizations/`, `sessions/`, `logs/` (including `audit.log`), `search-index/`, `page-index.json`, `media-index.json`, `oidc/`, `shares/`, `notifications/`, `jobs/`, the database file `ngdpbase.db`, and the generated `.env`.
+- __`SLOW_STORAGE`__ holds `pages/` (with `pages/vaults/`, the private stores), `attachments/`, `footnotes/`, `comments/` and, by default, `backups/`.
+- __`<FAST_STORAGE>/.env`__ holds the keys the site generates for itself: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, and the OpenID Connect provider's `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` when that provider is on. `NGDPBASE_DATABASE_KEY` is set there or in the environment by the operator.
+- Each path is a config key; the defaults are in `config/app-default-config.json`, and a site can move any of them.
+
+## How a backup is made
+
+- __By hand:__ Admin → Backup (`/admin/backup`) → __Create & Download Backup__ (`POST /admin/backup/create`, `WikiRoutes.adminBackup`). It needs `config-manage` and a fresh sign-in when that permission is listed in `ngdpbase.auth.step-up`. The file is written to the backup folder and then downloaded to the browser; the server keeps its copy.
+- __On a schedule:__ automatic backups are the scheduled job `backup.auto` (`BackupManager.scheduleAutoBackup`, #1720). They are off by default (`ngdpbase.backup.auto-backup: false`). `ngdpbase.backup.auto-backup-time` is `HH:MM` in the server's time zone; `ngdpbase.backup.auto-backup-days` is `daily`, `monthly` (the 1st), `weekdays` or day names such as `Mon,Wed,Fri` (`autoBackupSchedule`). A backup missed while the server was down runs once when it is back, one still running is not doubled, and a failed run is tried up to three times (again after 1 and 5 minutes). The settings are saved from Admin → Backup (`POST /admin/backup/config`, `config-manage`) into `app-custom-config.json`.
+- __Where:__ `ngdpbase.backup.directory`, default `${SLOW_STORAGE}/backups`, through the storage provider `ngdpbase.backup.provider` (`filebackupprovider`, the only one). The folder is made owner-only and each file `0600` where the filesystem allows (`FileBackupProvider.writeBackup`, #1560).
+- __The file:__ one gzipped JSON document, `{timestamp}-ngdpbase-backup.json.gz`, shaped `{ version: "1.0.0", timestamp, application: "ngdpbase", managers: { <ManagerName>: <that manager's backup()> } }` (`BackupManager.createBackup`). It is built whole in memory and __it is not encrypted__: it holds password hashes, every user record and the custom configuration as written, secrets included.
+- __How it is filled:__ `createBackup` calls `backup()` on every registered manager, core and add-on, in registration order. A manager that throws gets `{ error, timestamp }` in its slot and the backup carries on and counts as a success (#1213).
+- __Retention:__ after each backup the oldest files beyond `ngdpbase.backup.max-backups` (default 10) are deleted, by-hand and automatic alike (`BackupManager.cleanupOldBackups`). A failed cleanup is only a log warning.
+- __Record:__ a successful backup writes the `backup-create` audit event, naming who asked and where the file went.
+- __Failure:__
+  - A scheduled backup that fails posts an admin error notification ("Automatic backup failed") on each failed attempt, and the job records `job-failed` after the last (`BackgroundJobManager`). A success posts an "Automatic backup complete" notification.
+  - Automatic backups switched on with a time or days setting that can't be read: an admin error notification ("Automatic backups are not running") and an error log line; nothing runs until it is fixed.
+  - A backup folder that can't be used at start (for example an unmounted volume): `BackupManager` is marked degraded, which the `/admin` dashboard shows, and backups are off until restart (`BaseManager.preflightConfiguredPath`).
+  - A backup by hand that fails returns an error page. No notification is sent.
+  - Not yet: no warning when backups stop happening, no free-space check before writing, no read-back check after writing ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)).
+- `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` are in the default config but nothing reads them. Compression is always on and the schedule is the time and days settings.
+
+## What a backup holds
+
+"Yes" means the data is in the `.json.gz`. "No" means the file has nothing of it, so a copy of the folder is the only backup there is. Rows marked "probe" were confirmed in a backup taken on a throwaway instance.
+
+| Data | In the backup | Manager | Evidence |
+| --- | --- | --- | --- |
+| Pages, current text (public and required pages) | Yes (probe) | PageManager | `FileSystemProvider.backup`: every `.md` under the pages and required-pages folders |
+| Page version history | Yes, with `versioningfileprovider` (probe). The shipped default `filesystemprovider` keeps no history | PageManager | `VersioningFileProvider.backup` → `readVersionFiles` (read and written as UTF-8 text) |
+| Public trash (deleted pages) | Yes, with `versioningfileprovider` (probe) | PageManager | `VersioningFileProvider.readTrash` |
+| Page index (`page-index.json`) | No; rebuilt from the version manifests when it is empty at start | PageManager | `VersioningFileProvider.rebuildPageIndexFromManifests` |
+| Private stores / vaults | Yes, every file of every vault as stored, sealed files still sealed: pages, history, trash, the vault's attachments, footnotes and comments, `store.json`, and each user's `user-keys.json` (probe: a vault page, its history and its indexes). __None of it__ when the whole private tree is over 256 MB; the backup then carries `privateOmitted` and the server logs an error | PageManager | `FileSystemProvider.backupPrivateStores`, `privateStoreTakeout.collectUser`; vault attachments by code, not verified in the probe |
+| A leftover legacy `pages/private/` folder | No | PageManager | `walkDir` skips it and `listPrivateOwners` reads only the current private root |
+| Attachment metadata (shared pool) | Yes (probe) | AttachmentManager | `BasicAttachmentProvider.backup`: the metadata map |
+| Attachment files (shared pool) | __No__ (probe: the uploaded file's bytes are not in the backup) | AttachmentManager | `BasicAttachmentProvider.backup` |
+| Footnotes and comments on public pages | No | FootnoteManager, CommentManager | no `backup()`; `BaseManager.backup` returns `data: null` |
+| Users (records, password hashes, preferences) | Yes (probe) | UserManager | `FileUserProvider.backup`: users and the provider's sessions map |
+| Role membership, persons, organizations | No (probe: membership is in `roles/*.json`, not on the user record) | RoleManager, PersonManager, OrganizationManager | no `backup()` |
+| Credentials store: passkeys, TOTP, verified email and phone, known devices, linked identities, proxy grants | No | AuthManager | `AuthManager.backup` lists provider ids only; the store is `ngdpbase.auth.credentials.file` |
+| Sign-in sessions (`sessions/`) | No; people sign in again | none | |
+| Configuration: `app-custom-config.json` | Yes, as written, secrets included (probe). Copies of the default and merged configuration are carried for reference; only the custom file would be restored | ConfigurationManager | `ConfigurationManager.backup` |
+| `.env` and the keys in it | No | none | `ConfigurationManager.backup` reads the config files only |
+| Audit log | No | AuditManager | no `backup()` on the manager; `FileAuditProvider.backup` (settings and counts only) is never called |
+| Search index | Yes, the shared Lunr documents; private page text is left out (probe). Elasticsearch: at most the first 10,000 documents. Either can be rebuilt from the pages | SearchManager | `LunrSearchProvider.backup`, `ElasticsearchSearchProvider.backup` (`size: 10000`) |
+| Media index and media library | No. The library is the operator's own read-only source files; the index is rebuilt by a rescan | MediaManager | no `backup()` |
+| User keywords vocabulary | Yes | CatalogManager | `CatalogManager.backup` |
+| Application database and add-on databases | No; pending [#1723](https://github.com/jwilleke/ngdpbase/issues/1723) | DatabaseManager | no `backup()` on master |
+| Add-on data in files under its `dataPath` | No. Of the bundled add-ons, the journal's and calendar's managers return `data: null`; the forms and feeds managers have no `backup()`, so their slot holds an error (not verified on a running add-on) | the add-on's manager | `BackupManager.createBackup` catch |
+| Agent tokens | The list only, without the hashes; can't be restored (`restorable: false`) | AgentTokenManager | `AgentTokenManager.backup`, `restore` throws |
+| OpenID Connect provider | Client registrations are configuration (`oidc-auth-server.clients`), so they travel with it. Live grants: a list for incident response, can't be restored. Signing and cookie keys: no (`.env`) | OidcManager | `OidcManager.backup`, `restore` throws |
+| Shares, notifications, scheduled-job state | No | ShareManager, NotificationManager, BackgroundJobManager | no `backup()` |
+| Add-ons on or off | A list only; restore does nothing | AddonsManager | `AddonsManager.backup` |
+
+## Restore today
+
+__There is no restore.__ No route, button, view or script on master has ever called `BackupManager.restoreFromFile` (`git log -S restoreFromFile` finds only the method, its tests and documents). The "Restore Data" button and `POST /api/admin/restore` that older documents describe were never built.
+
+If `restoreFromFile` were called, it would not be safe to rely on:
+
+- It writes straight into the live site, not staged, and nothing is taken first.
+- Each manager's `restore()` runs in turn and a failure is listed, not rolled back. `AgentTokenManager` and `OidcManager` refuse by design.
+- Pages, history, trash and vault files go back. Attachment metadata goes back without the files it describes.
+- The data in the "No" rows above has nothing to come back from.
+
+Restoring the whole site, staged, all or nothing, is [#1876](https://github.com/jwilleke/ngdpbase/issues/1876) (P0).
+
+## Pending: database backup and restore (not merged)
+
+[PR #1875](https://github.com/jwilleke/ngdpbase/pull/1875) for [#1723](https://github.com/jwilleke/ngdpbase/issues/1723) is a draft, not on master. It is described here so nobody builds around it. The operator's decisions D1 to D6 are in the [decision log](https://github.com/jwilleke/ngdpbase/issues/1723#issuecomment-6248360904):
+
+- Every database, the application's and each declared add-on's, on or off, copied at one point in time and encrypted under `NGDPBASE_BACKUP_KEY`. Without the key nothing is written, and the site says so.
+- D1: a restore button on Admin → Backup. It picks a stored backup (no upload), is confirmed by typing the site name, takes a fresh backup first, and stages the restore for the next start. The site never restarts itself. A command line for a site that won't start is deferred.
+- D2: each backup downloads as one streamed `.tar`; the key is never in it.
+- D3: a backup key equal to the database key still backs up, with a loud warning. Each backup records a fingerprint of its key. Key rotation stays a gap: an old backup needs the key it was made with.
+- D4: a backed-up add-on database this site doesn't declare is skipped, and admins are told.
+- D5: a staged restore is shown, and can be cancelled or replaced, each recorded.
+- D6: the button restores __the databases only__. Pages, users and settings are not changed.
+
+## What an operator must do today
+
+Only what the code supports:
+
+- __Copy the data folders while the server is stopped.__ Stop with `./server.sh stop`, copy all of `FAST_STORAGE` and `SLOW_STORAGE`, then start again. That copy is the only complete backup: it holds every "No" row above. Stopped matters: the database (SQLite, WAL) and the JSON stores are not safe to copy while they are being written.
+- __Keep the keys off the server.__ Save `<FAST_STORAGE>/.env` (or wherever your deployment sets these variables) in a password manager or your cluster's secret store whenever it changes. Without `NGDPBASE_DATABASE_KEY` an encrypted database can't be opened; without `NGDPBASE_CREDENTIALS_KEY` the credentials store's rows don't verify. Vaults are sealed with each owner's own key in `user-keys.json`, which opens with their password or recovery words, so a copy restores to the password they had when it was taken.
+- __Treat the `.json.gz` as a partial copy.__ Turn on automatic backups if you like, but a `.json.gz` can't be restored. It holds password hashes and secrets unencrypted, so keep it as safe as the data folder.
+- __Restoring means putting the copy back.__ Stop the server, put the copied folders back where they were, with the same `.env`, then start.
+- __Media__ is never part of the site's data: back up the library at the storage level.
+
+## Rules for developers and add-on authors
+
+- __A manager that keeps data owns its backup.__ Override `backup()` and `restore()` from `BaseManager`. The default `backup()` returns `data: null`, so a manager that keeps state and doesn't override it is silently left out. Say what is missing as the row in this guide.
+- __A manager registered with the engine must have `backup()`.__ `BackupManager` calls it on everything `getRegisteredManagers()` returns. An add-on manager that doesn't extend `BaseManager` (or provide the method) becomes an error slot in every backup.
+- __Rows in a database: declare it, don't back it up yourself.__ An add-on that keeps rows declares `ngdpbase.addons.<slug>.database` and opens it with `openAddonDatabase` ([#1860](https://github.com/jwilleke/ngdpbase/issues/1860), [storage guide](storage-developer-guide.md#declaring-a-database)). Its backup is `DatabaseManager`'s job, pending [#1723](https://github.com/jwilleke/ngdpbase/issues/1723). Don't write your own copy of a database file.
+- __Never write a database backup unencrypted.__ The decided design writes database backups only under `NGDPBASE_BACKUP_KEY`, and writes nothing without it (#1723).
+- __A backup never carries anything that could be presented.__ Token hashes, session ids and grant secrets stay out, and `restore()` refuses instead of bringing back half a credential. `AgentTokenManager` and `OidcManager` are the pattern (#1111).
+- __Private text stays sealed.__ Vault files go into a backup as stored bytes, never decrypted. A restore never writes plaintext into a sealed vault (`FileSystemProvider.restore`, #1836). Search backups leave private page text out (#1458).
+- __Paths in a backup are data.__ A `restore()` resolves every relative path and refuses one that leaves its folder, as `FileSystemProvider` and `VersioningFileProvider` do.
+- __Backups are never silent__ (#1563). A part that can't be backed up says so: in the backup itself (like `privateOmitted`), in the log at error level, and to admins.
+- __A restore is staged__ (#1723 D1, #1876). New restore code stages for the next start, all or nothing, after a fresh backup of the live data. It never writes into the running site.
+
+## Known gaps
+
+- __A site backup can't be restored__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), P0). Nothing calls `restoreFromFile`. The other managers' `restore()` methods have never run on a real site, and they write live, not staged. Restoring anything but the databases must be staged as #1723 does for the databases.
+- __A backup's completeness is not checked__ (#1876). The inventory above is the first pass. Every "No" row is missing from the `.json.gz`:
+  - Attachment files in the shared pool (#1876).
+  - Footnotes and comments on public pages (no issue yet).
+  - Role membership, persons and organizations, so restored users would have no roles (no issue yet).
+  - The credentials store: passkeys, TOTP, verified email and phone, devices, linked identities, proxy grants (no issue yet).
+  - The audit log (no issue yet).
+  - Shares, notifications and scheduled-job state (no issue yet).
+  - Add-on files under `dataPath`; the forms and feeds managers have no `backup()` at all (no issue yet).
+- __Databases are not backed up yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723), [PR #1875](https://github.com/jwilleke/ngdpbase/pull/1875) pending): neither the application database nor any add-on's.
+- __Key rotation__: once #1723 lands, an old backup needs the backup key it was made with (#1723 D3).
+- __No command-line restore for a site that won't start__ (deferred, #1723 D1).
+- __The backup file is not encrypted__ ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)). It holds password hashes, every user record, the custom configuration with any secrets in it, and the text of vaults that aren't sealed.
+- __A backup is not a snapshot__ ([#1213](https://github.com/jwilleke/ngdpbase/issues/1213)). Managers are asked one after another while the site keeps writing. A manager that fails leaves an error in its slot, and the backup still counts as a success.
+- __Stale, unverified, out of space__ ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). Nothing says when backups stop. Nothing checks free space first or reads the file back after. A backup by hand that fails tells no admin.
+- __Private stores over 256 MB are left out whole__ (no issue yet; #1387 closed). The backup is built in memory. Over that size `privateOmitted` is set and an error logged, but no admin is notified, and every vault is missing from the backup.
+- __Elasticsearch search backups stop at 10,000 documents__ (no issue yet). It can be rebuilt from the pages.
+- __A leftover legacy `pages/private/` folder is not backed up__ (no issue yet).
+- __Two default-config keys do nothing__: `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` (no issue yet).
+
+## Checklist
+
+- [ ] Your manager keeps data: it overrides `backup()` and `restore()`, or its row here says why not
+- [ ] Your add-on's registered managers all have `backup()` (extend `BaseManager`)
+- [ ] Rows are in a declared database (#1860), not a file you copy yourself
+- [ ] No token hash, session id or grant secret in a backup; `restore()` refuses where there is nothing safe to restore
+- [ ] Vault bytes are backed up as stored, and a restore never writes plaintext into a sealed vault
+- [ ] Every path read from a backup is checked to stay in its folder
+- [ ] A part that can't be backed up is recorded in the backup, logged at error level, and reported to admins
+- [ ] Any restore you add is staged for the next start, all or nothing, after a fresh backup
+- [ ] The inventory table and Known gaps here are updated in the same change
