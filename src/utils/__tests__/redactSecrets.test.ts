@@ -226,3 +226,27 @@ describe('redactSecretsFormat', () => {
     expect(out.message).toBe('anything at all');
   });
 });
+
+describe('secrets inside a map, by a wildcard path (#1889)', () => {
+  const ACCOUNTS = 'ngdpbase.addons.accounting.accounts';
+  const config = {
+    'ngdpbase.config.sensitive-values': { [`${ACCOUNTS}.*.account-number`]: 'secret' },
+    // the reader stands in for getProperty, which hands back `$NAME` already resolved
+    [ACCOUNTS]: {
+      checking: { name: 'Checking Account', 'account-number': '123456789012' },
+      savings: { name: 'Savings', 'account-number': '998877665544' }
+    }
+  };
+
+  test('every value the entry names is struck from a log line, named by its path; a sibling is not', () => {
+    const result = refreshRedactedSecrets(reader(config));
+    expect(result.active).toBe(2);
+    expect(redactSecrets('paid from 123456789012 (Checking Account), moved 998877665544'))
+      .toBe(`paid from [redacted:${ACCOUNTS}.checking.account-number] (Checking Account), moved [redacted:${ACCOUNTS}.savings.account-number]`);
+  });
+
+  test('an exact path with no wildcard works the same way', () => {
+    refreshRedactedSecrets(reader({ ...config, 'ngdpbase.config.sensitive-values': { [`${ACCOUNTS}.checking.account-number`]: 'secret' } }));
+    expect(redactSecrets('123456789012 998877665544')).toBe(`[redacted:${ACCOUNTS}.checking.account-number] 998877665544`);
+  });
+});

@@ -29,7 +29,7 @@ import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManag
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
-import { secretKeys } from '../utils/sensitiveValues.js';
+import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
@@ -11882,10 +11882,15 @@ ${panes}
       // nothing and a read-only admin never receives the value at all. An admin
       // who needs one fetches that single key from adminRevealSecret below.
       const secretKeys = this.getSecretConfigKeys();
+      // #1889: a key that is not itself secret may hold secrets at declared
+      // paths (an account number inside an accounts map). Those are replaced
+      // with HIDDEN here too; a `$NAME` reference there is shown, it is not
+      // the secret. Saving puts the stored value back (adminUpdateConfiguration).
+      const levels = valueLevels((k: string, d: unknown) => configManager.getProperty(k, d));
       const strip = (props: unknown): Record<string, unknown> => {
         const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries((props ?? {}) as Record<string, unknown>)) {
-          out[k] = secretKeys.has(k) ? null : v;
+          out[k] = secretKeys.has(k) ? null : hideDeclaredPaths(k, v, levels, NO_SECRETS);
         }
         return out;
       };
@@ -11921,7 +11926,7 @@ ${panes}
           source: described?.source ?? 'config',
           // Never leak a secret's value into the page — the same deny-list that
           // strips them above applies here.
-          effective: secretKeys.has(key) ? null : described?.effective ?? null
+          effective: secretKeys.has(key) ? null : hideDeclaredPaths(key, described?.effective ?? null, levels, NO_SECRETS)
         };
       }
 
@@ -12184,6 +12189,10 @@ ${panes}
       if (typeof value === 'string') {
         try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
       }
+      // #1889: the screen showed this value with its declared secret paths
+      // hidden; a placeholder sent back keeps what is stored there.
+      parsedValue = keepHiddenValues(property, parsedValue, ((configManager.getAllProperties() ?? {}) as Record<string, unknown>)[property],
+        valueLevels((k: string, d: unknown) => configManager.getProperty(k, d)));
       await configManager.setProperty(property, parsedValue, currentUser);
 
       // Return JSON for AJAX requests, redirect for regular form submissions

@@ -17,7 +17,8 @@ import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
-import { secretKeys } from '../utils/sensitiveValues.js';
+import { hideDeclaredPaths, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
+import { envRefName, mapConfigValue, pathString } from '../utils/configPaths.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { CONFIG_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
@@ -632,6 +633,17 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
+   * #1889: a value as configured, every `$NAME` reference in it unresolved,
+   * for the one kind of reader that must see that a secret IS a reference:
+   * AuthManager refuses an outside provider whose client secret is written
+   * into configuration rather than named in the environment. Never for
+   * display: a literal secret would come back as itself.
+   */
+  getUnresolvedProperty(key: string, defaultValue: unknown = null): unknown {
+    return this.mergedConfig?.[key] ?? defaultValue;
+  }
+
+  /**
    * #896: read a property from the SHIPPED defaults only, ignoring instance
    * custom-config overrides. Used by vocabulary providers whose seed must not
    * be shadowed by legacy whole-catalog snapshots in instance config (the
@@ -724,7 +736,10 @@ class ConfigurationManager extends BaseManager {
    * **`$$literal` escape** — for the rare config value that genuinely
    * starts with `$`. `"$$abc"` resolves to `"$abc"`.
    *
-   * Non-string values pass through unchanged. Resolution happens at lookup
+   * Inside a map or list (#1889), the bare `$VAR` form and the `$$` escape
+   * apply to every string, strictly, the error naming the full path
+   * (`key.map-key.field`); the brace form does not. Other non-string values
+   * pass through unchanged. Resolution happens at lookup
    * time (per-`getProperty()` call), not at config load — so tests that
    * mutate `process.env` mid-run see the new value on the next read.
    *
@@ -736,6 +751,16 @@ class ConfigurationManager extends BaseManager {
    * @throws  When the bare `$VAR` form references an unset env var.
    */
   private resolveEnvRef(value: unknown, key: string): unknown {
+    // #1889: inside a map or list, a bare `$NAME` (and the `$$` escape)
+    // resolves wherever it sits, by the same strict rule, and an unset
+    // variable names the full path. The brace form stays top-level only: a
+    // `${...}` deep in a value is far more likely a template of its own than
+    // a path under FAST_STORAGE. Copy on write, so a value with no reference
+    // is returned as itself; nothing is written back to the configuration.
+    if (value !== null && typeof value === 'object') {
+      return mapConfigValue(value, (node, below) =>
+        typeof node === 'string' && below.length > 0 ? this.resolveNestedRef(node, pathString(key, below)) : undefined);
+    }
     if (typeof value !== 'string') return value;
 
     // Escape hatch — `$$literal` → `$literal`. Must come before the bare-form
@@ -747,19 +772,8 @@ class ConfigurationManager extends BaseManager {
     // Bare whole-value form `$VAR`. Strict: must match the WHOLE string and
     // throw on missing. The regex enforces a valid POSIX-shell-style env var
     // name (uppercase letters, digits, underscores; not starting with digit).
-    const bareMatch = /^\$([A-Z_][A-Z0-9_]*)$/.exec(value);
-    if (bareMatch) {
-      const varName = bareMatch[1];
-      if (varName in process.env) {
-        this._envRefHitCount++;
-        return process.env[varName];
-      }
-      this._envRefMissCount++;
-      throw new Error(
-        `Config secret \`${varName}\` referenced by \`${key}\` but env var is unset. ` +
-        `Add \`${varName}=...\` to your .env (or k8s Secret) and restart.`
-      );
-    }
+    const varName = envRefName(value);
+    if (varName) return this.readEnvRef(varName, key);
 
     // Brace embedded form `${VAR}`. Legacy behavior preserved from
     // pre-#775: leaves unresolved placeholders intact when the var is
@@ -781,6 +795,27 @@ class ConfigurationManager extends BaseManager {
     }
 
     return value;
+  }
+
+  /** A string inside a map or list (#1889): `$$` escapes, a bare `$NAME` resolves strictly, anything else is itself. */
+  private resolveNestedRef(value: string, path: string): string | undefined {
+    if (value.charCodeAt(0) !== 36 /* $ */) return value;
+    if (value.startsWith('$$')) return value.slice(1);
+    const varName = envRefName(value);
+    return varName ? this.readEnvRef(varName, path) : value;
+  }
+
+  /** The variable a bare `$NAME` reference names; throws, naming the key or path, when it is unset (#775). */
+  private readEnvRef(varName: string, path: string): string | undefined {
+    if (varName in process.env) {
+      this._envRefHitCount++;
+      return process.env[varName];
+    }
+    this._envRefMissCount++;
+    throw new Error(
+      `Config secret \`${varName}\` referenced by \`${path}\` but env var is unset. ` +
+      `Add \`${varName}=...\` to your .env (or k8s Secret) and restart.`
+    );
   }
 
   /** Audit counters for the boot-time env-ref summary log (#775). */
@@ -806,11 +841,20 @@ class ConfigurationManager extends BaseManager {
     // A raw value of `$VAR` indicates this entry is a secret reference.
     // Resolve it (to validate the env var is set — same throw semantics)
     // but return `"***"` to the caller for log-safety.
-    if (typeof raw === 'string' && /^\$[A-Z_][A-Z0-9_]*$/.test(raw)) {
+    if (envRefName(raw)) {
       // Force the resolution to fire (so it throws if the env var is
       // missing — operators want loud failure, not a silent `"***"`).
       this.resolveEnvRef(raw, key);
       return '***';
+    }
+    // #1889: the same inside a map or list — each bare reference resolves
+    // (and throws when unset) but reads as `***`.
+    if (raw !== null && typeof raw === 'object') {
+      return mapConfigValue(raw, (node, below) => {
+        if (typeof node !== 'string' || below.length === 0) return undefined;
+        const resolved = this.resolveNestedRef(node, pathString(key, below));
+        return envRefName(node) ? '***' : resolved;
+      });
     }
     // Everything else (literals, brace-form templates) is non-secret;
     // return the resolved value.
@@ -882,10 +926,14 @@ class ConfigurationManager extends BaseManager {
     const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
     if (!sink) return;
 
+    // #1889: a key that is not itself secret may hold secrets at declared
+    // paths (an account number inside an accounts map); those are hidden in
+    // the record, the rest of the change kept.
+    const levels = valueLevels((k, d) => this.getProperty(k, d));
     await recordAuditEvent(sink, buildConfigChangeAuditEvent({
       key,
-      before,
-      after,
+      before: hideDeclaredPaths(key, before, levels, NO_SECRETS),
+      after: hideDeclaredPaths(key, after, levels, NO_SECRETS),
       actor: actorOf(ctx),
       secret: isSecretKey(key, secretKeys((k, d) => this.getProperty(k, d)))
     }));
