@@ -117,25 +117,25 @@ Only what the code supports:
 
 ## Known gaps
 
+- __A backup file is a secret: treat it like one__ ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)). The `.json.gz` is not encrypted. It carries the custom configuration with its secrets in plain text (the probe's backup held the SMTP password as written), every user record with its password hash, and the text of vaults that aren't sealed. Keep it as safe as the data folder and `.env`: never on a share others can read, and never sent where you wouldn't send the keys.
 - __A site backup can't be restored__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), P0). Nothing calls `restoreFromFile`. The other managers' `restore()` methods have never run on a real site, and they write live, not staged. Restoring anything but the databases must be staged as #1723 does for the databases.
 - __A backup's completeness is not checked__ (#1876). The inventory above is the first pass. Every "No" row is missing from the `.json.gz`:
   - Attachment files in the shared pool (#1876).
-  - Footnotes and comments on public pages (no issue yet).
-  - Role membership, persons and organizations, so restored users would have no roles (no issue yet).
-  - The credentials store: passkeys, TOTP, verified email and phone, devices, linked identities, proxy grants (no issue yet).
-  - The audit log (no issue yet).
-  - Shares, notifications and scheduled-job state (no issue yet).
-  - Add-on files under `dataPath`; the forms and feeds managers have no `backup()` at all (no issue yet).
+  - Footnotes and comments on public pages ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+  - Role membership, persons and organizations, so restored users would have no roles ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+  - The credentials store: passkeys, TOTP, verified email and phone, devices, linked identities, proxy grants ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+  - The audit log ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+  - Shares, notifications and scheduled-job state ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+  - Add-on files under `dataPath`; the forms and feeds managers have no `backup()` at all ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
 - __Databases are not backed up yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723), [PR #1875](https://github.com/jwilleke/ngdpbase/pull/1875) pending): neither the application database nor any add-on's.
 - __Key rotation__: once #1723 lands, an old backup needs the backup key it was made with (#1723 D3).
 - __No command-line restore for a site that won't start__ (deferred, #1723 D1).
-- __The backup file is not encrypted__ ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)). It holds password hashes, every user record, the custom configuration with any secrets in it, and the text of vaults that aren't sealed.
 - __A backup is not a snapshot__ ([#1213](https://github.com/jwilleke/ngdpbase/issues/1213)). Managers are asked one after another while the site keeps writing. A manager that fails leaves an error in its slot, and the backup still counts as a success.
 - __Stale, unverified, out of space__ ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). Nothing says when backups stop. Nothing checks free space first or reads the file back after. A backup by hand that fails tells no admin.
-- __Private stores over 256 MB are left out whole__ (no issue yet; #1387 closed). The backup is built in memory. Over that size `privateOmitted` is set and an error logged, but no admin is notified, and every vault is missing from the backup.
-- __Elasticsearch search backups stop at 10,000 documents__ (no issue yet). It can be rebuilt from the pages.
-- __A leftover legacy `pages/private/` folder is not backed up__ (no issue yet).
-- __Two default-config keys do nothing__: `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` (no issue yet).
+- __Private stores over 256 MB are left out whole__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238); #1387 closed). The backup is built in memory. Over that size `privateOmitted` is set and an error logged, but no admin is notified, and every vault is missing from the backup.
+- __Elasticsearch search backups stop at 10,000 documents__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)). It can be rebuilt from the pages.
+- __A leftover legacy `pages/private/` folder is not backed up__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+- __Two default-config keys do nothing__: `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
 
 ## Checklist
 
