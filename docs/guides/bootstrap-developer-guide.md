@@ -166,6 +166,8 @@ __In the Docker image the name is baked.__ `docker/Dockerfile` sets `ENV NGDPBAS
 
 ### Env references inside config values
 
+__Only a key's whole top-level value is resolved today.__ A `$VAR` inside an object, map or array (for example an add-on's account map) comes back as the literal text, and `ngdpbase.config.sensitive-values` can only hide top-level keys; both are [#1889](https://github.com/jwilleke/ngdpbase/issues/1889).
+
 Any config value may reference an environment variable. Resolution happens __at lookup time__, per `getProperty()` call — not at config load — so a test that mutates `process.env` mid-run sees the new value on the next read (`ConfigurationManager.resolveEnvRef()`).
 
 There are three forms, with deliberately different failure modes:
@@ -307,6 +309,12 @@ Three files can carry an environment variable, and they are not interchangeable.
 
 Instance separation is environment-driven rather than first-class: give each instance its own `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, and optionally `INSTANCE_CONFIG_FILE`. `server.sh` refuses to start a second instance on an occupied port and keeps `<checkout>/.ngdpbase.pid`; the server's own single-instance lock is `<os.tmpdir()>/ngdpbase-<hash of the checkout>.pid` ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687)), so two servers never share one checkout.
 
+__Each instance has its own identity__ (operator, 2026-10-18, [#1878](https://github.com/jwilleke/ngdpbase/issues/1878)): its own `ngdpbase.application-name`, `ngdpbase.favicon-path` and `ngdpbase.application.base-url`, set in that instance's `.env` or `app-custom-config.json`, never in a repository.
+
+- __Name:__ shown in the header and title, typed to confirm a database restore, and the passkey label.
+- __Base URL:__ links in email and sign-in redirects are built from it, and its __hostname__ is the passkey scope. A port of its own is not enough: give each instance its own hostname, e.g. `http://jimstest.localhost:3000`, `http://fairways.localhost:2121`. Set it before anyone enrols a passkey, because changing the hostname orphans every passkey on that instance.
+- __Favicon:__ there is no per-instance folder for one, so an inline `data:image/svg+xml,…` URI is fine. `ngdpbase.favicon-path` only counts when set in the instance's own config, and it is also used as the site logo.
+
 ## Run-as user (PUID/PGID)
 
 The user the server runs as is a setting, the same on bare metal, Docker and Kubernetes ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693), operator 2026-10-08). `bootstrap-env.ts` loads the environment and the `.env` files, then — before anything is written — runs `becomeRunAsUser()` (`src/utils/runAsUser.ts`):
@@ -358,6 +366,8 @@ Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [doc
 
 ## Known gaps
 
+- [#1878](https://github.com/jwilleke/ngdpbase/issues/1878) — nothing warns when an instance still uses the shipped name, favicon or base URL.
+- [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — `$VAR` is not resolved inside nested config values, and `sensitive-values` takes no nested paths.
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645)
 
 ## History
