@@ -4,6 +4,7 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type SearchManager from '../../../dist/src/managers/SearchManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+import type { JournalAuthorCounter } from '../../../dist/src/types/Journal.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -56,8 +57,11 @@ export interface JournalQueryOptions {
  * Performance is fine at journal scale (≲100 entries); per-page metadata
  * reads are O(n) per call. If a deployment grows materially larger, an
  * engine-scoped cache with save-hook invalidation would be the next step.
+ *
+ * Implements core's `JournalAuthorCounter` (#1868): core calls countByAuthor
+ * through that shape, so a signature change here fails the add-on build.
  */
-class JournalDataManager extends BaseManager {
+class JournalDataManager extends BaseManager implements JournalAuthorCounter {
   readonly description = 'Journal entry query helpers over SearchManager + PageManager';
 
   constructor(engine: WikiEngine) {

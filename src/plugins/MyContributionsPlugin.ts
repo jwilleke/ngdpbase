@@ -17,6 +17,8 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type { JournalAuthorCounter } from '../types/Journal.js';
 
 interface UserManagerLike {
   getUser?: (username: string) => Promise<{ username: string } | undefined | null>;
@@ -41,10 +43,6 @@ interface PageManagerLike {
   getPagesByEditor?: (u: string, ctx: unknown) => Promise<unknown[]>;
   getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
   listOwnDeletedPrivatePages?: (ctx: unknown) => Promise<unknown[]>;
-}
-
-interface JournalManagerLike {
-  countByAuthor?: (u: string) => number;
 }
 
 interface ContributionCounts {
@@ -186,9 +184,10 @@ async function getContributionCounts(
   }
 
   try {
-    const journalManager = engine?.getManager('JournalDataManager') as JournalManagerLike | undefined;
+    const journalManager = engine?.getManager('JournalDataManager') as Partial<JournalAuthorCounter> | undefined;
     if (journalManager?.countByAuthor) {
-      counts.journal = journalManager.countByAuthor(target);
+      // The requester is the render's userContext — the request's PermissionSubject (#1868).
+      counts.journal = await journalManager.countByAuthor(target, requester as unknown as ActorContext);
     }
   } catch (err) {
     engine?.logger?.error?.('[MyContributionsPlugin] journal count failed:', err);

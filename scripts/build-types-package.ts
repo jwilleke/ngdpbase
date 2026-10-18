@@ -168,7 +168,7 @@ function typecheckConsumer(): void {
       files: ['index.ts']
     }));
     fs.writeFileSync(path.join(dir, 'index.ts'), [
-      "import type { AddonModule, AddonHost, WikiEngine, ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, SimplePlugin, AuditEvent, JobRunContext, DatabaseManager, ExportManager, PolicyDecisionPoint, Migration } from '@jwilleke/ngdpbase-types';",
+      "import type { AddonModule, AddonHost, WikiEngine, ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, SimplePlugin, AuditEvent, JobRunContext, DatabaseManager, ExportManager, PolicyDecisionPoint, Migration, AddonDatabaseDeclaration } from '@jwilleke/ngdpbase-types';",
       "import { buildAddonHost, openAddonTestDatabase, toCsv, formatters } from '@jwilleke/ngdpbase-types/testing';",
       'const migrations: Migration[] = [];',
       "const plugin: SimplePlugin = { name: 'P', execute: (context, params) => context.formatters.escapeHtml(String(params.x)) };",
@@ -182,7 +182,7 @@ function typecheckConsumer(): void {
       "    engine.app?.use('/addons/demo', engine.createRouter(), engine.serveStatic('public'));",
       '  }',
       '};',
-      'type Used = [ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, AuditEvent, JobRunContext];',
+      'type Used = [AddonDatabaseDeclaration, ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, AuditEvent, JobRunContext];',
       "const host: AddonHost = buildAddonHost('demo', {});",
       "openAddonTestDatabase('demo', { migrations, ledgerTable: 'demo_schema_migrations' });",
       "const csv: string = toCsv(['a'], [[1]]) + formatters.escapeHtml('<');",

@@ -33,6 +33,13 @@
  * value of the wrong type is refused, with a problem line naming it, and its
  * addon is then not loaded at all (operator, 2026-10-16): none of its other
  * keys apply, and its sound entries are kept as a turned-off addon's are.
+ *
+ * A second, `ngdpbase.addons.<slug>.database` (#1860): an addon's database
+ * declaration is read the same way, from every installed addon, so a
+ * turned-off addon's database stays known (and is backed up, #1723). It is
+ * never merged into the configuration: DatabaseManager reads the declarations
+ * from here, so the operator's file cannot change one. An invalid declaration
+ * stops its addon loading, as a refused system-category does.
  */
 
 import fs from 'fs';
@@ -43,6 +50,7 @@ import { configuredInstallSlugs, findNodeModulesDir, installedAddonsDir, matchNp
 import { lockedAddonDirsSync } from './addonLock.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
+import { addonDatabaseKey, addonDatabaseKeySlug, addonDatabaseProblems, type AddonDatabaseDeclaration, type DatabaseEncrypt } from './addonDatabaseRules.js';
 
 export const ADDONS_PATH_KEY = 'ngdpbase.managers.addons-manager.addons-path';
 export const ADDONS_MANAGER_ENABLED_KEY = 'ngdpbase.managers.addons-manager.enabled';
@@ -222,6 +230,58 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
   return layer;
 }
 
+export interface AddonDatabaseLayer {
+  /** Every sound declaration, of every installed addon, `enabled` as its addon is. */
+  declarations: AddonDatabaseDeclaration[];
+  /** Addons whose declaration was refused, by slug, with why: never loaded. */
+  refused: Map<string, string>;
+  problems: string[];
+}
+
+/**
+ * The databases the addons declare (#1860), from every addon's file whether
+ * or not it is enabled. An addon declares only under its own slug; a second
+ * declaration of one owner's ledger is refused. `custom` is the operator's
+ * file: a value there for a declaration's key is ignored, and said so.
+ */
+export function addonDatabaseLayer(addons: readonly AddonDefaults[], custom: Record<string, unknown>): AddonDatabaseLayer {
+  const layer: AddonDatabaseLayer = { declarations: [], refused: new Map(), problems: [] };
+  const ledgerBy = new Map<string, string>();
+  for (const addon of addons) {
+    const reasons: string[] = [];
+    let declared: unknown;
+    for (const [key, value] of Object.entries(addon.defaults)) {
+      const slug = addonDatabaseKeySlug(key);
+      if (slug === null) continue;
+      if (slug === addon.slug) declared = value;
+      else reasons.push(`it declares ${key}; an add-on declares only its own, ${addonDatabaseKey(addon.slug)}`);
+    }
+    if (declared !== undefined) {
+      const valueProblems = addonDatabaseProblems(declared);
+      reasons.push(...valueProblems);
+      if (valueProblems.length === 0) {
+        const { owner, ledgerTable } = declared as { owner: string; ledgerTable: string };
+        const by = ledgerBy.get(`${owner}/${ledgerTable}`);
+        if (by) reasons.push(`add-on '${by}' already declares ledger '${ledgerTable}' of database '${owner}'`);
+      }
+    }
+    if (reasons.length > 0) {
+      const who = `add-on '${addon.slug}'${addon.enabled ? '' : ' (turned off)'}`;
+      layer.problems.push(`${who}: its database declaration is refused (${reasons.join('; ')}); the add-on is not loaded`);
+      layer.refused.set(addon.slug, `its database declaration was refused: ${reasons.join('; ')}`);
+      continue;
+    }
+    if (declared === undefined) continue;
+    const { owner, ledgerTable, encrypt } = declared as { owner: string; ledgerTable: string; encrypt: DatabaseEncrypt };
+    ledgerBy.set(`${owner}/${ledgerTable}`, addon.slug);
+    layer.declarations.push({ owner, ledgerTable, encrypt, declaredBy: addon.slug, enabled: addon.enabled });
+    if (custom[addonDatabaseKey(addon.slug)] !== undefined) {
+      layer.problems.push(`app-custom-config.json sets ${addonDatabaseKey(addon.slug)}, which is the declaration of add-on '${addon.slug}'; the site's value is ignored`);
+    }
+  }
+  return layer;
+}
+
 /**
  * The owner's declaration stands (operator, 2026-09-29): for each entry an
  * addon declared, the fields in OWNER_DECIDED_FIELDS are the addon's, never
@@ -266,25 +326,30 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   shipped: T,
   addons: readonly AddonDefaults[],
   custom: Partial<T>
-): { merged: T; problems: string[]; refused: Map<string, string> } {
+): { merged: T; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[] } {
   const customCategories = (custom as Record<string, unknown>)[SYSTEM_CATEGORY_KEY];
   const layer = addonCategoryLayer(shipped[SYSTEM_CATEGORY_KEY], customCategories, addons);
+  const databaseLayer = addonDatabaseLayer(addons, custom);
+  const refused = new Map(layer.refused);
+  for (const [slug, reason] of databaseLayer.refused) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
-    .filter((a) => a.enabled && !layer.refused.has(a.slug))
+    .filter((a) => a.enabled && !refused.has(a.slug))
     .reduce<Record<string, unknown>>((acc, a) => {
       const rest = { ...a.defaults };
       delete rest[SYSTEM_CATEGORY_KEY];
+      for (const key of Object.keys(rest)) if (addonDatabaseKeySlug(key) !== null) delete rest[key];
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: layer.problems, refused: layer.refused };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems], refused, databases };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems], refused: layer.refused };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems], refused, databases };
 }
 
 /**
@@ -295,26 +360,29 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
  * `problems` names every addon system-category refused, every operator value
  * an owner's declaration overrode, and every turned-off addon whose file
  * could not be read; `refused` names, by slug, each addon that must not load
- * because an entry it declares was refused, and why (#1559).
+ * because an entry it declares was refused, and why (#1559), or because its
+ * database declaration was (#1860); `databases` is every sound database
+ * declaration of every installed addon, on or off (#1860).
  */
 export function mergeConfigWithAddons<T extends Record<string, unknown>>(
   shipped: T,
   custom: Partial<T>,
   cwd: string = process.cwd(),
   dataFolder: string = instanceDataFolder()
-): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string> } {
+): { merged: T; declared: T; addons: AddonDefaults[]; problems: string[]; refused: Map<string, string>; databases: AddonDatabaseDeclaration[] } {
   const base = deepMergeConfigs(shipped, custom);
   const all = discoverAddonDefaults(base, cwd, dataFolder);
-  const { merged, problems, refused } = mergeWithAddonLayer(shipped, all, custom);
+  const { merged, problems, refused, databases } = mergeWithAddonLayer(shipped, all, custom);
   const unreadable = all
     .filter((a) => !a.enabled && a.error)
-    .map((a) => `add-on '${a.slug}' (turned off): config/default-config.json could not be read (${a.error}); its system-categories are not known`);
+    .map((a) => `add-on '${a.slug}' (turned off): config/default-config.json could not be read (${a.error}); its system-categories and database are not known`);
   return {
     merged,
     declared: mergeWithAddonLayer(shipped, all, {}).merged,
     addons: all.filter((a) => a.enabled && !refused.has(a.slug)),
     problems: [...unreadable, ...problems],
-    refused
+    refused,
+    databases
   };
 }
 

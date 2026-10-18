@@ -36,5 +36,6 @@ export type { JobRunContext } from '../../src/managers/BackgroundJobManager.js';
 // The managers add-ons reach through `engine.getManager`, and what their add-on methods take.
 export type { default as DatabaseManager, AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
 export type { Migration } from '../../src/providers/sqliteMigrations.js';
+export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager } from '../../src/managers/ExportManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';

@@ -6,6 +6,7 @@
  * - Self-view vs other-user view (6 rows vs 3 rows)
  * - HTML escaping on user-supplied username
  * - Graceful degradation when managers / methods are absent
+ * - Journal count carries the requester and is awaited (#1868)
  *
  * @jest-environment node
  */
@@ -33,7 +34,7 @@ function makeContext(opts: {
       getPagesSharedWith: vi.fn().mockResolvedValue([{}])
     },
     JournalDataManager: opts.journalManager ?? {
-      countByAuthor: vi.fn().mockReturnValue(7)
+      countByAuthor: vi.fn().mockResolvedValue(7)
     },
     // Default: every queried user exists. Pass userManager: null to skip
     // registration (simulates older deployments without UserManager).
@@ -381,6 +382,26 @@ describe('MyContributionsPlugin', () => {
       const result = await MyContributionsPlugin.execute!(ctx, { username: 'alice' }) as string;
       expect(result).not.toContain('/my/captures');
       expect(result).not.toContain('My Captures');
+    });
+  });
+
+  describe('journal count (#1868)', () => {
+    test('passes the requester to countByAuthor and renders its resolved number', async () => {
+      const countByAuthor = vi.fn().mockResolvedValue(7);
+      const ctx = makeContext({ username: 'alice', journalManager: { countByAuthor } });
+      const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
+      expect(countByAuthor).toHaveBeenCalledWith('alice', ctx.userContext);
+      expect(result).toMatch(/Journal Entries[\s\S]*?>7</);
+      expect(result).not.toContain('[object Promise]');
+    });
+
+    test('a rejecting countByAuthor is logged and the card still renders', async () => {
+      const countByAuthor = vi.fn().mockRejectedValue(new TypeError('boom'));
+      const ctx = makeContext({ username: 'alice', journalManager: { countByAuthor } });
+      const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
+      expect(result).toContain('My Contributions');
+      expect(result).toMatch(/Journal Entries[\s\S]*?–/);
+      expect(ctx.engine.logger.error).toHaveBeenCalledWith('[MyContributionsPlugin] journal count failed:', expect.any(TypeError));
     });
   });
 });

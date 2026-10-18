@@ -92,6 +92,24 @@ describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {
     expect(() => openAddonTestDatabase('accounting-dues', { migrations: [], ledgerTable: 'accounting_schema_migrations' })).toThrow(/must start with 'accounting_dues_'/);
   });
 
+  describe('with the add-on\'s declaration (#1860)', () => {
+    const ledger = { migrations: [], ledgerTable: 'ledger_schema_migrations' };
+    const declared = (value: unknown) => ({ slug: 'ledger', defaults: { 'ngdpbase.addons.ledger.database': value } });
+
+    test('opens a declared database, encrypt "required" included (in memory, no key)', () => {
+      const db = openAddonTestDatabase<SqliteHandle>('ledger', ledger, declared({ owner: 'ledger', ledgerTable: 'ledger_schema_migrations', encrypt: 'required' }));
+      db.close();
+    });
+
+    test('refuses a missing declaration, another ledger, and a malformed one', () => {
+      expect(() => openAddonTestDatabase('ledger', ledger, { slug: 'ledger', defaults: {} })).toThrow(/No add-on declares database 'ledger'/);
+      expect(() => openAddonTestDatabase('ledger', ledger, declared({ owner: 'ledger', ledgerTable: 'ledger_other', encrypt: 'optional' })))
+        .toThrow(/not with ledger 'ledger_schema_migrations'/);
+      expect(() => openAddonTestDatabase('ledger', ledger, declared({ owner: 'ledger', ledgerTable: 'ledger_schema_migrations', encrypt: 'yes' })))
+        .toThrow(/is not loaded: .*encrypt must be "required" or "optional"/);
+    });
+  });
+
   test('toCsv is ExportManager.toCsv', () => {
     const rows = [['=SUM(A1)', -12550, 'a,"b"'], [null, true, 'line\nbreak']];
     expect(toCsv(['x', 'y', 'z'], rows)).toBe(new ExportManager({} as WikiEngine).toCsv(['x', 'y', 'z'], rows));

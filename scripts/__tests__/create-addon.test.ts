@@ -32,6 +32,7 @@ import {
   PUBLISH_WORKFLOW_VERSION,
   type ScaffoldOptions
 } from '../create-addon';
+import { NONCE, scriptsWithoutNonce, inlineHandlers, javascriptUrls } from '../../src/__tests__/__fixtures__/viewCspContract';
 
 let tmp: string;
 
@@ -188,6 +189,21 @@ describe('#1244 — the generated addon has the guarded defaults, and passes eve
     expect(subject.run(repo)).toEqual([]);
     // And the view IS in the csrf guard's scope — a tokenless POST there would be reported.
     expect(csrf.collectFiles(repo)).toContain(path.join('addons', 'volcano-watch', 'views', 'volcano-watch-status.ejs'));
+  });
+
+  // #1706: the scaffold's views follow the CSP contract the host's own views are held to.
+  test('every generated view carries the nonce, and has no inline handler or javascript: URL', async () => {
+    await scaffoldAddon(opts());
+    const viewsDir = path.join(tmp, 'volcano-watch', 'views');
+    const views = (await fs.readdir(viewsDir)).filter((f) => f.endsWith('.ejs'));
+    expect(views.length).toBeGreaterThan(0);
+    for (const name of views) {
+      const source = await fs.readFile(path.join(viewsDir, name), 'utf8');
+      expect(source).toContain(NONCE);
+      expect(scriptsWithoutNonce(source)).toEqual([]);
+      expect(inlineHandlers(source)).toEqual([]);
+      expect(javascriptUrls(source)).toEqual([]);
+    }
   });
 });
 
@@ -533,6 +549,38 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect(wf.jobs.publish.outputs).toEqual({ name: '${{ steps.tag.outputs.name }}', version: '${{ steps.tag.outputs.version }}' });
     });
 
+    describe('the release is the repository\'s Latest only for a plain v<version> tag', () => {
+      // Runs the release step with a stub gh that records its arguments.
+      function releaseArgs(plainTags: boolean, tag: string): string[] {
+        const bin = fs.mkdtempSync(path.join(tmp, 'bin-'));
+        const log = path.join(bin, 'args');
+        fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\n`, { mode: 0o755 });
+        const wf = yaml.load(publishWorkflow({ plainTags })) as Workflow;
+        const r = runStep(wf.jobs.release.steps[2], tmp, {
+          PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_REF_NAME: tag, TARBALL: 'x.tgz', SPEC: 'x@0.1.0', GH_TOKEN: 't',
+          NGDPBASE_PLAIN_TAGS: String(plainTags)
+        });
+        expect(r.status).toBe(0);
+        return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+      }
+
+      test('a <slug>-v<version> release is not marked Latest, with or without --plain-tags', () => {
+        for (const plain of [false, true]) {
+          const args = releaseArgs(plain, 'volcano-watch-v0.1.0');
+          expect(args.slice(0, 4)).toEqual(['release', 'create', 'volcano-watch-v0.1.0', 'x.tgz']);
+          expect(args).toContain('--latest=false');
+          expect(args).toContain('--verify-tag');
+        }
+      });
+
+      test('a plain v<version> release (--plain-tags) leaves Latest to GitHub', () => {
+        const args = releaseArgs(true, 'v0.1.0');
+        expect(args.slice(0, 3)).toEqual(['release', 'create', 'v0.1.0']);
+        expect(args.some(a => a.startsWith('--latest'))).toBe(false);
+        expect(args).toContain('--verify-tag');
+      });
+    });
+
     test('the Node/npm check runs and passes on this repository\'s engines (>=24.15)', async () => {
       const { wf } = await load();
       const s = step(wf, 'Node 24.15 or later, npm 11.5.1 or later');
@@ -726,6 +774,17 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         const r = await updatePublishWorkflow(repoRoot());
         expect(r).toMatchObject({ from: 0, to: PUBLISH_WORKFLOW_VERSION, plainTags: true });
         expect(await fs.readFile(file(), 'utf8')).toBe(publishWorkflow({ plainTags: true }));
+      });
+
+      test('rewrites a version-1 file, which let a <slug>-v* release become Latest, to version 2', async () => {
+        expect(PUBLISH_WORKFLOW_VERSION).toBe(2);
+        const v1 = publishWorkflow({}).replace(/: \d+\n/, ': 1\n').replace(' "$@" \\', ' \\');
+        expect(v1).not.toContain('"$@"');
+        await fs.outputFile(file(), v1);
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 1, to: 2, plainTags: false });
+        const now = await fs.readFile(file(), 'utf8');
+        expect(now).toBe(publishWorkflow({}));
+        expect(now).toContain('set -- --latest=false');
       });
 
       test('keeps a default (slug-tag) file default, reads a pre-marker v* file as plain, and writes a missing one', async () => {

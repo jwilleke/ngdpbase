@@ -22,6 +22,9 @@
  * (`openAddonDatabase`, ngdp-accounting-addons#13): its own file beside the
  * application database, opened by the same provider under the same key, with
  * its own migration ledger. A dependent add-on adds its ledger to that file.
+ * Only a declared database is opened (#1860): the add-on names it in its own
+ * config/default-config.json (`ngdpbase.addons.<slug>.database`), and one
+ * declared `encrypt: "required"` is never opened without the key.
  */
 import path from 'node:path';
 import BaseManager from './BaseManager.js';
@@ -32,12 +35,10 @@ import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/Sq
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
 import logger from '../utils/logger.js';
+import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 
 /** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
 export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
-
-/** A canonical add-on slug: lowercase letters and digits, single dashes. */
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** What an add-on hands over to have its database opened and migrated. */
 export interface AddonDatabaseOptions {
@@ -47,21 +48,48 @@ export interface AddonDatabaseOptions {
   ledgerTable: string;
 }
 
+/** A declared add-on database as Admin → Add-ons and the backup (#1723) see it. */
+export interface DeclaredAddonDatabase extends AddonDatabaseDeclaration {
+  /** `<owner>.db` beside the application database; null when no application database is configured. */
+  file: string | null;
+  /** Whether this declaration's ledger is open in this process. */
+  open: boolean;
+}
+
 /**
- * The rules an add-on's database request is held to: the owner is a canonical
- * slug, and the ledger table starts with that slug (dashes as underscores) and
- * `_`. `openAddonDatabase` applies them, and so does the test kit's in-memory
- * database (`@jwilleke/ngdpbase-types/testing`, #1865), so a test refuses what
- * a site refuses.
+ * The request rules (addonDatabaseRules): the owner is a canonical slug, and
+ * the ledger table starts with its prefix. `openAddonDatabase` applies them,
+ * and so does the test kit's in-memory database
+ * (`@jwilleke/ngdpbase-types/testing`, #1865), so a test refuses what a site
+ * refuses.
  */
 export function checkAddonDatabaseRequest(owner: string, options: AddonDatabaseOptions): void {
-  if (!SLUG.test(owner)) {
+  if (!ADDON_SLUG.test(owner)) {
     throw new Error(`'${owner}' is not an add-on slug — lowercase letters and digits, single dashes (ngdp-accounting-addons#13)`);
   }
-  const prefix = `${owner.replace(/-/g, '_')}_`;
+  const prefix = ledgerPrefix(owner);
   if (!options.ledgerTable.startsWith(prefix)) {
     throw new Error(`Add-on '${owner}': migration ledger table '${options.ledgerTable}' must start with '${prefix}' (ngdp-accounting-addons#13)`);
   }
+}
+
+/**
+ * The declaration of this owner's ledger among `declarations`, or a refusal
+ * naming what is missing (#1860). `openAddonDatabase` asks it of the site's
+ * declarations; the test kit asks it of the add-on's own (#1865).
+ */
+export function addonDatabaseDeclarationFor(declarations: readonly AddonDatabaseDeclaration[], owner: string, ledgerTable: string): AddonDatabaseDeclaration {
+  const forOwner = declarations.filter((d) => d.owner === owner);
+  const declaration = forOwner.find((d) => d.ledgerTable === ledgerTable);
+  if (!declaration) {
+    throw new Error(forOwner.length === 0
+      ? `No add-on declares database '${owner}' — declare ngdpbase.addons.<slug>.database { owner, ledgerTable, encrypt } in the add-on's config/default-config.json (#1860)`
+      : `Database '${owner}' is declared, but not with ledger '${ledgerTable}' — the add-on that opens it declares that ledger (#1860)`);
+  }
+  if (!declaration.enabled) {
+    throw new Error(`Database '${owner}' ledger '${ledgerTable}' is declared by add-on '${declaration.declaredBy}', which is turned off or not loaded (#1860)`);
+  }
+  return declaration;
 }
 
 interface AddonDatabase {
@@ -143,12 +171,21 @@ class DatabaseManager extends BaseManager {
    *
    * Requires the application database: an operator who has not set
    * `ngdpbase.database.provider` to `sqlite` has not chosen to keep a database.
+   *
+   * Opens only a declared database (#1860): an enabled add-on declares this
+   * owner and this ledger in `ngdpbase.addons.<slug>.database`. A declaration
+   * with `encrypt: "required"` is refused when `NGDPBASE_DATABASE_KEY` is not
+   * set; nothing is opened in the clear.
    */
   openAddonDatabase<Handle = unknown>(owner: string, options: AddonDatabaseOptions): Handle {
     if (!this.provider || !this.databaseFile) {
       throw new Error(`Add-on '${owner}' needs a database, but none is open — set ngdpbase.database.provider to 'sqlite' (ngdp-accounting-addons#13)`);
     }
     checkAddonDatabaseRequest(owner, options);
+    const declaration = addonDatabaseDeclarationFor(this.declarations(), owner, options.ledgerTable);
+    const key = process.env[DATABASE_KEY_ENV] ?? '';
+    const refusal = DatabaseManager.keyRefusal(declaration, key);
+    if (refusal) throw new Error(refusal);
 
     const existing = this.addonDatabases.get(owner);
     if (existing) {
@@ -165,7 +202,6 @@ class DatabaseManager extends BaseManager {
     if (path.resolve(file) === path.resolve(this.databaseFile)) {
       throw new Error(`Add-on '${owner}' would open the application database itself (${file}) (ngdp-accounting-addons#13)`);
     }
-    const key = process.env[DATABASE_KEY_ENV] ?? '';
     const provider = new SqliteDatabaseProvider(file, key, options.migrations, options.ledgerTable, { busyTimeoutMs: this.busyTimeoutMs });
     if (!provider.integrityOk()) {
       provider.close();
@@ -175,6 +211,46 @@ class DatabaseManager extends BaseManager {
     const { applied, skipped } = provider.migrations;
     logger.info(`[DatabaseManager] Opened ${file} for ${owner} (${key ? 'encrypted' : 'NOT encrypted'}) — ledger ${options.ledgerTable}, migrations applied ${applied.length}, already present ${skipped}`);
     return provider.handle as Handle;
+  }
+
+  /**
+   * Every add-on database declared on this site (#1860), whether or not its
+   * add-on is turned on — so a turned-off add-on's file is still listed and
+   * backed up (#1723). One entry per declared ledger; several may share an
+   * owner's file.
+   */
+  getDeclaredDatabases(): DeclaredAddonDatabase[] {
+    return this.declarations().map((d) => ({
+      ...d,
+      file: this.databaseFile ? path.join(path.dirname(this.databaseFile), `${d.owner}.db`) : null,
+      open: this.addonDatabases.get(d.owner)?.ledgers.has(d.ledgerTable) ?? false
+    }));
+  }
+
+  /**
+   * Why this add-on must not load, decided before it is imported (#1860): it
+   * declares a database `encrypt: "required"` and no key is set. Null when it
+   * may load. Asked by AddonsManager, as the configuration merge's refusals
+   * are (#1559).
+   */
+  addonRefusal(slug: string): string | null {
+    const key = process.env[DATABASE_KEY_ENV] ?? '';
+    for (const declaration of this.declarations()) {
+      if (declaration.declaredBy !== slug || !declaration.enabled) continue;
+      const refusal = DatabaseManager.keyRefusal(declaration, key);
+      if (refusal) return refusal;
+    }
+    return null;
+  }
+
+  private declarations(): readonly AddonDatabaseDeclaration[] {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonDatabaseDeclarations?.() ?? [];
+  }
+
+  /** The one rule: a database declared `encrypt: "required"` is never opened without the key. */
+  private static keyRefusal(declaration: AddonDatabaseDeclaration, key: string): string | null {
+    if (declaration.encrypt !== 'required' || key) return null;
+    return `Add-on '${declaration.declaredBy}' declares database '${declaration.owner}' with encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never opened unencrypted (#1860)`;
   }
 
   /** Whether every open database passes SQLite's quick check; true when none is configured. */

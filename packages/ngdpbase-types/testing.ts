@@ -5,16 +5,18 @@
  *
  * - `buildAddonHost(slug, defaults)`: the real host, so an undeclared audit
  *   event fails in a test as it does on a site;
- * - `openAddonTestDatabase(owner, { migrations, ledgerTable })`: the handle
- *   `DatabaseManager.openAddonDatabase` returns, opened in memory, so
- *   migrations and triggers run as they do on a site;
+ * - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`:
+ *   the handle `DatabaseManager.openAddonDatabase` returns, opened in memory,
+ *   so migrations and triggers run as they do on a site, checked against the
+ *   add-on's database declaration when `declaredBy` is given;
  * - `toCsv`: `ExportManager.toCsv`, the one CSV writer;
  * - `formatters`: the plugin formatters, the object a plugin gets as
  *   `context.formatters`.
  */
 import type { WikiEngine } from '../../src/types/WikiEngine.js';
 import ExportManager from '../../src/managers/ExportManager.js';
-import { checkAddonDatabaseRequest, type AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
+import { addonDatabaseDeclarationFor, checkAddonDatabaseRequest, type AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
+import { addonDatabaseLayer } from '../../src/utils/addonConfigLayer.js';
 import SqliteDatabaseProvider, { type SqliteHandle } from '../../src/providers/SqliteDatabaseProvider.js';
 import { buildAddonHost as buildHost, type AddonHost } from '../../src/utils/addonHost.js';
 import { bindAuditEvents } from '../../src/utils/auditRegistry.js';
@@ -36,17 +38,37 @@ export function buildAddonHost(slug: string, addonDefaults: Record<string, unkno
   return buildHost(slug, addonDefaults);
 }
 
+/** The add-on whose declaration a test database is checked against: its slug and its own `config/default-config.json`. */
+export interface AddonTestDatabaseDeclarer {
+  slug: string;
+  defaults: Record<string, unknown>;
+}
+
 /**
  * An add-on's database as `DatabaseManager.openAddonDatabase` returns it, in
  * memory: the same provider, migration ledger and owner and ledger-table
  * rules, with no file and no key. Each call opens a new database; the test
  * closes the handle (`db.close()`).
  *
+ * With `declaredBy`, the add-on's declaration (`ngdpbase.addons.<slug>.database`
+ * in its defaults, #1860) is read by core's own reader and must name this
+ * owner and ledger, so a test fails where a site would refuse the add-on or
+ * the open. `encrypt` is not applied: the database is in memory and never
+ * written to disk, so a declaration with `encrypt: "required"` opens without a key.
+ *
  * @param owner - The add-on slug that owns the database
  * @param options - Its migrations and ledger table, as given to `openAddonDatabase`
+ * @param declaredBy - The add-on whose declaration must cover this database
  */
-export function openAddonTestDatabase<Handle = SqliteHandle>(owner: string, options: AddonDatabaseOptions): Handle {
+export function openAddonTestDatabase<Handle = SqliteHandle>(owner: string, options: AddonDatabaseOptions, declaredBy?: AddonTestDatabaseDeclarer): Handle {
   checkAddonDatabaseRequest(owner, options);
+  if (declaredBy) {
+    const { slug, defaults } = declaredBy;
+    const layer = addonDatabaseLayer([{ slug, dir: '', source: 'directory', enabled: true, defaults }], {});
+    const refused = layer.refused.get(slug);
+    if (refused) throw new Error(`Add-on '${slug}' is not loaded: ${refused}`);
+    addonDatabaseDeclarationFor(layer.declarations, owner, options.ledgerTable);
+  }
   return new SqliteDatabaseProvider(':memory:', '', options.migrations, options.ledgerTable).handle as Handle;
 }
 

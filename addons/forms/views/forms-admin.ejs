@@ -62,7 +62,7 @@
                 <i class="fas fa-edit me-1"></i>Edit
               </a>
               <form method="POST" action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete" style="display:inline"
-                onsubmit="return confirm('Delete form &quot;<%= form.id %>&quot;?\n\nDeletion is blocked if submissions exist.')">
+                data-confirm="Delete form &quot;<%= form.id %>&quot;?&#10;&#10;Deletion is blocked if submissions exist.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button type="submit" class="btn btn-sm btn-outline-danger">
                   <i class="fas fa-trash me-1"></i>Delete
@@ -75,5 +75,13 @@
     </div>
   <% } %>
 </div>
+
+<script nonce="<%= locals.cspNonce %>">
+// A form with data-confirm asks before it submits (a listener, not an inline handler: #1706).
+document.addEventListener('submit', function (e) {
+  var form = e.target.closest('form[data-confirm]');
+  if (form && !confirm(form.dataset.confirm)) e.preventDefault();
+});
+</script>
 
 <%- include('footer') %>

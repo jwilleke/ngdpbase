@@ -7,14 +7,19 @@
  * and every bundled add-on's `views/`. A script loaded from a file (`src=`)
  * and a data block (`type="application/json"`, `application/ld+json`) are
  * not run as inline code and need no nonce.
+ *
+ * Add-on views follow the whole contract (#1706): besides the nonce, no
+ * inline event handler and no `javascript:` URL, which no nonce can allow.
+ * Core views get those two checks when #1704 has moved their handlers to
+ * listeners; until then they are held to the nonce only.
  */
 
 import fs from 'fs';
 import path from 'path';
 import { newCspNonce } from '../utils/securityHeaders';
+import { NONCE, scriptsWithoutNonce, inlineHandlers, javascriptUrls } from './__fixtures__/viewCspContract';
 
 const ROOT = path.resolve(__dirname, '../..');
-const NONCE = 'nonce="<%= locals.cspNonce %>"';
 
 function templatesUnder(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -29,20 +34,8 @@ const addonViewDirs = fs.readdirSync(path.join(ROOT, 'addons'), { withFileTypes:
   .filter((d) => d.isDirectory())
   .map((d) => path.join(ROOT, 'addons', d.name, 'views'));
 
-const templates = [path.join(ROOT, 'views'), ...addonViewDirs].flatMap(templatesUnder);
-
-/** The inline-script tags in a template that would run, and lack the nonce. */
-export function scriptsWithoutNonce(source: string): string[] {
-  // An attribute may hold an EJS tag, whose `%>` is not the end of the element.
-  return [...source.matchAll(/<script\b((?:<%[\s\S]*?%>|[^>])*)>/g)]
-    .filter(([, attrs]) => !/\bsrc\s*=/.test(attrs))
-    .filter(([, attrs]) => {
-      const type = /\btype\s*=\s*["']([^"']+)["']/.exec(attrs)?.[1].toLowerCase();
-      return !type || ['module', 'text/javascript', 'application/javascript'].includes(type);
-    })
-    .filter(([, attrs]) => !attrs.includes(NONCE))
-    .map(([tag]) => tag);
-}
+const addonTemplates = addonViewDirs.flatMap(templatesUnder);
+const templates = [...templatesUnder(path.join(ROOT, 'views')), ...addonTemplates];
 
 describe('inline scripts carry the response nonce (#1703)', () => {
   test('the guard finds a script without it, and passes one with it or a data block', () => {
@@ -66,5 +59,35 @@ describe('inline scripts carry the response nonce (#1703)', () => {
     const seen = new Set(Array.from({ length: 50 }, () => newCspNonce()));
     expect(seen.size).toBe(50);
     for (const nonce of seen) expect(Buffer.from(nonce, 'base64')).toHaveLength(16);
+  });
+});
+
+describe('add-on views have no inline handler or javascript: URL (#1706)', () => {
+  test('the guard finds a handler in markup or in a script-built string, and a javascript: URL', () => {
+    expect(inlineHandlers('<button onclick="go()">')).toEqual(['onclick=']);
+    expect(inlineHandlers('<form method="post" onsubmit = "return confirm(1)">')).toEqual(['onsubmit=']);
+    expect(inlineHandlers('html += \'<input oninput="set(\' + i + \')">\';')).toEqual(['oninput=']);
+    expect(javascriptUrls('<a href="javascript:void(0)">')).toEqual(['href="javascript:']);
+  });
+
+  test('and passes delegated listeners and data attributes', () => {
+    const compliant = `<button data-action="remove" data-confirm="Sure?">x</button>
+<script ${NONCE}>
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-action]')) run(); });
+  window.onload = init;
+</script>`;
+    expect(inlineHandlers(compliant)).toEqual([]);
+    expect(javascriptUrls(compliant)).toEqual([]);
+    expect(scriptsWithoutNonce(compliant)).toEqual([]);
+  });
+
+  test('there are add-on views to check', () => {
+    expect(addonTemplates.length).toBeGreaterThan(10);
+  });
+
+  test.each(addonTemplates.map((f) => [path.relative(ROOT, f), f]))('%s', (_name, file) => {
+    const source = fs.readFileSync(file, 'utf8');
+    expect(inlineHandlers(source)).toEqual([]);
+    expect(javascriptUrls(source)).toEqual([]);
   });
 });
