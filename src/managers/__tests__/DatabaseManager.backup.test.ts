@@ -65,6 +65,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     return {
       managers,
       getManager: (n: string) => managers[n] ?? null,
+      // #1892: an application database that cannot be opened blocks the site.
+      blockConfiguration: () => undefined,
       getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager'].includes(n))
     };
   };
@@ -515,6 +517,64 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       copy.close();
       await restarted.backups.shutdown();
       await restarted.database.shutdown();
+    });
+
+    test('#1892 D2: a restore while the application database cannot be opened — the safety backup leaves the databases out and says so, and the damaged file is kept as *.pre-restore', async () => {
+      const other = { backup: vi.fn(async () => ({ managerName: 'Other', timestamp: '', data: 1 })), restore: vi.fn() };
+      const healthy = await site();
+      healthy.engine.managers.Other = other;
+      healthy.database.getHandle<Db>().exec('CREATE TABLE app_notes (body TEXT)');
+      healthy.database.getHandle<Db>().prepare('INSERT INTO app_notes VALUES (?)').run('good');
+      const good = await healthy.backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      await healthy.backups.shutdown();
+      await healthy.database.shutdown();
+
+      // Damaged while the server was down, with a WAL and shared-memory file of its own beside it.
+      const live = path.join(dataDir, 'ngdpbase.db');
+      fs.writeFileSync(live, Buffer.alloc(8192, 0x5a));
+      fs.writeFileSync(`${live}-wal`, 'the damaged file\'s wal');
+      fs.writeFileSync(`${live}-shm`, 'the damaged file\'s shm');
+
+      const broken = await site();
+      broken.engine.managers.Other = other;
+      expect(broken.database.getUnavailableReason()).toMatch(/could not be opened safely/);
+      const results = await broken.backups.restoreFromFile(CTX, good);
+      expect(results.success).toContain('DatabaseManager');
+      const staged = broken.database.getStagedRestore()!;
+      expect(staged.databases.map((d) => d.name)).toEqual(['application']);
+
+      // The safety backup is complete for everything else, and records what it left out.
+      const safety = await readDocument(path.join(backupDir, staged.safetyBackup));
+      expect(safety.managers.Other).toMatchObject({ data: 1 });
+      expect(safety.managers.DatabaseManager.data).toEqual({
+        format: 1, databases: [], absent: [], failed: [],
+        leftOut: { databases: ['application', 'addon-accounting'], reason: broken.database.getUnavailableReason() }
+      });
+      expect(safety.managers.DatabaseManager.note).toMatch(/left out of this safety backup/);
+      expect(notifications.find((n) => n.title === 'A backup is incomplete')).toBeUndefined();
+      expect(notifications.find((n) => n.title === 'A database restore is staged')?.message).toMatch(/safety backup leaves the databases out; the current database files are kept as \*\.pre-restore/);
+      const damaged = { db: fs.readFileSync(live), wal: fs.readFileSync(`${live}-wal`), shm: fs.readFileSync(`${live}-shm`) };
+      await broken.backups.shutdown();
+      await broken.database.shutdown();
+
+      // The restart applies it: the restored database opens, and the damaged file, its WAL and shm are kept.
+      const restarted = await site();
+      expect(restarted.database.getUnavailableReason()).toBeNull();
+      expect(restarted.database.getHandle<Db>().prepare('SELECT body FROM app_notes').all()).toEqual([{ body: 'good' }]);
+      expect(fs.readFileSync(`${live}.pre-restore`).equals(damaged.db)).toBe(true);
+      expect(fs.readFileSync(`${live}.pre-restore-wal`).equals(damaged.wal)).toBe(true);
+      expect(fs.readFileSync(`${live}.pre-restore-shm`).equals(damaged.shm)).toBe(true);
+      await restarted.backups.shutdown();
+      await restarted.database.shutdown();
+    });
+
+    test('#1892 D2: an ordinary backup while the application database cannot be opened is reported incomplete', async () => {
+      fs.writeFileSync(path.join(dataDir, 'ngdpbase.db'), Buffer.alloc(8192, 0x5a));
+      const { database, backups } = await site();
+      await backups.createBackup(CTX);
+      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'A backup is incomplete', message: expect.stringMatching(/application database is not available, so no database was backed up/) }));
+      await backups.shutdown();
+      await database.shutdown();
     });
 
     test('when the databases cannot be staged, nothing else is restored', async () => {

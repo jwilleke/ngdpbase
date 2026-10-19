@@ -115,3 +115,17 @@ export function blockedForVisitors(
   if (publicMessage !== null) return { message: publicMessage, detail: [publicMessage] };
   return { message: describeBlocked(reasons), detail: reasons };
 }
+
+/**
+ * #1883: what visitors see while a failure for administrators only holds the
+ * site in maintenance mode — a site-critical add-on that did not load, or an
+ * application database that cannot be opened safely (#1892). Empty leaves
+ * only the page's heading.
+ */
+export const SITE_CRITICAL_PUBLIC_MESSAGE_KEY = 'ngdpbase.managers.addons-manager.site-critical.public-message';
+
+/** The configured public message ({@link SITE_CRITICAL_PUBLIC_MESSAGE_KEY}); '' when unset or not a string. */
+export function sitePublicMessage(getProperty: ((key: string, fallback: unknown) => unknown) | undefined): string {
+  const value = getProperty?.(SITE_CRITICAL_PUBLIC_MESSAGE_KEY, '');
+  return typeof value === 'string' ? value : '';
+}

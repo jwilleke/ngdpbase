@@ -11666,13 +11666,15 @@ ${panes}
       const recentBackups = await backupManager.listStoredBackups();
       // #1723: what a restore needs on the page — the staged one, whether one
       // is being prepared, and the name an admin types to confirm.
-      const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown }>('DatabaseManager');
+      const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown; getUnavailableReason?(): string | null }>('DatabaseManager');
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-backup', {
         ...commonData,
         status,
         recentBackups,
         databasesEnabled: databaseManager?.isEnabled() ?? false,
+        // #1892 D2: the application database can't be opened; a restore is still offered, and says what it leaves out.
+        databaseUnavailable: databaseManager?.getUnavailableReason?.() ?? null,
         stagedRestore: databaseManager?.getStagedRestore() ?? null,
         restoreRunning: backupManager.isRestoreRunning(),
         siteName: this.siteName(),

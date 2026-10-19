@@ -94,7 +94,7 @@
     <!-- ================================================================ -->
     <!-- Restore databases                                                -->
     <!-- ================================================================ -->
-    <% if (databasesEnabled) { %>
+    <% if (databasesEnabled || locals.databaseUnavailable) { %>
     <div class="card mb-4" id="restore-card">
         <div class="card-header">
             <h5 class="mb-0"><i class="fas fa-undo"></i> Restore Databases</h5>
@@ -107,6 +107,14 @@
                 <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
                 <li>At the restart the prepared databases take the place of the current ones, which are kept beside them.</li>
             </ul>
+
+            <% if (locals.databaseUnavailable) { %>
+            <div class="alert alert-danger" id="restore-database-unavailable">
+                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> The application database can't be opened</h6>
+                <p class="mb-2">A restore still works, with one difference: <strong>the fresh backup taken first leaves the databases out</strong>, because they can't be read. The current database files are not lost: at the restart they are kept beside the restored ones as <code>*.pre-restore</code>.</p>
+                <p class="mb-0 small">The restore needs <code>NGDPBASE_DATABASE_KEY</code> to be set. If the problem is a missing or wrong key, set or correct the key and restart instead: no restore is needed.</p>
+            </div>
+            <% } %>
 
             <% if (restoreRunning) { %>
             <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
@@ -121,7 +129,7 @@
                     <tr><th>Staged</th><td><%= new Date(stagedRestore.stagedAt).toLocaleString() %></td></tr>
                     <tr><th>Staged by</th><td><%= stagedRestore.stagedBy || '—' %></td></tr>
                     <% if (stagedRestore.safetyBackup) { const safety = (recentBackups || []).find(function(b) { return b.filename === stagedRestore.safetyBackup; }); %>
-                    <tr id="safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedRestore.safetyBackup %></code><%= safety ? ' (' + new Date(safety.created).toLocaleString() + ')' : '' %>. It is in the list above; restore it to undo this restore.</td></tr>
+                    <tr id="safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedRestore.safetyBackup %></code><%= safety ? ' (' + new Date(safety.created).toLocaleString() + ')' : '' %>. It is in the list above<% if (safety && safety.databases.length === 0) { %>. <span id="safety-backup-no-databases">It holds no databases: they could not be opened when it was taken, so the current database files are kept as <code>*.pre-restore</code> at the restart instead. To undo this restore, put those files back with the server stopped.</span><% } else { %>; restore it to undo this restore.<% } %></td></tr>
                     <% } %>
                     <tr><th>Databases</th><td><%= stagedRestore.databases.map(function(d) { return d.name; }).join(', ') %></td></tr>
                 </table>

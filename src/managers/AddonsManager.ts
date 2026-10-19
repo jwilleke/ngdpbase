@@ -54,12 +54,7 @@ import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
-
-/**
- * #1883: what visitors see while a site-critical add-on that did not load
- * holds the site in maintenance mode. Empty leaves only the page's heading.
- */
-export const SITE_CRITICAL_PUBLIC_MESSAGE_KEY = 'ngdpbase.managers.addons-manager.site-critical.public-message';
+import { sitePublicMessage } from '../utils/startupState.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -895,9 +890,8 @@ class AddonsManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const siteCritical = configManager?.isAddonSiteCritical?.(slug) === true;
     if (siteCritical) {
-      const publicMessage = configManager?.getProperty(SITE_CRITICAL_PUBLIC_MESSAGE_KEY, '');
       this.engine.blockConfiguration(`Site-critical add-on '${slug}' did not load: ${reason}`, {
-        publicMessage: typeof publicMessage === 'string' ? publicMessage : ''
+        publicMessage: sitePublicMessage(configManager ? (k, d) => configManager.getProperty(k, d) : undefined)
       });
     }
     this.notifyAdmins('error', `Critical: add-on ${slug} did not load`, `${slug} did not load: ${reason}. ` + (siteCritical
