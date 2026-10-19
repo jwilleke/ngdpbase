@@ -25,7 +25,8 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         const formsWithCounts = await Promise.all(
           definitions.map(async (form) => ({
             ...form,
-            submissionCount: await m!.getSubmissionCount(form.id)
+            submissionCount: await m!.getSubmissionCount(form.id),
+            shippedState: m!.shippedFormState(form.id)
           }))
         );
 
@@ -34,6 +35,28 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
           forms: formsWithCounts,
           query: req.query
         });
+      } catch (err) {
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
+        res.status(500).send(String(err));
+      }
+    })();
+  });
+
+  // ── POST /addons/forms/:formId/sync ───────────────────────────────────────
+  // A shipped form's copy takes what its add-on ships now (#1880). A copy
+  // edited on this site is replaced only when the admin confirmed `overwrite`.
+  router.post('/:formId/sync', async (req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
+
+        const m = fdm();
+        if (!m) { res.status(503).send('Forms addon not available'); return; }
+        const body = req.body as Record<string, unknown>;
+        const result = await m.syncShippedForm(String(req.params['formId']), { overwriteEdited: body['overwrite'] === '1' });
+        if (result === 'not-shipped') { res.status(404).send('No add-on ships this form'); return; }
+        res.redirect(`/addons/forms?flash=${result === 'synced' ? 'synced' : 'sync-edited'}`);
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
