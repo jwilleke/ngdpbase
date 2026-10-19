@@ -53,6 +53,8 @@
             <% const val = submission.data[field.name]; %>
             <% if (field.type === 'checkbox') { %>
               <i class="fas fa-<%= val ? 'check text-success' : 'times text-danger' %>"></i>
+            <% } else if (Array.isArray(val)) { %>
+              <%= val.length ? val.join(', ') : '—' %>
             <% } else { %>
               <%= val != null ? val : '—' %>
             <% } %>

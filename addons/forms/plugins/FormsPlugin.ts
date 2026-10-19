@@ -17,6 +17,12 @@ import { resolveFieldOptions } from '../managers/fieldOptions.js';
 
 type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string };
 
+/**
+ * The currency a checklist's running total is shown in. The `amount` field
+ * shows "$" and parses two decimals, so forms money is US dollars throughout.
+ */
+const CURRENCY = 'USD';
+
 function resolvePrefill(
   dotPath: string,
   userCtx: Record<string, unknown>,
@@ -65,6 +71,8 @@ function renderField(f: PluginFormatters, field: ResolvedField): string {
       <span class="input-group-text">$</span>
       <input type="text" inputmode="decimal" autocomplete="off" name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-control"${placeholder}${required}${valueAttr}>
     </div>`;
+  } else if (field.type === 'checklist') {
+    return renderChecklist(f, field, requiredBadge, desc, errorSlot);
   } else if (field.type === 'checkbox') {
     return `<div class="mb-3 form-check">
       <input type="checkbox" name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-check-input"${required}>
@@ -85,6 +93,50 @@ function renderField(f: PluginFormatters, field: ResolvedField): string {
     ${desc}
     ${errorSlot}
   </div>`;
+}
+
+/**
+ * A checklist (#1904): one checkbox per choice, submitted as an array by
+ * forms-submit.js. When any choice carries an amount, a line shows how many
+ * are ticked and their sum; with `totalField`, whether the sum matches what
+ * was typed in that field. forms-submit.js keeps both lines current.
+ */
+function renderChecklist(f: PluginFormatters, field: ResolvedField, requiredBadge: string, desc: string, errorSlot: string): string {
+  const { escapeHtml: escHtml } = f;
+  const name = escHtml(field.name);
+  const options = field.resolvedOptions ?? [];
+  const boxes = options.length === 0
+    ? '<div class="text-muted fst-italic" data-checklist-empty>Nothing to choose</div>'
+    : options.map((o, i) => {
+      const id = `field-${name}-${i}`;
+      const amount = typeof o.amount === 'number' ? ` data-amount="${o.amount}"` : '';
+      return `<div class="form-check">
+        <input type="checkbox" name="${name}" value="${escHtml(o.value)}" id="${id}" class="form-check-input"${amount}>
+        <label class="form-check-label" for="${id}">${escHtml(o.label)}</label>
+      </div>`;
+    }).join('\n');
+  const hasAmounts = options.some(o => typeof o.amount === 'number');
+  const total = hasAmounts
+    ? `<div class="form-text" data-checklist-total>Ticked: 0 · ${escHtml(f.formatMoney(0, CURRENCY))}</div>`
+    : '';
+  const match = hasAmounts && field.totalField
+    ? '<div class="form-text" data-checklist-match></div>'
+    : '';
+  const attrs = [
+    `data-checklist="${name}"`,
+    `data-label="${escHtml(field.label)}"`,
+    field.required ? 'data-required="1"' : '',
+    hasAmounts ? `data-currency="${CURRENCY}"` : '',
+    hasAmounts && field.totalField ? `data-total-field="${escHtml(field.totalField)}"` : ''
+  ].filter(Boolean).join(' ');
+  return `<fieldset class="mb-3" ${attrs}>
+    <legend class="form-label fs-6 mb-1">${escHtml(field.label)}${requiredBadge}</legend>
+    ${boxes}
+    ${total}
+    ${match}
+    ${desc}
+    ${errorSlot}
+  </fieldset>`;
 }
 
 function renderFieldset(f: PluginFormatters, label: string, fieldsHtml: string): string {
@@ -193,7 +245,7 @@ const FormsPlugin = {
     // Resolve optionsSource and prefill for each field
     const resolvedFields: ResolvedField[] = await Promise.all(form.fields.map(async field => {
       const base: ResolvedField = { ...field };
-      if (field.type === 'dropdown') {
+      if (field.type === 'dropdown' || field.type === 'checklist') {
         base.resolvedOptions = await resolveFieldOptions(context.engine, field, context.userContext);
       }
       if (field.prefill && userCtx) {

@@ -8,14 +8,16 @@ import { z } from 'zod';
 
 export const FieldSchema = z.object({
   name:          z.string(),
-  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount']),
+  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount', 'checklist']),
   label:         z.string(),
   required:      z.boolean().default(false),
   description:   z.string().optional(),
   placeholder:   z.string().optional(),
   optionsSource: z.string().optional(),
   options:       z.array(z.string()).optional(),
-  prefill:       z.string().optional()
+  prefill:       z.string().optional(),
+  // checklist: the amount field whose value the ticked sum is shown against (#1904)
+  totalField:    z.string().optional()
 });
 
 export const FormDefinitionSchema = z.object({
@@ -81,6 +83,10 @@ export function buildSubmissionValidator(
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const field of form.fields) {
     if (field.type === 'hidden' || field.type === 'section') continue;
+    if (field.type === 'checklist') {
+      shape[field.name] = checklistRule(field, choices.get(field.name) ?? []);
+      continue;
+    }
     let rule: z.ZodTypeAny;
     if (field.type === 'email') {
       rule = z.string().email(`${field.label} must be a valid email`);
@@ -109,6 +115,19 @@ export function buildSubmissionValidator(
     shape[field.name] = rule;
   }
   return z.object(shape);
+}
+
+/**
+ * A checklist submits the ticked values as an array (#1904). Each must be one
+ * of the choices it offered this viewer; `required` means at least one.
+ * A value ticked twice counts once.
+ */
+function checklistRule(field: FormField, allowed: string[]): z.ZodTypeAny {
+  return z.array(z.string(), { error: `${field.label}: tick from the listed options` })
+    .optional()
+    .transform(values => [...new Set(values ?? [])])
+    .refine(values => values.every(v => allowed.includes(v)), `${field.label}: tick only the listed options`)
+    .refine(values => !field.required || values.length > 0, `${field.label}: tick at least one`);
 }
 
 /** Flatten validation issues to one message per field, for showing next to it. */
