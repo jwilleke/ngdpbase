@@ -3,6 +3,8 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
+import { evaluateSeededAddonPage, pageSourceHash } from '../../../dist/src/utils/addonPageSync.js';
+import type { SeededAddonPageStatus } from '../../../dist/src/utils/addonPageSync.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -30,7 +32,10 @@ export const FormDefinitionSchema = z.object({
   confirmationUrl: z.string().optional(),
   // false: the handler's answer is the record, and no submission file is kept
   store:           z.boolean().default(true),
-  fields:          z.array(FieldSchema).min(1)
+  fields:          z.array(FieldSchema).min(1),
+  // A form an add-on ships (#1880): who shipped it, and the hash of the shipped
+  // definition this copy was saved or synced from. Not part of the hash itself.
+  shipped:         z.object({ addon: z.string(), sourceHash: z.string() }).optional()
 });
 
 export type FormField      = z.infer<typeof FieldSchema>;
@@ -52,6 +57,38 @@ export const SubmissionSchema = z.object({
   handlerResult: z.unknown().optional(),
   notes:         z.string().optional()
 });
+
+/**
+ * Where a shipped form's copy on this site stands against what its add-on
+ * ships now (#1880). The same rule as shipped pages (#931, #1395), so
+ * `status` is that rule's answer: `current`, `outdated` (unedited since it was
+ * saved or synced, or unstamped), or `locally-modified` (edited on this site).
+ */
+export interface ShippedFormState {
+  addon: string;
+  status: SeededAddonPageStatus;
+  /** False for a copy saved before #1880, which carries no stamp. */
+  stamped: boolean;
+  /**
+   * The add-on ships something other than what this copy was saved or synced
+   * from, so for an edited copy an update is waiting. True when unstamped.
+   */
+  shippedChanged: boolean;
+}
+
+/** What `syncShippedForm` did: `edited` means it refused to overwrite site edits. */
+export type ShippedFormSyncResult = 'synced' | 'edited' | 'not-shipped';
+
+/**
+ * The text a definition's hash is taken over: the parsed definition (defaults
+ * applied, keys in schema order) without its `shipped` stamp, so a copy saved
+ * by the builder and the add-on's own object compare equal when they say the
+ * same thing.
+ */
+function definitionContent(form: FormDefinition): string {
+  const { shipped: _stamp, ...body } = FormDefinitionSchema.parse(form);
+  return JSON.stringify(body);
+}
 
 export type FormSubmission   = z.infer<typeof SubmissionSchema>;
 export type SubmissionStatus = 'pending' | 'processed' | 'rejected';
@@ -145,6 +182,8 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
 export default class FormsDataManager {
   private dataPath: string;
   private definitions: Map<string, FormDefinition> = new Map();
+  /** Forms add-ons registered this boot, by id (#1880). */
+  private shippedForms: Map<string, { addon: string; definition: FormDefinition }> = new Map();
 
   constructor(_engine: unknown, dataPath: string) {
     this.dataPath = dataPath;
@@ -262,12 +301,92 @@ export default class FormsDataManager {
     }
   }
 
+  /**
+   * Write a definition. A copy of a shipped form keeps its `shipped` stamp
+   * when the definition saved carries none (a form-builder save), so the edit
+   * shows as an edit (#1880).
+   */
   async saveDefinition(form: FormDefinition): Promise<void> {
+    const shipped = form.shipped ?? this.definitions.get(form.id)?.shipped;
+    const stored: FormDefinition = shipped ? { ...form, shipped } : form;
     const filePath = path.join(this.dataPath, 'definitions', `${form.id}.json`);
     const tmp = `${filePath}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(form, null, 2), 'utf8');
+    await fsp.writeFile(tmp, JSON.stringify(stored, null, 2), 'utf8');
     await fsp.rename(tmp, filePath);
-    this.definitions.set(form.id, form);
+    this.definitions.set(form.id, stored);
+  }
+
+  /**
+   * Register a form an add-on ships (#1880). Call it from the add-on's
+   * `register()` at every start, with the definition as the add-on ships it now.
+   *
+   * - No copy on this site: it is saved, stamped with the hash of what was saved.
+   * - A copy with no stamp (saved before #1880) that says the same as the
+   *   definition: stamped, as shipped pages are (#1408).
+   * - Anything else is left as it is. The forms admin shows an outdated copy
+   *   with Sync, and an edited copy as edited; nothing here overwrites it.
+   *
+   * Throws when the definition does not parse, so an add-on author sees it at
+   * the first start.
+   *
+   * @param addon - The add-on's name, shown in the forms admin
+   * @param definition - The definition the add-on ships
+   * @returns Where the site's copy stands after registering
+   */
+  async registerShippedForm(addon: string, definition: FormDefinition): Promise<ShippedFormState> {
+    const { shipped: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
+    this.shippedForms.set(parsed.id, { addon, definition: parsed });
+
+    const live = this.definitions.get(parsed.id);
+    if (!live) {
+      await this.writeShipped(addon, parsed);
+    } else if (!live.shipped && definitionContent(live) === definitionContent(parsed)) {
+      await this.saveDefinition({ ...live, shipped: { addon, sourceHash: pageSourceHash(definitionContent(parsed)) } });
+    }
+
+    const state = this.shippedFormState(parsed.id)!;
+    if (state.status === 'outdated') {
+      console.info(`[FormsDataManager] ${addon} ships a changed form '${parsed.id}'; Sync it in the forms admin`);
+    } else if (state.status === 'locally-modified' && state.shippedChanged) {
+      console.info(`[FormsDataManager] ${addon} ships a changed form '${parsed.id}', but it was edited on this site; not synced`);
+    }
+    return state;
+  }
+
+  /**
+   * Where a shipped form's copy stands, or undefined for a form no add-on
+   * registered this boot, or one with no copy on this site.
+   */
+  shippedFormState(formId: string): ShippedFormState | undefined {
+    const shipped = this.shippedForms.get(formId);
+    const live = this.definitions.get(formId);
+    if (!shipped || !live) return undefined;
+    const storedHash = live.shipped?.sourceHash;
+    const sourceContent = definitionContent(shipped.definition);
+    const stamped = typeof storedHash === 'string' && storedHash.length > 0;
+    return {
+      addon: shipped.addon,
+      status: evaluateSeededAddonPage({ sourceContent, liveContent: definitionContent(live), storedHash }),
+      stamped,
+      shippedChanged: !stamped || storedHash !== pageSourceHash(sourceContent)
+    };
+  }
+
+  /**
+   * Replace the site's copy of a shipped form with what the add-on ships now.
+   * A copy edited on this site is replaced only with `overwriteEdited`, which
+   * the forms admin sends after the admin confirms.
+   */
+  async syncShippedForm(formId: string, options: { overwriteEdited?: boolean } = {}): Promise<ShippedFormSyncResult> {
+    const shipped = this.shippedForms.get(formId);
+    if (!shipped) return 'not-shipped';
+    if (this.shippedFormState(formId)?.status === 'locally-modified' && !options.overwriteEdited) return 'edited';
+    await this.writeShipped(shipped.addon, shipped.definition);
+    return 'synced';
+  }
+
+  private async writeShipped(addon: string, definition: FormDefinition): Promise<void> {
+    await this.saveDefinition({ ...definition, shipped: { addon, sourceHash: pageSourceHash(definitionContent(definition)) } });
   }
 
   async deleteDefinition(formId: string): Promise<boolean> {

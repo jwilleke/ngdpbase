@@ -19,6 +19,16 @@
       <i class="fas fa-check-circle me-1"></i>Form definition saved.
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+  <% } else if (flash === 'synced') { %>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      <i class="fas fa-sync-alt me-1"></i>Form updated to the version its add-on ships.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  <% } else if (flash === 'sync-edited') { %>
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      <i class="fas fa-lock me-1"></i>Not updated: this form was edited on this site. Use <strong>Replace my edits</strong> to take the shipped version anyway.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
   <% } else if (flash === 'deleted') { %>
     <div class="alert alert-info alert-dismissible fade show" role="alert">
       <i class="fas fa-trash me-1"></i>Form definition deleted.
@@ -52,6 +62,17 @@
                 <% if (form.proxySubmission) { %>
                   <span class="badge bg-warning text-dark">proxy</span>
                 <% } %>
+                <% var shipped = form.shippedState; %>
+                <% if (shipped) { %>
+                  <span class="badge bg-light text-dark border">from <%= shipped.addon %></span>
+                  <% if (shipped.status === 'outdated') { %>
+                    <span class="badge bg-warning text-dark" data-shipped-status="outdated">update available</span>
+                  <% } else if (shipped.status === 'locally-modified') { %>
+                    <span class="badge bg-info text-dark" data-shipped-status="edited" title="Edited on this site: an update does not replace it unless you choose to">edited here<%= shipped.shippedChanged ? ' · update available' : '' %></span>
+                  <% } else { %>
+                    <span class="badge bg-light text-dark border" data-shipped-status="current">up to date</span>
+                  <% } %>
+                <% } %>
               </div>
             </div>
             <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
@@ -61,6 +82,24 @@
               <a href="/addons/forms/builder/<%= encodeURIComponent(form.id) %>" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-edit me-1"></i>Edit
               </a>
+              <% if (shipped && shipped.status === 'outdated') { %>
+                <form method="POST" action="/addons/forms/<%= encodeURIComponent(form.id) %>/sync" style="display:inline"
+                  <% if (!shipped.stamped) { %>data-confirm="Update &quot;<%= form.title %>&quot; to the version <%= shipped.addon %> ships?&#10;&#10;This copy was saved before edits were tracked, so any change made to it in the form builder is replaced."<% } %>>
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-sm btn-primary" data-action="sync">
+                    <i class="fas fa-sync-alt me-1"></i>Sync
+                  </button>
+                </form>
+              <% } else if (shipped && shipped.status === 'locally-modified') { %>
+                <form method="POST" action="/addons/forms/<%= encodeURIComponent(form.id) %>/sync" style="display:inline"
+                  data-confirm="Replace the edits made to &quot;<%= form.title %>&quot; on this site with the version <%= shipped.addon %> ships?&#10;&#10;Those edits are lost.">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="overwrite" value="1">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" data-action="overwrite">
+                    <i class="fas fa-sync-alt me-1"></i>Replace my edits
+                  </button>
+                </form>
+              <% } %>
               <form method="POST" action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete" style="display:inline"
                 data-confirm="Delete form &quot;<%= form.id %>&quot;?&#10;&#10;Deletion is blocked if submissions exist.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">

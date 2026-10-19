@@ -17,6 +17,13 @@
  *   GET  /addons/forms/:formId/submissions — list submissions for a form
  *   GET  /addons/forms/:formId/submissions/:id — view a submission
  *   POST /addons/forms/:formId/submissions/:id/status — update submission status
+ *   POST /addons/forms/:formId/sync        — take the version an add-on ships (#1880)
+ *
+ * Shipping a form from another add-on (#1880):
+ *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+ *   await forms?.registerShippedForm('my-addon', definition);
+ * at every start. The first start saves it; later, a changed definition shows
+ * in the forms admin as an update, and a copy edited on the site is kept.
  *
  * Handler hook:
  *   const formsAddon = engine.getManager('FormsAddon');
