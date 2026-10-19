@@ -1,4 +1,5 @@
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -43,6 +44,8 @@ class RoleManager extends BaseManager {
 
   private provider: RoleProvider | null = null;
   private providerClass?: string;
+  /** `ngdpbase.application.roles.storagedir`, resolved at start: what a backup copies (#1876). */
+  private storageDir: string | null = null;
 
   // #620: in-memory caches for the two read paths UserManager hits per
   // request (resolveUserRoles → listByMember; the role-mirror writes use
@@ -71,6 +74,10 @@ class RoleManager extends BaseManager {
       'ngdpbase.application.roles.storagedir',
       './data/roles'
     );
+    this.storageDir = storageDir;
+    // #1876: a staged site restore goes in before the records are read.
+    const restored = applyDirectoryPartAtStart('RoleManager', storageDir, configManager);
+    if (restored?.refused) this.markDegraded(`A staged restore of role membership was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.roles.storagedir',
       storageDir
@@ -140,6 +147,25 @@ class RoleManager extends BaseManager {
       this.invalidateCache();
       logger.info(`🔑 RoleManager: removed the stale catalogue copy from ${cleaned} role record(s) (#1431)`);
     }
+  }
+
+  /**
+   * Role membership is in the backup (#1876): the role records folder, as
+   * `<stem>.roles.tar` beside the document. Without it restored users would
+   * have no roles.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('RoleManager', 'roles', this.storageDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('RoleManager', this.storageDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /** Provider accessor, mainly for tests. */

@@ -1,4 +1,6 @@
-import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
+import type { PartOutcome } from '../utils/siteRestore.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
@@ -73,6 +75,10 @@ interface BaseAttachmentProvider {
   getThumbnail?(id: string, size: string): Promise<Buffer | null>;
   backup(): Promise<unknown>;
   restore(backupData: unknown): Promise<void>;
+  /** #1876: the files themselves beside the backup document, and their staged restore. */
+  backupFiles?(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome>;
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }>;
+  takeRestoreAtStart?(): PartOutcome | null;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
   // #1400 / #1460: files in a private store, listed in the store's own index —
@@ -209,6 +215,8 @@ export interface AttachmentMetadataInput {
 export interface AttachmentBackupData extends BackupData {
   providerClass: string | null;
   providerBackup?: unknown;
+  /** The files themselves, as archives beside the document (#1876). */
+  files?: AttachmentFilesBackupData;
   data?: null;
 }
 
@@ -331,6 +339,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: AttachmentProviderConstructor };
       this.attachmentProvider = new mod.default(this.engine);
       await this.attachmentProvider.initialize();
+      // #1876: a staged restore of the files that was set aside is shown, not just logged.
+      const restored = this.attachmentProvider.takeRestoreAtStart?.();
+      if (restored?.refused) this.markDegraded(`A staged restore of the attachment files was not applied: ${restored.refused}`);
 
       logger.info(`📎 AttachmentManager initialized with ${this.providerClass}`);
       logger.info(`📎 Max attachment size: ${this.formatSize(this.maxSize)}`);
@@ -2735,7 +2746,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @returns {Promise<AttachmentBackupData>}
    */
-  async backup(): Promise<AttachmentBackupData> {
+  async backup(options?: ManagerBackupOptions): Promise<AttachmentBackupData> {
     if (!this.attachmentProvider) {
       return {
         managerName: 'AttachmentManager',
@@ -2748,11 +2759,24 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     const providerBackup = await this.attachmentProvider.backup();
 
+    // #1876: the files themselves, beside the document, never in it.
+    if (!options?.directory || !options.stem) {
+      throw new Error('AttachmentManager writes the attachment files beside the backup document, so it is backed up through BackupManager (#1876)');
+    }
+    if (!this.attachmentProvider.backupFiles) {
+      throw new Error(`${this.providerClass} cannot write its files into a backup, so the attachment files are not backed up (#1876)`);
+    }
+    const { data: files, warnings } = await this.attachmentProvider.backupFiles(options.directory, options.stem);
+    for (const w of warnings) logger.error(`📎 [AttachmentManager] ${w}`);
+    logger.info(`📎 Backed up ${files.pool.files} shared file(s) and ${files.vaults.files} vault file(s) (${files.vaults.stores.length} vault(s)) beside the document (#1876)`);
+
     return {
       managerName: 'AttachmentManager',
       timestamp: new Date().toISOString(),
       providerClass: this.providerClass,
-      providerBackup: providerBackup
+      providerBackup: providerBackup,
+      files,
+      ...(warnings.length > 0 ? { warnings } : {})
     };
   }
 
@@ -2763,7 +2787,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {AttachmentBackupData} backupData - Backup data from backup() method
    * @returns {Promise<void>}
    */
-  async restore(backupData: AttachmentBackupData): Promise<void> {
+  async restore(backupData: AttachmentBackupData, options?: ManagerRestoreOptions): Promise<void> {
     if (!backupData) {
       throw new Error('AttachmentManager: No backup data provided for restore');
     }
@@ -2772,14 +2796,36 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('AttachmentManager: Provider not initialized, cannot restore');
     }
 
+    // #1876: staged for the next start with the rest of the site, never written live.
+    if (!options?.siteRestore || !options.directory) {
+      throw new Error('AttachmentManager\'s restore is staged with the rest of the site, so it is restored through BackupManager (#1876)');
+    }
     if (backupData.providerClass !== this.providerClass) {
-      logger.warn(`📎 Provider mismatch: backup has ${backupData.providerClass}, current is ${this.providerClass}`);
+      throw new Error(`The backup's attachments were kept by ${backupData.providerClass}, and this site uses ${this.providerClass}; nothing was staged (#1876)`);
     }
+    if (!backupData.providerBackup || !backupData.files) {
+      throw new Error('The backup holds no attachment files (it was taken before they were backed up, #1876); nothing was staged');
+    }
+    if (!this.attachmentProvider.stageFilesRestore) {
+      throw new Error(`${this.providerClass} cannot stage a restore of its files; nothing was staged (#1876)`);
+    }
+    const { skippedVaults } = await this.attachmentProvider.stageFilesRestore(backupData.providerBackup as Record<string, unknown>, backupData.files, options.directory, options.siteRestore);
+    logger.warn('📎 Attachment files and metadata staged — applied at the next start with the rest of the site restore (#1876)');
+    if (skippedVaults.length > 0) {
+      const message = `The backup holds files of vaults this site no longer has (${skippedVaults.join(', ')}), so they were not staged. Their pages are not on this site either.`;
+      logger.error(`📎 [AttachmentManager] ${message}`);
+      try {
+        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
+          ?.addNotification({ type: 'system', level: 'error', title: 'Some vault files in the backup were not restored', message });
+      } catch (err) {
+        logger.error('📎 [AttachmentManager] The notification could not be sent:', err);
+      }
+    }
+  }
 
-    if (backupData.providerBackup) {
-      await this.writeAttachments(this.attachmentProvider.restore(backupData.providerBackup));
-      logger.info('📎 AttachmentManager restored from backup');
-    }
+  /** Its restore is staged for the next start with the rest of a site restore (#1876). */
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /**

@@ -55,7 +55,12 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
   const engineFor = (props: Record<string, unknown>, declarations: AddonDatabaseDeclaration[], extra: Record<string, unknown> = {}) => {
     const configManager = {
       getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
-      getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.backup.directory' ? backupDir : (props['ngdpbase.database.file'] as string | undefined) ?? def),
+      getResolvedDataPath: (key: string, def: string) => {
+        if (key === 'ngdpbase.backup.directory') return backupDir;
+        // #1876: the site restore record, in this test's own data folder.
+        if (key === 'ngdpbase.backup.restore-manifest') return path.join(dataDir, 'site-restore.json');
+        return (props['ngdpbase.database.file'] as string | undefined) ?? def;
+      },
       getAddonDatabaseDeclarations: () => declarations,
       setProperty: async () => undefined
     };

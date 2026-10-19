@@ -1,7 +1,7 @@
 ---
 name: Storage developer guide
 description: Where an add-on's pages, files and data live — declaring a system-category with its own vault, the fields that decide privacy and encryption, writing through the doors, and the gaps
-dateModified: 2026-10-18
+dateModified: 2026-10-19
 category: guides
 relatedModules: [ValidationManager, PageManager, AttachmentManager, ShareManager, DatabaseManager]
 ---
@@ -129,7 +129,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __Removing the add-on removes its category__ ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)). The category is read from the add-on's files, so with them gone its pages carry an unknown system-category and its vault door answers "no such store". The data stays on disk. Retiring an add-on properly is #1490.
 - __Restoring a database needs a site that starts__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). The restore is on Admin → Backup (staged, applied at the next restart); there is no command line for a site that won't start. A site whose application database can't be opened now starts, in maintenance mode, and can be restored from Admin → Backup; its safety backup leaves the databases out and the current files are kept as `*.pre-restore` ([#1892](https://github.com/jwilleke/ngdpbase/issues/1892)). The rest of the database backup's gaps are in [DatabaseManager.md](../managers/DatabaseManager.md#known-gaps).
 - __Without `NGDPBASE_BACKUP_KEY` no database is backed up__ (#1723). It is never written unencrypted instead: the dashboard shows the database manager degraded from the start, and each backup tells admins it is incomplete. A backup key equal to `NGDPBASE_DATABASE_KEY` still backs up, with the same banner and a notification.
-- __Vault files in backups haven't been checked.__ Vault pages sit under `pages/`, which the page backup walks. That vault files (PDFs, images) are covered too hasn't been checked; do it before relying on it.
+- __Vault files are backed up beside the document, and restore only with the site restore__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). Each vault's `attachments/` and `files-index.json` go into `<stem>.vault-attachments.tar` as stored (sealed bytes stay sealed), not into PageManager's part of the backup. Their restore is staged with the rest of the site restore, which has no button on Admin → Backup yet ([backup and restore guide](backup-restore-guide.md#the-staged-site-restore-1876-slice-1)).
 - __Plaintext written before [#1834](https://github.com/jwilleke/ngdpbase/issues/1834)__: a page saved into an `encrypt: true` vault before its door was opened was stored in the clear. Such vaults are closed and listed at startup; moving or sealing their files is still an administrator's job, with no tool for it yet.
 - __Plaintext moved into sealed vaults before [#1836](https://github.com/jwilleke/ngdpbase/issues/1836)__: a page made private into a sealed vault kept its history in the clear, and adopted attachments landed in the clear. New moves are sealed. What is already on disk is listed at startup (owner, vault, count and folder), and nothing re-seals it yet.
 - __A backup taken before a vault was sealed can't put its files back into it__ (#1836). Its plaintext files, and a `store.json` that isn't sealed, are skipped and logged as an error. Restoring that vault means opening the old backup's contents through the page door.

@@ -88,13 +88,15 @@ describe('backup() carries the private tree (#1387)', () => {
     expect(Buffer.compare(Buffer.from(entry!.base64, 'base64'), CIPHERTEXT)).toBe(0);
   });
 
-  test('the whole store travels — history, attachments, indexes and the wrapped key', async () => {
+  test('the whole store travels — history, indexes and the wrapped key; its files go beside the document (#1876)', async () => {
+    // The vault's files and their index are AttachmentManager's: they go into
+    // <stem>.vault-attachments.tar as stored bytes, never base64 in this JSON.
+    await fs.writeFile(path.join(pagesDir, 'vaults', 'molly', 'vault', 'files-index.json'), CIPHERTEXT);
     const backup = await makeProvider(pagesDir, requiredDir).backup();
     const paths = (backup.privateFiles ?? []).map(f => f.relativePath).sort();
 
     expect(paths).toEqual([
       'vaults/molly/user-keys.json',
-      'vaults/molly/vault/attachments/abc-123.pdf',
       'vaults/molly/vault/pages-index.json',
       'vaults/molly/vault/store.json',
       'vaults/molly/vault/uuid-1.md',

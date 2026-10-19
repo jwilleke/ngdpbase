@@ -1,7 +1,8 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -49,6 +50,9 @@ export default class CommentManager extends BaseManager {
         'ngdpbase.comments.storagedir',
         './data/comments'
       );
+      // #1876: a staged site restore goes in before anything is read.
+      const restored = applyDirectoryPartAtStart('CommentManager', this.commentsDir, configManager);
+      if (restored?.refused) this.markDegraded(`A staged restore of the public pages' comments was not applied: ${restored.refused}`);
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(
@@ -64,6 +68,25 @@ export default class CommentManager extends BaseManager {
       await this.outsideCheck.run({ notify: true });
       logger.debug('CommentManager initialized');
     }
+  }
+
+  /**
+   * The public folder is in the backup (#1876), as `<stem>.comments.tar` beside
+   * the document: the public pages' comments. A vault page's are in its vault, which
+   * PageManager backs up with the vault, sealed as stored.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('CommentManager', 'comments', this.commentsDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live folder is untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('CommentManager', this.commentsDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   isEnabled(): boolean {

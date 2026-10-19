@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import BaseManager, { type ManagerStats } from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -32,6 +33,8 @@ class PersonManager extends BaseManager {
 
   private provider: PersonProvider | null = null;
   private providerClass?: string;
+  /** `ngdpbase.application.persons.storagedir`, resolved at start: what a backup copies (#1876). */
+  private storageDir: string | null = null;
 
   // #620: cache the two by-key lookups (used per request in
   // RoleManager.resolveUserRoles → getByIdentifier and indirectly in
@@ -58,6 +61,10 @@ class PersonManager extends BaseManager {
       'ngdpbase.application.persons.storagedir',
       './data/persons'
     );
+    this.storageDir = storageDir;
+    // #1876: a staged site restore goes in before the records are read.
+    const restored = applyDirectoryPartAtStart('PersonManager', storageDir, configManager);
+    if (restored?.refused) this.markDegraded(`A staged restore of person records was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.persons.storagedir',
       storageDir
@@ -83,6 +90,21 @@ class PersonManager extends BaseManager {
     await this.provider.initialize();
 
     logger.info(`👤 PersonManager initialized (${(await this.provider.list()).length} persons)`);
+  }
+
+  /** Person records are in the backup (#1876), as `<stem>.persons.tar` beside the document. */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('PersonManager', 'persons', this.storageDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('PersonManager', this.storageDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   getProvider(): PersonProvider | null {

@@ -92,6 +92,13 @@ export interface ManagerRestoreOptions {
   replaceStaged?: boolean;
   /** The backup of the live data BackupManager took just before this restore (#1723, D6), by filename. */
   safetyBackup?: string;
+  /**
+   * The site restore manifest this restore is staged under (#1876). A
+   * manager whose restore is staged (`restoreIsStaged()`) stages its files
+   * beside its live ones and records its part there; the next start applies
+   * every part or none (`src/utils/siteRestore.ts`).
+   */
+  siteRestore?: string;
 }
 
 /**
@@ -468,6 +475,16 @@ abstract class BaseManager {
     if (!backupData) {
       throw new Error(`${this.constructor.name}: No backup data provided for restore`);
     }
+  }
+
+  /**
+   * Whether this manager's `restore()` stages for the next start instead of
+   * writing into the running site (#1723, #1876). BackupManager stages every
+   * such manager in a site restore together, all or nothing, after a backup
+   * of the live data. The default is false: the restore writes live.
+   */
+  restoreIsStaged(): boolean {
+    return false;
   }
 
   /**

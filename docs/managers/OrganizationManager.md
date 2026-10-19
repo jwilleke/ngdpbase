@@ -1,7 +1,7 @@
 ---
 name: OrganizationManager
 description: Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider
-dateModified: '2026-05-28'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/OrganizationManager.ts
 ---
@@ -33,6 +33,10 @@ Two things it never does: __write the config key back__ (instance config is a re
 ## Provider Pattern
 
 `OrganizationProvider` is the storage abstraction. The default implementation is [FileOrganizationProvider](../providers/FileOrganizationProvider.md) (one JSON file per org under `data/organizations/`). Other backends could swap in (database, CRM API) without affecting the manager.
+
+## Backup and restore
+
+Organization records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `backup()` writes the folder (`ngdpbase.application.organization.storagedir`) as `<stem>.organizations.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive (`src/utils/directoryBackup.ts`). `restore()` is staged (`restoreIsStaged()`): it extracts the archive to `<folder>.staged` as part of a site restore and never writes into the folder; at the next start, before anything reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
 
 ## See Also
 
