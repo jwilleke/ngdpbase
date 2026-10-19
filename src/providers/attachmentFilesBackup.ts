@@ -14,6 +14,9 @@
  *   files stay sealed, and nothing is decrypted.
  *
  * Both are written and read as streams, so no file is ever whole in memory.
+ * With `NGDPBASE_BACKUP_KEY` set both are encrypted under it (#1561) and
+ * named `.tar.enc`; a restore reads them only under the key they were made
+ * with (`archiveTarget`, `archiveReadKey` in `src/utils/directoryBackup.ts`).
  *
  * A restore stages, all or nothing with the rest of a site restore
  * (`src/utils/siteRestore.ts`): the pool is extracted to `<pool>.staged`
@@ -27,9 +30,8 @@
  */
 import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { list as listTar } from 'tar';
-import { extractTreeArchive, readHead, writeTreeArchive } from '../utils/treeArchive.js';
-import { isArchiveName } from '../utils/directoryBackup.js';
+import { extractTreeArchive, listTreeArchive, readHead, writeTreeArchive } from '../utils/treeArchive.js';
+import { archiveReadKey, archiveTarget, isArchiveName } from '../utils/directoryBackup.js';
 import { applyPartAtStart, recordStagedPart, stagedPathFor, type PartOutcome, type StagedSwap } from '../utils/siteRestore.js';
 import { isSealedBytes } from '../utils/privateStoreCrypto.js';
 import { vaultMustBeSealed } from '../utils/privateStoreFiles.js';
@@ -58,6 +60,8 @@ export interface AttachmentFilesBackupData {
   format: 1;
   pool: { archive: string; files: number; bytes: number };
   vaults: { archive: string; files: number; bytes: number; stores: string[] };
+  /** `backupKeyFingerprint()` of the key both archives are encrypted under; absent when they are not. */
+  keyFingerprint?: string;
 }
 
 export interface AttachmentFilesBackupOutcome {
@@ -89,8 +93,11 @@ function vaultStores(places: AttachmentFilePlaces): { stores: Array<{ owner: str
 export async function backupAttachmentFiles(places: AttachmentFilePlaces, directory: string, stem: string): Promise<AttachmentFilesBackupOutcome> {
   const warnings: string[] = [];
   const metadataRel = path.relative(places.pool, places.metadataFile).split(path.sep).join('/');
-  const poolArchive = `${stem}.attachments.tar`;
+  const poolTarget = archiveTarget(stem, 'attachments');
+  const poolArchive = poolTarget.archive;
+  const backupKey = poolTarget.backupKey;
   const pool = await writeTreeArchive(path.join(directory, poolArchive), places.pool, {
+    backupKey,
     exclude: (rel) => rel === THUMBS || rel.startsWith(`${THUMBS}/`) || rel === metadataRel
   });
   for (const s of pool.skipped) warnings.push(`attachments: ${s} is not a file or a folder, so it was left out`);
@@ -108,37 +115,35 @@ export async function backupAttachmentFiles(places: AttachmentFilePlaces, direct
     entries.push(...here);
     named.push(`${owner}/${store}`);
   }
-  const vaultArchive = `${stem}.vault-attachments.tar`;
-  const vaults = await writeTreeArchive(path.join(directory, vaultArchive), places.pagesDirectory ?? directory, { entries });
+  const vaultArchive = archiveTarget(stem, 'vault-attachments').archive;
+  const vaults = await writeTreeArchive(path.join(directory, vaultArchive), places.pagesDirectory ?? directory, { entries, backupKey });
   for (const s of vaults.skipped) warnings.push(`vault attachments: ${s} is not a file or a folder, so it was left out`);
   return {
     data: {
       format: 1,
       pool: { archive: poolArchive, files: pool.files, bytes: pool.bytes },
-      vaults: { archive: vaultArchive, files: vaults.files, bytes: vaults.bytes, stores: named }
+      vaults: { archive: vaultArchive, files: vaults.files, bytes: vaults.bytes, stores: named },
+      ...(poolTarget.keyFingerprint ? { keyFingerprint: poolTarget.keyFingerprint } : {})
     },
     warnings
   };
 }
 
 /** The `vaults/{owner}/{store}` folders an archive holds, read as a stream. */
-async function storesInArchive(archive: string, layout: PrivateStoreLayout): Promise<Array<{ owner: string; store: string }>> {
+async function storesInArchive(archive: string, layout: PrivateStoreLayout, backupKey: string | undefined): Promise<Array<{ owner: string; store: string }>> {
   const seen = new Map<string, { owner: string; store: string }>();
   const bad: string[] = [];
-  await listTar({
-    file: archive,
-    onReadEntry: (entry) => {
-      const parts = entry.path.replace(/\/$/, '').split('/');
-      const folderAbove = entry.type === 'Directory' && parts.length < 4;
-      if (parts[0] !== layout.privateRoot || (parts.length < 4 && !folderAbove)) {
-        bad.push(`'${entry.path}' is not a vault's files`);
-      } else if (parts.length >= 4) {
-        const [, owner, store] = parts;
-        if (!isSafePathSegment(owner) || !isValidStoreId(store)) bad.push(`'${owner}/${store}' can't be a vault`);
-        else seen.set(`${owner}/${store}`, { owner, store });
-      }
+  await listTreeArchive(archive, (entry) => {
+    const parts = entry.path.replace(/\/$/, '').split('/');
+    const folderAbove = entry.type === 'Directory' && parts.length < 4;
+    if (parts[0] !== layout.privateRoot || (parts.length < 4 && !folderAbove)) {
+      bad.push(`'${entry.path}' is not a vault's files`);
+    } else if (parts.length >= 4) {
+      const [, owner, store] = parts;
+      if (!isSafePathSegment(owner) || !isValidStoreId(store)) bad.push(`'${owner}/${store}' can't be a vault`);
+      else seen.set(`${owner}/${store}`, { owner, store });
     }
-  });
+  }, { backupKey });
   if (bad.length > 0) throw new Error(`the vault files archive holds entries that don't belong in it: ${bad.slice(0, 5).join(', ')}`);
   return [...seen.values()];
 }
@@ -176,13 +181,14 @@ export async function stageAttachmentFiles(
   if (!isArchiveName(data?.pool?.archive) || !isArchiveName(data?.vaults?.archive)) {
     throw new Error('The backup names attachment archives that are not files in the backup directory; nothing was staged');
   }
+  const backupKey = archiveReadKey('AttachmentManager', data);
   const swaps: StagedSwap[] = [];
   const skippedVaults: string[] = [];
   try {
     // The shared pool, with its metadata from the document.
     const poolStaged = stagedPathFor(places.pool);
     swaps.push({ live: places.pool, staged: poolStaged });
-    await extractTreeArchive(path.join(directory, data.pool.archive), poolStaged);
+    await extractTreeArchive(path.join(directory, data.pool.archive), poolStaged, { backupKey });
     const metadataRel = path.relative(places.pool, places.metadataFile);
     if (!metadataRel.startsWith('..') && !path.isAbsolute(metadataRel)) {
       const target = path.join(poolStaged, metadataRel);
@@ -196,7 +202,7 @@ export async function stageAttachmentFiles(
 
     // Each vault's files, as stored.
     const vaultArchive = path.join(directory, data.vaults.archive);
-    const stores = places.pagesDirectory ? await storesInArchive(vaultArchive, places.layout) : [];
+    const stores = places.pagesDirectory ? await storesInArchive(vaultArchive, places.layout, backupKey) : [];
     for (const { owner, store } of stores) {
       const pagesDirectory = places.pagesDirectory!;
       if (!existsSync(privateStoreRoot(pagesDirectory, owner, store, places.layout))) {
@@ -209,15 +215,15 @@ export async function stageAttachmentFiles(
       const attachmentsRel = `${prefix}${places.layout.attachmentsDir}/`;
       const indexRel = `${prefix}${places.layout.files.storefiles}`;
       const staged: string[] = [];
-      if (await archiveHas(vaultArchive, attachmentsRel)) {
+      if (await archiveHas(vaultArchive, attachmentsRel, backupKey)) {
         const dirStaged = stagedPathFor(dir);
         swaps.push({ live: dir, staged: dirStaged });
-        await extractTreeArchive(vaultArchive, dirStaged, { select: (rel) => rel.startsWith(attachmentsRel), strip: 4 });
+        await extractTreeArchive(vaultArchive, dirStaged, { select: (rel) => rel.startsWith(attachmentsRel), strip: 4, backupKey });
         staged.push(dirStaged);
       }
-      if (await archiveHas(vaultArchive, indexRel)) {
+      if (await archiveHas(vaultArchive, indexRel, backupKey)) {
         const tmp = path.join(path.dirname(index), `.${path.basename(index)}.restore`);
-        await extractTreeArchive(vaultArchive, tmp, { select: (rel) => rel === indexRel, strip: 3 });
+        await extractTreeArchive(vaultArchive, tmp, { select: (rel) => rel === indexRel, strip: 3, backupKey });
         const indexStaged = stagedPathFor(index);
         rmSync(indexStaged, { force: true });
         renameSync(path.join(tmp, path.basename(index)), indexStaged);
@@ -241,9 +247,9 @@ export async function stageAttachmentFiles(
 }
 
 /** Whether the archive holds an entry at `rel` (or under it, for a folder). */
-async function archiveHas(archive: string, rel: string): Promise<boolean> {
+async function archiveHas(archive: string, rel: string, backupKey: string | undefined): Promise<boolean> {
   let found = false;
-  await listTar({ file: archive, filter: (p) => p === rel || p.startsWith(rel), onReadEntry: () => { found = true; } });
+  await listTreeArchive(archive, (e) => { if (e.path === rel || e.path.startsWith(rel)) found = true; }, { backupKey });
   return found;
 }
 

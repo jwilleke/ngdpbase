@@ -14,7 +14,7 @@ The full, current detail — every kind of data, what restores, and every known 
 - __Automatically:__ turn on automatic backups on Admin → Backup, with a time of day and the days to run. A backup missed while the server was down runs when it is back.
 - The server keeps the last 10 backups (`ngdpbase.backup.max-backups`), each with the files beside it.
 
-A backup is one document, `<timestamp>-ngdpbase-backup.json.gz`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar` (attachments, vault files, role membership, persons, organizations, footnotes, comments).
+A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar.enc` (attachments, vault files, role membership, persons, organizations, footnotes, comments, the credentials store, the audit log, file-based job state, add-on files). With `NGDPBASE_BACKUP_KEY` set every one of them is encrypted under it; without it the names end `.json.gz` and `.tar`, and nothing is encrypted (below).
 
 ### What IS in a backup
 
@@ -31,20 +31,24 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz`, and the files b
 | Settings (`app-custom-config.json`, secrets included) | the document |
 | The search index and the keyword vocabulary | the document |
 | The application database and add-on databases (with `NGDPBASE_BACKUP_KEY` set) | `<stem>.<name>.db`, encrypted |
+| Passkeys, authenticator apps, verified email and phone, known devices, linked sign-ins, proxy grants (with `NGDPBASE_BACKUP_KEY` set; never unencrypted) | `<stem>.credentials.tar.enc` |
+| The audit log, with its hash chain | `<stem>.audit.tar.enc` |
+| Scheduled-job state kept in files (with a database it is in the database copy) | `<stem>.jobs.tar.enc` |
+| Add-on files: forms and submissions, calendars, feed records | `<stem>.forms.tar.enc`, `<stem>.calendar.tar.enc`, `<stem>.feeds.tar.enc` |
 
 ### What is NOT in a backup
 
 | Data | How to keep it |
 | --- | --- |
-| Passkeys, authenticator apps, verified email and phone, known devices, linked sign-ins | copy `$FAST_STORAGE/users/` |
 | `.env` and the keys in it | keep a copy in a password manager or secret store |
-| The audit log | copy `$FAST_STORAGE/logs/` |
-| Shares, notifications, scheduled-job state | copy `$FAST_STORAGE/` |
-| Add-on files under an add-on's data folder | copy `$FAST_STORAGE/` |
+| Shares, notifications | copy `$FAST_STORAGE/` |
 | Sign-in sessions | not needed: people sign in again |
-| Media files | back up your media folders at the storage level |
+| Media files and the media index | back up your media folders at the storage level; the index is rebuilt by a rescan |
 
-> __Important:__ the document and the `.tar` files are __not encrypted__. They hold password hashes, settings with their secrets, attachments and records as they are on disk. Keep backups as safe as the data folder itself.
+### Encryption
+
+- __With `NGDPBASE_BACKUP_KEY` set__ every file of a backup is encrypted under it: the document, every `.tar.enc` and the databases. Each records a short fingerprint of the key (never the key); a restore under another key is refused, and one without the key can't read anything.
+- __Without it__ the backup is __not encrypted__: the document holds password hashes and settings with their secrets, the `.tar` files hold attachments and records as they are on disk. The credentials store and the databases are left out. Every such backup notifies admins ("A backup is incomplete" or "A backup is not encrypted"). A restore of the rest of the site also needs the key, since it starts with a complete backup of the live data.
 
 ---
 
@@ -67,7 +71,18 @@ __Admin → Backup → Restore Databases__: pick a backup stored on the server, 
 
 ### Everything else
 
-Nothing on Admin → Backup restores anything but the databases yet ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). The attachment files, role membership, persons, organizations, footnotes and comments in a backup can be restored together with the databases, staged for the next start, by the site restore that #1876 is building; it has no button yet.
+Nothing on Admin → Backup restores anything but the databases yet ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). The attachment files, role membership, persons, organizations, footnotes and comments, the credentials store, the audit log, file-based job state and add-on files in a backup can be restored together with the databases, staged for the next start, by the site restore that #1876 is building; it has no button yet.
+
+### Not restored
+
+After any restore is put in place, admins get a __critical__ notification ("Critical: a restore did not bring everything back") listing what it did not bring back. The list is known before a restore too:
+
+- shares and notifications (they stay as they are), sign-in sessions, the keys in `.env`, the media index — no backup holds them;
+- pages, user accounts and settings — they have no staged restore yet;
+- for a databases-only restore, everything but the databases;
+- anything the backup left out, such as the credentials store of a backup taken without the key.
+
+The notification also names each scheduled job that ran between the backup and the restore, with its last run time and result. Those runs are not in the restored job history, and a restore never runs a job again: a run the backup caught in progress is closed as cut off, and each schedule goes on from the next time after the restart. Decide yourself whether any of them needs running again.
 
 To bring back anything else today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
 

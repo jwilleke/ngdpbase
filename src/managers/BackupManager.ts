@@ -19,6 +19,10 @@ import {
   beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, readSiteRestore, siteRestoreFile,
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
+import { decryptBuffer, encryptBuffer, ENCRYPTED_SUFFIX, isEncryptedBackup } from '../utils/backupCrypto.js';
+import { BACKUP_KEY_ENV, currentBackupKey } from '../utils/backupKey.js';
+import type { JobRunSince } from './BackgroundJobManager.js';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -57,6 +61,10 @@ export interface StoredBackup extends BackupFileInfo {
   databases: string[];
   /** The file archives beside the document, by part (`attachments`, `roles`, …) (#1876). */
   parts: string[];
+  /** Every file beside the document, by filename: what a download carries with it. */
+  files: string[];
+  /** Whether the document is encrypted under the backup key (#1561): its name ends `.enc`. */
+  encrypted: boolean;
   /** The document and every file beside it together, in bytes. */
   totalSize: number;
 }
@@ -138,12 +146,81 @@ export interface AutoBackupConfig {
  * pruned and downloaded with it.
  */
 export function backupStem(filename: string): string {
-  return filename.replace(/\.json(\.gz)?$/, '');
+  return filename.replace(/\.json(\.gz)?(\.enc)?$/, '');
 }
 
-/** Whether `filename` is one of the files a manager wrote beside the document named `documentFilename` (#1723). */
+/** Whether `filename` is one of the files a manager wrote beside the document named `documentFilename` (#1723); a file archive may be encrypted, `.tar.enc` (#1561). */
 export function isCompanionOf(filename: string, documentFilename: string): boolean {
-  return filename.startsWith(`${backupStem(documentFilename)}.`) && (filename.endsWith('.db') || filename.endsWith('.tar'));
+  return filename.startsWith(`${backupStem(documentFilename)}.`) && (filename.endsWith('.db') || filename.endsWith('.tar') || filename.endsWith(`.tar${ENCRYPTED_SUFFIX}`));
+}
+
+/**
+ * What no backup holds, so no restore brings back (#1876), in the words
+ * admins read: these stay as they are on the site. The backup-restore guide
+ * and the Backup help page list the same.
+ */
+export const NEVER_IN_A_BACKUP: readonly string[] = [
+  'shares (share links stay as they are)',
+  'notifications',
+  'sign-in sessions',
+  'the keys in the instance .env',
+  'the media index'
+];
+
+/** How the "not restored" notification names a manager's data (#1876); a manager not listed is named as it is. */
+const RESTORE_LABELS: Record<string, string> = {
+  PageManager: 'pages (with their history, trash and private stores)',
+  UserManager: 'user accounts',
+  ConfigurationManager: 'settings',
+  SearchManager: 'the search index (rebuild it from the pages)',
+  CatalogManager: 'the user keywords vocabulary',
+  AddonsManager: 'the add-on list',
+  AgentTokenManager: 'agent tokens',
+  OidcManager: 'OpenID Connect grants',
+  AuthManager: 'the credentials store (passkeys, verified email and phone, devices, linked identities, proxy grants)',
+  AuditManager: 'the audit log',
+  BackgroundJobManager: 'scheduled-job state',
+  AttachmentManager: 'attachment files',
+  RoleManager: 'role membership',
+  PersonManager: 'persons',
+  OrganizationManager: 'organizations',
+  FootnoteManager: 'footnotes on public pages',
+  CommentManager: 'comments on public pages',
+  DatabaseManager: 'the databases',
+  FormsDataManager: 'forms and their submissions',
+  CalendarDataManager: 'calendars',
+  FeedManager: 'feed records'
+};
+
+/** Managers whose backup entry holds nothing of the site's own: never named as not restored. */
+const NO_SITE_DATA: ReadonlySet<string> = new Set(['BackupManager', 'ImportManager']);
+
+/** Whether a manager's backup entry holds anything: an error, or a field beyond the bookkeeping every entry has. */
+function slotHoldsData(slot: unknown): boolean {
+  if (!slot || typeof slot !== 'object') return false;
+  return Object.entries(slot as Record<string, unknown>)
+    .some(([key, value]) => !['managerName', 'timestamp', 'note', 'warnings'].includes(key) && value !== null && value !== undefined);
+}
+
+/** A manager's data as the "not restored" notification names it. */
+export function restoreLabel(manager: string): string {
+  return RESTORE_LABELS[manager] ?? manager;
+}
+
+/**
+ * What a staged restore will not bring back, written when it is staged (#1876)
+ * and read once it has been applied, for the critical notification: kept by
+ * BackupManager beside the site restore manifest, as `<manifest>.report.json`.
+ */
+export interface RestoreReport {
+  version: 1;
+  source: string;
+  /** When the backup was taken. */
+  backup: string;
+  /** The backup's parts that were not staged, by manager. */
+  notRestored: string[];
+  /** The job runs since the backup, read from the live job state when the restore was staged. */
+  jobRuns: JobRunSince[];
 }
 
 /** The scheduled job automatic backups run as (#1720). */
@@ -185,6 +262,46 @@ export function autoBackupSchedule(time: string, days: string, timeZone: string)
 /** The server's own time zone: what the replaced timer's `getHours()` read. */
 function serverTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+/** A time as admins read it: the server's local time (#1876; never UTC in a notification). */
+function localTime(iso: string | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : 'an unknown time';
+}
+
+/**
+ * The text of the critical "not restored" notification (#1876): what the
+ * restore put back, what it did not, and per job the runs since the backup —
+ * its name, when it last ran and how that ended — newest first.
+ */
+export function describeNotRestored(input: {
+  source: string;
+  backup: string;
+  applied: string[];
+  notRestored: string[];
+  jobRuns: JobRunSince[];
+  nameOf: (jobId: string) => string;
+  missingReport?: boolean;
+}): string {
+  const lines: string[] = [];
+  lines.push(`The restore from ${input.source}${input.backup ? ` (backup taken ${localTime(input.backup)})` : ''} was applied: ${input.applied.join(', ')}.`);
+  const notRestored = [...input.notRestored, ...NEVER_IN_A_BACKUP];
+  lines.push(`Not restored — still as they were before the restore: ${notRestored.join('; ')}.`);
+  if (input.missingReport) lines.push('The record of what this restore left out could not be read, so this list may be short.');
+  const byJob = new Map<string, JobRunSince[]>();
+  for (const r of input.jobRuns) byJob.set(r.jobId, [...(byJob.get(r.jobId) ?? []), r]);
+  if (byJob.size === 0) {
+    lines.push('No scheduled job ran between the backup and the restore.');
+  } else {
+    const jobs = [...byJob.entries()].map(([jobId, runs]) => {
+      const last = runs.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
+      const result = last.status === 'completed' ? 'completed' : last.status === 'running' ? 'still running' : `${last.status}${last.error ? `: ${last.error}` : ''}`;
+      return `${input.nameOf(jobId)} — last ran ${localTime(last.completedAt ?? last.startedAt)}, ${result}${runs.length > 1 ? ` (${runs.length} runs since the backup)` : ''}`;
+    });
+    lines.push(`Jobs that ran between the backup and the restore — their runs are not in the restored job history, and they are not run again: ${jobs.join('; ')}. Check whether any of them needs running again.`);
+  }
+  return lines.join(' ');
 }
 
 class BackupManager extends BaseManager {
@@ -272,10 +389,6 @@ class BackupManager extends BaseManager {
     if (!configManager) {
       throw new Error('BackupManager requires ConfigurationManager to be initialized.');
     }
-
-    // #1876: every part of a staged site restore was applied (or set aside)
-    // by its owner as it started; this manager starts last, so say what happened.
-    await this.reportSiteRestoreAtBoot(siteRestoreFile(configManager));
 
     // Uses getResolvedDataPath to support INSTANCE_DATA_FOLDER
     this.backupDirectory = configManager.getResolvedDataPath(
@@ -382,7 +495,10 @@ class BackupManager extends BaseManager {
 
       // Generate filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = options.filename || `${timestamp}-ngdpbase-backup.json.gz`;
+      // #1561: with the backup key set the document is encrypted under it, and named so.
+      const backupKey = currentBackupKey();
+      const plainName = options.filename || `${timestamp}-ngdpbase-backup.json.gz`;
+      const filename = backupKey && !plainName.endsWith(ENCRYPTED_SUFFIX) ? `${plainName}${ENCRYPTED_SUFFIX}` : plainName;
 
       // Collect backup data from all managers
       const backupData: BackupData = {
@@ -446,6 +562,9 @@ class BackupManager extends BaseManager {
         logger.info(`🗜️  Compressed size: ${(compressed.length / 1024).toFixed(2)} KB (${((compressed.length / jsonData.length) * 100).toFixed(1)}% of original)`);
       }
 
+      // #1561: the document holds password hashes and the custom configuration with its secrets.
+      if (backupKey) finalData = await encryptBuffer(Buffer.isBuffer(finalData) ? finalData : Buffer.from(finalData, 'utf8'), backupKey);
+
       // Write via the storage provider (#170)
       const backupPath = await this.provider.writeBackup(filename, finalData);
       pending = null;
@@ -470,11 +589,14 @@ class BackupManager extends BaseManager {
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
       // #1723, #1563: a backup with a part missing is said, not just logged.
-      if (failures.length > 0) {
-        const message = `Backup ${filename} was written, but without: ${failures.join('; ')}`;
+      // #1561: so is one that is not encrypted.
+      const unencrypted = backupKey ? '' : `${BACKUP_KEY_ENV} is not set, so this backup is NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear. Set ${BACKUP_KEY_ENV} to encrypt backups.`;
+      if (failures.length > 0 || unencrypted) {
+        const missing = failures.length > 0 ? `Backup ${filename} was written, but without: ${failures.join('; ')}` : `Backup ${filename} was written.`;
+        const message = unencrypted ? `${missing} ${unencrypted}` : missing;
         logger.error(`❌ ${message}`);
-        await this.notifyAdmins('error', 'A backup is incomplete', message);
-        if (options.requireComplete) throw new Error(message);
+        await this.notifyAdmins('error', failures.length > 0 ? 'A backup is incomplete' : 'A backup is not encrypted', message);
+        if (failures.length > 0 && options.requireComplete) throw new Error(missing);
       }
 
       // Clean up old backups
@@ -555,14 +677,26 @@ class BackupManager extends BaseManager {
 
       logger.info(`📁 Read backup file: ${(fileData.length / 1024).toFixed(2)} KB`);
 
-      // Decompress if needed (detect by extension or try decompression)
+      // #1561: an encrypted document is read only under the backup key it was made with.
+      let documentBytes: Buffer = fileData;
+      if (isEncryptedBackup(fileData)) {
+        const key = currentBackupKey();
+        if (!key) throw new Error(`The backup ${path.basename(backupPath)} is encrypted under the backup key, and ${BACKUP_KEY_ENV} is not set; nothing was restored`);
+        try {
+          documentBytes = await decryptBuffer(fileData, key);
+        } catch (err) {
+          throw new Error(`The backup ${path.basename(backupPath)} could not be read: ${(err as Error).message}; nothing was restored`, { cause: err });
+        }
+      }
+
+      // Decompress if needed (gzip's first bytes, whatever the name says)
       let jsonData: string;
-      if (backupPath.endsWith('.gz')) {
-        const decompressed = await gunzip(fileData);
+      if (documentBytes[0] === 0x1f && documentBytes[1] === 0x8b) {
+        const decompressed = await gunzip(documentBytes);
         jsonData = decompressed.toString('utf8');
         logger.info(`🗜️  Decompressed to: ${(jsonData.length / 1024).toFixed(2)} KB`);
       } else {
-        jsonData = fileData.toString('utf8');
+        jsonData = documentBytes.toString('utf8');
       }
 
       // Parse JSON
@@ -617,11 +751,33 @@ class BackupManager extends BaseManager {
         logger.info(`✅ Live data backed up to ${before}`);
         await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged, safetyBackup: path.basename(before) });
         results.success.push('DatabaseManager');
+        // #1876: what this databases-only restore leaves as it is, for the notification once it is applied.
+        await this.writeRestoreReport(backupPath, backupData, managerNames.filter((n) => n !== 'DatabaseManager'));
+      }
+
+      // #1876: while a site restore is staged, nothing is restored live: it
+      // would be overwritten, or contradicted, by the parts the restart puts
+      // in place. A site restore just staged leaves them out and says so.
+      const live = managerNames.filter((name) =>
+        !(siteRestore && stagedNames.includes(name)) && !(name === 'DatabaseManager' && hasDatabases) && filtered(name));
+      if (live.length > 0 && !siteRestore) {
+        let staged: SiteRestoreManifest | null;
+        try {
+          staged = this.getStagedSiteRestore();
+        } catch (err) {
+          throw new Error(`A site restore record is there but can't be read (${(err as Error).message}); nothing was restored`, { cause: err });
+        }
+        if (staged) throw new Error(`A site restore from ${staged.source || staged.backup} is staged, so ${live.join(', ')} can't be restored now; cancel it first. Nothing was restored`);
       }
 
       // Restore each manager
       for (const managerName of managerNames) {
         if (siteRestore && stagedNames.includes(managerName)) continue;
+        if (siteRestore && live.includes(managerName)) {
+          logger.warn(`⏭️  ${managerName} not restored: it has no staged restore, and a site restore is staged (#1876)`);
+          results.skipped.push(managerName);
+          continue;
+        }
         if (managerName === 'DatabaseManager' && hasDatabases) {
           if (options.managerFilter && !options.managerFilter.includes(managerName)) results.skipped.push(managerName);
           continue;
@@ -751,9 +907,14 @@ class BackupManager extends BaseManager {
           replaceStaged: options.replaceStaged || Boolean(databaseStaged)
         });
       }
-      commitSiteRestore(siteFile);
+      const committed = commitSiteRestore(siteFile);
+      // #1876: every part of the backup that is not in the restore — no staged
+      // restore here, or a staged one that found nothing to stage.
+      const recorded = new Set(committed.parts.map((p) => p.manager));
+      await this.writeRestoreReport(backupPath, backupData, Object.keys(backupData.managers).filter((n) => !recorded.has(n)));
     } catch (err) {
       discardSiteRestore(siteFile);
+      this.removeRestoreReport();
       throw new Error(`The site restore was not staged, and nothing was changed: ${(err as Error).message}`, { cause: err });
     }
     const message = `${ordered.join(', ')} from the backup taken ${String(backupData.timestamp)} are staged. Restart the site to put them in place, all together; the current data of each is kept beside it as *.pre-restore. The current data was backed up first, as ${before}.`;
@@ -781,12 +942,47 @@ class BackupManager extends BaseManager {
       metadata: { ...who.metadata, stagedAt: staged.stagedAt, stagedBy: staged.stagedBy, parts: staged.parts.map((p) => p.manager) }
     });
     discardSiteRestore(this.siteRestorePath());
+    this.removeRestoreReport();
     logger.warn(`[BackupManager] Staged site restore from ${staged.source || staged.backup} cancelled by ${who.user} (#1876)`);
     return staged;
   }
 
-  /** Tell admins what the start did with a staged site restore (#1876). */
-  private async reportSiteRestoreAtBoot(siteFile: string): Promise<void> {
+  /** Where this manager keeps the report of a staged restore: beside the site restore manifest (#1876). */
+  private restoreReportPath(): string {
+    return `${this.siteRestorePath()}.report.json`;
+  }
+
+  private removeRestoreReport(): void {
+    rmSync(this.restoreReportPath(), { force: true });
+  }
+
+  /**
+   * Record, when a restore is staged, what it will not bring back (#1876):
+   * the parts of the backup not in it, and the job runs since the backup,
+   * read from the live job state now, before the restore replaces it.
+   */
+  private async writeRestoreReport(backupPath: string, backupData: BackupData, notStaged: string[]): Promise<void> {
+    const since = String(backupData.timestamp ?? '');
+    let jobRuns: JobRunSince[] = [];
+    try {
+      jobRuns = await this.engine.getManager<{ runsSince(since: string): Promise<JobRunSince[]> }>('BackgroundJobManager')?.runsSince?.(since) ?? [];
+    } catch (err) {
+      logger.warn('[BackupManager] The job runs since the backup could not be read for the restore report:', err);
+    }
+    const notRestored = notStaged.filter((name) => !NO_SITE_DATA.has(name) && slotHoldsData(backupData.managers[name]));
+    const report: RestoreReport = { version: 1, source: path.basename(backupPath), backup: since, notRestored, jobRuns };
+    writeFileSync(this.restoreReportPath(), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
+  }
+
+  /**
+   * Tell admins what this start did with a staged restore (#1876). Called
+   * once every manager and add-on has started (`WikiEngine.initializeAddons`):
+   * each owner applied (or set aside) its part as it started, add-ons last.
+   * After any restore that was applied, a critical notification lists what it
+   * did not bring back, and the job runs between the backup and the restore.
+   */
+  async reportRestoreAtBoot(): Promise<void> {
+    const siteFile = this.siteRestorePath();
     let finished: SiteRestoreManifest | null;
     try {
       finished = finishSiteRestoreAtBoot(siteFile);
@@ -796,7 +992,43 @@ class BackupManager extends BaseManager {
       await this.notifyAdmins('error', 'A site restore could not be checked', message);
       return;
     }
-    if (!finished) return;
+    const databasesOnly = finished ? [] : this.engine.getManager<DatabaseManager>('DatabaseManager')?.getRestoredAtStart?.() ?? [];
+    const applied = finished ? finished.parts.filter((p) => p.status === 'applied').map((p) => p.manager) : databasesOnly.length > 0 ? ['DatabaseManager'] : [];
+    if (applied.length > 0) {
+      await this.reportNotRestored(applied, finished ? finished.parts.filter((p) => p.status !== 'applied').map((p) => p.manager) : []);
+    }
+    this.removeRestoreReport();
+    if (finished) await this.reportSiteRestoreOutcome(finished);
+  }
+
+  /**
+   * The critical notification after a restore was applied (#1876): every
+   * part of the site it did not bring back, and the job runs between the
+   * backup and the restore (name, last run, result), which are not in the
+   * restored job history. Jobs are never run again because of a restore.
+   */
+  private async reportNotRestored(applied: string[], notApplied: string[]): Promise<void> {
+    let report: RestoreReport | null = null;
+    try {
+      const file = this.restoreReportPath();
+      if (existsSync(file)) report = JSON.parse(readFileSync(file, 'utf8')) as RestoreReport;
+    } catch (err) {
+      logger.error('[BackupManager] The restore report could not be read:', err);
+    }
+    const jobs = this.engine.getManager<{ getRunsReplacedAtStart?(): JobRunSince[]; displayNameOf?(id: string): string }>('BackgroundJobManager');
+    const runs = new Map<string, JobRunSince>();
+    for (const r of [...(report?.jobRuns ?? []), ...(jobs?.getRunsReplacedAtStart?.() ?? [])]) runs.set(`${r.jobId}@${r.startedAt}`, r);
+    const notRestored = [...new Set([...(report?.notRestored ?? []), ...notApplied])].map(restoreLabel);
+    const message = describeNotRestored({
+      source: report?.source ?? 'a backup', backup: report?.backup ?? '', applied: applied.map(restoreLabel), notRestored,
+      jobRuns: [...runs.values()], nameOf: (id) => jobs?.displayNameOf?.(id) ?? id, missingReport: !report
+    });
+    logger.error(`[BackupManager] ${message} (#1876)`);
+    await this.notifyAdmins('error', 'Critical: a restore did not bring everything back', message);
+  }
+
+  /** Tell admins what the start did with a staged site restore (#1876). */
+  private async reportSiteRestoreOutcome(finished: SiteRestoreManifest): Promise<void> {
     const applied = finished.parts.filter((p) => p.status === 'applied').map((p) => p.manager);
     const notApplied = finished.parts.filter((p) => p.status !== 'applied').map((p) => p.manager);
     const from = `the backup ${finished.source || finished.backup}`;
@@ -850,7 +1082,9 @@ class BackupManager extends BaseManager {
       return {
         ...b,
         databases: companions.filter((o) => o.filename.endsWith('.db')).map((o) => o.filename.slice(stem.length + 1, -'.db'.length)).sort(),
-        parts: companions.filter((o) => o.filename.endsWith('.tar')).map((o) => o.filename.slice(stem.length + 1, -'.tar'.length)).sort(),
+        parts: companions.filter((o) => !o.filename.endsWith('.db')).map((o) => o.filename.slice(stem.length + 1).replace(/\.tar(\.enc)?$/, '')).sort(),
+        files: companions.map((o) => o.filename).sort(),
+        encrypted: b.filename.endsWith(ENCRYPTED_SUFFIX),
         totalSize: b.size + companions.reduce((n, o) => n + o.size, 0)
       };
     });
@@ -865,15 +1099,15 @@ class BackupManager extends BaseManager {
    * One backup as a `.tar` stream (#1723, D2): the document and every file
    * beside it — the databases, and the archives of attachment files, role
    * membership, persons, organizations, footnotes and comments (#1876) —
-   * read from disk as the stream is consumed, never built in memory. The
-   * database files are already encrypted under the backup key, which is
-   * never in the archive; the file archives are not encrypted (#1561).
+   * read from disk as the stream is consumed, never built in memory. With
+   * the backup key set every file in it is encrypted under that key, which
+   * is never in the archive (#1723, #1561).
    */
   async backupArchive(filename: string): Promise<{ name: string; stream: Readable }> {
     const backup = await this.findStoredBackup(filename);
     if (!backup || !this.backupDirectory) throw new Error(`No backup named ${filename} in the backup directory`);
     const stem = backupStem(backup.filename);
-    const files = [backup.filename, ...backup.databases.map((d) => `${stem}.${d}.db`), ...backup.parts.map((p) => `${stem}.${p}.tar`)];
+    const files = [backup.filename, ...backup.files];
     const stream = createTar({ cwd: this.backupDirectory, portable: true, noDirRecurse: true }, files) as unknown as Readable;
     return { name: `${stem}.tar`, stream };
   }
@@ -945,8 +1179,8 @@ class BackupManager extends BaseManager {
       const backups = objects
         .filter(o =>
           // Support both old format (ngdpbase-backup-{timestamp}) and new format ({timestamp}-ngdpbase-backup)
-          (o.filename.startsWith('ngdpbase-backup-') || o.filename.endsWith('-ngdpbase-backup.json.gz'))
-          && o.filename.endsWith('.json.gz')
+          (o.filename.startsWith('ngdpbase-backup-') || /-ngdpbase-backup\.json\.gz(\.enc)?$/.test(o.filename))
+          && /\.json\.gz(\.enc)?$/.test(o.filename)
         )
         .map(o => ({
           filename: o.filename,

@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto';
 import os from 'node:os';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
+import { readSiteRestore, siteRestoreFile } from '../utils/siteRestore.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -50,6 +54,26 @@ const DEFAULT_CHECKPOINT_MAX_BYTES = 64 * 1024;
 /** `ngdpbase.jobs.shutdown-grace-ms` when it is not set: how long running jobs get to stop at shutdown. */
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
 /** Who holds a slot lock: this host, this process, this start. */
+/**
+ * One run between a backup and the restore of it (#1876): what admins are
+ * told was done on the site and is no longer in the restored job state.
+ */
+export interface JobRunSince {
+  jobId: string;
+  startedAt: string;
+  completedAt?: string;
+  status: JobRunRecord['status'];
+  error?: string;
+}
+
+/** The runs in `runs` started after `since`. */
+function runsAfter(jobId: string, runs: JobRunRecord[], since: string): JobRunSince[] {
+  const from = Date.parse(since);
+  return runs
+    .filter((r) => Number.isFinite(from) && Date.parse(r.startedAt) > from && r.status !== 'skipped')
+    .map((r) => ({ jobId, startedAt: r.startedAt, status: r.status, ...(r.completedAt ? { completedAt: r.completedAt } : {}), ...(r.error ? { error: r.error } : {}) }));
+}
+
 const LOCK_OWNER = `${os.hostname()}:${process.pid}:${randomUUID()}`;
 
 /**
@@ -306,6 +330,19 @@ class BackgroundJobManager extends BaseManager {
   private controllers: Map<string, AbortController> = new Map();
   /** For each running scheduled run: write it as interrupted and let go of its slot. */
   private handoffs: Map<string, () => Promise<void>> = new Map();
+  /** `ngdpbase.jobs.state.dir`, when job state is files: what a backup copies (#1876). */
+  private stateDir: string | null = null;
+  /**
+   * The job state was put back from a backup at this start (#1876): every
+   * job then starts from now — no slot since the backup is caught up, and a
+   * run unfinished in the backup is closed, never resumed or retried. Jobs
+   * are never re-run because of a restore.
+   */
+  private restoredAtStart = false;
+  /** Jobs whose restored state has been settled, since this start. */
+  private settledAfterRestore: Set<string> = new Set();
+  /** The runs found in the live file state before a restore replaced it (#1876). */
+  private runsReplacedAtStart: JobRunSince[] = [];
 
   /**
    * @param options - for tests: a state provider in place of the configured
@@ -340,9 +377,16 @@ class BackgroundJobManager extends BaseManager {
       const database = this.engine.getManager<{ isEnabled(): boolean; getHandle<H>(): H }>('DatabaseManager');
       const backend = selectJobStateBackend(configManager.getProperty('ngdpbase.jobs.state.provider', 'auto'), database?.isEnabled() ?? false);
       const limits = { historyLimit: Number(configManager.getProperty('ngdpbase.jobs.history-limit', 50)), checkpointMaxBytes: this.checkpointMaxBytes() };
-      this.stateProvider = backend === 'sqlite' && database
-        ? new SqliteJobStateProvider(database.getHandle(), limits)
-        : new FileJobStateProvider(configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs'), limits);
+      if (backend === 'sqlite' && database) {
+        this.stateProvider = new SqliteJobStateProvider(database.getHandle(), limits);
+        // #1876: the job state is in the database, which DatabaseManager restored before this start.
+        this.restoredAtStart = this.engine.getManager<{ restoredAtStart?(): boolean }>('DatabaseManager')?.restoredAtStart?.() ?? false;
+      } else {
+        this.stateDir = configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs');
+        this.applyRestoreAtStart(this.stateDir, configManager);
+        this.stateProvider = new FileJobStateProvider(this.stateDir, limits);
+      }
+      if (this.restoredAtStart) logger.warn('[BackgroundJobManager] Job state was restored from a backup: every job starts from now, nothing since the backup is caught up, and a run unfinished in the backup is not run again (#1876)');
       logger.info(`BackgroundJobManager initialized (scheduled-job state: ${backend})`);
       return;
     }
@@ -541,6 +585,14 @@ class BackgroundJobManager extends BaseManager {
     const now = this.clock();
     const rule = ruleKey(job.schedule);
     const state = await this.loadState(job);
+
+    if (this.restoredAtStart && !this.settledAfterRestore.has(job.def.id)) {
+      this.settledAfterRestore.add(job.def.id);
+      if (state) {
+        await this.settleAfterRestore(job, state, rule, now);
+        return;
+      }
+    }
 
     if (!state || state.rule !== rule) {
       // A job seen for the first time starts from now. So does a changed
@@ -1208,6 +1260,11 @@ class BackgroundJobManager extends BaseManager {
   private async recoverHandRunsOf(def: JobDefinition, provider: JobStateProvider): Promise<boolean> {
     const unfinished = (await provider.listRuns(def.id)).filter((r) => r.slot === null && (r.status === 'running' || r.status === 'interrupted'));
     if (unfinished.length === 0) return true;
+    if (this.restoredAtStart) {
+      // #1876: a run the backup caught unfinished is never restarted by a restore.
+      for (const r of unfinished) await this.reportCutOff(def, r, 'the site was restored from a backup taken while it ran, so it is not restarted — run it again if it is still needed');
+      return true;
+    }
     for (const r of unfinished) {
       if (r.status !== 'running') continue;
       if (!(await provider.takeLock(handLockId(def.id), r.startedAt, LOCK_OWNER, LOCK_TTL_MS))) return false;
@@ -1262,6 +1319,116 @@ class BackgroundJobManager extends BaseManager {
   }
 
   /** A run a restart cut off and that is not run again: recorded as failed, audited, and told to the admins. Never silent. */
+  /**
+   * A scheduled job's first look after its state was restored (#1876): a run
+   * the backup caught unfinished is closed as failed, never resumed or
+   * retried, and the next slot is the next one from now, so no slot between
+   * the backup and the restore is caught up. The restore's notification
+   * lists the runs that had happened since the backup.
+   */
+  private async settleAfterRestore(job: ScheduledJob, state: JobState, rule: string, now: Date): Promise<void> {
+    const current = state.current;
+    if (current) {
+      const error = `cut off by a restore: the backup was taken while this run was ${current.status === 'running' ? 'in progress' : current.status}, so it is not run again (#1876)`;
+      if (job.persist) await this.stateProvider?.recordRun(job.def.id, { ...current, status: 'failed', retryAt: undefined, completedAt: now.toISOString(), error });
+      logger.warn(`[BackgroundJobManager] '${job.def.id}' run ${current.runId} (slot ${current.slot ?? 'by hand'}) ${error}`);
+      await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: current.runId, slot: current.slot, attempt: current.attempt }, error, this.schedulerContext(job));
+    }
+    await this.saveState(job, { ...state, current: null, rule, nextSlot: isoOrNull(job.schedule.nextSlot(now)) });
+  }
+
+  /**
+   * Job state in a backup (#1876). Files (`ngdpbase.jobs.state.dir`): the
+   * state, run history and checkpoints as `<stem>.jobs.tar` beside the
+   * document, without the slot locks, which belong to the server that holds
+   * them. In the database: nothing here — it is in the database backup.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    const base = { managerName: 'BackgroundJobManager', timestamp: new Date().toISOString() };
+    if (this.stateProvider?.backend === 'sqlite') return { ...base, data: { backend: 'sqlite' }, note: 'Job state is in the application database, so it is in the database backup' };
+    if (!this.stateDir) return { ...base, data: null, note: this.held ?? 'No file job state is open' };
+    return backupDirectoryPart('BackgroundJobManager', 'jobs', this.stateDir, options, { exclude: (rel) => rel === 'locks' || rel.startsWith('locks/') });
+  }
+
+  /** File job state is staged for the next start with the rest of a site restore (#1876). Database job state comes back with the database. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    const data = backupData.data as { backend?: string; archive?: string } | null;
+    if (!data?.archive) {
+      logger.info(`[BackgroundJobManager] The backup holds no job state files${data?.backend === 'sqlite' ? ' (its job state is in the database backup)' : ''}; nothing staged (#1876)`);
+      return;
+    }
+    if (!this.stateDir) {
+      logger.warn('[BackgroundJobManager] The backup holds job state files, but this site keeps job state in the database; they are not restored (#1876)');
+      return;
+    }
+    await stageDirectoryPart('BackgroundJobManager', this.stateDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
+  }
+
+  /**
+   * Put staged file job state in place, at start, before it is opened
+   * (#1876). The runs in the live state since the backup was taken are read
+   * first, before it is replaced, for the restore's notification.
+   */
+  private applyRestoreAtStart(stateDir: string, configManager: ConfigurationManager): void {
+    let since: string | null = null;
+    try {
+      const manifest = readSiteRestore(siteRestoreFile(configManager));
+      const part = manifest?.parts.find((p) => p.manager === 'BackgroundJobManager');
+      if (manifest?.state === 'staged' && part && !part.status) since = manifest.backup;
+    } catch { /* the gate below says so */ }
+    const replaced = since ? this.readLiveRunsSince(stateDir, since) : [];
+    const outcome = applyDirectoryPartAtStart('BackgroundJobManager', stateDir, configManager);
+    if (outcome?.refused) this.markDegraded(`A staged restore of the job state was not applied: ${outcome.refused}`);
+    if (outcome && !outcome.refused && outcome.applied.length > 0) {
+      this.restoredAtStart = true;
+      this.runsReplacedAtStart = replaced;
+    }
+  }
+
+  /** The runs in the file job state at `stateDir` started after `since`, read from disk. */
+  private readLiveRunsSince(stateDir: string, since: string): JobRunSince[] {
+    const runsDir = path.join(stateDir, 'runs');
+    const found: JobRunSince[] = [];
+    let files: string[];
+    try {
+      files = readdirSync(runsDir).filter((f) => f.endsWith('.json'));
+    } catch {
+      return found;
+    }
+    for (const file of files) {
+      try {
+        const runs = JSON.parse(readFileSync(path.join(runsDir, file), 'utf8')) as JobRunRecord[];
+        if (Array.isArray(runs)) found.push(...runsAfter(file.slice(0, -'.json'.length), runs, since));
+      } catch (err) {
+        logger.warn(`[BackgroundJobManager] The run history ${file} could not be read before the restore replaced it: ${(err as Error).message}`);
+      }
+    }
+    return found;
+  }
+
+  /** The runs of every registered job started after `since`, from the live state (#1876): read before a restore replaces it. */
+  async runsSince(since: string): Promise<JobRunSince[]> {
+    if (!this.stateProvider) return [];
+    const found: JobRunSince[] = [];
+    for (const def of this.jobs.values()) found.push(...runsAfter(def.id, await this.stateProvider.listRuns(def.id), since));
+    return found;
+  }
+
+  /** The runs the live file state held before a restore replaced it at this start (#1876). */
+  getRunsReplacedAtStart(): JobRunSince[] {
+    return [...this.runsReplacedAtStart];
+  }
+
+  /** A job's display name, or its id when no job of that id is registered. */
+  displayNameOf(jobId: string): string {
+    return this.jobs.get(jobId)?.displayName ?? jobId;
+  }
+
   private async reportCutOff(def: JobDefinition, r: JobRunRecord, why: string): Promise<void> {
     const when = r.startedAt;
     const error = `cut off by a restart (started ${when}); ${why}`;

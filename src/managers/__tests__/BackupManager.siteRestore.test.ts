@@ -15,7 +15,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { list as listTar } from 'tar';
+import { decryptBuffer } from '../../utils/backupCrypto';
+import { listTreeArchive, writeTreeArchive } from '../../utils/treeArchive';
 import Database from 'better-sqlite3-multiple-ciphers';
 import BackupManager from '../BackupManager';
 import DatabaseManager, { BACKUP_KEY_ENV, DATABASE_KEY_ENV } from '../DatabaseManager';
@@ -113,6 +114,7 @@ describe('a site restore stages every part together (#1876)', () => {
     const backup = new BackupManager(engine);
     managers.BackupManager = backup;
     await backup.initialize();
+    await backup.reportRestoreAtBoot();
     return { managers, backup, database };
   }
 
@@ -167,8 +169,13 @@ describe('a site restore stages every part together (#1876)', () => {
     return (fs.readdirSync(dir, { recursive: true }) as string[]).filter((f) => suffix.test(f)).sort();
   }
 
+  /** The backup document as text: decrypted under the backup key (#1561), then unzipped. */
+  async function documentText(file: string): Promise<string> {
+    return gunzipSync(await decryptBuffer(fs.readFileSync(file), process.env[BACKUP_KEY_ENV])).toString('utf8');
+  }
+
   async function backupDocument(file: string): Promise<{ managers: Record<string, Record<string, unknown>> }> {
-    return JSON.parse(gunzipSync(fs.readFileSync(file)).toString('utf8'));
+    return JSON.parse(await documentText(file));
   }
 
   beforeEach(() => {
@@ -205,24 +212,24 @@ describe('a site restore stages every part together (#1876)', () => {
     const doc = await backupDocument(file);
     const stem = '2026-10-19T00-00-00-000Z-ngdpbase-backup';
     for (const [manager, part] of [['RoleManager', 'roles'], ['PersonManager', 'persons'], ['OrganizationManager', 'organizations'], ['FootnoteManager', 'footnotes'], ['CommentManager', 'comments']]) {
-      expect(doc.managers[manager].data).toMatchObject({ format: 1, archive: `${stem}.${part}.tar` });
+      expect(doc.managers[manager].data).toMatchObject({ format: 1, archive: `${stem}.${part}.tar.enc`, keyFingerprint: expect.any(String) });
     }
-    expect(doc.managers.AttachmentManager.files).toMatchObject({ pool: { archive: `${stem}.attachments.tar`, files: 1 }, vaults: { archive: `${stem}.vault-attachments.tar`, stores: ['molly/default', 'molly/health'] } });
+    expect(doc.managers.AttachmentManager.files).toMatchObject({ pool: { archive: `${stem}.attachments.tar.enc`, files: 1 }, vaults: { archive: `${stem}.vault-attachments.tar.enc`, stores: ['molly/default', 'molly/health'] } });
     // No file's bytes in the document: no base64 of any of them.
-    const text = gunzipSync(fs.readFileSync(file)).toString('utf8');
+    const text = await documentText(file);
     for (const bytes of [POOL_BYTES, SEALED]) expect(text).not.toContain(bytes.toString('base64'));
     expect(text).not.toContain('the original comment');
 
     const entries = async (archive: string): Promise<string[]> => {
       const out: string[] = [];
-      await listTar({ file: path.join(p.backups, archive), onReadEntry: (e) => { out.push(e.path); } });
+      await listTreeArchive(path.join(p.backups, archive), (e) => { out.push(e.path); }, { backupKey: process.env[BACKUP_KEY_ENV] });
       return out.sort();
     };
-    expect(await entries(`${stem}.roles.tar`)).toEqual(['editor.json']);
-    expect(await entries(`${stem}.comments.tar`)).toEqual(['page-1/', 'page-1/c1.json']);
+    expect(await entries(`${stem}.roles.tar.enc`)).toEqual(['editor.json']);
+    expect(await entries(`${stem}.comments.tar.enc`)).toEqual(['page-1/', 'page-1/c1.json']);
     // The pool without its thumbnails or the metadata the document already holds.
-    expect(await entries(`${stem}.attachments.tar`)).toEqual([`${ATTACHMENT_ID}.png`]);
-    expect(await entries(`${stem}.vault-attachments.tar`)).toEqual([
+    expect(await entries(`${stem}.attachments.tar.enc`)).toEqual([`${ATTACHMENT_ID}.png`]);
+    expect(await entries(`${stem}.vault-attachments.tar.enc`)).toEqual([
       'vaults/molly/default/attachments/', 'vaults/molly/default/attachments/note.txt',
       'vaults/molly/health/attachments/', 'vaults/molly/health/attachments/scan.pdf', 'vaults/molly/health/files-index.json'
     ]);
@@ -239,7 +246,7 @@ describe('a site restore stages every part together (#1876)', () => {
       parser.on('error', reject);
       stream.pipe(parser);
     });
-    expect(tarEntries).toEqual(expect.arrayContaining([`${stem}.attachments.tar`, `${stem}.roles.tar`, `${stem}.vault-attachments.tar`, `${stem}.application.db`]));
+    expect(tarEntries).toEqual(expect.arrayContaining([path.basename(file), `${stem}.attachments.tar.enc`, `${stem}.roles.tar.enc`, `${stem}.vault-attachments.tar.enc`, `${stem}.application.db`]));
     await stop(site);
   });
 
@@ -286,8 +293,8 @@ describe('a site restore stages every part together (#1876)', () => {
     const { site, file } = await backedUp();
     const p = paths();
     // Sabotage: one part's archive is gone from beside the document.
-    fs.rmSync(path.join(p.backups, '2026-10-19T00-00-00-000Z-ngdpbase-backup.comments.tar'));
-    await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/site restore was not staged, and nothing was changed: .*comments\.tar is missing/);
+    fs.rmSync(path.join(p.backups, '2026-10-19T00-00-00-000Z-ngdpbase-backup.comments.tar.enc'));
+    await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/site restore was not staged, and nothing was changed: .*comments\.tar\.enc is missing/);
     expect(leftovers(/\.staged$/)).toEqual([]);
     expect(fs.existsSync(p.siteRestore)).toBe(false);
     expect(fs.existsSync(manifestPath(p.db))).toBe(false);
@@ -320,13 +327,12 @@ describe('a site restore stages every part together (#1876)', () => {
     const p = paths();
     // Sabotage: the backup's vault files are plaintext, the vault on this site is sealed.
     const stem = '2026-10-19T00-00-00-000Z-ngdpbase-backup';
-    const archive = path.join(p.backups, `${stem}.vault-attachments.tar`);
+    const archive = path.join(p.backups, `${stem}.vault-attachments.tar.enc`);
     const work = path.join(dir, 'forge');
     fs.mkdirSync(path.join(work, 'vaults', 'molly', 'health', 'attachments'), { recursive: true });
     fs.writeFileSync(path.join(work, 'vaults', 'molly', 'health', 'attachments', 'scan.pdf'), 'PLAINTEXT');
     fs.rmSync(archive);
-    const { create } = await import('tar');
-    await create({ file: archive, cwd: work, portable: true }, ['vaults']);
+    await writeTreeArchive(archive, work, { entries: ['vaults'], backupKey: process.env[BACKUP_KEY_ENV] });
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/must be sealed.*never puts plaintext into a sealed vault/);
     expect(leftovers(/\.staged$/)).toEqual([]);
     expect(fs.existsSync(p.siteRestore)).toBe(false);

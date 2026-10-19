@@ -44,7 +44,6 @@ import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
 import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
-import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
@@ -57,29 +56,16 @@ import {
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
 } from '../providers/sqliteBackup.js';
 import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
+import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey } from '../utils/backupKey.js';
 
 /** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
 export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
 
-/**
- * The environment variable holding the key every database backup is encrypted
- * under (#1723). Its own secret, not the database key: the copy that travels
- * and the copy that stays should not fall to the same compromise. Never a
- * config key. Unset, no database is backed up, and admins are told.
- */
-export const BACKUP_KEY_ENV = 'NGDPBASE_BACKUP_KEY';
+// #1723, #1876: the backup key has one declaration (`src/utils/backupKey.ts`); re-exported for the callers that import it from here.
+export { BACKUP_KEY_ENV, backupKeyFingerprint } from '../utils/backupKey.js';
 
 /** How long a database backup or restore staging may run on its worker before it is stopped, when not configured. */
 export const DEFAULT_BACKUP_WORKER_TIMEOUT_MS = 3_600_000;
-
-/**
- * A short fingerprint of a backup key (#1723, D3): the first 16 hex digits of
- * an HMAC of a fixed label under the key. Recorded in each backup so a restore
- * under another key says so plainly; it never reveals the key.
- */
-export function backupKeyFingerprint(key: string): string {
-  return createHmac('sha256', key).update('ngdpbase backup key fingerprint v1').digest('hex').slice(0, 16);
-}
 
 /** The backup's name for the application database; an add-on's is `addon-<owner>`. */
 const APPLICATION = 'application';
@@ -188,6 +174,8 @@ class DatabaseManager extends BaseManager {
   private readonly addonDatabases = new Map<string, AddonDatabase>();
   /** What the start did with a staged restore (#1723), reported once the notifications exist. */
   private restoreAtStart: ApplyOutcome | null = null;
+  /** The databases a staged restore put back at this start (#1876): kept after the report, for the managers whose data is in them. */
+  private restoredNow: string[] = [];
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
   private readonly faults = new Map<Fault, string>();
   /** Why the configured application database could not be opened safely (#1892); null otherwise. */
@@ -605,6 +593,16 @@ class DatabaseManager extends BaseManager {
     }
   }
 
+  /** Whether a staged restore put the databases back at this start (#1876): the job state in them is then the backup's. */
+  restoredAtStart(): boolean {
+    return this.restoredNow.length > 0;
+  }
+
+  /** The databases a staged restore put back at this start, by name (#1876). */
+  getRestoredAtStart(): string[] {
+    return [...this.restoredNow];
+  }
+
   /** Its restore is staged for the next start (#1723), and joins a site restore (#1876). */
   override restoreIsStaged(): boolean {
     return true;
@@ -711,13 +709,14 @@ class DatabaseManager extends BaseManager {
       this.fault('restore', reason);
       return;
     }
+    this.restoredNow = outcome.applied.map((a) => a.name);
     for (const a of outcome.applied) {
       logger.warn(`[DatabaseManager] Restore applied: ${a.name} -> ${a.live} (previous kept as ${path.basename(a.kept)}) (#1723)`);
     }
   }
 
   private backupKey(): string {
-    return (process.env[BACKUP_KEY_ENV] ?? '').trim();
+    return currentBackupKey();
   }
 
   /** What is wrong with the backup key: missing, or the database key itself (D3). Null when sound. */

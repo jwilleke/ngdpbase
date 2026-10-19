@@ -87,6 +87,11 @@ const formsAddon = {
 
   _handlers: new Map<string, FormHandler>(),
 
+  /** Registered with the engine, so backed up like every manager (#1876): its files are FormsDataManager's, so it has none of its own. */
+  backup(): Promise<{ managerName: string; timestamp: string; data: null; note: string }> {
+    return Promise.resolve({ managerName: 'FormsAddon', timestamp: new Date().toISOString(), data: null, note: 'The forms are backed up by FormsDataManager' });
+  },
+
   registerHandler(formId: string, handler: FormHandler): void {
     this._handlers.set(formId, handler);
     console.info(`[FormsAddon] Handler registered for form: ${formId}`);
