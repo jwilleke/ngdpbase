@@ -14,9 +14,11 @@
  *     when `NGDPBASE_DATABASE_KEY` is set (in the environment or the instance
  *     `.env`), never from config. Without a key it opens unencrypted and says so.
  *
- * Boot refuses, naming the cause, when the file would sit on a network
- * filesystem, when the schema is from a newer build, when a migration fails,
- * or when the integrity check does not pass.
+ * The database is refused, naming the cause, when the file would sit on a
+ * network filesystem, when the schema is from a newer build, when a migration
+ * fails, when the key is missing or wrong, or when the integrity check does
+ * not pass. The process stays up (#1892): the site starts in maintenance mode
+ * and administrators are told the fix (`getUnavailableReason`).
  *
  * An add-on that keeps rows gets a database of its own the same way
  * (`openAddonDatabase`, ngdp-accounting-addons#13): its own file beside the
@@ -50,6 +52,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
+import { sitePublicMessage } from '../utils/startupState.js';
 import {
   applyStagedRestore, manifestPath, runOffThread, stagedPath, writeManifest,
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
@@ -104,6 +107,12 @@ export interface DatabaseBackupData {
   absent: string[];
   /** Databases that could not be copied; the backup carries the others. */
   failed: Array<{ name: string; error: string }>;
+  /**
+   * #1892 D2: in a restore's safety backup taken while the application
+   * database can't be opened, the databases left out and why. The restore
+   * keeps their files beside the restored ones, as `*.pre-restore`.
+   */
+  leftOut?: { databases: string[]; reason: string };
 }
 
 interface BackupSource {
@@ -181,6 +190,8 @@ class DatabaseManager extends BaseManager {
   private restoreAtStart: ApplyOutcome | null = null;
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
   private readonly faults = new Map<Fault, string>();
+  /** Why the configured application database could not be opened safely (#1892); null otherwise. */
+  private unavailable: string | null = null;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -208,15 +219,30 @@ class DatabaseManager extends BaseManager {
 
     const file = configManager.getResolvedDataPath('ngdpbase.database.file', './data/ngdpbase.db');
     const key = process.env[DATABASE_KEY_ENV] ?? '';
+    // Known even when it does not open (#1892): a staged restore stays visible and cancellable.
+    this.databaseFile = file;
     // #1723: a staged restore goes in now, before any database opens.
-    this.applyRestoreAtStart(file);
-    const provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS, 'schema_migrations', { busyTimeoutMs: this.busyTimeoutMs });
-    if (!provider.integrityOk()) {
-      provider.close();
-      throw new Error(`The application database ${file} failed its integrity check — refusing to start (#1536)`);
+    try {
+      this.applyRestoreAtStart(file);
+    } catch (err) {
+      this.markUnavailable(`A staged database restore could not be put in place: ${(err as Error).message}. ` +
+        'No database was opened. Some databases may already be restored: each one moved is kept beside it as *.pre-restore, and the rest are still *.staged beside ' +
+        `${path.basename(manifestPath(file))}. Stop the server, put the files back as they should be, and restart (#1892)`);
+      return;
+    }
+    // #1892: a database that cannot be opened safely (no key or the wrong key
+    // on an encrypted file, a damaged file, a failed migration, a newer
+    // schema) does not stop the process: the site starts in maintenance mode.
+    // The provider checks integrity before it writes anything, and a failed
+    // migration is rolled back.
+    let provider: SqliteDatabaseProvider;
+    try {
+      provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS, 'schema_migrations', { busyTimeoutMs: this.busyTimeoutMs });
+    } catch (err) {
+      this.markUnavailable(DatabaseManager.openFailure(file, (err as Error).message, key));
+      return;
     }
     this.provider = provider;
-    this.databaseFile = file;
 
     const { applied, skipped } = provider.migrations;
     logger.info(`[DatabaseManager] Opened ${file} (${key ? 'encrypted' : 'NOT encrypted'}, lock wait ${this.busyTimeoutMs} ms) — migrations applied ${applied.length}, already present ${skipped}`);
@@ -233,6 +259,51 @@ class DatabaseManager extends BaseManager {
   /** Whether an application database is open. */
   isEnabled(): boolean {
     return this.provider !== null;
+  }
+
+  /**
+   * Why the configured application database is not open (#1892): it could not
+   * be opened safely, and the site is in maintenance mode. Null when it is
+   * open, or when none is configured (`ngdpbase.database.provider` `none`).
+   * A manager that needs the database asks this and holds its work.
+   */
+  getUnavailableReason(): string | null {
+    return this.unavailable;
+  }
+
+  /**
+   * #1892 (operator D3 rule, 2026-10-18): the application database can't be
+   * opened safely. The process stays up in maintenance mode through core's
+   * survivable path (#1152): visitors see only the public message (#1883),
+   * administrators can sign in and reach /admin, and `reportAtBoot()` sends
+   * them the reason as a critical notification once notifications exist.
+   */
+  private markUnavailable(reason: string): void {
+    this.unavailable = reason;
+    this.provider = null;
+    logger.error(`[DatabaseManager] ${reason}`);
+    this.markFailed(reason, 'ngdpbase.database.file');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    this.engine.blockConfiguration(reason, {
+      publicMessage: sitePublicMessage(configManager ? (k, d) => configManager.getProperty(k, d) : undefined)
+    });
+  }
+
+  /** The reason for a database that did not open, with the fix that fits the key (#1892). */
+  private static openFailure(file: string, cause: string, key: string): string {
+    const keyFix = key
+      ? `If ${DATABASE_KEY_ENV} is not the key this database was made with, correct ${DATABASE_KEY_ENV} in <FAST_STORAGE>/.env (or the environment) and restart.`
+      : `${DATABASE_KEY_ENV} is not set: if the database is encrypted, set ${DATABASE_KEY_ENV} in <FAST_STORAGE>/.env (or the environment) and restart.`;
+    return `The application database ${file} could not be opened safely: ${cause.replace(/\.$/, '')}. ` +
+      'It was not opened unencrypted, and nothing further was migrated or written. ' +
+      `${keyFix} If the file itself is damaged or a migration failed, restore the databases from a backup on Admin → Backup ` +
+      '(applied at the next restart; the current file is kept beside it as *.pre-restore), or stop the server, put back a good copy ' +
+      'of the database file, and restart (#1892)';
+  }
+
+  /** The refusal for anything that needs the application database while it is unavailable (#1892). */
+  private unavailableRefusal(what: string): string {
+    return `The application database is not available, so ${what} — the critical notification about it says why and how to fix it (#1892)`;
   }
 
   /**
@@ -264,6 +335,7 @@ class DatabaseManager extends BaseManager {
    * set; nothing is opened in the clear.
    */
   openAddonDatabase<Handle = unknown>(owner: string, options: AddonDatabaseOptions): Handle {
+    if (this.unavailable) throw new Error(this.unavailableRefusal(`add-on database '${owner}' is not opened`));
     if (!this.provider || !this.databaseFile) {
       throw new Error(`Add-on '${owner}' needs a database, but none is open — set ngdpbase.database.provider to 'sqlite' (ngdp-accounting-addons#13)`);
     }
@@ -288,11 +360,8 @@ class DatabaseManager extends BaseManager {
     if (path.resolve(file) === path.resolve(this.databaseFile)) {
       throw new Error(`Add-on '${owner}' would open the application database itself (${file}) (ngdp-accounting-addons#13)`);
     }
+    // Integrity is checked by the provider before anything is written (#1892).
     const provider = new SqliteDatabaseProvider(file, key, options.migrations, options.ledgerTable, { busyTimeoutMs: this.busyTimeoutMs });
-    if (!provider.integrityOk()) {
-      provider.close();
-      throw new Error(`Add-on database ${file} failed its integrity check (ngdp-accounting-addons#13)`);
-    }
     this.addonDatabases.set(owner, { provider, ledgers: new Set([options.ledgerTable]) });
     const { applied, skipped } = provider.migrations;
     logger.info(`[DatabaseManager] Opened ${file} for ${owner} (${key ? 'encrypted' : 'NOT encrypted'}) — ledger ${options.ledgerTable}, migrations applied ${applied.length}, already present ${skipped}`);
@@ -323,6 +392,8 @@ class DatabaseManager extends BaseManager {
     const key = process.env[DATABASE_KEY_ENV] ?? '';
     for (const declaration of this.declarations()) {
       if (declaration.declaredBy !== slug || !declaration.enabled) continue;
+      // #1892: its database sits beside the application database, under the same key.
+      if (this.unavailable) return this.unavailableRefusal(`add-on '${slug}', which declares database '${declaration.owner}', is not loaded`);
       const refusal = DatabaseManager.keyRefusal(declaration, key);
       if (refusal) return refusal;
     }
@@ -353,6 +424,17 @@ class DatabaseManager extends BaseManager {
    */
   override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
     const base = { managerName: 'DatabaseManager', timestamp: new Date().toISOString() };
+    // #1892: never a backup that silently leaves the databases out. A
+    // restore's safety backup (D2) leaves them out and says so: they can't be
+    // read, and the restore keeps their files as *.pre-restore.
+    if (this.unavailable && this.databaseFile) {
+      if (!options?.safetyBackup) throw new Error(this.unavailableRefusal('no database was backed up'));
+      const leftOut = this.backupSources(this.databaseFile).map((s) => s.name);
+      const note = `The databases (${leftOut.join(', ')}) are left out of this safety backup: the application database could not be opened. A restore keeps their files beside the restored ones as *.pre-restore (#1892)`;
+      logger.warn(`[DatabaseManager] ${note}`);
+      const data: DatabaseBackupData = { format: 1, databases: [], absent: [], failed: [], leftOut: { databases: leftOut, reason: this.unavailable } };
+      return { ...base, data, note };
+    }
     if (!this.provider || !this.databaseFile) {
       return { ...base, data: null, note: 'No application database (ngdpbase.database.provider is none)' };
     }
@@ -424,7 +506,13 @@ class DatabaseManager extends BaseManager {
       logger.info('[DatabaseManager] The backup holds no database; every database is left as it is (#1723)');
       return;
     }
-    if (!this.provider || !this.databaseFile) {
+    // #1892 D2: a restore is how a damaged database is put right, so it is
+    // allowed while the application database can't be opened, but never
+    // without the key: what it stages would then be unencrypted.
+    if (this.unavailable && !(process.env[DATABASE_KEY_ENV] ?? '')) {
+      throw new Error(`The application database is not available and ${DATABASE_KEY_ENV} is not set, so nothing was staged: a restore now would put the databases back unencrypted. Set ${DATABASE_KEY_ENV} in <FAST_STORAGE>/.env (or the environment) and restart first; if that opens the database, no restore is needed (#1892)`);
+    }
+    if (!this.databaseFile || (!this.provider && !this.unavailable)) {
       throw new Error("The backup holds databases, but this site has none open — set ngdpbase.database.provider to 'sqlite' first (#1723)");
     }
     if (!options?.directory) {
@@ -500,7 +588,10 @@ class DatabaseManager extends BaseManager {
     writeManifest(manifestFile, manifest);
     const names = stages.map((s) => s.name).join(', ');
     logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
-    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.${manifest.safetyBackup ? ` The current data was backed up first, as ${manifest.safetyBackup}.` : ''}`);
+    const unopened = this.unavailable
+      ? ' The application database could not be opened, so that safety backup leaves the databases out; the current database files are kept as *.pre-restore instead.'
+      : '';
+    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.${manifest.safetyBackup ? ` The current data was backed up first, as ${manifest.safetyBackup}.` : ''}${unopened}`);
     if (skipped.length > 0) {
       const message = `The backup also holds ${skipped.join(', ')}, which no add-on on this site declares, so they were not restored. Install the add-on and restore again to bring them back.`;
       logger.error(`[DatabaseManager] ${message}`);
@@ -553,6 +644,10 @@ class DatabaseManager extends BaseManager {
    * notifications do.
    */
   async reportAtBoot(): Promise<void> {
+    if (this.unavailable) {
+      await this.notify('error', 'Critical: the application database is not available',
+        `${this.unavailable}. Until then the site is in maintenance mode: visitors see a short notice with no details, and administrators can still sign in and use /admin.`);
+    }
     const keyProblem = this.provider ? this.backupKeyProblem() : null;
     if (keyProblem) await this.notify('error', 'Databases are not safely backed up', keyProblem);
     const outcome = this.restoreAtStart;
@@ -643,8 +738,9 @@ class DatabaseManager extends BaseManager {
     }
   }
 
-  /** Whether every open database passes SQLite's quick check; true when none is configured. */
+  /** Whether every open database passes SQLite's quick check; true when none is configured, false when the configured one could not be opened (#1892). */
   integrityOk(): boolean {
+    if (this.unavailable) return false;
     if (this.provider && !this.provider.integrityOk()) return false;
     for (const { provider } of this.addonDatabases.values()) {
       if (!provider.integrityOk()) return false;

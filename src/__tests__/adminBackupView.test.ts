@@ -56,6 +56,33 @@ describe('#1723 Admin → Backup, Restore Databases', () => {
     expect(text(doc.querySelector('#staged-restore'))).toMatch(/Staged by\s*jim/);
   });
 
+  test('#1892 D2: with the application database unavailable the card is shown, and says the safety backup leaves the databases out', async () => {
+    const doc = await render({ databasesEnabled: false, databaseUnavailable: 'The application database /d/ngdpbase.db could not be opened safely: file is not a database' });
+    expect(doc.querySelector('#restore-form')).not.toBeNull();
+    const alert = text(doc.querySelector('#restore-database-unavailable'));
+    expect(alert).toMatch(/the fresh backup taken first leaves the databases out/);
+    expect(alert).toMatch(/kept beside the restored ones as \*\.pre-restore/);
+    expect(alert).toMatch(/needs NGDPBASE_DATABASE_KEY to be set/);
+    // The admin-only reason itself is in the notification, not repeated here.
+    expect(alert).not.toMatch(/file is not a database/);
+  });
+
+  test('#1892 D2: no unavailable notice on a site whose database is open, and no card on one with none', async () => {
+    expect((await render()).querySelector('#restore-database-unavailable')).toBeNull();
+    expect((await render({ databasesEnabled: false })).querySelector('#restore-card')).toBeNull();
+  });
+
+  test('#1892 D2: a staged restore whose safety backup holds no databases says the files are kept instead', async () => {
+    const safety = '2026-10-18T09-00-00-000Z-ngdpbase-backup.json.gz';
+    const doc = await render({
+      databasesEnabled: false, databaseUnavailable: 'reason',
+      recentBackups: [stored(safety, '2026-10-18T09:00:00Z', []), stored('2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz', '2026-10-17T02:00:00Z', ['application'])],
+      stagedRestore: { version: 1, stagedAt: '2026-10-18T09:00:05Z', backup: '2026-10-17T02:00:00Z', source: '2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz', stagedBy: 'jim', safetyBackup: safety, databases: [{ name: 'application', live: '/d/ngdpbase.db', staged: '/d/ngdpbase.db.staged' }] }
+    });
+    expect(text(doc.querySelector('#safety-backup-no-databases'))).toMatch(/It holds no databases.*kept as \*\.pre-restore at the restart instead\. To undo this restore, put those files back/);
+    expect(text(doc.querySelector('#safety-backup'))).not.toMatch(/restore it to undo/);
+  });
+
   test('no safety-backup row when the staged restore names none', async () => {
     const doc = await render({
       stagedRestore: { version: 1, stagedAt: '2026-10-18T09:00:05Z', backup: '', source: 'x.json.gz', stagedBy: 'jim', databases: [{ name: 'application', live: '/d/a.db', staged: '/d/a.db.staged' }] }

@@ -296,6 +296,12 @@ class BackgroundJobManager extends BaseManager {
   /** Set once shutdown begins: no slot starts after it (#1717). */
   private stopping = false;
   private handedOff: Promise<void> | null = null;
+  /**
+   * #1892: why no job runs — the application database is configured but could
+   * not be opened safely, and the site is in maintenance mode. Jobs still
+   * register; none starts, on a schedule or by hand, until a restart opens it.
+   */
+  private held: string | null = null;
   /** Each running job's abort, by run id. */
   private controllers: Map<string, AbortController> = new Map();
   /** For each running scheduled run: write it as interrupted and let go of its slot. */
@@ -320,6 +326,16 @@ class BackgroundJobManager extends BaseManager {
     // DatabaseManager, so `auto` can see whether the application database is
     // open; a backend that cannot be used stops the server, naming the key.
     const configManager = this.configManager();
+    // #1892: the job state may live in the database, and a job (a backup
+    // above all) may need it. Held, not run on a substitute: a backup taken
+    // without it would rotate out the backups that have it.
+    const unavailable = this.engine.getManager<{ getUnavailableReason?(): string | null }>('DatabaseManager')?.getUnavailableReason?.() ?? null;
+    if (unavailable) {
+      this.held = 'The application database is not available, so no scheduled or hand-started job runs until a restart opens it — the critical notification about it says why and how to fix it (#1892)';
+      logger.error(`[BackgroundJobManager] ${this.held}`);
+      this.markDegraded(this.held);
+      return;
+    }
     if (!this.stateProvider && configManager) {
       const database = this.engine.getManager<{ isEnabled(): boolean; getHandle<H>(): H }>('DatabaseManager');
       const backend = selectJobStateBackend(configManager.getProperty('ngdpbase.jobs.state.provider', 'auto'), database?.isEnabled() ?? false);
@@ -409,7 +425,7 @@ class BackgroundJobManager extends BaseManager {
     if (!['queue', 'skip'].includes(overlap)) throw new Error(`${where}: overlap '${String(overlap)}' is not one of queue, skip`);
     if (persist) {
       assertJobId(def.id);
-      if (!this.stateProvider) throw new Error(`${where}: persist is true but no scheduled-job state is open — register it after BackgroundJobManager has initialized`);
+      if (!this.stateProvider && !this.held) throw new Error(`${where}: persist is true but no scheduled-job state is open — register it after BackgroundJobManager has initialized`);
     }
     const timeoutMs = this.timeoutFor(def, DEFAULT_TIMEOUT_MS);
     const maxAttempts = def.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -486,6 +502,10 @@ class BackgroundJobManager extends BaseManager {
    * add-ons are up, so a catch-up run never meets a manager still starting.
    */
   startScheduler(): void {
+    if (this.held) {
+      logger.error(`[BackgroundJobManager] Scheduler not started: ${this.held}`);
+      return;
+    }
     if (this.timer) return;
     this.timer = setInterval(() => { void this.tick(); }, TICK_MS);
     this.timer.unref();
@@ -498,7 +518,7 @@ class BackgroundJobManager extends BaseManager {
    * the ones chosen. Public so tests can drive the clock.
    */
   async tick(): Promise<void> {
-    if (this.ticking || this.stopping) return;
+    if (this.ticking || this.stopping || this.held) return;
     this.ticking = true;
     try {
       await this.recoverHandRuns();
@@ -671,6 +691,7 @@ class BackgroundJobManager extends BaseManager {
 
   /** Refused while the job runs, waits for a retry, or the server is stopping: one run of a job at a time. */
   private async assertIdle(job: ScheduledJob): Promise<void> {
+    if (this.held) throw new JobActionError(this.held, 409);
     if (this.stopping) throw new JobActionError('The server is shutting down', 409);
     if (job.draining || this.activeByJobId.has(job.def.id)) throw new JobActionError(`'${job.def.id}' is running`, 409);
     const current = (await this.loadState(job))?.current;
@@ -716,6 +737,7 @@ class BackgroundJobManager extends BaseManager {
    */
   async retryNow(jobId: string, requestedBy: JobContext): Promise<void> {
     const job = this.scheduledOrThrow(jobId);
+    if (this.held) throw new JobActionError(this.held, 409);
     if (job.draining || this.activeByJobId.has(jobId)) throw new JobActionError(`'${jobId}' is running`, 409);
     const state = await this.loadState(job);
     const current = state?.current;
@@ -899,7 +921,9 @@ class BackgroundJobManager extends BaseManager {
 
   private async loadState(job: ScheduledJob): Promise<JobState | null> {
     if (!job.persist) return job.memoryState;
-    return (this.stateProvider as JobStateProvider).getState(job.def.id);
+    // #1892: held with no state open, a persisted job shows no state rather than failing the page.
+    if (!this.stateProvider) return null;
+    return this.stateProvider.getState(job.def.id);
   }
 
   private async saveState(job: ScheduledJob, state: JobState): Promise<void> {
@@ -1005,6 +1029,16 @@ class BackgroundJobManager extends BaseManager {
         completedAt: new Date()
       };
       this.runs.set(runId, refused);
+      return runId;
+    }
+    // #1892: held, as a failed run that says why — the caller is a request handler.
+    if (this.held) {
+      const runId = randomUUID();
+      logger.error(`[BackgroundJobManager] '${jobId}' not run: ${this.held}`);
+      this.runs.set(runId, {
+        runId, jobId, displayName: this.jobs.get(jobId)?.displayName ?? jobId, requestedBy,
+        status: 'failed', result: { success: false, error: this.held }, startedAt: new Date(), completedAt: new Date()
+      });
       return runId;
     }
 

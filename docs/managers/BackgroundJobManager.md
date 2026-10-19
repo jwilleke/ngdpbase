@@ -1,7 +1,7 @@
 ---
 name: BackgroundJobManager
 description: Long-running job registry + scheduler with progress reporting and polling API
-dateModified: '2026-10-09'
+dateModified: '2026-10-18'
 category: managers
 code: src/managers/BackgroundJobManager.ts
 ---
@@ -110,6 +110,16 @@ Core's maintenance jobs: `media.folder-scan` (`ngdpbase.media.scaninterval`), `p
 - One run of a job at a time: run now and rerun are refused (409) while the job runs or has an unfinished run (waiting for a retry, or interrupted).
 - The manager methods are `listScheduledJobs`, `runNow`, `rerunSlot` and `retryNow`; a refusal is a `JobActionError` carrying its HTTP status.
 - Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the person as the user; retry now as `job-retry`; pause as a configuration change.
+
+## When the application database is unavailable (#1892)
+
+When `DatabaseManager` could not open the configured application database ([maintenance mode](DatabaseManager.md#when-the-application-database-cant-be-opened-maintenance-mode)), no job runs until a restart opens it: the job state may live in that database, and a job, a backup above all, may need it. A backup taken without it would rotate out the backups that have it.
+
+- The manager is `degraded` with the reason, and opens no job state (no file fallback).
+- Jobs still register, persisted or not, so every manager starts.
+- `startScheduler()` does not start the scheduler, and `tick()` does nothing.
+- `enqueue()` returns a run that has already failed, with the reason; `runNow()`, `rerunSlot()` and `retryNow()` are refused (409).
+- The Admin → Jobs page lists the jobs with no state.
 
 ## See Also
 

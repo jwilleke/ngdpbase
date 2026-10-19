@@ -283,6 +283,8 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `NGDPBASE_ADMIN_PASSWORD` | Only used when the config key points at it (see above) |
 | `NGDPBASE_SESSION_SECRET` | Signs the session cookie. Generated into `<FAST_STORAGE>/.env` on first boot if absent; set it yourself only to manage it. Placeholders are refused |
 | `NGDPBASE_CREDENTIALS_KEY` | Signs the credentials store and encrypts TOTP seeds. Generated into `<FAST_STORAGE>/.env` on first boot if absent. No config key |
+| `NGDPBASE_DATABASE_KEY` | The SQLCipher key of the application database and every add-on database, when `ngdpbase.database.provider` is `sqlite`. Never generated and never a config key: set it yourself, and keep a copy off the server. Missing or wrong on an encrypted database, the site starts in maintenance mode (see below) |
+| `NGDPBASE_BACKUP_KEY` | The key every database backup is encrypted under. Its own value, never the database key. Never generated |
 | `OIDC_AUTH_SERVER_JWKS` | OpenID Connect signing keys. Generated into the instance `.env` only when `oidc-auth-server.enabled` is true |
 | `OIDC_AUTH_SERVER_COOKIE_KEYS` | OpenID Connect cookie keys. Same gate as the JWKS |
 | `PUID` / `PGID` | The user and group the server runs as. Required; never 0. Standard default `1000` / `1000` ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)) |
@@ -290,6 +292,16 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `NGDPBASE_SYSTEM_USER` | Name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631)). Required on a direct install; the Docker image bakes `system` |
 
 Both storage variables default to `./data`, so a single-drive setup can leave them alone or point both at the same path.
+
+### A missing or wrong database key
+
+When `NGDPBASE_DATABASE_KEY` is missing or wrong on an encrypted application database (or the file is damaged, or a migration fails), the process stays up in maintenance mode ([#1892](https://github.com/jwilleke/ngdpbase/issues/1892)) instead of exiting:
+
+- visitors get only the public message `ngdpbase.managers.addons-manager.site-critical.public-message`, with a 503;
+- administrators sign in at `/login` and reach `/admin`, where the notification "Critical: the application database is not available" names the fix;
+- the fix is to set or correct the key in `<FAST_STORAGE>/.env` (or the deployment's environment) and restart. Nothing is opened unencrypted in the meantime, nothing is migrated, and no job or backup runs against a substitute.
+
+A database with no key that has never been encrypted still opens unencrypted, with the warning: the key can't be told missing from never set. The details are in [DatabaseManager.md](../managers/DatabaseManager.md#when-the-application-database-cant-be-opened-maintenance-mode).
 
 ### Where a new variable goes
 
@@ -375,6 +387,7 @@ Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [doc
 - [#1878](https://github.com/jwilleke/ngdpbase/issues/1878) — nothing warns when an instance still uses the shipped name, favicon or base URL.
 - [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — an unset `$VAR` anywhere inside a map makes the whole key unreadable (it throws), so an add-on's `register()` config omits that whole key, with a warning; the other gaps are in [configuration-developer-guide.md](configuration-developer-guide.md#known-gaps).
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645)
+- [#1892](https://github.com/jwilleke/ngdpbase/issues/1892) — a database key that is missing from a new `.env` is not caught at first boot: with no database file yet, the site creates a new unencrypted one. Only an existing encrypted file shows the key is missing.
 
 ## History
 
