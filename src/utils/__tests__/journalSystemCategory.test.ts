@@ -17,6 +17,7 @@ import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import { mergeConfigWithAddons } from '../addonConfigLayer';
 import { storeKindFromConfig } from '../privateStoreDoor';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { MaintenanceState } from '../maintenanceState';
 
 const SC = 'ngdpbase.system-category';
 const ROOT = process.cwd();
@@ -45,7 +46,7 @@ function validationManagerFor(merged: Record<string, unknown>): Promise<Validati
   const configManager = { getProperty: (key: string, def: unknown) => merged[key] ?? def };
   const engine = {
     getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : undefined),
-    blockConfiguration: () => undefined
+    maintenance: new MaintenanceState()
   } as unknown as WikiEngine;
   const vm = new ValidationManager(engine);
   return vm.initialize().then(() => vm);

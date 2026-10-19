@@ -283,7 +283,7 @@ class AuditManager extends BaseManager {
       // value outside refuse | continue means nobody decided.
       const rule = (d as unknown as Record<string, unknown>)['on-failure'];
       if ('tier' in (d as unknown as Record<string, unknown>) || (rule !== 'refuse' && rule !== 'continue')) {
-        this.engine.blockConfiguration(
+        this.engine.maintenance.enter(
           `ngdpbase.audit.events['${name}'] must declare on-failure: refuse | continue` +
           ('tier' in (d as unknown as Record<string, unknown>) ? ' (the field was called tier before #1218; critical is refuse, standard and volume are continue)' : '') +
           '. Fix it in app-custom-config.json.'
@@ -291,12 +291,12 @@ class AuditManager extends BaseManager {
       }
       if (d.enabled === false) continue;
       if (!AUDIT_EVENT_NAME_PATTERN.test(name)) {
-        this.engine.blockConfiguration(
+        this.engine.maintenance.enter(
           `ngdpbase.audit.events declares '${name}', which is not a {target}-{action} name. ` +
           'Rename it or remove it from app-custom-config.json.'
         );
       } else if (!known.has(name)) {
-        this.engine.blockConfiguration(
+        this.engine.maintenance.enter(
           `ngdpbase.audit.events enables '${name}', which nothing in this build emits: neither the shipped defaults nor an enabled addon declare it. ` +
           'Set enabled: false on it, or remove it from app-custom-config.json, until an emitter exists.'
         );
@@ -488,9 +488,10 @@ class AuditManager extends BaseManager {
         // Throwing here aborted initialize() partway, so the very screens an
         // operator needed were never registered.
         //
-        // The value keeps its name (D14): engineReady stays false, so the boot
-        // genuinely does not complete. The process stays alive to say why.
-        this.engine.blockConfiguration(
+        // The value keeps its name (D14): the site stays closed to everyone,
+        // administrators included, except /admin, /login and /logout, so it
+        // never serves as a working system. The process stays alive to say why.
+        this.engine.maintenance.enter(
           `Audit provider ${configured} could not be used: ${reason}. ` +
           'Auditing is configured but not working, and ngdpbase.audit.on-failure=refuse-boot. ' +
           'Fix the provider, choose another, or set ngdpbase.audit.provider=nullauditprovider to run without auditing deliberately.'

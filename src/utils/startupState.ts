@@ -79,7 +79,27 @@ export function gateDecision(
 }
 
 /**
- * The message shown on the maintenance page and logged at boot.
+ * The initialisation gate's decision with maintenance mode in it (#1906).
+ *
+ * A failure a manager entered (`engine.maintenance.enter`) keeps everyone,
+ * administrators included, to the repair screens — before the engine is ready
+ * and after. It is asked per request, so when that reason leaves, the site
+ * reopens without a restart. The admin switch is not a failure and does not
+ * close this gate: the maintenance gate behind the session handles it, where
+ * an administrator can be recognised.
+ */
+export function initialisationGate(
+  engineReady: boolean,
+  maintenance: { isClosedToAdmins(): boolean } | null | undefined,
+  path: string
+): GateDecision {
+  const blocked = maintenance?.isClosedToAdmins() ?? false;
+  return gateDecision(engineReady && !blocked, blocked, path);
+}
+
+/**
+ * The reasons as logged at boot, for administrators. Visitors never see them:
+ * they get `engine.maintenance.visitorView(…)` (#1906).
  *
  * Every reason at once, rather than the first: an operator who fixes one and
  * restarts into the next has been made to do the work twice.
@@ -96,36 +116,4 @@ export function describeBlocked(reasons: readonly string[]): string {
   }
   const list = reasons.map((r) => `• ${r}`).join('\n');
   return `The instance is not serving because its configuration could not be used:\n${list}`;
-}
-
-/**
- * What a visitor is told about a blocked instance: on the maintenance page and
- * in `/health/readiness`, both served without sign-in (#1883).
- *
- * Every reason, as {@link describeBlocked} words them, unless one was recorded
- * for administrators only (a site-critical add-on that did not load): then
- * only `publicMessage`, and no reason at all — not even the ones that could be
- * shown, since one detail beside a vague notice still says what failed.
- * Administrators get the reasons in the log and the admin notification.
- */
-export function blockedForVisitors(
-  reasons: readonly string[],
-  publicMessage: string | null
-): { message: string; detail: readonly string[] } {
-  if (publicMessage !== null) return { message: publicMessage, detail: [publicMessage] };
-  return { message: describeBlocked(reasons), detail: reasons };
-}
-
-/**
- * #1883: what visitors see while a failure for administrators only holds the
- * site in maintenance mode — a site-critical add-on that did not load, or an
- * application database that cannot be opened safely (#1892). Empty leaves
- * only the page's heading.
- */
-export const SITE_CRITICAL_PUBLIC_MESSAGE_KEY = 'ngdpbase.managers.addons-manager.site-critical.public-message';
-
-/** The configured public message ({@link SITE_CRITICAL_PUBLIC_MESSAGE_KEY}); '' when unset or not a string. */
-export function sitePublicMessage(getProperty: ((key: string, fallback: unknown) => unknown) | undefined): string {
-  const value = getProperty?.(SITE_CRITICAL_PUBLIC_MESSAGE_KEY, '');
-  return typeof value === 'string' ? value : '';
 }

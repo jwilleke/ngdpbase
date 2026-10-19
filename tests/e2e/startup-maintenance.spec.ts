@@ -26,7 +26,8 @@ test.describe('Startup Maintenance Page', () => {
 
     if (status === 503) {
       // Server is still initializing - verify maintenance page content
-      await expect(page.locator('h1')).toContainText('System Maintenance');
+      // #1906: the heading names the site (ngdpbase.application-name).
+      await expect(page.locator('h1')).not.toBeEmpty();
       await expect(page.locator('text=starting up')).toBeVisible();
 
       // Verify auto-refresh meta tag exists
