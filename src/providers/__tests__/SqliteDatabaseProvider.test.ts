@@ -82,6 +82,25 @@ describe('SqliteDatabaseProvider (#1536)', () => {
     expect(fs.existsSync(`${file}-wal`)).toBe(false);
   });
 
+  test('no key or the wrong key leaves an encrypted file and its WAL as they were, uncommitted-to-file frames included (#1892)', () => {
+    // A server that stopped without a checkpoint: the rows are only in the WAL.
+    const p = new SqliteDatabaseProvider(file, KEY, [CREATE]);
+    p.handle.pragma('wal_autocheckpoint = 0');
+    for (let i = 0; i < 20; i++) p.handle.prepare('INSERT INTO notes (body) VALUES (?)').run(`row ${i}`);
+    const crashed = { db: fs.readFileSync(file), wal: fs.readFileSync(`${file}-wal`) };
+    p.close();
+    for (const key of ['', 'another-key']) {
+      fs.writeFileSync(file, crashed.db);
+      fs.writeFileSync(`${file}-wal`, crashed.wal);
+      expect(() => new SqliteDatabaseProvider(file, key, [CREATE])).toThrow(/file is not a database/);
+      expect(fs.readFileSync(file).equals(crashed.db)).toBe(true);
+      expect(fs.readFileSync(`${file}-wal`).equals(crashed.wal)).toBe(true);
+    }
+    const q = new SqliteDatabaseProvider(file, KEY, [CREATE]);
+    expect(q.handle.prepare('SELECT COUNT(*) AS n FROM notes').get()).toEqual({ n: 20 });
+    q.close();
+  });
+
   test('a database from a newer build is refused, naming the unknown migration', () => {
     new SqliteDatabaseProvider(file, KEY, [CREATE, COUNTER]).close();
     expect(() => new SqliteDatabaseProvider(file, KEY, [CREATE])).toThrow(/newer than this build.*20261002130000/);

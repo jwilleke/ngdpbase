@@ -107,6 +107,12 @@ export interface DatabaseBackupData {
   absent: string[];
   /** Databases that could not be copied; the backup carries the others. */
   failed: Array<{ name: string; error: string }>;
+  /**
+   * #1892 D2: in a restore's safety backup taken while the application
+   * database can't be opened, the databases left out and why. The restore
+   * keeps their files beside the restored ones, as `*.pre-restore`.
+   */
+  leftOut?: { databases: string[]; reason: string };
 }
 
 interface BackupSource {
@@ -290,8 +296,9 @@ class DatabaseManager extends BaseManager {
       : `${DATABASE_KEY_ENV} is not set: if the database is encrypted, set ${DATABASE_KEY_ENV} in <FAST_STORAGE>/.env (or the environment) and restart.`;
     return `The application database ${file} could not be opened safely: ${cause.replace(/\.$/, '')}. ` +
       'It was not opened unencrypted, and nothing further was migrated or written. ' +
-      `${keyFix} If the file itself is damaged or a migration failed, stop the server, put back a good copy of the database file ` +
-      '(after a restore, the previous one is kept beside it as *.pre-restore), and restart (#1892)';
+      `${keyFix} If the file itself is damaged or a migration failed, restore the databases from a backup on Admin → Backup ` +
+      '(applied at the next restart; the current file is kept beside it as *.pre-restore), or stop the server, put back a good copy ' +
+      'of the database file, and restart (#1892)';
   }
 
   /** The refusal for anything that needs the application database while it is unavailable (#1892). */
@@ -417,8 +424,17 @@ class DatabaseManager extends BaseManager {
    */
   override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
     const base = { managerName: 'DatabaseManager', timestamp: new Date().toISOString() };
-    // #1892: never a backup that silently leaves the databases out.
-    if (this.unavailable) throw new Error(this.unavailableRefusal('no database was backed up'));
+    // #1892: never a backup that silently leaves the databases out. A
+    // restore's safety backup (D2) leaves them out and says so: they can't be
+    // read, and the restore keeps their files as *.pre-restore.
+    if (this.unavailable && this.databaseFile) {
+      if (!options?.safetyBackup) throw new Error(this.unavailableRefusal('no database was backed up'));
+      const leftOut = this.backupSources(this.databaseFile).map((s) => s.name);
+      const note = `The databases (${leftOut.join(', ')}) are left out of this safety backup: the application database could not be opened. A restore keeps their files beside the restored ones as *.pre-restore (#1892)`;
+      logger.warn(`[DatabaseManager] ${note}`);
+      const data: DatabaseBackupData = { format: 1, databases: [], absent: [], failed: [], leftOut: { databases: leftOut, reason: this.unavailable } };
+      return { ...base, data, note };
+    }
     if (!this.provider || !this.databaseFile) {
       return { ...base, data: null, note: 'No application database (ngdpbase.database.provider is none)' };
     }
@@ -490,8 +506,13 @@ class DatabaseManager extends BaseManager {
       logger.info('[DatabaseManager] The backup holds no database; every database is left as it is (#1723)');
       return;
     }
-    if (this.unavailable) throw new Error(this.unavailableRefusal('nothing was staged'));
-    if (!this.provider || !this.databaseFile) {
+    // #1892 D2: a restore is how a damaged database is put right, so it is
+    // allowed while the application database can't be opened, but never
+    // without the key: what it stages would then be unencrypted.
+    if (this.unavailable && !(process.env[DATABASE_KEY_ENV] ?? '')) {
+      throw new Error(`The application database is not available and ${DATABASE_KEY_ENV} is not set, so nothing was staged: a restore now would put the databases back unencrypted. Set ${DATABASE_KEY_ENV} in <FAST_STORAGE>/.env (or the environment) and restart first; if that opens the database, no restore is needed (#1892)`);
+    }
+    if (!this.databaseFile || (!this.provider && !this.unavailable)) {
       throw new Error("The backup holds databases, but this site has none open — set ngdpbase.database.provider to 'sqlite' first (#1723)");
     }
     if (!options?.directory) {
@@ -567,7 +588,10 @@ class DatabaseManager extends BaseManager {
     writeManifest(manifestFile, manifest);
     const names = stages.map((s) => s.name).join(', ');
     logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
-    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.${manifest.safetyBackup ? ` The current data was backed up first, as ${manifest.safetyBackup}.` : ''}`);
+    const unopened = this.unavailable
+      ? ' The application database could not be opened, so that safety backup leaves the databases out; the current database files are kept as *.pre-restore instead.'
+      : '';
+    await this.notify('warning', 'A database restore is staged', `The databases ${names} from the backup taken ${manifest.backup} are staged. Restart the site to put them in place; the current files are kept as *.pre-restore.${manifest.safetyBackup ? ` The current data was backed up first, as ${manifest.safetyBackup}.` : ''}${unopened}`);
     if (skipped.length > 0) {
       const message = `The backup also holds ${skipped.join(', ')}, which no add-on on this site declares, so they were not restored. Install the add-on and restore again to bring them back.`;
       logger.error(`[DatabaseManager] ${message}`);

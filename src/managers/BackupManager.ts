@@ -33,6 +33,8 @@ export interface BackupOptions {
   skipCleanup?: boolean;
   /** Throw when any part of the backup failed, after saying so (#1723): a restore stages nothing without a whole copy of the live data. */
   requireComplete?: boolean;
+  /** This is a restore's backup of the live data (#1892 D2); handed to every manager as `safetyBackup`. */
+  safetyBackup?: boolean;
 }
 
 /**
@@ -385,7 +387,7 @@ class BackupManager extends BaseManager {
 
       // #1723: a manager may write its own files (the databases) beside the
       // document; they share its stem and are pruned with it.
-      const managerOptions = { ctx, directory: this.backupDirectory, stem: backupStem(filename) };
+      const managerOptions = { ctx, directory: this.backupDirectory, stem: backupStem(filename), ...(options.safetyBackup ? { safetyBackup: true } : {}) };
       const failures: string[] = [];
       pending = { filename, existing: new Set(await this.companionsOf(filename)) };
 
@@ -591,7 +593,7 @@ class BackupManager extends BaseManager {
           throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it. Nothing was restored`);
         }
         logger.info('📦 Taking a backup of the live data before staging the databases...');
-        const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true });
+        const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true });
         logger.info(`✅ Live data backed up to ${before}`);
         await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged, safetyBackup: path.basename(before) });
         results.success.push('DatabaseManager');

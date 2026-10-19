@@ -40,25 +40,42 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
   constructor(private readonly file: string, key: string, ledger: Migration[], ledgerTable = 'schema_migrations', options: { busyTimeoutMs?: number } = {}) {
     super();
     refuseNetworkFilesystem(file);
+    // #1892: an existing file is first read through a read-only connection.
+    // A wrong or missing key, or a damaged file, fails there, and nothing is
+    // written: a read-write connection that fails to read still checkpoints
+    // the WAL into the file on close, or deletes a WAL it can't parse. Only
+    // the -shm index, which SQLite rebuilds from the WAL, may be rewritten.
+    if (existsSync(file)) SqliteDatabaseProvider.probe(file, key);
     this.db = new Database(file, { timeout: options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS });
     this.encrypted = key !== '';
     try {
-      if (this.encrypted) {
-        this.db.pragma("cipher='sqlcipher'");
-        this.db.pragma(`key='${key.replace(/'/g, "''")}'`);
-      }
-      // The first read: a wrong key fails here, before anything is written.
-      // #1892: and so does a damaged file — checked before the journal mode or
-      // a migration writes anything to it.
-      if (!this.quickCheckOk()) {
-        throw new Error(`The database ${file} failed its integrity check — nothing was migrated or written`);
-      }
+      SqliteDatabaseProvider.unlock(this.db, key);
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('synchronous = FULL');
       this.migrations = runMigrations(this.db, ledger, ledgerTable);
     } catch (err) {
       this.db.close();
       throw err;
+    }
+  }
+
+  private static unlock(db: SqliteHandle, key: string): void {
+    if (!key) return;
+    db.pragma("cipher='sqlcipher'");
+    db.pragma(`key='${key.replace(/'/g, "''")}'`);
+  }
+
+  /** Read an existing file read-only: the key opens it and it passes the quick check, or this throws. */
+  private static probe(file: string, key: string): void {
+    const db = new Database(file, { readonly: true, fileMustExist: true });
+    try {
+      SqliteDatabaseProvider.unlock(db, key);
+      const rows = db.pragma('quick_check') as { quick_check: string }[];
+      if (String(rows[0]?.quick_check ?? '').toLowerCase() !== 'ok') {
+        throw new Error(`The database ${file} failed its integrity check — nothing was migrated or written`);
+      }
+    } finally {
+      db.close();
     }
   }
 

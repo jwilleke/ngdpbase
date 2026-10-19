@@ -14,9 +14,8 @@
  * catch in initialize → every case ("does not throw"); drop the
  * blockConfiguration call → every "maintenance" assertion; drop its
  * publicMessage → "visitors see only the public message"; drop the
- * notification in reportAtBoot → "critical notification"; drop the integrity
- * check before the journal mode in SqliteDatabaseProvider → "damaged file …
- * unchanged"; catch nothing around applyRestoreAtStart → "staged restore
+ * notification in reportAtBoot → "critical notification"; drop the read-only
+ * probe in SqliteDatabaseProvider → "damaged file … unchanged"; catch nothing around applyRestoreAtStart → "staged restore
  * whose apply fails"; drop the held check in BackgroundJobManager.initialize →
  * the jobs test.
  */
@@ -114,14 +113,14 @@ const CORRECT_KEY = /correct NGDPBASE_DATABASE_KEY in <FAST_STORAGE>\/\.env .*an
 const CASES: Case[] = [
   { name: 'no key on an encrypted database', setUp: encryptedDatabase, key: '', why: /file is not a database/, fix: SET_KEY, unchanged: true },
   { name: 'the wrong key', setUp: encryptedDatabase, key: 'another-key', why: /file is not a database/, fix: CORRECT_KEY, unchanged: true },
-  { name: 'a damaged file (failed integrity check)', setUp: () => damage(file), key: '', why: /failed its integrity check/, fix: /good copy/, unchanged: true },
+  { name: 'a damaged file (failed integrity check)', setUp: () => damage(file), key: '', why: /failed its integrity check/, fix: /restore the databases from a backup on Admin → Backup .*or stop the server, put back a good copy/, unchanged: true },
   {
     name: 'a failed migration',
     // A table the first core migration creates is already there, so it fails and is rolled back.
     setUp: () => { const db = new Database(file); db.pragma("cipher='sqlcipher'"); db.pragma(`key='${KEY}'`); db.exec('CREATE TABLE job_state (x)'); db.close(); },
     key: KEY,
     why: /migration 20261008180000 .*failed and was rolled back/,
-    fix: /good copy/,
+    fix: /restore the databases from a backup on Admin → Backup .*or stop the server, put back a good copy/,
     unchanged: false
   }
 ];
@@ -214,8 +213,14 @@ describe('#1892 an application database that cannot be opened safely puts the si
 
     // A backup never silently leaves it out; a restore is not staged.
     await expect(database.backup({ directory: dir, stem: 'b' })).rejects.toThrow(/application database is not available, so no database was backed up/);
+    // D2: only a restore's safety backup leaves them out, and it says so.
+    const safety = await database.backup({ directory: dir, stem: 's', safetyBackup: true });
+    expect(safety.data).toEqual({ format: 1, databases: [], absent: [], failed: [], leftOut: { databases: ['application', 'addon-phr'], reason: database.getUnavailableReason() } });
+    expect(safety.note).toMatch(/left out of this safety backup/);
+    expect(safety.warnings).toBeUndefined();
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith('s.'))).toEqual([]);
     await expect(database.restore({ managerName: 'DatabaseManager', timestamp: 'x', data: { format: 1, databases: [{ name: 'application', kind: 'application', file: 'b.application.db', sizeBytes: 1, tables: 1 }], absent: [], failed: [] } }, { directory: dir }))
-      .rejects.toThrow(/application database is not available.*nothing was staged/);
+      .rejects.toThrow(/application database is not available and NGDPBASE_DATABASE_KEY is not set, so nothing was staged/);
     expect(fs.existsSync(stagedPath(file))).toBe(false);
 
     // Scheduled and hand-started jobs are held; registering them still works.

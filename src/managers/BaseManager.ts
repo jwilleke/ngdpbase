@@ -70,6 +70,12 @@ export interface ManagerBackupOptions {
   directory: string;
   /** The document's filename without `.json.gz` / `.json`. */
   stem: string;
+  /**
+   * The backup a restore takes of the live data first (#1892 D2). A database
+   * that can't be opened is left out and recorded in the manager's data, not
+   * failed: the restore keeps its file beside the restored one instead.
+   */
+  safetyBackup?: boolean;
 }
 
 /** What BackupManager hands each manager's `restore()` (#1723): who asked, and the directory the backup document was read from. */
