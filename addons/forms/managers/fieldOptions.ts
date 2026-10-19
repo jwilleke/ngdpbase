@@ -40,23 +40,27 @@ export async function resolveFieldOptions(
 }
 
 /**
- * Every dropdown's and checklist's allowed values, keyed by field name. A
- * dropdown inside a `lines` row is keyed `<lines>.<sub-field>`, resolved once
- * for all its rows (#1913).
+ * Every dropdown's and checklist's choices for this viewer, keyed by field
+ * name. A dropdown inside a `lines` row is keyed `<lines>.<sub-field>`,
+ * resolved once for all its rows (#1913).
  */
-export async function resolveChoices(
+export async function resolveChoiceOptions(
   engine: EngineLike,
   fields: FormField[],
   userContext: unknown
-): Promise<Map<string, string[]>> {
-  const choices = new Map<string, string[]>();
+): Promise<Map<string, FormOption[]>> {
+  const choices = new Map<string, FormOption[]>();
   const keyed = fields.flatMap((field): Array<[string, FormField]> => field.type === 'lines'
     ? (field.fields ?? []).map((sub): [string, FormField] => [`${field.name}.${sub.name}`, sub])
     : [[field.name, field]]);
   for (const [key, field] of keyed) {
     if (field.type !== 'dropdown' && field.type !== 'checklist') continue;
-    const options = await resolveFieldOptions(engine, field, userContext);
-    choices.set(key, options.map(o => o.value));
+    choices.set(key, await resolveFieldOptions(engine, field, userContext));
   }
   return choices;
+}
+
+/** The allowed values of each resolved choice list, as the submission validator takes them. */
+export function choiceValues(options: Map<string, FormOption[]>): Map<string, string[]> {
+  return new Map(Array.from(options, ([key, list]) => [key, list.map(o => o.value)]));
 }

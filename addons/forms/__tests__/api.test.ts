@@ -473,3 +473,66 @@ describe('POST /api/forms/submit/:formId — lines', () => {
     expect(seen).toEqual([]);
   });
 });
+
+// ── The submission email reads as the form did (#1915) ────────────────────────
+
+describe('POST /api/forms/submit/:formId — submission email', () => {
+  const emailForm = {
+    id: 'test-form',
+    title: 'Record a receipt',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      { name: 'email', type: 'email', label: 'Your email', required: true },
+      { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      {
+        name: 'lines', type: 'lines', label: 'Lines', required: true,
+        fields: [
+          { name: 'amount', type: 'amount', label: 'Amount', required: true },
+          { name: 'fundId', type: 'dropdown', label: 'Line fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' }
+        ]
+      },
+      { name: 'total', type: 'amount', label: 'Receipt total', required: true }
+    ]
+  };
+
+  test('labels, choice names resolved once as the submitter, formatted money, and each line', async () => {
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => emailForm, saveSubmission: async (s: object) => s },
+      ConfigurationManager: { getProperty: () => '' },
+      EmailManager: { isEnabled: () => true, sendTo: async (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'general', label: 'General Fund' }, { value: 'reserve', label: 'Reserve Fund' }];
+        }
+      }
+    });
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      email: 'molly@example.com',
+      fundId: 'general',
+      lines: [{ amount: '50', fundId: 'reserve' }, { amount: '12.50', fundId: 'general' }],
+      total: '62.50'
+    });
+    expect(res.status).toBe(201);
+    expect(sent).toHaveLength(1);
+    const money = (c: number): string => TEST_PLUGIN_MANAGER.formatters.formatMoney(c, 'USD');
+    expect(sent[0].text).toContain([
+      'Details:',
+      '  Your email: molly@example.com',
+      '  Fund: General Fund',
+      '  Lines:',
+      `    1. Amount: ${money(5000)} · Line fund: Reserve Fund`,
+      `    2. Amount: ${money(1250)} · Line fund: General Fund`,
+      `  Receipt total: ${money(6250)}`
+    ].join('\n'));
+    // Asked once per choice field, as the submitter: the validation's own resolution.
+    expect(viewers).toEqual([{ username: 'molly' }, { username: 'molly' }]);
+  });
+});

@@ -13,15 +13,10 @@ import type ConfigurationManager from '../../../dist/src/managers/ConfigurationM
 import type { FormOption } from '../../../dist/src/utils/pluginFormatters.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
+import { FORMS_CURRENCY } from '../managers/FormsDataManager.js';
 import { resolveFieldOptions } from '../managers/fieldOptions.js';
 
 type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string; resolvedFields?: ResolvedField[] };
-
-/**
- * The currency a checklist's or lines field's running total is shown in. The `amount` field
- * shows "$" and parses two decimals, so forms money is US dollars throughout.
- */
-const CURRENCY = 'USD';
 
 function resolvePrefill(
   dotPath: string,
@@ -123,7 +118,7 @@ function renderChecklist(f: PluginFormatters, field: ResolvedField, requiredBadg
     `data-checklist="${name}"`,
     `data-label="${escHtml(field.label)}"`,
     field.required ? 'data-required="1"' : '',
-    hasAmounts ? `data-currency="${CURRENCY}"` : '',
+    hasAmounts ? `data-currency="${FORMS_CURRENCY}"` : '',
     hasAmounts && field.totalField ? `data-total-field="${escHtml(field.totalField)}"` : ''
   ].filter(Boolean).join(' ');
   return `<fieldset class="mb-3" ${attrs}>
@@ -141,7 +136,7 @@ function renderChecklist(f: PluginFormatters, field: ResolvedField, requiredBadg
  * forms-submit.js keeps both current (drawTotal).
  */
 function renderTotal(f: PluginFormatters, kind: 'checklist' | 'lines', prefix: string, withMatch: boolean): string {
-  const total = `<div class="form-text" data-${kind}-total>${prefix}: 0 · ${f.escapeHtml(f.formatMoney(0, CURRENCY))}</div>`;
+  const total = `<div class="form-text" data-${kind}-total>${prefix}: 0 · ${f.escapeHtml(f.formatMoney(0, FORMS_CURRENCY))}</div>`;
   return withMatch ? `${total}\n    <div class="form-text" data-${kind}-match></div>` : total;
 }
 
@@ -175,7 +170,7 @@ function renderLines(f: PluginFormatters, field: ResolvedField, requiredBadge: s
     field.required ? 'data-required="1"' : '',
     `data-min-rows="${field.minRows ?? 0}"`,
     field.maxRows !== undefined ? `data-max-rows="${field.maxRows}"` : '',
-    field.amountField ? `data-amount-field="${escHtml(field.amountField)}" data-currency="${CURRENCY}"` : '',
+    field.amountField ? `data-amount-field="${escHtml(field.amountField)}" data-currency="${FORMS_CURRENCY}"` : '',
     field.amountField && field.totalField ? `data-total-field="${escHtml(field.totalField)}"` : ''
   ].filter(Boolean).join(' ');
   return `<fieldset class="mb-3" ${attrs}>

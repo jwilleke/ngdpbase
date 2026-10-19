@@ -127,6 +127,13 @@ export type SubmissionStatus = 'pending' | 'processed' | 'rejected';
 // ── Validator builder ─────────────────────────────────────────────────────────
 
 /**
+ * The currency forms money is shown in: running totals and the submission
+ * email. The `amount` field shows "$" and parses two decimals, so forms money
+ * is US dollars throughout.
+ */
+export const FORMS_CURRENCY = 'USD';
+
+/**
  * Parse a typed amount to whole minor units (cents): `1250`, `1,250.5`,
  * `$1,250.50`. Returns null for anything else, including more than two
  * decimals, a sign, or zero.
@@ -143,7 +150,7 @@ export function parseAmount(raw: string): number | null {
  * Build the submission validator. `choices` holds the options each dropdown
  * offered this viewer (resolved again at submit time); a dropdown value not
  * among them is refused. An amount comes out as whole cents. A `lines`
- * sub-field's choices are keyed `<lines>.<sub-field>` (see resolveChoices).
+ * sub-field's choices are keyed `<lines>.<sub-field>` (see resolveChoiceOptions).
  */
 export function buildSubmissionValidator(
   form: FormDefinition,
