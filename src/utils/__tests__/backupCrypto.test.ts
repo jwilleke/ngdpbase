@@ -53,6 +53,29 @@ describe('backupCrypto (#1561)', () => {
     await expect(decryptBuffer(sealed.subarray(0, headerLen + firstRecord), KEY)).rejects.toThrow(/cut short/);
   });
 
+  /** Rewrite an encrypted file's header, as a crafted file would. */
+  function withHeader(sealed: Buffer, change: (h: Record<string, unknown>) => void): Buffer {
+    const len = sealed.readUInt32BE(8);
+    const header = JSON.parse(sealed.subarray(12, 12 + len).toString('utf8')) as Record<string, unknown>;
+    change(header);
+    const json = Buffer.from(JSON.stringify(header), 'utf8');
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(json.length, 0);
+    return Buffer.concat([sealed.subarray(0, 8), head, json, sealed.subarray(12 + len)]);
+  }
+
+  test('a header asking for another key derivation cost, or a salt or nonce of the wrong size, is refused before any key is derived', async () => {
+    const sealed = await encryptBuffer(Buffer.from('x'), KEY);
+    const refused = /in a format this build does not read/;
+    await expect(decryptBuffer(withHeader(sealed, (h) => { (h.kdf as Record<string, unknown>).N = 2 ** 30; }), KEY)).rejects.toThrow(refused);
+    await expect(decryptBuffer(withHeader(sealed, (h) => { (h.kdf as Record<string, unknown>).r = 64; }), KEY)).rejects.toThrow(refused);
+    await expect(decryptBuffer(withHeader(sealed, (h) => { (h.kdf as Record<string, unknown>).p = 16; }), KEY)).rejects.toThrow(refused);
+    await expect(decryptBuffer(withHeader(sealed, (h) => { (h.kdf as Record<string, unknown>).salt = Buffer.alloc(4).toString('base64'); }), KEY)).rejects.toThrow(refused);
+    await expect(decryptBuffer(withHeader(sealed, (h) => { h.noncePrefix = Buffer.alloc(12).toString('base64'); }), KEY)).rejects.toThrow(refused);
+    // Unchanged, it still opens.
+    expect((await decryptBuffer(withHeader(sealed, () => undefined), KEY)).toString()).toBe('x');
+  });
+
   test('no key is refused outright', async () => {
     expect(() => encryptBuffer(Buffer.from('x'), '')).toThrow(/NGDPBASE_BACKUP_KEY is not set/);
   });

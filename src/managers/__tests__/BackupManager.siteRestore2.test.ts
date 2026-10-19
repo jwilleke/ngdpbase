@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import BackupManager, { describeNotRestored } from '../BackupManager';
+import BackupManager, { BACKUP_KEY_MISSING, BACKUP_KEY_MISSING_TITLE, describeNotRestored } from '../BackupManager';
 import AuthManager from '../AuthManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import FileCredentialsProvider from '../../providers/FileCredentialsProvider';
@@ -65,7 +65,11 @@ describe('slice 2 of the site restore (#1876)', () => {
         getBaseURL: () => 'https://site.example.com',
         setProperty: async () => undefined
       },
-      NotificationManager: { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
+      // Stored notifications outlive a restart, as NotificationManager's do: the one-time backup-key notice is deduplicated against them.
+      NotificationManager: {
+        addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
+        getAllNotifications: () => notifications
+      },
       AuditManager: { logAuditEvent: async () => 'evt', flushAuditQueue: async () => undefined },
       // Restores live only: never while a site restore is staged.
       UserManager: {
@@ -211,11 +215,40 @@ describe('slice 2 of the site restore (#1876)', () => {
     const notice = notifications.find((n) => n.title === 'A backup is incomplete');
     expect(notice?.level).toBe('error');
     expect(notice?.message).toMatch(/credentials store was left out/);
-    expect(notice?.message).toMatch(/this backup is NOT encrypted/);
     // A restore needs a complete safety backup first, which can't be taken without the key.
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/credentials store was left out/);
     expect(fs.existsSync(paths().siteRestore)).toBe(false);
     await stop(site);
+  });
+
+  test('without the backup key: a persistent banner and ONE notification across backups and restarts; with the key the banner goes', async () => {
+    delete process.env[BACKUP_KEY_ENV];
+    const site = await start();
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
+    await site.backup.createBackup(CTX, { filename: '2026-01-01T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    await site.backup.createBackup(CTX, { filename: '2026-01-02T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    await stop(site);
+    const restarted = await start();
+    await restarted.backup.createBackup(CTX, { filename: '2026-01-03T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    const keyNotices = notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE);
+    expect(keyNotices).toHaveLength(1);
+    expect(keyNotices[0]).toMatchObject({ level: 'error', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY is not set, so backups are NOT encrypted.*the only notification/) });
+    // No per-backup "not encrypted" notice; each backup still says what it left out.
+    expect(notifications.filter((n) => /not encrypted/i.test(n.title) && n.title !== BACKUP_KEY_MISSING_TITLE)).toEqual([]);
+    expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toHaveLength(3);
+    expect(restarted.backup.getManagerStatus().state).toBe('degraded');
+    // The key is read at each backup: once it is set the banner goes, without a restart.
+    process.env[BACKUP_KEY_ENV] = KEY;
+    await restarted.backup.createBackup(CTX, { filename: '2026-01-04T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    expect(restarted.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    await stop(restarted);
+
+    process.env[BACKUP_KEY_ENV] = KEY;
+    const keyed = await start();
+    expect(keyed.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    await keyed.backup.createBackup(CTX);
+    expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
+    await stop(keyed);
   });
 
   test('a backup made under another backup key is refused before anything is staged', async () => {

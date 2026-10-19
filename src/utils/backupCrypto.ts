@@ -35,6 +35,8 @@ export const ENCRYPTED_SUFFIX = '.enc';
 /** The key derivation's cost, written into each file's header so a reader uses the file's own. A format constant, not a tunable: changing it changes no file already written. */
 const KDF = { N: 16384, r: 8, p: 1 } as const;
 const CHUNK_BYTES = 64 * 1024;
+const SALT_BYTES = 16;
+const NONCE_PREFIX_BYTES = 8;
 const TAG_BYTES = 16;
 const RECORD_HEAD = 5;
 /** The largest header a reader accepts: a header is a few hundred bytes. */
@@ -119,8 +121,8 @@ export function encryptStream(backupKey: string): Transform {
 
   const start = async (stream: Transform): Promise<void> => {
     if (key) return;
-    const salt = randomBytes(16);
-    prefix = randomBytes(8);
+    const salt = randomBytes(SALT_BYTES);
+    prefix = randomBytes(NONCE_PREFIX_BYTES);
     const header: Header = {
       format: 1,
       cipher: 'aes-256-gcm',
@@ -190,14 +192,23 @@ export function decryptStream(backupKey: string): Transform {
     } catch {
       throw new Error('the encrypted backup file has a damaged header');
     }
-    if (parsed.format !== 1 || parsed.cipher !== 'aes-256-gcm' || parsed.kdf?.alg !== 'scrypt' || !(parsed.chunkBytes > 0 && parsed.chunkBytes <= 16 * CHUNK_BYTES)) {
+    // The header is not authenticated until the first record verifies, so
+    // nothing in it may set the cost of the work before that: format 1 has
+    // one key derivation cost, and a header asking for another is refused
+    // (a crafted file must not make the server run a huge scrypt).
+    const salt = typeof parsed.kdf?.salt === 'string' ? Buffer.from(parsed.kdf.salt, 'base64') : Buffer.alloc(0);
+    const noncePrefix = typeof parsed.noncePrefix === 'string' ? Buffer.from(parsed.noncePrefix, 'base64') : Buffer.alloc(0);
+    if (parsed.format !== 1 || parsed.cipher !== 'aes-256-gcm' || parsed.kdf?.alg !== 'scrypt'
+      || parsed.kdf.N !== KDF.N || parsed.kdf.r !== KDF.r || parsed.kdf.p !== KDF.p
+      || salt.length !== SALT_BYTES || noncePrefix.length !== NONCE_PREFIX_BYTES
+      || !(parsed.chunkBytes > 0 && parsed.chunkBytes <= 16 * CHUNK_BYTES)) {
       throw new Error('the encrypted backup file is in a format this build does not read');
     }
     const fingerprint = backupKeyFingerprint(backupKey);
     if (parsed.keyFingerprint !== fingerprint) throw new BackupKeyMismatchError(String(parsed.keyFingerprint), fingerprint);
     headerHash = createHash('sha256').update(headerBytes).digest();
-    prefix = Buffer.from(parsed.noncePrefix, 'base64');
-    key = await deriveKey(backupKey, Buffer.from(parsed.kdf.salt, 'base64'), parsed.kdf);
+    prefix = noncePrefix;
+    key = await deriveKey(backupKey, salt, KDF);
     header = parsed;
     buffer = buffer.subarray(total);
     return true;

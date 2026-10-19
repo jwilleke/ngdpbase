@@ -223,6 +223,11 @@ export interface RestoreReport {
   jobRuns: JobRunSince[];
 }
 
+/** BackupManager's fault, and the dashboard banner, while there is no backup key (#1561, #1912). */
+export const BACKUP_KEY_MISSING = `${BACKUP_KEY_ENV} is not set, so backups are NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear, and the credentials store and the databases are left out`;
+/** The title of the one notification about it. */
+export const BACKUP_KEY_MISSING_TITLE = 'Backups are not encrypted';
+
 /** The scheduled job automatic backups run as (#1720). */
 export const AUTO_BACKUP_JOB_ID = 'backup.auto';
 
@@ -428,6 +433,9 @@ class BackupManager extends BaseManager {
     // #170: load the storage provider — it owns ensuring the container exists.
     await this.loadProvider();
 
+    // #1561: without the backup key, the dashboard says so for as long as it lasts.
+    await this.checkBackupKey();
+
     // #1720: automatic backups are a scheduled job.
     this.scheduleAutoBackup();
 
@@ -589,14 +597,16 @@ class BackupManager extends BaseManager {
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
       // #1723, #1563: a backup with a part missing is said, not just logged.
-      // #1561: so is one that is not encrypted.
-      const unencrypted = backupKey ? '' : `${BACKUP_KEY_ENV} is not set, so this backup is NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear. Set ${BACKUP_KEY_ENV} to encrypt backups.`;
-      if (failures.length > 0 || unencrypted) {
-        const missing = failures.length > 0 ? `Backup ${filename} was written, but without: ${failures.join('; ')}` : `Backup ${filename} was written.`;
-        const message = unencrypted ? `${missing} ${unencrypted}` : missing;
+      // #1561: a backup that is not encrypted is said by the dashboard banner
+      // and one notification (checkBackupKey), never once per backup.
+      await this.checkBackupKey();
+      if (failures.length > 0) {
+        const message = `Backup ${filename} was written, but without: ${failures.join('; ')}`;
         logger.error(`❌ ${message}`);
-        await this.notifyAdmins('error', failures.length > 0 ? 'A backup is incomplete' : 'A backup is not encrypted', message);
-        if (failures.length > 0 && options.requireComplete) throw new Error(missing);
+        await this.notifyAdmins('error', 'A backup is incomplete', message);
+        if (options.requireComplete) throw new Error(message);
+      } else if (!backupKey) {
+        logger.warn(`⚠️  Backup ${filename} was written NOT encrypted: ${BACKUP_KEY_ENV} is not set`);
       }
 
       // Clean up old backups
@@ -626,6 +636,34 @@ class BackupManager extends BaseManager {
     } catch (err) {
       logger.warn(`⚠️  Failed to remove the files beside ${documentFilename}:`, err);
     }
+  }
+
+  /**
+   * Without `NGDPBASE_BACKUP_KEY` backups are still taken, unencrypted, with
+   * the credentials store and the databases left out (#1561, #1876). That is
+   * said twice, never once per backup (operator, #1912): BackupManager is
+   * degraded for as long as the key is missing — the persistent banner on the
+   * dashboard — and admins get ONE notification the first time. It is
+   * deduplicated the way other one-time notices are (`pageMetadataMissing`):
+   * by its title among the stored notifications, which persist across
+   * restarts and keep a dismissed one. With the key set the fault clears.
+   * Read at start and at each backup.
+   */
+  private async checkBackupKey(): Promise<void> {
+    if (currentBackupKey()) {
+      this.markReadyIfDegradedBy(BACKUP_KEY_MISSING);
+      return;
+    }
+    // A degraded backup directory (preflight) is the worse fault, and keeps the banner.
+    const status = this.getManagerStatus();
+    if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING) this.markDegraded(BACKUP_KEY_MISSING, BACKUP_KEY_ENV);
+    try {
+      const notifications = this.engine.getManager<{ getAllNotifications?(includeExpired?: boolean): Array<{ title: string }> }>('NotificationManager');
+      if (notifications?.getAllNotifications?.(true).some((n) => n.title === BACKUP_KEY_MISSING_TITLE)) return;
+    } catch (err) {
+      logger.warn('[BackupManager] Could not check for an earlier backup-key notice:', err);
+    }
+    await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard shows Backup as degraded; this is the only notification about it.`);
   }
 
   private async notifyAdmins(level: 'error' | 'warning' | 'success', title: string, message: string): Promise<void> {
