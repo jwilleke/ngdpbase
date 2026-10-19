@@ -1,6 +1,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
-import BaseManager, { type ManagerStats } from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -51,6 +52,8 @@ class OrganizationManager extends BaseManager {
 
   private provider: OrganizationProvider | null = null;
   private providerClass?: string;
+  /** `ngdpbase.application.organization.storagedir`, resolved at start: what a backup copies (#1876). */
+  private storageDir: string | null = null;
 
   // #620: cache the install-anchor lookup and by-id/by-file lookups. Read
   // hot path: UserManager.syncPersonOnCreate / applyRoleDiff hit
@@ -79,6 +82,10 @@ class OrganizationManager extends BaseManager {
       'ngdpbase.application.organization.storagedir',
       './data/organizations'
     );
+    this.storageDir = storageDir;
+    // #1876: a staged site restore goes in before the records are read.
+    const restored = applyDirectoryPartAtStart('OrganizationManager', storageDir, configManager);
+    if (restored?.refused) this.markDegraded(`A staged restore of organization records was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.organization.storagedir',
       storageDir
@@ -141,6 +148,21 @@ class OrganizationManager extends BaseManager {
   }
 
   /** Provider accessor, mainly for tests. */
+  /** Organization records are in the backup (#1876), as `<stem>.organizations.tar` beside the document. */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('OrganizationManager', 'organizations', this.storageDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('OrganizationManager', this.storageDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
+  }
+
   getProvider(): OrganizationProvider | null {
     return this.provider;
   }

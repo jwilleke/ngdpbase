@@ -53,9 +53,10 @@ import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import {
-  applyStagedRestore, manifestPath, runOffThread, stagedPath, writeManifest,
+  applyStagedRestore, manifestPath, runOffThread, setAsideStagedRestore, stagedPath, writeManifest,
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
 } from '../providers/sqliteBackup.js';
+import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
 
 /** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
 export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
@@ -583,6 +584,14 @@ class DatabaseManager extends BaseManager {
       databases: stages.map((s) => ({ name: s.name, live: s.live, staged: stagedPath(s.live) }))
     };
     writeManifest(manifestFile, manifest);
+    // #1876: part of a site restore — the databases go in with the other parts, or not at all.
+    if (options.siteRestore) {
+      recordStagedPart(options.siteRestore, {
+        manager: 'DatabaseManager',
+        swaps: manifest.databases.map((d) => ({ live: d.live, staged: d.staged })),
+        discard: [manifestFile]
+      });
+    }
     const names = stages.map((s) => s.name).join(', ');
     logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
     const unopened = this.unavailable
@@ -594,6 +603,11 @@ class DatabaseManager extends BaseManager {
       logger.error(`[DatabaseManager] ${message}`);
       await this.notify('error', 'Some databases in the backup were not restored', message);
     }
+  }
+
+  /** Its restore is staged for the next start (#1723), and joins a site restore (#1876). */
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /** The restore staged and waiting for the next start, or null. */
@@ -675,7 +689,20 @@ class DatabaseManager extends BaseManager {
       const name = path.basename(resolved);
       return path.dirname(resolved) === dir && name.endsWith('.db') && ADDON_SLUG.test(name.slice(0, -3));
     };
-    const outcome = applyStagedRestore(file, allowed);
+    // #1876: a database restore staged as part of a site restore goes in only
+    // when the whole site restore does; otherwise it is set aside with it.
+    const siteFile = siteRestoreFile(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
+    const gate = gatePart(siteFile, 'DatabaseManager');
+    let outcome: ApplyOutcome | null;
+    if (gate.decision === 'set-aside') {
+      outcome = setAsideStagedRestore(file, `the site restore it belongs to was not applied: ${gate.reason}`);
+      if (gate.part) markPart(siteFile, 'DatabaseManager', 'set-aside', gate.reason);
+    } else {
+      outcome = applyStagedRestore(file, allowed);
+      if (gate.decision === 'apply') {
+        markPart(siteFile, 'DatabaseManager', outcome && !outcome.refused ? 'applied' : 'set-aside', outcome?.refused ?? (outcome ? undefined : 'no staged database restore was found'));
+      }
+    }
     if (!outcome) return;
     this.restoreAtStart = outcome;
     if (outcome.refused) {

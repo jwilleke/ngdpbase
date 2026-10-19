@@ -15,6 +15,10 @@ import type { ScheduleInput } from '../utils/schedule.js';
 import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import {
+  beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, readSiteRestore, siteRestoreFile,
+  type SiteRestoreManifest
+} from '../utils/siteRestore.js';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -51,7 +55,9 @@ export interface RestoreOptions {
 export interface StoredBackup extends BackupFileInfo {
   /** The database files beside the document, by name (`application`, `addon-<owner>`). */
   databases: string[];
-  /** The document and its database files together, in bytes. */
+  /** The file archives beside the document, by part (`attachments`, `roles`, …) (#1876). */
+  parts: string[];
+  /** The document and every file beside it together, in bytes. */
   totalSize: number;
 }
 
@@ -127,8 +133,9 @@ export interface AutoBackupConfig {
 
 /**
  * A backup document's filename without `.json.gz` / `.json` (#1723). A
- * manager's own files beside the document are named `<stem>.<something>.db`,
- * and are pruned with it.
+ * manager's own files beside the document are named `<stem>.<name>.db` (a
+ * database, #1723) or `<stem>.<part>.tar` (a folder of files, #1876), and are
+ * pruned and downloaded with it.
  */
 export function backupStem(filename: string): string {
   return filename.replace(/\.json(\.gz)?$/, '');
@@ -136,7 +143,7 @@ export function backupStem(filename: string): string {
 
 /** Whether `filename` is one of the files a manager wrote beside the document named `documentFilename` (#1723). */
 export function isCompanionOf(filename: string, documentFilename: string): boolean {
-  return filename.startsWith(`${backupStem(documentFilename)}.`) && filename.endsWith('.db');
+  return filename.startsWith(`${backupStem(documentFilename)}.`) && (filename.endsWith('.db') || filename.endsWith('.tar'));
 }
 
 /** The scheduled job automatic backups run as (#1720). */
@@ -265,6 +272,10 @@ class BackupManager extends BaseManager {
     if (!configManager) {
       throw new Error('BackupManager requires ConfigurationManager to be initialized.');
     }
+
+    // #1876: every part of a staged site restore was applied (or set aside)
+    // by its owner as it started; this manager starts last, so say what happened.
+    await this.reportSiteRestoreAtBoot(siteRestoreFile(configManager));
 
     // Uses getResolvedDataPath to support INSTANCE_DATA_FOLDER
     this.backupDirectory = configManager.getResolvedDataPath(
@@ -495,7 +506,7 @@ class BackupManager extends BaseManager {
     }
   }
 
-  private async notifyAdmins(level: 'error' | 'warning', title: string, message: string): Promise<void> {
+  private async notifyAdmins(level: 'error' | 'warning' | 'success', title: string, message: string): Promise<void> {
     try {
       await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
         ?.addNotification({ type: 'system', level, title, message });
@@ -584,10 +595,19 @@ class BackupManager extends BaseManager {
       const databases = backupData.managers.DatabaseManager as BaseBackupData | undefined;
       const databaseList = (databases?.data as { databases?: unknown } | null | undefined)?.databases;
       const hasDatabases = Array.isArray(databaseList) && databaseList.length > 0;
-      if (hasDatabases && (!options.managerFilter || options.managerFilter.includes('DatabaseManager'))) {
+      // #1876: every manager whose restore is staged goes in one site restore,
+      // all or nothing, when any besides the databases is asked for.
+      const filtered = (name: string): boolean => !options.managerFilter || options.managerFilter.includes(name);
+      const stagedNames = managerNames.filter((name) => filtered(name) && this.restoresStaged(name));
+      const siteRestore = stagedNames.some((name) => name !== 'DatabaseManager');
+      if (siteRestore) {
+        await this.stageSiteRestore(ctx, backupPath, backupData, directory, stagedNames, options);
+        results.success.push(...stagedNames);
+      } else if (hasDatabases && filtered('DatabaseManager')) {
         const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
         if (!databaseManager) throw new Error('The backup holds databases, but DatabaseManager is not available; nothing was restored');
         // D5: never replaced silently — refused before the fresh backup is taken.
+        this.refuseIfSiteRestoreStaged();
         const staged = databaseManager.getStagedRestore?.();
         if (staged && !options.replaceStaged) {
           throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it. Nothing was restored`);
@@ -601,6 +621,7 @@ class BackupManager extends BaseManager {
 
       // Restore each manager
       for (const managerName of managerNames) {
+        if (siteRestore && stagedNames.includes(managerName)) continue;
         if (managerName === 'DatabaseManager' && hasDatabases) {
           if (options.managerFilter && !options.managerFilter.includes(managerName)) results.skipped.push(managerName);
           continue;
@@ -651,6 +672,150 @@ class BackupManager extends BaseManager {
     }
   }
 
+  /** Whether this site's manager of that name stages its restore (#1876). */
+  private restoresStaged(name: string): boolean {
+    const manager = this.engine.getManager<BaseManager>(name);
+    return typeof manager?.restoreIsStaged === 'function' && manager.restoreIsStaged();
+  }
+
+  /** The site restore manifest, as configured (#1876). */
+  private siteRestorePath(): string {
+    return siteRestoreFile(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
+  }
+
+  /** The site restore staged and waiting for the next start, or null (#1876). Throws for a record that can't be read. */
+  getStagedSiteRestore(): SiteRestoreManifest | null {
+    return readSiteRestore(this.siteRestorePath());
+  }
+
+  /** A databases-only restore is refused while a site restore is staged: it would take the site restore's databases away from it (#1876). */
+  private refuseIfSiteRestoreStaged(): void {
+    let staged: SiteRestoreManifest | null;
+    try {
+      staged = this.getStagedSiteRestore();
+    } catch (err) {
+      throw new Error(`A site restore record is there but can't be read (${(err as Error).message}); nothing was restored`, { cause: err });
+    }
+    if (staged) throw new Error(`A site restore from ${staged.source || staged.backup} is staged; it includes the databases. Cancel it first; nothing was restored`);
+  }
+
+  /**
+   * Stage a whole-site restore (#1876): every manager in `names` stages its
+   * part for the next start, after a complete backup of the live data, under
+   * one site restore manifest. All or nothing: a part that can't be staged
+   * discards every part staged before it, and the live data is never
+   * touched. The next start applies every part or none
+   * (`src/utils/siteRestore.ts`).
+   */
+  private async stageSiteRestore(ctx: ActorContext, backupPath: string, backupData: BackupData, directory: string, names: string[], options: RestoreOptions): Promise<void> {
+    const siteFile = this.siteRestorePath();
+    let existing: SiteRestoreManifest | null;
+    try {
+      existing = readSiteRestore(siteFile);
+    } catch (err) {
+      if (!options.replaceStaged) throw new Error(`A site restore record is there but can't be read (${(err as Error).message}); replace it to go on. Nothing was restored`, { cause: err });
+      existing = null;
+    }
+    const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
+    const databaseStaged = databaseManager?.getStagedRestore?.() ?? null;
+    if ((existing || databaseStaged) && !options.replaceStaged) {
+      const what = existing ? `A site restore from ${existing.source || existing.backup}` : `A database restore from ${databaseStaged!.source || databaseStaged!.backup}`;
+      throw new Error(`${what} is already staged; cancel it or replace it. Nothing was restored`);
+    }
+    // A part whose backup failed can't be restored, so none is.
+    for (const name of names) {
+      const slot = backupData.managers[name] as { error?: unknown } | undefined;
+      if (slot && typeof slot.error === 'string') throw new Error(`The backup has no ${name} part (its backup failed: ${slot.error}); nothing was restored`);
+    }
+
+    logger.info('📦 Taking a backup of the live data before staging the site restore...');
+    const before = path.basename(await this.createBackup(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true }));
+    logger.info(`✅ Live data backed up to ${before}`);
+
+    discardSiteRestore(siteFile);
+    beginSiteRestore(siteFile, {
+      stagedAt: new Date().toISOString(),
+      backup: String(backupData.timestamp ?? ''),
+      source: path.basename(backupPath),
+      stagedBy: actorOf(ctx).user,
+      safetyBackup: before
+    });
+    // The databases first, as before (#1723); then the rest in registration order.
+    const ordered = [...names].sort((a, b) => Number(b === 'DatabaseManager') - Number(a === 'DatabaseManager'));
+    try {
+      for (const name of ordered) {
+        const manager = this.engine.getManager<BaseManager>(name)!;
+        logger.info(`📦 Staging ${name}...`);
+        await manager.restore(backupData.managers[name] as BaseBackupData, {
+          ctx, directory, source: path.basename(backupPath), safetyBackup: before, siteRestore: siteFile,
+          replaceStaged: options.replaceStaged || Boolean(databaseStaged)
+        });
+      }
+      commitSiteRestore(siteFile);
+    } catch (err) {
+      discardSiteRestore(siteFile);
+      throw new Error(`The site restore was not staged, and nothing was changed: ${(err as Error).message}`, { cause: err });
+    }
+    const message = `${ordered.join(', ')} from the backup taken ${String(backupData.timestamp)} are staged. Restart the site to put them in place, all together; the current data of each is kept beside it as *.pre-restore. The current data was backed up first, as ${before}.`;
+    logger.warn(`[BackupManager] Site restore staged: ${message} (#1876)`);
+    await this.notifyAdmins('warning', 'A site restore is staged', message);
+  }
+
+  /**
+   * Throw away a staged site restore before the restart applies it (#1876):
+   * every staged file and the record are removed, the live data is
+   * untouched. Recorded first (`backup-restore-cancel`, refuse).
+   */
+  async cancelStagedSiteRestore(ctx: ActorContext): Promise<SiteRestoreManifest> {
+    const staged = this.getStagedSiteRestore();
+    if (!staged) throw new Error('No site restore is staged');
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.BACKUP_RESTORE_CANCEL,
+      ...who,
+      action: 'backup-restore-cancel',
+      result: 'success',
+      severity: 'high',
+      resource: staged.source || staged.backup,
+      resourceType: 'backup',
+      metadata: { ...who.metadata, stagedAt: staged.stagedAt, stagedBy: staged.stagedBy, parts: staged.parts.map((p) => p.manager) }
+    });
+    discardSiteRestore(this.siteRestorePath());
+    logger.warn(`[BackupManager] Staged site restore from ${staged.source || staged.backup} cancelled by ${who.user} (#1876)`);
+    return staged;
+  }
+
+  /** Tell admins what the start did with a staged site restore (#1876). */
+  private async reportSiteRestoreAtBoot(siteFile: string): Promise<void> {
+    let finished: SiteRestoreManifest | null;
+    try {
+      finished = finishSiteRestoreAtBoot(siteFile);
+    } catch (err) {
+      const message = `The site restore record ${path.basename(siteFile)} could not be read at start: ${(err as Error).message}`;
+      logger.error(`❌ ${message}`);
+      await this.notifyAdmins('error', 'A site restore could not be checked', message);
+      return;
+    }
+    if (!finished) return;
+    const applied = finished.parts.filter((p) => p.status === 'applied').map((p) => p.manager);
+    const notApplied = finished.parts.filter((p) => p.status !== 'applied').map((p) => p.manager);
+    const from = `the backup ${finished.source || finished.backup}`;
+    const undo = finished.safetyBackup ? ` The data from before was backed up as ${finished.safetyBackup}.` : '';
+    if (notApplied.length === 0) {
+      const message = `Restored at start from ${from}: ${applied.join(', ')}. The previous data of each is kept beside it as *.pre-restore.${undo}`;
+      logger.warn(`[BackupManager] ${message} (#1876)`);
+      await this.notifyAdmins('success', 'A site restore was applied', message);
+    } else if (applied.length === 0) {
+      const message = `The restore from ${from} was not applied: ${finished.reason ?? 'it was refused'}. Nothing was restored; the staged files were set aside as *.incomplete, and the site started on its current data.`;
+      logger.error(`❌ ${message} (#1876)`);
+      await this.notifyAdmins('error', 'A site restore was not applied', message);
+    } else {
+      const message = `The restore from ${from} was applied only in part: ${applied.join(', ')} restored; ${notApplied.join(', ')} not (${finished.reason ?? 'refused'}). The previous data of each restored part is kept as *.pre-restore.${undo}`;
+      logger.error(`❌ ${message} (#1876)`);
+      await this.notifyAdmins('error', 'A site restore was applied only in part', message);
+    }
+  }
+
   /**
    * Validate backup data structure
    * @param {BackupData} backupData - Backup data to validate
@@ -684,7 +849,8 @@ class BackupManager extends BaseManager {
       const stem = backupStem(b.filename);
       return {
         ...b,
-        databases: companions.map((o) => o.filename.slice(stem.length + 1, -'.db'.length)).sort(),
+        databases: companions.filter((o) => o.filename.endsWith('.db')).map((o) => o.filename.slice(stem.length + 1, -'.db'.length)).sort(),
+        parts: companions.filter((o) => o.filename.endsWith('.tar')).map((o) => o.filename.slice(stem.length + 1, -'.tar'.length)).sort(),
         totalSize: b.size + companions.reduce((n, o) => n + o.size, 0)
       };
     });
@@ -696,16 +862,18 @@ class BackupManager extends BaseManager {
   }
 
   /**
-   * One backup as a `.tar` stream (#1723, D2): the document and every database
-   * file beside it, read from disk as the stream is consumed, never built in
-   * memory. The database files are already encrypted under the backup key,
-   * which is never in the archive.
+   * One backup as a `.tar` stream (#1723, D2): the document and every file
+   * beside it — the databases, and the archives of attachment files, role
+   * membership, persons, organizations, footnotes and comments (#1876) —
+   * read from disk as the stream is consumed, never built in memory. The
+   * database files are already encrypted under the backup key, which is
+   * never in the archive; the file archives are not encrypted (#1561).
    */
   async backupArchive(filename: string): Promise<{ name: string; stream: Readable }> {
     const backup = await this.findStoredBackup(filename);
     if (!backup || !this.backupDirectory) throw new Error(`No backup named ${filename} in the backup directory`);
     const stem = backupStem(backup.filename);
-    const files = [backup.filename, ...backup.databases.map((d) => `${stem}.${d}.db`)];
+    const files = [backup.filename, ...backup.databases.map((d) => `${stem}.${d}.db`), ...backup.parts.map((p) => `${stem}.${p}.tar`)];
     const stream = createTar({ cwd: this.backupDirectory, portable: true, noDirRecurse: true }, files) as unknown as Readable;
     return { name: `${stem}.tar`, stream };
   }
@@ -732,6 +900,7 @@ class BackupManager extends BaseManager {
     if (backup.databases.length === 0) throw new Error(`Backup ${filename} holds no database to restore`);
     const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
     if (!databaseManager) throw new Error('DatabaseManager is not available');
+    this.refuseIfSiteRestoreStaged();
     const staged = databaseManager.getStagedRestore();
     if (staged && !options.replace) throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it`);
     if (!staged && options.replace) throw new Error('There is no staged restore to replace');

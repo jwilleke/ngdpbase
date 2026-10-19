@@ -2,144 +2,77 @@
 
 ## Overview
 
-ngdpbase has two layers of data that require different backup strategies:
+A backup made from __Admin → Backup__ is a partial copy of the site. It holds most of the site's data, and __only its databases can be restored from Admin → Backup__. A complete, restorable copy is still the data folders, copied while the server is stopped, plus the keys kept somewhere else.
 
-1. __Structured data__ (configuration, users, ACLs, attachment metadata) — backed up by the built-in __Backup Data__ button
-2. __File data__ (wiki page files, attachment binaries, media files) — must be backed up separately using your OS or NAS backup tools
-
-__A complete backup requires both.__
+The full, current detail — every kind of data, what restores, and every known gap — is in the [backup and restore guide](../guides/backup-restore-guide.md). This page is the short version.
 
 ---
 
-## The "Backup Data" Button
+## Making a backup
 
-Found at __Admin → Data Management → Backup Data__.
+- __By hand:__ Admin → Backup → __Create & Download Backup__. The backup is written to the server's backup folder and downloaded as one `.tar`.
+- __Automatically:__ turn on automatic backups on Admin → Backup, with a time of day and the days to run. A backup missed while the server was down runs when it is back.
+- The server keeps the last 10 backups (`ngdpbase.backup.max-backups`), each with the files beside it.
 
-Clicking this button:
+A backup is one document, `<timestamp>-ngdpbase-backup.json.gz`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar` (attachments, vault files, role membership, persons, organizations, footnotes, comments).
 
-1. Calls `backup()` on every registered manager in sequence
-2. Aggregates all results into a single JSON document
-3. Compresses it with gzip
-4. Downloads the file to your browser as `<timestamp>-ngdpbase-backup.json.gz`
+### What IS in a backup
 
-The server also retains the last 10 backup files in its backup directory (configurable via `ngdpbase.backup.max-backups`).
+| Data | Where in the backup |
+| --- | --- |
+| Pages, their history and trash (history and trash with `versioningfileprovider`) | the document |
+| Private stores (vaults): pages, history, footnotes, comments, keys — as stored, sealed files still sealed | the document (none of it when the vaults are over 256 MB together) |
+| Attachment files in the shared pool | `<stem>.attachments.tar` |
+| Vault files (attachments on vault pages), as stored — never decrypted | `<stem>.vault-attachments.tar` |
+| Attachment metadata | the document |
+| Footnotes and comments on public pages | `<stem>.footnotes.tar`, `<stem>.comments.tar` |
+| Users (accounts, password hashes, preferences) | the document |
+| Role membership (who holds which role), persons, organizations | `<stem>.roles.tar`, `<stem>.persons.tar`, `<stem>.organizations.tar` |
+| Settings (`app-custom-config.json`, secrets included) | the document |
+| The search index and the keyword vocabulary | the document |
+| The application database and add-on databases (with `NGDPBASE_BACKUP_KEY` set) | `<stem>.<name>.db`, encrypted |
 
-### What IS included in the backup file
+### What is NOT in a backup
 
-| Data | Manager | Status |
-|------|---------|--------|
-| Configuration settings | ConfigurationManager | ✅ Included |
-| User accounts and roles | UserManager | ✅ Included |
-| Access control lists | PolicyInformationPoint | ✅ Included |
-| Attachment metadata (filenames, hashes, page links) | AttachmentManager | ✅ Included |
-| Search index | SearchManager | ✅ Included |
+| Data | How to keep it |
+| --- | --- |
+| Passkeys, authenticator apps, verified email and phone, known devices, linked sign-ins | copy `$FAST_STORAGE/users/` |
+| `.env` and the keys in it | keep a copy in a password manager or secret store |
+| The audit log | copy `$FAST_STORAGE/logs/` |
+| Shares, notifications, scheduled-job state | copy `$FAST_STORAGE/` |
+| Add-on files under an add-on's data folder | copy `$FAST_STORAGE/` |
+| Sign-in sessions | not needed: people sign in again |
+| Media files | back up your media folders at the storage level |
 
-### What is NOT included in the backup file
+> __Important:__ the document and the `.tar` files are __not encrypted__. They hold password hashes, settings with their secrets, attachments and records as they are on disk. Keep backups as safe as the data folder itself.
 
-| Data | Why | How to back up |
-|------|-----|----------------|
-| __Wiki page files__ (`.md` files) | FileSystemProvider does not yet implement backup() | Copy `$SLOW_STORAGE/pages/` directory |
-| __Attachment binaries__ (images, PDFs, etc.) | Only metadata is backed up, not the files themselves | Copy `$SLOW_STORAGE/attachments/` directory |
-| __Media files__ | External files managed by FileSystemMediaProvider; not part of the wiki data store | Back up your media source folders directly |
-| __Versions/history__ | Page version history lives in the filesystem alongside pages | Copy `$SLOW_STORAGE/pages/` (versions are stored inline) |
+---
 
-> __Important:__ The Backup Data button is __not a complete backup__. Without a filesystem-level copy of your pages and attachments, you cannot fully restore the wiki from the `.json.gz` file alone.
-
-### Databases
+## Databases
 
 When `ngdpbase.database.provider` is `sqlite`, every backup also copies the application database and every declared add-on database, on or off ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)):
 
 - Encrypted under `NGDPBASE_BACKUP_KEY` (environment or instance `.env`, never config; use a value different from `NGDPBASE_DATABASE_KEY`). Keep a copy of the key outside the backups.
 - Without the key no database is backed up and nothing unencrypted is written; the dashboard shows the database manager degraded and each backup notifies admins that it is incomplete.
 - All databases are copied at one point in time, on a worker thread, while the site runs.
-- Each database is its own file beside the document: `<timestamp>-ngdpbase-backup.application.db`, `<timestamp>-ngdpbase-backup.addon-<owner>.db`. Retention removes them with their document. Admin → Backup downloads each backup as one `.tar` holding the document and its database files; the backup key is never in it.
-- A backup key equal to `NGDPBASE_DATABASE_KEY` still backs up, but the dashboard and a notification say so, as for a missing key. Each backup records a short fingerprint of its key (never the key), so restoring under another key is refused plainly.
 - `ngdpbase.database.backup.worker-timeout-ms` (default `3600000`) caps how long the copy may run.
 
-A database restore is staged: a fresh backup of the live data is taken, the backup's databases are prepared as `<file>.staged` beside the live files, all or nothing, and the next start puts them in place before any database opens, keeping the old files (and their `-wal`/`-shm`) as `*.pre-restore`. It is started from Admin → Backup → Restore Databases: pick a backup stored on the server, type the site name, and restart when the notification says it is staged. A staged restore is shown there (which backup, when, by whom, and the safety backup of the current data taken just before) and can be cancelled or replaced. Only the databases are restored; pages, users and settings are not changed. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
-
 ---
 
-## Recommended Backup Strategy
+## Restoring
 
-### Step 1 — Download the structured backup
+### The databases (Admin → Backup)
 
-Use __Admin → Data Management → Backup Data__ to download the `.json.gz` file.
-Store it somewhere safe (cloud storage, external drive, etc.).
+__Admin → Backup → Restore Databases__: pick a backup stored on the server, type the site name, and restart when the notification says it is staged. A fresh backup of the current data is taken first, the databases are prepared beside the live files, all or nothing, and the next start puts them in place, keeping the old files as `*.pre-restore`. A staged restore is shown there and can be cancelled or replaced. __Only the databases are restored__; pages, users and settings are not changed. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
 
-### Step 2 — Back up the filesystem data
+### Everything else
 
-Copy or snapshot the following directories:
+Nothing on Admin → Backup restores anything but the databases yet ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). The attachment files, role membership, persons, organizations, footnotes and comments in a backup can be restored together with the databases, staged for the next start, by the site restore that #1876 is building; it has no button yet.
 
-| Directory | Contains |
-|-----------|----------|
-| `$SLOW_STORAGE/pages/` | All wiki page markdown files and version history |
-| `$SLOW_STORAGE/attachments/` | All uploaded attachment binary files |
-| `$FAST_STORAGE/` | Users, sessions, config overrides, search index, logs |
-
-> On a standard install, `FAST_STORAGE` defaults to `./data` and `SLOW_STORAGE` is set in your `.env` file. Check your instance's `.env` to find the exact paths.
-
-### Step 3 — Back up media (if applicable)
-
-Media files (photos, videos) are stored in your configured media source folders (`ngdpbase.media.folders`). These are __read-only__ to ngdpbase and must be backed up independently — typically via your NAS or storage system's own backup tools.
-
-The media index file (default: `$FAST_STORAGE/media-index.json`) is rebuilt on the next scan and does not need to be backed up, but backing it up avoids a full rescan after restore.
-
----
-
-## Restoring from a Backup
-
-### Restore structured data
-
-1. Go to __Admin → Data Management → Restore Data__
-2. Upload the `.json.gz` backup file
-3. The server will call `restore()` on each manager in sequence
-
-> Restore replaces live data. Stop traffic to the wiki before restoring in a production environment.
-
-### Restore filesystem data
-
-Copy your backed-up `pages/`, `attachments/`, and `$FAST_STORAGE/` directories back to their original locations, then restart the server.
-
----
-
-## Auto Backup (Not Yet Active)
-
-The configuration supports automatic scheduled backups:
-
-```json
-"ngdpbase.backup.auto-backup": false,
-"ngdpbase.backup.auto-backup-interval": 86400000
-```
-
-Setting `autoBackup` to `true` and `autoBackupInterval` to a millisecond interval (default: 86400000 = 24 hours) is planned but __not yet implemented__. See [#258](https://github.com/jwilleke/ngdpbase/issues/258) for status.
-
-Until auto backup is active, schedule a recurring manual backup or use an OS-level cron job to copy your data directories.
-
----
-
-## Backup Granularity (Planned — #258)
-
-Issue [#258](https://github.com/jwilleke/ngdpbase/issues/258) tracks adding selective backup options:
-
-- Configuration only
-- Pages only
-- Attachments only
-- Pages + Attachments
-- Full backup (all of the above)
-- Scheduled/automatic backups
-
-Currently only a full structured backup is available via the Backup Data button.
+To bring back anything else today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
 
 ---
 
 ## What About Media Files?
 
-Media files (photos, videos in your media library) are __never__ included in the ngdpbase backup, for two reasons:
-
-1. They are treated as read-only source files — ngdpbase indexes them but does not own them
-2. They are typically very large (gigabytes to terabytes) and impractical to include in an application-level backup
-
-__Back up media files at the storage/NAS level__, independent of ngdpbase.
-
-The media index (`media-index.json`) can be regenerated at any time via __Admin → Media → Rescan__. You do not need to restore it manually.
+Media files (photos, videos in your media library) are __never__ included in the ngdpbase backup: ngdpbase indexes them but does not own them, and they are usually far too large. __Back up media files at the storage/NAS level.__ The media index can be rebuilt at any time with a rescan.
