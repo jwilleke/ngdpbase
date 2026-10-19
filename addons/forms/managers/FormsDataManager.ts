@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { evaluateSeededAddonPage, pageSourceHash } from '../../../dist/src/utils/addonPageSync.js';
 import type { SeededAddonPageStatus } from '../../../dist/src/utils/addonPageSync.js';
+import { administratorUsernames } from '../../../dist/src/utils/administrators.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -74,6 +75,53 @@ export interface ShippedFormState {
    * from, so for an edited copy an update is waiting. True when unstamped.
    */
   shippedChanged: boolean;
+  /**
+   * The add-on ships a change this copy has not taken: it is outdated, or it
+   * was edited here and the add-on has shipped something new since (#1918).
+   */
+  behind: boolean;
+  /** The add-on marked what it ships now as needed to operate (#1918). */
+  required: boolean;
+}
+
+/** Options for `registerShippedForm` (#1918). */
+export interface ShippedFormOptions {
+  /**
+   * What ships now is needed for the add-on to work. A site copy behind it
+   * raises a critical notice to administrators instead of an "update
+   * available" one, and the forms admin flags it.
+   */
+  required?: boolean;
+}
+
+/** The notice `registerShippedForm` raises for a copy that is behind (#1918). */
+export interface ShippedFormNotice {
+  title: string;
+  message: string;
+  level: 'info' | 'error';
+}
+
+/**
+ * What administrators are told when a shipped form's copy is behind what its
+ * add-on ships (#1918): which add-on, which form, and the fix on the forms
+ * admin. Critical ("Critical:" title, error level, as an add-on that did not
+ * load is, #1883) when the add-on marked the change required; otherwise an
+ * "update available" info notice. An edited copy says Sync will not replace
+ * it without Force Sync.
+ */
+export function shippedFormNotice(addon: string, form: { id: string; title: string }, state: Pick<ShippedFormState, 'status' | 'required'>): ShippedFormNotice {
+  const name = `"${form.title}" (${form.id})`;
+  const need = state.required ? `${addon} needs this update to work. ` : '';
+  const fix = state.status === 'locally-modified'
+    ? 'It was edited on this site, so Sync does not replace it: open Forms (/addons/forms) and choose Force Sync to take the shipped version. Your edits to it are lost.'
+    : 'Open Forms (/addons/forms) and choose Sync to take it.';
+  return {
+    title: state.required
+      ? `Critical: form ${name} from ${addon} needs syncing`
+      : `Form update available: ${name} from ${addon}`,
+    message: `${need}${addon} ships a new version of the form ${name}. ${fix}`,
+    level: state.required ? 'error' : 'info'
+  };
 }
 
 /** What `syncShippedForm` did: `edited` means it refused to overwrite site edits. */
@@ -183,9 +231,11 @@ export default class FormsDataManager {
   private dataPath: string;
   private definitions: Map<string, FormDefinition> = new Map();
   /** Forms add-ons registered this boot, by id (#1880). */
-  private shippedForms: Map<string, { addon: string; definition: FormDefinition }> = new Map();
+  private shippedForms: Map<string, { addon: string; definition: FormDefinition; required: boolean }> = new Map();
+  private engine: { getManager: (name: string) => unknown } | null;
 
-  constructor(_engine: unknown, dataPath: string) {
+  constructor(engine: unknown, dataPath: string) {
+    this.engine = (engine ?? null) as { getManager: (name: string) => unknown } | null;
     this.dataPath = dataPath;
   }
 
@@ -326,16 +376,21 @@ export default class FormsDataManager {
    * - Anything else is left as it is. The forms admin shows an outdated copy
    *   with Sync, and an edited copy as edited; nothing here overwrites it.
    *
+   * A copy left behind what ships raises an administrator notice, once per
+   * form and shipped version (#1918): critical with `required`, otherwise
+   * "update available".
+   *
    * Throws when the definition does not parse, so an add-on author sees it at
    * the first start.
    *
    * @param addon - The add-on's name, shown in the forms admin
    * @param definition - The definition the add-on ships
+   * @param options - `required`: what ships now is needed for the add-on to work
    * @returns Where the site's copy stands after registering
    */
-  async registerShippedForm(addon: string, definition: FormDefinition): Promise<ShippedFormState> {
+  async registerShippedForm(addon: string, definition: FormDefinition, options: ShippedFormOptions = {}): Promise<ShippedFormState> {
     const { shipped: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
-    this.shippedForms.set(parsed.id, { addon, definition: parsed });
+    this.shippedForms.set(parsed.id, { addon, definition: parsed, required: options.required === true });
 
     const live = this.definitions.get(parsed.id);
     if (!live) {
@@ -345,12 +400,51 @@ export default class FormsDataManager {
     }
 
     const state = this.shippedFormState(parsed.id)!;
-    if (state.status === 'outdated') {
-      console.info(`[FormsDataManager] ${addon} ships a changed form '${parsed.id}'; Sync it in the forms admin`);
-    } else if (state.status === 'locally-modified' && state.shippedChanged) {
-      console.info(`[FormsDataManager] ${addon} ships a changed form '${parsed.id}', but it was edited on this site; not synced`);
-    }
+    if (state.behind) await this.noticeBehind(addon, parsed, state);
     return state;
+  }
+
+  /**
+   * Tell administrators a shipped form's copy is behind (#1918), once per form
+   * and shipped version: the version told about is kept in
+   * `shipped-notices.json` beside the definitions, so a restart, or the
+   * notice being dismissed or cleared, does not raise it again; the next
+   * shipped change does. Never throws: a notice that cannot be sent is
+   * logged, and tried again at the next start.
+   */
+  private async noticeBehind(addon: string, definition: FormDefinition, state: ShippedFormState): Promise<void> {
+    const notice = shippedFormNotice(addon, definition, state);
+    const log = state.required ? console.error : console.info;
+    log(`[FormsDataManager] ${notice.title}: ${notice.message}`);
+
+    const sourceHash = pageSourceHash(definitionContent(definition));
+    const file = path.join(this.dataPath, 'shipped-notices.json');
+    try {
+      let told: Record<string, string> = {};
+      try {
+        told = JSON.parse(await fsp.readFile(file, 'utf8')) as Record<string, string>;
+      } catch { /* none told yet */ }
+      if (told[definition.id] === sourceHash) return;
+
+      const notifications = this.engine?.getManager('NotificationManager') as {
+        createNotification(n: { type: string; level: string; title: string; message: string; targetUsers: string[] }): Promise<unknown>;
+      } | null | undefined;
+      if (!notifications) return;
+      // An empty target list means every user, so nobody to tell is log-only.
+      const admins = (await administratorUsernames(this.engine)) ?? [];
+      if (admins.length === 0) {
+        console.error(`[FormsDataManager] no user holds admin-system; '${definition.id}' reported in the log only`);
+        return;
+      }
+      await notifications.createNotification({ type: 'system', level: notice.level, title: notice.title, message: notice.message, targetUsers: admins });
+
+      told[definition.id] = sourceHash;
+      const tmp = `${file}.tmp`;
+      await fsp.writeFile(tmp, JSON.stringify(told, null, 2), 'utf8');
+      await fsp.rename(tmp, file);
+    } catch (err) {
+      console.error(`[FormsDataManager] could not notify administrators about form '${definition.id}':`, (err as Error).message);
+    }
   }
 
   /**
@@ -364,11 +458,15 @@ export default class FormsDataManager {
     const storedHash = live.shipped?.sourceHash;
     const sourceContent = definitionContent(shipped.definition);
     const stamped = typeof storedHash === 'string' && storedHash.length > 0;
+    const status = evaluateSeededAddonPage({ sourceContent, liveContent: definitionContent(live), storedHash });
+    const shippedChanged = !stamped || storedHash !== pageSourceHash(sourceContent);
     return {
       addon: shipped.addon,
-      status: evaluateSeededAddonPage({ sourceContent, liveContent: definitionContent(live), storedHash }),
+      status,
       stamped,
-      shippedChanged: !stamped || storedHash !== pageSourceHash(sourceContent)
+      shippedChanged,
+      behind: status !== 'current' && shippedChanged,
+      required: shipped.required
     };
   }
 

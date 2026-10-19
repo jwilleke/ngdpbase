@@ -37,6 +37,7 @@ import SchemaGenerator from '../utils/SchemaGenerator.js';
 import {
   evaluateSeededAddonPage,
   REQUIRED_SOURCE_HASH_KEY,
+  syncRowState,
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
@@ -13021,8 +13022,7 @@ ${panes}
           // has (`created`), and a whole-file compare kept a synced page
           // 'modified' forever.
           const seedStatus = WikiRoutes.requiredPageStatus(sourceContent, destBody, destData);
-          userModified = destData['user-modified'] === true || seedStatus === 'locally-modified';
-          status = seedStatus === 'current' ? 'current' : 'modified';
+          ({ status, userModified } = syncRowState(seedStatus, destData['user-modified'] === true));
 
           // Detect title drift: source title vs live title
           const liveTitleRaw = (destData.title as string | undefined) || '';
@@ -13140,8 +13140,7 @@ ${panes}
                   ? (destParsed.data['addon-source-hash'])
                   : undefined
               });
-              userModified = destParsed.data['user-modified'] === true || seedStatus === 'locally-modified';
-              status = seedStatus === 'current' ? 'current' : 'modified';
+              ({ status, userModified } = syncRowState(seedStatus, destParsed.data['user-modified'] === true));
             }
 
             addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, liveUuid });

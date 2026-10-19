@@ -26,13 +26,62 @@
     </div>
   <% } else if (flash === 'sync-edited') { %>
     <div class="alert alert-warning alert-dismissible fade show" role="alert">
-      <i class="fas fa-lock me-1"></i>Not updated: this form was edited on this site. Use <strong>Replace my edits</strong> to take the shipped version anyway.
+      <i class="fas fa-lock me-1"></i>Not updated: this form was edited on this site. Use <strong>Force Sync</strong> to take the shipped version anyway.
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
   <% } else if (flash === 'deleted') { %>
     <div class="alert alert-info alert-dismissible fade show" role="alert">
       <i class="fas fa-trash me-1"></i>Form definition deleted.
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  <% } %>
+
+  <% var shippedRows = typeof shippedForms !== 'undefined' ? shippedForms : []; %>
+  <% if (typeof shippedCounts !== 'undefined' && shippedCounts.required > 0) { %>
+    <div class="alert alert-danger" role="alert" data-testid="shipped-required">
+      <i class="fas fa-exclamation-triangle me-1"></i><strong><%= shippedCounts.required %> shipped form<%= shippedCounts.required !== 1 ? 's need an update their add-on requires' : ' needs an update its add-on requires' %> to work.</strong> Sync <%= shippedCounts.required !== 1 ? 'them' : 'it' %> below.
+    </div>
+  <% } %>
+
+  <% if (shippedRows.length > 0) { %>
+    <%# #1918: shipped forms look and sync as Admin -> Required Pages' add-on pages do, through core's shared partials. %>
+    <div class="card mb-4" id="shippedForms">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-puzzle-piece me-2"></i>Shipped Forms</h5>
+        <small class="text-muted">Forms shipped with enabled add-ons —
+          <%- include('_sync-counts', { syncCounts: shippedCounts }) %>
+        </small>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Title</th><th>Add-on</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <% shippedRows.forEach(function(row) { %>
+                <tr data-form-id="<%= row.id %>" data-status="<%= row.status %>">
+                  <td><strong><%= row.title %></strong><br><small class="text-muted font-monospace"><%= row.id %></small></td>
+                  <td><span class="badge bg-secondary"><%= row.addon %></span></td>
+                  <td><%- include('_sync-status', { syncItem: row }) %></td>
+                  <td>
+                    <% if (row.status !== 'current') { %>
+                      <%- include('_sync-button', { syncItem: {
+                        userModified: row.userModified,
+                        name: row.title,
+                        forceNote: 'Those edits are lost: a form keeps no version history.',
+                        confirm: row.stamped ? undefined : 'Update "' + row.title + '" to the version ' + row.addon + ' ships?\n\nThis copy was saved before edits were tracked, so any change made to it in the form builder is replaced.',
+                        action: '/addons/forms/' + encodeURIComponent(row.id) + '/sync',
+                        csrfToken: csrfToken
+                      } }) %>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   <% } %>
 
@@ -62,16 +111,8 @@
                 <% if (form.proxySubmission) { %>
                   <span class="badge bg-warning text-dark">proxy</span>
                 <% } %>
-                <% var shipped = form.shippedState; %>
-                <% if (shipped) { %>
-                  <span class="badge bg-light text-dark border">from <%= shipped.addon %></span>
-                  <% if (shipped.status === 'outdated') { %>
-                    <span class="badge bg-warning text-dark" data-shipped-status="outdated">update available</span>
-                  <% } else if (shipped.status === 'locally-modified') { %>
-                    <span class="badge bg-info text-dark" data-shipped-status="edited" title="Edited on this site: an update does not replace it unless you choose to">edited here<%= shipped.shippedChanged ? ' · update available' : '' %></span>
-                  <% } else { %>
-                    <span class="badge bg-light text-dark border" data-shipped-status="current">up to date</span>
-                  <% } %>
+                <% if (form.shippedState) { %>
+                  <a class="badge bg-light text-dark border text-decoration-none" href="#shippedForms">from <%= form.shippedState.addon %></a>
                 <% } %>
               </div>
             </div>
@@ -82,24 +123,6 @@
               <a href="/addons/forms/builder/<%= encodeURIComponent(form.id) %>" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-edit me-1"></i>Edit
               </a>
-              <% if (shipped && shipped.status === 'outdated') { %>
-                <form method="POST" action="/addons/forms/<%= encodeURIComponent(form.id) %>/sync" style="display:inline"
-                  <% if (!shipped.stamped) { %>data-confirm="Update &quot;<%= form.title %>&quot; to the version <%= shipped.addon %> ships?&#10;&#10;This copy was saved before edits were tracked, so any change made to it in the form builder is replaced."<% } %>>
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <button type="submit" class="btn btn-sm btn-primary" data-action="sync">
-                    <i class="fas fa-sync-alt me-1"></i>Sync
-                  </button>
-                </form>
-              <% } else if (shipped && shipped.status === 'locally-modified') { %>
-                <form method="POST" action="/addons/forms/<%= encodeURIComponent(form.id) %>/sync" style="display:inline"
-                  data-confirm="Replace the edits made to &quot;<%= form.title %>&quot; on this site with the version <%= shipped.addon %> ships?&#10;&#10;Those edits are lost.">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <input type="hidden" name="overwrite" value="1">
-                  <button type="submit" class="btn btn-sm btn-outline-danger" data-action="overwrite">
-                    <i class="fas fa-sync-alt me-1"></i>Replace my edits
-                  </button>
-                </form>
-              <% } %>
               <form method="POST" action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete" style="display:inline"
                 data-confirm="Delete form &quot;<%= form.id %>&quot;?&#10;&#10;Deletion is blocked if submissions exist.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -116,10 +139,12 @@
 </div>
 
 <script nonce="<%= locals.cspNonce %>">
-// A form with data-confirm asks before it submits (a listener, not an inline handler: #1706).
-document.addEventListener('submit', function (e) {
-  var form = e.target.closest('form[data-confirm]');
-  if (form && !confirm(form.dataset.confirm)) e.preventDefault();
+// A form or button with data-confirm asks before it submits (a listener, not
+// an inline handler: #1706). Core's _sync-button puts it on the button (#1918).
+document.addEventListener('click', function (e) {
+  var button = e.target.closest('button[type="submit"]');
+  var asks = button && (button.closest('[data-confirm]'));
+  if (asks && !confirm(asks.dataset.confirm)) e.preventDefault();
 });
 </script>
 
