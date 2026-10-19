@@ -39,17 +39,24 @@ export async function resolveFieldOptions(
   return (field.options ?? []).map(o => ({ value: o, label: o }));
 }
 
-/** Every dropdown's and checklist's allowed values, keyed by field name. */
+/**
+ * Every dropdown's and checklist's allowed values, keyed by field name. A
+ * dropdown inside a `lines` row is keyed `<lines>.<sub-field>`, resolved once
+ * for all its rows (#1913).
+ */
 export async function resolveChoices(
   engine: EngineLike,
   fields: FormField[],
   userContext: unknown
 ): Promise<Map<string, string[]>> {
   const choices = new Map<string, string[]>();
-  for (const field of fields) {
+  const keyed = fields.flatMap((field): Array<[string, FormField]> => field.type === 'lines'
+    ? (field.fields ?? []).map((sub): [string, FormField] => [`${field.name}.${sub.name}`, sub])
+    : [[field.name, field]]);
+  for (const [key, field] of keyed) {
     if (field.type !== 'dropdown' && field.type !== 'checklist') continue;
     const options = await resolveFieldOptions(engine, field, userContext);
-    choices.set(field.name, options.map(o => o.value));
+    choices.set(key, options.map(o => o.value));
   }
   return choices;
 }

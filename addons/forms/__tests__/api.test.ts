@@ -386,3 +386,90 @@ describe('POST /api/forms/submit/:formId — checklist', () => {
     expect(seen).toEqual([{ receiptIds: [] }]);
   });
 });
+
+// ── Lines: an array of row objects (#1913) ────────────────────────────────────
+
+describe('POST /api/forms/submit/:formId — lines', () => {
+  const receiptForm = {
+    id: 'test-form',
+    title: 'Record a receipt',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      {
+        name: 'lines', type: 'lines', label: 'Lines', required: true, minRows: 1, maxRows: 20,
+        fields: [
+          { name: 'amount', type: 'amount', label: 'Amount', required: true },
+          { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+          { name: 'memo', type: 'text', label: 'Note', required: false }
+        ],
+        amountField: 'amount', totalField: 'total'
+      },
+      { name: 'total', type: 'amount', label: 'Total', required: true }
+    ]
+  };
+
+  function receiptApp(handler: (s: { data: unknown }) => Promise<{ ok: boolean; [k: string]: unknown }> = async () => ({ ok: true })) {
+    const seen: unknown[] = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => receiptForm, saveSubmission: async (s: object) => s },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'general', label: 'General' }, { value: 'reserve', label: 'Reserve' }];
+        }
+      }
+    });
+    const addon = { callHandler: async (_id: string, s: { data: unknown }) => { seen.push(s.data); return handler(s); } };
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    return { app, seen, viewers };
+  }
+
+  test('the rows reach the handler as an array of objects, amounts in minor units, options resolved once as the viewer', async () => {
+    const { app, seen, viewers } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      lines: [
+        { amount: '50', fundId: 'general', memo: '' },
+        { amount: '12.50', fundId: 'reserve', memo: 'dues' },
+        { amount: '', fundId: '', memo: '' }
+      ],
+      total: '62.50'
+    });
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{
+      lines: [{ amount: 5000, fundId: 'general', memo: '' }, { amount: 1250, fundId: 'reserve', memo: 'dues' }],
+      total: 6250
+    }]);
+    expect(viewers).toEqual([{ username: 'molly' }]);
+  });
+
+  test('a fund the row did not offer is refused next to that row\'s field, and the handler never runs', async () => {
+    const { app, seen } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      lines: [{ amount: '50', fundId: 'general', memo: '' }, { amount: '5', fundId: 'someone-elses', memo: '' }],
+      total: '55'
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.fields).toEqual({ 'lines[1].fundId': 'Fund: choose one of the listed options' });
+    expect(seen).toEqual([]);
+  });
+
+  test('a handler\'s per-row field errors are sent as it returned them', async () => {
+    const { app } = receiptApp(async () => ({ ok: false, error: 'Please correct the marked fields', fields: { 'lines[0].fundId': 'That fund is closed', total: 'Does not match the lines' } }));
+    const res = await request(app).post('/api/forms/submit/test-form').send({ lines: [{ amount: '50', fundId: 'general', memo: '' }], total: '1' });
+    expect(res.status).toBe(409);
+    expect(res.body.fields).toEqual({ 'lines[0].fundId': 'That fund is closed', total: 'Does not match the lines' });
+  });
+
+  test('required: no lines is refused on the field', async () => {
+    const { app, seen } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ lines: [], total: '1' });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.lines).toBe('Lines: add at least one line');
+    expect(seen).toEqual([]);
+  });
+});

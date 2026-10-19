@@ -118,7 +118,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           // Build detail lines from submission data for fields with values
           const data = submission.data as Record<string, string>;
           const detailFields = form.fields.filter(f =>
-            !['hidden', 'checkbox', 'section'].includes(f.type) && data[f.name]
+            !['hidden', 'checkbox', 'section', 'lines'].includes(f.type) && data[f.name]
           );
           const details = detailFields
             .map(f => `  ${f.label}: ${data[f.name]}`)

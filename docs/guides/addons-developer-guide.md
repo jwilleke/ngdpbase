@@ -779,6 +779,16 @@ A `dropdown` or `checklist` field with `"optionsSource": "fetch:YourManager.toFo
 - When any choice has an `amount`, the checklist shows "Ticked: N · $sum" with core's `formatMoney`. With `totalField: "<amount field>"` it shows whether the sum matches that field, parsed as the `amount` field is. That is a hint to the person: the forms add-on does not refuse a mismatch, so a handler that needs them equal checks it and answers `{ ok: false, fields: { total: '...' } }`.
 - The field reference for site authors is the shipped [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md).
 
+### Lines: repeating rows of fields
+
+A `lines` field ([#1913](https://github.com/jwilleke/ngdpbase/issues/1913)) repeats its `fields` once per row: the lines of a receipt or refund. The definition, and what each key does, is in the [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md); what your handler gets:
+
+- `submission.data.<name>` is an array of row objects, `[{ amount: 5000, fundId: "general", category: "4100", memo: "" }]`. An `amount` sub-field is whole minor units, as a top-level `amount` is. Fully empty rows at the end are dropped, in the browser and again on the server.
+- Each row is validated by the same rules as top-level fields (`buildSubmissionValidator` builds the row from the same per-field rule). A sub-field's `optionsSource` is asked once per render and once per submit, as the viewer, whatever the row count; a value it did not offer is refused before your handler runs. `required`, `minRows` and `maxRows` are enforced on both sides.
+- Errors are keyed `<name>[<0-based row>].<field>`, for example `lines[1].category`. Answer `{ ok: false, fields: { 'lines[1].category': '...' } }` and the message shows next to that row's field; a key for the whole field (`lines`) shows under the field.
+- With `amountField` the form shows "Lines: N · $sum"; with `totalField`, whether it matches that field. It is the checklist's total (one drawing for both), and a hint only: a handler that needs the lines to add up to the total checks it.
+- A row holds one value per sub-field: `lines`, `section`, `hidden` and `checklist` sub-fields are refused when the definition is parsed, so `registerShippedForm` throws on them. The shipped-form hash covers the sub-fields, so a changed sub-field ships as an update.
+
 ### Ship a Theme
 
 Since v3.17.0 (issue #443): if your add-on ships a `theme/` subdirectory, ngdpbase auto-deploys it to the
@@ -1504,6 +1514,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
 - [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
 - [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file.
+- [#1913](https://github.com/jwilleke/ngdpbase/issues/1913) — [lines](#lines-repeating-rows-of-fields): the form builder lists the `lines` type but cannot edit sub-fields, `minRows`, `maxRows`, `amountField` or `totalField`; write them in the definition file (the builder keeps them on save, and refuses a `lines` field with no sub-fields). A row cannot be removed below one even with `minRows: 0`, since an empty row is not sent. The submission detail page in the forms admin shows each row's raw values (amounts in cents), as it shows top-level amounts, and the confirmation email leaves the lines out.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
 - [#1883](https://github.com/jwilleke/ngdpbase/issues/1883) — [site-critical addons](#when-an-addon-does-not-load-site-critical):
@@ -1516,4 +1527,4 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 ---
 
-Last updated: 2026-10-18
+Last updated: 2026-10-19

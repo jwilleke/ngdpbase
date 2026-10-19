@@ -8,9 +8,9 @@ import type { SeededAddonPageStatus } from '../../../dist/src/utils/addonPageSyn
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
-export const FieldSchema = z.object({
+const BaseFieldSchema = z.object({
   name:          z.string(),
-  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount', 'checklist']),
+  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount', 'checklist', 'lines']),
   label:         z.string(),
   required:      z.boolean().default(false),
   description:   z.string().optional(),
@@ -18,8 +18,39 @@ export const FieldSchema = z.object({
   optionsSource: z.string().optional(),
   options:       z.array(z.string()).optional(),
   prefill:       z.string().optional(),
-  // checklist: the amount field whose value the ticked sum is shown against (#1904)
+  // checklist, lines: the amount field whose value the sum is shown against (#1904, #1913)
   totalField:    z.string().optional()
+});
+
+/**
+ * Types a `lines` row cannot hold (#1913): a row is one value per sub-field,
+ * so no nested lines, no grouping, nothing hidden, no list of values.
+ */
+const NOT_IN_A_ROW: ReadonlyArray<string> = ['lines', 'section', 'hidden', 'checklist'];
+
+/** One sub-field of a `lines` row. */
+const RowFieldSchema = BaseFieldSchema.refine(f => !NOT_IN_A_ROW.includes(f.type), {
+  message: `a lines row cannot hold a field of type ${NOT_IN_A_ROW.join(', ')}`,
+  path: ['type']
+});
+
+export const FieldSchema = BaseFieldSchema.extend({
+  // lines (#1913): the sub-fields of each row, how many rows, and which sub-field is summed
+  fields:      z.array(RowFieldSchema).optional(),
+  minRows:     z.number().int().min(0).optional(),
+  maxRows:     z.number().int().min(1).optional(),
+  amountField: z.string().optional()
+}).superRefine((field, ctx) => {
+  if (field.type !== 'lines') return;
+  if (!field.fields?.length) {
+    ctx.addIssue({ code: 'custom', path: ['fields'], message: 'a lines field needs its sub-fields' });
+  }
+  if (field.minRows !== undefined && field.maxRows !== undefined && field.minRows > field.maxRows) {
+    ctx.addIssue({ code: 'custom', path: ['minRows'], message: 'minRows cannot be more than maxRows' });
+  }
+  if (field.amountField !== undefined && !field.fields?.some(f => f.name === field.amountField && f.type === 'amount')) {
+    ctx.addIssue({ code: 'custom', path: ['amountField'], message: 'amountField must name an amount sub-field' });
+  }
 });
 
 export const FormDefinitionSchema = z.object({
@@ -111,47 +142,88 @@ export function parseAmount(raw: string): number | null {
 /**
  * Build the submission validator. `choices` holds the options each dropdown
  * offered this viewer (resolved again at submit time); a dropdown value not
- * among them is refused. An amount comes out as whole cents.
+ * among them is refused. An amount comes out as whole cents. A `lines`
+ * sub-field's choices are keyed `<lines>.<sub-field>` (see resolveChoices).
  */
 export function buildSubmissionValidator(
   form: FormDefinition,
   choices: Map<string, string[]> = new Map()
 ): z.ZodObject<Record<string, z.ZodTypeAny>> {
+  return z.object(fieldsShape(form.fields, name => choices.get(name)));
+}
+
+/** One rule per field that carries data: the form's fields, or a `lines` row's. */
+function fieldsShape(
+  fields: FormField[],
+  choicesFor: (name: string) => string[] | undefined
+): Record<string, z.ZodTypeAny> {
   const shape: Record<string, z.ZodTypeAny> = {};
-  for (const field of form.fields) {
+  for (const field of fields) {
     if (field.type === 'hidden' || field.type === 'section') continue;
-    if (field.type === 'checklist') {
-      shape[field.name] = checklistRule(field, choices.get(field.name) ?? []);
-      continue;
-    }
-    let rule: z.ZodTypeAny;
-    if (field.type === 'email') {
-      rule = z.string().email(`${field.label} must be a valid email`);
-    } else if (field.type === 'tel') {
-      rule = z.string().min(7, `${field.label} must be at least 7 characters`);
-    } else if (field.type === 'checkbox') {
-      rule = z.union([z.literal('on'), z.literal('true'), z.literal('1')]);
-    } else if (field.type === 'amount') {
-      rule = z.string().transform((value, ctx) => {
-        const cents = parseAmount(value);
-        if (cents === null) {
-          ctx.addIssue({ code: 'custom', message: `${field.label}: enter an amount such as 125.50` });
-          return z.NEVER;
-        }
-        return cents;
-      });
-    } else if (field.type === 'dropdown' && choices.has(field.name)) {
-      const allowed = choices.get(field.name) ?? [];
-      rule = z.string().refine(v => allowed.includes(v), `${field.label}: choose one of the listed options`);
-    } else {
-      rule = field.required
-        ? z.string().min(1, `${field.label} is required`)
-        : z.string();
-    }
-    if (!field.required) rule = z.literal('').or(rule.optional());
-    shape[field.name] = rule;
+    shape[field.name] = fieldRule(field, choicesFor);
   }
-  return z.object(shape);
+  return shape;
+}
+
+function fieldRule(field: FormField, choicesFor: (name: string) => string[] | undefined): z.ZodTypeAny {
+  if (field.type === 'checklist') return checklistRule(field, choicesFor(field.name) ?? []);
+  if (field.type === 'lines') return linesRule(field, choicesFor);
+  const allowed = choicesFor(field.name);
+  let rule: z.ZodTypeAny;
+  if (field.type === 'email') {
+    rule = z.string().email(`${field.label} must be a valid email`);
+  } else if (field.type === 'tel') {
+    rule = z.string().min(7, `${field.label} must be at least 7 characters`);
+  } else if (field.type === 'checkbox') {
+    rule = z.union([z.literal('on'), z.literal('true'), z.literal('1')]);
+  } else if (field.type === 'amount') {
+    rule = z.string().transform((value, ctx) => {
+      const cents = parseAmount(value);
+      if (cents === null) {
+        ctx.addIssue({ code: 'custom', message: `${field.label}: enter an amount such as 125.50` });
+        return z.NEVER;
+      }
+      return cents;
+    });
+  } else if (field.type === 'dropdown' && allowed) {
+    rule = z.string().refine(v => allowed.includes(v), `${field.label}: choose one of the listed options`);
+  } else {
+    rule = field.required
+      ? z.string().min(1, `${field.label} is required`)
+      : z.string();
+  }
+  if (!field.required) rule = z.literal('').or(rule.optional());
+  return rule;
+}
+
+/** A row whose every value is empty: what an untouched "+ Add line" sends. */
+function isEmptyRow(row: unknown): boolean {
+  return typeof row === 'object' && row !== null && !Array.isArray(row)
+    && Object.values(row).every(v => v === '' || v === null || v === undefined);
+}
+
+/**
+ * A `lines` field submits an array of row objects (#1913). Fully empty rows
+ * at the end are dropped; each remaining row gets its sub-fields' rules, the
+ * same rules as top-level fields, so an issue's path is `[lines, i, field]`.
+ * `required` means at least one row; `minRows`/`maxRows` bound the count.
+ */
+function linesRule(field: FormField, choicesFor: (name: string) => string[] | undefined): z.ZodTypeAny {
+  const row = z.object(fieldsShape(field.fields ?? [], sub => choicesFor(`${field.name}.${sub}`)));
+  const minRows = field.minRows ?? 0;
+  const { maxRows } = field;
+  const dropTrailingEmpty = (value: unknown): unknown => {
+    if (!Array.isArray(value)) return value;
+    const rows: unknown[] = [...(value as unknown[])];
+    while (rows.length > 0 && isEmptyRow(rows[rows.length - 1])) rows.pop();
+    return rows;
+  };
+  return z.preprocess(dropTrailingEmpty, z.array(row, { error: `${field.label}: send the lines as a list` }))
+    .optional()
+    .transform(rows => rows ?? [])
+    .refine(rows => !field.required || rows.length > 0, `${field.label}: add at least one line`)
+    .refine(rows => rows.length >= minRows, `${field.label}: add at least ${minRows} lines`)
+    .refine(rows => maxRows === undefined || rows.length <= maxRows, `${field.label}: no more than ${maxRows} lines`);
 }
 
 /**
@@ -167,11 +239,18 @@ function checklistRule(field: FormField, allowed: string[]): z.ZodTypeAny {
     .refine(values => !field.required || values.length > 0, `${field.label}: tick at least one`);
 }
 
-/** Flatten validation issues to one message per field, for showing next to it. */
+/**
+ * Flatten validation issues to one message per field, for showing next to it.
+ * A `lines` row's sub-field is keyed `lines[<0-based row>].<field>` (#1913),
+ * the key a handler returns in `fields` too.
+ */
 export function fieldErrors(error: z.ZodError): Record<string, string> {
   const out: Record<string, string> = {};
   for (const issue of error.issues) {
-    const name = String(issue.path[0] ?? '');
+    const [first, row, sub] = issue.path;
+    const name = typeof row === 'number' && typeof sub === 'string'
+      ? `${String(first)}[${row}].${sub}`
+      : String(first ?? '');
     if (name && !(name in out)) out[name] = issue.message;
   }
   return out;
