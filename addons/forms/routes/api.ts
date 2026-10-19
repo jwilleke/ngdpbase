@@ -141,7 +141,9 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
             `Submission ID: ${submission.id}`
           ].join('\n').trim();
 
-          emailManager.sendTo(submitterEmail, subject, text).catch(() => {});
+          // #1916: a failure is logged and reported to administrators by EmailManager;
+          // the submission still succeeds.
+          emailManager.sendInBackground(submitterEmail, subject, text);
         }
 
         // ── 8. In-app notification (fire-and-forget) ───────────────────────
