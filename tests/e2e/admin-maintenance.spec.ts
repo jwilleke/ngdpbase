@@ -67,6 +67,8 @@ test.describe('Admin Maintenance Mode', () => {
                        pageContent.includes('maintenance mode is currently');
 
       expect(isActive).toBe(true);
+      // #1906: the admin dashboard lists why the site is in maintenance mode.
+      await expect(page.locator('[data-maintenance-reasons]')).toContainText('An administrator turned maintenance mode on');
     } else {
       // Maintenance might already be enabled - check for disable button
       const disableButton = page.locator('button:has-text("Disable Maintenance")');
@@ -101,6 +103,8 @@ test.describe('Admin Maintenance Mode', () => {
       // Verify it's the maintenance page
       const bodyText = await anonPage.textContent('body');
       expect(bodyText).toContain('maintenance');
+      // #1906: the reason is for administrators only.
+      expect(bodyText).not.toContain('An administrator turned maintenance mode on');
     } finally {
       await anonContext.close();
     }

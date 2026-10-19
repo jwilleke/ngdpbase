@@ -32,11 +32,12 @@ import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { tokenGateRefusal } from './security/tokenRouteMap.js';
 import { resolveAvailability } from './utils/availability.js';
+import { ENV_KEYS_CONFIG_KEY } from './utils/configEnvKeys.js';
 import { resolveTlsConfig } from './utils/tlsConfig.js';
 import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js';
 import https from 'https';
 import net from 'net';
-import { gateDecision, describeBlocked, blockedForVisitors } from './utils/startupState.js';
+import { initialisationGate, describeBlocked } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -180,6 +181,19 @@ function readConfigForPort(): Record<string, unknown> | null {
 }
 
 /**
+ * The site's name from the configuration files and the environment, for the
+ * maintenance page while ConfigurationManager is not up yet (#1906, #1878).
+ * Read once at boot; `ConfigurationManager.getApplicationName()` answers after.
+ */
+function siteNameFromFiles(merged: Record<string, unknown> | null): string {
+  const envVar = (merged?.[ENV_KEYS_CONFIG_KEY] as Record<string, string> | undefined)?.['ngdpbase.application-name'];
+  const fromEnv = envVar ? process.env[envVar] : undefined;
+  const name = fromEnv || merged?.['ngdpbase.application-name'];
+  // A "$VAR" reference is not resolved here; showing it would name nothing.
+  return typeof name === 'string' && !name.startsWith('$') ? name : '';
+}
+
+/**
  * Which keys the operator set themselves, as opposed to inheriting (#1163).
  *
  * The merged view cannot answer "did they configure this or is it the
@@ -196,16 +210,12 @@ void (async (): Promise<void> => {
   const app = express();
   let engine: IWikiEngine;
   let engineReady = false;
-  // #1152: the second, independent fact the gate needs. Not a third readiness
-  // value — the engine either finished or it did not — but whether it finished
-  // and a configuration value turned out to be unusable, which is what decides
-  // if /admin is reachable.
-  let blockedReasons: string[] = [];
-  // #1883: set when a reason is for administrators only; visitors then see this instead.
-  let blockedPublicMessage: string | null = null;
   // #1153: collected before the engine exists, so it cannot go through
-  // engine.blockConfiguration() at the point it is found.
+  // engine.maintenance.enter() at the point it is found.
   let tlsBlockedReasons: string[] = [];
+  // #1906: the site's name for the maintenance page before ConfigurationManager
+  // is up (the "starting" page); afterwards it is asked for per request.
+  const startingSiteName = siteNameFromFiles(readConfigForPort());
 
   // #1488: browser security headers on every response, static files and the
   // maintenance page included, so this runs first. The mode is read from
@@ -285,10 +295,14 @@ void (async (): Promise<void> => {
     // configuration-blocked one cannot, and it would otherwise pass every
     // check below — engineRef is set and storage is fine. Reporting ready
     // while serving nobody is the defect #1079 removed.
-    if (blockedReasons.length > 0) {
+    // #1906: only what visitors are told — never a reason, which is for
+    // administrators. The admin switch does not pull the instance: nothing is
+    // broken, and the maintenance page must stay reachable.
+    if (engineRef?.maintenance.isClosedToAdmins()) {
+      const view = engineRef.maintenance.visitorView(engineRef.getManager('ConfigurationManager'));
       res.status(503).json({
         status: 'not-ready' satisfies ReadinessReport['status'],
-        checks: { configuration: { ok: false, detail: blockedForVisitors(blockedReasons, blockedPublicMessage).detail } }
+        checks: { configuration: { ok: false, detail: [view?.message ?? ''] } }
       });
       return;
     }
@@ -320,15 +334,22 @@ void (async (): Promise<void> => {
   });
 
   // 2. Initialization gate middleware — serves maintenance page while engine starts
+  //
+  // #1906: a failure held in maintenance mode (`engine.maintenance`, entered
+  // by a manager) closes everything but /admin, /login and /logout, for
+  // administrators too — read per request, so leave() reopens the site.
   app.use((req: Request, res: Response, next: NextFunction): void => {
-    const blocked = blockedReasons.length > 0;
-    if (gateDecision(engineReady, blocked, req.path) === 'serve') { next(); return; }
+    if (initialisationGate(engineReady, engineRef?.maintenance, req.path) === 'serve') { next(); return; }
+    const blocked = engineRef?.maintenance.isClosedToAdmins() ?? false;
 
+    const configManager = engineRef?.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
+    const view = blocked ? engineRef?.maintenance.visitorView(configManager) : null;
     res.status(503).render('maintenance', {
-      message: blocked
-        ? blockedForVisitors(blockedReasons, blockedPublicMessage).message
+      message: view
+        ? view.message
         : 'The system is starting up. This may take a moment while pages are indexed.',
-      estimatedDuration: null,
+      estimatedDuration: view?.estimatedDuration ?? null,
+      siteName: configManager?.getApplicationName?.() ?? startingSiteName,
       notifications: [],
       // #1432: which state closed it. Neither of the two that reach here is
       // maintenance, and the page used to announce both as maintenance — an
@@ -443,7 +464,7 @@ void (async (): Promise<void> => {
       // parse, and nothing about the running instance looks wrong. #1152 makes
       // it block serving rather than only warn, because a restriction somebody
       // wrote and believes is in force must not silently not be.
-      engine.blockConfiguration(
+      engine.maintenance.enter(
         `${egress.malformed.length} outbound range(s) do not parse as CIDR and are NOT in force: ` +
         `${egress.malformed.join(', ')}. A malformed deny rule means the restriction you wrote is not applied. ` +
         'Fix ngdpbase.security.egress.denied-ranges / allowed-ranges.'
@@ -454,12 +475,12 @@ void (async (): Promise<void> => {
     // the process. The engine finished, so the admin screens work; the
     // instance serves them and refuses everything else until the value is
     // fixed.
-    for (const reason of tlsBlockedReasons) engine.blockConfiguration(reason);
-    blockedReasons = [...engine.getBlockingConditions()];
-    // #1892: an application database that cannot be opened is known now, and its reason is for administrators only.
-    blockedPublicMessage = engine.getPublicBlockingMessage();
-    if (blockedReasons.length > 0) {
-      logger.error(`🚨 ${describeBlocked(blockedReasons)}`);
+    for (const reason of tlsBlockedReasons) engine.maintenance.enter(reason);
+    const bootReasons = engine.maintenance.reasons();
+    // #1147/#1906: the admin switch, left on before a restart, holds again.
+    engine.maintenance.restoreSwitch(egressCm);
+    if (bootReasons.length > 0) {
+      logger.error(`🚨 ${describeBlocked(bootReasons)}`);
       logger.error(
         '[startup] The instance is NOT serving content. Sign in at /admin to repair the configuration, then restart.'
       );
@@ -1124,13 +1145,19 @@ void (async (): Promise<void> => {
   //
   // Resolved per request rather than captured here, so the toggle takes effect
   // immediately and closing or reopening an instance needs no restart.
+  //
+  // #1906: whether the site is in maintenance mode is engine.maintenance's —
+  // the admin switch is one reason in it — and its visitor view is what this
+  // page shows.
   app.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const maintenanceCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
     // #1432: one gate, several reasons — maintenance, a schedule such as
     // business hours, a holiday. Each has its own message, and the page says
     // which one closed the instance.
     const availability = resolveAvailability(
-      (key) => maintenanceCm?.getProperty?.(key, undefined)
+      (key) => maintenanceCm?.getProperty?.(key, undefined),
+      new Date(),
+      engine.maintenance.visitorView(maintenanceCm)
     );
     if (!availability.blocked) { next(); return; }
 
@@ -1155,6 +1182,7 @@ void (async (): Promise<void> => {
       // tell a schedule from a holiday.
       reason: availability.kind,
       estimatedDuration: availability.estimatedDuration,
+      siteName: maintenanceCm?.getApplicationName?.() ?? startingSiteName,
       notifications: [],
       allowAdmins: availability.allowAdmins,
       isAdmin
@@ -1173,13 +1201,11 @@ void (async (): Promise<void> => {
   // 6c. Initialize addons NOW — after session + userContext + CSRF middleware
   //     — so addon route handlers can read req.session and req.userContext
   //     normally and inherit CSRF protection on their own POST routes.
-  await engine.initializeAddons();
-
   // #1883: a site-critical add-on that did not load blocks the instance the
   // same way (#1152), and is only known now that the add-ons have loaded.
-  const addonBlocks = engine.getBlockingConditions().slice(blockedReasons.length);
-  blockedReasons = [...engine.getBlockingConditions()];
-  blockedPublicMessage = engine.getPublicBlockingMessage();
+  const reasonsBeforeAddons = new Set(engine.maintenance.reasons());
+  await engine.initializeAddons();
+  const addonBlocks = engine.maintenance.reasons().filter((r) => !reasonsBeforeAddons.has(r));
   if (addonBlocks.length > 0) {
     logger.error(`🚨 ${describeBlocked(addonBlocks)}`);
     logger.error('[startup] The instance is NOT serving content. Sign in at /admin for the notification that says how to fix it, then restart.');
@@ -1270,11 +1296,10 @@ void (async (): Promise<void> => {
   wikiRoutes.registerRoutes(app);
 
   // 8. Mark engine as ready
-  // #1152: an instance with an unusable configuration value never becomes
-  // ready. It serves the maintenance page and the repair screens, nothing else.
-  if (blockedReasons.length === 0) {
-    engineReady = true;
-  }
+  // #1906: ready means booted. A site held in maintenance mode by a failure
+  // still serves only the maintenance page and the repair screens: the gate
+  // asks engine.maintenance per request, so a reason that leaves reopens it.
+  engineReady = true;
 
   // #1090: the same resolution app.listen used, so the banner and base URL
   // report the port actually bound. This used to be an independent expression

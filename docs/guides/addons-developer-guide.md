@@ -224,9 +224,9 @@ Most addons stop there: the site runs without them. An addon the site can't work
 }
 ```
 
-When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the same path a broken configuration value takes (#1152):
+When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the one maintenance door every manager uses ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); see [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)):
 
-- __Visitors__ get a short page saying "We're having temporary issues. Please try again later." with no details. `/health/readiness` answers 503 with that sentence only. The sentence is `ngdpbase.managers.addons-manager.site-critical.public-message`.
+- __Visitors__ get the maintenance page with the site's maintenance message (`ngdpbase.features.maintenance.message`, any text an admin sets) and no details. `/health/readiness` answers 503 with that message only. The retired `ngdpbase.managers.addons-manager.site-critical.public-message` is still used when a site set it and has not set the maintenance message.
 - __Admins__ can still sign in and reach `/admin`, where the notification says which addon failed, why, and how to fix it. Fix the cause and restart.
 - Nothing is opened or written in its place: an addon whose encrypted database has no key stays off, and its database stays closed.
 
@@ -751,11 +751,24 @@ author: my-addon
 
 ### Ship form definitions
 
-An add-on that ships forms for the bundled forms add-on saves each definition through `FormsDataManager.saveDefinition(definition)` in its `register()`. The forms add-on stores it as `data/forms/definitions/<id>.json`; `saveDefinition` always overwrites.
+An add-on that ships forms for the bundled forms add-on registers each one in its `register()`, at every start, with the definition as this release ships it ([#1880](https://github.com/jwilleke/ngdpbase/issues/1880)):
 
-- __Today, save a shipped form only when the site has none__: `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)`. Saving it at every start would wipe out what the site changed in the form builder.
-- __The cost:__ a changed definition never reaches a site that already has the form. After an upgrade the site keeps its first-saved copy, with the old fields and labels, and nothing shows it as outdated. Until [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) ships, a site gets a changed form only when an admin deletes the old one in the forms admin and the add-on saves it again at the next start, which loses any edits made in the builder. Say so in your add-on's release notes whenever a shipped form changes.
-- Shipped pages don't have this problem: Admin → Required Pages shows an outdated add-on page and syncs it, protecting pages the site edited.
+```ts
+const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+await forms?.registerShippedForm('my-addon', definition);
+```
+
+The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
+
+- No copy on the site: it is saved. That is the first install.
+- The copy is what you ship: `up to date`.
+- You ship a change and the copy is unedited since it was stamped: `update available` in the forms admin (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
+- The copy was edited in the form builder (its hash no longer matches its stamp): `edited here`. Sync never replaces it; __Replace my edits__ does, after the admin confirms.
+- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as `update available`, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+
+`registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
+
+Migrating from the interim rule: replace `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)` with `await forms.registerShippedForm('<your add-on>', definition)`, called on every start. Existing sites need nothing else: their unedited copies are stamped or offered as updates by the rule above.
 
 ### Choices from your manager, and checklists
 
@@ -1490,7 +1503,6 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
 - [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
-- [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) — a [shipped form definition](#ship-form-definitions) never refreshes on upgrade: the forms add-on records no version and no "edited on the site" flag, so there is no outdated status, no sync, and an add-on can only save a form once or overwrite site edits.
 - [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).

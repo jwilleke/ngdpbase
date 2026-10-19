@@ -22,6 +22,7 @@ import path from 'path';
 import AuditManager from '../AuditManager';
 import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { MaintenanceState } from '../../utils/maintenanceState';
 
 function makeConfigManager(overrides: Record<string, unknown> = {}, declared: Record<string, unknown> = {}) {
   return {
@@ -35,11 +36,11 @@ function makeConfigManager(overrides: Record<string, unknown> = {}, declared: Re
 function makeEngine(configOverrides: Record<string, unknown> = {}, declared: Record<string, unknown> = {}): WikiEngine {
   const cm = makeConfigManager(configOverrides, declared);
   // #1152: refuse-boot records a blocking condition rather than throwing, so
-  // the engine finishes initialising and the repair screens exist.
-  const blocking: string[] = [];
+  // the engine finishes initialising and the repair screens exist. #1906: it
+  // records it through the one door, engine.maintenance.
+  const maintenance = new MaintenanceState();
   return {
-    blockConfiguration: vi.fn((reason: string) => { blocking.push(reason); }),
-    getBlockingConditions: () => [...blocking],
+    maintenance,
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return cm;
       // #1116: audit queries verify their caller against the decision point.
@@ -137,7 +138,7 @@ describe('AuditManager', () => {
         { 'ngdpbase.audit.events': withAddon }
       );
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions()).toEqual([]);
+      expect(engine.maintenance.reasons()).toEqual([]);
 
       // Named only in the operator's file: nothing declares it, so it blocks.
       engine = makeEngine(
@@ -145,7 +146,7 @@ describe('AuditManager', () => {
         { 'ngdpbase.audit.events': events }
       );
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions().join('\n')).toMatch(/enables 'ledger-post', which nothing in this build emits/);
+      expect(engine.maintenance.reasons().join('\n')).toMatch(/enables 'ledger-post', which nothing in this build emits/);
     });
 
     test('#1205: an enabled event this build cannot emit is a fatal configuration entry', async () => {
@@ -155,29 +156,29 @@ describe('AuditManager', () => {
       // Enabled and unknown: blocked, with the name in the reason.
       let engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { 'on-failure': 'continue', description: 'nothing emits this' } } });
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions().join('\n')).toMatch(/enables 'widget-frobnicate', which nothing in this build emits/);
+      expect(engine.maintenance.reasons().join('\n')).toMatch(/enables 'widget-frobnicate', which nothing in this build emits/);
 
       // Switched off and unknown: a decision on the record, not a fault.
       engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { 'on-failure': 'continue', enabled: false, description: 'not yet' } } });
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions()).toEqual([]);
+      expect(engine.maintenance.reasons()).toEqual([]);
 
       // Off-convention: blocked.
       engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page.delete': { 'on-failure': 'refuse', description: 'old name' } } });
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions().join('\n')).toMatch(/'page.delete', which is not a \{target\}-\{action\} name/);
+      expect(engine.maintenance.reasons().join('\n')).toMatch(/'page.delete', which is not a \{target\}-\{action\} name/);
 
       // #1218: the field used to be `tier`. A custom entry still carrying it is
       // refused with the mapping in the message, not silently treated as
       // continue.
       engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page-delete': { tier: 'critical', description: 'old field' } } });
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions().join('\n')).toMatch(/'page-delete'\] must declare on-failure: refuse \| continue \(the field was called tier before #1218/);
+      expect(engine.maintenance.reasons().join('\n')).toMatch(/'page-delete'\] must declare on-failure: refuse \| continue \(the field was called tier before #1218/);
 
       // The shipped map: nothing blocked.
       engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider' });
       await new AuditManager(engine).initialize();
-      expect(engine.getBlockingConditions()).toEqual([]);
+      expect(engine.maintenance.reasons()).toEqual([]);
     });
 
     test('throws when ConfigurationManager unavailable', async () => {
@@ -421,7 +422,7 @@ describe('#1118 a failed audit provider is never silent', () => {
     const am = new AuditManager(engine);
     await expect(am.initialize()).resolves.not.toThrow();
 
-    const reasons = (engine as unknown as { getBlockingConditions: () => string[] }).getBlockingConditions();
+    const reasons = (engine as unknown as { maintenance: MaintenanceState }).maintenance.reasons();
     expect(reasons.join(' ')).toMatch(/DatabaseAuditProvider/);
     expect(reasons.join(' ')).toMatch(/refuse-boot/);
   });

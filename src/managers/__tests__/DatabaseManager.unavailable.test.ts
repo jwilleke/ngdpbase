@@ -1,7 +1,8 @@
 /**
  * #1892 (operator D3 rule, 2026-10-18): when the application database can't
  * be opened safely the site does not crash. It boots into maintenance through
- * engine.blockConfiguration (#1152) with the public message (#1883), admins get
+ * the one door, engine.maintenance (#1906), visitors see only the maintenance
+ * message (here the site's retired #1883 key, still read), admins get
  * a critical notification naming the problem and the fix, and nothing is
  * opened unencrypted, migrated or written. What needs the database is held:
  * add-on databases, scheduled and hand-started jobs, backups and restores.
@@ -12,8 +13,7 @@
  *
  * Sabotage (each done once, each turned these red): rethrow from the open's
  * catch in initialize → every case ("does not throw"); drop the
- * blockConfiguration call → every "maintenance" assertion; drop its
- * publicMessage → "visitors see only the public message"; drop the
+ * maintenance.enter call → every "maintenance" assertion; drop the
  * notification in reportAtBoot → "critical notification"; drop the read-only
  * probe in SqliteDatabaseProvider → "damaged file … unchanged"; catch nothing around applyRestoreAtStart → "staged restore
  * whose apply fails"; drop the held check in BackgroundJobManager.initialize →
@@ -31,7 +31,8 @@ import BackgroundJobManager from '../BackgroundJobManager';
 import SqliteDatabaseProvider from '../../providers/SqliteDatabaseProvider';
 import DATABASE_MIGRATIONS from '../../providers/databaseMigrations';
 import { manifestPath, stagedPath, writeManifest } from '../../providers/sqliteBackup';
-import { blockedForVisitors, gateDecision, SITE_CRITICAL_PUBLIC_MESSAGE_KEY } from '../../utils/startupState';
+import { gateDecision } from '../../utils/startupState';
+import { LEGACY_MESSAGE_KEY } from '../../utils/maintenanceState';
 import { jobContextFromRequest } from '../../context/JobContext';
 import { damage } from '../../providers/__tests__/__fixtures__/damagedDatabase';
 import type { AddonDatabaseDeclaration } from '../../utils/addonDatabaseRules';
@@ -64,11 +65,12 @@ interface Booted {
 async function boot(provider: 'sqlite' | 'none' = 'sqlite'): Promise<Booted> {
   const props: Record<string, unknown> = {
     'ngdpbase.database.provider': provider,
-    [SITE_CRITICAL_PUBLIC_MESSAGE_KEY]: PUBLIC_MESSAGE
+    [LEGACY_MESSAGE_KEY]: PUBLIC_MESSAGE
   };
   const engine = new Engine();
   engine.registerManager('ConfigurationManager', {
     getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
+    getCustomProperty: () => null,
     getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.database.file' ? file : path.join(dir, def)),
     getAddonDatabaseDeclarations: () => [PHR]
   });
@@ -139,15 +141,14 @@ describe('#1892 an application database that cannot be opened safely puts the si
     expect(database.getManagerStatus().state).toBe('failed');
     expect(database.integrityOk()).toBe(false);
 
-    // Maintenance, through #1152, with the reason for administrators only.
-    const reasons = engine.getBlockingConditions();
+    // Maintenance, through the one door (#1906), with the reason for administrators only.
+    const reasons = engine.maintenance.reasons();
     expect(reasons).toHaveLength(1);
     expect(reasons[0]).toMatch(c.why);
     expect(reasons[0]).toMatch(c.fix);
-    expect(engine.getPublicBlockingMessage()).toBe(PUBLIC_MESSAGE);
-    const visitors = blockedForVisitors(reasons, engine.getPublicBlockingMessage());
-    expect(visitors.message).toBe(PUBLIC_MESSAGE);
-    expect(visitors.detail).toEqual([PUBLIC_MESSAGE]);
+    expect(engine.maintenance.isClosedToAdmins()).toBe(true);
+    const visitors = engine.maintenance.visitorView(engine.getManager('ConfigurationManager') as never);
+    expect(visitors?.message).toBe(PUBLIC_MESSAGE);
     expect(JSON.stringify(visitors)).not.toMatch(/NGDPBASE|database|ngdpbase\.db/i);
     // Visitors are held at the gate; the repair screens stay open.
     expect(gateDecision(false, true, '/')).toBe('block');
@@ -193,8 +194,8 @@ describe('#1892 an application database that cannot be opened safely puts the si
 
     expect(database.isEnabled()).toBe(false);
     expect(database.getUnavailableReason()).toMatch(/staged database restore could not be put in place/);
-    expect(engine.getBlockingConditions()[0]).toMatch(/staged database restore could not be put in place/);
-    expect(engine.getPublicBlockingMessage()).toBe(PUBLIC_MESSAGE);
+    expect(engine.maintenance.reasons()[0]).toMatch(/staged database restore could not be put in place/);
+    expect(engine.maintenance.visitorView(engine.getManager('ConfigurationManager') as never)?.message).toBe(PUBLIC_MESSAGE);
     expect(notifications.filter((n) => n.level === 'error' && /^Critical:/.test(n.title))).toHaveLength(1);
     expect(snapshot().equals(before)).toBe(true);
     await database.shutdown();
@@ -249,7 +250,7 @@ describe('#1892 an application database that cannot be opened safely puts the si
     expect(database.isEnabled()).toBe(true);
     expect(database.getUnavailableReason()).toBeNull();
     expect(database.getHandle<InstanceType<typeof Database>>().prepare('SELECT v FROM marker').get()).toEqual({ v: 'kept' });
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
     expect(notifications.filter((n) => /^Critical:/.test(n.title))).toEqual([]);
     expect(database.addonRefusal('phr')).toBeNull();
     await database.shutdown();
@@ -260,7 +261,7 @@ describe('#1892 an application database that cannot be opened safely puts the si
     const { engine, database, notifications } = await boot('none');
     expect(database.isEnabled()).toBe(false);
     expect(database.getUnavailableReason()).toBeNull();
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
     expect(notifications).toEqual([]);
     const jobs = new BackgroundJobManager(engine as never);
     await jobs.initialize();

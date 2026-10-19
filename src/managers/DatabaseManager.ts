@@ -52,7 +52,6 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
-import { sitePublicMessage } from '../utils/startupState.js';
 import {
   applyStagedRestore, manifestPath, runOffThread, setAsideStagedRestore, stagedPath, writeManifest,
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
@@ -274,8 +273,8 @@ class DatabaseManager extends BaseManager {
 
   /**
    * #1892 (operator D3 rule, 2026-10-18): the application database can't be
-   * opened safely. The process stays up in maintenance mode through core's
-   * survivable path (#1152): visitors see only the public message (#1883),
+   * opened safely. The process stays up in maintenance mode through the one
+   * door (`engine.maintenance`, #1906): visitors see only the site's maintenance message,
    * administrators can sign in and reach /admin, and `reportAtBoot()` sends
    * them the reason as a critical notification once notifications exist.
    */
@@ -284,10 +283,8 @@ class DatabaseManager extends BaseManager {
     this.provider = null;
     logger.error(`[DatabaseManager] ${reason}`);
     this.markFailed(reason, 'ngdpbase.database.file');
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    this.engine.blockConfiguration(reason, {
-      publicMessage: sitePublicMessage(configManager ? (k, d) => configManager.getProperty(k, d) : undefined)
-    });
+    // #1906: no message of its own, so visitors see the site's maintenance message.
+    this.engine.maintenance.enter(reason);
   }
 
   /** The reason for a database that did not open, with the fix that fits the key (#1892). */

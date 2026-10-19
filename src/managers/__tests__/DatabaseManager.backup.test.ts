@@ -19,6 +19,7 @@ import type { AddonDatabaseDeclaration } from '../../utils/addonDatabaseRules';
 import { manifestPath } from '../../providers/sqliteBackup';
 import { list as listTar } from 'tar';
 import { backupKeyFingerprint } from '../DatabaseManager';
+import { MaintenanceState } from '../../utils/maintenanceState';
 
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 const MARKER = 'PLAINTEXT-MARKER-1723';
@@ -71,7 +72,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       managers,
       getManager: (n: string) => managers[n] ?? null,
       // #1892: an application database that cannot be opened blocks the site.
-      blockConfiguration: () => undefined,
+      maintenance: new MaintenanceState(),
       getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager'].includes(n))
     };
   };

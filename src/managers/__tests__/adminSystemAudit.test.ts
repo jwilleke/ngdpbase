@@ -15,6 +15,7 @@ import BackupManager from '../BackupManager';
 import AuditManager from '../AuditManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromSystem } from '../../context/JobContext';
+import { MaintenanceState } from '../../utils/maintenanceState';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown>; resource?: string }
 
@@ -140,7 +141,7 @@ describe('#1215 audit-export', () => {
         if (name === 'PolicyDecisionPoint') return { permits: async () => true };
         return null;
       }),
-      blockConfiguration: vi.fn(), getBlockingConditions: () => []
+      maintenance: new MaintenanceState()
     } as unknown as WikiEngine;
     const am = new AuditManager(engine);
     (am as unknown as { provider: unknown }).provider = {
