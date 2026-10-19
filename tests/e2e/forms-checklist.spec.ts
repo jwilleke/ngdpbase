@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForServerReady, deletePage, TEST_PAGE_PREFIX, createPluginPage } from './fixtures/helpers';
+import { waitForServerReady, deletePage, TEST_PAGE_PREFIX, createPluginPage, instanceOrigin } from './fixtures/helpers';
 
 /**
  * #1904 — a checklist field submits the ticked values as an array.
@@ -22,7 +22,7 @@ async function csrfToken(page: Page): Promise<string> {
 
 async function deleteDefinition(page: Page): Promise<void> {
   const token = await csrfToken(page);
-  const res = await page.request.post(`/addons/forms/builder/${FORM_ID}/delete`, {
+  const res = await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder/${FORM_ID}/delete`, {
     headers: { 'X-CSRF-Token': token },
     form: { _csrf: token },
     maxRedirects: 0
@@ -47,7 +47,7 @@ test.describe('forms: a checklist submits an array (#1904)', () => {
     if (enabled) {
       await deleteDefinition(page); // a leftover from a failed run
       const token = await csrfToken(page);
-      const res = await page.request.post('/addons/forms/builder', {
+      const res = await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder`, {
         headers: { 'X-CSRF-Token': token },
         form: {
           _csrf: token,

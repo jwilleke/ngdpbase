@@ -300,8 +300,20 @@ async function createPluginPage(page, name: string, content: string): Promise<vo
   await markTestArtifact(page, name);
 }
 
+/**
+ * The origin the instance actually serves (after its redirects). An instance
+ * whose base URL is https answers plain-http requests with 308, so a request
+ * sent with `maxRedirects: 0` to the configured baseURL reads that redirect
+ * instead of the answer. Prefix such requests with this origin.
+ */
+async function instanceOrigin(page: import('@playwright/test').Page): Promise<string> {
+  const res = await page.request.get('/health/liveness');
+  return new URL(res.url()).origin;
+}
+
 export {
   TEST_PAGE_PREFIX,
+  instanceOrigin,
   createPluginPage,
   waitForServerReady,
   waitForPageReady,
