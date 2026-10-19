@@ -1,6 +1,6 @@
 
 /**
- * The choices a dropdown offers one viewer, resolved the same way when the
+ * The choices a dropdown or checklist offers one viewer, resolved the same way when the
  * form is drawn and when it is submitted (the submit refuses a value that is
  * not among them).
  *
@@ -39,7 +39,7 @@ export async function resolveFieldOptions(
   return (field.options ?? []).map(o => ({ value: o, label: o }));
 }
 
-/** Every dropdown's allowed values, keyed by field name. */
+/** Every dropdown's and checklist's allowed values, keyed by field name. */
 export async function resolveChoices(
   engine: EngineLike,
   fields: FormField[],
@@ -47,7 +47,7 @@ export async function resolveChoices(
 ): Promise<Map<string, string[]>> {
   const choices = new Map<string, string[]>();
   for (const field of fields) {
-    if (field.type !== 'dropdown') continue;
+    if (field.type !== 'dropdown' && field.type !== 'checklist') continue;
     const options = await resolveFieldOptions(engine, field, userContext);
     choices.set(field.name, options.map(o => o.value));
   }

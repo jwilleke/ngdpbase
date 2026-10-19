@@ -10,7 +10,7 @@ describe('FieldSchema', () => {
   const base = { name: 'myField', type: 'text', label: 'My Field' };
 
   test('accepts all supported field types', () => {
-    const types = ['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section'];
+    const types = ['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount', 'checklist'];
     for (const type of types) {
       expect(FieldSchema.safeParse({ ...base, type }).success).toBe(true);
     }

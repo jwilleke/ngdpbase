@@ -311,3 +311,78 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     expect(saved).toEqual([]);
   });
 });
+
+// ── Checklist: an array of the ticked values (#1904) ──────────────────────────
+
+describe('POST /api/forms/submit/:formId — checklist', () => {
+  const depositForm = (required: boolean) => ({
+    id: 'test-form',
+    title: 'Make a deposit',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      { name: 'receiptIds', type: 'checklist', label: 'Receipts', required, optionsSource: 'fetch:LedgerManager.toFormOptions(list=deposit-receipts)', totalField: 'total' },
+      { name: 'total', type: 'amount', label: 'Total', required: false }
+    ]
+  });
+
+  function depositApp(required = true) {
+    const seen: unknown[] = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => depositForm(required), saveSubmission: async (s: object) => s },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'r1', label: 'Receipt 1', amount: 12000 }, { value: 'r2', label: 'Receipt 2', amount: 22000 }];
+        }
+      }
+    });
+    const addon = { callHandler: async (_id: string, s: { data: unknown }) => { seen.push(s.data); return { ok: true }; } };
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    return { app, seen, viewers };
+  }
+
+  test('the ticked values reach the handler as an array, the options resolved as the viewer', async () => {
+    const { app, seen, viewers } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: ['r1', 'r2'], total: '340' });
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{ receiptIds: ['r1', 'r2'], total: 34000 }]);
+    expect(viewers).toEqual([{ username: 'molly' }]);
+  });
+
+  test('a value the checklist did not offer is refused next to the field, and the handler never runs', async () => {
+    const { app, seen } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: ['r1', 'someone-elses'] });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.receiptIds).toMatch(/only the listed options/i);
+    expect(seen).toEqual([]);
+  });
+
+  test('a comma string is not an array, and is refused', async () => {
+    const { app, seen } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: 'r1,r2' });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.receiptIds).toMatch(/Receipts/);
+    expect(seen).toEqual([]);
+  });
+
+  test('required: nothing ticked is refused with "tick at least one"', async () => {
+    const { app } = depositApp(true);
+    for (const body of [{ receiptIds: [] }, {}]) {
+      const res = await request(app).post('/api/forms/submit/test-form').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.fields.receiptIds).toMatch(/tick at least one/i);
+    }
+  });
+
+  test('optional: nothing ticked is an empty array', async () => {
+    const { app, seen } = depositApp(false);
+    const res = await request(app).post('/api/forms/submit/test-form').send({});
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{ receiptIds: [] }]);
+  });
+});

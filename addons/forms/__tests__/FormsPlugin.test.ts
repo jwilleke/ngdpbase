@@ -426,3 +426,68 @@ describe('FormsPlugin — fetch options, amount, page name', () => {
     expect(html).toContain('data-field-error="amount"');
   });
 });
+
+// ── Checklist (#1904) ─────────────────────────────────────────────────────────
+
+describe('FormsPlugin — checklist', () => {
+  function ctxFor(field: object, toFormOptions: (o: unknown, viewer: unknown) => Promise<unknown>) {
+    const form = makeForm([field, { name: 'total', type: 'amount', label: 'Total', required: false }]);
+    return {
+      engine: {
+        getManager: (name: string) => {
+          if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
+          if (name === 'FormsDataManager') return { getDefinition: () => form };
+          if (name === 'LedgerManager') return { toFormOptions };
+          return undefined;
+        }
+      },
+      pageName: 'Deposits',
+      userContext: { username: 'molly', roles: ['treasurer'] }
+    };
+  }
+  const receipts = { name: 'receiptIds', type: 'checklist', label: 'Receipts', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=deposit-receipts)', totalField: 'total' };
+
+  test('one checkbox per choice, resolved as the viewer, each named for the field', async () => {
+    let viewer: unknown;
+    const html = await FormsPlugin.execute(ctxFor(receipts, async (_o, v) => {
+      viewer = v;
+      return [{ value: 'r1', label: 'Receipt <1>' }, { value: 'r2', label: 'Receipt 2' }];
+    }), { id: 'test-form' });
+    expect(viewer).toEqual({ username: 'molly', roles: ['treasurer'] });
+    expect(html.match(/<input type="checkbox" name="receiptIds"/g)).toHaveLength(2);
+    expect(html).toContain('value="r1" id="field-receiptIds-0"');
+    expect(html).toContain('Receipt &lt;1&gt;');
+    expect(html).toContain('data-checklist="receiptIds"');
+    expect(html).toContain('data-required="1"');
+    expect(html).toContain('data-field-error="receiptIds"');
+    // `required` on a box would mean every box; the script checks for one.
+    expect(html).not.toMatch(/name="receiptIds"[^>]*required/);
+  });
+
+  test('inline options work as for a dropdown', async () => {
+    const html = await FormsPlugin.execute(ctxFor({ name: 'pick', type: 'checklist', label: 'Pick', required: false, options: ['A', 'B', 'C'] }, async () => []), { id: 'test-form' });
+    expect(html.match(/<input type="checkbox" name="pick"/g)).toHaveLength(3);
+    expect(html).not.toContain('data-required');
+  });
+
+  test('an empty list says "Nothing to choose"', async () => {
+    const html = await FormsPlugin.execute(ctxFor(receipts, async () => []), { id: 'test-form' });
+    expect(html).toContain('Nothing to choose');
+    expect(html).not.toContain('name="receiptIds"');
+  });
+
+  test('choices with amounts get a running total in the site\'s money format, and a match line for totalField', async () => {
+    const html = await FormsPlugin.execute(ctxFor(receipts, async () => [{ value: 'r1', label: 'R1', amount: 12000 }]), { id: 'test-form' });
+    expect(html).toContain('data-amount="12000"');
+    expect(html).toContain('data-currency="USD"');
+    expect(html).toContain('data-total-field="total"');
+    expect(html).toContain(`Ticked: 0 · ${TEST_PLUGIN_MANAGER.formatters.formatMoney(0, 'USD')}`);
+    expect(html).toContain('data-checklist-match');
+  });
+
+  test('choices without amounts show no total', async () => {
+    const html = await FormsPlugin.execute(ctxFor(receipts, async () => [{ value: 'r1', label: 'R1' }]), { id: 'test-form' });
+    expect(html).not.toContain('data-checklist-total');
+    expect(html).not.toContain('data-checklist-match');
+  });
+});
