@@ -16,6 +16,7 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 - Reproduce a failure the way the suite runs it. Do not skip fixture reset, reuse state, or run one spec alone when the suite runs it in a batch.
 - Do not invent a system principal to satisfy a mandatory context. Use `jobContextFromSystem(reason)` or the request subject you were given.
 - Test credentials are generated at run time (`pw-${randomUUID()}`), never written as literals, and no real secret is ever committed, in tests or anywhere else. GitGuardian skips test paths (`**/__tests__/**`, `tests/**`, in `.gitguardian.yaml` on master) because its username/password detector matches the shape of test code, not the value; that skip is only safe while this rule holds.
+- An E2E request sent with `maxRedirects: 0` goes to `instanceOrigin(page)` (`tests/e2e/fixtures/helpers.ts`), never to a bare `/path`. jimstest's base URL is https, so it answers plain-http requests with 308, and a spec written against an http throwaway instance then fails the release gate there.
 
 ## How to add a test
 
