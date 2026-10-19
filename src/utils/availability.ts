@@ -17,14 +17,11 @@
  * it, and the gate middleware renders it.
  *
  * Read per request, never cached at boot, so an admin toggle takes effect
- * without a restart — the reason {@link resolveMaintenanceState} gives.
+ * without a restart. Maintenance itself is `MaintenanceState`'s (#1906): the
+ * gate passes its visitor view in, and this only ranks it first.
  */
 
-import {
-  resolveMaintenanceState,
-  type ReadProperty as ReadPropertyWithFallback,
-  type MaintenanceState
-} from './maintenanceState.js';
+import type { MaintenanceVisitorView } from './maintenanceState.js';
 
 /**
  * Read one configuration value. No fallback parameter, deliberately.
@@ -209,17 +206,19 @@ export function holidayKeyMatches(key: string, date: string): boolean {
  * before anything time-based, so "I closed it" is never reported as "it is a
  * holiday".
  */
-export function resolveAvailability(get: ReadProperty, now: Date = new Date()): AvailabilityState {
-  // maintenanceState still takes (key, fallback); give it one that ignores the
-  // fallback for a key that is present, so the two readers cannot disagree.
-  const withFallback: ReadPropertyWithFallback = (key, fallback) => get(key) ?? fallback;
-  const maintenance: MaintenanceState = resolveMaintenanceState(withFallback);
-  if (maintenance.enabled) {
+export function resolveAvailability(
+  get: ReadProperty,
+  now: Date = new Date(),
+  maintenance: MaintenanceVisitorView | null = null
+): AvailabilityState {
+  // #1906: `engine.maintenance.visitorView(…)`, null when the site is not in
+  // maintenance mode. Its message is already the one visitors may see.
+  if (maintenance) {
     return {
       blocked: true,
       kind: 'maintenance',
       message: maintenance.message,
-      allowAdmins: maintenance.allowAdmins,
+      allowAdmins: maintenance.adminsMayEnter,
       estimatedDuration: maintenance.estimatedDuration
     };
   }

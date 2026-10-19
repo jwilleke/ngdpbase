@@ -224,9 +224,9 @@ Most addons stop there: the site runs without them. An addon the site can't work
 }
 ```
 
-When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the same path a broken configuration value takes (#1152):
+When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the one maintenance door every manager uses ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); see [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)):
 
-- __Visitors__ get a short page saying "We're having temporary issues. Please try again later." with no details. `/health/readiness` answers 503 with that sentence only. The sentence is `ngdpbase.managers.addons-manager.site-critical.public-message`.
+- __Visitors__ get the maintenance page with the site's maintenance message (`ngdpbase.features.maintenance.message`, any text an admin sets) and no details. `/health/readiness` answers 503 with that message only. The retired `ngdpbase.managers.addons-manager.site-critical.public-message` is still used when a site set it and has not set the maintenance message.
 - __Admins__ can still sign in and reach `/admin`, where the notification says which addon failed, why, and how to fix it. Fix the cause and restart.
 - Nothing is opened or written in its place: an addon whose encrypted database has no key stays off, and its database stays closed.
 

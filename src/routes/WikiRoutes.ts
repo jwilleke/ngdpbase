@@ -191,7 +191,7 @@ import { safeRedirect } from '../utils/safeRedirect.js';
 import { stripAclMarkup } from '../parsers/aclMarkup.js';
 import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
-import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
+import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY, ADMIN_SWITCH_REASON } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 import { untrustedFileHeaders } from '../utils/securityHeaders.js';
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
@@ -532,6 +532,8 @@ interface ISearchManager {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface WikiEngine {
+  /** #1906: whether the site is in maintenance mode, and why — the one door. */
+  readonly maintenance: import('../utils/maintenanceState.js').MaintenanceState;
   // Managers with local minimal interfaces (call-site-derived types)
   getManager(name: 'UserManager'): IUserManager;
   getManager(name: 'ConfigurationManager'): IConfigManager;
@@ -11155,12 +11157,11 @@ ${panes}
         requiredPagesSyncNeeded,
         notifications: notifications,
         totalNotificationCount: totalNotificationCount,
-        // #1147: read through the shared resolver, so the dashboard's toggle
-        // state matches what the gate and PolicyInformationPoint are actually enforcing.
-        maintenanceMode: resolveMaintenanceState(
-          (key, fallback) =>
-            this.engine.getManager('ConfigurationManager')?.getProperty?.(key, fallback)
-        ).enabled,
+        // #1906: the toggle's state is the admin switch in engine.maintenance,
+        // the state the gate enforces; the reasons are every reason the site
+        // is in maintenance mode, for administrators only.
+        maintenanceMode: this.engine.maintenance.has(ADMIN_SWITCH_REASON),
+        maintenanceReasons: this.engine.maintenance.reasons(),
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
@@ -11219,16 +11220,20 @@ ${panes}
       // #1147: the toggle used to mutate `engine.config.features.maintenance`,
       // an in-memory object nothing persisted — so a restart during
       // maintenance brought the instance back live with nobody told, which is
-      // most likely exactly when an operator is mid-migration. It now writes
+      // most likely exactly when an operator is mid-migration. It persists
       // the documented key through ConfigurationManager, which saves to
-      // app-custom-config.json, and reads through the same resolver as the
-      // gate and PolicyInformationPoint.
+      // app-custom-config.json, so the switch is entered again at boot.
+      //
+      // #1906: the switch itself goes through the one door, like every other
+      // reason the site is in maintenance mode.
       const configManager = this.engine.getManager('ConfigurationManager');
       const current = resolveMaintenanceState(
         (key, fallback) => configManager?.getProperty?.(key, fallback)
       );
-      const enabled = !current.enabled;
+      const enabled = !this.engine.maintenance.has(ADMIN_SWITCH_REASON);
       await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled, currentUser);
+      if (enabled) this.engine.maintenance.enter(ADMIN_SWITCH_REASON, { adminsMayEnter: true });
+      else this.engine.maintenance.leave(ADMIN_SWITCH_REASON);
 
       // Shape kept for the notification payload below, which takes the
       // maintenance settings as an object.

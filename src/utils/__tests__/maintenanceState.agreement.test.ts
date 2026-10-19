@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { resolveAvailability } from '../availability';
+import { MaintenanceState } from '../maintenanceState';
 
 /**
  * #1147 — "one switch, one state", made provable. #1432 — made structural.
@@ -43,9 +44,16 @@ describe('#1147/#1432 — there is one reader of the maintenance switch', () => 
 
   const configFrom = (values: Record<string, unknown>) => (key: string) => values[key];
 
-  /** What the gate middleware in app.ts decides for a given request. */
+  /**
+   * What the gate middleware in app.ts decides for a given request. #1906:
+   * the switch is the door's — restored from the configuration at boot, as
+   * app.ts does — and the gate passes its visitor view in.
+   */
   const gateBlocks = (values: Record<string, unknown>, isAdmin: boolean): boolean => {
-    const state = resolveAvailability(configFrom(values));
+    const config = { getProperty: (key: string, fallback: unknown) => values[key] ?? fallback };
+    const maintenance = new MaintenanceState();
+    maintenance.restoreSwitch(config);
+    const state = resolveAvailability(configFrom(values), new Date(), maintenance.visitorView(config));
     if (!state.blocked) return false;
     return !(state.allowAdmins && isAdmin);
   };

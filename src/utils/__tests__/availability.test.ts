@@ -11,6 +11,7 @@ import {
   zonedParts,
   type ReadProperty
 } from '../availability';
+import { MaintenanceState } from '../maintenanceState';
 
 const BUSINESS_HOURS = {
   name: 'Standard Business Hours',
@@ -24,6 +25,17 @@ const BUSINESS_HOURS = {
 
 /** A reader over a plain map — no fallback parameter, by design. */
 const reader = (values: Record<string, unknown>): ReadProperty => (key) => values[key];
+
+/**
+ * #1906: maintenance is the door's. What the gate passes in: the admin switch
+ * restored from these values, and its visitor view.
+ */
+const maintenanceFrom = (values: Record<string, unknown>) => {
+  const config = { getProperty: (key: string, fallback: unknown) => values[key] ?? fallback };
+  const maintenance = new MaintenanceState();
+  maintenance.restoreSwitch(config);
+  return maintenance.visitorView(config);
+};
 
 // Monday 2026-09-21 14:00 New York = 18:00 UTC; Sunday is 2026-09-20.
 const MONDAY_MIDDAY_NY = new Date('2026-09-21T18:00:00Z');
@@ -41,20 +53,22 @@ describe('#1432 availability', () => {
 
   describe('maintenance', () => {
     test('closes with the operator message and keeps its own allow-admins', () => {
-      const state = resolveAvailability(reader({
+      const values = {
         'ngdpbase.features.maintenance.enabled': true,
         'ngdpbase.features.maintenance.message': 'Back at noon',
         'ngdpbase.features.maintenance.allow-admins': false
-      }), MONDAY_MIDDAY_NY);
+      };
+      const state = resolveAvailability(reader(values), MONDAY_MIDDAY_NY, maintenanceFrom(values));
       expect(state).toMatchObject({ blocked: true, kind: 'maintenance', message: 'Back at noon', allowAdmins: false });
     });
 
     test('wins over a schedule — "I closed it" is never reported as a schedule', () => {
-      const state = resolveAvailability(reader({
+      const values = {
         'ngdpbase.features.maintenance.enabled': true,
         'ngdpbase.access-control.business-hours.enabled': true,
         'ngdpbase.schedules': { 'business-hours': BUSINESS_HOURS }
-      }), SUNDAY_MIDDAY_NY);
+      };
+      const state = resolveAvailability(reader(values), SUNDAY_MIDDAY_NY, maintenanceFrom(values));
       expect(state.kind).toBe('maintenance');
     });
   });
