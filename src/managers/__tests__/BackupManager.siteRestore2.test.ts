@@ -36,6 +36,7 @@ describe('slice 2 of the site restore (#1876)', () => {
   let dir: string;
   let notifications: Array<{ level: string; title: string; message: string }>;
   let userRestores: number;
+  let userBackupFails: boolean;
   const saved = { backup: process.env[BACKUP_KEY_ENV], credentials: process.env[CREDENTIALS_KEY_ENV] };
 
   const paths = () => ({
@@ -73,7 +74,10 @@ describe('slice 2 of the site restore (#1876)', () => {
       AuditManager: { logAuditEvent: async () => 'evt', flushAuditQueue: async () => undefined },
       // Restores live only: never while a site restore is staged.
       UserManager: {
-        backup: async () => ({ managerName: 'UserManager', timestamp: new Date().toISOString(), data: null, providerBackup: { users: ['alice'] } }),
+        backup: async () => {
+          if (userBackupFails) throw new Error('the user store could not be read');
+          return { managerName: 'UserManager', timestamp: new Date().toISOString(), data: null, providerBackup: { users: ['alice'] } };
+        },
         restore: async () => { userRestores++; },
         getUser: async () => null,
         hasPassword: async () => false
@@ -123,6 +127,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdpbase-1876-s2-'));
     notifications = [];
     userRestores = 0;
+    userBackupFails = false;
     process.env[BACKUP_KEY_ENV] = KEY;
     process.env[CREDENTIALS_KEY_ENV] = CREDENTIALS_KEY;
     await seed();
@@ -212,9 +217,9 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect((doc.managers.AuthManager.data as { credentials: unknown }).credentials).toBeNull();
     expect(doc.managers.AuthManager.warnings?.[0]).toMatch(/NGDPBASE_BACKUP_KEY is not set, so the credentials store was left out/);
     expect(fs.existsSync(file.replace(/\.json\.gz$/, '.forms.tar'))).toBe(true);
-    const notice = notifications.find((n) => n.title === 'A backup is incomplete');
-    expect(notice?.level).toBe('error');
-    expect(notice?.message).toMatch(/credentials store was left out/);
+    // Left out only for want of the key: no per-backup notice (#1912); the one-time notice names what is left out.
+    expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
+    expect(notifications.find((n) => n.title === BACKUP_KEY_MISSING_TITLE)?.message).toMatch(/the credentials store and the databases are left out/);
     // A restore needs a complete safety backup first, which can't be taken without the key.
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/credentials store was left out/);
     expect(fs.existsSync(paths().siteRestore)).toBe(false);
@@ -233,9 +238,9 @@ describe('slice 2 of the site restore (#1876)', () => {
     const keyNotices = notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE);
     expect(keyNotices).toHaveLength(1);
     expect(keyNotices[0]).toMatchObject({ level: 'error', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY is not set, so backups are NOT encrypted.*the only notification/) });
-    // No per-backup "not encrypted" notice; each backup still says what it left out.
+    // No per-backup notice at all: what the missing key leaves out is the one-time notice's to say (#1912).
     expect(notifications.filter((n) => /not encrypted/i.test(n.title) && n.title !== BACKUP_KEY_MISSING_TITLE)).toEqual([]);
-    expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toHaveLength(3);
+    expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
     expect(restarted.backup.getManagerStatus().state).toBe('degraded');
     // The key is read at each backup: once it is set the banner goes, without a restart.
     process.env[BACKUP_KEY_ENV] = KEY;
@@ -249,6 +254,20 @@ describe('slice 2 of the site restore (#1876)', () => {
     await keyed.backup.createBackup(CTX);
     expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
     await stop(keyed);
+  });
+
+  test('without the backup key, a part that fails for another reason is still said at every backup — and only that part', async () => {
+    delete process.env[BACKUP_KEY_ENV];
+    const site = await start();
+    userBackupFails = true;
+    await site.backup.createBackup(CTX, { filename: '2026-01-01T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    await site.backup.createBackup(CTX, { filename: '2026-01-02T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    const incomplete = notifications.filter((n) => n.title === 'A backup is incomplete');
+    expect(incomplete).toHaveLength(2);
+    expect(incomplete[0].message).toMatch(/without: UserManager: the user store could not be read$/);
+    expect(incomplete[0].message).not.toMatch(/credentials store/);
+    expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
+    await stop(site);
   });
 
   test('a backup made under another backup key is refused before anything is staged', async () => {

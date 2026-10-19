@@ -48,7 +48,7 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 ### Encryption
 
 - __With `NGDPBASE_BACKUP_KEY` set__ every file of a backup is encrypted under it: the document, every `.tar.enc` and the databases. Each records a short fingerprint of the key (never the key); a restore under another key is refused, and one without the key can't read anything.
-- __Without it__ the backup is __not encrypted__: the document holds password hashes and settings with their secrets, the `.tar` files hold attachments and records as they are on disk. The credentials store and the databases are left out. Each backup still notifies admins of what it left out ("A backup is incomplete"). The missing key is shown as a banner on the admin dashboard (Backup degraded) for as long as it lasts, and admins get one notification about it, "Backups are not encrypted", the first time only. A restore of the rest of the site also needs the key, since it starts with a complete backup of the live data.
+- __Without it__ the backup is __not encrypted__: the document holds password hashes and settings with their secrets, the `.tar` files hold attachments and records as they are on disk. The credentials store and the databases are left out. The missing key is shown as a banner on the admin dashboard (Backup degraded) for as long as it lasts, and admins get one notification about it, "Backups are not encrypted", the first time only, naming what is left out; a backup sends no notice of its own for that. A part missing for any other reason still notifies admins at every backup ("A backup is incomplete", naming only that part). A restore of the rest of the site also needs the key, since it starts with a complete backup of the live data.
 
 ---
 

@@ -495,7 +495,9 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const { database, backups } = await site();
       const file = await backups.createBackup(CTX);
       expect(fs.readdirSync(backupDir)).toEqual([path.basename(file)]);
-      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'A backup is incomplete', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY/) }));
+      // #1912: admins are told once, by the backup-key notice that names the databases, not by a notice per backup.
+      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'Backups are not encrypted', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY .*the databases are left out/) }));
+      expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
       await backups.shutdown();
       await database.shutdown();
     });

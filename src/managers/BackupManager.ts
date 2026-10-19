@@ -20,7 +20,7 @@ import {
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
 import { decryptBuffer, encryptBuffer, ENCRYPTED_SUFFIX, isEncryptedBackup } from '../utils/backupCrypto.js';
-import { BACKUP_KEY_ENV, currentBackupKey } from '../utils/backupKey.js';
+import { BACKUP_KEY_ENV, currentBackupKey, isLeftOutForNoKey } from '../utils/backupKey.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
@@ -524,6 +524,9 @@ class BackupManager extends BaseManager {
       // document; they share its stem and are pruned with it.
       const managerOptions = { ctx, directory: this.backupDirectory, stem: backupStem(filename), ...(options.safetyBackup ? { safetyBackup: true } : {}) };
       const failures: string[] = [];
+      // #1912: parts left out only because there is no backup key — said by
+      // the banner and the one-time notice (checkBackupKey), not per backup.
+      const leftOutForNoKey: string[] = [];
       pending = { filename, existing: new Set(await this.companionsOf(filename)) };
 
       // Call backup() on each manager
@@ -545,11 +548,16 @@ class BackupManager extends BaseManager {
           const managerBackup = await manager.backup(managerOptions);
 
           backupData.managers[managerName] = managerBackup;
-          for (const warning of managerBackup?.warnings ?? []) failures.push(`${managerName}: ${warning}`);
+          for (const warning of managerBackup?.warnings ?? []) {
+            if (!backupKey && isLeftOutForNoKey(warning)) leftOutForNoKey.push(`${managerName}: ${warning}`);
+            else failures.push(`${managerName}: ${warning}`);
+          }
           logger.info(`✅ ${managerName} backed up${managerBackup?.warnings?.length ? ' in part' : ' successfully'}`);
         } catch (error) {
           logger.error(`❌ Failed to backup ${managerName}:`, error);
-          failures.push(`${managerName}: ${(error as Error).message}`);
+          const reason = (error as Error).message;
+          if (!backupKey && isLeftOutForNoKey(reason)) leftOutForNoKey.push(`${managerName}: ${reason}`);
+          else failures.push(`${managerName}: ${reason}`);
           // Continue with other managers even if one fails
           backupData.managers[managerName] = {
             error: (error as Error).message,
@@ -605,9 +613,12 @@ class BackupManager extends BaseManager {
         logger.error(`❌ ${message}`);
         await this.notifyAdmins('error', 'A backup is incomplete', message);
         if (options.requireComplete) throw new Error(message);
-      } else if (!backupKey) {
-        logger.warn(`⚠️  Backup ${filename} was written NOT encrypted: ${BACKUP_KEY_ENV} is not set`);
       }
+      if (!backupKey) {
+        logger.warn(`⚠️  Backup ${filename} was written NOT encrypted (${BACKUP_KEY_ENV} is not set)${leftOutForNoKey.length > 0 ? `, without: ${leftOutForNoKey.join('; ')}` : ''}`);
+      }
+      // A restore's safety backup must be whole, whatever left a part out.
+      if (options.requireComplete && leftOutForNoKey.length > 0) throw new Error(`Backup ${filename} was written, but without: ${leftOutForNoKey.join('; ')}`);
 
       // Clean up old backups
       if (!options.skipCleanup) await this.cleanupOldBackups();

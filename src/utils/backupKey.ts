@@ -23,6 +23,19 @@ export function backupKeyFingerprint(key: string): string {
   return createHmac('sha256', key).update('ngdpbase backup key fingerprint v1').digest('hex').slice(0, 16);
 }
 
+/**
+ * How every part left out of a backup for want of the key says so: the
+ * message starts with this. BackupManager recognises such a part by it
+ * (`isLeftOutForNoKey`): those are covered by its banner and one-time
+ * notice, never a notice per backup (operator, #1912).
+ */
+export const LEFT_OUT_FOR_NO_KEY = `${BACKUP_KEY_ENV} is not set, so `;
+
+/** Whether a backup warning or error says a part was left out only because there is no backup key. */
+export function isLeftOutForNoKey(message: string): boolean {
+  return message.startsWith(LEFT_OUT_FOR_NO_KEY);
+}
+
 /** The backup key as set now, trimmed; '' when there is none. Read at use, never cached. */
 export function currentBackupKey(): string {
   return (process.env[BACKUP_KEY_ENV] ?? '').trim();

@@ -21,7 +21,7 @@ import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '..
 import logger from './logger.js';
 import { extractTreeArchive, writeTreeArchive } from './treeArchive.js';
 import { applyPartAtStart, recordStagedPart, siteRestoreFile, stagedPathFor, type PartOutcome } from './siteRestore.js';
-import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey } from './backupKey.js';
+import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from './backupKey.js';
 import { ENCRYPTED_SUFFIX } from './backupCrypto.js';
 
 /** A folder part's `data` in the backup document. */
@@ -171,7 +171,7 @@ export async function backupFilePart(
   if (!file) return { data: null, warnings: [], note: `${manager} has no ${what} configured` };
   const target = archiveTarget(options.stem, part);
   if (requireKey && !target.backupKey) {
-    const warning = `${BACKUP_KEY_ENV} is not set, so the ${what} was left out: it is only ever backed up encrypted under the backup key (#1876)`;
+    const warning = `${LEFT_OUT_FOR_NO_KEY}the ${what} was left out: it is only ever backed up encrypted under the backup key (#1876)`;
     logger.error(`[${manager}] ${warning}`);
     return { data: null, warnings: [warning] };
   }

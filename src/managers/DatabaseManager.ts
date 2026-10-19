@@ -56,7 +56,7 @@ import {
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
 } from '../providers/sqliteBackup.js';
 import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
-import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey } from '../utils/backupKey.js';
+import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 
 /** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
 export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
@@ -429,7 +429,7 @@ class DatabaseManager extends BaseManager {
     }
     const backupKey = this.backupKey();
     if (!backupKey) {
-      const reason = `${BACKUP_KEY_ENV} is not set, so no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
+      const reason = `${LEFT_OUT_FOR_NO_KEY}no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
       this.fault('backup-key', reason);
       throw new Error(reason);
     }
