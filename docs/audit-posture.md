@@ -147,7 +147,7 @@ A row's `user` is the account acted on. Under a proxy grant ([#1762](https://git
 | Value | What happens when the configured provider cannot be used |
 | --- | --- |
 | `continue` (shipped default) | Fall back to `NullAuditProvider`, mark the instance degraded, keep serving, banner on the admin dashboard |
-| `refuse-boot` | `engine.blockConfiguration(…)` — the process stays alive in maintenance mode so `/admin` and `/login` remain reachable; the instance does not finish booting as a serving system |
+| `refuse-boot` | `engine.maintenance.enter(…)` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906)) — the process stays alive in maintenance mode so `/admin` and `/login` remain reachable; the instance does not finish booting as a serving system |
 
 Selecting `databaseauditprovider` or `cloudauditprovider` takes this path. Both classes exist, extend `BaseAuditProvider`, and *reject* `initialize()` (`DatabaseAuditProvider not yet implemented. Use FileAuditProvider instead.` and the cloud equivalent). They are not silent no-ops: a configured stub becomes either a degraded instance or a blocked boot, depending on `on-failure`.
 

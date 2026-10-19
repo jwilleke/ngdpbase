@@ -297,11 +297,19 @@ Both storage variables default to `./data`, so a single-drive setup can leave th
 
 When `NGDPBASE_DATABASE_KEY` is missing or wrong on an encrypted application database (or the file is damaged, or a migration fails), the process stays up in maintenance mode ([#1892](https://github.com/jwilleke/ngdpbase/issues/1892)) instead of exiting:
 
-- visitors get only the public message `ngdpbase.managers.addons-manager.site-critical.public-message`, with a 503;
+- visitors get only the site's maintenance message, `ngdpbase.features.maintenance.message`, with a 503 (the one maintenance door, [#1906](https://github.com/jwilleke/ngdpbase/issues/1906); see [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner));
 - administrators sign in at `/login` and reach `/admin`, where the notification "Critical: the application database is not available" names the fix;
 - the fix is to set or correct the key in `<FAST_STORAGE>/.env` (or the deployment's environment) and restart. Nothing is opened unencrypted in the meantime, nothing is migrated, and no job or backup runs against a substitute.
 
 A database with no key that has never been encrypted still opens unencrypted, with the warning: the key can't be told missing from never set. The details are in [DatabaseManager.md](../managers/DatabaseManager.md#when-the-application-database-cant-be-opened-maintenance-mode).
+
+### When the site starts in maintenance mode
+
+Something an administrator can fix never stops the process: the site boots into maintenance mode instead, through the one door every manager uses, `engine.maintenance` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); the API is in [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)). The boot paths that use it: a missing or wrong database key (above), a broken audit provider with `ngdpbase.audit.on-failure` `refuse-boot`, a site-critical add-on that did not load, an unusable TLS certificate or key, and an outbound range that does not parse. The admin switch, left on before a restart, is entered again at boot.
+
+- Visitors get the maintenance page and a 503 with the site's maintenance message (`ngdpbase.features.maintenance.message`, any text) and estimate (`…estimated-duration`), never the reason. `/health/readiness` gives the same message only.
+- The page's title and heading name the site from `ngdpbase.application-name`.
+- Administrators sign in at `/login` and reach `/admin`, which lists every reason; the startup log has them too. Everything else stays closed, for administrators as well, until the cause is fixed and the server restarted.
 
 ### Where a new variable goes
 
@@ -387,6 +395,7 @@ Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [doc
 - [#1878](https://github.com/jwilleke/ngdpbase/issues/1878) — nothing warns when an instance still uses the shipped name, favicon or base URL.
 - [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — an unset `$VAR` anywhere inside a map makes the whole key unreadable (it throws), so an add-on's `register()` config omits that whole key, with a warning; the other gaps are in [configuration-developer-guide.md](configuration-developer-guide.md#known-gaps).
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645)
+- [#1906](https://github.com/jwilleke/ngdpbase/issues/1906) — while the engine is still starting, the maintenance page reads the site name from the configuration files and the environment, so a name written as a `$VAR` reference is not shown until the engine is up.
 - [#1892](https://github.com/jwilleke/ngdpbase/issues/1892) — a database key that is missing from a new `.env` is not caught at first boot: with no database file yet, the site creates a new unencrypted one. Only an existing encrypted file shows the key is missing.
 
 ## History

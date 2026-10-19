@@ -401,6 +401,17 @@
                             </small>
                         </div>
                     <% } %>
+                    <%# #1906: every reason the site is in maintenance mode, for administrators only. Visitors see the maintenance message. %>
+                    <% if (typeof maintenanceReasons !== 'undefined' && maintenanceReasons && maintenanceReasons.length > 0) { %>
+                        <div class="alert alert-danger mt-2 mb-0 small" data-maintenance-reasons>
+                            <strong>The site is in maintenance mode because:</strong>
+                            <ul class="mb-0">
+                                <% maintenanceReasons.forEach(function (r) { %>
+                                    <li><%= r %></li>
+                                <% }); %>
+                            </ul>
+                        </div>
+                    <% } %>
                     <% } else { %>
                         <p class="text-muted">Admin role required for these tools.</p>
                     <% } %>
