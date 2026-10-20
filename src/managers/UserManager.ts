@@ -19,7 +19,8 @@ import type RoleManager from './RoleManager.js';
 import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
 import type ValidationManager from './ValidationManager.js';
-import type { Person, PersonUpdate } from '../types/Person.js';
+import type { PersonUpdate } from '../types/Person.js';
+import type { JobContext } from '../context/JobContext.js';
 import type { ShareGrant } from '../types/Share.js';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
@@ -712,7 +713,7 @@ class UserManager extends BaseManager {
       metadata: { bootstrap: true }
     });
 
-    await this.syncPersonOnCreate(adminUser);
+    await this.syncPersonOnCreate(adminUser, systemContext(this.engine, 'create the bootstrap admin account at first boot'));
     await this.roleManager().applyRoleDiff(adminUser.username, [], this.withAccountRoles(['admin']));
 
     // Never log the value. `2b48d838` removed the equivalent echo from the
@@ -1000,8 +1001,9 @@ class UserManager extends BaseManager {
 
     await this.writeAccounts(this.provider.createUser(user));
 
-    await this.syncPersonOnCreate(user);
+    await this.syncPersonOnCreate(user, ctx);
     await this.roleManager().applyRoleDiff(username, [], roles);
+    await this.offerContactLink(username, ctx);
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
 
@@ -1132,7 +1134,7 @@ class UserManager extends BaseManager {
     // #1765: turning an account off goes through the one deactivation step.
     if (disabling) await this.closeAccess(username, 'disable', ctx);
 
-    await this.syncPersonOnUpdate(username, updates);
+    await this.syncPersonOnUpdate(username, updates, ctx);
     if (incomingRoles) {
       await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles);
     }
@@ -1209,7 +1211,7 @@ class UserManager extends BaseManager {
     // Order matters: clear role memberships while the Person record still
     // exists, then delete the Person.
     await this.roleManager().removeAllMemberships(username);
-    await this.syncPersonOnDelete(username);
+    await this.syncPersonOnDelete(username, ctx);
 
     logger.info(`👤 Deleted user: ${username}`);
     return true;
@@ -1356,35 +1358,56 @@ class UserManager extends BaseManager {
 
 
   /**
+   * The account lifecycle reaches PersonManager's door under a system context
+   * (#1930): keeping an account's person in step with the account is core's
+   * own bookkeeping, not the caller's contact management, so it never depends
+   * on the caller holding `contact-manage`. The reason names the account and
+   * who changed it, so the record says why.
+   */
+  private personSyncContext(what: string, username: string, ctx: ActorContext): JobContext {
+    return systemContext(this.engine, `account lifecycle: ${what} the person for account ${username} (account changed by ${actorOf(ctx).user})`);
+  }
+
+  /**
    * Persist a Person record paired with a newly-created User. The install's
    * anchor org (when configured) is referenced via `memberOf`; without it
    * the Person is written without an org link. Failures are logged, not
    * thrown — auth must still succeed if Person storage is degraded.
    */
-  private async syncPersonOnCreate(user: User): Promise<void> {
+  private async syncPersonOnCreate(user: User, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
       const installOrg = await this.engine
         .getManager<OrganizationManager>('OrganizationManager')
         ?.getInstallOrg();
-      const person: Person = {
-        '@context': 'https://schema.org',
-        '@type': 'Person',
-        '@id': `urn:uuid:${crypto.randomUUID()}`,
+      await personManager.create(this.personSyncContext('create', user.username, ctx), {
         identifier: user.username,
         ...(user.displayName ? { name: user.displayName } : {}),
         ...(user.email ? { email: user.email } : {}),
         ...(installOrg ? { memberOf: { '@id': installOrg['@id'] } } : {})
-      };
-      await personManager.create(person);
+      });
       logger.info(`📋 Created Person record for ${user.username}`);
     } catch (error) {
       logger.error(`❌ Failed to create Person record for ${user.username}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private async syncPersonOnUpdate(username: string, updates: UserUpdateInput): Promise<void> {
+  /**
+   * At sign-up, offer the new account a person with no account who has the
+   * same email (#1930): PersonManager mails an "Is this you?" link, and joins
+   * them only when the account confirms. Skipped when email is off. Never
+   * fails the account write.
+   */
+  private async offerContactLink(username: string, ctx: ActorContext): Promise<void> {
+    try {
+      await this.engine.getManager<PersonManager>('PersonManager')?.offerSignUpLink(ctx, username);
+    } catch (error) {
+      logger.warn(`👤 Could not offer ${username} a contact record: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async syncPersonOnUpdate(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
@@ -1394,19 +1417,19 @@ class UserManager extends BaseManager {
       if (updates.displayName !== undefined) patch.name = updates.displayName;
       if (updates.email !== undefined) patch.email = updates.email;
       if (Object.keys(patch).length === 0) return;
-      await personManager.update(person['@id'], patch);
+      await personManager.update(this.personSyncContext('update', username, ctx), person['@id'], patch);
     } catch (error) {
       logger.error(`❌ Failed to update Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private async syncPersonOnDelete(username: string): Promise<void> {
+  private async syncPersonOnDelete(username: string, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
       const person = await personManager.getByIdentifier(username);
       if (!person) return;
-      await personManager.delete(person['@id']);
+      await personManager.delete(this.personSyncContext('delete', username, ctx), person['@id']);
     } catch (error) {
       logger.error(`❌ Failed to delete Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }

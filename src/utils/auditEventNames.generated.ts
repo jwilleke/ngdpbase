@@ -59,6 +59,8 @@ export const AUDIT_EVENT = {
   CONFIG_CHANGE: 'config-change',
   /** Every custom configuration value discarded; recorded before the reset, which cannot proceed without it */
   CONFIG_RESET: 'config-reset',
+  /** Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values */
+  CONTACT_MANAGE: 'contact-manage',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
   FOOTNOTE_EDIT: 'footnote-edit',
   /** A background job finished successfully */

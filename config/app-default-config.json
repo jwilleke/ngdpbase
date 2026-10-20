@@ -115,6 +115,10 @@
   "ngdpbase.application.persons.storagedir": "${FAST_STORAGE}/persons",
   "ngdpbase.application.persons.provider.default": "filepersonprovider",
   "ngdpbase.application.persons.provider": "filepersonprovider",
+  "_comment_application_contacts": "Contacts (#1930): the most results PersonManager.search / OrganizationManager.search return when the caller gives no limit, and how long the 'Is this you?' sign-up link stays usable.",
+  "ngdpbase.application.persons.search.limit": 50,
+  "ngdpbase.application.persons.link-offer.ttl-minutes": 30,
+  "ngdpbase.application.organization.search.limit": 50,
   "ngdpbase.application.organization.provider.default": "fileorganizationprovider",
   "ngdpbase.application.organization.provider": "fileorganizationprovider",
   "_comment_application_roles": "OrganizationRole records storage (#617 follow-up). One file per (organization, namedPosition) pair under storagedir, named <namedPosition>.json. Snapshot at create time from the catalog at ngdpbase.roles.definitions.",
@@ -1969,6 +1973,16 @@
         "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
       }
     },
+    "contact-manage": {
+      "description": "Find, create, edit and link contacts: persons (with or without an account) and organizations, and a person's affiliations, through PersonManager and OrganizationManager (#1930). Admins by default; an add-on grants it to its own roles in its own policy",
+      "label": "Find and manage contacts (people and organizations)",
+      "icon": "address-book",
+      "color": "#0d6efd",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values"
+      }
+    },
     "admin-read": {
       "description": "View administration screens (read-only, no changes)",
       "label": "View administration screens without changing anything",
@@ -2568,6 +2582,28 @@
         "comment-create",
         "search-user",
         "store-create"
+      ]
+    },
+    {
+      "id": "contact-manage-admin",
+      "name": "Administrators manage contacts",
+      "description": "Admins find, create, edit and link persons and organizations (#1930). An add-on that needs contacts grants contact-manage to its own roles in its own policy",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "contact-manage"
       ]
     },
     {

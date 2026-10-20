@@ -172,6 +172,9 @@ import type BackupManager from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
+import type PersonManager from '../managers/PersonManager.js';
+import { ContactRefusedError } from '../utils/contactAccess.js';
+import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
@@ -499,13 +502,14 @@ interface IOrganizationRecord {
   [key: string]: unknown;
 }
 
+// #1930: the door takes the caller's context first and asks contact-manage.
 interface IOrganizationManager {
-  list(): Promise<IOrganizationRecord[]>;
+  list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
   getById(id: string): Promise<IOrganizationRecord | null>;
   getByFile(filename: string): Promise<IOrganizationRecord | null>;
-  create(org: IOrganizationRecord, filename?: string): Promise<IOrganizationRecord>;
-  update(id: string, patch: Record<string, unknown>): Promise<IOrganizationRecord | null>;
-  delete(id: string): Promise<boolean>;
+  create(ctx: ActorContext, org: IOrganizationRecord & { name: string }, filename?: string): Promise<IOrganizationRecord>;
+  update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<IOrganizationRecord | null>;
+  delete(ctx: ActorContext, id: string): Promise<boolean>;
   getInstallOrg(): Promise<IOrganizationRecord | null>;
 }
 
@@ -544,6 +548,7 @@ interface WikiEngine {
   getManager(name: 'PolicyInformationPoint'): IPolicyInformationPoint;
   getManager(name: 'SchemaManager'): ISchemaManager;
   getManager(name: 'OrganizationManager'): IOrganizationManager;
+  getManager(name: 'PersonManager'): PersonManager;
   getManager(name: 'SearchManager'): ISearchManager;
   getManager(name: 'RoleManager'): RoleManager;
   getManager(name: 'PolicyDecisionPoint'): PolicyDecisionPoint;
@@ -804,7 +809,9 @@ const TWO_STEP_COOKIE = 'ngdp_two_step';
 export const VIEW_PERMISSIONS = [
   'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-create', 'page-raw-edit',
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
-  'config-manage', 'secret-reveal', 'account-security'
+  'config-manage', 'secret-reveal', 'account-security',
+  // #1930: the dashboard's Contacts entry.
+  'contact-manage'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
@@ -15455,6 +15462,167 @@ ${panes}
   // ============================================================================
 
   /**
+   * GET /admin/contacts — persons, with or without an account (#1930). Search
+   * by name or email; `?accountless=1` shows only persons with no account,
+   * each with a form to link it to an account by hand. The door asks
+   * `contact-manage`.
+   */
+  async adminContacts(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const accountless = req.query.accountless === '1';
+    try {
+      const persons = await this.engine.getManager('PersonManager').search(wikiContext.userContext, q, { accountless });
+      const organizationManager = this.engine.getManager('OrganizationManager');
+      const orgNames: Record<string, string> = {};
+      for (const org of await organizationManager.list(wikiContext.userContext)) {
+        if (typeof org.name === 'string') orgNames[org['@id']] = org.name;
+      }
+      const templateData = await this.getCommonTemplateData(req);
+      res.render('admin-contacts', {
+        ...templateData,
+        title: 'Contacts',
+        pageTitle: 'Contacts',
+        persons: persons.map((p) => ({
+          id: p['@id'],
+          name: typeof p.name === 'string' ? p.name : '',
+          email: typeof p.email === 'string' ? p.email : '',
+          account: p.identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX) ? null : p.identifier,
+          affiliations: (p.affiliation ?? []).map((a) => ({ name: orgNames[a.organization] ?? a.organization, role: a.role ?? '' }))
+        })),
+        q,
+        accountless,
+        success: typeof req.query.success === 'string' ? req.query.success : undefined,
+        error: typeof req.query.error === 'string' ? req.query.error : undefined,
+        csrfToken: req.session?.csrfToken || ''
+      });
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      logger.error('Error loading contacts:', err);
+      await this.renderError(req, res, 500, 'Server Error', 'Failed to load contacts');
+    }
+  }
+
+  /** POST /admin/contacts — add a person with no account (#1930): a name, and an email when known. */
+  async adminCreateContact(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!name) {
+      res.redirect('/admin/contacts?error=' + encodeURIComponent('A contact needs a name.'));
+      return;
+    }
+    try {
+      await this.engine.getManager('PersonManager').create(wikiContext.userContext, { name, ...(email ? { email } : {}) });
+      res.redirect('/admin/contacts?accountless=1&success=' + encodeURIComponent(`Added ${name}.`));
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      logger.warn(`[contacts] Adding a contact failed: ${getErrorMessage(err)}`);
+      res.redirect('/admin/contacts?error=' + encodeURIComponent('The contact could not be added.'));
+    }
+  }
+
+  /**
+   * POST /admin/contacts/delete — remove a person with no account (#1930). A
+   * person with an account follows the account: delete the account instead.
+   */
+  async adminDeleteContact(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    const personId = typeof (req.body as Record<string, unknown> | undefined)?.personId === 'string' ? String((req.body as Record<string, unknown>).personId) : '';
+    try {
+      const personManager = this.engine.getManager('PersonManager');
+      const person = personId ? await personManager.get(wikiContext.userContext, personId) : null;
+      if (!person || !person.identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX)) {
+        res.redirect('/admin/contacts?error=' + encodeURIComponent('Only a person with no account is removed here; remove an account under Users.'));
+        return;
+      }
+      await personManager.delete(wikiContext.userContext, personId);
+      res.redirect('/admin/contacts?success=' + encodeURIComponent('Removed.'));
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      logger.warn(`[contacts] Removing ${personId} failed: ${getErrorMessage(err)}`);
+      res.redirect('/admin/contacts?error=' + encodeURIComponent('The contact could not be removed.'));
+    }
+  }
+
+  /**
+   * POST /admin/contacts/link — link a person with no account to an account
+   * by hand (#1930), for when the email differs or none was given. The door
+   * asks `contact-manage` and `user-edit`; it never makes a second person.
+   */
+  async adminLinkContact(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const personId = typeof body.personId === 'string' ? body.personId : '';
+    const username = typeof body.username === 'string' ? body.username.trim() : '';
+    if (!personId || !username) {
+      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent('Choose a person and name the account.'));
+      return;
+    }
+    try {
+      await this.engine.getManager('PersonManager').linkAccount(wikiContext.userContext, personId, username);
+      res.redirect('/admin/contacts?success=' + encodeURIComponent(`Linked to the account ${username}.`));
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      logger.warn(`[contacts] Linking ${personId} to ${username} failed: ${getErrorMessage(err)}`);
+      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(getErrorMessage(err).replace(/^PersonManager:\s*/, '')));
+    }
+  }
+
+  /**
+   * GET /contacts/link/confirm?t= — the "Is this you?" link mailed at sign-up
+   * (#1930). Signed in as the account it was sent for, it shows the record it
+   * would join; joining is the button on the page, so a mail scanner opening
+   * the link joins nothing.
+   */
+  async contactLinkConfirmPage(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    // Any signed-in account: the link itself is the authority, bound to one account.
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const token = typeof req.query.t === 'string' ? req.query.t : '';
+    const offer = await this.engine.getManager('PersonManager').signUpLinkOffer(wikiContext.userContext, token);
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('contact-link-confirm', {
+      ...commonData,
+      title: 'Is this you?',
+      offer,
+      token,
+      username: wikiContext.userContext.username,
+      csrfToken: req.session?.csrfToken || ''
+    });
+  }
+
+  /** POST /contacts/link/confirm — the account's answer: `join`, or anything else to decline (#1930). */
+  async answerContactLink(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const token = typeof body.t === 'string' ? body.t : '';
+    const personManager = this.engine.getManager('PersonManager');
+    try {
+      if (body.answer === 'join') {
+        const joined = await personManager.confirmSignUpLink(wikiContext.userContext, token);
+        res.redirect('/profile?' + (joined
+          ? 'success=' + encodeURIComponent('Your account is now joined to your contact record.')
+          : 'error=' + encodeURIComponent('That link has expired or was for another account.')));
+        return;
+      }
+      personManager.declineSignUpLink(wikiContext.userContext, token);
+      res.redirect('/profile?success=' + encodeURIComponent('Nothing was joined.'));
+    } catch (err: unknown) {
+      logger.warn(`[contacts] Joining from a sign-up link failed: ${getErrorMessage(err)}`);
+      res.redirect('/profile?error=' + encodeURIComponent('The record could not be joined. An administrator can link it for you.'));
+    }
+  }
+
+  /**
    * Admin Organizations Management Page
    */
   async adminOrganizations(req: Request, res: Response) {
@@ -15484,17 +15652,23 @@ ${panes}
       // and avoids dragging filename plumbing into the public URL surface.
       const organizationManager = this.engine.getManager('OrganizationManager');
       let organizations: unknown[] = [];
+      let listError: string | undefined;
       try {
-        organizations = await organizationManager.list();
+        // #1930: the door asks contact-manage of this viewer.
+        organizations = await organizationManager.list(currentUser);
       } catch (err: unknown) {
-        logger.error('Error loading organizations:', getErrorMessage(err));
+        if (err instanceof ContactRefusedError) {
+          listError = "Listing organizations needs the 'contact-manage' permission.";
+        } else {
+          logger.error('Error loading organizations:', getErrorMessage(err));
+        }
         organizations = [];
       }
 
       templateData.organizations = organizations;
       templateData.pageTitle = 'Organization Management';
       templateData.success = req.query.success;
-      templateData.error = req.query.error;
+      templateData.error = req.query.error ?? listError;
 
       res.render('admin-organizations', templateData);
     } catch (error: unknown) {
@@ -15544,7 +15718,7 @@ ${panes}
         '@id': (organizationData['@id'] as string) || (organizationData.url as string) || `urn:ngdpbase:org:${nameForSlug}`
       };
 
-      const newOrganization = await organizationManager.create(orgRecord);
+      const newOrganization = await organizationManager.create(userContext, { ...orgRecord, name: String(orgRecord.name ?? '') });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });
@@ -15554,6 +15728,11 @@ ${panes}
         );
       }
     } catch (error: unknown) {
+      // #1930: the contacts door refused (contact-manage).
+      if (error instanceof ContactRefusedError) {
+        await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
+        return;
+      }
       logger.error('Error creating organization:', error);
       if (req.headers.accept?.includes('application/json')) {
         return res.status(500).json({ error: getErrorMessage(error) });
@@ -15589,7 +15768,7 @@ ${panes}
       // Look up the org to find its `@id`, then patch by @id. Mutation of
       // identity fields (`@context`, `@type`, `@id`) is rejected by the
       // provider's update() implementation.
-      const existing = await this.findOrganizationByName(organizationManager, identifier);
+      const existing = await this.findOrganizationByName(organizationManager, identifier, userContext);
       if (!existing) {
         if (req.headers.accept?.includes('application/json')) {
           return res.status(404).json({ error: `Organization "${identifier}" not found` });
@@ -15597,7 +15776,7 @@ ${panes}
         return res.redirect('/admin/organizations?error=' + encodeURIComponent(`Organization "${identifier}" not found`));
       }
 
-      const updatedOrganization = await organizationManager.update(existing['@id'], patch);
+      const updatedOrganization = await organizationManager.update(userContext, existing['@id'], patch);
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: updatedOrganization });
@@ -15607,6 +15786,11 @@ ${panes}
         );
       }
     } catch (error: unknown) {
+      // #1930: the contacts door refused (contact-manage).
+      if (error instanceof ContactRefusedError) {
+        await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
+        return;
+      }
       logger.error('Error updating organization:', error);
       if (req.headers.accept?.includes('application/json')) {
         return res.status(500).json({ error: getErrorMessage(error) });
@@ -15637,7 +15821,7 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const identifier = req.params.identifier;
 
-      const existing = await this.findOrganizationByName(organizationManager, identifier);
+      const existing = await this.findOrganizationByName(organizationManager, identifier, userContext);
       if (!existing) {
         if (req.headers.accept?.includes('application/json')) {
           return res.status(404).json({ error: `Organization "${identifier}" not found` });
@@ -15645,7 +15829,7 @@ ${panes}
         return res.redirect('/admin/organizations?error=' + encodeURIComponent(`Organization "${identifier}" not found`));
       }
 
-      await organizationManager.delete(existing['@id']);
+      await organizationManager.delete(userContext, existing['@id']);
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true });
@@ -15655,6 +15839,11 @@ ${panes}
         );
       }
     } catch (error: unknown) {
+      // #1930: the contacts door refused (contact-manage).
+      if (error instanceof ContactRefusedError) {
+        await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
+        return;
+      }
       logger.error('Error deleting organization:', error);
       if (req.headers.accept?.includes('application/json')) {
         return res.status(500).json({ error: getErrorMessage(error) });
@@ -15684,7 +15873,7 @@ ${panes}
 
       const organizationManager = this.engine.getManager('OrganizationManager');
       const identifier = req.params.identifier;
-      const organization = await this.findOrganizationByName(organizationManager, identifier);
+      const organization = await this.findOrganizationByName(organizationManager, identifier, userContext);
 
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found' });
@@ -15692,6 +15881,10 @@ ${panes}
 
       return res.json(organization);
     } catch (error: unknown) {
+      if (error instanceof ContactRefusedError) {
+        await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
+        return;
+      }
       logger.error('Error getting organization:', error);
       return res.status(500).json({ error: getErrorMessage(error) });
     }
@@ -15703,11 +15896,12 @@ ${panes}
    * the org or null.
    */
   private async findOrganizationByName(
-    organizationManager: { list(): Promise<Array<{ name?: string; '@id': string; [key: string]: unknown }>> },
-    identifier: string
+    organizationManager: { list(ctx: ActorContext): Promise<Array<{ name?: string; '@id': string; [key: string]: unknown }>> },
+    identifier: string,
+    ctx: ActorContext
   ): Promise<{ '@id': string; [key: string]: unknown } | null> {
     const target = decodeURIComponent(identifier).toLowerCase();
-    const all = await organizationManager.list();
+    const all = await organizationManager.list(ctx);
     return all.find((o) => typeof o.name === 'string' && o.name.toLowerCase() === target) ?? null;
   }
 
@@ -15730,7 +15924,7 @@ ${panes}
 
       const organizationManager = this.engine.getManager('OrganizationManager');
       const identifier = req.params.identifier;
-      const organization = await this.findOrganizationByName(organizationManager, identifier);
+      const organization = await this.findOrganizationByName(organizationManager, identifier, currentUser);
 
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found' });
@@ -15743,6 +15937,10 @@ ${panes}
 
       return res.json(schema);
     } catch (error: unknown) {
+      if (error instanceof ContactRefusedError) {
+        await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
+        return;
+      }
       logger.error('Error getting organization schema:', error);
       return res.status(500).json({ error: getErrorMessage(error) });
     }
@@ -16271,6 +16469,14 @@ ${panes}
       '/admin/organizations/:identifier/schema',
       this.adminGetOrganizationSchema.bind(this)
     );
+
+    // #1930: contacts — persons with or without an account, and linking a later sign-up.
+    app.get('/admin/contacts', (req: Request, res: Response) => void this.adminContacts(req, res));
+    app.post('/admin/contacts', (req: Request, res: Response) => void this.adminCreateContact(req, res));
+    app.post('/admin/contacts/link', (req: Request, res: Response) => void this.adminLinkContact(req, res));
+    app.post('/admin/contacts/delete', (req: Request, res: Response) => void this.adminDeleteContact(req, res));
+    app.get('/contacts/link/confirm', (req: Request, res: Response) => void this.contactLinkConfirmPage(req, res));
+    app.post('/contacts/link/confirm', (req: Request, res: Response) => void this.answerContactLink(req, res));
 
     // #1546: the idle-timeout warning. The status poll is not activity (the
     // session middleware skips it), so it can never keep a session alive on its

@@ -410,6 +410,15 @@ export interface ApplicationOrganizationConfig {
   /** Active Person provider class (lowercased; falls back to .default) */
   'ngdpbase.application.persons.provider': string;
 
+  /** #1930: the most results `PersonManager.search` returns when the caller gives no limit */
+  'ngdpbase.application.persons.search.limit': number;
+
+  /** #1930: minutes the emailed "Is this you?" sign-up link stays usable */
+  'ngdpbase.application.persons.link-offer.ttl-minutes': number;
+
+  /** #1930: the most results `OrganizationManager.search` returns when the caller gives no limit */
+  'ngdpbase.application.organization.search.limit': number;
+
   /** Storage directory for OrganizationRole JSON files (one per (org, namedPosition) pair) */
   'ngdpbase.application.roles.storagedir': string;
 

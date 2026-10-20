@@ -516,7 +516,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` and `PolicyDecisionPoint`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -563,7 +563,78 @@ const pages = await pageManager.getAllPages();
 Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
+`PersonManager`, `OrganizationManager` ([Contacts](#contacts-persons-and-organizations)),
 `MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
+
+### Contacts: persons and organizations
+
+People and organizations an add-on keeps (donors, members, suppliers) are core's contacts, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). A donor is a person or an organization; a user is a person with an account. Store the contact's `@id` in your own records, never a copy of the name or email.
+
+- __One door each.__ `PersonManager` and `OrganizationManager`. Every call takes the caller's context first: in a route, `ctx.getActor()` from the `ApiContext`; in a job, its `JobContext`. Never a username.
+- __One permission, `contact-manage`.__ Shipped to admins only. Grant it to your own roles in your add-on's own policy, as in [Permissions](#permissions): an add-on never names `admin`, and never appends to a shipped policy.
+- __Ask, then call.__ In the route, `await ctx.requirePermission('contact-manage')` first: it shapes the refusal and the step-up prompt. The door asks again. If it refuses anyway, it throws a `ContactRefusedError` (`err.name === 'ContactRefusedError'`) carrying `permission` and `decision`; hand them to `await ctx.enforceDeny(err.permission, err.decision)`. Never build the 401 or 403 yourself.
+- __Every change is recorded__ by the door as the `contact-manage` audit event, with your caller as the actor. Do not record it again.
+- __A person with no account__ gets the identifier `person:<uuid>`. No username can take that form, so a person you create never collides with an account. When they sign up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The person keeps its `@id`, so your stored references stay good.
+- __Affiliations__ are on the person: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
+
+| Call | What it does |
+| --- | --- |
+| `persons.search(ctx, query, { limit?, accountless? })` | Persons whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to persons with no account |
+| `persons.get(ctx, id)` / `persons.list(ctx)` | One person by `@id`, or all |
+| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | A person with no account; returns the record with its `@id` |
+| `persons.update(ctx, id, patch)` | Change fields, affiliations included. `@id` and `identifier` never change |
+| `persons.delete(ctx, id)` | Remove a person |
+| `organizations.search(ctx, query, { limit? })` | Organizations whose name, legal name or email contains `query` |
+| `organizations.get(ctx, id)` / `organizations.list(ctx)` | One organization, or all |
+| `organizations.create(ctx, { name, url?, … })` | `@id` is the `url`, else a new `urn:uuid:` |
+| `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | Change or remove |
+| `organizations.people(ctx, orgId)` | `[{ person, role? }]` for each person affiliated with it |
+
+Linking an account by hand (`persons.linkAccount`) is an administrator's action, and also needs `user-edit`; an add-on does not call it.
+
+A donor picker for the accounting add-on: search both, show which is which, and keep the chosen `@id`.
+
+```typescript
+import type { PersonManager, OrganizationManager, ContactRefusedError } from '@jwilleke/ngdpbase-types';
+
+router.get('/api/donors', async (req, res) => {
+  const ctx = host.ApiContext.from(req, engine);
+  try {
+    await ctx.requirePermission('contact-manage'); // granted to the treasurer by accounting's own policy
+    const q = String(req.query.q ?? '');
+    const actor = ctx.getActor();
+    const persons = engine.getManager<PersonManager>('PersonManager')!;
+    const organizations = engine.getManager<OrganizationManager>('OrganizationManager')!;
+    const [people, orgs] = await Promise.all([
+      persons.search(actor, q, { limit: 20 }),
+      organizations.search(actor, q, { limit: 20 })
+    ]);
+    res.json([
+      ...people.map((p) => ({ kind: 'person', id: p['@id'], name: p.name ?? p.email ?? p['@id'], email: p.email })),
+      ...orgs.map((o) => ({ kind: 'organization', id: o['@id'], name: o.name }))
+    ]);
+  } catch (err) {
+    try {
+      if ((err as Error).name === 'ContactRefusedError') {
+        const refused = err as ContactRefusedError;
+        await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+      }
+      throw err;
+    } catch (answer) {
+      if (answer instanceof host.ApiError) return host.sendApiError(res, answer);
+      res.status(500).json({ error: 'Could not search donors' });
+    }
+  }
+});
+
+// A new donor who is not in the list yet: a person with no account, affiliated with their organization.
+const donor = await persons.create(ctx.getActor(), {
+  name: 'Dana Donor',
+  email: 'dana@example.org',
+  affiliation: [{ organization: orgId, role: 'Treasurer' }]
+});
+// Store donor['@id'] (and orgId, when the gift is from the organization) on the gift.
+```
 
 ### Mount Express Routes
 
@@ -1538,6 +1609,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-manage` to admins only, so an add-on's own policy must grant it before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an account deletes its person, even one first made by an add-on and later joined to the account, so a stored `@id` can then name nobody; deleting an organization leaves the affiliations that name it.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

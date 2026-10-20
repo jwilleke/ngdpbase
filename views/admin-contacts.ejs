@@ -1,0 +1,104 @@
+<%- include('header', { pageName: 'Contacts' }) %>
+
+<%
+// #1930 — persons, with or without an account. A person with no account can
+// be linked to an account by hand here (the email differs, or none was given).
+%>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-address-book"></i> Contacts</h1>
+        <a href="/admin" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+    </div>
+
+    <% if (success) { %><div class="alert alert-success" data-testid="contacts-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-danger" data-testid="contacts-error"><%= error %></div><% } %>
+
+    <form action="/admin/contacts" method="GET" class="row g-2 mb-3">
+        <div class="col-md-6">
+            <input type="search" name="q" value="<%= q %>" class="form-control" placeholder="Search by name or email" aria-label="Search by name or email" data-testid="contacts-search">
+        </div>
+        <div class="col-auto form-check align-self-center ms-2">
+            <input class="form-check-input" type="checkbox" name="accountless" value="1" id="accountless" <%= accountless ? 'checked' : '' %>>
+            <label class="form-check-label" for="accountless">Only people with no account</label>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary"<%- lockedUnless('contact-manage') %>>Search</button>
+        </div>
+    </form>
+
+    <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0">Add a person with no account</h5></div>
+        <div class="card-body">
+            <form action="/admin/contacts" method="POST" class="row g-2" data-testid="contacts-add-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="col-md-5"><input type="text" name="name" class="form-control" placeholder="Name" aria-label="Name" required data-testid="contacts-add-name"></div>
+                <div class="col-md-5"><input type="email" name="email" class="form-control" placeholder="Email (optional)" aria-label="Email" data-testid="contacts-add-email"></div>
+                <div class="col-md-2"><button type="submit" class="btn btn-primary w-100" data-testid="contacts-add-submit"<%- lockedUnless('contact-manage') %>>Add</button></div>
+            </form>
+            <p class="text-muted small mt-2 mb-0">If they sign up later with the same email, they are asked by email whether this record is theirs.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">People <span class="badge bg-secondary ms-2"><%= persons.length %></span></h5>
+        </div>
+        <div class="card-body">
+            <% if (persons.length === 0) { %>
+                <p class="text-muted mb-0">Nobody matches.</p>
+            <% } else { %>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" data-testid="contacts-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Organizations</th>
+                                <th>Account</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% persons.forEach(p => { %>
+                                <tr data-person-id="<%= p.id %>">
+                                    <td><%= p.name || '—' %></td>
+                                    <td><%= p.email || '—' %></td>
+                                    <td>
+                                        <% p.affiliations.forEach(a => { %>
+                                            <div><%= a.name %><% if (a.role) { %> <small class="text-muted">(<%= a.role %>)</small><% } %></div>
+                                        <% }) %>
+                                    </td>
+                                    <td>
+                                        <% if (p.account) { %>
+                                            <%= p.account %>
+                                        <% } else { %>
+                                            <div class="d-flex gap-2">
+                                            <% if (typeof can === 'function' && can('user-edit')) { %>
+                                                <form action="/admin/contacts/link" method="POST" class="d-flex gap-2">
+                                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                    <input type="hidden" name="personId" value="<%= p.id %>">
+                                                    <input type="text" name="username" class="form-control form-control-sm" placeholder="Username" aria-label="Account to link" required data-testid="contacts-link-username">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary" data-testid="contacts-link-submit"<%- lockedUnless('user-edit') %>>Link</button>
+                                                </form>
+                                            <% } else { %>
+                                                <span class="text-muted">No account</span>
+                                            <% } %>
+                                                <form action="/admin/contacts/delete" method="POST">
+                                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                    <input type="hidden" name="personId" value="<%= p.id %>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" data-testid="contacts-remove"<%- lockedUnless('contact-manage') %>>Remove</button>
+                                                </form>
+                                            </div>
+                                        <% } %>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            <% } %>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

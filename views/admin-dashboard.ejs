@@ -312,6 +312,13 @@
                             </a>
                             <a href="/view/organizations" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
                         </span>
+                        <% if ((typeof can === 'function' && can('contact-manage'))) { %>
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/contacts" class="btn btn-secondary btn-sm" data-testid="admin-contacts-link">
+                                <i class="fas fa-address-book"></i> Contacts
+                            </a>
+                        </span>
+                        <% } %>
                     </div>
                 </div>
             </div>
