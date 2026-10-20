@@ -57,6 +57,21 @@ test.describe('Admin Backup', () => {
     expect(missing.status()).toBe(404);
   });
 
+  test('the backup key card shows its fingerprint, and the key is shown only on its own page, never cached (#1876)', async ({ page }) => {
+    await page.goto('/admin/backup');
+    const fingerprint = (await page.locator('#backup-key-card #backup-key-fingerprint').textContent())?.trim() ?? '';
+    expect(fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    // Saved or not, the card links nowhere else for the key; the key page is the one place it is shown.
+    const response = await page.request.get('/admin/backup/key');
+    expect(response.status()).toBe(200);
+    expect(response.headers()['cache-control']).toBe('no-store');
+    await page.goto('/admin/backup/key');
+    await expect(page.locator('#backup-key-value')).not.toHaveValue('');
+    await expect(page.locator('#backup-key-fingerprint')).toHaveText(fingerprint);
+    await expect(page.locator('#backup-key-confirm input[name="fingerprint"]')).toHaveValue(fingerprint);
+    // (Confirming is left to the admin: it records a setting.)
+  });
+
   test('the restore button waits for the site name', async ({ page }) => {
     await page.goto('/admin/backup');
     test.skip((await page.locator('#restore-card').count()) === 0, 'this instance keeps no databases');

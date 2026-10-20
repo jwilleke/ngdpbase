@@ -148,7 +148,8 @@ const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
   listBackups: vi.fn(),
   listStoredBackups: vi.fn().mockResolvedValue([]),
-  isRestoreRunning: vi.fn().mockReturnValue(false)
+  isRestoreRunning: vi.fn().mockReturnValue(false),
+  backupKeyInfo: vi.fn().mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: true })
 };
 
 const mockConfigManager = {

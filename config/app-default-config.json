@@ -414,6 +414,10 @@
   "ngdpbase.attachment.provider.basic.hashmethod": "sha256",
   "_comment_attachment_legacy_private": "Migrate-FROM folder under attachment storagedir (pre-#1386 attachments/private/{user}/). Not a live write target. Destination is the page store under pages storagedir.",
   "ngdpbase.attachment.provider.basic.legacyprivateroot": "private",
+  "_comment_files_migration": "Files migration (#1859, epic #1851): values the dry run (npm run files:migration:dry) and, later, the copy apply. owner-map maps an uploader a record names to a username, and is applied first (e.g. {\"jim@willeke.com\": \"jim\", \"Unknown\": \"jim\"}). default-owner is given to a public file whose record names no user (Unknown, empty, or an email used as a name) and that owner-map does not cover. clash-suffix-digits is the width of the suffix two different files with the same name in one place get: 3 gives report-001.pdf.",
+  "ngdpbase.files.migration.owner-map": {},
+  "ngdpbase.files.migration.default-owner": "admin",
+  "ngdpbase.files.migration.clash-suffix-digits": 3,
   "ngdpbase.directories.templates": "./templates",
   "ngdpbase.directories.exports": "${FAST_STORAGE}/exports",
   "ngdpbase.directories.resources": "./resources",
@@ -2253,6 +2257,13 @@
         "on-failure": "refuse"
       }
     },
+    "backup-restore-applied": {
+      "description": "A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
     "addon-install": {
       "description": "An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830)",
       "grantable": false,
@@ -2860,6 +2871,8 @@
   "ngdpbase.backup.auto-backup-days": "daily",
   "_comment_backup_restore_manifest": "#1876 — the record of a whole-site restore staged for the next start: which parts (attachments, role membership, persons, organizations, public footnotes and comments, databases) are staged beside their live data, and whether the set is complete. Each part goes in at the next start only when every part does; otherwise each is set aside as *.incomplete. Becomes <file>.last once the start has applied or refused it. Instance data: keep it in FAST_STORAGE.",
   "ngdpbase.backup.restore-manifest": "${FAST_STORAGE}/site-restore.json",
+  "_comment_backup_key_saved": "#1876: the fingerprint of the backup key (NGDPBASE_BACKUP_KEY) an admin confirmed is saved off the server, set from Admin -> Backup. Empty: the dashboard asks for the key to be saved. A different key asks again. The fingerprint never reveals the key.",
+  "ngdpbase.backup.key-saved-fingerprint": "",
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

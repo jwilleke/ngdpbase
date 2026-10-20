@@ -2,6 +2,7 @@ import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './Base
 import type { ProviderInfo, StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
+import { UNKNOWN_UPLOADER } from '../types/Asset.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
 import { ExifTool } from 'exiftool-vendored';
@@ -293,8 +294,13 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   /**
    * Initialize the provider
    * All configuration access via ConfigurationManager
+   *
+   * @param options.readOnly - Open for reading only (#1852): load the index and
+   *   change nothing on disk. No staged restore is applied, no folder is
+   *   created, and neither start-up migration (legacy private files, stale
+   *   paths) runs. For an operator report such as the files dry run.
    */
-  async initialize(): Promise<void> {
+  async initialize(options: { readOnly?: boolean } = {}): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) {
       throw new Error('BasicAttachmentProvider requires ConfigurationManager');
@@ -354,6 +360,13 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       : 'private';
     this.legacyPrivateDir = path.join(this.storageDirectory, legacyRoot);
     this.thumbDir = path.join(this.storageDirectory, '.thumbs');
+
+    if (options.readOnly) {
+      await this.loadMetadata();
+      this.initialized = true;
+      logger.info(`[BasicAttachmentProvider] Opened read-only with ${this.attachmentMetadata.size} attachments.`);
+      return;
+    }
 
     // #1876: a staged site restore goes in before the metadata is read.
     this.restoreAtStart = applyAttachmentFilesAtStart(this.filePlaces(), siteRestoreFile(configManager));
@@ -784,7 +797,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       size: schemaMetadata.contentSize,
       url: `/attachments/${schemaMetadata.identifier}`,
       uploadedAt: schemaMetadata.dateCreated,
-      uploadedBy: schemaMetadata.author?.name || 'Unknown',
+      uploadedBy: schemaMetadata.author?.name || UNKNOWN_UPLOADER,
       filePath: schemaMetadata.storageLocation,
       description: schemaMetadata.description,
       isPrivate: schemaMetadata.isPrivate,
@@ -845,7 +858,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
         size: metadata.contentSize,
         url: `/attachments/${metadata.identifier}`,
         uploadedAt: metadata.dateCreated,
-        uploadedBy: metadata.author?.name || 'Unknown',
+        uploadedBy: metadata.author?.name || UNKNOWN_UPLOADER,
         filePath,
         description: metadata.description
       };
@@ -898,7 +911,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
         size: buffer.length,
         url: `/attachments/${attachmentId}`,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: 'Unknown',
+        uploadedBy: UNKNOWN_UPLOADER,
         filePath
       };
 
@@ -1335,7 +1348,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       mimeType: schemaMetadata.encodingFormat,
       size: schemaMetadata.contentSize,
       uploadedAt: schemaMetadata.dateCreated,
-      uploadedBy: schemaMetadata.author?.name || 'Unknown',
+      uploadedBy: schemaMetadata.author?.name || UNKNOWN_UPLOADER,
       filePath: schemaMetadata.storageLocation,
       description: schemaMetadata.description,
       isPrivate: schemaMetadata.isPrivate,
@@ -1447,7 +1460,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       encodingFormat: schema.encodingFormat,
       size: schema.contentSize,
       uploadedAt: schema.dateCreated,
-      uploadedBy: schema.author?.name || 'Unknown',
+      uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
       filePath: schema.storageLocation,
       description: schema.description,
       // Slice 5 of #755 (#759) — embedded document metadata fields surfaced
@@ -1498,7 +1511,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       size: schema.contentSize,
       url: `/attachments/${schema.identifier}`,
       uploadedAt: schema.dateCreated,
-      uploadedBy: schema.author?.name || 'Unknown',
+      uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
       filePath: schema.storageLocation,
       description: schema.description
     })));
@@ -1524,7 +1537,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
           size: schema.contentSize,
           url: `/attachments/${schema.identifier}`,
           uploadedAt: schema.dateCreated,
-          uploadedBy: schema.author?.name || 'Unknown',
+          uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
           filePath: schema.storageLocation,
           description: schema.description
         };
@@ -2078,6 +2091,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       dateCreated: schema.dateCreated,
       dateModified: schema.dateModified,
       author: schema.author?.name,
+      ...(schema.editor?.name ? { editor: schema.editor.name } : {}),
       description: schema.description,
       // #999: surfaces both upload-extracted and user-edited keywords.
       keywords: schema.documentKeywords ?? [],

@@ -12,16 +12,11 @@ import path from 'path';
 import EmailManager, { SEND_FAILING_REASON, SEND_FAILING_TITLE } from '../EmailManager';
 import NotificationManager from '../NotificationManager';
 import logger from '../../utils/logger';
+import { loggedText } from './__fixtures__/loggedText';
 
 const BODY = 'SECRET-BODY-TEXT do not log me';
 const ADDRESS = 'bob.private@example.org';
 
-function allLogLines(): string {
-  const l = logger as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-  return ['error', 'warn', 'info', 'debug']
-    .flatMap((level) => l[level].mock.calls.map((c) => c.map(String).join(' ')))
-    .join('\n');
-}
 
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
@@ -84,7 +79,7 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
     expect(line).toContain('Your reservation');
     expect(line).toContain('Recipient address rejected');
 
-    const everything = allLogLines();
+    const everything = loggedText();
     expect(everything).not.toContain(ADDRESS);
     expect(everything).not.toContain('bob.private');
     expect(everything).not.toContain('SECRET-BODY');

@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { evaluateSeededAddonPage, pageSourceHash } from '../../../dist/src/utils/addonPageSync.js';
 import type { SeededAddonPageStatus } from '../../../dist/src/utils/addonPageSync.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
+import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
 import { administratorUsernames } from '../../../dist/src/utils/administrators.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
@@ -326,6 +328,9 @@ export default class FormsDataManager {
   }
 
   async initialize(): Promise<void> {
+    // #1876: a staged site restore puts the backed-up forms folder in place before it is read.
+    const configManager = this.engine?.getManager?.('ConfigurationManager') as { getResolvedDataPath(key: string, def: string): string } | null | undefined;
+    if (configManager) applyDirectoryPartAtStart('FormsDataManager', this.dataPath, configManager);
     await fsp.mkdir(path.join(this.dataPath, 'definitions'), { recursive: true });
     await fsp.mkdir(path.join(this.dataPath, 'submissions'), { recursive: true });
     await this.loadDefinitions();
@@ -599,5 +604,21 @@ export default class FormsDataManager {
     } catch {
       return undefined;
     }
+  }
+
+  // ── Backup (#1876) ──────────────────────────────────────────────────────────
+
+  /** The forms folder — definitions and submissions — as `<stem>.forms.tar` beside the backup document (`.tar.enc` under the backup key). */
+  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('FormsDataManager', 'forms', this.dataPath, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore; the live folder is untouched until then. */
+  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await stageDirectoryPart('FormsDataManager', this.dataPath, backupData, options);
+  }
+
+  restoreIsStaged(): boolean {
+    return true;
   }
 }

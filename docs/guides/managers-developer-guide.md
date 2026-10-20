@@ -1,9 +1,9 @@
 ---
 name: Managers and providers developer guide
 description: How to add a manager or provider — one door per resource, config selects the implementation
-dateModified: 2026-10-19
+dateModified: 2026-10-20
 category: guides
-relatedModules: [BaseManager, BaseProvider]
+relatedModules: [BaseManager, BaseProvider, FileManager]
 ---
 
 # Managers and providers developer guide
@@ -20,6 +20,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - Authorization and audit happen at the manager door, with an `ActorContext`. See [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md).
 - A manager whose data can appear on a page bumps its cache topic after every write, through one write helper at its door (`CacheManager.bump`). See [caching-developer-guide.md](caching-developer-guide.md).
 - A manager that needs the site closed puts it in maintenance mode through the one door, below. It never throws to stop the boot over something an administrator can fix, and never writes its own gate.
+- Server log: domain only; audit keeps addresses. A full email address never reaches the server log: a log line names the address's domain, through `emailDomain()`, and an error that may quote an address goes through `errorForLog()` (`src/utils/emailForLog.ts`). Audit records are not the server log and keep the full address an event carries; never pass them through these helpers (operator, 2026-10-20, [#1916](https://github.com/jwilleke/ngdpbase/issues/1916)). A failed send is logged once, by EmailManager; a caller does not log the error again.
 
 ## Maintenance mode has one owner
 
@@ -32,6 +33,15 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - __What visitors see:__ the manager's message if it passed one, else `ngdpbase.features.maintenance.message` (any text an administrator sets), else the retired `ngdpbase.managers.addons-manager.site-critical.public-message` when a site set it, else the shipped message; the estimate likewise from `ngdpbase.features.maintenance.estimated-duration`. Never a reason, on the page or in `/health/readiness`.
 - __Who gets in:__ a failure keeps everyone, administrators included, to `/admin`, `/login` and `/logout`, and `/health/readiness` answers 503. The admin switch alone lets administrators with `admin-system` use the whole site, when `ngdpbase.features.maintenance.allow-admins` is true.
 - __What administrators see:__ every reason in the startup log and on the admin dashboard, plus whatever notification the manager sends (the add-on and database failures send a critical one).
+
+## Files have one door
+
+`FileManager` owns files: the file record (`FileRecord`, `src/types/File.ts`), where a file lives (public or a vault), its owner and its system-category, for every type ([#1852](https://github.com/jwilleke/ngdpbase/issues/1852), epic [#1851](https://github.com/jwilleke/ngdpbase/issues/1851), operator 2026-10-20). It is the door and, as later steps land, the only writer of files.
+
+- __Today it reads only__, over AttachmentManager: today's attachments as file records. AttachmentManager still writes them, until FileManager takes the writes over.
+- __Ask it, not around it__: code that needs "the files this person may read" calls `FileManager.list` / `get` / `findByName` with the caller's context. It asks the PDP for `asset-read` and leaves the vault rule to AttachmentManager's vault reads, so neither rule has a second home.
+- __PageManager keeps pages__ and its own index for a long time (decision log, round 2); intake is ImportManager, extended, handing pages to PageManager and files to FileManager.
+- Details and what is built when: [storage developer guide](storage-developer-guide.md#files-one-record-one-door), [FileManager.md](../managers/FileManager.md).
 
 ## How to add a manager
 
@@ -67,5 +77,6 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - [#1109](https://github.com/jwilleke/ngdpbase/issues/1109)
 - [#1167](https://github.com/jwilleke/ngdpbase/issues/1167)
 - [#1136](https://github.com/jwilleke/ngdpbase/issues/1136)
-- [#1916](https://github.com/jwilleke/ngdpbase/issues/1916): EmailManager reports every failed send ([EmailManager](../managers/EmailManager.md#when-a-send-fails)), but the count and the open notice are held in memory, so a restart starts a new notice. Outside EmailManager's own failure line, the full recipient address still reaches the log: the success lines of `NodemailerMailProvider`, `MagicLinkAuthProvider` and NotificationManager's escalation, and the raw error that `MagicLinkAuthProvider` and the escalation log again after EmailManager has reported it. Second-factor enrolment shows the transport's error text to the person who asked.
+- [#1852](https://github.com/jwilleke/ngdpbase/issues/1852): FileManager reads only; files are still written through AttachmentManager. Its gaps are in the [storage developer guide](storage-developer-guide.md#known-gaps).
+- [#1916](https://github.com/jwilleke/ngdpbase/issues/1916): EmailManager reports every failed send ([EmailManager](../managers/EmailManager.md#when-a-send-fails)), but the count and the open notice are held in memory, so a restart starts a new notice. Second-factor enrolment shows the transport's error text to the person who asked.
 - [#1906](https://github.com/jwilleke/ngdpbase/issues/1906): editing `ngdpbase.features.maintenance.enabled` on the configuration screen, rather than with the toggle, takes effect at the next restart. AuditManager and the TLS and egress checks send no notification of their own; their reasons are on the admin dashboard and in the log.

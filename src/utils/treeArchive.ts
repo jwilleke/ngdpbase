@@ -17,11 +17,21 @@
  *   left out of a backup, and named; one in an archive refuses the extract.
  * - __Paths are data__: an extract refuses an entry that is absolute or
  *   climbs out of its folder (`strict`), never writing outside `dest`.
+ * - __Encrypted under the backup key__ when one is given (#1561, #1876): the
+ *   archive is streamed through `backupCrypto.ts` as it is written, and an
+ *   extract or a listing given the key decrypts it as it reads. One that is
+ *   encrypted is never read without the key, one made under another key is
+ *   refused by its fingerprint, and given a key a plain archive is refused:
+ *   it is not the one the backup wrote.
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { create as createTar, extract as extractTar, type ReadEntry } from 'tar';
+import { Readable, type Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { create as createTar, extract as extractTar, list as listTar, type ReadEntry } from 'tar';
 import type { Stats } from 'node:fs';
+import { decryptBuffer, decryptStream, encryptBuffer, encryptStream, fileIsEncrypted } from './backupCrypto.js';
+import { BACKUP_KEY_ENV } from './backupKey.js';
 
 export interface TreeArchiveOutcome {
   /** Regular files written. */
@@ -43,7 +53,7 @@ const EMPTY_TAR = Buffer.alloc(1024);
 export async function writeTreeArchive(
   target: string,
   root: string,
-  options: { entries?: string[]; exclude?: (relative: string) => boolean } = {}
+  options: { entries?: string[]; exclude?: (relative: string) => boolean; backupKey?: string } = {}
 ): Promise<TreeArchiveOutcome> {
   if (existsSync(target)) throw new Error(`${path.basename(target)} already exists; a backup never overwrites one`);
   const outcome: TreeArchiveOutcome = { files: 0, bytes: 0, skipped: [] };
@@ -52,15 +62,13 @@ export async function writeTreeArchive(
     .filter((e) => !options.exclude?.(toPosix(e)))
     .sort();
   if (entries.length === 0) {
-    writeFileSync(target, EMPTY_TAR, { mode: 0o600, flag: 'wx' });
+    writeFileSync(target, options.backupKey ? await encryptBuffer(EMPTY_TAR, options.backupKey) : EMPTY_TAR, { mode: 0o600, flag: 'wx' });
     return outcome;
   }
   try {
-    await createTar({
-      file: target,
+    const tarOptions = {
       cwd: root,
       portable: true,
-      mode: 0o600,
       filter: (p: string, stat: Stats | ReadEntry) => {
         const relative = toPosix(path.normalize(p));
         if (options.exclude?.(relative)) return false;
@@ -74,7 +82,13 @@ export async function writeTreeArchive(
         outcome.bytes += s.size;
         return true;
       }
-    }, entries);
+    };
+    if (options.backupKey) {
+      const pack = createTar(tarOptions, entries) as unknown as Readable;
+      await pipeline(pack, encryptStream(options.backupKey), createWriteStream(target, { flags: 'wx', mode: 0o600 }));
+    } else {
+      await createTar({ ...tarOptions, file: target, mode: 0o600 }, entries);
+    }
   } catch (err) {
     rmSync(target, { force: true });
     throw err;
@@ -91,19 +105,19 @@ export async function writeTreeArchive(
 export async function extractTreeArchive(
   archive: string,
   dest: string,
-  options: { select?: (relative: string) => boolean; strip?: number } = {}
+  options: { select?: (relative: string) => boolean; strip?: number; backupKey?: string } = {}
 ): Promise<{ files: number; bytes: number }> {
   if (!existsSync(archive) || !statSync(archive).isFile()) throw new Error(`${path.basename(archive)} is missing`);
+  const source = await openArchive(archive, options.backupKey);
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   // An archive of an empty folder is only its end blocks, which a strict read refuses.
-  if (statSync(archive).size === EMPTY_TAR.length && (await readHead(archive, EMPTY_TAR.length)).equals(EMPTY_TAR)) return { files: 0, bytes: 0 };
+  if (source.empty) return { files: 0, bytes: 0 };
   const refused: string[] = [];
   let files = 0;
   let bytes = 0;
   try {
-    await extractTar({
-      file: archive,
+    const unpackOptions = {
       cwd: dest,
       strict: true,
       preservePaths: false,
@@ -123,7 +137,9 @@ export async function extractTreeArchive(
         }
         return true;
       }
-    });
+    };
+    if (source.into) await source.into(extractTar(unpackOptions) as unknown as Writable);
+    else await extractTar({ ...unpackOptions, file: archive });
   } catch (err) {
     rmSync(dest, { recursive: true, force: true });
     throw new Error(`${path.basename(archive)} could not be read: ${(err as Error).message}`, { cause: err });
@@ -133,6 +149,50 @@ export async function extractTreeArchive(
     throw new Error(`${path.basename(archive)} holds entries that are not files or folders: ${refused.slice(0, 5).join(', ')}`);
   }
   return { files, bytes };
+}
+
+/** An encrypted archive this small is decrypted whole, to recognise an empty one; anything larger streams. */
+const SMALL_ENCRYPTED = 64 * 1024;
+
+/**
+ * How to read an archive: plain (`stream` absent, tar reads the file), or
+ * decrypted as a stream. `empty` when it holds no entry at all. Throws for an
+ * encrypted archive with no key or another key, before anything is written.
+ */
+async function openArchive(archive: string, backupKey: string | undefined): Promise<{ empty: boolean; into?: (sink: Writable) => Promise<void> }> {
+  const name = path.basename(archive);
+  if (!(await fileIsEncrypted(archive))) {
+    // A backup that says its archive is encrypted never takes a plain one in its place.
+    if (backupKey) throw new Error(`${name} is not encrypted, but the backup says it is: it was replaced or damaged`);
+    const empty = statSync(archive).size === EMPTY_TAR.length && (await readHead(archive, EMPTY_TAR.length)).equals(EMPTY_TAR);
+    return { empty };
+  }
+  if (!backupKey) throw new Error(`${name} is encrypted under a backup key, and none was given to read it (${BACKUP_KEY_ENV} is not set, or the backup does not say the archive is encrypted)`);
+  if (statSync(archive).size <= SMALL_ENCRYPTED) {
+    let plain: Buffer;
+    try {
+      plain = await decryptBuffer(await readHead(archive, SMALL_ENCRYPTED), backupKey);
+    } catch (err) {
+      throw new Error(`${name} could not be read: ${(err as Error).message}`, { cause: err });
+    }
+    if (plain.length === EMPTY_TAR.length && plain.equals(EMPTY_TAR)) return { empty: true };
+    return { empty: false, into: (sink) => pipeline(Readable.from([plain]), sink) };
+  }
+  // The decrypting stream checks the header (a wrong key is refused) before it passes on any byte.
+  return { empty: false, into: (sink) => pipeline(createReadStream(archive), decryptStream(backupKey), sink) };
+}
+
+/**
+ * Every entry in an archive, plain or encrypted, read as a stream: what a
+ * caller checks before extracting. `onEntry` gets each entry's path and type.
+ */
+export async function listTreeArchive(archive: string, onEntry: (entry: { path: string; type: string }) => void, options: { backupKey?: string } = {}): Promise<void> {
+  if (!existsSync(archive) || !statSync(archive).isFile()) throw new Error(`${path.basename(archive)} is missing`);
+  const source = await openArchive(archive, options.backupKey);
+  if (source.empty) return;
+  const listOptions = { onReadEntry: (e: ReadEntry) => onEntry({ path: e.path, type: e.type }) };
+  if (source.into) await source.into(listTar(listOptions) as unknown as Writable);
+  else await listTar({ ...listOptions, file: archive });
 }
 
 /** The first `n` bytes of a file, read without reading the rest. */
