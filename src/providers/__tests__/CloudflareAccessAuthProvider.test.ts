@@ -16,6 +16,7 @@ import {
   type JWTVerifyGetKey
 } from 'jose';
 import { CloudflareAccessAuthProvider } from '../CloudflareAccessAuthProvider';
+import { loggedText } from '../../managers/__tests__/__fixtures__/loggedText';
 
 const TEAM_DOMAIN = 'test.cloudflareaccess.com';
 const APP_AUD = 'test-aud-tag-12345';
@@ -109,6 +110,18 @@ describe('CloudflareAccessAuthProvider (#649)', () => {
     const result = await provider.verify({ token });
     expect(result).toEqual({ username: 'jim' });
     expect(created).toHaveLength(0);
+  });
+
+  test('the JIT-provisioned log line names the domain only, never the address (#1916)', async () => {
+    vi.clearAllMocks();
+    const { engine, created } = buildEngine([]);
+    const provider = buildProvider(engine);
+    const token = await mintJwt({ email: 'newuser@example.com', name: 'New User' });
+    await provider.verify({ token });
+    expect(created[0]).toMatchObject({ email: 'newuser@example.com' });
+    const text = loggedText();
+    expect(text).toContain('JIT-provisioned user: newuser (an address at example.com)');
+    expect(text).not.toContain('newuser@example.com');
   });
 
   test('a JIT-provisioned account signs in by its name as stored, not the name derived for it (#1882)', async () => {

@@ -5,6 +5,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
+import { emailDomain } from '../utils/emailForLog.js';
 import { isReservedUsername } from '../utils/username.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
@@ -458,7 +459,9 @@ class UserManager extends BaseManager {
     if (shared.length === 0) return;
     const detail = shared.map(([email, names]) => `${email}: ${names.join(', ')}`).join('; ');
     const reason = `${shared.length} email address(es) are shared by more than one account — give each account its own (Admin → Users). Sign-in by email refuses them until then (#1748)`;
-    logger.error(`👤 ${reason}. ${detail}`);
+    // #1916: the log names each address's domain only; the notice names the address.
+    const logDetail = shared.map(([email, names]) => `an address at ${emailDomain(email)}: ${names.join(', ')}`).join('; ');
+    logger.error(`👤 ${reason}. ${logDetail}`);
     if (this.markDegraded(reason)) {
       try {
         await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
