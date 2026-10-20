@@ -1,7 +1,7 @@
 ---
 name: Storage developer guide
 description: Where an add-on's pages, files and data live — declaring a system-category with its own vault, the fields that decide privacy and encryption, writing through the doors, and the gaps
-dateModified: 2026-10-19
+dateModified: 2026-10-20
 category: guides
 relatedModules: [ValidationManager, PageManager, AttachmentManager, ShareManager, DatabaseManager]
 ---
@@ -109,6 +109,7 @@ An add-on that keeps rows of its own declares its database in its `config/defaul
 
 - __Pages__ go through `PageManager`, with the caller's context. A private page's name is `vaults/{owner}/{vaultid}/{title}`. `npm run lint:page-door` fails on any other page write.
 - __Files__ (PDFs, images, DICOM) go through `AttachmentManager`. An upload is either an attachment, on a page, or a saved file; __every attachment of a vault page is stored in that vault__ (operator, 2026-10-16, [#1842](https://github.com/jwilleke/ngdpbase/issues/1842)). A file uploaded onto a vault page goes into its vault, a shared file attached to one is copied in, and when a page moves into a vault, out of one or between two its files move with it under the same id ([private-stores.md](../private-stores.md#files)). A vault's files are just files, under the vault's own access controls. Never point a vault page at a file in the shared pool: the pool serves it to anyone with `asset-read`.
+- __An upload records who uploaded it by username__, taken from the context the door was given, as the file's author and editor, public or vault. Never an email, never `Unknown`. No one uploads anonymously (operator, 2026-10-20, on [#1852](https://github.com/jwilleke/ngdpbase/issues/1852)): with nobody signed in (the anonymous subject, a share visitor, a job with no person behind it) the upload is refused after policy and before anything is written, and the route answers 401 ([#1926](https://github.com/jwilleke/ngdpbase/issues/1926)). An add-on uploading for a person forwards that person's context; one uploading for itself uses `jobContextFromSystem`.
 - __Footnotes and comments__ go through `FootnoteManager` and `CommentManager`, naming the page as `{ name, uuid }` with the caller's context. A vault page's are kept in its vault and sealed with it; the name, not the uuid, says where ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839), [private-stores.md](../private-stores.md#footnotes-and-comments)). Never key anything belonging to a vault page by uuid alone in a folder outside the vault.
 - __Never__ write into `pages/` or `pages/vaults/` directly. The doors apply encryption, the owner checks, the audit record and the indexes.
 - An encrypted vault needs its owner's key, unlocked by their sign-in. A write without it is refused, never written in the clear. Whether a vault is sealed is fixed when it is created (its `store.json`), so decide `encrypt` before the first page is written.
@@ -138,6 +139,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __A takeout's footnotes and comments are not imported__ (#1839). The takeout carries them, decrypted, and the import lists them as ignored.
 - __Operator scripts that walk `pages/` recursively__ (`migrate-private-field`, `migrate-vocabulary-slice1`, `migrate-user-pages-category`, `repair-jspwiki-frontmatter`, `migrate-page-acl-to-frontmatter`) also go into vaults. They can't read sealed files, so they leave them alone, but they do rewrite plaintext in vaults that aren't sealed. `migrate-page-created` used to rewrite sealed files too, and now skips them (#1836).
 - __`ImportManager` `targetDir`__ writes raw files to any folder it is given, and no caller passes it today. Pointing it into a vault would bypass store I/O (#1836).
+- __Uploads before [#1926](https://github.com/jwilleke/ngdpbase/issues/1926) may name their uploader by email or as `Unknown`__. A public upload recorded the email, or `Unknown` when there was none, because the door handed the provider `name` and the provider read `username`. Those records are left as they are; the files migration's owner mapping ([#1859](https://github.com/jwilleke/ngdpbase/issues/1859)) assigns them an owner.
 - __A site override of the journal's owner fields is now ignored__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)). The journal's entry moved from core config to the add-on, so a site whose `app-custom-config.json` sets `encrypt`, `defaultPrivate` or `shareMaxDays` on `journal` gets the journal's value and a startup warning. Vaults already sealed stay sealed; new ones follow the journal.
 
 - __An add-on that catches `openAddonDatabase`'s error still loads__ (#1860). It gets no connection, so nothing is written, but its status shows it as loaded. A `"required"` database with no key is caught before import and never gets this far; an undeclared owner or ledger is refused only when opened. Let the error leave `register()`.

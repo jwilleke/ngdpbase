@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-19'
+dateModified: '2026-10-20'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -36,7 +36,8 @@ const attachmentManager = engine.getManager('AttachmentManager');
 const attachment = await attachmentManager.uploadAttachment(
   fileBuffer,
   { originalName: 'doc.pdf', mimeType: 'application/pdf', size: 1024 },
-  { pageName: 'ProjectDocs', context: wikiContext }
+  wikiContext.userContext, // who is uploading: mandatory, positional
+  { pageName: 'ProjectDocs' }
 );
 
 // Get attachment
@@ -53,7 +54,7 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `uploadAttachment(buffer, fileInfo, options)` | `Promise<Object>` | Upload new attachment |
+| `uploadAttachment(buffer, fileInfo, ctx, options)` | `Promise<Object>` | Upload new attachment, recorded under `ctx`'s username ([below](#who-uploaded-it-1926)) |
 | `getAttachment(id)` | `Promise<{buffer, metadata}>` | Get attachment data and metadata |
 | `getAttachmentMetadata(id)` | `Promise<Object>` | Get metadata only |
 | `getAttachmentsForPage(pageName)` | `Promise<Array>` | List page attachments |
@@ -68,6 +69,12 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | `resolveAttachmentSrc(src, pageName, ctx)` | `Promise<{url, mimeType}\|null>` | Canonical src resolution used by Image/ATTACH plugins; the viewer's context reaches their own sealed files |
 | `getSealedAttachment(id, ctx)` | `Promise<{buffer, metadata}\|null>` | A file from the requester's own unlocked encrypted stores, decrypted (#1400) |
 | `getSealedAttachmentsForPage(pageName, ctx)` | `Promise<Array>` | The requester's own sealed files uploaded onto a page (#1400) |
+
+## Who uploaded it (#1926)
+
+An upload's author and editor are the uploader's __username__, read from the context passed to `uploadAttachment`. The provider is handed `{ username }` (the `User` type in `BaseAttachmentProvider`); an email is never recorded as the uploader, and nothing is recorded as `Unknown`.
+
+No one uploads anonymously. After policy allows the upload and before anything is written, a context with no username, or the anonymous subject's (`Anonymous`, which a share visitor carries too), is refused with `Permission denied: you must be signed in to upload a file`; the upload route answers it 401. `BasicAttachmentProvider.storeAttachment` also refuses a call that names no username. A vault upload by nobody is refused earlier, by the vault's container rule. Records written before #1926 keep what they have.
 
 ## Attachment Resolution Order
 
