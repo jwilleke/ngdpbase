@@ -10,6 +10,7 @@
  */
 
 import logger from '../utils/logger.js';
+import { emailDomain, redactEmailAddresses } from '../utils/emailForLog.js';
 
 /**
  * An outbound email message.
@@ -35,13 +36,15 @@ export interface MailProvider {
 /**
  * Development transport — writes the email to the server log instead of
  * sending it. Useful for local installs where no SMTP server is available.
+ * Like every log line, it names the recipient's domain only, and any address
+ * in the body is cut to its domain (#1916).
  */
 export class ConsoleMailProvider implements MailProvider {
   send(message: MailMessage): Promise<void> {
     logger.info('[ConsoleMailProvider] ── Outbound email ─────────────────────');
-    logger.info(`[ConsoleMailProvider] To:      ${message.to}`);
+    logger.info(`[ConsoleMailProvider] To:      an address at ${emailDomain(message.to)}`);
     logger.info(`[ConsoleMailProvider] Subject: ${message.subject}`);
-    logger.info(`[ConsoleMailProvider] Body:\n${message.text}`);
+    logger.info(`[ConsoleMailProvider] Body:\n${redactEmailAddresses(message.text)}`);
     logger.info('[ConsoleMailProvider] ──────────────────────────────────────');
     return Promise.resolve();
   }
