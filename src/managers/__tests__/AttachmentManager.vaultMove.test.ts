@@ -147,7 +147,7 @@ describe('a page\'s files go where the page goes (#1842)', () => {
 
   /** A shared-pool file used by the pages named. */
   const poolFile = async (...usedBy: string[]): Promise<void> => {
-    await pool.storeAttachment(BYTES, FILE, {}, null);
+    await pool.storeAttachment(BYTES, FILE, {}, { username: 'molly' });
     if (usedBy.length > 0) await pool.setPoolMentions(ID, usedBy);
   };
 

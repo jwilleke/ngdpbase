@@ -5,7 +5,7 @@ import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
-import { toPermissionSubject } from '../context/JobContext.js';
+import { ANONYMOUS_USERNAME, toPermissionSubject } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -32,6 +32,8 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
+// #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
+import type { User } from '../providers/BaseAttachmentProvider.js';
 import { formatPrivatePageName, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
@@ -156,14 +158,6 @@ export interface UploadOptions {
 // `UserContext` this file used to declare recorded `unknown` when omitted;
 // a missing context now fails the permission check closed AND cannot be
 // omitted at compile time.
-
-/**
- * User object interface
- */
-export interface User {
-  name: string;
-  email?: string;
-}
 
 /**
  * Mention object (WebPage reference)
@@ -645,13 +639,6 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // The allow-list check and the served Content-Type both use this.
     fileInfo = { ...fileInfo, mimeType: resolveUploadMime(fileBuffer, fileInfo.mimeType) };
 
-    // The uploader, from the context. A request subject built from a session
-    // carries the account's fields; a JobContext carries a name only.
-    const user = {
-      name: ctx.username,
-      email: (ctx as { email?: string }).email || undefined
-    };
-
     // Destination (#1398): a new upload onto a private page is always private
     // and belongs to that page's author — the author owns the page and every
     // attachment uploaded onto it, whoever uploads. With no private page,
@@ -693,6 +680,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       if (!(await this.mayInVault(ctx, 'asset-upload', pageCreator, pageStore, 'upload'))) {
         throw new Error('Permission denied: You do not have permission to upload attachments');
       }
+      const author = AttachmentManager.uploaderOf(ctx);
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(
@@ -729,7 +717,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             originalName: fileInfo.originalName,
             mimeType: fileInfo.mimeType,
             description: options.description || '',
-            author: user.name,
+            author,
             ...(pageName ? { pageName } : {})
           }
         ));
@@ -744,6 +732,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
       }
     }
+
+    // #1926: the uploader is recorded by username, never an email.
+    const uploader = { username: AttachmentManager.uploaderOf(ctx) };
 
     // Create metadata (include privacy flags for provider). Destination is the
     // page store (#1386); ciphertext of those bytes is later.
@@ -760,7 +751,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     };
 
     // Store attachment via provider
-    const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user));
+    const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, uploader));
 
     logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}, store: ${pageStore ?? ''}]` : ''}`);
 
@@ -775,6 +766,23 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }, options.wikiContext);
 
     return attachmentMetadata;
+  }
+
+  /**
+   * The username an upload is recorded under (#1926): the person the context
+   * names. Asked after policy has allowed the upload and before anything is
+   * written; it decides nothing about authority, only whether there is
+   * someone to record. No one uploads anonymously (operator, 2026-10-20, on
+   * #1852), so the anonymous subject — a share visitor included — and a job
+   * with no person behind it are refused. A refusal reads 'Permission denied'
+   * so the route answers it as one (401 for an anonymous caller).
+   */
+  private static uploaderOf(ctx: ActorContext): string {
+    const username = typeof ctx.username === 'string' ? ctx.username.trim() : '';
+    if (!username || username === ANONYMOUS_USERNAME) {
+      throw new Error('Permission denied: you must be signed in to upload a file');
+    }
+    return username;
   }
 
   /** A file is added to a private page only by someone who may edit it: the page's own decision (#1398). */
