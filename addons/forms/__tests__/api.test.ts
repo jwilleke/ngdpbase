@@ -387,6 +387,36 @@ describe('POST /api/forms/submit/:formId — checklist', () => {
   });
 });
 
+// ── #1916: a failed confirmation email is reported, and the submission still succeeds
+
+describe('POST /api/forms/submit/:formId — confirmation email fails (#1916)', () => {
+  test('201 for the submitter; EmailManager records the failure and tells the administrators', async () => {
+    const { default: EmailManager } = await import('../../../dist/src/managers/EmailManager.js');
+    const createNotification = vi.fn(async () => 'notification_1');
+    // EmailManager's own engine: where its failure report goes.
+    const core: Record<string, unknown> = {
+      ConfigurationManager: { getProperty: (key: string, def: unknown) => (key === 'ngdpbase.mail.enabled' ? true : def) },
+      NotificationManager: { createNotification, updateNotificationMessage: vi.fn(async () => true) },
+      UserManager: { getUsers: async () => [{ username: 'admin' }] },
+      PolicyDecisionPoint: { userHoldsPermission: async (u: string) => u === 'admin' }
+    };
+    const emailManager = new EmailManager({ getManager: (n: string) => core[n] } as never);
+    await emailManager.initialize();
+    const send = vi.fn(async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:587'); });
+    (emailManager as unknown as { provider: unknown }).provider = { send };
+
+    const app = makeContext(makeEngine({ EmailManager: emailManager, ConfigurationManager: core.ConfigurationManager }));
+    const res = await request(app).post('/api/forms/submit/test-form').send({ name: 'Alice', email: 'alice@example.com' });
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+
+    await vi.waitFor(() => expect(createNotification).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(emailManager.isDeliveryFailing()).toBe(true);
+    expect(createNotification.mock.calls[0][0]).toMatchObject({ title: 'Email could not be sent', targetUsers: ['admin'] });
+  });
+});
+
 // ── Lines: an array of row objects (#1913) ────────────────────────────────────
 
 describe('POST /api/forms/submit/:formId — lines', () => {
@@ -502,7 +532,8 @@ describe('POST /api/forms/submit/:formId — submission email', () => {
     const engine = makeEngine({
       FormsDataManager: { getDefinition: () => emailForm, saveSubmission: async (s: object) => s },
       ConfigurationManager: { getProperty: () => '' },
-      EmailManager: { isEnabled: () => true, sendTo: async (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      // #1916: the route sends through sendInBackground, which never rejects.
+      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
       LedgerManager: {
         toFormOptions: async (_o: unknown, viewer: unknown) => {
           viewers.push(viewer);

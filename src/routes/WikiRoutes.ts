@@ -37,6 +37,7 @@ import SchemaGenerator from '../utils/SchemaGenerator.js';
 import {
   evaluateSeededAddonPage,
   REQUIRED_SOURCE_HASH_KEY,
+  syncRowState,
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
@@ -6789,7 +6790,12 @@ ${panes}
     const pending = this.pendingFor(req);
     if (!pending) { this.expiredSignIn(res); return; }
     const outcome = await this.authManagerFor2Step().sendEmailApproval(pending.handle, pending.binding);
-    const notice = outcome === 'too-soon' ? 'A link was sent less than a minute ago.' : outcome === 'unavailable' ? 'Email is not available right now.' : '';
+    const notice = {
+      'too-soon': 'A link was sent less than a minute ago.',
+      unavailable: 'Email is not available right now.',
+      failed: 'The approval email could not be sent. Try again later, or ask an administrator.', // #1916
+      sent: ''
+    }[outcome];
     res.redirect('/login/second-factor' + (notice ? `?notice=${encodeURIComponent(notice)}` : ''));
   }
 
@@ -7074,6 +7080,18 @@ ${panes}
         // ConfigurationManager.getBaseURL() at runtime. The provider is
         // only registered when base-url is explicitly configured.
         await authManager.initiate('magic-link', { email, redirect, deviceState });
+
+        // #1916: the person is waiting for the link, so say when email is
+        // failing. Asked of the site's mail state, not of this request's send,
+        // so every address gets the same answer and none is revealed as
+        // registered (the provider sends only to registered addresses unless
+        // auto-provision is on).
+        const mail = this.engine.getManager('EmailManager') as { isDeliveryFailing?(): boolean } | null;
+        if (mail?.isDeliveryFailing?.()) {
+          res.redirect('/login?error=' + encodeURIComponent('Email cannot be sent right now, so no sign-in link is on its way. Try again later or sign in another way.')
+            + (redirect !== '/' ? '&redirect=' + encodeURIComponent(redirect) : ''));
+          return;
+        }
       }
 
       // Always redirect with success — never reveal whether email exists
@@ -13062,8 +13080,7 @@ ${panes}
           // has (`created`), and a whole-file compare kept a synced page
           // 'modified' forever.
           const seedStatus = WikiRoutes.requiredPageStatus(sourceContent, destBody, destData);
-          userModified = destData['user-modified'] === true || seedStatus === 'locally-modified';
-          status = seedStatus === 'current' ? 'current' : 'modified';
+          ({ status, userModified } = syncRowState(seedStatus, destData['user-modified'] === true));
 
           // Detect title drift: source title vs live title
           const liveTitleRaw = (destData.title as string | undefined) || '';
@@ -13181,8 +13198,7 @@ ${panes}
                   ? (destParsed.data['addon-source-hash'])
                   : undefined
               });
-              userModified = destParsed.data['user-modified'] === true || seedStatus === 'locally-modified';
-              status = seedStatus === 'current' ? 'current' : 'modified';
+              ({ status, userModified } = syncRowState(seedStatus, destParsed.data['user-modified'] === true));
             }
 
             addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, liveUuid });

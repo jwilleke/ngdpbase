@@ -756,15 +756,24 @@ An add-on that ships forms for the bundled forms add-on registers each one in it
 ```ts
 const forms = engine.getManager<FormsDataManager>('FormsDataManager');
 await forms?.registerShippedForm('my-addon', definition);
+// a change your add-on cannot work without (#1918):
+await forms?.registerShippedForm('my-addon', definition, { required: true });
 ```
 
 The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
 
 - No copy on the site: it is saved. That is the first install.
-- The copy is what you ship: `up to date`.
-- You ship a change and the copy is unedited since it was stamped: `update available` in the forms admin (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
-- The copy was edited in the form builder (its hash no longer matches its stamp): `edited here`. Sync never replaces it; __Replace my edits__ does, after the admin confirms.
-- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as `update available`, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+- The copy is what you ship: __Current__.
+- You ship a change and the copy is unedited since it was stamped: __Modified__ in the forms admin's Shipped Forms (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
+- The copy was edited in the form builder (its hash no longer matches its stamp): __Modified__ and __User Edited__. Sync never replaces it; __Force Sync__ does, after the admin confirms.
+- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as __Modified__, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+
+The status words, badges and Sync / Force Sync are Admin → Required Pages' own ([#1918](https://github.com/jwilleke/ngdpbase/issues/1918)), drawn by core's shared partials `views/_sync-status.ejs`, `views/_sync-button.ejs` and `views/_sync-counts.ejs` from `syncRowState` (`src/utils/addonPageSync.ts`). Any add-on screen that syncs shipped content uses them rather than its own design.
+
+A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `data/forms/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
+
+- Ordinary change: an info notice, "Form update available: …".
+- `{ required: true }`: what ships now is needed for your add-on to work. The notice is critical ("Critical: form … needs syncing", error level), as a failed add-on load is ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883)), and the forms admin flags the form __Required__ until it is synced. Mark only a change your add-on breaks without, such as a field your handler now reads.
 
 `registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
 
