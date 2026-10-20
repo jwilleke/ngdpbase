@@ -342,20 +342,20 @@ class OrganizationManager extends BaseManager {
 
   // ── The door (#1930) ─────────────────────────────────────────────────────
   //
-  // Each call takes the caller's context first, asks the PDP for
-  // `contact-manage`, and records each change as the `contact-manage` audit
+  // Each call takes the caller's context first and asks the PDP: `contact-read` to read,
+  // `contact-manage` to change; each change is recorded as the `contact-manage` audit
   // event; a refusal throws ContactRefusedError. getById / getByFile /
   // getInstallOrg stay context-free lookups for core's own paths.
 
-  /** Every organization, for a caller who may manage contacts. */
+  /** Every organization, for a caller who may read contacts (`contact-read`). */
   async list(ctx: ActorContext): Promise<Organization[]> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     return this.requireProvider().list();
   }
 
-  /** One organization by `@id`, for a caller who may manage contacts. */
+  /** One organization by `@id`, for a caller who may read contacts (`contact-read`). */
   async get(ctx: ActorContext, id: string): Promise<Organization | null> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     return this.getById(id);
   }
 
@@ -365,7 +365,7 @@ class OrganizationManager extends BaseManager {
    * most `limit` (`ngdpbase.application.organization.search.limit` by default).
    */
   async search(ctx: ActorContext, query: string, options: { limit?: number } = {}): Promise<Organization[]> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     const configured = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')
       ?.getProperty('ngdpbase.application.organization.search.limit', 50));
     const limit = options.limit ?? (Number.isFinite(configured) && configured > 0 ? configured : 50);
@@ -386,7 +386,7 @@ class OrganizationManager extends BaseManager {
    * with the role they hold there, when one is given.
    */
   async people(ctx: ActorContext, organizationId: string): Promise<Array<{ person: Person; role?: string }>> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     const persons = this.engine.getManager<{ list(ctx: ActorContext): Promise<Person[]> }>('PersonManager');
     if (!persons) return [];
     const out: Array<{ person: Person; role?: string }> = [];
@@ -404,7 +404,7 @@ class OrganizationManager extends BaseManager {
    * other records take one from the url or name.
    */
   async create(ctx: ActorContext, org: OrganizationInput, filename?: string): Promise<Organization> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     if (!org || typeof org.name !== 'string' || !org.name.trim()) throw new Error('OrganizationManager.create: an organization needs a name');
     const record: Organization = {
       ...org,
@@ -423,7 +423,7 @@ class OrganizationManager extends BaseManager {
   }
 
   async update(ctx: ActorContext, id: string, patch: OrganizationUpdate): Promise<Organization | null> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().update(id, patch);
     this.invalidateCache();
     if (result) {
@@ -436,7 +436,7 @@ class OrganizationManager extends BaseManager {
   }
 
   async delete(ctx: ActorContext, id: string): Promise<boolean> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().delete(id);
     this.invalidateCache();
     if (result) await recordContactChange(this.engine, ctx, { kind: 'organization', operation: 'delete', id });

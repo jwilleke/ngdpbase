@@ -23,7 +23,7 @@
             <label class="form-check-label" for="accountless">Only people with no account</label>
         </div>
         <div class="col-auto">
-            <button type="submit" class="btn btn-primary"<%- lockedUnless('contact-manage') %>>Search</button>
+            <button type="submit" class="btn btn-primary"<%- lockedUnless('contact-read') %>>Search</button>
         </div>
     </form>
 
@@ -73,7 +73,7 @@
                                             <%= p.account %>
                                         <% } else { %>
                                             <div class="d-flex gap-2">
-                                            <% if (typeof can === 'function' && can('user-edit')) { %>
+                                            <% if (typeof can === 'function' && can('contact-manage') && can('user-edit')) { %>
                                                 <form action="/admin/contacts/link" method="POST" class="d-flex gap-2">
                                                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                                     <input type="hidden" name="personId" value="<%= p.id %>">

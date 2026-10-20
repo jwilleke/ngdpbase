@@ -2,9 +2,11 @@
  * The contacts door's one decision and its one record (#1930).
  *
  * PersonManager and OrganizationManager are the enforcement points for
- * contacts. Both ask the PDP the same question, `contact-manage`, with the
- * caller's context, and both record what they did as the `contact-manage`
- * audit event. That rule lives here once, so the two doors cannot drift.
+ * contacts. Both ask the PDP the same two questions with the caller's
+ * context: `contact-read` to list, search or view, `contact-manage` to
+ * create, change, delete or link; and both record each change as the
+ * `contact-manage` audit event. That rule lives here once, so the two doors
+ * cannot drift (operator, 2026-10-20).
  *
  * A refusal is thrown as {@link ContactRefusedError}, carrying the decision.
  * A route turns it into the answer with `ApiContext.enforceDeny(err.permission,
@@ -27,29 +29,31 @@ interface DeciderLike {
   decide(subject: unknown, request: { action: string }): Promise<Decision>;
 }
 
-/** The permission every contacts door asks for. */
-export const CONTACT_PERMISSION: CorePermission = 'contact-manage';
+/** What a contacts door asks: `read` to list, search or view; `manage` to change. */
+export const CONTACT_PERMISSION = { read: 'contact-read', manage: 'contact-manage' } as const satisfies Record<string, CorePermission>;
 
 /** A contacts door said no. `permission` is what was refused; `decision` is the PDP's answer. */
 export class ContactRefusedError extends Error {
   constructor(public readonly permission: string, public readonly decision: Decision) {
-    super(`Refused: '${permission}' is required to manage contacts`);
+    super(`Refused: '${permission}' is required for this contacts action`);
     this.name = 'ContactRefusedError';
   }
 }
 
 /**
- * Throws {@link ContactRefusedError} unless `ctx` may do `contact-manage`, and
- * each of `also` (a link to an account also asks `user-edit`). A missing
- * context or decision point refuses: closed, never open.
+ * Throws {@link ContactRefusedError} unless `ctx` may do `kind` (`read` asks
+ * `contact-read`, `manage` asks `contact-manage`), and each of `also` (a link
+ * to an account also asks `user-edit`). A missing context or decision point
+ * refuses: closed, never open.
  */
 export async function requireContactPermission(
   engine: EngineLike,
   ctx: ActorContext,
+  kind: keyof typeof CONTACT_PERMISSION,
   also: readonly CorePermission[] = []
 ): Promise<void> {
   const pdp = engine.getManager<DeciderLike>('PolicyDecisionPoint');
-  for (const action of [CONTACT_PERMISSION, ...also]) {
+  for (const action of [CONTACT_PERMISSION[kind], ...also]) {
     if (!ctx || !pdp) throw new ContactRefusedError(action, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context' });
     const decision = await pdp.decide(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, { action });
     if (!decision.permit) throw new ContactRefusedError(action, decision);

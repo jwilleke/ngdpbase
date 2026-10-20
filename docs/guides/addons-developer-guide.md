@@ -597,29 +597,29 @@ Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `Att
 
 ### Contacts: persons and organizations
 
-People and organizations an add-on keeps (donors, members, suppliers) are core's contacts, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). A donor is a person or an organization; a user is a person with an account. Store the contact's `@id` in your own records, never a copy of the name or email.
+People and organizations an add-on keeps (donors, members, suppliers) are core's contacts, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). A donor is a person or an organization; a user is a person with an account. Store the contact's `@id` in your own records, and keep what your record needs to show (the name, say) there too: deleting an account deletes its person, even one your add-on made and that later joined an account, so the `@id` can come to name nobody (operator, 2026-10-20). Handle a `get` that returns `null`.
 
 - __One door each.__ `PersonManager` and `OrganizationManager`. Every call takes the caller's context first: in a route, `ctx.getActor()` from the `ApiContext`; in a job, its `JobContext`. Never a username.
-- __One permission, `contact-manage`.__ Shipped to admins only. Grant it to your own roles in your add-on's own policy, as in [Permissions](#permissions): an add-on never names `admin`, and never appends to a shipped policy.
-- __Ask, then call.__ In the route, `await ctx.requirePermission('contact-manage')` first: it shapes the refusal and the step-up prompt. The door asks again. If it refuses anyway, it throws a `ContactRefusedError` (`err.name === 'ContactRefusedError'`) carrying `permission` and `decision`; hand them to `await ctx.enforceDeny(err.permission, err.decision)`. Never build the 401 or 403 yourself.
+- __Two permissions.__ __`contact-read`__ to `search`, `get`, `list` and `people`; __`contact-manage`__ to `create`, `update` and `delete`. As shipped, `contact-read` is held by admins and demo admins, `contact-manage` by admins alone. Grant what your roles need in your add-on's own policy, as in [Permissions](#permissions): an add-on never names `admin`, and never appends to a shipped policy. Accounting's donor picker needs `contact-read` to search, and `contact-manage` to add a new donor.
+- __Ask, then call.__ In the route, `await ctx.requirePermission('contact-read')` (or `'contact-manage'` for a change) first: it shapes the refusal and the step-up prompt. The door asks again. If it refuses anyway, it throws a `ContactRefusedError` (`err.name === 'ContactRefusedError'`) carrying `permission` and `decision`; hand them to `await ctx.enforceDeny(err.permission, err.decision)`. Never build the 401 or 403 yourself.
 - __Every change is recorded__ by the door as the `contact-manage` audit event, with your caller as the actor. Do not record it again.
 - __A person with no account__ gets the identifier `person:<uuid>`. No username can take that form, so a person you create never collides with an account. When they sign up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The person keeps its `@id`, so your stored references stay good.
 - __Affiliations__ are on the person: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
 
-| Call | What it does |
-| --- | --- |
-| `persons.search(ctx, query, { limit?, accountless? })` | Persons whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to persons with no account |
-| `persons.get(ctx, id)` / `persons.list(ctx)` | One person by `@id`, or all |
-| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | A person with no account; returns the record with its `@id` |
-| `persons.update(ctx, id, patch)` | Change fields, affiliations included. `@id` and `identifier` never change |
-| `persons.delete(ctx, id)` | Remove a person |
-| `organizations.search(ctx, query, { limit? })` | Organizations whose name, legal name or email contains `query` |
-| `organizations.get(ctx, id)` / `organizations.list(ctx)` | One organization, or all |
-| `organizations.create(ctx, { name, url?, … })` | `@id` is the `url`, else a new `urn:uuid:` |
-| `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | Change or remove |
-| `organizations.people(ctx, orgId)` | `[{ person, role? }]` for each person affiliated with it |
+| Call | Asks | What it does |
+| --- | --- | --- |
+| `persons.search(ctx, query, { limit?, accountless? })` | `contact-read` | Persons whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to persons with no account |
+| `persons.get(ctx, id)` / `persons.list(ctx)` | `contact-read` | One person by `@id`, or all |
+| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | `contact-manage` | A person with no account; returns the record with its `@id` |
+| `persons.update(ctx, id, patch)` | `contact-manage` | Change fields, affiliations included. `@id` and `identifier` never change |
+| `persons.delete(ctx, id)` | `contact-manage` | Remove a person |
+| `organizations.search(ctx, query, { limit? })` | `contact-read` | Organizations whose name, legal name or email contains `query` |
+| `organizations.get(ctx, id)` / `organizations.list(ctx)` | `contact-read` | One organization, or all |
+| `organizations.create(ctx, { name, url?, … })` | `contact-manage` | `@id` is the `url`, else a new `urn:uuid:` |
+| `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `contact-manage` | Change or remove |
+| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each person affiliated with it |
 
-Linking an account by hand (`persons.linkAccount`) is an administrator's action, and also needs `user-edit`; an add-on does not call it.
+Linking an account by hand (`persons.linkAccount`) is an administrator's action: `contact-manage` and `user-edit`; an add-on does not call it.
 
 A donor picker for the accounting add-on: search both, show which is which, and keep the chosen `@id`.
 
@@ -629,7 +629,7 @@ import type { PersonManager, OrganizationManager, ContactRefusedError } from '@j
 router.get('/api/donors', async (req, res) => {
   const ctx = host.ApiContext.from(req, engine);
   try {
-    await ctx.requirePermission('contact-manage'); // granted to the treasurer by accounting's own policy
+    await ctx.requirePermission('contact-read'); // granted to the treasurer by accounting's own policy
     const q = String(req.query.q ?? '');
     const actor = ctx.getActor();
     const persons = engine.getManager<PersonManager>('PersonManager')!;
@@ -656,13 +656,15 @@ router.get('/api/donors', async (req, res) => {
   }
 });
 
-// A new donor who is not in the list yet: a person with no account, affiliated with their organization.
+// A new donor who is not in the list yet (the route asks contact-manage first):
+// a person with no account, affiliated with their organization.
 const donor = await persons.create(ctx.getActor(), {
   name: 'Dana Donor',
   email: 'dana@example.org',
   affiliation: [{ organization: orgId, role: 'Treasurer' }]
 });
-// Store donor['@id'] (and orgId, when the gift is from the organization) on the gift.
+// Store donor['@id'] (and orgId, when the gift is from the organization) on the gift,
+// with the donor's name as given, so the gift still reads right if the person is deleted.
 ```
 
 ### Mount Express Routes
@@ -1638,7 +1640,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
-- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-manage` to admins only, so an add-on's own policy must grant it before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an account deletes its person, even one first made by an add-on and later joined to the account, so a stored `@id` can then name nobody; deleting an organization leaves the affiliations that name it.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

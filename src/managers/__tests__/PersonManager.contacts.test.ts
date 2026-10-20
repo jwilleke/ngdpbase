@@ -20,6 +20,8 @@
  * - `requireContactPermission` removed from OrganizationManager.list → the refusal test went red;
  * - UserManager's lifecycle sync given the caller's context instead of the
  *   system one → self-registration made no person, and four tests went red;
+ * - every read asking contact-manage instead of contact-read → the demo-admin
+ *   read test went red; every write asking contact-read → its write refusals went red;
  * - PolicyEvaluator registered after UserManager again (the shipped order
  *   before this change) → the boot-order test went red.
  */
@@ -49,6 +51,7 @@ interface Recorded { eventType: string; user: string; action: string; resource?:
 const ADMIN = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 const EDITOR = { username: 'ed', roles: ['editor'], isAuthenticated: true };
 const USER_ADMIN = { username: 'ua', roles: ['user-admin'], isAuthenticated: true };
+const DEMO_ADMIN = { username: 'demo', roles: ['demo-admin'], isAuthenticated: true };
 
 async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}) {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'contacts-1930-'));
@@ -144,17 +147,57 @@ describe('contacts in core (#1930)', () => {
     await fs.remove(site.tmp).catch(() => {});
   });
 
-  test('contact-manage as shipped: one grantable, audited permission, held by admin alone', async () => {
+  test('as shipped: contact-read is held by admin and demo-admin, contact-manage (audited) by admin alone', async () => {
     const defs = shipped['ngdpbase.permissions.definitions'] as Record<string, Record<string, unknown>>;
     expect(defs['contact-manage']).toMatchObject({ audit: { 'on-failure': 'continue' } });
     expect(defs['contact-manage'].grantable).not.toBe(false);
+    expect(defs['contact-read']).toBeDefined();
+    expect(defs['contact-read'].grantable).not.toBe(false);
     const roleNames = Object.keys(shipped['ngdpbase.roles.definitions'] as Record<string, unknown>);
     const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
-    const holders: string[] = [];
-    for (const role of roleNames) {
-      if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, 'contact-manage')) holders.push(role);
-    }
-    expect(holders).toEqual(['admin']);
+    const holders = async (permission: string): Promise<string[]> => {
+      const out: string[] = [];
+      for (const role of roleNames) {
+        if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, permission)) out.push(role);
+      }
+      return out.sort();
+    };
+    expect(await holders('contact-manage')).toEqual(['admin']);
+    expect(await holders('contact-read')).toEqual(['admin', 'demo-admin']);
+  });
+
+  test('demo-admin reads contacts but cannot change them', async () => {
+    const acme = await site.organizations.create(ADMIN, { name: 'Acme Trust' });
+    const dana = await site.persons.create(ADMIN, { name: 'Dana', email: 'dana@example.org', affiliation: [{ organization: acme['@id'] }] });
+    await site.signUp('pat', 'pat@example.org');
+    const before = site.contacts().length;
+
+    expect((await site.persons.list(DEMO_ADMIN)).length).toBe(2);
+    expect((await site.persons.search(DEMO_ADMIN, 'dana')).map((p) => p['@id'])).toEqual([dana['@id']]);
+    expect(await site.persons.get(DEMO_ADMIN, dana['@id'])).toMatchObject({ name: 'Dana' });
+    expect((await site.organizations.list(DEMO_ADMIN)).map((o) => o.name)).toContain('Acme Trust');
+    expect((await site.organizations.search(DEMO_ADMIN, 'acme')).length).toBe(1);
+    expect(await site.organizations.get(DEMO_ADMIN, acme['@id'])).toMatchObject({ name: 'Acme Trust' });
+    expect((await site.organizations.people(DEMO_ADMIN, acme['@id'])).map((x) => x.person.name)).toEqual(['Dana']);
+
+    const writes: Array<Promise<unknown>> = [
+      site.persons.create(DEMO_ADMIN, { name: 'No' }),
+      site.persons.update(DEMO_ADMIN, dana['@id'], { name: 'Changed' }),
+      site.persons.delete(DEMO_ADMIN, dana['@id']),
+      site.persons.linkAccount(DEMO_ADMIN, dana['@id'], 'pat'),
+      site.organizations.create(DEMO_ADMIN, { name: 'No Org' }),
+      site.organizations.update(DEMO_ADMIN, acme['@id'], { name: 'Changed' }),
+      site.organizations.delete(DEMO_ADMIN, acme['@id'])
+    ];
+    for (const w of writes) await expect(w).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-manage' });
+    expect(await site.persons.getById(dana['@id'])).toMatchObject({ name: 'Dana', identifier: dana.identifier });
+    expect(await site.organizations.getById(acme['@id'])).toMatchObject({ name: 'Acme Trust' });
+    expect(site.contacts().length).toBe(before);
+  });
+
+  test('a read refused without contact-read names that permission', async () => {
+    await expect(site.persons.search(EDITOR, '')).rejects.toMatchObject({ permission: 'contact-read' });
+    await expect(site.organizations.list(EDITOR)).rejects.toMatchObject({ permission: 'contact-read' });
   });
 
   test('the PDP can decide while UserManager starts: PolicyEvaluator is registered before it', () => {

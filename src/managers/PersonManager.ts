@@ -66,8 +66,8 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * the account lifecycle under a system context.
  *
  * The door: `create`, `update`, `delete`, `get`, `list`, `search` and
- * `linkAccount` take the caller's context first, ask the PDP for
- * `contact-manage` (`linkAccount` also `user-edit`), and record each change as
+ * `linkAccount` take the caller's context first and ask the PDP: `contact-read`
+ * to list, search or get; `contact-manage` to change (`linkAccount` also `user-edit`). Each change is recorded as
  * the `contact-manage` audit event. A refusal throws `ContactRefusedError`.
  * `getById` / `getByIdentifier` stay as context-free lookups for core's own
  * hot paths (RoleManager resolves roles through them on every request).
@@ -202,15 +202,15 @@ class PersonManager extends BaseManager {
 
   // ── The door (#1930) ─────────────────────────────────────────────────────
 
-  /** Every person, for a caller who may manage contacts. */
+  /** Every person, for a caller who may read contacts (`contact-read`). */
   async list(ctx: ActorContext): Promise<Person[]> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     return this.requireProvider().list();
   }
 
-  /** One person by `@id`, for a caller who may manage contacts. */
+  /** One person by `@id`, for a caller who may read contacts (`contact-read`). */
   async get(ctx: ActorContext, id: string): Promise<Person | null> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     return this.getById(id);
   }
 
@@ -221,7 +221,7 @@ class PersonManager extends BaseManager {
    * (`ngdpbase.application.persons.search.limit` by default).
    */
   async search(ctx: ActorContext, query: string, options: { limit?: number; accountless?: boolean } = {}): Promise<Person[]> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'read');
     const limit = options.limit ?? this.configNumber(SEARCH_LIMIT_KEY, 50);
     const q = (query ?? '').trim().toLowerCase();
     const out: Person[] = [];
@@ -240,7 +240,7 @@ class PersonManager extends BaseManager {
    * person yet: that is how UserManager makes the person for a new account.
    */
   async create(ctx: ActorContext, input: PersonInput): Promise<Person> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     const provider = this.requireProvider();
     const { identifier: requested, ...given } = input ?? {};
     const fields: Record<string, unknown> = { ...given };
@@ -275,7 +275,7 @@ class PersonManager extends BaseManager {
 
   /** Change a person's fields, affiliations included. `@id` and `identifier` never change here. */
   async update(ctx: ActorContext, id: string, patch: PersonUpdate): Promise<Person | null> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     const clean: Record<string, unknown> = { ...(patch ?? {}) };
     for (const fixed of ['@context', '@type', '@id', 'identifier']) delete clean[fixed];
     if ('affiliation' in clean) clean.affiliation = await this.checkedAffiliations(clean.affiliation);
@@ -286,7 +286,7 @@ class PersonManager extends BaseManager {
   }
 
   async delete(ctx: ActorContext, id: string): Promise<boolean> {
-    await requireContactPermission(this.engine, ctx);
+    await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().delete(id);
     this.invalidateCache();
     if (result) await recordContactChange(this.engine, ctx, { kind: 'person', operation: 'delete', id });
@@ -300,7 +300,7 @@ class PersonManager extends BaseManager {
    * has one, is folded in and removed.
    */
   async linkAccount(ctx: ActorContext, personId: string, username: string): Promise<Person> {
-    await requireContactPermission(this.engine, ctx, ['user-edit']);
+    await requireContactPermission(this.engine, ctx, 'manage', ['user-edit']);
     return this.join(ctx, personId, username, 'admin');
   }
 

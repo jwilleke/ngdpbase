@@ -502,7 +502,7 @@ interface IOrganizationRecord {
   [key: string]: unknown;
 }
 
-// #1930: the door takes the caller's context first and asks contact-manage.
+// #1930: the door takes the caller's context first and asks contact-read to read and contact-manage to change.
 interface IOrganizationManager {
   list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
   getById(id: string): Promise<IOrganizationRecord | null>;
@@ -810,8 +810,8 @@ export const VIEW_PERMISSIONS = [
   'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-create', 'page-raw-edit',
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
   'config-manage', 'secret-reveal', 'account-security',
-  // #1930: the dashboard's Contacts entry.
-  'contact-manage'
+  // #1930: the dashboard's Contacts entry (read) and the contacts page's change controls.
+  'contact-read', 'contact-manage'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
@@ -15465,11 +15465,11 @@ ${panes}
    * GET /admin/contacts — persons, with or without an account (#1930). Search
    * by name or email; `?accountless=1` shows only persons with no account,
    * each with a form to link it to an account by hand. The door asks
-   * `contact-manage`.
+   * `contact-read`; changes ask `contact-manage`.
    */
   async adminContacts(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'contact-read', req, res, 'page'))) return;
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     const accountless = req.query.accountless === '1';
     try {
@@ -15654,11 +15654,11 @@ ${panes}
       let organizations: unknown[] = [];
       let listError: string | undefined;
       try {
-        // #1930: the door asks contact-manage of this viewer.
+        // #1930: the door asks contact-read of this viewer.
         organizations = await organizationManager.list(currentUser);
       } catch (err: unknown) {
         if (err instanceof ContactRefusedError) {
-          listError = "Listing organizations needs the 'contact-manage' permission.";
+          listError = "Listing organizations needs the 'contact-read' permission.";
         } else {
           logger.error('Error loading organizations:', getErrorMessage(err));
         }
@@ -15728,7 +15728,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-manage).
+      // #1930: the contacts door refused (contact-read or contact-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
@@ -15786,7 +15786,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-manage).
+      // #1930: the contacts door refused (contact-read or contact-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
@@ -15839,7 +15839,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-manage).
+      // #1930: the contacts door refused (contact-read or contact-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;

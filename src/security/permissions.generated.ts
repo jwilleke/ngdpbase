@@ -29,8 +29,10 @@ export type CorePermission =
   | 'comment-create'
   /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
   | 'config-manage'
-  /** Find, create, edit and link contacts: persons (with or without an account) and organizations, and a person's affiliations, through PersonManager and OrganizationManager (#1930). Admins by default; an add-on grants it to its own roles in its own policy */
+  /** Create, edit, delete and link contacts: persons (with or without an account) and organizations, and a person's affiliations, through PersonManager and OrganizationManager (#1930). Reading them is contact-read. Admins by default; an add-on grants it to its own roles in its own policy */
   | 'contact-manage'
+  /** List, search and view contacts: persons (with or without an account) and organizations, and their affiliations, through PersonManager and OrganizationManager, and the /admin/contacts and /admin/organizations views (#1930). Admins and demo admins by default; an add-on grants it to its own roles in its own policy */
+  | 'contact-read'
   /** Browse and view the media library (not delegated to anonymous visitors) */
   | 'media-read'
   /** Create new pages */
@@ -98,6 +100,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'comment-create',
   'config-manage',
   'contact-manage',
+  'contact-read',
   'media-read',
   'page-create',
   'page-delete',

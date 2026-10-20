@@ -16,7 +16,7 @@ Pre-#617, person-shaped data was scattered: author names on pages, contact entri
 
 ## The contacts door
 
-PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-manage`, and record each change as the `contact-manage` audit event. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
+PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
 
 ## Provider Pattern
 
@@ -38,6 +38,6 @@ Person records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase
 - [FilePersonProvider](../providers/FilePersonProvider.md)
 - [OrganizationManager](OrganizationManager.md), [RoleManager](RoleManager.md)
 - `src/types/Person.ts` — `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`
-- `src/utils/contactAccess.ts` — the `contact-manage` decision and record, `ContactRefusedError`
+- `src/utils/contactAccess.ts` — the `contact-read` / `contact-manage` decision and the record, `ContactRefusedError`
 - Issue #617 — canonical-records design
 - Issue #602 — `person-contacts` addon proposal

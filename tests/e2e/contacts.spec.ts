@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
+import { instanceOrigin } from './fixtures/helpers';
 
 /**
  * #1930 — contacts on the admin pages: add a person with no account, find
@@ -90,6 +91,57 @@ test.describe('Contacts (#1930)', () => {
     // Deleting the account removed the person joined to it.
     await page.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);
     await expect(rowFor(page, email)).toHaveCount(0);
+  });
+
+  test('a demo admin sees contacts and organizations, with every change control locked', async ({ page, browser }) => {
+    const email = `e2e-demo-view-${RUN}@example.test`;
+    await addContact(page, `E2E Demo View ${RUN}`, email);
+    const username = `e2e-demo-${RUN}`;
+    const password = `pw-${randomUUID()}`;
+    const made = await page.request.post('/admin/users', {
+      form: { _csrf: await csrfFrom(page), username, email: `${username}@example.test`, displayName: username, password, roles: 'demo-admin', isTest: 'on' }
+    });
+    expect(made.url()).not.toContain('error=');
+
+    const demo = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const demoPage = await demo.newPage();
+    try {
+      await demoPage.goto('/admin/login');
+      const form = demoPage.locator('form:has(input[type="password"])');
+      await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
+      await form.locator('input[type="password"]').fill(password);
+      await demoPage.getByRole('button', { name: /login/i }).click();
+      await demoPage.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+
+      // contact-read: the list and search work.
+      await demoPage.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);
+      await expect(demoPage.locator('h1')).toContainText('Contacts');
+      await expect(rowFor(demoPage, email)).toHaveCount(1);
+      // No contact-manage: the change controls are locked and the link form is absent.
+      await expect(demoPage.getByTestId('contacts-add-submit')).toBeDisabled();
+      await expect(rowFor(demoPage, email).getByTestId('contacts-remove')).toBeDisabled();
+      await expect(rowFor(demoPage, email).getByTestId('contacts-link-username')).toHaveCount(0);
+      // A change sent anyway is refused by the door.
+      const refused = await demoPage.request.post(`${await instanceOrigin(demoPage)}/admin/contacts`, {
+        form: { _csrf: await csrfFrom(demoPage), name: `E2E Refused ${RUN}` },
+        maxRedirects: 0
+      });
+      expect(refused.status()).toBe(403);
+
+      await demoPage.goto('/admin/organizations');
+      await expect(demoPage.locator('h1')).toContainText('Organization Management');
+      await expect(demoPage.getByText("needs the 'contact-read' permission")).toHaveCount(0);
+    } finally {
+      await demo.close();
+      await page.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);
+      await rowFor(page, email).getByTestId('contacts-remove').click();
+      const removed = await page.request.delete(`/admin/users/${encodeURIComponent(username)}`, {
+        headers: { 'X-CSRF-Token': await csrfFrom(page), Accept: 'application/json' }
+      });
+      expect(removed.ok()).toBe(true);
+    }
+    await page.goto(`/admin/contacts?q=${encodeURIComponent(`E2E Refused ${RUN}`)}`);
+    await expect(page.getByTestId('contacts-table')).toHaveCount(0);
   });
 
   test('a sign-up link that is not valid says so and joins nothing', async ({ page }) => {
