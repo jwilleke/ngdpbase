@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-19'
+dateModified: '2026-10-20'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -140,6 +140,7 @@ The files are in every backup, beside the document, never in it ([#1876](https:/
 - [PolicyManager](PolicyManager.md) - Access control policies
 - [BackupManager](BackupManager.md) - Backup/restore operations
 - [ConfigurationManager](ConfigurationManager.md) - Configuration settings
+- [FileManager](FileManager.md) - The files door (#1852): reads today's attachments as file records through `sharedPoolAssetRecords`, `readableVaultAssetRecords` and, for the operator dry run, `vaultFileInventory`; the provider opens `{ readOnly: true }` for it
 
 ## Developer Documentation
 
