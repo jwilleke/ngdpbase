@@ -15,7 +15,7 @@ import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/sched
 import { selectSlots, CATCH_UP_ALL_CAP, type CatchUp, type Overlap } from '../utils/jobSlots.js';
 import { assertJobId, checkpointJson, selectJobStateBackend, type JobRunRecord, type JobState, type JobStateProvider } from '../providers/jobState.js';
 import FileJobStateProvider from '../providers/FileJobStateProvider.js';
-import SqliteJobStateProvider from '../providers/SqliteJobStateProvider.js';
+import SqliteJobStateProvider, { runsStartedAfter } from '../providers/SqliteJobStateProvider.js';
 
 /** A JobContext a JavaScript caller actually supplied: an object naming who and from where. */
 function isUsableContext(value: unknown): value is JobContext {
@@ -381,6 +381,7 @@ class BackgroundJobManager extends BaseManager {
         this.stateProvider = new SqliteJobStateProvider(database.getHandle(), limits);
         // #1876: the job state is in the database, which DatabaseManager restored before this start.
         this.restoredAtStart = this.engine.getManager<{ restoredAtStart?(): boolean }>('DatabaseManager')?.restoredAtStart?.() ?? false;
+        if (this.restoredAtStart) this.runsReplacedAtStart = this.readReplacedDatabaseRuns();
       } else {
         this.stateDir = configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs');
         this.applyRestoreAtStart(this.stateDir, configManager);
@@ -1387,6 +1388,23 @@ class BackgroundJobManager extends BaseManager {
     if (outcome && !outcome.refused && outcome.applied.length > 0) {
       this.restoredAtStart = true;
       this.runsReplacedAtStart = replaced;
+    }
+  }
+
+  /**
+   * The job runs the live application database held, since the backup, when
+   * this start's restore replaced it (#1876): read from the copy DatabaseManager
+   * kept, which is the database as it was at the moment of the swap — so runs
+   * between staging and the restart are named too.
+   */
+  private readReplacedDatabaseRuns(): JobRunSince[] {
+    try {
+      const database = this.engine.getManager<{ readReplacedApplicationDatabase?<T>(read: (db: never, backupTakenAt: string) => T): T | null }>('DatabaseManager');
+      return database?.readReplacedApplicationDatabase?.((db, since) =>
+        runsStartedAfter(db, since).flatMap(({ jobId, run }) => runsAfter(jobId, [run], since))) ?? [];
+    } catch (err) {
+      logger.warn(`[BackgroundJobManager] The job runs in the replaced application database could not be read: ${(err as Error).message}`);
+      return [];
     }
   }
 

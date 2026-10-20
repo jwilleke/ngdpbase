@@ -65,6 +65,22 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
     db.pragma(`key='${key.replace(/'/g, "''")}'`);
   }
 
+  /**
+   * Read a database file once, read-only, under `key`, and close it (#1876):
+   * nothing is migrated or written. Used for the copy a restore kept as
+   * `*.pre-restore`, to read what the site had recorded just before the
+   * restore replaced it.
+   */
+  static readOnce<T>(file: string, key: string, read: (db: SqliteHandle) => T): T {
+    const db = new Database(file, { readonly: true, fileMustExist: true });
+    try {
+      SqliteDatabaseProvider.unlock(db, key);
+      return read(db);
+    } finally {
+      db.close();
+    }
+  }
+
   /** Read an existing file read-only: the key opens it and it passes the quick check, or this throws. */
   private static probe(file: string, key: string): void {
     const db = new Database(file, { readonly: true, fileMustExist: true });

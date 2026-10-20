@@ -40,10 +40,16 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 
 | Data | How to keep it |
 | --- | --- |
-| `.env` and the keys in it | keep a copy in a password manager or secret store |
+| The backup key (`NGDPBASE_BACKUP_KEY`) | save it off the server: Admin → Backup → Show the key to copy it (see What to keep safe) |
+| TLS certificate files | reissue them on a new server |
 | Shares, notifications | copy `$FAST_STORAGE/` |
 | Sign-in sessions | not needed: people sign in again |
 | Media files and the media index | back up your media folders at the storage level; the index is rebuilt by a rescan |
+
+### What to keep safe
+
+- __The operator: the backup key.__ Every site makes one at first start; every backup, including the `.env` copy (every line but the backup key's), is encrypted under it. Admin → Backup shows its fingerprint, and the dashboard asks for it to be saved off the server until an admin confirms (showing the key needs `config-manage` and a fresh sign-in). On a new server, put the saved key in `<FAST_STORAGE>/.env` before the first start, then restore.
+- __Each person: their recovery words__, the only way into their private vaults after a forgotten password. Each person with a vault gets one reminder.
 
 ### Encryption
 
@@ -77,7 +83,7 @@ Nothing on Admin → Backup restores anything but the databases yet ([#1876](htt
 
 After any restore is put in place, admins get a __critical__ notification ("Critical: a restore did not bring everything back") listing what it did not bring back. The list is known before a restore too:
 
-- shares and notifications (they stay as they are), sign-in sessions, the keys in `.env`, the media index — no backup holds them;
+- shares and notifications (they stay as they are), sign-in sessions, the backup key and database key (the site keeps its own), TLS certificate files, the media library and its index — no backup holds them;
 - pages, user accounts and settings — they have no staged restore yet;
 - for a databases-only restore, everything but the databases;
 - anything the backup left out, such as the credentials store of a backup taken without the key.

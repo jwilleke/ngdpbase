@@ -18,6 +18,7 @@ import { gunzipSync } from 'node:zlib';
 import { decryptBuffer } from '../../utils/backupCrypto';
 import { listTreeArchive, writeTreeArchive } from '../../utils/treeArchive';
 import Database from 'better-sqlite3-multiple-ciphers';
+import { applyInstanceEnvAtStart } from '../../utils/instanceEnvBackup';
 import BackupManager from '../BackupManager';
 import DatabaseManager, { BACKUP_KEY_ENV, DATABASE_KEY_ENV } from '../DatabaseManager';
 import RoleManager from '../RoleManager';
@@ -65,6 +66,8 @@ describe('a site restore stages every part together (#1876)', () => {
   /** A fresh set of managers over the same folders: one start of the site. */
   async function start(): Promise<{ managers: Record<string, unknown>; backup: BackupManager; database: DatabaseManager }> {
     const p = paths();
+    // What bootstrap-env does before any manager: a staged .env goes in first (#1876).
+    applyInstanceEnvAtStart(fast, p.siteRestore);
     const resolved: Record<string, string> = {
       'ngdpbase.application.roles.storagedir': p.roles,
       'ngdpbase.application.persons.storagedir': p.persons,
@@ -235,7 +238,7 @@ describe('a site restore stages every part together (#1876)', () => {
     ]);
     // Listed with the backup, downloaded with it, pruned with it.
     const stored = await site.backup.findStoredBackup(path.basename(file));
-    expect(stored?.parts).toEqual(['attachments', 'comments', 'footnotes', 'organizations', 'persons', 'roles', 'vault-attachments']);
+    expect(stored?.parts).toEqual(['attachments', 'comments', 'env', 'footnotes', 'organizations', 'persons', 'roles', 'vault-attachments']);
     expect(stored?.databases).toEqual(['application']);
     const tarEntries: string[] = [];
     const { stream } = await site.backup.backupArchive(path.basename(file));

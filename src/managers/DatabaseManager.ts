@@ -41,7 +41,7 @@ import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
-import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
+import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS, type SqliteHandle } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
@@ -58,8 +58,9 @@ import {
 import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 
-/** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
-export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
+// The environment variable holding the SQLCipher key: one declaration, `src/utils/databaseKey.ts`.
+import { DATABASE_KEY_ENV } from '../utils/databaseKey.js';
+export { DATABASE_KEY_ENV };
 
 // #1723, #1876: the backup key has one declaration (`src/utils/backupKey.ts`); re-exported for the callers that import it from here.
 export { BACKUP_KEY_ENV, backupKeyFingerprint } from '../utils/backupKey.js';
@@ -176,6 +177,8 @@ class DatabaseManager extends BaseManager {
   private restoreAtStart: ApplyOutcome | null = null;
   /** The databases a staged restore put back at this start (#1876): kept after the report, for the managers whose data is in them. */
   private restoredNow: string[] = [];
+  /** When the restored backup was taken, and where the replaced application database is kept, when a restore was applied at this start (#1876). */
+  private replaced: { backup: string; applicationKept: string | null } | null = null;
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
   private readonly faults = new Map<Fault, string>();
   /** Why the configured application database could not be opened safely (#1892); null otherwise. */
@@ -598,6 +601,19 @@ class DatabaseManager extends BaseManager {
     return this.restoredNow.length > 0;
   }
 
+  /**
+   * Read the application database as it was just before this start's restore
+   * replaced it (#1876): the kept `*.pre-restore` file, read-only, under the
+   * site's database key, which it was encrypted under. For the owner of data
+   * in it (BackgroundJobManager's job runs since the backup) to say what the
+   * restore took away. Null when no restore replaced it at this start.
+   */
+  readReplacedApplicationDatabase<T>(read: (db: SqliteHandle, backupTakenAt: string) => T): T | null {
+    const kept = this.replaced?.applicationKept;
+    if (!kept || !existsSync(kept)) return null;
+    return SqliteDatabaseProvider.readOnce(kept, process.env[DATABASE_KEY_ENV] ?? '', (db) => read(db, this.replaced!.backup));
+  }
+
   /** The databases a staged restore put back at this start, by name (#1876). */
   getRestoredAtStart(): string[] {
     return [...this.restoredNow];
@@ -690,6 +706,7 @@ class DatabaseManager extends BaseManager {
     // #1876: a database restore staged as part of a site restore goes in only
     // when the whole site restore does; otherwise it is set aside with it.
     const siteFile = siteRestoreFile(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
+    const stagedBackupAt = this.getStagedRestore()?.backup ?? '';
     const gate = gatePart(siteFile, 'DatabaseManager');
     let outcome: ApplyOutcome | null;
     if (gate.decision === 'set-aside') {
@@ -710,6 +727,9 @@ class DatabaseManager extends BaseManager {
       return;
     }
     this.restoredNow = outcome.applied.map((a) => a.name);
+    if (outcome.applied.length > 0) {
+      this.replaced = { backup: stagedBackupAt, applicationKept: outcome.applied.find((a) => path.resolve(a.live) === path.resolve(file))?.kept ?? null };
+    }
     for (const a of outcome.applied) {
       logger.warn(`[DatabaseManager] Restore applied: ${a.name} -> ${a.live} (previous kept as ${path.basename(a.kept)}) (#1723)`);
     }

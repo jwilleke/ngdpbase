@@ -45,6 +45,8 @@ export const AUDIT_EVENT = {
   BACKUP_CREATE: 'backup-create',
   /** A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) */
   BACKUP_RESTORE: 'backup-restore',
+  /** A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876) */
+  BACKUP_RESTORE_APPLIED: 'backup-restore-applied',
   /** A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) */
   BACKUP_RESTORE_CANCEL: 'backup-restore-cancel',
   /** A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723) */

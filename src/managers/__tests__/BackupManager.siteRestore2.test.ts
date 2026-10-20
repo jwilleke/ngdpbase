@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { applyInstanceEnvAtStart } from '../../utils/instanceEnvBackup';
 import BackupManager, { BACKUP_KEY_MISSING, BACKUP_KEY_MISSING_TITLE, describeNotRestored } from '../BackupManager';
 import AuthManager from '../AuthManager';
 import BackgroundJobManager from '../BackgroundJobManager';
@@ -37,6 +38,8 @@ describe('slice 2 of the site restore (#1876)', () => {
   let notifications: Array<{ level: string; title: string; message: string }>;
   let userRestores: number;
   let userBackupFails: boolean;
+  let savedConfig: Record<string, unknown>;
+  let audits: Array<Record<string, unknown>>;
   const saved = { backup: process.env[BACKUP_KEY_ENV], credentials: process.env[CREDENTIALS_KEY_ENV] };
 
   const paths = () => ({
@@ -50,13 +53,15 @@ describe('slice 2 of the site restore (#1876)', () => {
   /** One start of the site. */
   async function start(): Promise<{ backup: BackupManager; jobs: BackgroundJobManager; managers: Record<string, unknown> }> {
     const p = paths();
+    // What bootstrap-env does before any manager: a staged .env goes in first (#1876).
+    applyInstanceEnvAtStart(path.join(dir, 'fast'), p.siteRestore);
     const resolved: Record<string, string> = {
       'ngdpbase.auth.credentials.file': p.credentials,
       'ngdpbase.jobs.state.dir': p.jobs,
       'ngdpbase.backup.directory': p.backups,
       'ngdpbase.backup.restore-manifest': p.siteRestore
     };
-    const props: Record<string, unknown> = { 'ngdpbase.jobs.state.provider': 'file', 'ngdpbase.backup.max-backups': 10, 'ngdpbase.default.timezone': 'UTC' };
+    const props: Record<string, unknown> = { 'ngdpbase.jobs.state.provider': 'file', 'ngdpbase.backup.max-backups': 10, 'ngdpbase.default.timezone': 'UTC', ...savedConfig };
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
@@ -64,14 +69,16 @@ describe('slice 2 of the site restore (#1876)', () => {
         getCustomProperty: () => undefined,
         isBaseUrlExplicit: () => true,
         getBaseURL: () => 'https://site.example.com',
-        setProperty: async () => undefined
+        getInstanceDataFolder: () => path.join(dir, 'fast'),
+        // What an admin saves outlives a restart, as app-custom-config.json does.
+        setProperty: async (key: string, value: unknown) => { props[key] = value; savedConfig[key] = value; }
       },
       // Stored notifications outlive a restart, as NotificationManager's do: the one-time backup-key notice is deduplicated against them.
       NotificationManager: {
         addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
         getAllNotifications: () => notifications
       },
-      AuditManager: { logAuditEvent: async () => 'evt', flushAuditQueue: async () => undefined },
+      AuditManager: { logAuditEvent: async (e: Record<string, unknown>) => { audits.push(e); return 'evt'; }, flushAuditQueue: async () => undefined },
       // Restores live only: never while a site restore is staged.
       UserManager: {
         backup: async () => {
@@ -109,6 +116,8 @@ describe('slice 2 of the site restore (#1876)', () => {
   }
 
   async function seed(): Promise<void> {
+    fs.mkdirSync(path.join(dir, 'fast'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'fast', '.env'), `SMTP_PASSWORD=smtp-password-in-env\nNGDPBASE_CREDENTIALS_KEY=${CREDENTIALS_KEY}\nNGDPBASE_BACKUP_KEY=${KEY}\nNGDPBASE_DATABASE_KEY=db-key-at-backup\n`, { mode: 0o600 });
     const store = new FileCredentialsProvider(paths().credentials, CREDENTIALS_KEY);
     await store.initialize(() => undefined);
     await store.add(PASSKEY);
@@ -128,6 +137,8 @@ describe('slice 2 of the site restore (#1876)', () => {
     notifications = [];
     userRestores = 0;
     userBackupFails = false;
+    savedConfig = {};
+    audits = [];
     process.env[BACKUP_KEY_ENV] = KEY;
     process.env[CREDENTIALS_KEY_ENV] = CREDENTIALS_KEY;
     await seed();
@@ -147,11 +158,11 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(path.basename(file)).toMatch(/-ngdpbase-backup\.json\.gz\.enc$/);
     const stem = path.basename(file).replace(/\.json\.gz\.enc$/, '');
     const companions = fs.readdirSync(paths().backups).filter((f) => f.startsWith(`${stem}.`) && f !== path.basename(file)).sort();
-    expect(companions).toEqual([`${stem}.credentials.tar.enc`, `${stem}.forms.tar.enc`, `${stem}.jobs.tar.enc`]);
+    expect(companions).toEqual([`${stem}.credentials.tar.enc`, `${stem}.env.tar.enc`, `${stem}.forms.tar.enc`, `${stem}.jobs.tar.enc`]);
     for (const f of [path.basename(file), ...companions]) {
       const raw = fs.readFileSync(path.join(paths().backups, f));
       expect(isEncryptedBackup(raw)).toBe(true);
-      for (const secret of ['public-key', 'Contact (as backed up)', '"users"']) expect(raw.includes(Buffer.from(secret))).toBe(false);
+      for (const secret of ['public-key', 'Contact (as backed up)', '"users"', 'smtp-password-in-env']) expect(raw.includes(Buffer.from(secret))).toBe(false);
     }
     const doc = await documentOf(file);
     expect(doc.managers.AuthManager.data).toMatchObject({ credentials: { archive: `${stem}.credentials.tar.enc`, files: 1, keyFingerprint: expect.any(String) } });
@@ -159,7 +170,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(doc.managers.FormsDataManager.data).toMatchObject({ archive: `${stem}.forms.tar.enc` });
     // Listed, downloaded and pruned with the document.
     const stored = await site.backup.findStoredBackup(path.basename(file));
-    expect(stored).toMatchObject({ encrypted: true, parts: ['credentials', 'forms', 'jobs'], files: companions });
+    expect(stored).toMatchObject({ encrypted: true, parts: ['credentials', 'env', 'forms', 'jobs'], files: companions });
     expect(notifications.filter((n) => n.level === 'error')).toEqual([]);
     await stop(site);
   });
@@ -175,8 +186,13 @@ describe('slice 2 of the site restore (#1876)', () => {
     const later = new Date(Date.now() + 1000).toISOString();
     await new FileJobStateProvider(paths().jobs).recordRun('demo.nightly', { runId: 'r-after', slot: null, startedAt: later, completedAt: later, attempt: 1, status: 'failed', error: 'feed down', requestedBy: null });
 
+    // The .env changes too: a new secret, and a database key line that must be kept.
+    fs.writeFileSync(path.join(dir, 'fast', '.env'), `SMTP_PASSWORD=changed-later\nNGDPBASE_CREDENTIALS_KEY=${CREDENTIALS_KEY}\nNGDPBASE_BACKUP_KEY=${KEY}\nNGDPBASE_DATABASE_KEY=db-key-live\n`);
     const results = await site.backup.restoreFromFile(CTX, file);
     expect(results.success).toEqual(expect.arrayContaining(['AuthManager', 'BackgroundJobManager', 'FormsDataManager']));
+    // Staged without the backup key's line; the live .env is untouched until the restart.
+    expect(fs.readFileSync(path.join(dir, 'fast', '.env.staged'), 'utf8')).not.toContain('NGDPBASE_BACKUP_KEY');
+    expect(fs.readFileSync(path.join(dir, 'fast', '.env'), 'utf8')).toContain('changed-later');
     // Users have no staged restore: left out, never written live.
     expect(results.skipped).toContain('UserManager');
     expect(userRestores).toBe(0);
@@ -195,6 +211,14 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(fs.readFileSync(path.join(paths().forms, 'definitions', 'contact.json'), 'utf8')).toContain('as backed up');
     expect((await new FileJobStateProvider(paths().jobs).listRuns('demo.nightly')).map((r) => r.runId)).not.toContain('r-after');
     expect(fs.existsSync(`${paths().credentials}.pre-restore`)).toBe(true);
+    // The .env came back from the backup, with this site's backup and database key lines kept.
+    const env = fs.readFileSync(path.join(dir, 'fast', '.env'), 'utf8');
+    expect(env).toContain('SMTP_PASSWORD=smtp-password-in-env');
+    expect(env).not.toContain('changed-later');
+    expect(env).toContain(`NGDPBASE_BACKUP_KEY=${KEY}`);
+    expect(env).toContain('NGDPBASE_DATABASE_KEY=db-key-live');
+    expect(env).not.toContain('db-key-at-backup');
+    expect(fs.readFileSync(path.join(dir, 'fast', '.env.pre-restore'), 'utf8')).toContain('changed-later');
 
     const critical = notifications.find((n) => n.title.startsWith('Critical:'));
     expect(critical).toMatchObject({ level: 'error', title: 'Critical: a restore did not bring everything back' });
@@ -203,6 +227,11 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(critical.message).toMatch(/Nightly demo — last ran .*, failed: feed down/);
     expect(critical.message).toContain('they are not run again');
     expect(notifications.map((n) => n.title)).toContain('A site restore was applied');
+    // The restored audit log says a restore happened, which backup, and who started it (operator-approved event).
+    expect(audits.find((e) => e.eventType === 'backup-restore-applied')).toMatchObject({
+      action: 'backup-restore-applied', resource: path.basename(file),
+      metadata: expect.objectContaining({ source: path.basename(file), startedBy: 'admin', kind: 'site', applied: expect.arrayContaining(['AuthManager', 'BackupManager']) })
+    });
     // The report is read once.
     expect(fs.existsSync(`${paths().siteRestore}.report.json`)).toBe(false);
     await stop(restarted);
@@ -219,7 +248,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(fs.existsSync(file.replace(/\.json\.gz$/, '.forms.tar'))).toBe(true);
     // Left out only for want of the key: no per-backup notice (#1912); the one-time notice names what is left out.
     expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
-    expect(notifications.find((n) => n.title === BACKUP_KEY_MISSING_TITLE)?.message).toMatch(/the credentials store and the databases are left out/);
+    expect(notifications.find((n) => n.title === BACKUP_KEY_MISSING_TITLE)?.message).toMatch(/the credentials store, the databases and the instance \.env are left out/);
     // A restore needs a complete safety backup first, which can't be taken without the key.
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/credentials store was left out/);
     expect(fs.existsSync(paths().siteRestore)).toBe(false);
@@ -245,12 +274,13 @@ describe('slice 2 of the site restore (#1876)', () => {
     // The key is read at each backup: once it is set the banner goes, without a restart.
     process.env[BACKUP_KEY_ENV] = KEY;
     await restarted.backup.createBackup(CTX, { filename: '2026-01-04T00-00-00-000Z-ngdpbase-backup.json.gz' });
-    expect(restarted.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    // The missing-key banner gives way to the one asking for the key to be saved (#1876).
+    expect(restarted.backup.getManagerStatus().reason).toMatch(/^Save the backup key off this server/);
     await stop(restarted);
 
     process.env[BACKUP_KEY_ENV] = KEY;
     const keyed = await start();
-    expect(keyed.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    expect(keyed.backup.getManagerStatus().reason).not.toBe(BACKUP_KEY_MISSING);
     await keyed.backup.createBackup(CTX);
     expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
     await stop(keyed);
@@ -268,6 +298,27 @@ describe('slice 2 of the site restore (#1876)', () => {
     expect(incomplete[0].message).not.toMatch(/credentials store/);
     expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
     await stop(site);
+  });
+
+  test('the backup key: a banner with its fingerprint until an admin confirms it is saved, recorded across restarts; a new key asks again', async () => {
+    const { backupKeyFingerprint } = await import('../../utils/backupKey');
+    const site = await start();
+    const info = site.backup.backupKeyInfo();
+    expect(info).toEqual({ set: true, fingerprint: backupKeyFingerprint(KEY), saved: false });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
+    expect(site.backup.getManagerStatus().reason).not.toContain(KEY);
+    await expect(site.backup.confirmBackupKeySaved(CTX, 'not-the-fingerprint')).rejects.toThrow(/not the fingerprint of the current backup key/);
+    await site.backup.confirmBackupKeySaved(CTX, info.fingerprint);
+    expect(site.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    await stop(site);
+    const restarted = await start();
+    expect(restarted.backup.getManagerStatus()).toEqual({ state: 'ready' });
+    await stop(restarted);
+    process.env[BACKUP_KEY_ENV] = 'a-new-backup-key';
+    const rekeyed = await start();
+    expect(rekeyed.backup.backupKeyInfo().saved).toBe(false);
+    expect(rekeyed.backup.getManagerStatus().state).toBe('degraded');
+    await stop(rekeyed);
   });
 
   test('a backup made under another backup key is refused before anything is staged', async () => {
@@ -296,7 +347,7 @@ describe('the "not restored" notification (#1876)', () => {
       nameOf: (id) => (id === 'backup.auto' ? 'Automatic backup' : id)
     });
     expect(message).toContain('was applied: the databases, attachment files.');
-    expect(message).toMatch(/Not restored — still as they were before the restore: user accounts; settings; shares .*; notifications; sign-in sessions; the keys in the instance \.env; the media index\./);
+    expect(message).toMatch(/Not restored — still as they were before the restore: user accounts; settings; shares .*; notifications; sign-in sessions; the backup key itself, and the database key .*; TLS certificate files; the media library and its index\./);
     expect(message).toContain(`Automatic backup — last ran ${new Date('2026-10-19T12:01:00.000Z').toLocaleString()}, completed (2 runs since the backup)`);
     expect(message).toContain('feeds.poll — last ran');
     expect(message).toContain('failed: timeout');

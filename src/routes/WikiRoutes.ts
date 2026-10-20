@@ -108,6 +108,7 @@ import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, keywordsCo
 import {
   kekFor,
   endSessionKeys,
+  hasUserKeys,
   newPrivateStoreHandle,
   setUnlockedDek,
   unlockPrivateStores,
@@ -143,6 +144,7 @@ import {
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { FORBIDDEN_TITLE_CHARS, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
+import { remindRecoveryWords } from '../utils/recoveryWordsReminder.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -6738,6 +6740,8 @@ ${panes}
       if (pagesDirectory) {
         await unlockPrivateStoresWithPassword({ handle: privateStoreHandle, username, password, pagesDirectory });
         await this.adoptSealedPages(username, privateStoreHandle);
+        // #1876: once per person with vault keys, a reminder to keep the recovery words safe.
+        void remindRecoveryWords(this.engine.getManager('NotificationManager'), username, () => hasUserKeys(pagesDirectory, username));
       }
     } catch {
       logger.warn('[private-store] could not unlock stores after login');
@@ -11682,6 +11686,8 @@ ${panes}
         databaseUnavailable: databaseManager?.getUnavailableReason?.() ?? null,
         stagedRestore: databaseManager?.getStagedRestore() ?? null,
         restoreRunning: backupManager.isRestoreRunning(),
+        // #1876: the backup key's fingerprint and whether it is saved off the server — never the key.
+        backupKey: backupManager.backupKeyInfo(),
         siteName: this.siteName(),
         success: req.query.success as string | undefined,
         error: req.query.error as string | undefined,
@@ -11690,6 +11696,41 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error rendering backup page:', err);
       return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /admin/backup/key — the one page that shows the backup key, for an
+   * admin to copy it off the server (#1876). `config-manage`, with its fresh
+   * sign-in (step-up); never cached, never logged.
+   */
+  async adminBackupKey(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      const key = backupManager?.revealBackupKey();
+      if (!backupManager || !key) return res.redirect('/admin/backup?error=' + encodeURIComponent('This site has no backup key. Restart the site to have one made.'));
+      res.setHeader('Cache-Control', 'no-store');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-backup-key', { ...commonData, key, fingerprint: backupManager.backupKeyInfo().fingerprint, title: 'Backup key' });
+    } catch (err: unknown) {
+      logger.error('Error rendering the backup key page:', getErrorMessage(err));
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /** POST /admin/backup/key/saved — an admin confirms the backup key is saved off the server (#1876, config-manage). */
+  async adminBackupKeySaved(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      await backupManager.confirmBackupKeySaved(wikiContext.userContext, (() => { const f = (req.body as Record<string, unknown> | undefined)?.fingerprint; return typeof f === 'string' ? f : ''; })());
+      return res.redirect('/admin/backup?success=' + encodeURIComponent('Thank you: the backup key is recorded as saved off the server.'));
+    } catch (err: unknown) {
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
     }
   }
 
@@ -15980,6 +16021,8 @@ ${panes}
     app.get('/admin/backup/download/:filename', (req: Request, res: Response) => void this.adminBackupDownload(req, res));
     app.post('/admin/backup/restore', (req: Request, res: Response) => void this.adminBackupRestore(req, res));
     app.post('/admin/backup/restore/cancel', (req: Request, res: Response) => void this.adminBackupRestoreCancel(req, res));
+    app.get('/admin/backup/key', (req: Request, res: Response) => void this.adminBackupKey(req, res));
+    app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

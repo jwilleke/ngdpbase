@@ -2251,6 +2251,13 @@
         "on-failure": "refuse"
       }
     },
+    "backup-restore-applied": {
+      "description": "A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
     "addon-install": {
       "description": "An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830)",
       "grantable": false,
@@ -2858,6 +2865,8 @@
   "ngdpbase.backup.auto-backup-days": "daily",
   "_comment_backup_restore_manifest": "#1876 — the record of a whole-site restore staged for the next start: which parts (attachments, role membership, persons, organizations, public footnotes and comments, databases) are staged beside their live data, and whether the set is complete. Each part goes in at the next start only when every part does; otherwise each is set aside as *.incomplete. Becomes <file>.last once the start has applied or refused it. Instance data: keep it in FAST_STORAGE.",
   "ngdpbase.backup.restore-manifest": "${FAST_STORAGE}/site-restore.json",
+  "_comment_backup_key_saved": "#1876: the fingerprint of the backup key (NGDPBASE_BACKUP_KEY) an admin confirmed is saved off the server, set from Admin -> Backup. Empty: the dashboard asks for the key to be saved. A different key asks again. The fingerprint never reveals the key.",
+  "ngdpbase.backup.key-saved-fingerprint": "",
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

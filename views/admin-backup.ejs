@@ -23,6 +23,34 @@
     <% } %>
 
     <!-- ================================================================ -->
+    <!-- Backup key (#1876): the one thing to save off the server          -->
+    <!-- ================================================================ -->
+    <% const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false }; %>
+    <div class="card mb-4" id="backup-key-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-key"></i> Backup key</h5>
+        </div>
+        <div class="card-body">
+            <% if (!backupKey.set) { %>
+            <div class="alert alert-danger mb-0" id="backup-key-missing">
+                This site has <strong>no backup key</strong> (<code>NGDPBASE_BACKUP_KEY</code>). Backups are not encrypted, and they leave out the sign-in credentials (passkeys, authenticator apps), the databases and the <code>.env</code> keys. Restart the site to have one made.
+            </div>
+            <% } else { %>
+            <p>Every backup is encrypted with this site's backup key. It is the <strong>one thing to keep safe off this server</strong> (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.</p>
+            <p class="mb-2">Fingerprint: <code id="backup-key-fingerprint"><%= backupKey.fingerprint %></code> <span class="text-muted small">— check that the copy you keep has this fingerprint on Admin → Backup of any site you restore to.</span></p>
+            <% if (backupKey.saved) { %>
+            <p class="text-success mb-0" id="backup-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed this key is saved off the server.</p>
+            <% } else { %>
+            <div class="alert alert-warning" id="backup-key-not-saved">
+                <strong>Save the backup key now.</strong> No admin has confirmed it is saved off this server yet.
+            </div>
+            <a class="btn btn-outline-primary btn-sm" id="backup-key-show" href="/admin/backup/key"><i class="fas fa-eye"></i> Show the key to copy it</a>
+            <% } %>
+            <% } %>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
     <!-- Manual Backup                                                     -->
     <!-- ================================================================ -->
     <div class="card mb-4">
@@ -79,7 +107,7 @@
                         <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
                         <td><%= new Date(b.created).toLocaleString() %></td>
                         <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
-                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %></td>
+                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %><% if (b.encrypted === false) { %> <span class="badge bg-warning text-dark keyless-backup" title="Taken without the backup key: not encrypted, and without the sign-in credentials">no sign-in credentials</span><% } %></td>
                         <td class="text-nowrap">
                             <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
                         </td>
@@ -113,6 +141,13 @@
                 <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> The application database can't be opened</h6>
                 <p class="mb-2">A restore still works, with one difference: <strong>the fresh backup taken first leaves the databases out</strong>, because they can't be read. The current database files are not lost: at the restart they are kept beside the restored ones as <code>*.pre-restore</code>.</p>
                 <p class="mb-0 small">The restore needs <code>NGDPBASE_DATABASE_KEY</code> to be set. If the problem is a missing or wrong key, set or correct the key and restart instead: no restore is needed.</p>
+            </div>
+            <% } %>
+
+            <% if (!backupKey.set) { %>
+            <div class="alert alert-danger" id="restore-no-key">
+                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> This site has no backup key</h6>
+                <p class="mb-0">After a restore, passwords return to what they were on the backup date. Passkeys and authenticator apps are not restored. On a new server, admins sign in with a password only, and won't have admin rights until they set up a passkey again.</p>
             </div>
             <% } %>
 

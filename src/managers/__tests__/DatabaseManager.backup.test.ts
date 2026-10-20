@@ -63,7 +63,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
         return (props['ngdpbase.database.file'] as string | undefined) ?? def;
       },
       getAddonDatabaseDeclarations: () => declarations,
-      setProperty: async () => undefined
+      getInstanceDataFolder: () => dataDir,
+      setProperty: async (key: string, value: unknown) => { props[key] = value; }
     };
     const notificationManager = { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } };
     const auditManager = { logAuditEvent: async (e: Record<string, unknown>) => { if (auditFails) throw new Error('audit sink down'); audits.push(e); }, flushAuditQueue: async () => undefined };
@@ -485,7 +486,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz.enc' });
       expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-01'))).toEqual([]);
-      expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-02')).length).toBe(2);
+      // The document, its database and the instance .env (#1876).
+      expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-02')).length).toBe(3);
       await backups.shutdown();
       await database.shutdown();
     });
@@ -496,7 +498,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const file = await backups.createBackup(CTX);
       expect(fs.readdirSync(backupDir)).toEqual([path.basename(file)]);
       // #1912: admins are told once, by the backup-key notice that names the databases, not by a notice per backup.
-      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'Backups are not encrypted', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY .*the databases are left out/) }));
+      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'Backups are not encrypted', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY .*the databases .*are left out/) }));
       expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
       await backups.shutdown();
       await database.shutdown();
@@ -619,7 +621,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       await new Promise<void>((resolve, reject) => stream.pipe(fs.createWriteStream(out)).on('finish', resolve).on('error', reject));
       const entries: string[] = [];
       await listTar({ file: out, onReadEntry: (e) => { entries.push(e.path); } });
-      expect(entries.sort()).toEqual(['2026-01-01-ngdpbase-backup.addon-accounting.db', '2026-01-01-ngdpbase-backup.application.db', '2026-01-01-ngdpbase-backup.json.gz.enc']);
+      expect(entries.sort()).toEqual(['2026-01-01-ngdpbase-backup.addon-accounting.db', '2026-01-01-ngdpbase-backup.application.db', '2026-01-01-ngdpbase-backup.env.tar.enc', '2026-01-01-ngdpbase-backup.json.gz.enc']);
       expect(fs.readFileSync(out).includes(process.env[BACKUP_KEY_ENV])).toBe(false);
       await expect(backups.backupArchive('../data/ngdpbase.db')).rejects.toThrow(/No backup named/);
       await backups.shutdown();

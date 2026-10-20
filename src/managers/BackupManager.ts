@@ -20,9 +20,13 @@ import {
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
 import { decryptBuffer, encryptBuffer, ENCRYPTED_SUFFIX, isEncryptedBackup } from '../utils/backupCrypto.js';
-import { BACKUP_KEY_ENV, currentBackupKey, isLeftOutForNoKey } from '../utils/backupKey.js';
+import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, isLeftOutForNoKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
+import { archiveTarget, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import { writeTreeArchive } from '../utils/treeArchive.js';
+import { envForBackup, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
+import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -163,8 +167,9 @@ export const NEVER_IN_A_BACKUP: readonly string[] = [
   'shares (share links stay as they are)',
   'notifications',
   'sign-in sessions',
-  'the keys in the instance .env',
-  'the media index'
+  'the backup key itself, and the database key (both stay as they are on this site)',
+  'TLS certificate files',
+  'the media library and its index'
 ];
 
 /** How the "not restored" notification names a manager's data (#1876); a manager not listed is named as it is. */
@@ -187,13 +192,14 @@ const RESTORE_LABELS: Record<string, string> = {
   FootnoteManager: 'footnotes on public pages',
   CommentManager: 'comments on public pages',
   DatabaseManager: 'the databases',
+  BackupManager: 'the instance .env (the keys and secrets in it)',
   FormsDataManager: 'forms and their submissions',
   CalendarDataManager: 'calendars',
   FeedManager: 'feed records'
 };
 
 /** Managers whose backup entry holds nothing of the site's own: never named as not restored. */
-const NO_SITE_DATA: ReadonlySet<string> = new Set(['BackupManager', 'ImportManager']);
+const NO_SITE_DATA: ReadonlySet<string> = new Set(['ImportManager']);
 
 /** Whether a manager's backup entry holds anything: an error, or a field beyond the bookkeeping every entry has. */
 function slotHoldsData(slot: unknown): boolean {
@@ -221,12 +227,34 @@ export interface RestoreReport {
   notRestored: string[];
   /** The job runs since the backup, read from the live job state when the restore was staged. */
   jobRuns: JobRunSince[];
+  /** Who started the restore. */
+  stagedBy?: string;
 }
 
 /** BackupManager's fault, and the dashboard banner, while there is no backup key (#1561, #1912). */
-export const BACKUP_KEY_MISSING = `${BACKUP_KEY_ENV} is not set, so backups are NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear, and the credentials store and the databases are left out`;
+export const BACKUP_KEY_MISSING = `${BACKUP_KEY_ENV} is not set, so backups are NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear, and the credentials store, the databases and the instance .env are left out`;
 /** The title of the one notification about it. */
 export const BACKUP_KEY_MISSING_TITLE = 'Backups are not encrypted';
+
+/**
+ * The config key that records an admin's confirmation that the backup key is
+ * saved off the server (#1876): the fingerprint of the key they saved. A
+ * different key (a new one made, or one replaced) asks again.
+ */
+export const BACKUP_KEY_SAVED_KEY = 'ngdpbase.backup.key-saved-fingerprint';
+
+/** The banner while no admin has confirmed the backup key is saved off the server (#1876). */
+export function backupKeyNotSaved(fingerprint: string): string {
+  return `Save the backup key off this server: Admin → Backup shows it (fingerprint ${fingerprint}). Every backup is encrypted with it, and a restore on a new server needs it. This stays until an admin confirms it is saved`;
+}
+
+/** What Admin → Backup shows about the backup key: never the key itself. */
+export interface BackupKeyInfo {
+  set: boolean;
+  fingerprint: string | null;
+  /** An admin confirmed this key is saved off the server. */
+  saved: boolean;
+}
 
 /** The scheduled job automatic backups run as (#1720). */
 export const AUTO_BACKUP_JOB_ID = 'backup.auto';
@@ -566,6 +594,18 @@ class BackupManager extends BaseManager {
         }
       }
 
+      // #1876: BackupManager's own part, the instance .env without the backup key's line.
+      try {
+        const env = await this.backupInstanceEnv(backupData, filename, backupKey);
+        if (env.warning) {
+          if (isLeftOutForNoKey(env.warning)) leftOutForNoKey.push(`BackupManager: ${env.warning}`);
+          else failures.push(`BackupManager: ${env.warning}`);
+        }
+      } catch (error) {
+        logger.error('❌ Failed to back up the instance .env:', error);
+        failures.push(`BackupManager: the instance .env: ${(error as Error).message}`);
+      }
+
       // Serialize to JSON
       const jsonData = JSON.stringify(backupData, null, 2);
       logger.info(`📊 Backup data size: ${(jsonData.length / 1024).toFixed(2)} KB`);
@@ -632,6 +672,40 @@ class BackupManager extends BaseManager {
     }
   }
 
+  /**
+   * The instance `.env` beside the document (#1876): `<stem>.env.tar.enc`,
+   * only ever encrypted, and never with the backup key's own line. Without
+   * the key it is left out (`LEFT_OUT_FOR_NO_KEY`). BackupManager owns this
+   * part: the file belongs to no manager, and the backup key is this one's.
+   */
+  private async backupInstanceEnv(backupData: BackupData, filename: string, backupKey: string): Promise<{ warning?: string }> {
+    const slot = (env: DirectoryBackupData | null): void => {
+      backupData.managers.BackupManager = { managerName: 'BackupManager', timestamp: new Date().toISOString(), data: { env } };
+    };
+    if (!backupKey) {
+      slot(null);
+      return { warning: `${LEFT_OUT_FOR_NO_KEY}the instance .env was left out: it is only ever backed up encrypted under the backup key (#1876)` };
+    }
+    const file = this.instanceEnvFile();
+    const target = archiveTarget(backupStem(filename), 'env');
+    const scratch = mkdtempSync(path.join(this.backupDirectory!, '.env-part-'));
+    try {
+      const entries = file && existsSync(file) ? ['.env'] : [];
+      if (file && entries.length > 0) writeFileSync(path.join(scratch, '.env'), envForBackup(readFileSync(file, 'utf8')), { mode: 0o600 });
+      const outcome = await writeTreeArchive(path.join(this.backupDirectory!, target.archive), scratch, { entries, backupKey: target.backupKey });
+      slot({ format: 1, archive: target.archive, files: outcome.files, bytes: outcome.bytes, ...(target.keyFingerprint ? { keyFingerprint: target.keyFingerprint } : {}) });
+      return {};
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  /** `<FAST_STORAGE>/.env`, or null when the instance data folder is not known. */
+  private instanceEnvFile(): string | null {
+    const dir = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getInstanceDataFolder?.();
+    return dir ? instanceEnvPath(dir) : null;
+  }
+
   /** The files the managers wrote beside one backup document (#1723). */
   private async companionsOf(documentFilename: string): Promise<string[]> {
     return (await this.provider?.listBackupObjects() ?? []).filter((o) => isCompanionOf(o.filename, documentFilename)).map((o) => o.filename);
@@ -661,8 +735,18 @@ class BackupManager extends BaseManager {
    * Read at start and at each backup.
    */
   private async checkBackupKey(): Promise<void> {
-    if (currentBackupKey()) {
+    const key = currentBackupKey();
+    if (key) {
       this.markReadyIfDegradedBy(BACKUP_KEY_MISSING);
+      // #1876: the banner asking an admin to save the key off the server, until one confirms.
+      const fingerprint = backupKeyFingerprint(key);
+      const notSaved = backupKeyNotSaved(fingerprint);
+      const status = this.getManagerStatus();
+      if (this.backupKeyInfo().saved) {
+        if (status.state === 'degraded' && status.reason?.startsWith('Save the backup key off this server')) this.markReady();
+      } else if (status.state !== 'degraded' || status.reason?.startsWith('Save the backup key off this server')) {
+        this.markDegraded(notSaved, BACKUP_KEY_SAVED_KEY);
+      }
       return;
     }
     // A degraded backup directory (preflight) is the worse fault, and keeps the banner.
@@ -675,6 +759,40 @@ class BackupManager extends BaseManager {
       logger.warn('[BackupManager] Could not check for an earlier backup-key notice:', err);
     }
     await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard shows Backup as degraded; this is the only notification about it.`);
+  }
+
+  /** The backup key as Admin → Backup shows it: set or not, its fingerprint, and whether an admin confirmed it is saved. Never the key. */
+  backupKeyInfo(): BackupKeyInfo {
+    const key = currentBackupKey();
+    if (!key) return { set: false, fingerprint: null, saved: false };
+    const fingerprint = backupKeyFingerprint(key);
+    const saved = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(BACKUP_KEY_SAVED_KEY, '') === fingerprint;
+    return { set: true, fingerprint, saved };
+  }
+
+  /**
+   * The backup key itself, for the one page that asks an admin to copy it
+   * off the server (#1876). The route asks `config-manage`, with its fresh
+   * sign-in; nothing else shows, logs or returns it.
+   */
+  revealBackupKey(): string | null {
+    return currentBackupKey() || null;
+  }
+
+  /**
+   * An admin confirms the backup key with this fingerprint is saved off the
+   * server (#1876). Recorded in the configuration (`ngdpbase.backup.key-saved-fingerprint`,
+   * written through ConfigurationManager, which records the change), so it
+   * survives restarts; a different key asks again. Refused when the
+   * fingerprint is not the current key's: the page they read was stale.
+   */
+  async confirmBackupKeySaved(ctx: ActorContext, fingerprint: string): Promise<void> {
+    const info = this.backupKeyInfo();
+    if (!info.set || info.fingerprint !== fingerprint) throw new Error('That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) throw new Error('ConfigurationManager not available');
+    await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);
+    await this.checkBackupKey();
   }
 
   private async notifyAdmins(level: 'error' | 'warning' | 'success', title: string, message: string): Promise<void> {
@@ -801,7 +919,7 @@ class BackupManager extends BaseManager {
         await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged, safetyBackup: path.basename(before) });
         results.success.push('DatabaseManager');
         // #1876: what this databases-only restore leaves as it is, for the notification once it is applied.
-        await this.writeRestoreReport(backupPath, backupData, managerNames.filter((n) => n !== 'DatabaseManager'));
+        await this.writeRestoreReport(backupPath, backupData, managerNames.filter((n) => n !== 'DatabaseManager'), actorOf(ctx).user);
       }
 
       // #1876: while a site restore is staged, nothing is restored live: it
@@ -956,11 +1074,18 @@ class BackupManager extends BaseManager {
           replaceStaged: options.replaceStaged || Boolean(databaseStaged)
         });
       }
+      // #1876: the instance .env, BackupManager's own part; applied at the very start of the process.
+      const env = (backupData.managers.BackupManager as { data?: { env?: DirectoryBackupData | null } } | undefined)?.data?.env;
+      const envFile = this.instanceEnvFile();
+      if (env && envFile) {
+        logger.info('📦 Staging the instance .env...');
+        await stageFilePart(INSTANCE_ENV_PART, envFile, env, { ctx, directory, siteRestore: siteFile }, { whenAbsent: '' });
+      }
       const committed = commitSiteRestore(siteFile);
       // #1876: every part of the backup that is not in the restore — no staged
       // restore here, or a staged one that found nothing to stage.
       const recorded = new Set(committed.parts.map((p) => p.manager));
-      await this.writeRestoreReport(backupPath, backupData, Object.keys(backupData.managers).filter((n) => !recorded.has(n)));
+      await this.writeRestoreReport(backupPath, backupData, Object.keys(backupData.managers).filter((n) => !recorded.has(n)), actorOf(ctx).user);
     } catch (err) {
       discardSiteRestore(siteFile);
       this.removeRestoreReport();
@@ -1010,7 +1135,7 @@ class BackupManager extends BaseManager {
    * the parts of the backup not in it, and the job runs since the backup,
    * read from the live job state now, before the restore replaces it.
    */
-  private async writeRestoreReport(backupPath: string, backupData: BackupData, notStaged: string[]): Promise<void> {
+  private async writeRestoreReport(backupPath: string, backupData: BackupData, notStaged: string[], stagedBy: string): Promise<void> {
     const since = String(backupData.timestamp ?? '');
     let jobRuns: JobRunSince[] = [];
     try {
@@ -1019,7 +1144,7 @@ class BackupManager extends BaseManager {
       logger.warn('[BackupManager] The job runs since the backup could not be read for the restore report:', err);
     }
     const notRestored = notStaged.filter((name) => !NO_SITE_DATA.has(name) && slotHoldsData(backupData.managers[name]));
-    const report: RestoreReport = { version: 1, source: path.basename(backupPath), backup: since, notRestored, jobRuns };
+    const report: RestoreReport = { version: 1, source: path.basename(backupPath), backup: since, notRestored, jobRuns, stagedBy };
     writeFileSync(this.restoreReportPath(), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   }
 
@@ -1044,7 +1169,9 @@ class BackupManager extends BaseManager {
     const databasesOnly = finished ? [] : this.engine.getManager<DatabaseManager>('DatabaseManager')?.getRestoredAtStart?.() ?? [];
     const applied = finished ? finished.parts.filter((p) => p.status === 'applied').map((p) => p.manager) : databasesOnly.length > 0 ? ['DatabaseManager'] : [];
     if (applied.length > 0) {
-      await this.reportNotRestored(applied, finished ? finished.parts.filter((p) => p.status !== 'applied').map((p) => p.manager) : []);
+      const report = this.readRestoreReport();
+      await this.recordRestoreApplied(applied, finished, report);
+      await this.reportNotRestored(applied, finished ? finished.parts.filter((p) => p.status !== 'applied').map((p) => p.manager) : [], report);
     }
     this.removeRestoreReport();
     if (finished) await this.reportSiteRestoreOutcome(finished);
@@ -1056,14 +1183,7 @@ class BackupManager extends BaseManager {
    * backup and the restore (name, last run, result), which are not in the
    * restored job history. Jobs are never run again because of a restore.
    */
-  private async reportNotRestored(applied: string[], notApplied: string[]): Promise<void> {
-    let report: RestoreReport | null = null;
-    try {
-      const file = this.restoreReportPath();
-      if (existsSync(file)) report = JSON.parse(readFileSync(file, 'utf8')) as RestoreReport;
-    } catch (err) {
-      logger.error('[BackupManager] The restore report could not be read:', err);
-    }
+  private async reportNotRestored(applied: string[], notApplied: string[], report: RestoreReport | null): Promise<void> {
     const jobs = this.engine.getManager<{ getRunsReplacedAtStart?(): JobRunSince[]; displayNameOf?(id: string): string }>('BackgroundJobManager');
     const runs = new Map<string, JobRunSince>();
     for (const r of [...(report?.jobRuns ?? []), ...(jobs?.getRunsReplacedAtStart?.() ?? [])]) runs.set(`${r.jobId}@${r.startedAt}`, r);
@@ -1074,6 +1194,47 @@ class BackupManager extends BaseManager {
     });
     logger.error(`[BackupManager] ${message} (#1876)`);
     await this.notifyAdmins('error', 'Critical: a restore did not bring everything back', message);
+  }
+
+  /** The report written when the restore was staged, or null. */
+  private readRestoreReport(): RestoreReport | null {
+    try {
+      const file = this.restoreReportPath();
+      return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as RestoreReport : null;
+    } catch (err) {
+      logger.error('[BackupManager] The restore report could not be read:', err);
+      return null;
+    }
+  }
+
+  /**
+   * `backup-restore-applied` (#1876, operator-approved): written at the start
+   * that applied a restore, so into the restored audit log — which otherwise
+   * would not say a restore happened (the `backup-restore` record of the
+   * staging is in the log it replaced). Names the backup, when it was taken,
+   * who started the restore and what was put back. on-failure: continue — the
+   * restore is already in place.
+   */
+  private async recordRestoreApplied(applied: string[], finished: SiteRestoreManifest | null, report: RestoreReport | null): Promise<void> {
+    const who = actorOf(systemContext(this.engine, 'a staged restore was applied at start'));
+    const source = finished?.source || report?.source || 'unknown';
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.BACKUP_RESTORE_APPLIED,
+      ...who,
+      action: 'backup-restore-applied',
+      result: 'success',
+      severity: 'high',
+      resource: source,
+      resourceType: 'backup',
+      metadata: {
+        ...who.metadata,
+        source,
+        backupTakenAt: finished?.backup || report?.backup || null,
+        startedBy: finished?.stagedBy || report?.stagedBy || null,
+        kind: finished ? 'site' : 'databases',
+        applied
+      }
+    }, (err) => logger.warn('[BackupManager] Audit record failed for backup-restore-applied:', err));
   }
 
   /** Tell admins what the start did with a staged site restore (#1876). */

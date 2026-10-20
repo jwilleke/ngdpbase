@@ -31,6 +31,7 @@ import '../src/bootstrap-env.js';
 import path from 'path';
 import fs from 'fs-extra';
 import { instanceDataFolder as resolveInstanceDataFolder } from '../src/utils/configFiles.js';
+import { backupKeyFingerprint } from '../src/utils/backupKey.js';
 
 async function seedTestData() {
   // #1895: the same folder the server resolves. This read only the legacy
@@ -77,6 +78,16 @@ async function seedTestData() {
     customConfig['ngdpbase.auth.step-up'] = { ...(customConfig['ngdpbase.auth.step-up'] as Record<string, unknown> | undefined), 'max-age-minutes': 120 };
     await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
     console.log('✅ E2E step-up window set to 120 minutes');
+
+    // #1876: every site has a backup key (bootstrap-env, above, made this one),
+    // and the dashboard asks an admin to save it off the server until one
+    // confirms. Nobody keeps a throwaway E2E instance's key, so its
+    // confirmation is recorded here, and the dashboard starts healthy.
+    if (process.env.NGDPBASE_BACKUP_KEY) {
+      customConfig['ngdpbase.backup.key-saved-fingerprint'] = backupKeyFingerprint(process.env.NGDPBASE_BACKUP_KEY);
+      await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+      console.log('✅ E2E backup key recorded as saved (a throwaway instance\'s key)');
+    }
 
     // #1895: the admin's bootstrap password comes from config, never straight
     // from the environment. Point it at the variable when one is set, so the
