@@ -130,3 +130,16 @@ class SqliteJobStateProvider implements JobStateProvider {
 }
 
 export default SqliteJobStateProvider;
+
+/**
+ * Every job's runs started after `since`, from a database handle (#1876): the
+ * application database a restore kept as `*.pre-restore`, read just after it
+ * was replaced, so the restore's notice names the runs the restored job
+ * history no longer has. The same table `listRuns` reads.
+ */
+export function runsStartedAfter(db: Handle, since: string): Array<{ jobId: string; run: JobRunRecord }> {
+  const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'job_runs'").get();
+  if (!hasTable) return [];
+  const rows = db.prepare('SELECT job_id, record FROM job_runs WHERE started_at > ? ORDER BY started_at DESC').all(since) as Array<{ job_id: string; record: string }>;
+  return rows.map((r) => ({ jobId: r.job_id, run: JSON.parse(r.record) as JobRunRecord }));
+}

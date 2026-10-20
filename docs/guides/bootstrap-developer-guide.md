@@ -7,7 +7,7 @@ How an ngdpbase instance comes up: how environment variables are found, which us
 - `src/bootstrap-env.ts` is the only environment bootstrap. Scripts that need instance paths import it first.
 - `PUID` and `PGID` are required on every boot, and the server never runs as root ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). See [Run-as user](#run-as-user-puidpgid).
 - Nothing is written under the application folder at runtime (`/app` in the image). Only `FAST_STORAGE` and `SLOW_STORAGE` are written ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687), [#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
-- Nothing writes a `.env` except the boot backfills: `NGDPBASE_SESSION_SECRET` and `NGDPBASE_CREDENTIALS_KEY` when they are absent, and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS`.
+- Nothing writes a `.env` except the boot backfills: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` when they are absent, a staged restore of the `.env` itself, and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS`.
 - `NGDPBASE_SYSTEM_USER` is required on every boot. `NGDPBASE_ADMIN_PASSWORD` is required for a headless install that would otherwise create the admin on the shipped password, and whenever `ngdpbase.user.security.defaultpassword` is the bare ref `$NGDPBASE_ADMIN_PASSWORD`. An interactive fresh install may boot on the shipped `admin123` and warn.
 - Configuration merge and `${VAR}` resolution live in `ConfigurationManager`, not in the env loader.
 - Identity of the system principal is the env name; authority is `ngdpbase.system.roles`, resolved live.
@@ -20,7 +20,7 @@ Three layers, in the order they run:
 2. __Configuration__ — `ConfigurationManager` merges shipped defaults, each enabled addon's `config/default-config.json`, and instance overrides, then resolves `$VAR` references against that environment at every lookup.
 3. __Install__ — a `.install-complete` marker gates the setup wizard; `HEADLESS_INSTALL=true` skips it.
 
-Nothing in the codebase __writes__ a `.env` except the boot backfills below: `NGDPBASE_SESSION_SECRET` and `NGDPBASE_CREDENTIALS_KEY` when absent ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), [#1524](https://github.com/jwilleke/ngdpbase/issues/1524)), and, only when `oidc-auth-server.enabled` is true, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574), `OidcManager`). Everything else you create by hand from `.env.example`.
+Nothing in the codebase __writes__ a `.env` except the boot backfills below: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` when absent ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), [#1524](https://github.com/jwilleke/ngdpbase/issues/1524), [#1876](https://github.com/jwilleke/ngdpbase/issues/1876)), a staged site restore putting back the backup's `.env` (#1876), and, only when `oidc-auth-server.enabled` is true, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574), `OidcManager`). Everything else you create by hand from `.env.example`.
 
 `NGDPBASE_SYSTEM_USER` is __required__ on every boot and is never generated: the name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631), below). An instance without it refuses to start. `NGDPBASE_ADMIN_PASSWORD` is never generated either. It is read only on the boot that finds an empty user store. An interactive install may use the shipped `admin123` and then warn; a headless install refuses that shipped password.
 
@@ -96,6 +96,10 @@ Two cases refuse to start, before the logger exists, with the reason on stderr: 
 The repo-root `.env` is never written. It is shared by every instance launched from the checkout, and the per-instance file is the documented home for machine-specific secrets.
 
 The same helper (`ensureInstanceEnvSecret` in `src/utils/instanceEnvSecret.ts`) backfills `NGDPBASE_CREDENTIALS_KEY` on every boot when it is absent ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)): it signs the credentials store and encrypts TOTP seeds, and it has no config key. When `oidc-auth-server.enabled` is true, `OidcManager.ensureKeys` backfills `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` the same way ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574)). A placeholder or a failed append refuses boot, as for the session secret.
+
+`NGDPBASE_BACKUP_KEY` is backfilled the same way ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), "one thing to save"): every site has one, and every backup is encrypted under it. The generated line's comment says to save a copy off the server; Admin → Backup shows its fingerprint, and a dashboard banner stays until an admin confirms it is saved (`ngdpbase.backup.key-saved-fingerprint`). __On a new server, put the saved key in the `.env` before the first start__: otherwise the site makes its own, and that line must be replaced with the saved one (and the server restarted) before a backup can be restored.
+
+Before the backfills, a staged site restore of the `.env` is applied (`applyInstanceEnvAtStart`, `src/utils/instanceEnvBackup.ts`; the manifest is found with `siteRestoreFileAtBoot`, before the configuration loads): the backup's file takes the live one's place, kept as `.env.pre-restore`, with the live `NGDPBASE_BACKUP_KEY` and `NGDPBASE_DATABASE_KEY` lines carried over, and the environment is reloaded from it — every variable the old instance file set is replaced, never one set in the ambient environment, and the root `.env` fills what is left.
 
 ### Every entry point loads it
 
@@ -234,7 +238,7 @@ Until `#1087` this was documentation without implementation: the comment claimed
 
 ## Setting `.env` values
 
-__By hand__, except the boot backfills. Those append one line each to `<FAST_STORAGE>/.env`, only when the variable is absent: `NGDPBASE_SESSION_SECRET` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), `bootstrap-env.ts`), `NGDPBASE_CREDENTIALS_KEY` ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524), same module), and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574), `OidcManager`). Everything else is yours to set. (Test fixtures also write, to scratch paths.)
+__By hand__, except the boot backfills. Those append one line each to `<FAST_STORAGE>/.env`, only when the variable is absent: `NGDPBASE_SESSION_SECRET` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), `bootstrap-env.ts`), `NGDPBASE_CREDENTIALS_KEY` ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524), same module), `NGDPBASE_BACKUP_KEY` ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), same module), and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574), `OidcManager`). Everything else is yours to set. (Test fixtures also write, to scratch paths.)
 
 `.env` is gitignored (`.gitignore:68-71` ignores `.env` and `.env.*` while keeping `!.env.example`). Copy the template and fill it in:
 
@@ -259,7 +263,7 @@ Rules that follow from this, for every implementation:
 - __The ambient environment beats the file.__ A variable set in the Deployment or compose file cannot be changed by editing `.env`; remove it from the launcher first.
 - __The image carries no `.env`.__ A checkout's `.env` (yours, jimstest's) never reaches a container. Per-instance values live on the instance's own data volume or in its launcher.
 - __Names are exact.__ There are no aliases: `SESSION_SECRET` is not `NGDPBASE_SESSION_SECRET`, and a misnamed variable is silently unused ([#1678](https://github.com/jwilleke/ngdpbase/issues/1678)). An `optional: true` `secretKeyRef` hides a Secret that does not exist, so check the name in `.env.example`.
-- __Missing secrets are generated, not required.__ The boot backfills write `NGDPBASE_SESSION_SECRET` and `NGDPBASE_CREDENTIALS_KEY` into the instance `.env` when nothing supplied them, so a fresh volume works; supply them yourself only to manage them (rotation, a GitOps-held Secret).
+- __Missing secrets are generated, not required.__ The boot backfills write `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` into the instance `.env` when nothing supplied them, so a fresh volume works; supply them yourself only to manage them (rotation, a GitOps-held Secret).
 
 Which of those homes a *new* variable belongs in is decided by what it is — see [Where a new variable goes](#where-a-new-variable-goes).
 
@@ -284,7 +288,7 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `NGDPBASE_SESSION_SECRET` | Signs the session cookie. Generated into `<FAST_STORAGE>/.env` on first boot if absent; set it yourself only to manage it. Placeholders are refused |
 | `NGDPBASE_CREDENTIALS_KEY` | Signs the credentials store and encrypts TOTP seeds. Generated into `<FAST_STORAGE>/.env` on first boot if absent. No config key |
 | `NGDPBASE_DATABASE_KEY` | The SQLCipher key of the application database and every add-on database, when `ngdpbase.database.provider` is `sqlite`. Never generated and never a config key: set it yourself, and keep a copy off the server. Missing or wrong on an encrypted database, the site starts in maintenance mode (see below) |
-| `NGDPBASE_BACKUP_KEY` | The key every database backup is encrypted under. Its own value, never the database key. Never generated |
+| `NGDPBASE_BACKUP_KEY` | The key every backup is encrypted under: the document, every file archive, the `.env` copy and the databases. Its own value, never the database key. Generated into `<FAST_STORAGE>/.env` on first boot if absent (#1876); save a copy off the server. Never in a backup itself |
 | `OIDC_AUTH_SERVER_JWKS` | OpenID Connect signing keys. Generated into the instance `.env` only when `oidc-auth-server.enabled` is true |
 | `OIDC_AUTH_SERVER_COOKIE_KEYS` | OpenID Connect cookie keys. Same gate as the JWKS |
 | `PUID` / `PGID` | The user and group the server runs as. Required; never 0. Standard default `1000` / `1000` ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)) |

@@ -42,6 +42,7 @@ import BackgroundJobManager from './managers/BackgroundJobManager.js';
 import CatalogManager from './managers/CatalogManager.js';
 import CommentManager from './managers/CommentManager.js';
 import FootnoteManager from './managers/FootnoteManager.js';
+import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import PersonManager from './managers/PersonManager.js';
@@ -366,6 +367,11 @@ class WikiEngine extends Engine {
     this.registerManager('AssetManager', assetManager);
     await assetManager.initialize();
 
+    // FileManager — the files door (#1852); this step reads only, over AttachmentManager
+    const fileManager = new FileManager(this);
+    this.registerManager('FileManager', fileManager);
+    await fileManager.initialize();
+
     // AssetService — backward-compatible search facade over AssetManager
     const assetService = new AssetService(this);
     this.registerManager('AssetService', assetService);
@@ -459,10 +465,13 @@ class WikiEngine extends Engine {
     const addonsManager = this.getManager<AddonsManager>('AddonsManager');
     if (!addonsManager) {
       logger.warn('[WikiEngine] initializeAddons: AddonsManager not registered');
-      return;
+    } else {
+      await addonsManager.initialize();
+      logger.info('[WikiEngine] Addons initialized');
     }
-    await addonsManager.initialize();
-    logger.info('[WikiEngine] Addons initialized');
+    // #1876: every manager, add-ons included, has now applied its part of a
+    // staged restore; say what the restore did, and what it did not bring back.
+    await this.getManager<BackupManager>('BackupManager')?.reportRestoreAtBoot();
   }
 
   /**
