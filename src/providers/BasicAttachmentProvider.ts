@@ -619,7 +619,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
    * @param fileBuffer - File data
    * @param fileInfo - { originalName, mimeType, size }
    * @param metadata - Schema.org CreativeWork metadata
-   * @param user - User object { name, email }
+   * @param user - The uploader: `username` is recorded as author and editor (#1926)
    * @param options - Privacy-aware storage options
    * @returns Complete attachment metadata
    * @private
@@ -631,6 +631,14 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     user: User | null = null,
     options: StoreAttachmentOptions = {}
   ): Promise<SchemaCreativeWork> {
+    // #1926: a new record names its uploader by username — never an email,
+    // never 'Unknown'. AttachmentManager refuses an upload with nobody signed
+    // in; this refuses a caller that hands no username, before anything is written.
+    const uploader = user?.username;
+    if (!uploader) {
+      throw new Error('[BasicAttachmentProvider] an upload must name its uploader\'s username (#1926)');
+    }
+
     // Validate file
     this.validateFile(fileInfo);
 
@@ -701,11 +709,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
     // Create Schema.org CreativeWork metadata
     const now = new Date().toISOString();
-    const author: SchemaPerson | undefined = user ? {
-      '@type': 'Person',
-      'name': user.username || user.email || UNKNOWN_UPLOADER,
-      'email': user.email
-    } : undefined;
+    const author: SchemaPerson = { '@type': 'Person', 'name': uploader };
 
     const attachmentMetadata: SchemaCreativeWork = {
       '@context': 'https://schema.org',

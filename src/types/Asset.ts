@@ -9,9 +9,11 @@
 import type { ActorContext } from '../context/ActorContext.js';
 
 /**
- * What an attachment record says when it was stored with no uploader: written
- * into the pool's `author.name` and shown as `uploadedBy`. Not a user; the
- * files layer reads it as "no owner" (#1852).
+ * What an attachment record says when it was stored with no uploader, in the
+ * pool's `author.name`, and what `uploadedBy` shows for a record with none.
+ * Only records written before #1926 carry it: a new upload names its
+ * uploader's username or is refused. Not a user; the files layer reads it as
+ * "no owner" (#1852).
  */
 export const UNKNOWN_UPLOADER = 'Unknown';
 
