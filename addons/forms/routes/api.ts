@@ -8,7 +8,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataManager.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
-import { resolveChoices } from '../managers/fieldOptions.js';
+import { resolveChoiceOptions, choiceValues } from '../managers/fieldOptions.js';
+import { submissionDetails } from '../managers/submissionText.js';
+import type PluginManager from '../../../dist/src/managers/PluginManager.js';
 
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
@@ -38,8 +40,8 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         await ctx.requirePermission('form-submit');
 
         // ── 2. Validate fields; a dropdown value must be one it offered ────
-        const choices = await resolveChoices(engine, form.fields, userContext);
-        const validator = buildSubmissionValidator(form, choices);
+        const choiceOptions = await resolveChoiceOptions(engine, form.fields, userContext);
+        const validator = buildSubmissionValidator(form, choiceValues(choiceOptions));
         const validationResult = validator.safeParse(body);
         if (!validationResult.success) {
           res.status(400).json({ ok: false, error: 'Please correct the marked fields', fields: fieldErrors(validationResult.error) });
@@ -115,14 +117,12 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           const cm = engine.getManager<import('../../../dist/src/managers/ConfigurationManager.js').default>('ConfigurationManager');
           const baseUrl = (cm?.getProperty('ngdpbase.application.base-url', '') as string).replace(/\/$/, '');
 
-          // Build detail lines from submission data for fields with values
-          const data = submission.data as Record<string, string>;
-          const detailFields = form.fields.filter(f =>
-            !['hidden', 'checkbox', 'section'].includes(f.type) && data[f.name]
-          );
-          const details = detailFields
-            .map(f => `  ${f.label}: ${data[f.name]}`)
-            .join('\n');
+          // The details as the form showed them (#1915): the choices this
+          // submitter was offered, money through core's formatter (#1820).
+          const pluginManager = engine.getManager<PluginManager>('PluginManager');
+          const details = pluginManager
+            ? submissionDetails(form, submission.data, choiceOptions, pluginManager.formatters.formatMoney).join('\n')
+            : '';
 
           const obo = submission.onBehalfOf;
           const requesterBlock = obo?.name
