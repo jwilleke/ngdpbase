@@ -2784,7 +2784,7 @@ class AuthManager extends BaseManager {
    * The link only opens the approval page; the button there approves, so a
    * mail scanner opening links approves nothing. Limited to one per minute.
    */
-  async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable'> {
+  async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable' | 'failed'> {
     const p = this.pendingSignIn(handle, binding);
     const mail = this.mailForLinks();
     const row = p ? (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email') : undefined;
@@ -2792,9 +2792,12 @@ class AuthManager extends BaseManager {
     if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) return 'too-soon';
     const token = randomBytes(32).toString('base64url');
     this.approvalTokens.set(token, { handle, expiresAt: p.expiresAt });
+    const previousSentAt = p.lastSentAt;
     p.lastSentAt = Date.now();
     const url = `${this.linkBase()}/login/approve?t=${token}`;
-    await mail.send({
+    // #1916: a send that fails is reported by EmailManager; here the person
+    // waiting is told, and nothing says a link is on its way.
+    const sent = await mail.send({
       to: row.subject,
       subject: 'Approve your sign-in',
       text: [
@@ -2810,7 +2813,12 @@ class AuthManager extends BaseManager {
         `<p><a href="${url}">See the details and approve or refuse it</a></p>`,
         '<p>It works once, for the next 10 minutes. If this was not you, refuse it and change your password.</p>'
       ].join('\n')
-    });
+    }).then(() => true, () => false);
+    if (!sent) {
+      this.approvalTokens.delete(token);
+      p.lastSentAt = previousSentAt;
+      return 'failed';
+    }
     return 'sent';
   }
 

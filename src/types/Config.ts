@@ -140,6 +140,12 @@ export interface WikiConfig {
   'ngdpbase.mail.rate-limit.enabled': boolean;
 
   /**
+   * Outbound email failures: one administrator notice per this many minutes,
+   * counting every failure inside it (#1916). Default: 60.
+   */
+  'ngdpbase.mail.failure-notice.window-minutes': number;
+
+  /**
    * Anti-spam: max submissions per IP per `window-minutes` window before
    * the 429 trips (#670 Phase E). Default: 5.
    */

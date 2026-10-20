@@ -22,6 +22,7 @@ describe('two-step sign-in (#1523)', () => {
   let file: string;
   let sent: Array<{ to: string; subject: string; text: string }>;
   let mailOn: boolean;
+  let mailFails: boolean;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
 
   const started = async () => {
@@ -38,7 +39,7 @@ describe('two-step sign-in (#1523)', () => {
         getUser: (u: string) => Promise.resolve({ molly: { username: 'molly', email: 'molly@example.com' }, sam: { username: 'sam', email: '' } }[u] ?? null),
         hasPassword: () => Promise.resolve(true)
       },
-      EmailManager: mailOn ? { send: (m: { to: string; subject: string; text: string }) => { sent.push(m); return Promise.resolve(); }, getProviderName: () => 'test' } : null,
+      EmailManager: mailOn ? { send: (m: { to: string; subject: string; text: string }) => { if (mailFails) return Promise.reject(new Error('smtp down')); sent.push(m); return Promise.resolve(); }, getProviderName: () => 'test' } : null,
       AuditManager: { logAuditEvent: () => Promise.resolve('evt') }
     };
     const manager = new AuthManager({ getManager: (n: string) => managers[n] ?? null });
@@ -63,6 +64,7 @@ describe('two-step sign-in (#1523)', () => {
     process.env[CREDENTIALS_KEY_ENV] = 'test-credentials-key-not-a-secret';
     sent = [];
     mailOn = true;
+    mailFails = false;
   });
 
   afterEach(() => {
@@ -119,6 +121,16 @@ describe('two-step sign-in (#1523)', () => {
     expect(done?.result.factors?.map((f) => f.provider)).toEqual(['password', 'email-link']);
     expect(am.signInRecord(done!.result)).toMatchObject({ amr: ['pwd', 'email'], aal: 1, acr: 'aal1' });
     expect(am.completeTwoStep(handle, 'browser-1')).toBeNull();
+  });
+
+  test('#1916: an approval email that cannot be sent says so, leaves no live link, and does not block a retry', async () => {
+    const am = await enrolled();
+    const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
+    mailFails = true;
+    expect(await am.sendEmailApproval(handle, 'b')).toBe('failed');
+    expect(am.pendingSignIn(handle, 'b')?.lastSentAt).toBeUndefined();
+    mailFails = false;
+    expect(await am.sendEmailApproval(handle, 'b')).toBe('sent');
   });
 
   test('"this wasn\'t me" refuses the waiting sign-in for good', async () => {
