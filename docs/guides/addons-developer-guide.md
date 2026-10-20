@@ -504,6 +504,35 @@ async register(engine, config, host) {
 - An addon whose `register` takes two arguments still loads.
 - Anything an addon needs that `host` does not offer is added to core by pull request; the addon does not import it.
 
+### A section on the signed-in person's profile ([#534](https://github.com/jwilleke/ngdpbase/issues/534))
+
+An addon that has per-person settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
+
+- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this person. `user` is the person's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
+- `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write (`userManager.updateUser(ctx.username, updates, ctx)`), never build a new one from `ctx.username`. An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
+
+What it is not: it is only the signed-in person's own `/profile`. There is one route, `/profile`, and it always shows the person who is signed in; there is no profile page for someone else. Showing data about other people belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
+
+How core calls them:
+
+- `GET /profile` (checked against `profile-manage`) reads the person's fresh record and calls `AddonsManager.getProfileSections(user)`. It calls every loaded addon's `profileSection()` in parallel. An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded.
+- `POST /preferences` (also `profile-manage`) saves the core preferences first, then calls `AddonsManager.saveProfileSections(ctx, body)` with a copy of the request body. The addons are called one at a time, so each one's read-merge-write of the person's preferences sees the one before it. Dotted field names arrive flat: `<input name="journal.x">` is `body['journal.x']`. An addon that throws is logged; it does not stop the core save or another addon's save, and the person is not told their preferences failed.
+
+The rules, which core cannot enforce for you:
+
+- __`html` is inserted raw__ (`<%- %>`) inside the person's form. Escape every value you put in it: use `<%= %>` in your EJS partial. Unescaped input there is stored XSS against everyone who opens their profile.
+- __No `<input name="_csrf">`__: it overrides the host form's token and breaks the save.
+- __No `<form>` of your own__: the fields submit with the host's preferences form, and a nested `<form>` is invalid HTML.
+- __Put a hidden presence marker in the card__ (`<input type="hidden" name="<slug>._rendered" value="1">`) and have `saveProfileSection` return at once when it is missing. A checkbox that is not ticked sends nothing, so without the marker "unticked" and "the card was not on the form" look the same, and a save would quietly set every stored checkbox to false.
+- __Re-check every config-gated field on the server__: a field the partial shows only when a setting allows it (`<% if (enabled) { %>`) is written only under the same check in `saveProfileSection`, or a crafted POST sets it anyway.
+- __No inline script__: the partial is rendered outside the request, so it has no CSP nonce. See [Scripts in a view](#scripts-in-a-view-the-csp-nonce-contract).
+
+The worked example is the journal addon: `profileSection` and `saveProfileSection` in `addons/journal/index.ts`, and the partial `addons/journal/views/_profile-section.ejs`.
+
+- 1 `profileSection` reads the person's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', html }`.
+- 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
+- 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the person's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
+
 ---
 
 ## 4. Using the Engine
