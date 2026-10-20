@@ -1,0 +1,37 @@
+<%- include('header', { pageName: '' }) %>
+
+<%
+// #1930 — the "Is this you?" link mailed at sign-up. Joining is the button
+// below, never the link itself, so a mail scanner opening the link joins nothing.
+%>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Is this you?</h4>
+                </div>
+                <div class="card-body">
+                    <% if (offer) { %>
+                        <p>We hold a contact record<% if (offer.personName) { %> for <strong><%= offer.personName %></strong><% } %> with the email address <strong><%= offer.email %></strong>.</p>
+                        <p>Join it to your account <strong><%= username %></strong>?</p>
+                        <p class="text-muted small">Only do this if the record is about you. It then belongs to your account.</p>
+                        <form action="/contacts/link/confirm" method="POST" class="d-flex gap-2">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="t" value="<%= token %>">
+                            <button type="submit" name="answer" value="join" class="btn btn-primary flex-fill" data-testid="contact-link-join">Yes, join it</button>
+                            <button type="submit" name="answer" value="decline" class="btn btn-outline-secondary flex-fill" data-testid="contact-link-decline">No, it's not me</button>
+                        </form>
+                    <% } else { %>
+                        <p data-testid="contact-link-expired">This link has expired, was already used, or was sent for another account.</p>
+                        <p class="text-muted small">Sign in as the account the email was sent for, or ask an administrator to link the record for you.</p>
+                        <a href="/profile" class="btn btn-secondary">Back to your profile</a>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

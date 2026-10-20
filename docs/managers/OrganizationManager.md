@@ -1,7 +1,7 @@
 ---
 name: OrganizationManager
 description: Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider
-dateModified: '2026-10-19'
+dateModified: '2026-10-20'
 category: managers
 code: src/managers/OrganizationManager.ts
 ---
@@ -29,6 +29,10 @@ __Several records and no key resolves to `null`, deliberately.__ Choosing arbitr
 The result is cached — including a `null` — so resolution happens once per process.
 
 Two things it never does: __write the config key back__ (instance config is a read-only mount on containerised deployments, so any strategy depending on persisting a key fails exactly where this problem bites), and __rewrite an adopted record's `@id`__ (Role records reference the organization by `@id`; normalising even a trailing slash would orphan every existing role).
+
+## The contacts door
+
+OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `contact-read` to read and `contact-manage` to change, and record each change as the `contact-manage` audit event. `people(ctx, id)` reads each person's `affiliation`; the organization stores no copy. `getById`, `getByFile`, `getInstallOrg` and `seedFromConfig` stay context-free for core's own paths. The rules are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
 
 ## Provider Pattern
 

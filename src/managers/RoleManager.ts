@@ -388,6 +388,22 @@ class RoleManager extends BaseManager {
     return usernames.length;
   }
 
+  /**
+   * Move every membership held by one Person `@id` to another (#1930): when
+   * PersonManager joins an account to an existing person, the roles the
+   * account's person held go with the account. One write per role record;
+   * returns how many records changed. PersonManager's join records the change.
+   */
+  async moveMemberships(fromPersonId: string, toPersonId: string): Promise<number> {
+    const held = await this.listByMember(fromPersonId);
+    for (const role of held) {
+      const members = (role.member ?? []).filter((m) => m['@id'] !== fromPersonId);
+      if (!members.some((m) => m['@id'] === toPersonId)) members.push({ '@id': toPersonId });
+      await this.update(role['@id'], { member: members });
+    }
+    return held.length;
+  }
+
   /** Remove a deleted account's Person from every role it held. */
   async removeAllMemberships(username: string): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');

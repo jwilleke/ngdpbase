@@ -6,9 +6,13 @@ import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type { Organization, OrganizationUpdate, PostalAddress, ContactPoint } from '../types/Organization.js';
+import { randomUUID } from 'crypto';
+import type { Organization, OrganizationInput, OrganizationUpdate, PostalAddress, ContactPoint } from '../types/Organization.js';
 import type { OrganizationProvider } from '../types/OrganizationProvider.js';
+import type { Person } from '../types/Person.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import { installCompletePath } from '../utils/configFiles.js';
+import { recordContactChange, requireContactPermission } from '../utils/contactAccess.js';
 
 interface OrganizationProviderConstructor {
   new (engine: WikiEngine): OrganizationProvider;
@@ -332,29 +336,110 @@ class OrganizationManager extends BaseManager {
 
   /** #1006: how many organizations this instance holds. Count only. */
   async getManagerStats(): Promise<ManagerStats> {
-    const n = (await this.list()).length;
+    const n = (await this.requireProvider().list()).length;
     return { ...(await super.getManagerStats()), count: n, summary: `${n} organization(s)` };
   }
 
-  async list(): Promise<Organization[]> {
+  // ── The door (#1930) ─────────────────────────────────────────────────────
+  //
+  // Each call takes the caller's context first and asks the PDP: `contact-read` to read,
+  // `contact-manage` to change; each change is recorded as the `contact-manage` audit
+  // event; a refusal throws ContactRefusedError. getById / getByFile /
+  // getInstallOrg stay context-free lookups for core's own paths.
+
+  /** Every organization, for a caller who may read contacts (`contact-read`). */
+  async list(ctx: ActorContext): Promise<Organization[]> {
+    await requireContactPermission(this.engine, ctx, 'read');
     return this.requireProvider().list();
   }
 
-  async create(org: Organization, filename?: string): Promise<Organization> {
-    const result = await this.requireProvider().create(org, filename);
+  /** One organization by `@id`, for a caller who may read contacts (`contact-read`). */
+  async get(ctx: ActorContext, id: string): Promise<Organization | null> {
+    await requireContactPermission(this.engine, ctx, 'read');
+    return this.getById(id);
+  }
+
+  /**
+   * Organizations whose `name`, `legalName`, `email` or a contact point's
+   * email contains `query`, ignoring case; an empty query matches all. At
+   * most `limit` (`ngdpbase.application.organization.search.limit` by default).
+   */
+  async search(ctx: ActorContext, query: string, options: { limit?: number } = {}): Promise<Organization[]> {
+    await requireContactPermission(this.engine, ctx, 'read');
+    const configured = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.application.organization.search.limit', 50));
+    const limit = options.limit ?? (Number.isFinite(configured) && configured > 0 ? configured : 50);
+    const q = (query ?? '').trim().toLowerCase();
+    const out: Organization[] = [];
+    for (const org of await this.requireProvider().list()) {
+      const texts = [org.name, org.legalName, org.email, ...(org.contactPoint ?? []).map((c) => c.email)];
+      if (q && !texts.some((v) => typeof v === 'string' && v.toLowerCase().includes(q))) continue;
+      out.push(org);
+      if (limit > 0 && out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /**
+   * The people affiliated with an organization, read from each person's
+   * `affiliation` (#1930): the link is stored once, on the person. Each comes
+   * with the role they hold there, when one is given.
+   */
+  async people(ctx: ActorContext, organizationId: string): Promise<Array<{ person: Person; role?: string }>> {
+    await requireContactPermission(this.engine, ctx, 'read');
+    const persons = this.engine.getManager<{ list(ctx: ActorContext): Promise<Person[]> }>('PersonManager');
+    if (!persons) return [];
+    const out: Array<{ person: Person; role?: string }> = [];
+    for (const person of await persons.list(ctx)) {
+      for (const a of person.affiliation ?? []) {
+        if (a.organization === organizationId) out.push({ person, ...(a.role ? { role: a.role } : {}) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Create an organization. `name` is required; `@id` defaults to the `url`,
+   * else a new `urn:uuid:`. `filename` is for the install anchor (seeding);
+   * other records take one from the url or name.
+   */
+  async create(ctx: ActorContext, org: OrganizationInput, filename?: string): Promise<Organization> {
+    await requireContactPermission(this.engine, ctx, 'manage');
+    if (!org || typeof org.name !== 'string' || !org.name.trim()) throw new Error('OrganizationManager.create: an organization needs a name');
+    const record: Organization = {
+      ...org,
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      '@id': (typeof org['@id'] === 'string' && org['@id']) || (typeof org.url === 'string' && org.url) || `urn:uuid:${randomUUID()}`,
+      name: org.name
+    };
+    const result = await this.requireProvider().create(record, filename);
     this.invalidateCache();
+    await recordContactChange(this.engine, ctx, {
+      kind: 'organization', operation: 'create', id: record['@id'],
+      fields: Object.keys(org).filter((k) => !k.startsWith('@')).sort()
+    });
     return result;
   }
 
-  async update(id: string, patch: OrganizationUpdate): Promise<Organization | null> {
+  async update(ctx: ActorContext, id: string, patch: OrganizationUpdate): Promise<Organization | null> {
+    await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().update(id, patch);
     this.invalidateCache();
+    if (result) {
+      await recordContactChange(this.engine, ctx, {
+        kind: 'organization', operation: 'update', id,
+        fields: Object.keys(patch ?? {}).filter((k) => !k.startsWith('@')).sort()
+      });
+    }
     return result;
   }
 
-  async delete(id: string): Promise<boolean> {
+  async delete(ctx: ActorContext, id: string): Promise<boolean> {
+    await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().delete(id);
     this.invalidateCache();
+    if (result) await recordContactChange(this.engine, ctx, { kind: 'organization', operation: 'delete', id });
     return result;
   }
 

@@ -1,7 +1,7 @@
 ---
 name: PersonManager
 description: Canonical Person records (#617) — decoupled from User authentication identity, shared across addons
-dateModified: '2026-10-19'
+dateModified: '2026-10-20'
 category: managers
 code: src/managers/PersonManager.ts
 ---
@@ -13,6 +13,10 @@ Canonical core record for Person entities (#617). A Person is a real-world indiv
 ## Why this exists
 
 Pre-#617, person-shaped data was scattered: author names on pages, contact entries in some addons, organization members in others. Centralizing as first-class records lets addons (person-contacts, journal, calendar) share the identity without re-implementing person storage.
+
+## The contacts door
+
+PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
 
 ## Provider Pattern
 
@@ -33,6 +37,7 @@ Person records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase
 
 - [FilePersonProvider](../providers/FilePersonProvider.md)
 - [OrganizationManager](OrganizationManager.md), [RoleManager](RoleManager.md)
-- `src/types/Person.ts` — `Person`, `PersonUpdate`
+- `src/types/Person.ts` — `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`
+- `src/utils/contactAccess.ts` — the `contact-read` / `contact-manage` decision and the record, `ContactRefusedError`
 - Issue #617 — canonical-records design
 - Issue #602 — `person-contacts` addon proposal
