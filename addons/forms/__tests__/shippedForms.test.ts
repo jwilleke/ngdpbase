@@ -171,6 +171,20 @@ describe('registerShippedForm (#1880)', () => {
     expect(await m.syncShippedForm('site-made')).toBe('not-shipped');
   });
 
+  test('a change inside a lines field\'s sub-fields reads as a change (#1913)', async () => {
+    const withLines = (label: string): FormDefinition => ({
+      ...V1,
+      fields: [{
+        name: 'lines', type: 'lines', label: 'Lines', required: true,
+        fields: [{ name: 'amount', type: 'amount', label: 'Amount', required: true }, { name: 'memo', type: 'text', label, required: false }]
+      }]
+    });
+    await (await boot()).registerShippedForm('accounting', withLines('Note'));
+    expect((await stored('record-entry')).fields[0].fields?.map(f => f.label)).toEqual(['Amount', 'Note']);
+    expect((await (await boot()).registerShippedForm('accounting', withLines('Note'))).status).toBe('current');
+    expect((await (await boot()).registerShippedForm('accounting', withLines('Memo'))).status).toBe('outdated');
+  });
+
   test('an invalid shipped definition throws at registration', async () => {
     const m = await boot();
     await expect(m.registerShippedForm('accounting', { ...V1, id: 'Bad Id' })).rejects.toThrow();
