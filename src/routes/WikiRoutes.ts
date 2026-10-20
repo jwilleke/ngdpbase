@@ -8007,8 +8007,8 @@ ${panes}
 
       try {
         await emailManager.sendTo(recipient, finalSubject, text);
-      } catch (mailErr: unknown) {
-        logger.error('[processContact] EmailManager.sendTo failed:', mailErr);
+      } catch {
+        // #1916: EmailManager has reported the failure (domain only); not logged again here.
         await persistSubmission('mail-failed', recipient);
         await renderForm('form', 'We could not send your message right now. Please try again later.', 200);
         return;

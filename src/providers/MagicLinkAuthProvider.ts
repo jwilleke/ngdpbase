@@ -36,6 +36,7 @@ import type UserManager from '../managers/UserManager.js';
 import type { MailProvider } from '../mail/MailProvider.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
 import logger from '../utils/logger.js';
+import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 interface TokenEntry {
   /**
@@ -99,7 +100,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
 
       // Rate limit: 1 request per email per 60 seconds
       if (this.isRateLimited(email)) {
-        logger.debug(`[MagicLinkAuthProvider] Rate limited: ${email}`);
+        logger.debug(`[MagicLinkAuthProvider] Rate limited: an address at ${emailDomain(email)}`);
         return;
       }
 
@@ -109,7 +110,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
       const user = await userManager.getUserByEmail(email);
       if (!user && !this.isAutoProvisionEnabled()) {
         // Silent — do not reveal whether email is registered
-        logger.debug(`[MagicLinkAuthProvider] No user for email (silent): ${email}`);
+        logger.debug(`[MagicLinkAuthProvider] No user for an address at ${emailDomain(email)} (silent)`);
         return;
       }
 
@@ -149,7 +150,9 @@ export class MagicLinkAuthProvider implements AuthProvider {
       const verifyUrl = `${baseUrl}/auth/magic-link/verify?token=${token}`;
       const ttlMinutes = Math.round(this.config.ttlMs / 60_000);
 
-      await this.config.mailProvider.send({
+      // #1916: a failed send is reported once, by EmailManager (the mail
+      // provider here); logging its error again would repeat it.
+      const sent = await this.config.mailProvider.send({
         to: email,
         subject: 'Your login link',
         text: [
@@ -167,15 +170,16 @@ export class MagicLinkAuthProvider implements AuthProvider {
           `<p>This link expires in ${ttlMinutes} minutes and can only be used once.</p>`,
           '<p>If you did not request this link, you can ignore this email.</p>'
         ].join('\n')
-      });
+      }).then(() => true, () => false);
+      if (!sent) return;
 
       this.cleanupExpired();
       logger.info(
-        `[MagicLinkAuthProvider] Link sent to ${email} ` +
+        `[MagicLinkAuthProvider] Link sent to an address at ${emailDomain(email)} ` +
         (user ? `for user ${user.username}` : '(new account — provisioned on verify)')
       );
     } catch (err) {
-      logger.error('[MagicLinkAuthProvider] Error in initiate:', err);
+      logger.error(`[MagicLinkAuthProvider] Error in initiate: ${errorForLog(err)}`);
     }
   }
 
@@ -291,13 +295,13 @@ export class MagicLinkAuthProvider implements AuthProvider {
         isActive: true
       }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by magic-link')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
     } catch (err) {
-      logger.error(`[MagicLinkAuthProvider] Failed to provision ${entry.email}:`, err);
+      logger.error(`[MagicLinkAuthProvider] Failed to provision an account for an address at ${emailDomain(entry.email)}: ${errorForLog(err)}`);
       return false;
     }
 
     entry.username = created.username; // #1882: the account as stored
     entry.isNewUser = false;
-    logger.info(`[MagicLinkAuthProvider] Provisioned new user: ${username} (${entry.email}) role=${role}`);
+    logger.info(`[MagicLinkAuthProvider] Provisioned new user: ${username} (an address at ${emailDomain(entry.email)}) role=${role}`);
     return true;
   }
 

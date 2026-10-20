@@ -51,6 +51,7 @@
     "migrate:vocabulary-store:dry": "tsx scripts/migrate-vocabulary-store.ts --dry-run",
     "reconcile:mentions": "tsx scripts/reconcile-attachment-mentions.ts",
     "reconcile:mentions:dry": "tsx scripts/reconcile-attachment-mentions.ts --dry-run",
+    "files:migration:dry": "tsx scripts/files-migration-dry-run.ts",
     "migrate:vocabulary:dry": "tsx scripts/migrate-vocabulary-slice1.ts --dry-run",
     "migrate:user-pages-category": "tsx scripts/migrate-user-pages-category.ts",
     "migrate:user-pages-category:dry": "tsx scripts/migrate-user-pages-category.ts --dry-run",

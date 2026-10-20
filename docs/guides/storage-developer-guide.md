@@ -1,9 +1,9 @@
 ---
 name: Storage developer guide
 description: Where an add-on's pages, files and data live — declaring a system-category with its own vault, the fields that decide privacy and encryption, writing through the doors, and the gaps
-dateModified: 2026-10-19
+dateModified: 2026-10-20
 category: guides
-relatedModules: [ValidationManager, PageManager, AttachmentManager, ShareManager, DatabaseManager]
+relatedModules: [ValidationManager, PageManager, AttachmentManager, FileManager, ShareManager, DatabaseManager]
 ---
 
 # Storage developer guide
@@ -108,12 +108,43 @@ An add-on that keeps rows of its own declares its database in its `config/defaul
 ## Writing pages and files
 
 - __Pages__ go through `PageManager`, with the caller's context. A private page's name is `vaults/{owner}/{vaultid}/{title}`. `npm run lint:page-door` fails on any other page write.
-- __Files__ (PDFs, images, DICOM) go through `AttachmentManager`. An upload is either an attachment, on a page, or a saved file; __every attachment of a vault page is stored in that vault__ (operator, 2026-10-16, [#1842](https://github.com/jwilleke/ngdpbase/issues/1842)). A file uploaded onto a vault page goes into its vault, a shared file attached to one is copied in, and when a page moves into a vault, out of one or between two its files move with it under the same id ([private-stores.md](../private-stores.md#files)). A vault's files are just files, under the vault's own access controls. Never point a vault page at a file in the shared pool: the pool serves it to anyone with `asset-read`.
+- __Files__ (PDFs, images, DICOM) are written through `AttachmentManager`, and can be read as file records through `FileManager` ([Files: one record, one door](#files-one-record-one-door)). An upload is either an attachment, on a page, or a saved file; __every attachment of a vault page is stored in that vault__ (operator, 2026-10-16, [#1842](https://github.com/jwilleke/ngdpbase/issues/1842)). A file uploaded onto a vault page goes into its vault, a shared file attached to one is copied in, and when a page moves into a vault, out of one or between two its files move with it under the same id ([private-stores.md](../private-stores.md#files)). A vault's files are just files, under the vault's own access controls. Never point a vault page at a file in the shared pool: the pool serves it to anyone with `asset-read`.
 - __Footnotes and comments__ go through `FootnoteManager` and `CommentManager`, naming the page as `{ name, uuid }` with the caller's context. A vault page's are kept in its vault and sealed with it; the name, not the uuid, says where ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839), [private-stores.md](../private-stores.md#footnotes-and-comments)). Never key anything belonging to a vault page by uuid alone in a folder outside the vault.
 - __Never__ write into `pages/` or `pages/vaults/` directly. The doors apply encryption, the owner checks, the audit record and the indexes.
 - An encrypted vault needs its owner's key, unlocked by their sign-in. A write without it is refused, never written in the clear. Whether a vault is sealed is fixed when it is created (its `store.json`), so decide `encrypt` before the first page is written.
 - A vault of an `encrypt: true` category can't be written until its owner has opened it at `/stores/{vaultid}`, which creates the sealed copy. Before that a save is refused, and the editor tells them to open the vault first. A vault whose `store.json` isn't sealed under an `encrypt: true` category is refused too, and reported to admins at startup. Store I/O asks both the category and `store.json` ([#1834](https://github.com/jwilleke/ngdpbase/issues/1834)); details in [private-stores.md](../private-stores.md#the-kind-is-asked-as-well-as-storejson).
 - Moving files into or out of a vault goes through store I/O as well, never a bare `fs.move`/`fs.copy`/`fs.writeFile`. Use `moveStoreFolder()` (history), the location's `io.writeBytes` (attachments), or refuse the move with `vaultMustBeSealed()` when there's no key (restore, legacy migrations) ([#1836](https://github.com/jwilleke/ngdpbase/issues/1836)).
+
+## Files: one record, one door
+
+Epic [#1851](https://github.com/jwilleke/ngdpbase/issues/1851) turns every stored file into one thing with one record behind one door. Every decision is in its [decision log](https://github.com/jwilleke/ngdpbase/issues/1851#issuecomment-6236003946), which is the spec; this section is what that means for code today.
+
+### What exists now (first step, [#1852](https://github.com/jwilleke/ngdpbase/issues/1852))
+
+- __The file record__ is `FileRecord` in `src/types/File.ts`. It takes its fields from `AssetRecord` by name (`id`, `filename`, `name`, `description`, `keywords`, `encodingFormat`, `contentSize`, `url`, `mentions`, `dateCreated`/`author`, `dateModified`/`editor`) and adds `place` (public, or `{ owner, vault }`), `owner` and `systemCategory`. Declare nothing about a file anywhere else: extend this shape, or `AssetRecord` under it.
+- __FileManager is the door__ for files ([FileManager.md](../managers/FileManager.md)). Today it only reads: `list`, `get` and `findByName` show today's attachments (the shared pool as the public place, and every vault the requester may read) as file records. The public place needs `asset-read`; a vault is read through AttachmentManager's vault reads, under the container rule. A viewer never sees another person's vault, and a vault's metadata never leaves the door.
+- __The migration dry run__ is `npm run files:migration:dry` ([#1859](https://github.com/jwilleke/ngdpbase/issues/1859)). It opens the door read-only (`FileManager.openForOperator()`) and reports counts, bytes, owners (with the configured mapping), name clashes per place with the `-###` name each would get, the pages whose links would be rewritten, and each vault as counts. It writes nothing. Its values are `ngdpbase.files.migration.owner-map`, `default-owner` and `clash-suffix-digits`.
+- __Still today__: files are written, moved and deleted through `AttachmentManager`, as in [Writing pages and files](#writing-pages-and-files). Nothing about stored data changed in this step.
+
+### What is decided for later
+
+From the decision log (17 October and round 2, 20 October), in short:
+
+- A file is bytes plus one record, the same for every type; a page is a file of type `text/markdown`, and rendering is what differs by type. Every change is a version; only markdown keeps old content.
+- A file is unique by place plus name, its id stable across renames and moves; linkable by name (`[Annual Report.pdf]`), URLs by name. No deduplication. Uploading a taken name replaces the file as a new version, after a warning.
+- Files stand on their own and pages link to them; a page moving into a vault leaves its files' fate to the person, and only a file's owner moves it into a vault. The uploader is the owner; only the owner or an administrator (a permission, not a role) edits metadata.
+- Permissions: `page-*` for pages, `asset-*` for every other file. No `file-*` set.
+- A system-category per file (never by type) decides its vault and that vault's rules; picked on the upload form, starting from `general`.
+- Media items are files with MediaManager as their handler; the library stays read-only. `[name.jpg]` finds an upload first, `[media:name.jpg]` the library copy.
+- __One shape, an index per place__ (public, each vault, sealed inside it, the media library); the door reads them as one. __An index per type__ (pages, files, media, footnotes, comments) in one listing shape, usable on pages through one plugin.
+- __Footnotes are shared records__ used by many pages; editing one asks which pages take the new wording. __Comments__ always target a file or an add-on record and need their own permission.
+- __PageManager stays__, with its own index, for a long time; the files layer starts with uploads, media, footnotes and comments.
+- __FileManager is the only writer of files__; __intake is ImportManager, extended__ (receive, unpack, identify, chained converters that add-ons register, hand to the writer). Converting to NCM is an option, with the original kept, cited or dropped as the person (or the calling add-on) chooses. Folder intake is upload (copy) or a linked read-only folder; files no converter reads yet are stored as they are, "not converted".
+- __Migration is copy-first__: dry run, copy (originals untouched), verify counts and hashes, catch up, switch, keep the old pool read-only until the operator deletes it. Clashes get `-###`; pages using a clashing name are rewritten to the new name.
+
+### Next steps
+
+Not built yet, each its own step: writes (upload, replace as a version, rename, move, delete) through FileManager; the per-place index files; ImportManager as the intake; footnote and comment records; links and URLs by name; the type indexes and their plugin; the copy, verify, catch-up and switch of the migration; the UI ("Files", "My files", "Upload file").
 
 ## Access, sharing and proxies
 
@@ -139,6 +170,14 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __Operator scripts that walk `pages/` recursively__ (`migrate-private-field`, `migrate-vocabulary-slice1`, `migrate-user-pages-category`, `repair-jspwiki-frontmatter`, `migrate-page-acl-to-frontmatter`) also go into vaults. They can't read sealed files, so they leave them alone, but they do rewrite plaintext in vaults that aren't sealed. `migrate-page-created` used to rewrite sealed files too, and now skips them (#1836).
 - __`ImportManager` `targetDir`__ writes raw files to any folder it is given, and no caller passes it today. Pointing it into a vault would bypass store I/O (#1836).
 - __A site override of the journal's owner fields is now ignored__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)). The journal's entry moved from core config to the add-on, so a site whose `app-custom-config.json` sets `encrypt`, `defaultPrivate` or `shareMaxDays` on `journal` gets the journal's value and a startup warning. Vaults already sealed stay sealed; new ones follow the journal.
+
+- __Public uploads record no uploader__ (found building [#1852](https://github.com/jwilleke/ngdpbase/issues/1852)). `AttachmentManager.uploadAttachment` hands the provider `{ name, email }`, and `BasicAttachmentProvider` reads `user.username || user.email`, so a public upload is stored with its uploader's email, or `Unknown` when there is none. That is the likely source of the `Unknown` and email uploaders in the jimstest report (not verified against its data). Vault uploads record the username. FileManager reads either as "no owner", and the migration's owner mapping covers them; new uploads keep adding to the count until it is fixed.
+- __The files door reads only__ (#1852). Writes still go through `AttachmentManager`; FileManager has no upload, rename, move or delete, and there are no per-place index files yet.
+- __A viewer's vault files are their own vaults' only__ (#1852), as AttachmentManager reads them today: a proxy acting for a vault's owner does not see its files through the door yet.
+- __The dry run's page rewrites come from each file's recorded pages__ (`mentions`), not a scan of page content, and cover public pages only (#1859). A stale mention lists a page that no longer shows the file; a page that shows a file its record does not name is missed. The copy step has to confirm against content.
+- __The dry run doesn't check uploaders against accounts__ (#1859). A recorded name is kept unless `owner-map` covers it or it is `Unknown`, empty or an email; a name that is no account (a deleted user, a typo) is kept as is.
+- __Names match exactly__ (#1859): `Route.png` and `route.png` are two names, as a link finds a file today.
+- __The media library is not in the door yet__ (#1852): media items have no file records, and the dry run reports none.
 
 - __An add-on that catches `openAddonDatabase`'s error still loads__ (#1860). It gets no connection, so nothing is written, but its status shows it as loaded. A `"required"` database with no key is caught before import and never gets this far; an undeclared owner or ledger is refused only when opened. Let the error leave `register()`.
 - __A declared database that is never opened__ (the add-on is off, or it opens lazily) is listed as not open; nothing checks that its file exists or passes its integrity check until it is opened.

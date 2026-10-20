@@ -13,6 +13,7 @@
 import nodemailer from 'nodemailer';
 import type { MailMessage, MailProvider } from './MailProvider.js';
 import logger from '../utils/logger.js';
+import { emailDomain } from '../utils/emailForLog.js';
 
 export interface SmtpConfig {
   host: string;
@@ -45,6 +46,6 @@ export class NodemailerMailProvider implements MailProvider {
       text: message.text,
       ...(message.html ? { html: message.html } : {})
     });
-    logger.info(`[NodemailerMailProvider] Sent email to ${message.to}: ${message.subject}`);
+    logger.info(`[NodemailerMailProvider] Sent email to-domain=${emailDomain(message.to)}: ${message.subject}`);
   }
 }

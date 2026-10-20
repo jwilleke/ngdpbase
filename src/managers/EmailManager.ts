@@ -33,6 +33,7 @@ import { ConsoleMailProvider } from '../mail/MailProvider.js';
 import { NodemailerMailProvider } from '../mail/NodemailerMailProvider.js';
 import logger from '../utils/logger.js';
 import { administratorUsernames } from '../utils/administrators.js';
+import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /** The degraded reason while sends fail; cleared by the next success. */
 export const SEND_FAILING_REASON = 'outbound email is failing — see the server log and the administrator notification';
@@ -61,20 +62,6 @@ interface FailureNotice {
   count: number;
   /** Resolves to the notification id, or null when nobody was notified. */
   id: Promise<string | null>;
-}
-
-/** Recipient domain(s) only — the full address never reaches a log or a notice. */
-function recipientDomains(to: string): string {
-  const domains = new Set(
-    String(to).split(',').map((a) => a.trim()).filter(Boolean)
-      .map((a) => (a.includes('@') ? a.slice(a.lastIndexOf('@') + 1).replace(/>$/, '').toLowerCase() : 'unknown'))
-  );
-  return [...domains].join(',') || 'unknown';
-}
-
-/** An SMTP error often quotes the rejected address; keep only its domain. */
-function redactAddresses(text: string): string {
-  return text.replace(/[^\s<>"'@,;:()[\]]+@([A-Za-z0-9.-]+)/g, '…@$1');
 }
 
 class EmailManager extends BaseManager implements MailProvider {
@@ -151,7 +138,7 @@ class EmailManager extends BaseManager implements MailProvider {
     }
 
     logger.info(`[EmailManager] Initialized provider=${this.providerName} enabled=${this.enabled}` +
-      (this.from ? ` from=${this.from}` : ''));
+      (this.from ? ` from-domain=${emailDomain(this.from)}` : ''));
   }
 
   /**
@@ -198,9 +185,9 @@ class EmailManager extends BaseManager implements MailProvider {
 
   private reportFailure(message: MailMessage, err: unknown): void {
     this.failuresSinceSuccess++;
-    const domain = recipientDomains(message.to);
+    const domain = emailDomain(message.to);
     const subject = String(message.subject ?? '').slice(0, 200);
-    const error = redactAddresses(err instanceof Error ? err.message : String(err));
+    const error = errorForLog(err);
     logger.error(
       `[EmailManager] send failed: provider=${this.providerName} to-domain=${domain} ` +
       `subject=${JSON.stringify(subject)} error=${JSON.stringify(error)}`

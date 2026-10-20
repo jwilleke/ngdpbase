@@ -42,6 +42,7 @@ import BackgroundJobManager from './managers/BackgroundJobManager.js';
 import CatalogManager from './managers/CatalogManager.js';
 import CommentManager from './managers/CommentManager.js';
 import FootnoteManager from './managers/FootnoteManager.js';
+import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import PersonManager from './managers/PersonManager.js';
@@ -365,6 +366,11 @@ class WikiEngine extends Engine {
     const assetManager = new AssetManager(this);
     this.registerManager('AssetManager', assetManager);
     await assetManager.initialize();
+
+    // FileManager — the files door (#1852); this step reads only, over AttachmentManager
+    const fileManager = new FileManager(this);
+    this.registerManager('FileManager', fileManager);
+    await fileManager.initialize();
 
     // AssetService — backward-compatible search facade over AssetManager
     const assetService = new AssetService(this);

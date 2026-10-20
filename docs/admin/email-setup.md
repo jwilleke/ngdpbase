@@ -56,7 +56,7 @@ What people see:
 - Someone waiting for a sign-in approval email is told it could not be sent, and can try again.
 - The contact form says the message could not be sent.
 
-The `console` provider never counts as a failure: it prints the email to the log by design.
+The `console` provider never counts as a failure: it prints the email to the log by design. Like every server-log line, it names the recipient's domain only, and any address in the printed body is cut to its domain.
 
 ---
 

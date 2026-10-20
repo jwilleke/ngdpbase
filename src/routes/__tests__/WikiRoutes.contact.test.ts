@@ -16,6 +16,7 @@ import { promises as fsPromises } from 'fs';
 import WikiRoutes, { contactRateLimiter } from '../WikiRoutes';
 import { buildTestApp } from './__fixtures__/buildTestApp';
 import { TEST_CSRF_TOKEN } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
+import { loggedText } from '../../managers/__tests__/__fixtures__/loggedText';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -458,6 +459,17 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     // 200 — server-side mail failure, not a client validation error (#677).
     expect(res.status).toBe(200);
     expect(res.text).toContain('data-state="form"');
+  });
+
+  test('a failed send is not logged again here — EmailManager reported it — and no address reaches the log (#1916)', async () => {
+    vi.clearAllMocks();
+    mockEmailManager.sendTo.mockRejectedValueOnce(new Error('550 <admin@example.com>: Recipient address rejected'));
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+    const text = loggedText();
+    expect(text).not.toContain('550');
+    expect(text).not.toContain('admin@example.com');
+    expect(text).not.toContain('alice@example.com');
   });
 
   test('returns 429 after 5 successful submissions from the same IP within 15 min', async () => {
