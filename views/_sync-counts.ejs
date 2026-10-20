@@ -1,0 +1,16 @@
+<%#
+  The count badges of a list of shipped items (#1918), as Admin -> Required
+  Pages heads its add-on pages: shared by every admin screen that syncs
+  shipped content.
+
+  locals:
+    syncCounts  { new?, modified, current, required? }; `new` and `required`
+                are drawn only when given (a list that never has new items omits it)
+
+  One named object, not loose locals: an include also sees its parent's data,
+  so a loose name could be picked up from the screen by accident.
+%>
+<% if (syncCounts.required) { %><span class="badge bg-danger" data-sync-count="required"><%= syncCounts.required %> Required</span><% } %>
+<% if (typeof syncCounts.new === 'number') { %><span class="badge bg-primary" data-sync-count="new"><%= syncCounts.new %> New</span><% } %>
+<span class="badge bg-warning text-dark" data-sync-count="modified"><%= syncCounts.modified %> Modified</span>
+<span class="badge bg-success" data-sync-count="current"><%= syncCounts.current %> Current</span>
