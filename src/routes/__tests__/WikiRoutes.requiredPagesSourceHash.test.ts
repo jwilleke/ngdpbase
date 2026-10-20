@@ -360,6 +360,12 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(button.textContent).not.toContain('(1)');
     // What the button's sync would select: nothing.
     expect(doc.querySelectorAll('#pagesTable tr[data-bulk-outdated="true"]')).toHaveLength(0);
+    // #1918: the row reads and syncs through the shared partials; Force Sync asks first.
+    const row = doc.querySelector(`#pagesTable tr[data-uuid="${UUID}"]`) as HTMLElement;
+    expect([...row.querySelectorAll('[data-sync-status]')].map((el) => el.getAttribute('data-sync-status'))).toEqual(['modified', 'user-edited']);
+    const force = row.querySelector('[data-action="force-sync"]') as HTMLButtonElement;
+    expect(force.dataset.syncId).toBe(UUID);
+    expect(force.dataset.confirm).toContain('The edited version stays in the page history.');
   });
 
   test('a user-edited and a plain outdated page: the count is the one it will sync', async () => {

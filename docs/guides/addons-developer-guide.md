@@ -756,22 +756,31 @@ An add-on that ships forms for the bundled forms add-on registers each one in it
 ```ts
 const forms = engine.getManager<FormsDataManager>('FormsDataManager');
 await forms?.registerShippedForm('my-addon', definition);
+// a change your add-on cannot work without (#1918):
+await forms?.registerShippedForm('my-addon', definition, { required: true });
 ```
 
 The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
 
 - No copy on the site: it is saved. That is the first install.
-- The copy is what you ship: `up to date`.
-- You ship a change and the copy is unedited since it was stamped: `update available` in the forms admin (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
-- The copy was edited in the form builder (its hash no longer matches its stamp): `edited here`. Sync never replaces it; __Replace my edits__ does, after the admin confirms.
-- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as `update available`, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+- The copy is what you ship: __Current__.
+- You ship a change and the copy is unedited since it was stamped: __Modified__ in the forms admin's Shipped Forms (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
+- The copy was edited in the form builder (its hash no longer matches its stamp): __Modified__ and __User Edited__. Sync never replaces it; __Force Sync__ does, after the admin confirms.
+- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as __Modified__, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+
+The status words, badges and Sync / Force Sync are Admin → Required Pages' own ([#1918](https://github.com/jwilleke/ngdpbase/issues/1918)), drawn by core's shared partials `views/_sync-status.ejs`, `views/_sync-button.ejs` and `views/_sync-counts.ejs` from `syncRowState` (`src/utils/addonPageSync.ts`). Any add-on screen that syncs shipped content uses them rather than its own design.
+
+A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `data/forms/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
+
+- Ordinary change: an info notice, "Form update available: …".
+- `{ required: true }`: what ships now is needed for your add-on to work. The notice is critical ("Critical: form … needs syncing", error level), as a failed add-on load is ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883)), and the forms admin flags the form __Required__ until it is synced. Mark only a change your add-on breaks without, such as a field your handler now reads.
 
 `registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
 
-The form builder saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)), so saving your form unchanged leaves it `up to date`:
+The form builder saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)), so saving your form unchanged leaves it __Current__:
 
 - `store` is its __Store submissions__ box, ticked unless the form says `"store": false`. The page sends `storeShown` beside the box (an unticked box sends nothing), and a post without it keeps the form's value.
-- A field's `optionsSource` and `totalField` have no input; the page carries them through the save unchanged. The `shipped` stamp is kept by `saveDefinition`.
+- A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged. The `shipped` stamp is kept by `saveDefinition`.
 
 Migrating from the interim rule: replace `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)` with `await forms.registerShippedForm('<your add-on>', definition)`, called on every start. Existing sites need nothing else: their unedited copies are stamped or offered as updates by the rule above.
 
@@ -783,6 +792,16 @@ A `dropdown` or `checklist` field with `"optionsSource": "fetch:YourManager.toFo
 - A `checklist` field ([#1904](https://github.com/jwilleke/ngdpbase/issues/1904)) reaches your handler as an array of the ticked values (`submission.data.receiptIds: ["r-101", "r-102"]`), never a comma string; nothing ticked is `[]`. `required` means at least one.
 - When any choice has an `amount`, the checklist shows "Ticked: N · $sum" with core's `formatMoney`. With `totalField: "<amount field>"` it shows whether the sum matches that field, parsed as the `amount` field is. That is a hint to the person: the forms add-on does not refuse a mismatch, so a handler that needs them equal checks it and answers `{ ok: false, fields: { total: '...' } }`.
 - The field reference for site authors is the shipped [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md).
+
+### Lines: repeating rows of fields
+
+A `lines` field ([#1913](https://github.com/jwilleke/ngdpbase/issues/1913)) repeats its `fields` once per row: the lines of a receipt or refund. The definition, and what each key does, is in the [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md); what your handler gets:
+
+- `submission.data.<name>` is an array of row objects, `[{ amount: 5000, fundId: "general", category: "4100", memo: "" }]`. An `amount` sub-field is whole minor units, as a top-level `amount` is. Fully empty rows at the end are dropped, in the browser and again on the server.
+- Each row is validated by the same rules as top-level fields (`buildSubmissionValidator` builds the row from the same per-field rule). A sub-field's `optionsSource` is asked once per render and once per submit, as the viewer, whatever the row count; a value it did not offer is refused before your handler runs. `required`, `minRows` and `maxRows` are enforced on both sides.
+- Errors are keyed `<name>[<0-based row>].<field>`, for example `lines[1].category`. Answer `{ ok: false, fields: { 'lines[1].category': '...' } }` and the message shows next to that row's field; a key for the whole field (`lines`) shows under the field.
+- With `amountField` the form shows "Lines: N · $sum"; with `totalField`, whether it matches that field. It is the checklist's total (one drawing for both), and a hint only: a handler that needs the lines to add up to the total checks it.
+- A row holds one value per sub-field: `lines`, `section`, `hidden` and `checklist` sub-fields are refused when the definition is parsed, so `registerShippedForm` throws on them. The shipped-form hash covers the sub-fields, so a changed sub-field ships as an update.
 
 ### Ship a Theme
 
@@ -1510,6 +1529,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
 - [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file. A builder save keeps them ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)).
 - [#1921](https://github.com/jwilleke/ngdpbase/issues/1921) — `views/header.ejs` shows the page editor's Save and Cancel for any view whose `title` starts with the word "Edit" and a space (`title.startsWith('Edit ')`), and those need a `pageName`. An add-on view with no page must not title itself `Edit …`: the form builder's edit page did, and every edit of a form answered 500. The builder is titled `Form Builder — Edit Form` now; the header still decides edit mode from the title.
+- [#1913](https://github.com/jwilleke/ngdpbase/issues/1913) — [lines](#lines-repeating-rows-of-fields): the form builder lists the `lines` type but cannot edit sub-fields, `minRows`, `maxRows`, `amountField` or `totalField`; write them in the definition file (the builder keeps them on save, and refuses a `lines` field with no sub-fields). A row cannot be removed below one even with `minRows: 0`, since an empty row is not sent. The submission detail page in the forms admin shows each row's raw values (amounts in cents), as it shows top-level amounts.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
 - [#1883](https://github.com/jwilleke/ngdpbase/issues/1883) — [site-critical addons](#when-an-addon-does-not-load-site-critical):

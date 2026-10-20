@@ -331,6 +331,8 @@
   "ngdpbase.mail.enabled": false,
   "ngdpbase.mail.provider": "console",
   "ngdpbase.mail.from": "",
+  "_comment_mail_failure_notice": "#1916 — a failed send is logged and administrators (admin-system holders) get one notification per window, with a running count of the failures in it, not one per email. EmailManager shows degraded until the next send succeeds. Minutes; read at startup.",
+  "ngdpbase.mail.failure-notice.window-minutes": 60,
   "_comment_mail_smtp": "SMTP settings (provider='smtp'). Works with any relay: Gmail, Resend, SendGrid, SES, self-hosted. smtp.from overrides mail.from and allows display names.",
   "ngdpbase.mail.provider.smtp.host": "",
   "ngdpbase.mail.provider.smtp.port": 587,

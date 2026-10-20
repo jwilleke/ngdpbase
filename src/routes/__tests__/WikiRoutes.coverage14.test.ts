@@ -166,6 +166,12 @@ const mockAuthManager = {
   completeSignIn: vi.fn().mockResolvedValue({})
 };
 
+// #1916: whether outbound email is failing right now.
+const mockEmailManager = {
+  isEnabled: vi.fn().mockReturnValue(false),
+  isDeliveryFailing: vi.fn().mockReturnValue(false)
+};
+
 let includeAuthManager = true;
 
 const mockConfigManager = {
@@ -217,6 +223,7 @@ vi.mock('../../WikiEngine', () => {
           NotificationManager: mockNotificationManager,
           ExportManager: mockExportManager,
           AuthManager: includeAuthManager ? mockAuthManager : null,
+          EmailManager: mockEmailManager,
           FootnoteManager: { isEnabled: vi.fn().mockReturnValue(false) },
           MarkupParser: { invalidateHandlerCache: vi.fn().mockResolvedValue(undefined) },
           ValidationManager: {
@@ -508,6 +515,23 @@ describe('WikiRoutes — coverage batch 14', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ email: 'test@example.com', redirect: '/dashboard' });
       expect(res.status).toBe(302);
+    });
+
+    test('#1916: while email is failing, the person is told no link is on its way — whatever the address', async () => {
+      mockUserContext = null;
+      mockAuthManager.isEnabled.mockReturnValue(true);
+      mockEmailManager.isDeliveryFailing.mockReturnValue(true);
+      try {
+        const res = await request(app)
+          .post('/auth/magic-link')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ email: 'test@example.com' });
+        expect(res.status).toBe(302);
+        expect(res.headers.location).not.toContain('magic=sent');
+        expect(decodeURIComponent(res.headers.location)).toMatch(/error=Email cannot be sent right now/);
+      } finally {
+        mockEmailManager.isDeliveryFailing.mockReturnValue(false);
+      }
     });
   });
 

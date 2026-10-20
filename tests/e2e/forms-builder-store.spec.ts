@@ -7,7 +7,8 @@ import { waitForServerReady, instanceOrigin } from './fixtures/helpers';
  *
  * Creates a form in the builder with the box unticked, saves it again
  * unchanged (it stays store:false, and a checklist's optionsSource and
- * totalField survive the page's round trip), then ticks the box. Skips when
+ * totalField and a lines field's sub-fields and row settings survive the
+ * page's round trip), then ticks the box. Skips when
  * the forms add-on is not enabled on this instance. Teardown deletes only this
  * test's form.
  */
@@ -96,7 +97,9 @@ test.describe('forms: the builder keeps store and what it has no input for (#192
         _csrf: token, title: 'E2E store', notifyRole: 'admin', confirmationUrl: '/view/e2e', proxySubmission: 'on', storeShown: '1',
         fieldsJson: JSON.stringify([
           { name: 'total', type: 'amount', label: 'Total', required: true },
-          { name: 'picks', type: 'checklist', label: 'Picks', required: false, optionsSource: 'config:e2e.none', totalField: 'total' }
+          { name: 'picks', type: 'checklist', label: 'Picks', required: false, optionsSource: 'config:e2e.none', totalField: 'total' },
+          { name: 'items', type: 'lines', label: 'Items', required: false, minRows: 1, maxRows: 5, amountField: 'cost', totalField: 'total',
+            fields: [{ name: 'what', type: 'text', label: 'What', required: true }, { name: 'cost', type: 'amount', label: 'Cost', required: true }] }
         ])
       },
       maxRedirects: 0

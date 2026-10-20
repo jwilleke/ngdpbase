@@ -86,7 +86,13 @@ describe('POST /forms/builder — store and the properties the builder has no in
   const fields = [
     { name: 'amount', type: 'amount', label: 'Amount', required: true },
     { name: 'receipts', type: 'checklist', label: 'Receipts', required: false,
-      optionsSource: 'fetch:LedgerManager.toFormOptions(list=receipts)', totalField: 'amount' }
+      optionsSource: 'fetch:LedgerManager.toFormOptions(list=receipts)', totalField: 'amount' },
+    { name: 'items', type: 'lines', label: 'Items', required: false, minRows: 1, maxRows: 5,
+      amountField: 'cost', totalField: 'amount',
+      fields: [
+        { name: 'what', type: 'text', label: 'What', required: true },
+        { name: 'cost', type: 'amount', label: 'Cost', required: true }
+      ] }
   ];
   const noStore: FormDefinition = {
     id: 'deposit', title: 'Deposit', handler: 'ledger', proxySubmission: true, notifyRole: 'treasurer',
