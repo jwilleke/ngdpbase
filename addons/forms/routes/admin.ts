@@ -2,6 +2,7 @@
 import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
+import { syncRowState } from '../../../dist/src/utils/addonPageSync.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { SubmissionStatus } from '../managers/FormsDataManager.js';
 
@@ -30,9 +31,31 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
           }))
         );
 
+        // #1918: shipped forms read as Admin → Required Pages reads shipped
+        // pages: its status words and Sync / Force Sync, from core's rule.
+        const shippedForms = formsWithCounts.flatMap((form) => {
+          const state = form.shippedState;
+          if (!state) return [];
+          return [{
+            id: form.id,
+            title: form.title,
+            addon: state.addon,
+            stamped: state.stamped,
+            ...syncRowState(state.status),
+            required: state.required && state.behind
+          }];
+        });
+        const shippedCounts = {
+          modified: shippedForms.filter(f => f.status === 'modified').length,
+          current: shippedForms.filter(f => f.status === 'current').length,
+          required: shippedForms.filter(f => f.required).length
+        };
+
         res.render('forms-admin', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           forms: formsWithCounts,
+          shippedForms,
+          shippedCounts,
           query: req.query
         });
       } catch (err) {

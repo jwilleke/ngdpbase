@@ -34,6 +34,12 @@ export interface NotificationInput {
   level?: 'info' | 'warning' | 'error' | 'success';
   targetUsers?: string[];
   expiresAt?: Date | null;
+  /**
+   * False: never email this notification, whatever the escalation settings
+   * (#1916). A notice that email is failing must not itself be emailed — the
+   * send would fail and report another failure. Not stored.
+   */
+  escalate?: boolean;
 }
 
 /**
@@ -256,8 +262,22 @@ class NotificationManager extends BaseManager {
     // Save to storage
     await this.saveNotifications();
 
-    this.escalateByEmail(fullNotification);  // fire-and-forget
+    if (notification.escalate !== false) this.escalateByEmail(fullNotification);  // fire-and-forget
     return id;
+  }
+
+  /**
+   * Replace an active notification's message in place (#1916) — a running
+   * count on one notice instead of a new notice per event. Never escalates:
+   * the notification was already escalated, or not, when it was created.
+   * @returns false when there is no such notification
+   */
+  async updateNotificationMessage(notificationId: string, message: string): Promise<boolean> {
+    const notification = this.notifications.get(notificationId);
+    if (!notification) return false;
+    notification.message = message;
+    await this.saveNotifications();
+    return true;
   }
 
   /**

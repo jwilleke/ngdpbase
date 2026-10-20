@@ -37,6 +37,26 @@ All settings live in your instance `app-custom-config.json`
 | `ngdpbase.mail.provider.smtp.user` | `""` | SMTP username (most relays require this). |
 | `ngdpbase.mail.provider.smtp.pass` | `""` | SMTP password or API key (see Security below). |
 | `ngdpbase.mail.provider.smtp.from` | `""` | Overrides `mail.from`; allows display names like `"Wiki <noreply@example.com>"`. |
+| `ngdpbase.mail.failure-notice.window-minutes` | `60` | When sends fail, one notification to administrators per this many minutes, counting the failures in it. Read at startup. |
+
+---
+
+## What you see when email fails
+
+A wrong SMTP password, an unreachable host or a relay that rejects mail no longer goes unnoticed. For every email that could not be sent, whichever feature sent it:
+
+- __Server log__: an error line `[EmailManager] send failed: provider=smtp to-domain=… subject="…" error="…"`. It names the recipient's domain only, never the full address or the message body.
+- __Admin dashboard__: EmailManager shows as degraded, "outbound email is failing". It returns to ready by itself as soon as an email goes out again.
+- __Notifications__: everyone who holds `admin-system` gets one notification, "Email could not be sent", with the latest error and a running count. During an outage the count goes up on that one notification; a new one is created only after `ngdpbase.mail.failure-notice.window-minutes`. This notification is never emailed, even when notification escalation is on.
+
+What people see:
+
+- A form submission or a calendar reservation still succeeds; only its confirmation email is missing.
+- Someone asking for a sign-in link while email is failing is told that no link is on its way, and to try again later or sign in another way.
+- Someone waiting for a sign-in approval email is told it could not be sent, and can try again.
+- The contact form says the message could not be sent.
+
+The `console` provider never counts as a failure: it prints the email to the log by design.
 
 ---
 

@@ -281,3 +281,182 @@ describe('forms-submit.js — checklist (#1904)', () => {
     }
   });
 });
+
+// ── Lines (#1913): add and remove rows, the live total, the array it submits ──
+
+const LINES_FIELD = {
+  name: 'lines', type: 'lines', label: 'Lines', required: true, minRows: 1, maxRows: 3,
+  fields: [
+    { name: 'amount', type: 'amount', label: 'Amount', required: true },
+    { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+    { name: 'memo', type: 'text', label: 'Note', required: false }
+  ],
+  amountField: 'amount', totalField: 'total'
+};
+
+interface LinesPage {
+  doc: Document;
+  bodies: unknown[];
+  rows(): HTMLElement[];
+  add(): void;
+  remove(row: number): void;
+  set(name: string, value: string): void;
+  submit(): void;
+  settle(): Promise<void>;
+  text(selector: string): string;
+  button(selector: string): HTMLButtonElement[];
+}
+
+async function linesPage(field: object = LINES_FIELD, answer: unknown = null): Promise<LinesPage> {
+  const form = {
+    id: 'rec', title: 'Record a receipt', proxySubmission: false,
+    fields: [field, { name: 'total', type: 'amount', label: 'Total', required: false }]
+  };
+  const html = (await FormsPlugin.execute({
+    engine: {
+      getManager: (name: string) => {
+        if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
+        if (name === 'FormsDataManager') return { getDefinition: () => form };
+        if (name === 'LedgerManager') return { toFormOptions: async () => [{ value: 'general', label: 'General' }, { value: 'reserve', label: 'Reserve' }] };
+        return undefined;
+      }
+    },
+    pageName: 'Receipts',
+    userContext: null
+  }, { id: 'rec' })).replace(/<script[^>]*><\/script>/g, '');
+  const dom = new JSDOM(`<!doctype html><body>${html}</body>`, { runScripts: 'outside-only' });
+  const win = dom.window as unknown as Record<string, unknown>;
+  const bodies: unknown[] = [];
+  win.fetch = (_url: string, init: { body: string }) => {
+    bodies.push(JSON.parse(init.body));
+    return answer === null ? new Promise(() => {}) : Promise.resolve({ json: async () => answer });
+  };
+  vm.runInContext(CODE, dom.getInternalVMContext());
+  const doc = dom.window.document;
+  const el = doc.querySelector('form[data-ngdp-form="rec"]') as HTMLFormElement;
+  const click = (b: Element) => b.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  return {
+    doc,
+    bodies,
+    rows: () => Array.from(el.querySelectorAll<HTMLElement>('[data-lines-row]')),
+    add: () => click(el.querySelector('[data-lines-add]') as Element),
+    remove: (row) => click(el.querySelectorAll('[data-lines-row]')[row].querySelector('[data-lines-remove]') as Element),
+    set(name, value) {
+      const input = el.elements.namedItem(name) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new dom.window.Event(input.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+    },
+    submit: () => { el.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })); },
+    settle: () => new Promise((resolve) => dom.window.setTimeout(resolve, 0)),
+    text: (selector) => (doc.querySelector(selector)?.textContent ?? '').trim(),
+    button: (selector) => Array.from(el.querySelectorAll<HTMLButtonElement>(selector))
+  };
+}
+
+describe('forms-submit.js — lines (#1913)', () => {
+  it('adds lines up to maxRows and removes them never below the floor, renumbering the names', async () => {
+    const p = await linesPage();
+    expect(p.rows()).toHaveLength(1);
+    expect(p.button('[data-lines-remove]')[0].disabled).toBe(true);
+    p.set('lines[0].memo', 'first');
+    p.add();
+    p.add();
+    expect(p.rows()).toHaveLength(3);
+    expect(p.button('[data-lines-add]')[0].disabled).toBe(true);
+    p.add(); // at maxRows: nothing happens
+    expect(p.rows()).toHaveLength(3);
+    // A new row starts empty, and is named for its place.
+    expect((p.doc.querySelector('[name="lines[2].memo"]') as HTMLInputElement).value).toBe('');
+    expect(p.doc.querySelector('[data-field-error="lines[2].fundId"]')).not.toBeNull();
+    p.set('lines[2].memo', 'third');
+    p.remove(0);
+    expect(p.rows()).toHaveLength(2);
+    expect((p.doc.querySelector('[name="lines[1].memo"]') as HTMLInputElement).value).toBe('third');
+    expect(p.doc.querySelector('[name="lines[2].memo"]')).toBeNull();
+    expect(p.button('[data-lines-add]')[0].disabled).toBe(false);
+    p.remove(0);
+    expect(p.rows()).toHaveLength(1);
+    expect(p.button('[data-lines-remove]')[0].disabled).toBe(true);
+    p.remove(0); // at the floor: nothing happens
+    expect(p.rows()).toHaveLength(1);
+  });
+
+  it('minRows rows are drawn, and none can be removed below it', async () => {
+    const p = await linesPage({ ...LINES_FIELD, minRows: 2, maxRows: 4 });
+    expect(p.rows()).toHaveLength(2);
+    expect(p.button('[data-lines-remove]').every((b) => b.disabled)).toBe(true);
+    p.add();
+    expect(p.button('[data-lines-remove]').every((b) => !b.disabled)).toBe(true);
+  });
+
+  it('shows the count and the sum of the lines as they are typed, and whether it matches the total', async () => {
+    const p = await linesPage();
+    expect(p.text('[data-lines-total]')).toBe(`Lines: 0 · ${money(0)}`);
+    p.set('lines[0].amount', '50');
+    expect(p.text('[data-lines-total]')).toBe(`Lines: 1 · ${money(5000)}`);
+    p.add();
+    p.set('lines[1].amount', '$1,250.05');
+    expect(p.text('[data-lines-total]')).toBe(`Lines: 2 · ${money(130005)}`);
+    expect(p.text('[data-lines-match]')).toBe('Enter the total to compare.');
+    p.set('total', '1300.05');
+    expect(p.text('[data-lines-match]')).toBe(`Matches the total of ${money(130005)}.`);
+    p.remove(0);
+    expect(p.text('[data-lines-total]')).toBe(`Lines: 1 · ${money(125005)}`);
+    expect(p.text('[data-lines-match]')).toBe(`Does not match the total of ${money(130005)}.`);
+  });
+
+  it('submits an array of row objects, trailing empty rows dropped', async () => {
+    const p = await linesPage();
+    p.set('lines[0].amount', '50');
+    p.set('lines[0].fundId', 'general');
+    p.add();
+    p.set('lines[1].amount', '12.50');
+    p.set('lines[1].fundId', 'reserve');
+    p.set('lines[1].memo', 'dues');
+    p.add(); // left empty
+    p.set('total', '62.50');
+    p.submit();
+    expect(p.bodies).toEqual([{
+      lines: [{ amount: '50', fundId: 'general', memo: '' }, { amount: '12.50', fundId: 'reserve', memo: 'dues' }],
+      total: '62.50'
+    }]);
+  });
+
+  it('required lines with nothing filled in post nothing, and say so next to the field', async () => {
+    const p = await linesPage();
+    p.submit();
+    expect(p.bodies).toEqual([]);
+    expect(p.text('[data-field-error="lines"]')).toBe('Lines: add at least one line');
+  });
+
+  it('a filled row missing a required sub-field posts nothing', async () => {
+    const p = await linesPage();
+    p.set('lines[0].memo', 'no amount');
+    p.submit();
+    expect(p.bodies).toEqual([]);
+  });
+
+  it('fewer filled lines than minRows post nothing', async () => {
+    const p = await linesPage({ ...LINES_FIELD, required: false, minRows: 2 });
+    p.set('lines[0].amount', '5');
+    p.set('lines[0].fundId', 'general');
+    p.submit();
+    expect(p.bodies).toEqual([]);
+    expect(p.text('[data-field-error="lines"]')).toBe('Lines: add at least 2 lines');
+  });
+
+  it('per-row errors the server answers land next to that row\'s field', async () => {
+    const p = await linesPage(LINES_FIELD, { ok: false, error: 'Please correct the marked fields', fields: { 'lines[1].fundId': 'That fund is closed' } });
+    for (const [i, fund] of [[0, 'general'], [1, 'reserve']] as const) {
+      p.set(`lines[${i}].amount`, '5');
+      p.set(`lines[${i}].fundId`, fund);
+      if (i === 0) p.add();
+    }
+    p.submit();
+    await p.settle();
+    expect(p.bodies).toHaveLength(1);
+    expect(p.text('[data-field-error="lines[1].fundId"]')).toBe('That fund is closed');
+    expect(p.text('[data-field-error="lines[0].fundId"]')).toBe('');
+    expect(p.doc.querySelector('[name="lines[1].fundId"]')?.classList.contains('is-invalid')).toBe(true);
+  });
+});

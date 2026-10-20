@@ -491,3 +491,85 @@ describe('FormsPlugin — checklist', () => {
     expect(html).not.toContain('data-checklist-match');
   });
 });
+
+// ── Lines (#1913) ─────────────────────────────────────────────────────────────
+
+describe('FormsPlugin — lines', () => {
+  const LINES = {
+    name: 'lines', type: 'lines', label: 'Lines', required: true, minRows: 1, maxRows: 20,
+    fields: [
+      { name: 'amount', type: 'amount', label: 'Amount', required: true },
+      { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      { name: 'memo', type: 'text', label: 'Note', required: false }
+    ],
+    amountField: 'amount', totalField: 'total'
+  };
+
+  async function render(lines: object = LINES) {
+    const viewers: unknown[] = [];
+    const form = makeForm([lines, { name: 'total', type: 'amount', label: 'Total', required: true }]);
+    const html = await FormsPlugin.execute({
+      engine: {
+        getManager: (name: string) => {
+          if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
+          if (name === 'FormsDataManager') return { getDefinition: () => form };
+          if (name === 'LedgerManager') return { toFormOptions: async (_o: unknown, v: unknown) => { viewers.push(v); return [{ value: 'general', label: 'General <Fund>' }]; } };
+          return undefined;
+        }
+      },
+      pageName: 'Receipts',
+      userContext: { username: 'molly' }
+    }, { id: 'test-form' });
+    return { html, viewers };
+  }
+
+  test('renders one row for minRows 1, each sub-field named lines[i].field with its own error slot', async () => {
+    const { html } = await render();
+    expect(html.match(/data-lines-row/g)).toHaveLength(1);
+    expect(html).toMatch(/name="lines\[0\]\.amount"/);
+    expect(html).toContain('<select name="lines[0].fundId"');
+    expect(html).toContain('<option value="general">General &lt;Fund&gt;</option>');
+    expect(html).toMatch(/name="lines\[0\]\.memo"/);
+    for (const key of ['lines', 'lines[0].amount', 'lines[0].fundId', 'lines[0].memo']) {
+      expect(html).toContain(`data-field-error="${key}"`);
+    }
+  });
+
+  test('renders max(1, minRows) rows', async () => {
+    expect((await render({ ...LINES, minRows: 3 })).html.match(/data-lines-row/g)).toHaveLength(3);
+    expect((await render({ ...LINES, minRows: 0, required: false })).html.match(/data-lines-row/g)).toHaveLength(1);
+    expect((await render({ ...LINES, minRows: undefined })).html.match(/data-lines-row/g)).toHaveLength(1);
+  });
+
+  test('sub-field options are resolved once, as the viewer, however many rows', async () => {
+    const { html, viewers } = await render({ ...LINES, minRows: 3 });
+    expect(html.match(/<option value="general">/g)).toHaveLength(3);
+    expect(viewers).toEqual([{ username: 'molly' }]);
+  });
+
+  test('an add button and a remove button per row, the limits on the group, no inline handlers', async () => {
+    const { html } = await render({ ...LINES, minRows: 2, maxRows: 5 });
+    expect(html).toContain('data-lines="lines"');
+    expect(html).toContain('data-min-rows="2"');
+    expect(html).toContain('data-max-rows="5"');
+    expect(html).toContain('data-required="1"');
+    expect(html.match(/data-lines-add/g)).toHaveLength(1);
+    expect(html).toContain('+ Add line');
+    expect(html.match(/<button type="button"[^>]*data-lines-remove[^>]*disabled/g)).toHaveLength(2); // at the floor
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+  });
+
+  test('with amountField: a running total in the site\'s money format, and a match line with totalField', async () => {
+    const { html } = await render();
+    expect(html).toContain('data-amount-field="amount"');
+    expect(html).toContain('data-total-field="total"');
+    expect(html).toContain(`Lines: 0 · ${TEST_PLUGIN_MANAGER.formatters.formatMoney(0, 'USD')}`);
+    expect(html).toContain('data-lines-match');
+  });
+
+  test('without amountField no total is shown', async () => {
+    const { html } = await render({ ...LINES, amountField: undefined });
+    expect(html).not.toContain('data-lines-total');
+    expect(html).not.toContain('data-lines-match');
+  });
+});

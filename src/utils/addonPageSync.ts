@@ -66,6 +66,37 @@ export function evaluateSeededAddonPage(args: {
 }
 
 /**
+ * How a shipped item's sync status reads on an admin screen: the status words
+ * and the edit protection of Admin → Required Pages, which every screen that
+ * syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`;
+ * shipped forms, #1918).
+ *
+ *  - `status` — `modified` when the live copy differs from what ships,
+ *    `current` when it is the same.
+ *  - `userModified` — edited on this site: Sync does not replace it; Force Sync
+ *    does, after a confirm.
+ */
+export interface SyncRowState {
+  status: 'current' | 'modified';
+  userModified: boolean;
+}
+
+/**
+ * The one mapping from `evaluateSeededAddonPage`'s answer to the admin screen's
+ * words (#1918). `userModifiedFlag` is a page's explicit `user-modified`
+ * frontmatter, which marks it edited even when the hash cannot tell.
+ *
+ * @param seedStatus - `evaluateSeededAddonPage`'s answer for the live copy
+ * @param userModifiedFlag - The live copy is explicitly marked edited
+ */
+export function syncRowState(seedStatus: SeededAddonPageStatus, userModifiedFlag = false): SyncRowState {
+  return {
+    status: seedStatus === 'current' ? 'current' : 'modified',
+    userModified: userModifiedFlag || seedStatus === 'locally-modified'
+  };
+}
+
+/**
  * Default edit access for a page ngdpbase ships (#971, #1411): a `general`
  * page is instance-owned and gets no stamp; any other category — system,
  * documentation, addon, unclassified — is administrator-edit only. A source

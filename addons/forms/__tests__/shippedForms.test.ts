@@ -61,7 +61,7 @@ describe('registerShippedForm (#1880)', () => {
   test('first install saves the shipped definition, stamped, and it is current', async () => {
     const m = await boot();
     const state = await m.registerShippedForm('accounting', V1);
-    expect(state).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false });
+    expect(state).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
     const file = await stored('record-entry');
     expect(file.fields.map(f => f.label)).toEqual(['In or out', 'Check number']);
     expect(file.shipped?.addon).toBe('accounting');
@@ -131,7 +131,7 @@ describe('registerShippedForm (#1880)', () => {
       expect((await stored('record-entry')).shipped).toBeUndefined();
 
       const m = await boot();
-      expect(await m.registerShippedForm('accounting', V1)).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false });
+      expect(await m.registerShippedForm('accounting', V1)).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
       expect((await stored('record-entry')).shipped?.addon).toBe('accounting');
 
       await builderEdit(m, 'Ours');
@@ -142,13 +142,13 @@ describe('registerShippedForm (#1880)', () => {
       await (await boot()).saveDefinition(V1);
       const m = await boot();
       const state = await m.registerShippedForm('accounting', V2);
-      expect(state).toEqual({ addon: 'accounting', status: 'outdated', stamped: false, shippedChanged: true });
+      expect(state).toEqual({ addon: 'accounting', status: 'outdated', stamped: false, shippedChanged: true, behind: true, required: false });
       expect((await stored('record-entry')).shipped).toBeUndefined();
       expect((await stored('record-entry')).fields).toHaveLength(2);
 
       expect(await m.syncShippedForm('record-entry')).toBe('synced');
       expect((await stored('record-entry')).fields.map(f => f.label)).toEqual(['Reference']);
-      expect(m.shippedFormState('record-entry')).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false });
+      expect(m.shippedFormState('record-entry')).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
     });
   });
 
@@ -169,6 +169,20 @@ describe('registerShippedForm (#1880)', () => {
     await m.saveDefinition({ ...V1, id: 'site-made' });
     expect(m.shippedFormState('site-made')).toBeUndefined();
     expect(await m.syncShippedForm('site-made')).toBe('not-shipped');
+  });
+
+  test('a change inside a lines field\'s sub-fields reads as a change (#1913)', async () => {
+    const withLines = (label: string): FormDefinition => ({
+      ...V1,
+      fields: [{
+        name: 'lines', type: 'lines', label: 'Lines', required: true,
+        fields: [{ name: 'amount', type: 'amount', label: 'Amount', required: true }, { name: 'memo', type: 'text', label, required: false }]
+      }]
+    });
+    await (await boot()).registerShippedForm('accounting', withLines('Note'));
+    expect((await stored('record-entry')).fields[0].fields?.map(f => f.label)).toEqual(['Amount', 'Note']);
+    expect((await (await boot()).registerShippedForm('accounting', withLines('Note'))).status).toBe('current');
+    expect((await (await boot()).registerShippedForm('accounting', withLines('Memo'))).status).toBe('outdated');
   });
 
   test('an invalid shipped definition throws at registration', async () => {
