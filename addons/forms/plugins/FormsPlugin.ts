@@ -13,15 +13,10 @@ import type ConfigurationManager from '../../../dist/src/managers/ConfigurationM
 import type { FormOption } from '../../../dist/src/utils/pluginFormatters.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
+import { FORMS_CURRENCY } from '../managers/FormsDataManager.js';
 import { resolveFieldOptions } from '../managers/fieldOptions.js';
 
-type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string };
-
-/**
- * The currency a checklist's running total is shown in. The `amount` field
- * shows "$" and parses two decimals, so forms money is US dollars throughout.
- */
-const CURRENCY = 'USD';
+type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string; resolvedFields?: ResolvedField[] };
 
 function resolvePrefill(
   dotPath: string,
@@ -73,6 +68,8 @@ function renderField(f: PluginFormatters, field: ResolvedField): string {
     </div>`;
   } else if (field.type === 'checklist') {
     return renderChecklist(f, field, requiredBadge, desc, errorSlot);
+  } else if (field.type === 'lines') {
+    return renderLines(f, field, requiredBadge, desc, errorSlot);
   } else if (field.type === 'checkbox') {
     return `<div class="mb-3 form-check">
       <input type="checkbox" name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-check-input"${required}>
@@ -116,24 +113,73 @@ function renderChecklist(f: PluginFormatters, field: ResolvedField, requiredBadg
       </div>`;
     }).join('\n');
   const hasAmounts = options.some(o => typeof o.amount === 'number');
-  const total = hasAmounts
-    ? `<div class="form-text" data-checklist-total>Ticked: 0 · ${escHtml(f.formatMoney(0, CURRENCY))}</div>`
-    : '';
-  const match = hasAmounts && field.totalField
-    ? '<div class="form-text" data-checklist-match></div>'
-    : '';
+  const total = hasAmounts ? renderTotal(f, 'checklist', 'Ticked', Boolean(field.totalField)) : '';
   const attrs = [
     `data-checklist="${name}"`,
     `data-label="${escHtml(field.label)}"`,
     field.required ? 'data-required="1"' : '',
-    hasAmounts ? `data-currency="${CURRENCY}"` : '',
+    hasAmounts ? `data-currency="${FORMS_CURRENCY}"` : '',
     hasAmounts && field.totalField ? `data-total-field="${escHtml(field.totalField)}"` : ''
   ].filter(Boolean).join(' ');
   return `<fieldset class="mb-3" ${attrs}>
     <legend class="form-label fs-6 mb-1">${escHtml(field.label)}${requiredBadge}</legend>
     ${boxes}
     ${total}
-    ${match}
+    ${desc}
+    ${errorSlot}
+  </fieldset>`;
+}
+
+/**
+ * The running-total line a checklist or lines field shows, "<prefix>: N · $sum",
+ * and with `totalField` the line saying whether the sum matches it.
+ * forms-submit.js keeps both current (drawTotal).
+ */
+function renderTotal(f: PluginFormatters, kind: 'checklist' | 'lines', prefix: string, withMatch: boolean): string {
+  const total = `<div class="form-text" data-${kind}-total>${prefix}: 0 · ${f.escapeHtml(f.formatMoney(0, FORMS_CURRENCY))}</div>`;
+  return withMatch ? `${total}\n    <div class="form-text" data-${kind}-match></div>` : total;
+}
+
+/**
+ * Lines (#1913): repeating rows of the field's sub-fields, each named
+ * `<lines>[<row>].<sub-field>`, the key its error comes back under.
+ * max(1, minRows) rows are drawn; forms-submit.js adds rows up to maxRows,
+ * removes them down to that floor, renumbers, and submits an array of rows.
+ */
+function renderLines(f: PluginFormatters, field: ResolvedField, requiredBadge: string, desc: string, errorSlot: string): string {
+  const { escapeHtml: escHtml } = f;
+  const subs = field.resolvedFields ?? [];
+  const floor = Math.max(1, field.minRows ?? 0);
+  const row = (i: number): string => {
+    const cells = subs
+      .map(sub => `<div class="col-md">${renderField(f, { ...sub, name: `${field.name}[${i}].${sub.name}` })}</div>`)
+      .join('\n');
+    return `<div class="border rounded p-2 mb-2" data-lines-row>
+      <div class="row g-2 align-items-start">
+        ${cells}
+        <div class="col-md-auto"><button type="button" class="btn btn-sm btn-outline-danger" data-lines-remove disabled>Remove</button></div>
+      </div>
+    </div>`;
+  };
+  const rows = Array.from({ length: floor }, (_, i) => row(i)).join('\n');
+  const atMax = field.maxRows !== undefined && floor >= field.maxRows;
+  const total = field.amountField ? renderTotal(f, 'lines', 'Lines', Boolean(field.totalField)) : '';
+  const attrs = [
+    `data-lines="${escHtml(field.name)}"`,
+    `data-label="${escHtml(field.label)}"`,
+    field.required ? 'data-required="1"' : '',
+    `data-min-rows="${field.minRows ?? 0}"`,
+    field.maxRows !== undefined ? `data-max-rows="${field.maxRows}"` : '',
+    field.amountField ? `data-amount-field="${escHtml(field.amountField)}" data-currency="${FORMS_CURRENCY}"` : '',
+    field.amountField && field.totalField ? `data-total-field="${escHtml(field.totalField)}"` : ''
+  ].filter(Boolean).join(' ');
+  return `<fieldset class="mb-3" ${attrs}>
+    <legend class="form-label fs-6 mb-1">${escHtml(field.label)}${requiredBadge}</legend>
+    <div data-lines-body>
+    ${rows}
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-lines-add${atMax ? ' disabled' : ''}>+ Add line</button>
+    ${total}
     ${desc}
     ${errorSlot}
   </fieldset>`;
@@ -242,17 +288,22 @@ const FormsPlugin = {
       }
     }
 
-    // Resolve optionsSource and prefill for each field
-    const resolvedFields: ResolvedField[] = await Promise.all(form.fields.map(async field => {
+    // Resolve optionsSource and prefill for each field; a lines field's
+    // sub-fields once, for all its rows (#1913)
+    const resolveField = async (field: FormField): Promise<ResolvedField> => {
       const base: ResolvedField = { ...field };
       if (field.type === 'dropdown' || field.type === 'checklist') {
         base.resolvedOptions = await resolveFieldOptions(context.engine, field, context.userContext);
+      }
+      if (field.type === 'lines') {
+        base.resolvedFields = await Promise.all((field.fields ?? []).map(resolveField));
       }
       if (field.prefill && userCtx) {
         base.prefillValue = resolvePrefill(field.prefill, userCtx, unitRecord);
       }
       return base;
-    }));
+    };
+    const resolvedFields: ResolvedField[] = await Promise.all(form.fields.map(resolveField));
 
     return renderForm(context.formatters, form, resolvedFields);
   }
