@@ -7,6 +7,8 @@ import { areIntervalsOverlapping, parseISO, addDays, format } from 'date-fns';
 import BaseManager from '../../../dist/src/managers/BaseManager.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.js';
+import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -107,6 +109,9 @@ class CalendarDataManager extends BaseManager {
    * Called once during addon register(). Safe to call on an empty directory.
    */
   async load(): Promise<void> {
+    // #1876: a staged site restore puts the backed-up calendars in place before they are read.
+    const configManager = this.engine.getManager<{ getResolvedDataPath(key: string, def: string): string }>('ConfigurationManager');
+    if (configManager) applyDirectoryPartAtStart('CalendarDataManager', this.dataPath, configManager);
     if (!existsSync(this.dataPath)) {
       mkdirSync(this.dataPath, { recursive: true });
       return;
@@ -411,6 +416,23 @@ class CalendarDataManager extends BaseManager {
     return events
       .map(e => `${e.title} — ${format(parseISO(e.start), 'MMM d')}`)
       .join(separator);
+  }
+
+  // ── Backup (#1876) ──────────────────────────────────────────────────────────
+
+  /** The calendar files under `dataPath` as `<stem>.calendar.tar` beside the backup document (`.tar.enc` under the backup key). */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('CalendarDataManager', 'calendar', this.dataPath, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore; the live calendars are untouched until then. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('CalendarDataManager', this.dataPath, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 }
 

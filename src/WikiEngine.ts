@@ -465,10 +465,13 @@ class WikiEngine extends Engine {
     const addonsManager = this.getManager<AddonsManager>('AddonsManager');
     if (!addonsManager) {
       logger.warn('[WikiEngine] initializeAddons: AddonsManager not registered');
-      return;
+    } else {
+      await addonsManager.initialize();
+      logger.info('[WikiEngine] Addons initialized');
     }
-    await addonsManager.initialize();
-    logger.info('[WikiEngine] Addons initialized');
+    // #1876: every manager, add-ons included, has now applied its part of a
+    // staged restore; say what the restore did, and what it did not bring back.
+    await this.getManager<BackupManager>('BackupManager')?.reportRestoreAtBoot();
   }
 
   /**

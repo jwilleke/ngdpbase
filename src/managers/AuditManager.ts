@@ -37,7 +37,8 @@ export class AuditQueryForbiddenError extends Error {
  * const auditManager = engine.getManager('AuditManager');
  * await auditManager.logAccess('admin', 'Main', 'view', 'granted');
  */
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import type { DirectoryBackupData } from '../utils/directoryBackup.js';
 import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -990,6 +991,48 @@ class AuditManager extends BaseManager {
         `[audit] could not record system.${phase}: ${err instanceof Error ? err.message : String(err)}`
       );
     }
+  }
+
+  /** The active provider's file backup and staged restore, when it keeps files (FileAuditProvider, #1876). */
+  private fileProvider(): {
+    backupFiles(options: ManagerBackupOptions): Promise<{ data: DirectoryBackupData; warnings: string[] }>;
+    stageRestore(data: DirectoryBackupData, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void>;
+  } | null {
+    const p = this.provider as unknown as { backupFiles?: unknown; stageRestore?: unknown } | null;
+    return p && typeof p.backupFiles === 'function' && typeof p.stageRestore === 'function' ? p as ReturnType<AuditManager['fileProvider']> : null;
+  }
+
+  /**
+   * The audit log in a backup (#1876): the provider's own files beside the
+   * document, with the hash chain they carry (`FileAuditProvider.backupFiles`).
+   * A provider that keeps no files (the database or a cloud sink) is not in
+   * the file backup: its records are wherever it keeps them.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    const base = { managerName: 'AuditManager', timestamp: new Date().toISOString() };
+    const files = this.fileProvider();
+    if (!files) return { ...base, data: null, note: `The audit provider ${this.providerClass ?? 'none'} keeps no files; its records are not in the file backup` };
+    if (!options?.directory || !options.stem) throw new Error('AuditManager writes its files beside the backup document, so it is backed up through BackupManager (#1876)');
+    const { data, warnings } = await files.backupFiles(options);
+    return { ...base, data, ...(warnings.length > 0 ? { warnings } : {}) };
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live log keeps recording until then. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    const data = backupData.data as DirectoryBackupData | null;
+    if (!data) {
+      logger.warn('[AuditManager] The backup holds no audit files; the audit log on this site is kept (#1876)');
+      return;
+    }
+    const files = this.fileProvider();
+    if (!files) throw new Error(`The backup holds audit files, but this site's audit provider (${this.providerClass ?? 'none'}) keeps none; nothing was staged`);
+    if (!options?.siteRestore || !options.directory) throw new Error("AuditManager's restore is staged with the rest of the site, so it is restored through BackupManager (#1876)");
+    await files.stageRestore(data, { ...options, siteRestore: options.siteRestore });
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /**

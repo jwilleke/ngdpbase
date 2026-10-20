@@ -41,10 +41,9 @@ import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
-import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
+import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS, type SqliteHandle } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
-import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
@@ -57,29 +56,17 @@ import {
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
 } from '../providers/sqliteBackup.js';
 import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
+import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 
-/** The environment variable holding the SQLCipher key. Never a config key: config is readable from the admin screens. */
-export const DATABASE_KEY_ENV = 'NGDPBASE_DATABASE_KEY';
+// The environment variable holding the SQLCipher key: one declaration, `src/utils/databaseKey.ts`.
+import { DATABASE_KEY_ENV } from '../utils/databaseKey.js';
+export { DATABASE_KEY_ENV };
 
-/**
- * The environment variable holding the key every database backup is encrypted
- * under (#1723). Its own secret, not the database key: the copy that travels
- * and the copy that stays should not fall to the same compromise. Never a
- * config key. Unset, no database is backed up, and admins are told.
- */
-export const BACKUP_KEY_ENV = 'NGDPBASE_BACKUP_KEY';
+// #1723, #1876: the backup key has one declaration (`src/utils/backupKey.ts`); re-exported for the callers that import it from here.
+export { BACKUP_KEY_ENV, backupKeyFingerprint } from '../utils/backupKey.js';
 
 /** How long a database backup or restore staging may run on its worker before it is stopped, when not configured. */
 export const DEFAULT_BACKUP_WORKER_TIMEOUT_MS = 3_600_000;
-
-/**
- * A short fingerprint of a backup key (#1723, D3): the first 16 hex digits of
- * an HMAC of a fixed label under the key. Recorded in each backup so a restore
- * under another key says so plainly; it never reveals the key.
- */
-export function backupKeyFingerprint(key: string): string {
-  return createHmac('sha256', key).update('ngdpbase backup key fingerprint v1').digest('hex').slice(0, 16);
-}
 
 /** The backup's name for the application database; an add-on's is `addon-<owner>`. */
 const APPLICATION = 'application';
@@ -188,6 +175,10 @@ class DatabaseManager extends BaseManager {
   private readonly addonDatabases = new Map<string, AddonDatabase>();
   /** What the start did with a staged restore (#1723), reported once the notifications exist. */
   private restoreAtStart: ApplyOutcome | null = null;
+  /** The databases a staged restore put back at this start (#1876): kept after the report, for the managers whose data is in them. */
+  private restoredNow: string[] = [];
+  /** When the restored backup was taken, and where the replaced application database is kept, when a restore was applied at this start (#1876). */
+  private replaced: { backup: string; applicationKept: string | null } | null = null;
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
   private readonly faults = new Map<Fault, string>();
   /** Why the configured application database could not be opened safely (#1892); null otherwise. */
@@ -441,7 +432,7 @@ class DatabaseManager extends BaseManager {
     }
     const backupKey = this.backupKey();
     if (!backupKey) {
-      const reason = `${BACKUP_KEY_ENV} is not set, so no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
+      const reason = `${LEFT_OUT_FOR_NO_KEY}no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
       this.fault('backup-key', reason);
       throw new Error(reason);
     }
@@ -605,6 +596,29 @@ class DatabaseManager extends BaseManager {
     }
   }
 
+  /** Whether a staged restore put the databases back at this start (#1876): the job state in them is then the backup's. */
+  restoredAtStart(): boolean {
+    return this.restoredNow.length > 0;
+  }
+
+  /**
+   * Read the application database as it was just before this start's restore
+   * replaced it (#1876): the kept `*.pre-restore` file, read-only, under the
+   * site's database key, which it was encrypted under. For the owner of data
+   * in it (BackgroundJobManager's job runs since the backup) to say what the
+   * restore took away. Null when no restore replaced it at this start.
+   */
+  readReplacedApplicationDatabase<T>(read: (db: SqliteHandle, backupTakenAt: string) => T): T | null {
+    const kept = this.replaced?.applicationKept;
+    if (!kept || !existsSync(kept)) return null;
+    return SqliteDatabaseProvider.readOnce(kept, process.env[DATABASE_KEY_ENV] ?? '', (db) => read(db, this.replaced!.backup));
+  }
+
+  /** The databases a staged restore put back at this start, by name (#1876). */
+  getRestoredAtStart(): string[] {
+    return [...this.restoredNow];
+  }
+
   /** Its restore is staged for the next start (#1723), and joins a site restore (#1876). */
   override restoreIsStaged(): boolean {
     return true;
@@ -692,6 +706,7 @@ class DatabaseManager extends BaseManager {
     // #1876: a database restore staged as part of a site restore goes in only
     // when the whole site restore does; otherwise it is set aside with it.
     const siteFile = siteRestoreFile(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
+    const stagedBackupAt = this.getStagedRestore()?.backup ?? '';
     const gate = gatePart(siteFile, 'DatabaseManager');
     let outcome: ApplyOutcome | null;
     if (gate.decision === 'set-aside') {
@@ -711,13 +726,17 @@ class DatabaseManager extends BaseManager {
       this.fault('restore', reason);
       return;
     }
+    this.restoredNow = outcome.applied.map((a) => a.name);
+    if (outcome.applied.length > 0) {
+      this.replaced = { backup: stagedBackupAt, applicationKept: outcome.applied.find((a) => path.resolve(a.live) === path.resolve(file))?.kept ?? null };
+    }
     for (const a of outcome.applied) {
       logger.warn(`[DatabaseManager] Restore applied: ${a.name} -> ${a.live} (previous kept as ${path.basename(a.kept)}) (#1723)`);
     }
   }
 
   private backupKey(): string {
-    return (process.env[BACKUP_KEY_ENV] ?? '').trim();
+    return currentBackupKey();
   }
 
   /** What is wrong with the backup key: missing, or the database key itself (D3). Null when sound. */

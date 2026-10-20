@@ -91,3 +91,52 @@ describe('#1723 Admin → Backup, Restore Databases', () => {
     expect(doc.querySelector('#safety-backup')).toBeNull();
   });
 });
+
+describe('#1876 Admin → Backup, the backup key', () => {
+  test('asks for the key to be saved, with its fingerprint and the way to see it, until an admin confirms; never the key', async () => {
+    const doc = await render({ backupKey: { set: true, fingerprint: 'abcdef0123456789', saved: false } });
+    expect(text(doc.querySelector('#backup-key-fingerprint'))).toBe('abcdef0123456789');
+    expect(doc.querySelector('#backup-key-not-saved')).not.toBeNull();
+    expect(doc.querySelector('#backup-key-show')?.getAttribute('href')).toBe('/admin/backup/key');
+    const saved = await render({ backupKey: { set: true, fingerprint: 'abcdef0123456789', saved: true } });
+    expect(saved.querySelector('#backup-key-not-saved')).toBeNull();
+    expect(saved.querySelector('#backup-key-saved')).not.toBeNull();
+  });
+
+  test('a keyless backup is marked "no sign-in credentials"; an encrypted one is not', async () => {
+    const doc = await render({
+      backupKey: { set: true, fingerprint: 'f', saved: true },
+      recentBackups: [
+        { ...stored('2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz', '2026-10-17T02:00:00Z', ['application']), encrypted: false },
+        { ...stored('2026-10-18T02-00-00-000Z-ngdpbase-backup.json.gz.enc', '2026-10-18T02:00:00Z', ['application']), encrypted: true }
+      ]
+    });
+    const marks = [...doc.querySelectorAll('.keyless-backup')];
+    expect(marks).toHaveLength(1);
+    expect(text(marks[0])).toBe('no sign-in credentials');
+    expect(marks[0].closest('tr')?.getAttribute('data-backup')).toBe('2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz');
+  });
+
+  test('a site with no backup key says so on the restore card, plainly, and still asks for the typed confirmation', async () => {
+    const doc = await render({ backupKey: { set: false, fingerprint: null, saved: false } });
+    const warning = text(doc.querySelector('#restore-no-key'));
+    expect(warning).toContain('passwords return to what they were on the backup date');
+    expect(warning).toContain('Passkeys and authenticator apps are not restored');
+    expect(warning).toContain("won't have admin rights until they set up a passkey again");
+    expect(doc.querySelector('#restoreConfirm')).not.toBeNull();
+    expect(doc.querySelector('#backup-key-missing')).not.toBeNull();
+    expect((await render({ backupKey: { set: true, fingerprint: 'f', saved: true } })).querySelector('#restore-no-key')).toBeNull();
+  });
+});
+
+describe('#1876 the page that shows the backup key', () => {
+  test('shows the key to copy, its fingerprint, and the confirmation it is saved', async () => {
+    const page = path.join(__dirname, '../../views/admin-backup-key.ejs');
+    const template = fs.readFileSync(page, 'utf8').replace(/<%- include\('(header|footer)'[^%]*%>/g, '');
+    const doc = new JSDOM(ejs.render(template, { key: 'the-key-to-copy', fingerprint: 'abcdef0123456789', csrfToken: 'c', lockedUnless: () => '' }, { filename: page })).window.document;
+    expect((doc.querySelector('#backup-key-value') as HTMLInputElement).value).toBe('the-key-to-copy');
+    expect(doc.querySelector('#backup-key-confirm input[name=fingerprint]')?.getAttribute('value')).toBe('abcdef0123456789');
+    expect(doc.querySelector('#backup-key-confirm')?.getAttribute('action')).toBe('/admin/backup/key/saved');
+  });
+});
+
