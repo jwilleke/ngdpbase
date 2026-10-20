@@ -8,6 +8,7 @@ import { scheduleContext } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
+import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /**
  * Notification object structure
@@ -494,7 +495,7 @@ class NotificationManager extends BaseManager {
 
   private escalateByEmail(notification: Notification): void {
     this._doEscalateByEmail(notification).catch(err => {
-      this.logger.warn('[NotificationManager] Email escalation failed:', err);
+      this.logger.warn(`[NotificationManager] Email escalation failed: ${errorForLog(err)}`);
     });
   }
 
@@ -537,8 +538,10 @@ class NotificationManager extends BaseManager {
     const html = `<h2>${notification.title}</h2><p>${notification.message}</p><p><strong>Level:</strong> ${notification.level}<br><strong>Created:</strong> ${notification.createdAt.toISOString()}</p>`;
 
     for (const user of withEmail) {
-      await emailManager.sendTo(user.email, subject, text, html);
-      this.logger.info(`[NotificationManager] Escalation email sent to ${user.email} (${user.username})`);
+      // #1916: a failed send is reported once, by EmailManager; it is not
+      // logged again here, and the other recipients are still tried.
+      const sent = await emailManager.sendTo(user.email, subject, text, html).then(() => true, () => false);
+      if (sent) this.logger.info(`[NotificationManager] Escalation email sent to ${user.username} (an address at ${emailDomain(user.email)})`);
     }
   }
 
