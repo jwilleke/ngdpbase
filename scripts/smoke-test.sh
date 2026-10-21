@@ -40,7 +40,9 @@ echo ""
 
 # 4. Test WikiEngine initialization (quick check)
 echo "✓ Testing WikiEngine initialization..."
-timeout 30 node -e "
+# #631/#1953: the engine refuses to initialise without a system principal.
+# This check loads no .env, so name one unless the caller already has.
+NGDPBASE_SYSTEM_USER="${NGDPBASE_SYSTEM_USER:-system}" timeout 30 node -e "
   const WikiEngine = require('./dist/src/WikiEngine');
   const engine = new WikiEngine.default();
   engine.initialize().then(() => {

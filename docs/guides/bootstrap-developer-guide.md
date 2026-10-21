@@ -126,6 +126,8 @@ All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/n
 
 __If you add an entry point that reads instance data, import `bootstrap-env` first.__ Without it the process silently operates on `./data`.
 
+__Every entry point that starts a `WikiEngine` needs `NGDPBASE_SYSTEM_USER`__ ([#1953](https://github.com/jwilleke/ngdpbase/issues/1953)): `WikiEngine.initialize()` refuses without it, before any manager writes. Outside `app.ts` those are `mcp-server.ts` (`npm run mcp`), `scripts/backfill-page-author.ts`, `scripts/lib/pageMigration.ts` (used by `fix-page-markdown.ts` and `strip-stray-frontmatter.ts`), `scripts/maintain-versions.ts` (`npm run maintain:*`), `scripts/restart-audit-chain.ts` (`npm run audit:restart-chain`) and `scripts/retrust-credentials.ts`. Each imports `bootstrap-env`, so it gets the variable from the instance's `.env`, where the server already needs it; run one against an instance whose principal is set only by its launcher, and set the variable in that shell. Two load no `.env` and set it themselves: the CI Smoke Tests step (`ci-system`) and `scripts/smoke-test.sh` (`system` unless already set). Tests get `system` from `vitest.setup.ts`.
+
 ## Layer 2 — configuration
 
 ### Merge order

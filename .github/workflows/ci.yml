@@ -357,6 +357,10 @@ jobs:
           "
 
       - name: Test WikiEngine initialization
+        env:
+          # #631/#1953: the engine refuses to initialise without a system
+          # principal, before any manager writes. Same name as the E2E job.
+          NGDPBASE_SYSTEM_USER: ci-system
         run: |
           echo "Testing WikiEngine initialization..."
           # Project is ESM (type: module). Use dynamic import on the BUILT
