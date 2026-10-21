@@ -852,7 +852,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         '{ "name": "@acme/volcano-watch-addon", "version": "0.0.0" }',
         'placeholder, not installable',
         'npm publish --access public',
-        'npm deprecate @acme/volcano-watch-addon@0.0.0 "placeholder, do not install"',
+        'It is not deprecated.',
         '`npm trust`, which needs npm 11.15.0',
         'no `"private": true`',
         '"url": "https://github.com/<owner>/<repo>.git", "directory": "addons/volcano-watch"',
@@ -863,6 +863,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect([...order].sort((a, b) => a - b)).toEqual(order);
       expect(readme).toContain('`git push origin volcano-watch-v0.2.0`');
       expect(readme).toContain('--update-publish');
+      expect(readme).not.toContain('npm deprecate');
       const entry = /```json\n(\{\n {2}"ngdpbase\.addons\.install"[\s\S]*?)```/.exec(readme);
       expect(entry).not.toBeNull();
       expect(JSON.parse(entry![1])).toEqual({
