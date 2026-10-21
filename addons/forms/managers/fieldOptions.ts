@@ -1,6 +1,6 @@
 
 /**
- * The choices a dropdown offers one viewer, resolved the same way when the
+ * The choices a dropdown or checklist offers one viewer, resolved the same way when the
  * form is drawn and when it is submitted (the submit refuses a value that is
  * not among them).
  *
@@ -39,17 +39,28 @@ export async function resolveFieldOptions(
   return (field.options ?? []).map(o => ({ value: o, label: o }));
 }
 
-/** Every dropdown's allowed values, keyed by field name. */
-export async function resolveChoices(
+/**
+ * Every dropdown's and checklist's choices for this viewer, keyed by field
+ * name. A dropdown inside a `lines` row is keyed `<lines>.<sub-field>`,
+ * resolved once for all its rows (#1913).
+ */
+export async function resolveChoiceOptions(
   engine: EngineLike,
   fields: FormField[],
   userContext: unknown
-): Promise<Map<string, string[]>> {
-  const choices = new Map<string, string[]>();
-  for (const field of fields) {
-    if (field.type !== 'dropdown') continue;
-    const options = await resolveFieldOptions(engine, field, userContext);
-    choices.set(field.name, options.map(o => o.value));
+): Promise<Map<string, FormOption[]>> {
+  const choices = new Map<string, FormOption[]>();
+  const keyed = fields.flatMap((field): Array<[string, FormField]> => field.type === 'lines'
+    ? (field.fields ?? []).map((sub): [string, FormField] => [`${field.name}.${sub.name}`, sub])
+    : [[field.name, field]]);
+  for (const [key, field] of keyed) {
+    if (field.type !== 'dropdown' && field.type !== 'checklist') continue;
+    choices.set(key, await resolveFieldOptions(engine, field, userContext));
   }
   return choices;
+}
+
+/** The allowed values of each resolved choice list, as the submission validator takes them. */
+export function choiceValues(options: Map<string, FormOption[]>): Map<string, string[]> {
+  return new Map(Array.from(options, ([key, list]) => [key, list.map(o => o.value)]));
 }

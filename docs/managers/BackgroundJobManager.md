@@ -1,7 +1,7 @@
 ---
 name: BackgroundJobManager
 description: Long-running job registry + scheduler with progress reporting and polling API
-dateModified: '2026-10-09'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/BackgroundJobManager.ts
 ---
@@ -110,6 +110,22 @@ Core's maintenance jobs: `media.folder-scan` (`ngdpbase.media.scaninterval`), `p
 - One run of a job at a time: run now and rerun are refused (409) while the job runs or has an unfinished run (waiting for a retry, or interrupted).
 - The manager methods are `listScheduledJobs`, `runNow`, `rerunSlot` and `retryNow`; a refusal is a `JobActionError` carrying its HTTP status.
 - Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the person as the user; retry now as `job-retry`; pause as a configuration change.
+
+## When the application database is unavailable (#1892)
+
+When `DatabaseManager` could not open the configured application database ([maintenance mode](DatabaseManager.md#when-the-application-database-cant-be-opened-maintenance-mode)), no job runs until a restart opens it: the job state may live in that database, and a job, a backup above all, may need it. A backup taken without it would rotate out the backups that have it.
+
+- The manager is `degraded` with the reason, and opens no job state (no file fallback).
+- Jobs still register, persisted or not, so every manager starts.
+- `startScheduler()` does not start the scheduler, and `tick()` does nothing.
+- `enqueue()` returns a run that has already failed, with the reason; `runNow()`, `rerunSlot()` and `retryNow()` are refused (409).
+- The Admin → Jobs page lists the jobs with no state.
+
+## Backup and restore
+
+Job state in the application database is in the database backup and comes back with it ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). File job state (`ngdpbase.jobs.state.dir`) is in the backup as `<stem>.jobs.tar` (`.tar.enc` under the backup key): state, run history and checkpoints, without the slot locks ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). It restores staged with the rest of a site restore; `initialize()` reads the runs in the live state since the backup (`getRunsReplacedAtStart()`), then swaps the folder in before opening it.
+
+__A restore never re-runs a job.__ When the job state was put back at this start (file state applied, or the database restored, `DatabaseManager.restoredAtStart()`), each scheduled job's first look closes a run the backup caught unfinished as `failed` ("cut off by a restore"), never resumed or retried, and sets its next slot to the next one from now, so nothing between the backup and the restore is caught up. A run started by hand that was unfinished is reported cut off and not restarted. Without a restore, the same unfinished run would be resumed as a crashed attempt (#1716). `runsSince(since)` gives BackupManager the runs since a backup, for the critical "not restored" notification, and `displayNameOf(jobId)` their names. See the [backup and restore guide](../guides/backup-restore-guide.md#a-job-run-in-progress-at-backup-time).
 
 ## See Also
 

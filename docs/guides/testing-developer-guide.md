@@ -1,7 +1,7 @@
 ---
 name: Testing developer guide
 description: Non-negotiable rules for tests in this repo — teardown, proving a test can fail, reproducing the way the suite runs
-dateModified: 2026-09-06
+dateModified: 2026-10-19
 category: guides
 ---
 
@@ -16,6 +16,7 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 - Reproduce a failure the way the suite runs it. Do not skip fixture reset, reuse state, or run one spec alone when the suite runs it in a batch.
 - Do not invent a system principal to satisfy a mandatory context. Use `jobContextFromSystem(reason)` or the request subject you were given.
 - Test credentials are generated at run time (`pw-${randomUUID()}`), never written as literals, and no real secret is ever committed, in tests or anywhere else. GitGuardian skips test paths (`**/__tests__/**`, `tests/**`, in `.gitguardian.yaml` on master) because its username/password detector matches the shape of test code, not the value; that skip is only safe while this rule holds.
+- An E2E request sent with `maxRedirects: 0` goes to `instanceOrigin(page)` (`tests/e2e/fixtures/helpers.ts`), never to a bare `/path`. jimstest's base URL is https, so it answers plain-http requests with 308, and a spec written against an http throwaway instance then fails the release gate there.
 
 ## How to add a test
 
@@ -41,6 +42,25 @@ A rendering or conversion fix adds its content shape to a test page (#1355). Tes
 - A shape that is still broken gets `knownBug: <issue>`. It runs as `test.fails`: green today, red once the bug is fixed — remove the marker then.
 - Existing instances get a new or changed page through Admin → Required Pages Sync; `tests/e2e/test-pages.spec.ts` fails when the instance under test is missing one.
 
+## Run E2E on a throwaway instance
+
+Run E2E against an instance you start for the run, never against one an operator uses (#1895). It needs its own port, its own data folder and a known admin password.
+
+- Pick a free port (`lsof -ti tcp:<port>` prints nothing) and a fresh data folder from `mktemp -d`. Never point it at `./data` or a live `FAST_STORAGE`.
+- Build first: `npm run build`. The instance runs `dist/`.
+- Seed the folder: `FAST_STORAGE=<dir> SLOW_STORAGE=<dir> PUID=$(id -u) PGID=$(id -g) npx tsx scripts/seed-e2e-test-data.ts`.
+- Start it with `node dist/src/app.js`, the way CI does, and stop it by its own PID. `./server.sh` is for long-running pm2-managed instances; from a worktree it can reach another instance by pm2 name or by path — the reasons are in the [bootstrap guide](bootstrap-developer-guide.md#multiple-instances-on-one-machine). Set `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, `NGDPBASE_BASE_URL=http://localhost:<port>`, `NGDPBASE_SYSTEM_USER`, `PUID` and `PGID`.
+- The forms specs skip unless `ngdpbase.addons.forms.enabled` is true in the folder's `config/app-custom-config.json`. `forms-shipped.spec.ts` also needs the fixture add-on in `tests/e2e/fixtures/addons/shipped-forms-e2e`; its header names the keys that load it.
+- Run `PORT=<port> npm run test:e2e`, then stop the server and remove the folder.
+
+The admin password has one source:
+
+- The engine gives the bootstrap `admin` account `ngdpbase.user.security.defaultpassword`, which ships as `admin123`. It does not read `NGDPBASE_ADMIN_PASSWORD` unless that key points at it.
+- Seed with `NGDPBASE_ADMIN_PASSWORD` unset (what CI does): the admin is on `admin123`, and the suite signs in with `admin123`.
+- Seed with `NGDPBASE_ADMIN_PASSWORD` set: the seed points the key at `"$NGDPBASE_ADMIN_PASSWORD"`. Start the server with the same variable (an unset ref stops the boot), and run the suite with it set too.
+- `E2E_ADMIN_PASS` overrides what the suite signs in with. `playwright.config.ts` resolves it from the shell, then `.env`, then `NGDPBASE_ADMIN_PASSWORD`, then `admin123`. Set it only when the admin's password is none of these.
+- A wrong password fails `auth.setup.ts` with the reason and the likely cause, and the rest of the run does not start. Fix the password; do not chase the specs.
+
 ## How you know you are done
 
 - `npm test`
@@ -57,3 +77,4 @@ A rendering or conversion fix adds its content shape to a test page (#1355). Tes
 
 - [#1093](https://github.com/jwilleke/ngdpbase/issues/1093)
 - [#1092](https://github.com/jwilleke/ngdpbase/issues/1092)
+- [#1895](https://github.com/jwilleke/ngdpbase/issues/1895): `playwright.config.ts` reads only the checkout's `.env`, not `<FAST_STORAGE>/.env`. A password kept only in the instance's own `.env` must be exported for the run.

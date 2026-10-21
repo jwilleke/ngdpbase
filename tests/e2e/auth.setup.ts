@@ -1,4 +1,4 @@
-import { test as setup, expect, type Page } from '@playwright/test';
+import { test as setup, type Page } from '@playwright/test';
 import { waitForServerReady, TEST_PAGE_PREFIX } from './fixtures/helpers';
 
 const STORAGE_STATE = './tests/e2e/.auth/user.json';
@@ -15,9 +15,9 @@ setup('authenticate', async ({ page }) => {
 
   // Test credentials from env or defaults
   const adminUser = process.env.E2E_ADMIN_USER || 'admin';
-  // Local throwaway instances were bootstrapped with this before ngdpbase
-  // stopped shipping a default admin password. A FRESH e2e instance now needs
-  // NGDPBASE_ADMIN_PASSWORD set at first boot, and E2E_ADMIN_PASS set to match.
+  // playwright.config.ts resolves E2E_ADMIN_PASS (E2E_ADMIN_PASS, else
+  // NGDPBASE_ADMIN_PASSWORD). With neither set, the instance's admin is on the
+  // shipped bootstrap password, admin123. See testing-developer-guide.md (#1895).
   const adminPass = process.env.E2E_ADMIN_PASS || 'admin123';
 
   // Navigate to admin login page (always shows password form regardless of OAuth config)
@@ -32,18 +32,31 @@ setup('authenticate', async ({ page }) => {
   await usernameInput.fill(adminUser);
   await passwordInput.fill(adminPass);
 
-  // Submit login form
+  // Submit login form and wait for the answer: a refused sign-in redirects to
+  // /login?error=…, an accepted one away from the login pages.
   await page.getByRole('button', { name: /login/i }).click();
-
-  // Wait for successful login - should redirect away from login page
-  await expect(page).not.toHaveURL(/\/login$/);
+  await page.waitForURL((url) => url.pathname !== '/admin/login', { timeout: 15000 }).catch(() => undefined);
   // Use domcontentloaded — networkidle never fires because admin dashboard
   // keeps persistent polling connections open (#460)
   await page.waitForLoadState('domcontentloaded');
 
+  // #1895: the URL is not the signal. `/login?error=…` slipped past a
+  // `/login$` check, and every signed-in spec then failed with a 401.
+  await assertSignedIn(page, adminUser, 'password sign-in');
+
   // #448: admin requires AAL2, so a password session acts without admin.
   // Upgrade it with a passkey from a virtual authenticator, then save that.
-  await upgradeToPasskeySession(page);
+  await upgradeToPasskeySession(page, adminUser);
+
+  // Whatever the passkey step did, the session saved for every spec must act
+  // as admin: the admin dashboard answers 200 only to admin-read.
+  const admin = await page.request.get(new URL('/admin', new URL(page.url()).origin).toString(), { maxRedirects: 0 });
+  if (admin.status() !== 200) {
+    throw new Error(
+      `[auth.setup] signed in as '${adminUser}', but GET /admin answered ${admin.status()}, not 200: ` +
+      'the session does not act as admin. Is the account an admin, and did the passkey upgrade (AAL2) complete?'
+    );
+  }
 
   // Save authentication state
   await page.context().storageState({ path: STORAGE_STATE });
@@ -69,6 +82,39 @@ setup('authenticate', async ({ page }) => {
 
 const E2E_PASSKEY_LABEL = 'e2e-virtual';
 
+/**
+ * #1895: fail the setup, naming the likely cause, unless the browser session
+ * is signed in. Asks the server (`/profile` answers 200 to a signed-in user
+ * and redirects anyone else to /login) rather than trusting the URL.
+ */
+async function assertSignedIn(page: Page, adminUser: string, step: string): Promise<void> {
+  // Ask the origin the browser actually landed on: an instance whose base URL
+  // is https redirects plain-http requests (308), which says nothing about
+  // whether this session is signed in.
+  const landed = new URL(page.url());
+  const profile = await page.request.get(new URL('/profile', landed.origin).toString(), { maxRedirects: 0 });
+  if (profile.status() === 200) return;
+
+  const refusal = landed.searchParams.get('error');
+  if (!landed.pathname.startsWith('/login') && !refusal) {
+    throw new Error(
+      `[auth.setup] ${step} as '${adminUser}': landed on ${landed.pathname}, but GET ${landed.origin}/profile ` +
+      `answered ${profile.status()} (${profile.headers()['location'] ?? 'no Location'}), not 200 — the sign-in may have worked; ` +
+      'check the instance\'s base URL and redirects rather than the password.'
+    );
+  }
+  const target = process.env.E2E_BASE_URL ?? `port ${process.env.PORT ?? '3000'}`;
+  throw new Error(
+    `[auth.setup] ${step} as '${adminUser}' did not sign in: landed on ${landed.pathname}` +
+    (refusal ? ` with "${refusal}"` : '') +
+    `, and GET /profile answered ${profile.status()}, not 200. ` +
+    `Likely cause: E2E_ADMIN_PASS does not match the admin password of the instance under test (${target}). ` +
+    'E2E_ADMIN_PASS defaults to NGDPBASE_ADMIN_PASSWORD, else admin123; a seeded instance\'s admin gets ' +
+    'NGDPBASE_ADMIN_PASSWORD only when it was set at seed time. ' +
+    'See docs/guides/testing-developer-guide.md, "Run E2E on a throwaway instance".'
+  );
+}
+
 /** Remove every passkey this suite enrolled — leftovers from a crashed run, or this run's. */
 async function removeE2EPasskeys(page: Page): Promise<void> {
   // The label is an editable input since passkeys could be renamed (#1591); a
@@ -93,11 +139,19 @@ async function removeE2EPasskeys(page: Page): Promise<void> {
  * sign-in record, so nothing stays in the instance's credentials store — the
  * suite also runs against real instances. Where passkeys are off, the admin's
  * AAL2 default is unreachable and acts at AAL1, so the password session stands.
+ *
+ * Skipping is the one optional path, taken only when the signed-in profile
+ * page has no enrol control. Once the step signs out it must sign back in: a
+ * passkey sign-in that did not take fails the setup (#1895).
  */
-async function upgradeToPasskeySession(page: Page): Promise<void> {
+async function upgradeToPasskeySession(page: Page, adminUser: string): Promise<void> {
   await page.goto('/profile');
+  await assertSignedIn(page, adminUser, 'password sign-in (before the passkey upgrade)');
   const enrol = page.locator('[data-passkey-enrol]');
-  if ((await enrol.count()) === 0) return; // passkeys are off on this instance
+  if ((await enrol.count()) === 0) {
+    console.log('[auth.setup] Passkeys are off on this instance: keeping the password session (admin acts at AAL1).');
+    return;
+  }
 
   await removeE2EPasskeys(page);
 
@@ -116,8 +170,9 @@ async function upgradeToPasskeySession(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Sign out' }).click(); // #1631: GET asks, POST signs out
     await page.goto('/login');
     await page.locator('[data-passkey-signin]').click();
-    await expect(page).not.toHaveURL(/\/login/);
+    await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 15000 }).catch(() => undefined);
     await page.waitForLoadState('domcontentloaded');
+    await assertSignedIn(page, adminUser, 'passkey sign-in');
 
     await removeE2EPasskeys(page);
   } finally {

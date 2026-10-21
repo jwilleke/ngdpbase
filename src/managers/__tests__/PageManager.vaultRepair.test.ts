@@ -186,7 +186,7 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
 
   /** What a move before #1839 / #1842 left: the page's file in the pool, its notes in the public folders. */
   const leaveOutside = async (pageName: string, ...alsoUsedBy: string[]): Promise<void> => {
-    await pool.storeAttachment(BYTES, FILE, {}, null);
+    await pool.storeAttachment(BYTES, FILE, {}, { username: 'molly' });
     await pool.setPoolMentions(ID, [pageName, ...alsoUsedBy]);
     await fs.ensureDir(footnotesDir);
     await fs.writeJson(path.join(footnotesDir, `${UUID}.json`), FOOTNOTES);
@@ -317,7 +317,7 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
     /** What that first repair left: the vault's own copy, and the pool copy named by the page's former public title. */
     const leaveCopiedWithStaleMention = async (): Promise<void> => {
       await pages.savePage(NOTE, CONTENT, { uuid: UUID }, MOLLY);
-      await pool.storeAttachment(BYTES, FILE, {}, null);
+      await pool.storeAttachment(BYTES, FILE, {}, { username: 'molly' });
       await pool.copyRecordIntoStore({ owner: 'molly', store: 'notes', io: PLAIN_FILE_IO }, ID, NOTE);
       await pool.setPoolMentions(ID, ['2026 JSW Knee']);
       await build();
@@ -396,7 +396,7 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
   });
 
   test('a page\'s mention removed by detach is removed on disk (it was not before #1842)', async () => {
-    await pool.storeAttachment(BYTES, FILE, {}, null);
+    await pool.storeAttachment(BYTES, FILE, {}, { username: 'molly' });
     await pool.setPoolMentions(ID, ['Old Title', 'Cholesterol Guide']);
 
     await attachments.detachFromPage(ID, 'Old Title', MOLLY);

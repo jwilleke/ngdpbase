@@ -27,7 +27,7 @@ const makeConfigManager = () => ({
 function setup(opts: { recordSignIn?: () => Promise<void>; sessionGeneration?: number } = {}) {
   const audit = { logAuthentication: vi.fn().mockResolvedValue('a1') };
   const userManager = {
-    getUser: vi.fn().mockResolvedValue({ username: 'molly', sessionGeneration: opts.sessionGeneration ?? 4 }),
+    getUser: vi.fn().mockResolvedValue({ username: 'molly', createdAt: '2026-10-01T10:00:00.000Z', sessionGeneration: opts.sessionGeneration ?? 4 }),
     recordSignIn: vi.fn(opts.recordSignIn ?? (() => Promise.resolve()))
   };
   const configManager = makeConfigManager();
@@ -97,6 +97,8 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       at: expect.any(String)
     }));
     expect(session.sessionGeneration).toBe(4);
+    // #1937: bound to this account, so a later account of the same name is not it.
+    expect(session.accountCreatedAt).toBe('2026-10-01T10:00:00.000Z');
   });
 
   test('the identity is written after regeneration, never before (#1043)', async () => {

@@ -1,5 +1,6 @@
 import type { WikiConfig } from '../types/Config.js';
 import type BaseManager from '../managers/BaseManager.js';
+import { MaintenanceState } from '../utils/maintenanceState.js';
 
 /**
  * Engine interface - Main wiki engine following JSPWiki architecture
@@ -188,20 +189,19 @@ class Engine {
    * @returns {Promise<void>}
    */
   /**
-   * Configuration values that could not be used (#1152).
+   * Whether the site is in maintenance mode, and why (#1906): the one door a
+   * manager calls to close the site (`enter(reason, { message? })`) or reopen
+   * it (`leave(reason)`). Created here, before any manager initialises, because
+   * the boot paths enter it while initialisation is still running.
    *
-   * Recorded rather than thrown, and that distinction is the whole mechanism.
-   * A manager that throws aborts `initialize()` partway, so the routes and
-   * admin screens are never registered — and the operator is left with a dead
-   * process and a repair path that requires filesystem access. A manager that
-   * RECORDS lets initialisation finish, after which `app.ts` puts the instance
-   * into maintenance mode with `/admin` and `/login` reachable.
-   *
-   * Only for values an administrator can repair through the admin UI. A
-   * failure of the machinery needed to SERVE that UI is fatal and still
-   * throws — see D10 of docs/security-posture.md.
+   * It replaces `blockConfiguration` (#1152): a value an administrator can
+   * repair, or a failure the site cannot serve through, is still recorded
+   * rather than thrown, so `initialize()` finishes and the instance serves
+   * `/admin`, `/login` and `/logout` with a route to the fix. A failure of the
+   * machinery needed to SERVE that UI is fatal and still throws — see D10 of
+   * docs/security-posture.md.
    */
-  private blockingConditions: string[] = [];
+  readonly maintenance = new MaintenanceState();
 
   /**
    * Every manager that is not `ready`, with its reason (#1155).
@@ -227,16 +227,6 @@ class Engine {
       }
     }
     return out;
-  }
-
-  /** Record a configuration value that cannot be used (#1152). */
-  blockConfiguration(reason: string): void {
-    this.blockingConditions.push(reason);
-  }
-
-  /** Configuration values that could not be used, in the order found. */
-  getBlockingConditions(): readonly string[] {
-    return [...this.blockingConditions];
   }
 
   async shutdown(): Promise<void> {

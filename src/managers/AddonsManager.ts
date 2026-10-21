@@ -53,6 +53,7 @@ import {
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
+import { addonProblemSubject } from '../utils/addonConfigLayer.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -318,7 +319,7 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
-  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration was refused (#1559, #1860), or its required-encryption database has no key (#1860); null otherwise. */
+  /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration or site-critical value was refused (#1559, #1860, #1883), its required-encryption database has no key (#1860), or it could not be imported or has no register() (#1883); null otherwise. */
   incompatible: string | null;
 
 }
@@ -392,6 +393,9 @@ class AddonsManager extends BaseManager {
   /** Name of the first domain addon loaded — only one is permitted */
   private domainAddonName: string | null;
 
+  /** #1883: the enabled add-ons that did not load this start, with why — each reported once. */
+  private readonly loadFailures = new Map<string, string>();
+
   constructor(engine: WikiEngine) {
     super(engine);
     this.addons = new Map();
@@ -461,6 +465,7 @@ class AddonsManager extends BaseManager {
     // Discover and load add-ons
     await this.discoverAddons();
     await this.loadAddons();
+    this.reportUndiscoveredAddons(configManager);
     this.notifySystemCategoryProblems(configManager);
 
     // Runs after loading so every enabled addon's pages/ dir is known. Cheap —
@@ -756,9 +761,10 @@ class AddonsManager extends BaseManager {
       return;
     }
 
+    let manifest: AddonManifest | null = null;
+    let packageVersion: string | undefined;
+    let canonicalId: string | null = null;
     try {
-      let manifest: AddonManifest | null = null;
-      let packageVersion: string | undefined;
       const pkgPath = path.join(addonPath, 'package.json');
       if (fs.existsSync(pkgPath)) {
         try {
@@ -776,23 +782,13 @@ class AddonsManager extends BaseManager {
       // merge refused (operator, 2026-10-16); its status says why. #1860: nor
       // one that declares a database DatabaseManager would refuse to open
       // (encrypt "required" with no key).
-      const canonicalId = resolveAddonSlug(addonPath, source);
+      canonicalId = resolveAddonSlug(addonPath, source);
       const incompatible = this.incompatibility(manifest)
         ?? this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonRefusal?.(canonicalId)
         ?? this.engine.getManager<DatabaseManager>('DatabaseManager')?.addonRefusal?.(canonicalId)
         ?? null;
       if (incompatible) {
-        if (this.addons.has(canonicalId)) return;
-        this.addons.set(canonicalId, {
-          path: addonPath,
-          module: { name: canonicalId, version: packageVersion, register: () => Promise.resolve() } as AddonModule,
-          enabled: this.isEnabled(canonicalId),
-          loaded: false,
-          error: incompatible,
-          manifest,
-          incompatible
-        });
-        logger.error(`[AddonsManager] Add-on ${canonicalId} not loaded: ${incompatible}`);
+        this.refuseAddon(canonicalId, addonPath, packageVersion, manifest, incompatible);
         return;
       }
 
@@ -805,7 +801,7 @@ class AddonsManager extends BaseManager {
         addonModule.name = folderName;
       }
       if (typeof addonModule.register !== 'function') {
-        logger.error(`Add-on ${addonModule.name} missing required register() function, skipping`);
+        this.refuseAddon(canonicalId, addonPath, packageVersion, manifest, 'it exports no register() function');
         return;
       }
 
@@ -851,6 +847,77 @@ class AddonsManager extends BaseManager {
       );
     } catch (err) {
       logger.error(`Failed to load add-on from ${folderName} (${sourceLabel}):`, err);
+      // #1883: an import that throws is a failure to load like any other.
+      if (canonicalId) this.refuseAddon(canonicalId, addonPath, packageVersion, manifest, `it could not be imported: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Register an add-on that will not be loaded, so Admin → Add-ons shows it
+   * with the reason, and report it when it is enabled (#1883). The first
+   * add-on of a slug wins, as for a loadable one.
+   */
+  private refuseAddon(slug: string, addonPath: string, version: string | undefined, manifest: AddonManifest | null, reason: string): void {
+    if (this.addons.has(slug)) return;
+    const enabled = this.isEnabled(slug);
+    this.addons.set(slug, {
+      path: addonPath,
+      module: { name: slug, version, register: () => Promise.resolve() } as AddonModule,
+      enabled,
+      loaded: false,
+      error: reason,
+      manifest,
+      incompatible: reason
+    });
+    logger.error(`[AddonsManager] Add-on ${slug} not loaded: ${reason}`);
+    if (enabled) this.recordLoadFailure(slug, reason);
+  }
+
+  /**
+   * #1883 (operator, 2026-10-18): the one rule for an enabled add-on that does
+   * not load, whatever the reason. Admins get a notification at the most
+   * severe level naming it and the reason, which says how to fix it where the
+   * reason does. A site-critical add-on (`ngdpbase.addons.<slug>.site-critical`)
+   * also holds the whole site in maintenance mode through the one door
+   * (`engine.maintenance`, #1906): visitors see only the site's maintenance
+   * message, with no details, and administrators can still sign in and reach /admin. Once per
+   * add-on per start. Nothing is opened in its place.
+   */
+  private recordLoadFailure(slug: string, reason: string): void {
+    if (this.loadFailures.has(slug)) return;
+    this.loadFailures.set(slug, reason);
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const siteCritical = configManager?.isAddonSiteCritical?.(slug) === true;
+    if (siteCritical) {
+      // #1906: no message of its own, so visitors see the site's maintenance message.
+      this.engine.maintenance.enter(`Site-critical add-on '${slug}' did not load: ${reason}`);
+    }
+    this.notifyAdmins('error', `Critical: add-on ${slug} did not load`, `${slug} did not load: ${reason}. ` + (siteCritical
+      ? `It is site-critical (ngdpbase.addons.${slug}.site-critical), so the whole site is in maintenance mode: visitors see a short notice with no details, and administrators can still sign in and use /admin. Fix the cause and restart.`
+      : 'The site is running without it: its pages, routes and plugins are not available until it loads.'));
+  }
+
+  /**
+   * #1883: an enabled add-on that discovery never found — its install failed
+   * (#1830), or only a stray folder answers it — did not load either.
+   */
+  private reportUndiscoveredAddons(configManager: ConfigurationManager | undefined): void {
+    for (const key of Object.keys(configManager?.getAllProperties?.() ?? {})) {
+      const slug = /^ngdpbase\.addons\.([^.]+)\.enabled$/.exec(key)?.[1];
+      if (!slug || this.addons.has(slug) || !this.isEnabled(slug)) continue;
+      this.recordLoadFailure(slug, 'it is enabled but was not found: it is not installed, or not on ngdpbase.managers.addons-manager.addons-path');
+    }
+  }
+
+  /** A notification to administrators; best-effort, like recordSeedFailure. */
+  private notifyAdmins(level: 'warning' | 'error', title: string, message: string): void {
+    try {
+      const notificationManager = this.engine.getManager<{
+        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
+          }>('NotificationManager');
+      void notificationManager?.createNotification?.({ type: 'system', level, title, message })?.catch?.(() => { /* non-fatal */ });
+    } catch {
+      // non-fatal
     }
   }
 
@@ -1079,18 +1146,12 @@ class AddonsManager extends BaseManager {
    * exist, so nothing is written unsealed or public by mistake). Best-effort.
    */
   private notifySystemCategoryProblems(configManager: ConfigurationManager | undefined): void {
-    const problems = configManager?.getSystemCategoryProblems?.() ?? [];
-    if (problems.length === 0) return;
-    const notificationManager = this.engine.getManager<{
-      createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
-        }>('NotificationManager');
-    for (const problem of problems) {
-      void notificationManager?.createNotification?.({
-        type: 'system',
-        level: 'warning',
-        title: 'Add-on declaration problem',
-        message: `${problem}.`
-      })?.catch?.(() => { /* non-fatal */ });
+    // #1883: a refusal of an enabled add-on is a load failure, already reported
+    // with its reason by recordLoadFailure; only the rest are declaration problems.
+    const failed = [...this.loadFailures.keys()].map((slug) => `${addonProblemSubject(slug, true)}: `);
+    for (const problem of configManager?.getSystemCategoryProblems?.() ?? []) {
+      if (failed.some((prefix) => problem.startsWith(prefix))) continue;
+      this.notifyAdmins('warning', 'Add-on declaration problem', `${problem}.`);
     }
   }
 
@@ -1528,6 +1589,14 @@ class AddonsManager extends BaseManager {
       }
     } catch (err) {
       logger.error('Failed to resolve add-on load order:', err);
+      // #1883: then no add-on loads, and each enabled one is reported.
+      const why = `the add-on load order could not be resolved: ${err instanceof Error ? err.message : String(err)}`;
+      for (const [name, addon] of this.addons) {
+        if (addon.enabled && !addon.loaded && !addon.incompatible) {
+          addon.error = why;
+          this.recordLoadFailure(name, why);
+        }
+      }
     }
   }
 
@@ -1672,7 +1741,10 @@ class AddonsManager extends BaseManager {
       addon.loaded = false;
 
       logger.error(`Failed to load add-on ${addonName}: ${errorMessage}`);
-      // Don't throw - allow other add-ons to load
+      // Don't throw - allow other add-ons to load. #1883: register() throwing
+      // covers a database the add-on opens there failing its migrations or
+      // its integrity check (DatabaseManager.openAddonDatabase throws).
+      this.recordLoadFailure(addonName, errorMessage);
     }
   }
 

@@ -281,6 +281,8 @@ __Why not-ready is right on its own terms.__ Readiness answers "can this instanc
 
 The repair UI is served by the instance at its own address, which is all ngdpbase controls. Whatever sits in front of it decides what it routes there, and that is the deployment's business — see D13.
 
+__Amended by [#1906](https://github.com/jwilleke/ngdpbase/issues/1906) (operator, 2026-10-19).__ The blocked state is no longer a value of `engineReady`: it is `engine.maintenance`, the one maintenance door every manager enters, and the gate asks it per request (`initialisationGate` in `src/utils/startupState.ts`). `engineReady` now means only that the boot finished. What D12 requires is unchanged: while a failure holds, everything but `/admin`, `/login` and `/logout` is refused, administrators included, and `/health/readiness` reports not-ready, with only the visitor message. What it adds: a reason that leaves reopens the site without a restart, and no reason is shown to visitors, configuration reasons included.
+
 __Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) — __landed 2026-09-01__. Depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) — __landed 2026-09-01__.
 
 ### D13 — Deployment methodology does not influence the design
@@ -301,7 +303,7 @@ __Issues:__ A standing design rule rather than a unit of work. No issue.
 
 `ngdpbase.audit.on-failure` keeps `continue` and `refuse-boot` as its values. No rename.
 
-The name is still accurate under D12. `engineReady = false` means the boot did not complete — the instance refuses to finish booting and serves the maintenance page instead. The process staying alive to say so is not the boot succeeding; it is the boot being refused in a way that leaves a route to the fix. `refuse-boot` describes that.
+The name is still accurate under D12 (and its #1906 amendment: the blocked state is held in `engine.maintenance` rather than `engineReady`, with the same effect). `engineReady = false` means the boot did not complete — the instance refuses to finish booting and serves the maintenance page instead. The process staying alive to say so is not the boot succeeding; it is the boot being refused in a way that leaves a route to the fix. `refuse-boot` describes that.
 
 Two pieces of __wording__ do become wrong when D11 lands, and they are the thing to correct rather than the value:
 

@@ -2,14 +2,25 @@
  * Seed E2E Test Data
  *
  * Prepares the data directory for E2E tests. Simple file operations only.
- * WikiEngine creates the admin account on startup using NGDPBASE_ADMIN_PASSWORD.
- * Set that variable (and E2E_ADMIN_PASS to match) before seeding a fresh instance.
+ *
+ * The engine creates the `admin` account on first startup with
+ * `ngdpbase.user.security.defaultpassword`, which ships as `admin123`. It does
+ * NOT read NGDPBASE_ADMIN_PASSWORD on its own (#1895). So that the instance and
+ * the suite agree on the password:
+ *   - NGDPBASE_ADMIN_PASSWORD set when seeding: the seed points that key at
+ *     "$NGDPBASE_ADMIN_PASSWORD" in the instance's custom config. The server
+ *     must then be started with the same variable (an unset ref stops the
+ *     boot), and playwright.config.ts uses it as E2E_ADMIN_PASS.
+ *   - Unset (CI): the admin is on admin123, which is auth.setup.ts's default.
+ * Set E2E_ADMIN_PASS only to sign in with something other than these.
  *
  * Usage:
- *   node scripts/seed-e2e-test-data.js
+ *   npx tsx scripts/seed-e2e-test-data.ts
  *
  * Environment variables:
- *   INSTANCE_DATA_FOLDER - Data directory (default: ./data)
+ *   FAST_STORAGE (or legacy INSTANCE_DATA_FOLDER) - Data directory (default: ./data)
+ *   SLOW_STORAGE - Pages directory parent (default: the data directory)
+ *   NGDPBASE_ADMIN_PASSWORD - Optional admin bootstrap password, see above
  */
 
 // Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
@@ -19,9 +30,14 @@
 import '../src/bootstrap-env.js';
 import path from 'path';
 import fs from 'fs-extra';
+import { instanceDataFolder as resolveInstanceDataFolder } from '../src/utils/configFiles.js';
+import { backupKeyFingerprint } from '../src/utils/backupKey.js';
 
 async function seedTestData() {
-  const instanceDataFolder = process.env.INSTANCE_DATA_FOLDER || './data';
+  // #1895: the same folder the server resolves. This read only the legacy
+  // INSTANCE_DATA_FOLDER, so with FAST_STORAGE set it seeded ./data instead.
+  const instanceDataFolder = resolveInstanceDataFolder();
+  const slowStorage = process.env.SLOW_STORAGE || instanceDataFolder;
 
   console.log('🌱 Seeding E2E test data...');
   console.log(`   Data folder: ${instanceDataFolder}`);
@@ -35,7 +51,8 @@ async function seedTestData() {
     console.log('✅ Directories created');
 
     // Copy startup pages
-    const pagesDir = path.join(instanceDataFolder, 'pages');
+    const pagesDir = path.join(slowStorage, 'pages');
+    await fs.ensureDir(pagesDir);
     const requiredPagesDir = path.join(process.cwd(), 'required-pages');
 
     if (await fs.pathExists(requiredPagesDir)) {
@@ -62,6 +79,27 @@ async function seedTestData() {
     await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
     console.log('✅ E2E step-up window set to 120 minutes');
 
+    // #1876: every site has a backup key (bootstrap-env, above, made this one),
+    // and the dashboard asks an admin to save it off the server until one
+    // confirms. Nobody keeps a throwaway E2E instance's key, so its
+    // confirmation is recorded here, and the dashboard starts healthy.
+    if (process.env.NGDPBASE_BACKUP_KEY) {
+      customConfig['ngdpbase.backup.key-saved-fingerprint'] = backupKeyFingerprint(process.env.NGDPBASE_BACKUP_KEY);
+      await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+      console.log('✅ E2E backup key recorded as saved (a throwaway instance\'s key)');
+    }
+
+    // #1895: the admin's bootstrap password comes from config, never straight
+    // from the environment. Point it at the variable when one is set, so the
+    // instance and playwright.config.ts (E2E_ADMIN_PASS falls back to it) agree.
+    if (process.env.NGDPBASE_ADMIN_PASSWORD) {
+      customConfig['ngdpbase.user.security.defaultpassword'] = '$NGDPBASE_ADMIN_PASSWORD';
+      await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+      console.log('✅ Admin bootstrap password: $NGDPBASE_ADMIN_PASSWORD (start the server with it set)');
+    } else {
+      console.log('✅ Admin bootstrap password: the shipped admin123 (NGDPBASE_ADMIN_PASSWORD not set)');
+    }
+
     // Create .install-complete marker
     await fs.writeFile(
       path.join(instanceDataFolder, '.install-complete'),
@@ -70,7 +108,7 @@ async function seedTestData() {
     console.log('✅ Installation marked complete');
 
     console.log('\n🎉 E2E test data ready!');
-    console.log('   WikiEngine will create the admin user from NGDPBASE_ADMIN_PASSWORD on startup');
+    console.log('   The engine creates the admin user on first startup');
 
   } catch (error) {
     console.error('❌ Failed:', error instanceof Error ? error.message : String(error));

@@ -60,3 +60,24 @@ describe('ConfigAccessorPlugin never prints a value its viewer may not see (#175
     expect(html).toContain('SESSION-SECRET-VALUE');
   });
 });
+
+describe('ConfigAccessorPlugin hides a secret inside a map by its wildcard path (#1889)', () => {
+  const ACCOUNTS = 'ngdpbase.addons.accounting.accounts';
+  beforeAll(() => {
+    (CONFIG['ngdpbase.config.sensitive-values'] as Record<string, string>)[`${ACCOUNTS}.*.account-number`] = 'secret';
+    CONFIG[ACCOUNTS] = { checking: { name: 'Checking', 'account-number': 'ACCT-123456789012' } };
+  });
+
+  test.each([
+    ['the wildcard table', { key: 'ngdpbase.addons.*' }],
+    ['a single key', { key: ACCOUNTS }],
+    ['a single key, value only', { key: ACCOUNTS, valueonly: 'true' }]
+  ])('%s: the account number is hidden even from admin-read; its name is shown', async (_name, params) => {
+    for (const granted of [[], ['admin-read']]) {
+      const html = await render(params, granted);
+      expect(html).not.toContain('ACCT-123456789012');
+      expect(html).toContain('Checking');
+    }
+    expect(await render(params, ['admin-read', 'secret-reveal'])).toContain('ACCT-123456789012');
+  });
+});

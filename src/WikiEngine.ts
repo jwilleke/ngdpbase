@@ -1,4 +1,4 @@
-import { usesLegacyName } from './utils/sensitiveValues.js';
+import { sensitiveValueProblems, usesLegacyName } from './utils/sensitiveValues.js';
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
@@ -42,6 +42,7 @@ import BackgroundJobManager from './managers/BackgroundJobManager.js';
 import CatalogManager from './managers/CatalogManager.js';
 import CommentManager from './managers/CommentManager.js';
 import FootnoteManager from './managers/FootnoteManager.js';
+import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import PersonManager from './managers/PersonManager.js';
@@ -97,7 +98,7 @@ class WikiEngine extends Engine {
    * 4. NotificationManager - Notification system
    * 5. PageManager - Page storage and retrieval
    * 6. TemplateManager - Template rendering
-   * 7. PolicyValidator/PolicyEvaluator - Policy system (policies read live, #1431)
+   * 7. PolicyValidator - Policy validation (policies read live, #1431); PolicyEvaluator starts with the PDP, before UserManager (#1930)
    * 8. PolicyInformationPoint - page and subject attributes; starts before UserManager and reads PolicyEvaluator at use (#1431 step 13)
    * 9. PluginManager - Plugin system
    * 10. MarkupParser - Markup parsing
@@ -164,6 +165,10 @@ class WikiEngine extends Engine {
     if (usesLegacyName((k, d) => configManager.getProperty(k, d))) {
       logger.warn('[config] ngdpbase.config.secret-keys is still set — rename it to ngdpbase.config.sensitive-values, each entry "secret" (#1750). It is still honoured.');
     }
+    // #1889: an entry that is no key or path, or has no level, hides nothing.
+    for (const problem of sensitiveValueProblems((k, d) => configManager.getProperty(k, d))) {
+      logger.warn(`[config] ${problem}`);
+    }
 
     // 1a. DatabaseManager (#1536) — the one door to the application database,
     //     open before any manager that stores rows. Off unless
@@ -225,6 +230,14 @@ class WikiEngine extends Engine {
     const policyDecisionPoint = new PolicyDecisionPoint(this);
     this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
 
+    // #1930: the PDP's matching engine starts with it. It needs only
+    // ConfigurationManager, and without it every decision during the later
+    // managers' start-up was 'no_evaluator' — the bootstrap admin's person,
+    // made through PersonManager's door under the system principal, was refused.
+    const policyEvaluator = new PolicyEvaluator(this);
+    this.registerManager('PolicyEvaluator', policyEvaluator);
+    await policyEvaluator.initialize();
+
     // #1431 step 13: the PIP builds subjects — the system principal among them —
     // and UserManager's own start-up needs that (the default admin is created
     // under the system principal, and its name is reserved). It reads every
@@ -284,10 +297,6 @@ class WikiEngine extends Engine {
     this.registerManager('PolicyValidator', policyValidator);
     await policyValidator.initialize();
 
-    const policyEvaluator = new PolicyEvaluator(this);
-    this.registerManager('PolicyEvaluator', policyEvaluator);
-
-    await policyEvaluator.initialize();
 
 
     const pluginManager = new PluginManager(this);
@@ -361,6 +370,11 @@ class WikiEngine extends Engine {
     const assetManager = new AssetManager(this);
     this.registerManager('AssetManager', assetManager);
     await assetManager.initialize();
+
+    // FileManager — the files door (#1852); this step reads only, over AttachmentManager
+    const fileManager = new FileManager(this);
+    this.registerManager('FileManager', fileManager);
+    await fileManager.initialize();
 
     // AssetService — backward-compatible search facade over AssetManager
     const assetService = new AssetService(this);
@@ -455,10 +469,13 @@ class WikiEngine extends Engine {
     const addonsManager = this.getManager<AddonsManager>('AddonsManager');
     if (!addonsManager) {
       logger.warn('[WikiEngine] initializeAddons: AddonsManager not registered');
-      return;
+    } else {
+      await addonsManager.initialize();
+      logger.info('[WikiEngine] Addons initialized');
     }
-    await addonsManager.initialize();
-    logger.info('[WikiEngine] Addons initialized');
+    // #1876: every manager, add-ons included, has now applied its part of a
+    // staged restore; say what the restore did, and what it did not bring back.
+    await this.getManager<BackupManager>('BackupManager')?.reportRestoreAtBoot();
   }
 
   /**

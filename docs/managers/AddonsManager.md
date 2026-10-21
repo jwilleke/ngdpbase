@@ -1,7 +1,7 @@
 ---
 name: AddonsManager
 description: Discovery, registration, lifecycle, and dependency management for optional ngdpbase add-ons
-dateModified: '2026-10-16'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/AddonsManager.ts
 ---
@@ -19,6 +19,7 @@ Core add-on management system. Discovers add-ons in the configured `addons/` dir
 - __Capability flags__ — addons can call `engine.setCapability(name, true)` to advertise their availability; consumers gate behaviour on `engine.hasCapability(name)`.
 - __Profile-section hooks__ — addons that contribute to `/profile` register a `profileSection(user)` callback; AddonsManager fans the call out. The paired save hook is `saveProfileSection(ctx, body)` — since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) its first argument is the caller's context (`PermissionSubject`), forwarded to whatever the addon writes, never a username; an addon still on the old `(username, body)` shape is named in a warning at load and its saves fail per call.
 - __Dashboard cards / stylesheets__ — addons register UI surfaces here.
+- __Load failures ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883))__ — every enabled add-on that does not load, whatever the reason (a refusal before import, an import that throws, no `register()`, `register()` throwing, an unresolvable load order, or never found), goes through `recordLoadFailure`: its status carries the reason, and admins get one `error` notification, "Critical: add-on `<slug>` did not load". The "Add-on declaration problem" notification no longer repeats a refusal of an enabled add-on. When `ConfigurationManager.isAddonSiteCritical(slug)` is true it also calls `engine.maintenance.enter(reason)`, the one maintenance door ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906)); the gate reads it per request, so the site starts in maintenance mode with `/admin`, `/login` and `/logout` open and visitors shown only the site's maintenance message (`ngdpbase.features.maintenance.message`). `app.ts` logs the add-on's reasons after `initializeAddons()`. The rule and the value's rules are in [the addons developer guide](../guides/addons-developer-guide.md#when-an-addon-does-not-load-site-critical).
 - __Installing add-ons ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830))__ — before discovery, installs or verifies the add-ons `ngdpbase.addons.install` names, into `<instance data folder>/addons/<slug>/`, and loads from there only the ones it verified. See below.
 
 ## Installed add-ons

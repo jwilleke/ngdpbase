@@ -1517,6 +1517,88 @@ describe('ConfigurationManager', () => {
     });
   });
 
+  describe('#1889 — $VAR inside maps and lists', () => {
+    const ACCOUNTS = 'ngdpbase.addons.accounting.accounts';
+    const saved = { ...process.env };
+    afterEach(() => {
+      for (const name of ['NGDPBASE_T_CHECKING', 'NGDPBASE_T_SAVINGS', 'NGDPBASE_T_TOKEN', 'NGDPBASE_T_MISSING']) {
+        if (name in saved) process.env[name] = saved[name]; else delete process.env[name];
+      }
+    });
+
+    async function makeCm(defaultConfig: Record<string, unknown>, sink?: { logAuditEvent: ReturnType<typeof vi.fn> }) {
+      await fs.ensureDir(path.join(tempDir, 'data', 'config'));
+      await fs.writeJson(path.join(tempDir, 'config', 'app-default-config.json'), defaultConfig, { spaces: 2 });
+      const cm = new ConfigurationManager({ getManager: vi.fn((name: string) => (name === 'AuditManager' ? sink ?? null : null)) });
+      await cm.initialize();
+      return cm;
+    }
+
+    test('a bare $VAR resolves anywhere inside a map; siblings and partial strings are untouched', async () => {
+      process.env.NGDPBASE_T_CHECKING = '123456789012';
+      const cm = await makeCm({
+        [ACCOUNTS]: { checking: { name: 'Checking', kind: 'bank', 'account-number': '$NGDPBASE_T_CHECKING', memo: 'x$NGDPBASE_T_CHECKING', note: '$NGDPBASE_T_CHECKING-x' } }
+      });
+      expect(cm.getProperty(ACCOUNTS)).toEqual({
+        checking: { name: 'Checking', kind: 'bank', 'account-number': '123456789012', memo: 'x$NGDPBASE_T_CHECKING', note: '$NGDPBASE_T_CHECKING-x' }
+      });
+    });
+
+    test('inside lists, at any depth', async () => {
+      process.env.NGDPBASE_T_TOKEN = 'tok-1';
+      const cm = await makeCm({ 'test.list': ['$NGDPBASE_T_TOKEN', { deep: [{ token: '$NGDPBASE_T_TOKEN' }] }, 7] });
+      expect(cm.getProperty('test.list')).toEqual(['tok-1', { deep: [{ token: 'tok-1' }] }, 7]);
+    });
+
+    test('an unset variable throws, naming the full path', async () => {
+      delete process.env.NGDPBASE_T_MISSING;
+      const cm = await makeCm({ [ACCOUNTS]: { checking: { 'account-number': '$NGDPBASE_T_MISSING' } } });
+      expect(() => cm.getProperty(ACCOUNTS)).toThrow(
+        'Config secret `NGDPBASE_T_MISSING` referenced by `ngdpbase.addons.accounting.accounts.checking.account-number` but env var is unset'
+      );
+      const list = await makeCm({ 'test.list': [{ token: '$NGDPBASE_T_MISSING' }] });
+      expect(() => list.getProperty('test.list')).toThrow('referenced by `test.list.0.token`');
+    });
+
+    test('$$ escapes inside a value; the brace form stays top-level only', async () => {
+      process.env.NGDPBASE_T_TOKEN = 'tok-1';
+      const cm = await makeCm({ 'test.map': { lit: '$$NGDPBASE_T_TOKEN', tpl: '${NGDPBASE_T_TOKEN}/x' } });
+      expect(cm.getProperty('test.map')).toEqual({ lit: '$NGDPBASE_T_TOKEN', tpl: '${NGDPBASE_T_TOKEN}/x' });
+    });
+
+    test('resolved on read, never written back: the merged config and a saved custom file keep the reference', async () => {
+      process.env.NGDPBASE_T_CHECKING = '123456789012';
+      const cm = await makeCm({ [ACCOUNTS]: { checking: { 'account-number': '$NGDPBASE_T_CHECKING' } } });
+      const value = cm.getProperty(ACCOUNTS) as Record<string, Record<string, string>>;
+      value.checking['account-number'] = 'mutated';
+      expect((cm.getAllProperties() as Record<string, unknown>)[ACCOUNTS]).toEqual({ checking: { 'account-number': '$NGDPBASE_T_CHECKING' } });
+      await cm.setProperty(ACCOUNTS, cm.getUnresolvedProperty(ACCOUNTS), { username: 'admin', isAuthenticated: true, roles: ['admin'] });
+      const saved = await fs.readJson(cm.getCustomConfigPath());
+      expect(saved[ACCOUNTS]).toEqual({ checking: { 'account-number': '$NGDPBASE_T_CHECKING' } });
+      expect(cm.getProperty(ACCOUNTS)).toEqual({ checking: { 'account-number': '123456789012' } });
+    });
+
+    test('getMaskedProperty masks a reference inside a map', async () => {
+      process.env.NGDPBASE_T_CHECKING = '123456789012';
+      const cm = await makeCm({ [ACCOUNTS]: { checking: { name: 'Checking', 'account-number': '$NGDPBASE_T_CHECKING' } } });
+      expect(cm.getMaskedProperty(ACCOUNTS)).toEqual({ checking: { name: 'Checking', 'account-number': '***' } });
+    });
+
+    test('a config-change record hides what a wildcard entry names, and keeps the rest', async () => {
+      const sink = { logAuditEvent: vi.fn().mockResolvedValue(undefined) };
+      const cm = await makeCm({
+        'ngdpbase.config.sensitive-values': { [`${ACCOUNTS}.*.account-number`]: 'secret' },
+        [ACCOUNTS]: {}
+      }, sink);
+      await cm.setProperty(ACCOUNTS, { checking: { name: 'Checking', 'account-number': '123456789012' } },
+        { username: 'admin', isAuthenticated: true, roles: ['admin'] });
+      const record = JSON.stringify(sink.logAuditEvent.mock.calls);
+      expect(record).not.toContain('123456789012');
+      expect(record).toContain('(hidden)');
+      expect(record).toContain('Checking');
+    });
+  });
+
   // #1117 slice 2: the filter namespace said the wrong thing —
   // `ngdpbase.filters.security.block-on-save` is a write-path gate, not
   // a markup option. Keys move to `ngdpbase.filters.*`; legacy custom-config

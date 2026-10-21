@@ -160,6 +160,39 @@ describe('#1220 the pre-engine reader carries the layer too', () => {
   });
 });
 
+describe('#1889 an add-on classifies only its own keys', () => {
+  const SENSITIVE = 'ngdpbase.config.sensitive-values';
+  const shipped = { [SENSITIVE]: { 'ngdpbase.session.secret': 'secret' }, 'ngdpbase.session.secret': 'x' };
+  const addon = (slug: string, entries: unknown, enabled = true) =>
+    ({ slug, dir: '', source: 'directory' as const, enabled, defaults: { [SENSITIVE]: entries, [`ngdpbase.addons.${slug}.accounts`]: {} } });
+
+  test('a nested wildcard entry for its own map is merged', () => {
+    const { merged, refused } = mergeWithAddonLayer(shipped, [addon('accounting', { 'ngdpbase.addons.accounting.accounts.*.account-number': 'secret' })], {});
+    expect(refused.size).toBe(0);
+    expect(merged[SENSITIVE]).toEqual({ 'ngdpbase.session.secret': 'secret', 'ngdpbase.addons.accounting.accounts.*.account-number': 'secret' });
+  });
+
+  test("an entry for core's key or another add-on's refuses the add-on: none of its keys apply", () => {
+    for (const entries of [
+      { 'ngdpbase.session.secret': false },
+      { 'ngdpbase.addons.other.accounts.*.account-number': 'sensitive' },
+      { 'ngdpbase.addons.accountingx.key': 'secret' },
+      ['ngdpbase.mail.password']
+    ]) {
+      const { merged, refused, problems } = mergeWithAddonLayer(shipped, [addon('accounting', entries)], {});
+      expect(refused.get('accounting')).toContain('are not its own');
+      expect(problems.join('\n')).toContain("add-on 'accounting': its sensitive-values entries");
+      expect(merged[SENSITIVE]).toEqual({ 'ngdpbase.session.secret': 'secret' });
+      expect(merged).not.toHaveProperty('ngdpbase.addons.accounting.accounts');
+    }
+  });
+
+  test('a turned-off add-on contributes nothing and is not refused', () => {
+    const { refused } = mergeWithAddonLayer(shipped, [addon('accounting', { 'ngdpbase.session.secret': false }, false)], {});
+    expect(refused.size).toBe(0);
+  });
+});
+
 describe('#1612 a set map is extended by every layer, never replaced', () => {
   const SET = 'ngdpbase.config.secret-keys';
   const base = { [SET]: { 'ngdpbase.session.secret': true, 'ngdpbase.mail.password': true } };
@@ -171,8 +204,8 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
   });
 
   test('two addon lists both add', () => {
-    const { merged } = mergeWithAddonLayer(base, [layer('a', { [SET]: ['a.key'] }), layer('b', { [SET]: ['b.key'] })], {});
-    expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'a.key', 'b.key']);
+    const { merged } = mergeWithAddonLayer(base, [layer('a', { [SET]: ['ngdpbase.addons.a.key'] }), layer('b', { [SET]: ['ngdpbase.addons.b.key'] })], {});
+    expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'ngdpbase.addons.a.key', 'ngdpbase.addons.b.key']);
   });
 
   test('an operator list adds; an operator false removes', () => {
@@ -194,7 +227,7 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
     const core = shippedFile[SENSITIVE] as Record<string, string>;
     expect(core['ngdpbase.session.secret']).toBe('secret');
     expect(core['ngdpbase.access.policies']).toBe('sensitive');
-    const { merged } = mergeWithAddonLayer(shippedFile, [layer('a', { [SENSITIVE]: { 'a.url': 'sensitive' } })], { [SENSITIVE]: { 'my.secret': 'secret' } });
-    expect(merged[SENSITIVE]).toEqual({ ...core, 'a.url': 'sensitive', 'my.secret': 'secret' });
+    const { merged } = mergeWithAddonLayer(shippedFile, [layer('a', { [SENSITIVE]: { 'ngdpbase.addons.a.url': 'sensitive' } })], { [SENSITIVE]: { 'my.secret': 'secret' } });
+    expect(merged[SENSITIVE]).toEqual({ ...core, 'ngdpbase.addons.a.url': 'sensitive', 'my.secret': 'secret' });
   });
 });

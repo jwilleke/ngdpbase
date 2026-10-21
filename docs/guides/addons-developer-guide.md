@@ -38,7 +38,9 @@ The rules that have to be right before that restart: [identity](#identity), [whe
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
   - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); the string `"true"` is read as false. Turning the addon off removes the category until #1559.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
+- An addon's permission entries don't set `"step-up": true` for now (operator, 2026-10-18): a form loses its typed fields across the fresh sign-in. Say so in your own docs; the rule is in the [authentication guide](authentication-developer-guide.md#standing-rules).
 - An addon that keeps rows declares its database under `ngdpbase.addons.<slug>.database` in its `config/default-config.json` before it calls `DatabaseManager.openAddonDatabase`; an undeclared one is refused, and an invalid declaration stops the addon loading ([storage guide](storage-developer-guide.md#declaring-a-database), #1860).
+- An addon that does not load, for any reason, is reported to admins at the most severe level. One the site cannot work without declares `ngdpbase.addons.<slug>.site-critical: true`, and then any failure to load puts the whole site in maintenance mode ([When an addon does not load](#when-an-addon-does-not-load-site-critical), #1883).
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
 - `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts importing something core added (a `dist/src/...` module, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
@@ -169,6 +171,21 @@ Point the config key at the variable with a bare whole-value reference. The name
 
 `${VAR}` is the other form, for a path inside a longer string (`"${FAST_STORAGE}/my-addon"`). An unset variable is left as the literal `${VAR}`. A value that should start with a dollar sign is written `$$`.
 
+#### A secret inside a map
+
+A map of entries the site adds to, each holding a secret (bank accounts, each with an account number), keeps the secret as a `$NAME` reference inside the entry and declares it `secret` by its path, with `*` for the map key ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)). One entry covers every account a site adds, so a forgotten entry cannot leak a new one:
+
+```json
+"ngdpbase.config.sensitive-values": {
+  "ngdpbase.addons.accounting.accounts.*.account-number": "secret"
+},
+"ngdpbase.addons.accounting.accounts": {
+  "checking": { "name": "Checking", "kind": "bank", "account-number": "$CHECKING_ACCOUNT_NUMBER" }
+}
+```
+
+`config.accounts.checking['account-number']` in `register()` is the variable's value. The account number is hidden on the admin screen, in page plugins, log lines and config-change audit records; the reference `$CHECKING_ACCOUNT_NUMBER` is shown, since it is not the secret. If any account's variable is unset, the whole `accounts` key is omitted from `config` with a warning, as an unset top-level reference is; treat a missing map as "not configured". Your file may classify only `ngdpbase.addons.<slug>` and what is under it: an entry for core's keys or another add-on's refuses your add-on, and it is not loaded. The rules are in [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules).
+
 ### `domainDefaults`
 
 `package.json` `ngdpbase.domainDefaults` is a map of fully qualified keys applied at load, before `register()`, when the operator file does not already set that key. The write is `setRuntimeProperty`: this boot only, not saved to the operator file. A domain addon uses it for a site default such as the active theme:
@@ -184,6 +201,41 @@ Point the config key at the variable with a bare whole-value reference. The name
 ```
 
 Any addon may set the field. The operator file wins.
+
+### When an addon does not load: `site-critical`
+
+Every enabled addon that does not load sends admins a notification at the most severe level, `error`, titled "Critical: add-on `<slug>` did not load", naming the reason and, where the reason knows it, the fix ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883), operator 2026-10-18). Any reason counts:
+
+- a database declared `encrypt: "required"` with no `NGDPBASE_DATABASE_KEY` (the fix: set the key in `<FAST_STORAGE>/.env` and restart);
+- a refused declaration: its system-category, its database, or its `site-critical` value;
+- a `minVersion` newer than the core;
+- an import that throws, or a module with no `register()`;
+- `register()` throwing, which includes a database you open there failing its migrations or its integrity check;
+- a dependency that is not installed or not enabled (then no addon loads);
+- an enabled addon that was never found, such as one whose install failed.
+
+Its status on `/admin/addons` shows the same reason. A turned-off addon is never reported.
+
+Most addons stop there: the site runs without them. An addon the site can't work without declares itself __site-critical__ in its `config/default-config.json`:
+
+```json
+{
+  "ngdpbase.addons.phr.site-critical": true
+}
+```
+
+When a site-critical addon does not load, for any of the reasons above, the whole site starts in maintenance mode through the one maintenance door every manager uses ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); see [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)):
+
+- __Visitors__ get the maintenance page with the site's maintenance message (`ngdpbase.features.maintenance.message`, any text an admin sets) and no details. `/health/readiness` answers 503 with that message only. The retired `ngdpbase.managers.addons-manager.site-critical.public-message` is still used when a site set it and has not set the maintenance message.
+- __Admins__ can still sign in and reach `/admin`, where the notification says which addon failed, why, and how to fix it. Fix the cause and restart.
+- Nothing is opened or written in its place: an addon whose encrypted database has no key stays off, and its database stays closed.
+
+The rules for the value:
+
+- It is exactly `true` or `false`. Anything else, the string `"true"` included, refuses the addon and counts as `true`, so a mistyped value fails closed.
+- An addon declares only its own key. A `site-critical` key for another slug in your file is ignored.
+- The site's `app-custom-config.json` wins in both directions: an operator can make any addon site-critical, or turn yours off.
+- Declare it only when the site is wrong without you: a health-record addon whose records are the site. A calendar, a feed or a search addon is not site-critical.
 
 ## Permissions
 
@@ -452,6 +504,35 @@ async register(engine, config, host) {
 - An addon whose `register` takes two arguments still loads.
 - Anything an addon needs that `host` does not offer is added to core by pull request; the addon does not import it.
 
+### A section on the signed-in person's profile ([#534](https://github.com/jwilleke/ngdpbase/issues/534))
+
+An addon that has per-person settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
+
+- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this person. `user` is the person's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
+- `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write (`userManager.updateUser(ctx.username, updates, ctx)`), never build a new one from `ctx.username`. An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
+
+What it is not: it is only the signed-in person's own `/profile`. There is one route, `/profile`, and it always shows the person who is signed in; there is no profile page for someone else. Showing data about other people belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
+
+How core calls them:
+
+- `GET /profile` (checked against `profile-manage`) reads the person's fresh record and calls `AddonsManager.getProfileSections(user)`. It calls every loaded addon's `profileSection()` in parallel. An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded.
+- `POST /preferences` (also `profile-manage`) saves the core preferences first, then calls `AddonsManager.saveProfileSections(ctx, body)` with a copy of the request body. The addons are called one at a time, so each one's read-merge-write of the person's preferences sees the one before it. Dotted field names arrive flat: `<input name="journal.x">` is `body['journal.x']`. An addon that throws is logged; it does not stop the core save or another addon's save, and the person is not told their preferences failed.
+
+The rules, which core cannot enforce for you:
+
+- __`html` is inserted raw__ (`<%- %>`) inside the person's form. Escape every value you put in it: use `<%= %>` in your EJS partial. Unescaped input there is stored XSS against everyone who opens their profile.
+- __No `<input name="_csrf">`__: it overrides the host form's token and breaks the save.
+- __No `<form>` of your own__: the fields submit with the host's preferences form, and a nested `<form>` is invalid HTML.
+- __Put a hidden presence marker in the card__ (`<input type="hidden" name="<slug>._rendered" value="1">`) and have `saveProfileSection` return at once when it is missing. A checkbox that is not ticked sends nothing, so without the marker "unticked" and "the card was not on the form" look the same, and a save would quietly set every stored checkbox to false.
+- __Re-check every config-gated field on the server__: a field the partial shows only when a setting allows it (`<% if (enabled) { %>`) is written only under the same check in `saveProfileSection`, or a crafted POST sets it anyway.
+- __No inline script__: the partial is rendered outside the request, so it has no CSP nonce. See [Scripts in a view](#scripts-in-a-view-the-csp-nonce-contract).
+
+The worked example is the journal addon: `profileSection` and `saveProfileSection` in `addons/journal/index.ts`, and the partial `addons/journal/views/_profile-section.ejs`.
+
+- 1 `profileSection` reads the person's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', html }`.
+- 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
+- 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the person's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
+
 ---
 
 ## 4. Using the Engine
@@ -464,7 +545,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` and `PolicyDecisionPoint`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -511,7 +592,80 @@ const pages = await pageManager.getAllPages();
 Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
+`PersonManager`, `OrganizationManager` ([Contacts](#contacts-persons-and-organizations)),
 `MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
+
+### Contacts: persons and organizations
+
+People and organizations an add-on keeps (donors, members, suppliers) are core's contacts, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). A donor is a person or an organization; a user is a person with an account. Store the contact's `@id` in your own records, and keep what your record needs to show (the name, say) there too: deleting an account deletes its person, even one your add-on made and that later joined an account, so the `@id` can come to name nobody (operator, 2026-10-20). Handle a `get` that returns `null`.
+
+- __One door each.__ `PersonManager` and `OrganizationManager`. Every call takes the caller's context first: in a route, `ctx.getActor()` from the `ApiContext`; in a job, its `JobContext`. Never a username.
+- __Two permissions.__ __`contact-read`__ to `search`, `get`, `list` and `people`; __`contact-manage`__ to `create`, `update` and `delete`. As shipped, `contact-read` is held by admins and demo admins, `contact-manage` by admins alone. Grant what your roles need in your add-on's own policy, as in [Permissions](#permissions): an add-on never names `admin`, and never appends to a shipped policy. Accounting's donor picker needs `contact-read` to search, and `contact-manage` to add a new donor.
+- __Ask, then call.__ In the route, `await ctx.requirePermission('contact-read')` (or `'contact-manage'` for a change) first: it shapes the refusal and the step-up prompt. The door asks again. If it refuses anyway, it throws a `ContactRefusedError` (`err.name === 'ContactRefusedError'`) carrying `permission` and `decision`; hand them to `await ctx.enforceDeny(err.permission, err.decision)`. Never build the 401 or 403 yourself.
+- __Every change is recorded__ by the door as the `contact-manage` audit event, with your caller as the actor. Do not record it again.
+- __A person with no account__ gets the identifier `person:<uuid>`. No username can take that form, so a person you create never collides with an account. When they sign up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The person keeps its `@id`, so your stored references stay good.
+- __Affiliations__ are on the person: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
+
+| Call | Asks | What it does |
+| --- | --- | --- |
+| `persons.search(ctx, query, { limit?, accountless? })` | `contact-read` | Persons whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to persons with no account |
+| `persons.get(ctx, id)` / `persons.list(ctx)` | `contact-read` | One person by `@id`, or all |
+| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | `contact-manage` | A person with no account; returns the record with its `@id` |
+| `persons.update(ctx, id, patch)` | `contact-manage` | Change fields, affiliations included. `@id` and `identifier` never change |
+| `persons.delete(ctx, id)` | `contact-manage` | Remove a person |
+| `organizations.search(ctx, query, { limit? })` | `contact-read` | Organizations whose name, legal name or email contains `query` |
+| `organizations.get(ctx, id)` / `organizations.list(ctx)` | `contact-read` | One organization, or all |
+| `organizations.create(ctx, { name, url?, … })` | `contact-manage` | `@id` is the `url`, else a new `urn:uuid:` |
+| `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `contact-manage` | Change or remove |
+| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each person affiliated with it |
+
+Linking an account by hand (`persons.linkAccount`) is an administrator's action: `contact-manage` and `user-edit`; an add-on does not call it.
+
+A donor picker for the accounting add-on: search both, show which is which, and keep the chosen `@id`.
+
+```typescript
+import type { PersonManager, OrganizationManager, ContactRefusedError } from '@jwilleke/ngdpbase-types';
+
+router.get('/api/donors', async (req, res) => {
+  const ctx = host.ApiContext.from(req, engine);
+  try {
+    await ctx.requirePermission('contact-read'); // granted to the treasurer by accounting's own policy
+    const q = String(req.query.q ?? '');
+    const actor = ctx.getActor();
+    const persons = engine.getManager<PersonManager>('PersonManager')!;
+    const organizations = engine.getManager<OrganizationManager>('OrganizationManager')!;
+    const [people, orgs] = await Promise.all([
+      persons.search(actor, q, { limit: 20 }),
+      organizations.search(actor, q, { limit: 20 })
+    ]);
+    res.json([
+      ...people.map((p) => ({ kind: 'person', id: p['@id'], name: p.name ?? p.email ?? p['@id'], email: p.email })),
+      ...orgs.map((o) => ({ kind: 'organization', id: o['@id'], name: o.name }))
+    ]);
+  } catch (err) {
+    try {
+      if ((err as Error).name === 'ContactRefusedError') {
+        const refused = err as ContactRefusedError;
+        await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+      }
+      throw err;
+    } catch (answer) {
+      if (answer instanceof host.ApiError) return host.sendApiError(res, answer);
+      res.status(500).json({ error: 'Could not search donors' });
+    }
+  }
+});
+
+// A new donor who is not in the list yet (the route asks contact-manage first):
+// a person with no account, affiliated with their organization.
+const donor = await persons.create(ctx.getActor(), {
+  name: 'Dana Donor',
+  email: 'dana@example.org',
+  affiliation: [{ organization: orgId, role: 'Treasurer' }]
+});
+// Store donor['@id'] (and orgId, when the gift is from the organization) on the gift,
+// with the donor's name as given, so the gift still reads right if the person is deleted.
+```
 
 ### Mount Express Routes
 
@@ -699,11 +853,57 @@ author: my-addon
 
 ### Ship form definitions
 
-An add-on that ships forms for the bundled forms add-on saves each definition through `FormsDataManager.saveDefinition(definition)` in its `register()`. The forms add-on stores it as `data/forms/definitions/<id>.json`; `saveDefinition` always overwrites.
+An add-on that ships forms for the bundled forms add-on registers each one in its `register()`, at every start, with the definition as this release ships it ([#1880](https://github.com/jwilleke/ngdpbase/issues/1880)):
 
-- __Today, save a shipped form only when the site has none__: `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)`. Saving it at every start would wipe out what the site changed in the form builder.
-- __The cost:__ a changed definition never reaches a site that already has the form. After an upgrade the site keeps its first-saved copy, with the old fields and labels, and nothing shows it as outdated. Until [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) ships, a site gets a changed form only when an admin deletes the old one in the forms admin and the add-on saves it again at the next start, which loses any edits made in the builder. Say so in your add-on's release notes whenever a shipped form changes.
-- Shipped pages don't have this problem: Admin → Required Pages shows an outdated add-on page and syncs it, protecting pages the site edited.
+```ts
+const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+await forms?.registerShippedForm('my-addon', definition);
+// a change your add-on cannot work without (#1918):
+await forms?.registerShippedForm('my-addon', definition, { required: true });
+```
+
+The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
+
+- No copy on the site: it is saved. That is the first install.
+- The copy is what you ship: __Current__.
+- You ship a change and the copy is unedited since it was stamped: __Modified__ in the forms admin's Shipped Forms (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
+- The copy was edited in the form builder (its hash no longer matches its stamp): __Modified__ and __User Edited__. Sync never replaces it; __Force Sync__ does, after the admin confirms.
+- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as __Modified__, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+
+The status words, badges and Sync / Force Sync are Admin → Required Pages' own ([#1918](https://github.com/jwilleke/ngdpbase/issues/1918)), drawn by core's shared partials `views/_sync-status.ejs`, `views/_sync-button.ejs` and `views/_sync-counts.ejs` from `syncRowState` (`src/utils/addonPageSync.ts`). Any add-on screen that syncs shipped content uses them rather than its own design.
+
+A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `data/forms/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
+
+- Ordinary change: an info notice, "Form update available: …".
+- `{ required: true }`: what ships now is needed for your add-on to work. The notice is critical ("Critical: form … needs syncing", error level), as a failed add-on load is ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883)), and the forms admin flags the form __Required__ until it is synced. Mark only a change your add-on breaks without, such as a field your handler now reads.
+
+`registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
+
+The form builder saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)), so saving your form unchanged leaves it __Current__:
+
+- `store` is its __Store submissions__ box, ticked unless the form says `"store": false`. The page sends `storeShown` beside the box (an unticked box sends nothing), and a post without it keeps the form's value.
+- A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged. The `shipped` stamp is kept by `saveDefinition`.
+
+Migrating from the interim rule: replace `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)` with `await forms.registerShippedForm('<your add-on>', definition)`, called on every start. Existing sites need nothing else: their unedited copies are stamped or offered as updates by the rule above.
+
+### Choices from your manager, and checklists
+
+A `dropdown` or `checklist` field with `"optionsSource": "fetch:YourManager.toFormOptions(k=v)"` gets its choices from your manager. Only `toFormOptions` is reachable, and it is called with the viewer's context (`(args, userContext)`), so offer that viewer only what they may see. It is called again when the form is submitted, and a value it did not offer is refused before your handler runs.
+
+- Answer an array of strings, or of `{ value, label, amount? }` (`FormOption` in `src/utils/pluginFormatters.ts`). `amount` is whole minor units (cents), an integer; anything else is dropped.
+- A `checklist` field ([#1904](https://github.com/jwilleke/ngdpbase/issues/1904)) reaches your handler as an array of the ticked values (`submission.data.receiptIds: ["r-101", "r-102"]`), never a comma string; nothing ticked is `[]`. `required` means at least one.
+- When any choice has an `amount`, the checklist shows "Ticked: N · $sum" with core's `formatMoney`. With `totalField: "<amount field>"` it shows whether the sum matches that field, parsed as the `amount` field is. That is a hint to the person: the forms add-on does not refuse a mismatch, so a handler that needs them equal checks it and answers `{ ok: false, fields: { total: '...' } }`.
+- The field reference for site authors is the shipped [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md).
+
+### Lines: repeating rows of fields
+
+A `lines` field ([#1913](https://github.com/jwilleke/ngdpbase/issues/1913)) repeats its `fields` once per row: the lines of a receipt or refund. The definition, and what each key does, is in the [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md); what your handler gets:
+
+- `submission.data.<name>` is an array of row objects, `[{ amount: 5000, fundId: "general", category: "4100", memo: "" }]`. An `amount` sub-field is whole minor units, as a top-level `amount` is. Fully empty rows at the end are dropped, in the browser and again on the server.
+- Each row is validated by the same rules as top-level fields (`buildSubmissionValidator` builds the row from the same per-field rule). A sub-field's `optionsSource` is asked once per render and once per submit, as the viewer, whatever the row count; a value it did not offer is refused before your handler runs. `required`, `minRows` and `maxRows` are enforced on both sides.
+- Errors are keyed `<name>[<0-based row>].<field>`, for example `lines[1].category`. Answer `{ ok: false, fields: { 'lines[1].category': '...' } }` and the message shows next to that row's field; a key for the whole field (`lines`) shows under the field.
+- With `amountField` the form shows "Lines: N · $sum"; with `totalField`, whether it matches that field. It is the checklist's total (one drawing for both), and a hint only: a handler that needs the lines to add up to the total checks it.
+- A row holds one value per sub-field: `lines`, `section`, `hidden` and `checklist` sub-fields are refused when the definition is parsed, so `registerShippedForm` throws on them. The shipped-form hash covers the sub-fields, so a changed sub-field ships as an update.
 
 ### Ship a Theme
 
@@ -1429,11 +1629,20 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
 - [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
-- [#1880](https://github.com/jwilleke/ngdpbase/issues/1880) — a [shipped form definition](#ship-form-definitions) never refreshes on upgrade: the forms add-on records no version and no "edited on the site" flag, so there is no outdated status, no sync, and an add-on can only save a form once or overwrite site edits.
+- [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file. A builder save keeps them ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)).
+- [#1921](https://github.com/jwilleke/ngdpbase/issues/1921) — `views/header.ejs` shows the page editor's Save and Cancel for any view whose `title` starts with the word "Edit" and a space (`title.startsWith('Edit ')`), and those need a `pageName`. An add-on view with no page must not title itself `Edit …`: the form builder's edit page did, and every edit of a form answered 500. The builder is titled `Form Builder — Edit Form` now; the header still decides edit mode from the title.
+- [#1913](https://github.com/jwilleke/ngdpbase/issues/1913) — [lines](#lines-repeating-rows-of-fields): the form builder lists the `lines` type but cannot edit sub-fields, `minRows`, `maxRows`, `amountField` or `totalField`; write them in the definition file (the builder keeps them on save, and refuses a `lines` field with no sub-fields). A row cannot be removed below one even with `minRows: 0`, since an empty row is not sent. The submission detail page in the forms admin shows each row's raw values (amounts in cents), as it shows top-level amounts.
 - [#1830](https://github.com/jwilleke/ngdpbase/issues/1830) — [installed add-ons](#installed-add-ons) have no admin Update action yet (`addon-update` is declared and switched off), and the installed copies are not yet in the site backup.
 - [#1706](https://github.com/jwilleke/ngdpbase/issues/1706) — the [view script contract](#scripts-in-a-view-the-csp-nonce-contract) is checked only for bundled add-ons. An external add-on's views are not checked; its author finds a violation only in the browser console, once [#1705](https://github.com/jwilleke/ngdpbase/issues/1705) sends the script policy in report-only mode. Inline scripts a plugin writes into page HTML cannot carry a nonce, because that HTML is cached; they move to static files under [#1733](https://github.com/jwilleke/ngdpbase/issues/1733).
+- [#1883](https://github.com/jwilleke/ngdpbase/issues/1883) — [site-critical addons](#when-an-addon-does-not-load-site-critical):
+  - There is no notification level above `error`, so "critical" is `error` with "Critical:" in the title. `error` is also the level email escalation sends by default, when it is on (`ngdpbase.notifications.escalation.levels`).
+  - `/admin/addons` shows the reason an addon did not load, but not whether it is site-critical.
+  - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
+  - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
+  - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
 
-Last updated: 2026-10-18
+Last updated: 2026-10-20

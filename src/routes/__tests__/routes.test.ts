@@ -361,7 +361,9 @@ vi.mock('../../WikiEngine', () => {
         features: {
           maintenance: { enabled: false, allowAdmins: true }
         }
-      }
+      },
+      // #1906: the dashboard reads the one maintenance door.
+      maintenance: { has: () => false, reasons: () => [] }
     };
   });
   return { default: MockEngine };

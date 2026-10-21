@@ -290,7 +290,8 @@ describe('AddonsManager', () => {
       expect(manager.hasAddon('no-index')).toBe(false);
     });
 
-    test('skips addon without register function', async () => {
+    // #1883: no longer skipped silently — listed as not loaded, with the reason.
+    test('lists an addon without register function as not loaded, with the reason', async () => {
       const addonDir = path.join(tmpDir, 'no-register');
       await fs.mkdir(addonDir);
       await fs.writeFile(
@@ -305,7 +306,10 @@ describe('AddonsManager', () => {
       const manager = new AddonsManager(engine);
       await manager.initialize();
 
-      expect(manager.hasAddon('no-register')).toBe(false);
+      expect(manager.hasAddon('no-register')).toBe(true);
+      expect(manager.isLoaded('no-register')).toBe(false);
+      const status = (await manager.getStatus()).find((s: { name: string }) => s.name === 'no-register');
+      expect(status?.error).toBe('it exports no register() function');
     });
 
     test('discovers addons from multiple paths when addons-path is an array', async () => {

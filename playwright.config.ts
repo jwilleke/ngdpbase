@@ -40,7 +40,15 @@ const fillFromEnvFile = (key: string, ...candidates: string[]): void => {
 fillFromEnvFile('PORT', 'PORT');
 fillFromEnvFile('E2E_ADMIN_USER', 'E2E_ADMIN_USER');
 // The account the instance was bootstrapped with, unless the run names another.
-fillFromEnvFile('E2E_ADMIN_PASS', 'E2E_ADMIN_PASS', 'NGDPBASE_ADMIN_PASSWORD');
+// #1895: E2E_ADMIN_PASS, else NGDPBASE_ADMIN_PASSWORD (each: shell, then
+// `.env`), else auth.setup.ts falls back to the shipped admin123. The seed
+// script points the instance's bootstrap password at NGDPBASE_ADMIN_PASSWORD
+// when it is set, so seed and setup read the same variable.
+fillFromEnvFile('E2E_ADMIN_PASS', 'E2E_ADMIN_PASS');
+fillFromEnvFile('NGDPBASE_ADMIN_PASSWORD', 'NGDPBASE_ADMIN_PASSWORD');
+if (!process.env.E2E_ADMIN_PASS && process.env.NGDPBASE_ADMIN_PASSWORD) {
+  process.env.E2E_ADMIN_PASS = process.env.NGDPBASE_ADMIN_PASSWORD;
+}
 
 const PORT = process.env.PORT ?? '3000';
 

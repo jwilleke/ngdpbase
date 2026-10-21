@@ -9,6 +9,7 @@ import { WikiConfig } from './Config.js';
 import type { Logger } from 'winston';
 import type { Application, Request, RequestHandler, Router, RouterOptions } from 'express';
 import type express from 'express';
+import type { MaintenanceState } from '../utils/maintenanceState.js';
 
 /**
  * All known manager names as a union type
@@ -140,18 +141,15 @@ export interface WikiEngine {
   shutdown(): Promise<void>;
 
   /**
-   * Record a configuration value that cannot be used (#1152).
-   *
-   * Recorded rather than thrown so `initialize()` finishes and the admin
-   * screens exist — the instance then serves maintenance mode with a route to
-   * the repair, instead of exiting and leaving the filesystem as the only way
-   * back. Only for values an administrator can fix through the admin UI; a
-   * failure of the machinery needed to serve that UI is fatal and still throws.
+   * Whether the site is in maintenance mode, and why (#1906): the one door.
+   * A manager that needs the site closed calls `maintenance.enter(reason,
+   * { message?, estimatedDuration? })`, and `maintenance.leave(reason)` when
+   * the reason clears. Reasons are for administrators only; visitors get
+   * `maintenance.visitorView(configManager)`. Replaces `blockConfiguration`
+   * (#1152), still recorded rather than thrown so `initialize()` finishes and
+   * `/admin`, `/login` and `/logout` stay reachable.
    */
-  blockConfiguration(reason: string): void;
-
-  /** Configuration values that could not be used, in the order found (#1152). */
-  getBlockingConditions(): readonly string[];
+  readonly maintenance: MaintenanceState;
 
   /**
    * Get all registered manager names

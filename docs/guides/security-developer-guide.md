@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-13
+dateModified: 2026-10-21
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -37,6 +37,10 @@ A door is a check made before the action is performed or the content is served o
 
 A manager method that decides access, writes an audit record, or acts on someone's behalf takes the context it was given, positionally. Forward it; never rebuild `{ username, roles, isAuthenticated }` from parts, because the rebuild drops `viaToken` and with it the agent-token scope ceiling. `scripts/check-permission-subject.ts` fails the commit on a rebuild in route code. A job or timer uses `JobContext`; boot paths that act use the system principal. An omitted actor is not "the system"; it is nobody, and the record is wrong.
 
+## A closed account holds nothing
+
+An account deleted or turned off loses every way in at once, through `AuthManager.closeAccess` ([#1765](https://github.com/jwilleke/ngdpbase/issues/1765)): its sessions in the live session store, and, on delete, its tokens, app grants, shares, proxy grants and credentials. A session is also held to its account on every request, so one the close missed, or one whose username a new account took, is refused ([#1937](https://github.com/jwilleke/ngdpbase/issues/1937)). The rules are in [authentication-developer-guide.md](authentication-developer-guide.md#standing-rules). A new kind of access an account can hold is closed there, and anything that names an account only by its username must not outlive it: a new account can take the name.
+
 ## Permissions and policies are configuration
 
 - `ngdpbase.permissions.definitions` is the permission catalog: `{target}-{action}`, target first, hyphen separated. Callers read it live with `ConfigurationManager.getProperty('ngdpbase.permissions.definitions')`; there is no list in code. `UserManager` does not hold the catalog. Each grantable entry carries a `label`, the plain words a person reads; `description` is for administrators and developers. `permissionLabel` / `describeScopes` in `src/utils/permissionCatalog.ts` are the one lookup, and `AuthManager.describeScopes` reads it against the live catalog (#1764).
@@ -44,6 +48,13 @@ A manager method that decides access, writes an audit record, or acts on someone
 - Roles are lists in `ngdpbase.roles.definitions`, additive, unordered, never gating anything. A role change is a configuration change and is recorded as `config-change`.
 
 __Adding a permission for a new action:__ declare it in the catalog with description, icon and colour; grant it in a policy; ask for it at the door. A catalog entry that only declares an audit event is `"grantable": false` and is never granted ([audit-developer-guide.md](audit-developer-guide.md)). The registry-drift test fails when a permission is declared and checked nowhere, or checked and declared nowhere.
+
+## Secrets in configuration
+
+A secret in configuration is a `$NAME` reference to an environment variable, at the top level of a key or anywhere inside a map or list, and it is declared `secret` in `ngdpbase.config.sensitive-values`, by key or by a path with `*` for a map key ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)). The rules, and every place a value is shown and so hidden, are in [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules). Two that bind code:
+
+- Show, log or record a configuration value only through `utils/sensitiveValues.ts` (`shownValue` for a viewer; `hideDeclaredPaths` with `NO_SECRETS` for an admin screen, a log line or an audit record). A new screen or record that renders a value with neither leaks what a path entry names.
+- `getUnresolvedProperty` returns the reference, not the secret. Use it only to check that a secret is a reference; a literal secret comes back as itself.
 
 ## Addons
 
@@ -80,5 +91,6 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 ## Known gaps
 
 - [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — proxy access is complete (slices 1–7), reachable while `ngdpbase.auth.proxy-access.enabled` is on. The private-store risk (a proxy's username matching the owner's) is closed, and the audit queries take the subject. Left: the "Jim acted for you" entries wait for the sign-in history page ([#1766](https://github.com/jwilleke/ngdpbase/issues/1766)); after a proxy approves a device, the browser's provider session stays signed in as the person represented, so the proxy's own app sign-in is refused (fails closed) until that session ends.
+- [#1937](https://github.com/jwilleke/ngdpbase/issues/1937) — what a closed account's sessions still cannot be checked against (old sessions with no sign-in time, stores that cannot list by id) is in the authentication guide's Known gaps.
 - [#1174](https://github.com/jwilleke/ngdpbase/issues/1174)
 - [#1216](https://github.com/jwilleke/ngdpbase/issues/1216)

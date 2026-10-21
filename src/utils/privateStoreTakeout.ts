@@ -109,10 +109,13 @@ export async function collectStore(
   pagesDirectory: string,
   owner: string,
   store: string,
-  layout?: PrivateStoreLayoutOverrides
+  layout?: PrivateStoreLayoutOverrides,
+  skip?: (relativeToStore: string) => boolean
 ): Promise<StoreTakeout> {
   const root = privateStoreRoot(pagesDirectory, owner, store, layout);
-  const files = await readAll(root, await walkFiles(root));
+  // `skip` leaves a file out unread (#1876: the instance backup leaves the
+  // vault's attachments to AttachmentManager, so they are never read here).
+  const files = await readAll(root, (await walkFiles(root)).filter((rel) => !skip?.(rel)));
   return {
     owner,
     store,
@@ -161,7 +164,8 @@ export async function listPrivateOwners(
 export async function collectUser(
   pagesDirectory: string,
   owner: string,
-  layout?: PrivateStoreLayoutOverrides
+  layout?: PrivateStoreLayoutOverrides,
+  skip?: (relativeToStore: string) => boolean
 ): Promise<{ owner: string; userFiles: StoreFile[]; stores: StoreTakeout[]; totalBytes: number }> {
   const userDir = privateUserDir(pagesDirectory, owner, layout);
 
@@ -177,7 +181,7 @@ export async function collectUser(
   const userFiles = await readAll(userDir, topLevel);
   const stores: StoreTakeout[] = [];
   for (const store of await listStoreIds(pagesDirectory, owner, layout)) {
-    stores.push(await collectStore(pagesDirectory, owner, store, layout));
+    stores.push(await collectStore(pagesDirectory, owner, store, layout, skip));
   }
 
   const totalBytes =

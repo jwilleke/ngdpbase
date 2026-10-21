@@ -79,7 +79,27 @@ export function gateDecision(
 }
 
 /**
- * The message shown on the maintenance page and logged at boot.
+ * The initialisation gate's decision with maintenance mode in it (#1906).
+ *
+ * A failure a manager entered (`engine.maintenance.enter`) keeps everyone,
+ * administrators included, to the repair screens — before the engine is ready
+ * and after. It is asked per request, so when that reason leaves, the site
+ * reopens without a restart. The admin switch is not a failure and does not
+ * close this gate: the maintenance gate behind the session handles it, where
+ * an administrator can be recognised.
+ */
+export function initialisationGate(
+  engineReady: boolean,
+  maintenance: { isClosedToAdmins(): boolean } | null | undefined,
+  path: string
+): GateDecision {
+  const blocked = maintenance?.isClosedToAdmins() ?? false;
+  return gateDecision(engineReady && !blocked, blocked, path);
+}
+
+/**
+ * The reasons as logged at boot, for administrators. Visitors never see them:
+ * they get `engine.maintenance.visitorView(…)` (#1906).
  *
  * Every reason at once, rather than the first: an operator who fixes one and
  * restarts into the next has been made to do the work twice.

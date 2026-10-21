@@ -1911,7 +1911,10 @@ class FileSystemProvider extends BasePageProvider {
 
     const root = resolvePrivateStoreLayout(this.privateStoreLayout).privateRoot;
     for (const owner of owners) {
-      const taken = await collectUser(this.pagesDirectory, owner, this.privateStoreLayout);
+      // #1876: a vault's files and their index are AttachmentManager's, backed
+      // up beside the document as stored bytes, never base64 in it — so they
+      // are not even read here.
+      const taken = await collectUser(this.pagesDirectory, owner, this.privateStoreLayout, (rel) => this.isVaultAttachmentPath(rel));
 
       const add = (relative: string, file: { bytes: Buffer; mtime: Date }): void => {
         bytes += file.bytes.length;
@@ -1977,6 +1980,12 @@ class FileSystemProvider extends BasePageProvider {
       }
     }
     return sealed;
+  }
+
+  /** A path inside a vault (relative to it) that is AttachmentManager's: its files folder or its file index (#1876). */
+  private isVaultAttachmentPath(relativeToStore: string): boolean {
+    const L = resolvePrivateStoreLayout(this.privateStoreLayout);
+    return relativeToStore === L.files.storefiles || relativeToStore.startsWith(`${L.attachmentsDir}/`);
   }
 
   /** `file` is a vault's own `store.json`: `{privateroot}/{owner}/{store}/store.json`. */

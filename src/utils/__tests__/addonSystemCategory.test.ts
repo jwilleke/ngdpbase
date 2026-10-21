@@ -75,7 +75,7 @@ function validationManagerFor(merged: Record<string, unknown>, seen: Seen = { bl
   const notificationManager = { addNotification: (n: Record<string, unknown>) => { seen.notifications.push(n); return Promise.resolve('id'); } };
   const engine = {
     getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : name === 'NotificationManager' ? notificationManager : undefined),
-    blockConfiguration: (reason: string) => { seen.blocked.push(reason); }
+    maintenance: { enter: (reason: string) => { seen.blocked.push(reason); } }
   } as unknown as WikiEngine;
   const vm = new ValidationManager(engine);
   return vm.initialize().then(() => vm);
@@ -263,8 +263,10 @@ describe('#1559 admins are told what was refused', () => {
     const AddonsManager = (mod.default ?? mod) as unknown as { prototype: object };
     const manager = Object.create(AddonsManager.prototype) as {
       engine: unknown;
+      loadFailures: Map<string, string>;
       notifySystemCategoryProblems(cm: unknown): void;
     };
+    manager.loadFailures = new Map(); // #1883: no add-on failed to load here
     const createNotification = vi.fn().mockResolvedValue(undefined);
     manager.engine = { getManager: (n: string) => (n === 'NotificationManager' ? { createNotification } : null) };
     addon('phr', { [SC]: { phr: { ...phrEntry, encrypt: 'true' } } });

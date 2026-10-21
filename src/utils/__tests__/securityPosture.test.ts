@@ -86,6 +86,16 @@ describe('#1145 — resolvePosture', () => {
     expect(item?.value).toBeUndefined();
   });
 
+  test('a secret inside an ingredient, named by a wildcard path, is hidden; the rest is shown (#1889)', () => {
+    const groups = resolvePosture(reader({
+      [POSTURE_KEY]: { 'ngdpbase.x.clients': { group: 'Outside services' } },
+      'ngdpbase.config.sensitive-values': { 'ngdpbase.x.clients.*.key': 'secret' },
+      'ngdpbase.x.clients': { a: { url: 'https://a.example.com', key: 'the-actual-client-key' } }
+    }));
+    const item = groups.flatMap((g) => g.items).find((i) => i.key === 'ngdpbase.x.clients');
+    expect(item?.value).toEqual({ a: { url: 'https://a.example.com', key: '(hidden)' } });
+  });
+
   test('an absent or malformed posture yields nothing rather than throwing', () => {
     expect(resolvePosture(reader({}))).toEqual([]);
     expect(resolvePosture(reader({ [POSTURE_KEY]: 'not-an-object' }))).toEqual([]);

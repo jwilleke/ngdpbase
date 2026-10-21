@@ -38,7 +38,8 @@
  */
 import { format } from 'winston';
 import type { Logform } from 'winston';
-import { secretKeys } from './sensitiveValues.js';
+import { secretKeys, secretValuesBelow, valueLevels } from './sensitiveValues.js';
+import { keyOfEntry } from './configPaths.js';
 
 /**
  * Values shorter than this are never redacted.
@@ -125,28 +126,45 @@ export function refreshRedactedSecrets(configManager: SecretConfigReader | null 
     return { active: 0, skipped };
   }
 
-  const keys = secretKeys((k, d) => configManager.getProperty(k, d));
+  const read = (k: string, d: unknown): unknown => configManager.getProperty(k, d);
+  const keys = secretKeys(read);
 
   const seen = new Set<string>();
   const next: Redaction[] = [];
+  const take = (key: string, value: unknown): void => {
+    const reason = rejectionReason(value);
+    if (reason) {
+      skipped.push({ key, reason });
+      return;
+    }
+    const literal = (value as string).trim();
+    // Two keys holding the same value redact once; the first key names it.
+    if (seen.has(literal)) return;
+    seen.add(literal);
+    next.push({ key, value: literal });
+  };
 
+  // #1889: an entry that names a path inside a key's value (with or without
+  // a `*`) is redacted by each value it finds there, named by its full path.
+  const inside = new Set<string>();
   for (const rawKey of keys) {
     if (typeof rawKey !== 'string') continue;
     const key = rawKey.trim();
     if (key === '') continue;
 
     const value = configManager.getProperty(key, undefined);
-    const reason = rejectionReason(value);
-    if (reason) {
-      skipped.push({ key, reason });
-      continue;
+    if (value === undefined) {
+      const parent = keyOfEntry(key, (k) => configManager.getProperty(k, undefined) !== undefined);
+      if (parent) {
+        inside.add(parent);
+        continue;
+      }
     }
-
-    const literal = (value as string).trim();
-    // Two keys holding the same value redact once; the first key names it.
-    if (seen.has(literal)) continue;
-    seen.add(literal);
-    next.push({ key, value: literal });
+    take(key, value);
+  }
+  const levels = valueLevels(read);
+  for (const parent of inside) {
+    for (const { path, value } of secretValuesBelow(parent, configManager.getProperty(parent, undefined), levels)) take(path, value);
   }
 
   // Longest first: where one secret contains another, the longer must be
