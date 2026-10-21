@@ -15,7 +15,9 @@ import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { toPermissionSubject } from '../context/JobContext.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
@@ -284,6 +286,21 @@ export interface AddonManifest {
    * docs/guides/addons-developer-guide.md "Declare a Private Store".
    */
   stores?: unknown;
+  /**
+   * #1963: each person turns this add-on on or off for themselves. Their
+   * switch is the preference `<slug>.enabled` (`personSwitchKey`), read only
+   * by `AddonsManager.enabledAddonsFor` and written only through
+   * `host.setEnabledForPerson`. Absent or anything but `true`: not per-person.
+   */
+  perPerson?: boolean;
+}
+
+/**
+ * The preference that holds a person's switch for a per-person add-on (#1963):
+ * `<slug>.enabled`. The one place the key is spelled.
+ */
+export function personSwitchKey(slug: string): string {
+  return `${slug}.enabled`;
 }
 
 /**
@@ -1734,7 +1751,11 @@ class AddonsManager extends BaseManager {
       // #1813: the host is built per add-on: its logger tagged with the slug,
       // its audit helpers limited to the events this add-on declares.
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {}, this.engine);
+      // #1963: the switch setter is bound to this add-on's slug, so it can set
+      // only its own switch; there is no slug argument to give another's.
+      // #1973: the engine names the system principal for host.systemContext.
+      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {},
+        (ctx, on) => this.#writePersonSwitch(addonName, ctx, on), this.engine);
 
       // Call the add-on's register function
       await addon.module.register(this.engine, addonConfig, host);
@@ -1996,6 +2017,61 @@ class AddonsManager extends BaseManager {
         );
       }
     }
+  }
+
+  /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
+  private perPersonAddons(): string[] {
+    return [...this.addons].filter(([, addon]) => addon.loaded && addon.manifest?.perPerson === true).map(([slug]) => slug);
+  }
+
+  /**
+   * The per-person add-ons this subject has turned on (#1963): each loaded
+   * add-on whose manifest says `perPerson: true` and whose switch, the
+   * person's preference `<slug>.enabled`, is `true`.
+   *
+   * It reads exactly those keys and no other preference, so no access check
+   * or listing built on it can come to depend on an arbitrary setting. An
+   * anonymous subject, an unknown or inactive account, and the system
+   * principal (which has no account) have none.
+   *
+   * @param ctx - Whose add-ons: the request's subject, or a job's context
+   * @returns The slugs, in load order
+   */
+  async enabledAddonsFor(ctx: ActorContext): Promise<string[]> {
+    if (!isJobContext(ctx) && !ctx.isAuthenticated) return [];
+    const slugs = this.perPersonAddons();
+    if (slugs.length === 0) return [];
+    const user = await this.engine.getManager<{ getUser(u: string): Promise<AddonProfileUser | undefined> }>('UserManager')
+      ?.getUser(ctx.username);
+    if (!user || user.isActive === false) return [];
+    const preferences = (user.preferences ?? {}) as Record<string, unknown>;
+    return slugs.filter((slug) => preferences[personSwitchKey(slug)] === true);
+  }
+
+  /**
+   * Set or clear one add-on's switch for the person `ctx` acts as (#1963).
+   * Reached only through that add-on's `host.setEnabledForPerson`, which binds
+   * the slug: a true private method, so no add-on can name another's slug.
+   * Self-service like `/profile`, so it asks for `profile-manage`.
+   */
+  async #writePersonSwitch(slug: string, ctx: ActorContext, on: boolean): Promise<void> {
+    if (this.addons.get(slug)?.manifest?.perPerson !== true) {
+      throw new Error(`Add-on '${slug}' is not per-person (set "perPerson": true in the "ngdpbase" block of its package.json), so it has no switch to set`);
+    }
+    if (typeof on !== 'boolean') throw new Error(`setEnabledForPerson takes true or false, not ${typeof on}`);
+    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!subject.isAuthenticated || !pdp || !(await pdp.permits(subject, 'profile-manage'))) {
+      throw new Error(`${ctx.username} may not change their add-on settings (needs profile-manage)`);
+    }
+    const userManager = this.engine.getManager<{
+      getUser(u: string): Promise<AddonProfileUser | undefined>;
+      updateUser(u: string, updates: { preferences: Record<string, unknown> }, c: ActorContext): Promise<unknown>;
+        }>('UserManager');
+    const user = await userManager?.getUser(ctx.username);
+    if (!userManager || !user) throw new Error(`No account '${ctx.username}' to set the ${slug} switch on`);
+    const preferences = { ...(user.preferences ?? {}), [personSwitchKey(slug)]: on };
+    await userManager.updateUser(ctx.username, { preferences }, ctx);
   }
 
   /**

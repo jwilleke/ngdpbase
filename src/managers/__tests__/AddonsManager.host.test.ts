@@ -16,7 +16,7 @@ const HOST_KEYS = [
   'ApiContext', 'ApiError', 'sendApiError',
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
-  'logger', 'guardedFetch'
+  'logger', 'guardedFetch', 'setEnabledForPerson'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
