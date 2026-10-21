@@ -666,6 +666,10 @@ class LunrSearchProvider extends BaseSearchProvider {
    * owner's private container: it is found only by its owner — no role, and no
    * frontmatter audience, reaches in (docs/private-stores.md, Access;
    * the same rule PolicyInformationPoint applies at Tier 0).
+   *
+   * This only narrows; it is not the access decision. Audience, `access`
+   * rules and the policies are not here: SearchManager puts every hit through
+   * the page-list door before it reaches anyone (#1962).
    */
   private isDocVisible(doc: LunrDocument, wikiContext?: SearchOptions['wikiContext']): boolean {
     if (!doc.isPrivate) return true;

@@ -50,11 +50,12 @@ interface MockPrivatePage {
   page: MockPage;
 }
 
-function makeMockEngine(pages: MockPage[], privatePages: MockPrivatePage[] = []): {
+function makeMockEngine(pages: MockPage[], privatePages: MockPrivatePage[] = [], refused: string[] = []): {
   engine: never;
   searchByCategory: ReturnType<typeof vi.fn>;
   getPage: ReturnType<typeof vi.fn>;
   getPagesByCreator: ReturnType<typeof vi.fn>;
+  filterPagesFor: ReturnType<typeof vi.fn>;
 } {
   // SearchResults projection: searchByCategory returns { name } per hit;
   // the manager then calls getPage(name, ctx) for each. We match name → page.slug.
@@ -77,14 +78,18 @@ function makeMockEngine(pages: MockPage[], privatePages: MockPrivatePage[] = [])
       .filter(p => p.owner === username)
       .map(p => ({ name: p.name, title: p.page.title, isPrivate: true })));
 
+  // #1962: the page-list door decides which shared-index names the requester
+  // may open; `refused` names the ones it turns down.
+  const filterPagesFor = vi.fn(async (_ctx: unknown, names: string[]) => names.filter(n => !refused.includes(n)));
+
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'SearchManager') return { searchByCategory };
-      if (name === 'PageManager') return { getPage, getPagesByCreator };
+      if (name === 'PageManager') return { getPage, getPagesByCreator, filterPagesFor };
       return undefined;
     })
   };
-  return { engine: engine as never, searchByCategory, getPage, getPagesByCreator };
+  return { engine: engine as never, searchByCategory, getPage, getPagesByCreator, filterPagesFor };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -353,6 +358,19 @@ describe('JournalDataManager', () => {
   });
 
   // ── #1456: private entries come from the requester's own stores ──────────────
+
+  describe('shared-index entries go through the page-list door (#1962)', () => {
+    it('leaves out an entry the door refuses, and asks with the requester', async () => {
+      const open = makeMockPage({ slug: 'journal-alice-open', journalDate: '2026-01-01' });
+      const restricted = makeMockPage({ slug: 'journal-alice-restricted', journalDate: '2026-01-02' });
+      const { engine, filterPagesFor, getPage } = makeMockEngine([open, restricted], [], ['journal-alice-restricted']);
+      const m = new JournalDataManager(engine);
+      expect((await m.listAll(alice)).map(e => e.slug)).toEqual(['journal-alice-open']);
+      expect(filterPagesFor).toHaveBeenCalledWith(alice, ['journal-alice-open', 'journal-alice-restricted']);
+      // Refused before anything is read.
+      expect(getPage).not.toHaveBeenCalledWith('journal-alice-restricted', expect.anything());
+    });
+  });
 
   describe('private entries (#1456)', () => {
     const alicePrivateName = 'vaults/alice/default/2026-02-01-1-journal-alice';
