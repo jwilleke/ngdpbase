@@ -4,6 +4,8 @@ import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/Ap
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
 import type NotificationManager from '../../../dist/src/managers/NotificationManager.js';
+import type UserManager from '../../../dist/src/managers/UserManager.js';
+import logger from '../../../dist/src/utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataManager.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
@@ -150,15 +152,28 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           emailManager.sendInBackground(submitterEmail, subject, text);
         }
 
-        // ── 8. In-app notification (fire-and-forget) ───────────────────────
+        // ── 8. In-app notification to the form's notifyRole (fire-and-forget)
+        // Only the role's members (#1957): an empty target list means every
+        // user, so a role nobody holds is told nothing.
         const nm = engine.getManager<NotificationManager>('NotificationManager');
-        if (notify && nm) {
-          nm.createNotification({
-            type:    'system',
+        const users = engine.getManager<UserManager>('UserManager');
+        if (notify && nm && users && ctx.subject) {
+          const notice = {
+            type:    'system' as const,
             title:   `New form submission: ${form.title}`,
             message: `Submitted by ${submittedBy}${onBehalfOf?.name ? ` on behalf of ${onBehalfOf.name}` : ''}`,
-            level:   'info'
-          }).catch(() => {});
+            level:   'info' as const
+          };
+          // Core's role lookup (RoleManager membership, active accounts only),
+          // under the submitter's context; limit 0 is every holder.
+          void users.searchUsers('', { role: form.notifyRole, limit: 0 }, ctx.subject).then((holders) => {
+            const targetUsers = holders.map((u) => u.username);
+            if (targetUsers.length === 0) {
+              logger.debug(`[forms] nobody holds '${form.notifyRole}'; no notice for a submission to '${formId}'`);
+              return;
+            }
+            return nm.createNotification({ ...notice, targetUsers });
+          }).catch((err: unknown) => logger.warn(`[forms] could not notify '${form.notifyRole}' of a submission to '${formId}':`, err));
         }
 
         res.status(201).json({ ok: true, submissionId: submission.id });
