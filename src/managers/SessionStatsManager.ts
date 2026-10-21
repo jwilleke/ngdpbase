@@ -27,6 +27,7 @@ export interface SessionStoreLike {
   /** session-file-store: the session file names, not the sessions. */
   list?(callback: (err: unknown, files?: string[]) => void): void;
   get?(sid: string, callback: (err: unknown, session?: unknown) => void): void;
+  destroy?(sid: string, callback: (err: unknown) => void): void;
   /** session-file-store keeps its file extension here (default `.json`). */
   options?: { fileExtension?: string };
 }
@@ -121,20 +122,46 @@ export async function listSessionUsers(store: SessionStoreLike): Promise<Session
  * an expired one. A session that cannot be read is left out: express-session
  * cannot load it either, so it is not a live session.
  */
-async function storeListAndGet(store: SessionStoreLike): Promise<Record<string, unknown>[]> {
+async function storeListAndGet(store: SessionStoreLike): Promise<StoredSession[]> {
   const files = await new Promise<string[]>((resolve, reject) => {
     store.list!((err, list) => (err ? reject(asError(err)) : resolve(Array.isArray(list) ? list : [])));
   });
   const extension = store.options?.fileExtension ?? '.json';
-  const sessions: Record<string, unknown>[] = [];
+  const sessions: StoredSession[] = [];
   for (const file of files) {
     const sid = extension && file.endsWith(extension) ? file.slice(0, -extension.length) : file;
     const session = await new Promise<unknown>((resolve) => {
       store.get!(sid, (err, s) => resolve(err ? null : s));
     });
-    if (session && typeof session === 'object') sessions.push(session as Record<string, unknown>);
+    if (session && typeof session === 'object') sessions.push({ sid, session: session as Record<string, unknown> });
   }
   return sessions;
+}
+
+/** A session in the store, with its id. */
+export interface StoredSession {
+  sid: string;
+  session: Record<string, unknown>;
+}
+
+/**
+ * Every session in the store with its id (#1937): `all()` keyed by id where
+ * the store has it, else list and read each (the file store). A store whose
+ * `all()` returns a bare array gives no ids, so it cannot be listed this way.
+ */
+export async function storedSessions(store: SessionStoreLike): Promise<StoredSession[]> {
+  if (typeof store.all === 'function') {
+    const all = await new Promise<unknown>((resolve, reject) => {
+      store.all!((err, sessions) => (err ? reject(asError(err)) : resolve(sessions)));
+    });
+    if (all && typeof all === 'object' && !Array.isArray(all)) {
+      return Object.entries(all as Record<string, unknown>)
+        .filter(([, s]) => s !== null && typeof s === 'object')
+        .map(([sid, s]) => ({ sid, session: s as Record<string, unknown> }));
+    }
+  }
+  if (typeof store.list === 'function' && typeof store.get === 'function') return storeListAndGet(store);
+  throw new SessionStoreUnsupportedError('listing sessions by id');
 }
 
 /**
@@ -146,7 +173,7 @@ async function storeListAndGet(store: SessionStoreLike): Promise<Record<string, 
 export async function liveSessionHandles(store: SessionStoreLike): Promise<Set<string>> {
   let sessions: Record<string, unknown>[];
   if (typeof store.all === 'function') sessions = await storeAll(store);
-  else if (typeof store.list === 'function' && typeof store.get === 'function') sessions = await storeListAndGet(store);
+  else if (typeof store.list === 'function' && typeof store.get === 'function') sessions = (await storeListAndGet(store)).map(s => s.session);
   else throw new SessionStoreUnsupportedError('listing sessions');
   const handles = new Set<string>();
   for (const s of sessions) {
@@ -187,6 +214,22 @@ class SessionStatsManager extends BaseManager {
   async liveHandles(): Promise<Set<string>> {
     if (!this.store) throw new Error('Session store not attached');
     return liveSessionHandles(this.store);
+  }
+
+  /** Every session in the store with its id (#1937). @throws Error when no store is attached; SessionStoreUnsupportedError when it cannot list by id. */
+  async sessions(): Promise<StoredSession[]> {
+    if (!this.store) throw new Error('Session store not attached');
+    return storedSessions(this.store);
+  }
+
+  /** Remove one session from the store (#1937). @throws Error when no store is attached, or SessionStoreUnsupportedError when it cannot destroy. */
+  async destroy(sid: string): Promise<void> {
+    const store = this.store;
+    if (!store) throw new Error('Session store not attached');
+    if (typeof store.destroy !== 'function') throw new SessionStoreUnsupportedError('destroying a session');
+    await new Promise<void>((resolve, reject) => {
+      store.destroy!(sid, (err) => (err ? reject(asError(err)) : resolve()));
+    });
   }
 }
 

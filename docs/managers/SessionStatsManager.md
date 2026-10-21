@@ -1,7 +1,7 @@
 ---
 name: SessionStatsManager
 description: "In-process session counts and user lists from the express-session store, shared by the session routes and SessionsPlugin"
-dateModified: '2026-09-06'
+dateModified: '2026-10-21'
 category: managers
 code: src/managers/SessionStatsManager.ts
 ---
@@ -31,7 +31,10 @@ SessionsPlugin used to obtain these numbers by requesting this server's own `htt
 | `hasStore()` | Whether a store is attached; the plugin renders `0` when not. |
 | `count()` | `{ sessionCount, distinctUsers }`. Prefers `store.length` (cheap; `distinctUsers` then equals the count), falls back to `store.all` and counts distinct usernames plus one anonymous bucket. |
 | `users()` | `{ users, anonymous, total }`. Needs `store.all`; under `length` alone the list is empty and every session counts as anonymous. |
-| `countSessions(store)`, `listSessionUsers(store)` | The exported helpers the routes use directly on `req.sessionStore`. |
+| `liveHandles()` | The private-store handles live sessions hold, for the orphaned-key sweep (#1626). |
+| `sessions()` | Every session with its id, `{ sid, session }[]`: `all()` keyed by id, else list and read each (the file store). Used by `UserManager` to end a closed account's sessions (#1937). |
+| `destroy(sid)` | Remove one session from the store (#1937). |
+| `countSessions(store)`, `listSessionUsers(store)`, `storedSessions(store)` | The exported helpers the routes use directly on `req.sessionStore`. |
 | `SessionStoreUnsupportedError` | Thrown when the store implements neither `length` nor `all`; the routes map it to `501`. |
 
 ## Errors

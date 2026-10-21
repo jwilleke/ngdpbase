@@ -2,6 +2,7 @@ import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './Base
 import type { ProviderInfo, StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
+import { UNKNOWN_UPLOADER } from '../types/Asset.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
 import { ExifTool } from 'exiftool-vendored';
@@ -16,6 +17,15 @@ import type AttachmentManager from '../managers/AttachmentManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
+import { siteRestoreFile, type PartOutcome } from '../utils/siteRestore.js';
+import {
+  applyAttachmentFilesAtStart,
+  backupAttachmentFiles,
+  stageAttachmentFiles,
+  type AttachmentFilePlaces,
+  type AttachmentFilesBackupData,
+  type AttachmentFilesBackupOutcome
+} from './attachmentFilesBackup.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
   parsePrivatePageName,
@@ -229,6 +239,8 @@ async function extractImageMetadata(buffer: Buffer): Promise<AssetMetadata | nul
  */
 class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetProvider {
   private storageDirectory: string | null;
+  /** What the start did with a staged restore of the files (#1876). */
+  private restoreAtStart: PartOutcome | null = null;
   /** Pre-#1386 attachments/{legacyprivateroot}/{user}/ — migrate-FROM and read fallback only. */
   private legacyPrivateDir: string | null;
   private pagesDirectory: string | null;
@@ -282,8 +294,13 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   /**
    * Initialize the provider
    * All configuration access via ConfigurationManager
+   *
+   * @param options.readOnly - Open for reading only (#1852): load the index and
+   *   change nothing on disk. No staged restore is applied, no folder is
+   *   created, and neither start-up migration (legacy private files, stale
+   *   paths) runs. For an operator report such as the files dry run.
    */
-  async initialize(): Promise<void> {
+  async initialize(options: { readOnly?: boolean } = {}): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) {
       throw new Error('BasicAttachmentProvider requires ConfigurationManager');
@@ -343,6 +360,18 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       : 'private';
     this.legacyPrivateDir = path.join(this.storageDirectory, legacyRoot);
     this.thumbDir = path.join(this.storageDirectory, '.thumbs');
+
+    if (options.readOnly) {
+      await this.loadMetadata();
+      this.initialized = true;
+      logger.info(`[BasicAttachmentProvider] Opened read-only with ${this.attachmentMetadata.size} attachments.`);
+      return;
+    }
+
+    // #1876: a staged site restore goes in before the metadata is read.
+    this.restoreAtStart = applyAttachmentFilesAtStart(this.filePlaces(), siteRestoreFile(configManager));
+    if (this.restoreAtStart?.refused) logger.error(`[BasicAttachmentProvider] A staged restore of the attachment files was NOT applied: ${this.restoreAtStart.refused} (#1876)`);
+    for (const a of this.restoreAtStart?.applied ?? []) logger.warn(`[BasicAttachmentProvider] Restore applied: ${a.live} (previous kept as ${path.basename(a.kept)}) (#1876)`);
 
     // Ensure directories exist. Do not create attachments/private — that is
     // migrate-FROM only; live private writes go to the page store (#1386).
@@ -590,7 +619,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
    * @param fileBuffer - File data
    * @param fileInfo - { originalName, mimeType, size }
    * @param metadata - Schema.org CreativeWork metadata
-   * @param user - User object { name, email }
+   * @param user - The uploader: `username` is recorded as author and editor (#1926)
    * @param options - Privacy-aware storage options
    * @returns Complete attachment metadata
    * @private
@@ -602,6 +631,14 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     user: User | null = null,
     options: StoreAttachmentOptions = {}
   ): Promise<SchemaCreativeWork> {
+    // #1926: a new record names its uploader by username — never an email,
+    // never 'Unknown'. AttachmentManager refuses an upload with nobody signed
+    // in; this refuses a caller that hands no username, before anything is written.
+    const uploader = user?.username;
+    if (!uploader) {
+      throw new Error('[BasicAttachmentProvider] an upload must name its uploader\'s username (#1926)');
+    }
+
     // Validate file
     this.validateFile(fileInfo);
 
@@ -672,11 +709,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
     // Create Schema.org CreativeWork metadata
     const now = new Date().toISOString();
-    const author: SchemaPerson | undefined = user ? {
-      '@type': 'Person',
-      'name': user.username || user.email || 'Unknown',
-      'email': user.email
-    } : undefined;
+    const author: SchemaPerson = { '@type': 'Person', 'name': uploader };
 
     const attachmentMetadata: SchemaCreativeWork = {
       '@context': 'https://schema.org',
@@ -764,7 +797,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       size: schemaMetadata.contentSize,
       url: `/attachments/${schemaMetadata.identifier}`,
       uploadedAt: schemaMetadata.dateCreated,
-      uploadedBy: schemaMetadata.author?.name || 'Unknown',
+      uploadedBy: schemaMetadata.author?.name || UNKNOWN_UPLOADER,
       filePath: schemaMetadata.storageLocation,
       description: schemaMetadata.description,
       isPrivate: schemaMetadata.isPrivate,
@@ -825,7 +858,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
         size: metadata.contentSize,
         url: `/attachments/${metadata.identifier}`,
         uploadedAt: metadata.dateCreated,
-        uploadedBy: metadata.author?.name || 'Unknown',
+        uploadedBy: metadata.author?.name || UNKNOWN_UPLOADER,
         filePath,
         description: metadata.description
       };
@@ -878,7 +911,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
         size: buffer.length,
         url: `/attachments/${attachmentId}`,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: 'Unknown',
+        uploadedBy: UNKNOWN_UPLOADER,
         filePath
       };
 
@@ -1315,7 +1348,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       mimeType: schemaMetadata.encodingFormat,
       size: schemaMetadata.contentSize,
       uploadedAt: schemaMetadata.dateCreated,
-      uploadedBy: schemaMetadata.author?.name || 'Unknown',
+      uploadedBy: schemaMetadata.author?.name || UNKNOWN_UPLOADER,
       filePath: schemaMetadata.storageLocation,
       description: schemaMetadata.description,
       isPrivate: schemaMetadata.isPrivate,
@@ -1427,7 +1460,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       encodingFormat: schema.encodingFormat,
       size: schema.contentSize,
       uploadedAt: schema.dateCreated,
-      uploadedBy: schema.author?.name || 'Unknown',
+      uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
       filePath: schema.storageLocation,
       description: schema.description,
       // Slice 5 of #755 (#759) — embedded document metadata fields surfaced
@@ -1478,7 +1511,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       size: schema.contentSize,
       url: `/attachments/${schema.identifier}`,
       uploadedAt: schema.dateCreated,
-      uploadedBy: schema.author?.name || 'Unknown',
+      uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
       filePath: schema.storageLocation,
       description: schema.description
     })));
@@ -1504,7 +1537,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
           size: schema.contentSize,
           url: `/attachments/${schema.identifier}`,
           uploadedAt: schema.dateCreated,
-          uploadedBy: schema.author?.name || 'Unknown',
+          uploadedBy: schema.author?.name || UNKNOWN_UPLOADER,
           filePath: schema.storageLocation,
           description: schema.description
         };
@@ -1669,6 +1702,41 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       storageDirectory: this.storageDirectory,
       attachments: Array.from(this.attachmentMetadata.entries())
     });
+  }
+
+  /** Where the attachment files are, for their backup and staged restore (#1876). */
+  private filePlaces(): AttachmentFilePlaces {
+    if (!this.storageDirectory || !this.metadataFile) throw new Error('Provider not properly initialized');
+    return { pool: this.storageDirectory, metadataFile: this.metadataFile, pagesDirectory: this.pagesDirectory, layout: this.privateStoreLayout };
+  }
+
+  /** The files themselves, beside the backup document (#1876): the shared pool and every vault's, as stored. */
+  async backupFiles(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome> {
+    return backupAttachmentFiles(this.filePlaces(), directory, stem);
+  }
+
+  /**
+   * Stage the files and the shared metadata from a backup for the next start
+   * (#1876). The metadata is the document's; the live files and metadata are
+   * not touched.
+   */
+  async stageFilesRestore(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }> {
+    const entries = (providerBackup as Partial<BackupData>)?.attachments;
+    if (!Array.isArray(entries)) throw new Error('Invalid backup data for BasicAttachmentProvider: no attachment metadata; nothing was staged');
+    const json: MetadataFile = {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      'name': 'ngdpbase Attachments',
+      'description': 'Metadata for all attachments in the wiki',
+      'attachments': entries.map(([, metadata]) => metadata)
+    };
+    return stageAttachmentFiles(this.filePlaces(), directory, files, JSON.stringify(json, null, 2), siteRestore);
+  }
+
+  takeRestoreAtStart(): PartOutcome | null {
+    const outcome = this.restoreAtStart;
+    this.restoreAtStart = null;
+    return outcome;
   }
 
   /**
@@ -2023,6 +2091,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       dateCreated: schema.dateCreated,
       dateModified: schema.dateModified,
       author: schema.author?.name,
+      ...(schema.editor?.name ? { editor: schema.editor.name } : {}),
       description: schema.description,
       // #999: surfaces both upload-extracted and user-edited keywords.
       keywords: schema.documentKeywords ?? [],

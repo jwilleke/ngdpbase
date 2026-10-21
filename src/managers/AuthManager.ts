@@ -31,7 +31,8 @@
  */
 
 import BaseManager from './BaseManager.js';
-import type { BackupData } from './BaseManager.js';
+import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
+import { applyFilePartAtStart, backupFilePart, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
@@ -93,6 +94,7 @@ import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { accountBindingOf } from '../utils/sessionAccount.js';
 import { DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from '../utils/sessionLimits.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
@@ -686,6 +688,8 @@ class AuthManager extends BaseManager {
   private factorCache: Factor[] | null;
   /** The credentials store (#1524); null when it could not be opened. */
   private credentials: BaseCredentialsProvider | null = null;
+  /** `ngdpbase.auth.credentials.file`, resolved at start: what a backup copies (#1876). */
+  private credentialsFile: string | null = null;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -1262,6 +1266,10 @@ class AuthManager extends BaseManager {
     const key = process.env[CREDENTIALS_KEY_ENV] ?? '';
     const file = configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json');
     if (!file) return;
+    this.credentialsFile = file;
+    // #1876: a staged site restore puts the backed-up store in place before it is read.
+    const restored = applyFilePartAtStart('AuthManager', file, configManager);
+    if (restored?.refused) this.markDegraded(`A staged restore of the credentials store was not applied: ${restored.refused}`, 'ngdpbase.auth.credentials.file');
     if (!key) {
       this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
       return;
@@ -1504,7 +1512,9 @@ class AuthManager extends BaseManager {
    * Disable and delete both come through here, from UserManager, so nothing
    * an account holds is left reachable by one path and not the other.
    *
-   * - Both: every session of the account ends.
+   * - Both: every session of the account ends, destroyed in the live session
+   *   store (#1937); a session the store could not reach is still refused on
+   *   its next request (`checkSessionAccount`).
    * - Disable: its agent tokens, app grants and shares are suspended by the
    *   live owner-is-active checks that refuse them, and its credentials stay,
    *   so turning the account back on restores them.
@@ -1526,7 +1536,9 @@ class AuthManager extends BaseManager {
     const step = async (what: string, run: () => Promise<unknown>): Promise<void> => {
       try { await run(); } catch (err) { logger.error(`[AuthManager] closeAccess(${username}, ${mode}): ${what} failed:`, err); }
     };
-    await step('sessions', async () => this.engine.getManager<{ deleteUserSessions(u: string): Promise<void> }>('UserManager')?.deleteUserSessions(username));
+    // #1937: in the live session store, each ended through endSession with its reason.
+    const reason = mode === 'delete' ? 'account-deleted' : 'account-disabled';
+    await step('sessions', async () => this.engine.getManager<UserManager>('UserManager')?.deleteUserSessions(username, reason, { ipAddress: ctx.ipAddress }));
     if (mode !== 'delete') return;
 
     const by = ctx.username ?? 'system';
@@ -2589,12 +2601,15 @@ class AuthManager extends BaseManager {
   /**
    * Stamp the session with the account's password-change generation (#1482):
    * at every sign-in, and on the session that changed the password, so that
-   * one stays signed in while every other session of the account ends.
+   * one stays signed in while every other session of the account ends. Also
+   * binds the session to the account itself (`accountCreatedAt`, #1937).
    */
   async stampSessionGeneration(req: Request, username: string): Promise<void> {
     if (!req.session) return;
-    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number } | null | undefined;
+    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number; createdAt?: string } | null | undefined;
     req.session.sessionGeneration = sessionGenerationOf(account);
+    // #1937: and to this account, so a later account of the same name never inherits the session.
+    req.session.accountCreatedAt = accountBindingOf(account);
   }
 
   /**
@@ -2784,7 +2799,7 @@ class AuthManager extends BaseManager {
    * The link only opens the approval page; the button there approves, so a
    * mail scanner opening links approves nothing. Limited to one per minute.
    */
-  async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable'> {
+  async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable' | 'failed'> {
     const p = this.pendingSignIn(handle, binding);
     const mail = this.mailForLinks();
     const row = p ? (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email') : undefined;
@@ -2792,9 +2807,12 @@ class AuthManager extends BaseManager {
     if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) return 'too-soon';
     const token = randomBytes(32).toString('base64url');
     this.approvalTokens.set(token, { handle, expiresAt: p.expiresAt });
+    const previousSentAt = p.lastSentAt;
     p.lastSentAt = Date.now();
     const url = `${this.linkBase()}/login/approve?t=${token}`;
-    await mail.send({
+    // #1916: a send that fails is reported by EmailManager; here the person
+    // waiting is told, and nothing says a link is on its way.
+    const sent = await mail.send({
       to: row.subject,
       subject: 'Approve your sign-in',
       text: [
@@ -2810,7 +2828,12 @@ class AuthManager extends BaseManager {
         `<p><a href="${url}">See the details and approve or refuse it</a></p>`,
         '<p>It works once, for the next 10 minutes. If this was not you, refuse it and change your password.</p>'
       ].join('\n')
-    });
+    }).then(() => true, () => false);
+    if (!sent) {
+      this.approvalTokens.delete(token);
+      p.lastSentAt = previousSentAt;
+      return 'failed';
+    }
     return 'sent';
   }
 
@@ -3087,16 +3110,49 @@ class AuthManager extends BaseManager {
     return Array.from(this.providers.values());
   }
 
-  backup(): Promise<BackupData> {
-    return Promise.resolve({
-      managerName: 'AuthManager',
-      timestamp: new Date().toISOString(),
-      data: { providers: Array.from(this.providers.keys()) }
-    });
+  /**
+   * The provider list, and the credentials store (#1876): passkeys, TOTP,
+   * verified email and phone, devices, linked identities and proxy grants,
+   * as its own file beside the document, __always encrypted under
+   * `NGDPBASE_BACKUP_KEY`__ (`<stem>.credentials.tar.enc`). Without the key the
+   * store is left out and the backup is reported incomplete; it is never in a
+   * backup unencrypted. The rows stay signed with `NGDPBASE_CREDENTIALS_KEY`,
+   * which is not in the backup: a site restored under another credentials key
+   * holds them in quarantine (#1633).
+   */
+  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    const providers = Array.from(this.providers.keys());
+    const base = { managerName: 'AuthManager', timestamp: new Date().toISOString() };
+    if (!options?.directory) return { ...base, data: { providers, credentials: null } };
+    const part = await backupFilePart('AuthManager', 'credentials', this.credentialsFile, options, { requireKey: true, what: 'credentials store' });
+    return {
+      ...base,
+      data: { providers, credentials: part.data },
+      ...(part.note ? { note: part.note } : {}),
+      ...(part.warnings.length > 0 ? { warnings: part.warnings } : {})
+    };
   }
 
-  restore(_backupData: BackupData): Promise<void> {
-    return Promise.resolve();
+  /**
+   * Stage the credentials store from a backup for the next start, with the
+   * rest of a site restore (#1876). A backup that left it out (no backup key
+   * when it was taken) stages nothing: the store on the site stays, and the
+   * restore's notification names it as not restored.
+   */
+  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    const credentials = (backupData.data as { credentials?: DirectoryBackupData | null } | null)?.credentials ?? null;
+    if (!credentials) {
+      logger.warn('[AuthManager] The backup holds no credentials store (it was taken without NGDPBASE_BACKUP_KEY); the store on this site is kept (#1876)');
+      return;
+    }
+    if (!this.credentialsFile) throw new Error('This site has no credentials store configured (ngdpbase.auth.credentials.file); nothing was staged');
+    await stageFilePart('AuthManager', this.credentialsFile, credentials, options, { whenAbsent: JSON.stringify({ version: 1, rows: [] }) });
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876). */
+  override restoreIsStaged(): boolean {
+    return true;
   }
 }
 

@@ -19,6 +19,7 @@ import type { AddonDatabaseDeclaration } from '../../utils/addonDatabaseRules';
 import { manifestPath } from '../../providers/sqliteBackup';
 import { list as listTar } from 'tar';
 import { backupKeyFingerprint } from '../DatabaseManager';
+import { MaintenanceState } from '../../utils/maintenanceState';
 
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 const MARKER = 'PLAINTEXT-MARKER-1723';
@@ -55,9 +56,15 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
   const engineFor = (props: Record<string, unknown>, declarations: AddonDatabaseDeclaration[], extra: Record<string, unknown> = {}) => {
     const configManager = {
       getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
-      getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.backup.directory' ? backupDir : (props['ngdpbase.database.file'] as string | undefined) ?? def),
+      getResolvedDataPath: (key: string, def: string) => {
+        if (key === 'ngdpbase.backup.directory') return backupDir;
+        // #1876: the site restore record, in this test's own data folder.
+        if (key === 'ngdpbase.backup.restore-manifest') return path.join(dataDir, 'site-restore.json');
+        return (props['ngdpbase.database.file'] as string | undefined) ?? def;
+      },
       getAddonDatabaseDeclarations: () => declarations,
-      setProperty: async () => undefined
+      getInstanceDataFolder: () => dataDir,
+      setProperty: async (key: string, value: unknown) => { props[key] = value; }
     };
     const notificationManager = { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } };
     const auditManager = { logAuditEvent: async (e: Record<string, unknown>) => { if (auditFails) throw new Error('audit sink down'); audits.push(e); }, flushAuditQueue: async () => undefined };
@@ -65,6 +72,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     return {
       managers,
       getManager: (n: string) => managers[n] ?? null,
+      // #1892: an application database that cannot be opened blocks the site.
+      maintenance: new MaintenanceState(),
       getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager'].includes(n))
     };
   };
@@ -448,7 +457,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
 
     const readDocument = async (file: string): Promise<{ managers: Record<string, BackupData> }> => {
       const { gunzipSync } = await import('node:zlib');
-      return JSON.parse(gunzipSync(fs.readFileSync(file)).toString('utf8'));
+      const { decryptBuffer } = await import('../../utils/backupCrypto');
+      return JSON.parse(gunzipSync(await decryptBuffer(fs.readFileSync(file), process.env[BACKUP_KEY_ENV])).toString('utf8'));
     };
 
     test('a backup includes every database, as files beside the document that it references', async () => {
@@ -459,7 +469,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const document = await readDocument(file);
       const data = document.managers.DatabaseManager.data as DatabaseBackupData;
       expect(data.databases.map((d) => d.name).sort()).toEqual(['addon-accounting', 'application']);
-      const stem = path.basename(file).replace(/\.json\.gz$/, '');
+      const stem = path.basename(file).replace(/\.json\.gz\.enc$/, '');
       for (const d of data.databases) {
         expect(d.file.startsWith(`${stem}.`)).toBe(true);
         expect(fs.existsSync(path.join(path.dirname(file), d.file))).toBe(true);
@@ -473,10 +483,11 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
 
     test('retention prunes a backup\'s database files with its document', async () => {
       const { database, backups } = await site({ 'ngdpbase.backup.max-backups': 1 });
-      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
-      await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz' });
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
+      await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz.enc' });
       expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-01'))).toEqual([]);
-      expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-02')).length).toBe(2);
+      // The document, its database and the instance .env (#1876).
+      expect(fs.readdirSync(backupDir).filter((f) => f.startsWith('2026-01-02')).length).toBe(3);
       await backups.shutdown();
       await database.shutdown();
     });
@@ -486,7 +497,9 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const { database, backups } = await site();
       const file = await backups.createBackup(CTX);
       expect(fs.readdirSync(backupDir)).toEqual([path.basename(file)]);
-      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'A backup is incomplete', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY/) }));
+      // #1912: admins are told once, by the backup-key notice that names the databases, not by a notice per backup.
+      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'Backups are not encrypted', message: expect.stringMatching(/NGDPBASE_BACKUP_KEY .*the databases .*are left out/) }));
+      expect(notifications.filter((n) => n.title === 'A backup is incomplete')).toEqual([]);
       await backups.shutdown();
       await database.shutdown();
     });
@@ -495,18 +508,23 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const { database, backups } = await site();
       database.getHandle<Db>().exec('CREATE TABLE app_notes (body TEXT)');
       database.getHandle<Db>().prepare('INSERT INTO app_notes VALUES (?)').run('before');
-      const file = await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      const file = await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       database.getHandle<Db>().prepare('INSERT INTO app_notes VALUES (?)').run('after');
 
       const results = await backups.restoreFromFile(CTX, file);
       expect(results.success).toContain('DatabaseManager');
-      const documents = fs.readdirSync(backupDir).filter((f) => f.endsWith('.json.gz'));
+      const documents = fs.readdirSync(backupDir).filter((f) => f.endsWith('.json.gz.enc'));
       expect(documents.length).toBe(2);
       await backups.shutdown();
       await database.shutdown();
 
       const restarted = await site();
       expect(restarted.database.getHandle<Db>().prepare('SELECT body FROM app_notes').all()).toEqual([{ body: 'before' }]);
+      // #1876: once every manager has started, admins are told what this databases-only restore did not bring back.
+      await restarted.backups.reportRestoreAtBoot();
+      const critical = notifications.find((n) => n.title === 'Critical: a restore did not bring everything back');
+      expect(critical?.level).toBe('error');
+      expect(critical?.message).toMatch(/restore from 2026-01-01-ngdpbase-backup\.json\.gz\.enc .*was applied: the databases\. Not restored .*shares/);
       // The fresh backup holds what the restore replaced.
       const fresh = documents.find((f) => !f.startsWith('2026-01-01'));
       const freshData = (await readDocument(path.join(backupDir, fresh))).managers.DatabaseManager.data as DatabaseBackupData;
@@ -515,6 +533,64 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       copy.close();
       await restarted.backups.shutdown();
       await restarted.database.shutdown();
+    });
+
+    test('#1892 D2: a restore while the application database cannot be opened — the safety backup leaves the databases out and says so, and the damaged file is kept as *.pre-restore', async () => {
+      const other = { backup: vi.fn(async () => ({ managerName: 'Other', timestamp: '', data: 1 })), restore: vi.fn() };
+      const healthy = await site();
+      healthy.engine.managers.Other = other;
+      healthy.database.getHandle<Db>().exec('CREATE TABLE app_notes (body TEXT)');
+      healthy.database.getHandle<Db>().prepare('INSERT INTO app_notes VALUES (?)').run('good');
+      const good = await healthy.backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
+      await healthy.backups.shutdown();
+      await healthy.database.shutdown();
+
+      // Damaged while the server was down, with a WAL and shared-memory file of its own beside it.
+      const live = path.join(dataDir, 'ngdpbase.db');
+      fs.writeFileSync(live, Buffer.alloc(8192, 0x5a));
+      fs.writeFileSync(`${live}-wal`, 'the damaged file\'s wal');
+      fs.writeFileSync(`${live}-shm`, 'the damaged file\'s shm');
+
+      const broken = await site();
+      broken.engine.managers.Other = other;
+      expect(broken.database.getUnavailableReason()).toMatch(/could not be opened safely/);
+      const results = await broken.backups.restoreFromFile(CTX, good);
+      expect(results.success).toContain('DatabaseManager');
+      const staged = broken.database.getStagedRestore()!;
+      expect(staged.databases.map((d) => d.name)).toEqual(['application']);
+
+      // The safety backup is complete for everything else, and records what it left out.
+      const safety = await readDocument(path.join(backupDir, staged.safetyBackup));
+      expect(safety.managers.Other).toMatchObject({ data: 1 });
+      expect(safety.managers.DatabaseManager.data).toEqual({
+        format: 1, databases: [], absent: [], failed: [],
+        leftOut: { databases: ['application', 'addon-accounting'], reason: broken.database.getUnavailableReason() }
+      });
+      expect(safety.managers.DatabaseManager.note).toMatch(/left out of this safety backup/);
+      expect(notifications.find((n) => n.title === 'A backup is incomplete')).toBeUndefined();
+      expect(notifications.find((n) => n.title === 'A database restore is staged')?.message).toMatch(/safety backup leaves the databases out; the current database files are kept as \*\.pre-restore/);
+      const damaged = { db: fs.readFileSync(live), wal: fs.readFileSync(`${live}-wal`), shm: fs.readFileSync(`${live}-shm`) };
+      await broken.backups.shutdown();
+      await broken.database.shutdown();
+
+      // The restart applies it: the restored database opens, and the damaged file, its WAL and shm are kept.
+      const restarted = await site();
+      expect(restarted.database.getUnavailableReason()).toBeNull();
+      expect(restarted.database.getHandle<Db>().prepare('SELECT body FROM app_notes').all()).toEqual([{ body: 'good' }]);
+      expect(fs.readFileSync(`${live}.pre-restore`).equals(damaged.db)).toBe(true);
+      expect(fs.readFileSync(`${live}.pre-restore-wal`).equals(damaged.wal)).toBe(true);
+      expect(fs.readFileSync(`${live}.pre-restore-shm`).equals(damaged.shm)).toBe(true);
+      await restarted.backups.shutdown();
+      await restarted.database.shutdown();
+    });
+
+    test('#1892 D2: an ordinary backup while the application database cannot be opened is reported incomplete', async () => {
+      fs.writeFileSync(path.join(dataDir, 'ngdpbase.db'), Buffer.alloc(8192, 0x5a));
+      const { database, backups } = await site();
+      await backups.createBackup(CTX);
+      expect(notifications).toContainEqual(expect.objectContaining({ level: 'error', title: 'A backup is incomplete', message: expect.stringMatching(/application database is not available, so no database was backed up/) }));
+      await backups.shutdown();
+      await database.shutdown();
     });
 
     test('when the databases cannot be staged, nothing else is restored', async () => {
@@ -533,10 +609,10 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     test('stored backups list the databases beside each, and one downloads as a .tar holding them all (D2)', async () => {
       const { database, backups } = await site();
       database.openAddonDatabase('accounting', { migrations: [LEDGER], ledgerTable: 'accounting_schema_migrations' });
-      const file = await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      const file = await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       const stored = await backups.listStoredBackups();
       expect(stored).toHaveLength(1);
-      expect(stored[0]).toMatchObject({ filename: '2026-01-01-ngdpbase-backup.json.gz', databases: ['addon-accounting', 'application'] });
+      expect(stored[0]).toMatchObject({ filename: '2026-01-01-ngdpbase-backup.json.gz.enc', databases: ['addon-accounting', 'application'] });
       expect(stored[0].totalSize).toBeGreaterThan(stored[0].size);
 
       const { name, stream } = await backups.backupArchive(path.basename(file));
@@ -545,7 +621,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       await new Promise<void>((resolve, reject) => stream.pipe(fs.createWriteStream(out)).on('finish', resolve).on('error', reject));
       const entries: string[] = [];
       await listTar({ file: out, onReadEntry: (e) => { entries.push(e.path); } });
-      expect(entries.sort()).toEqual(['2026-01-01-ngdpbase-backup.addon-accounting.db', '2026-01-01-ngdpbase-backup.application.db', '2026-01-01-ngdpbase-backup.json.gz']);
+      expect(entries.sort()).toEqual(['2026-01-01-ngdpbase-backup.addon-accounting.db', '2026-01-01-ngdpbase-backup.application.db', '2026-01-01-ngdpbase-backup.env.tar.enc', '2026-01-01-ngdpbase-backup.json.gz.enc']);
       expect(fs.readFileSync(out).includes(process.env[BACKUP_KEY_ENV])).toBe(false);
       await expect(backups.backupArchive('../data/ngdpbase.db')).rejects.toThrow(/No backup named/);
       await backups.shutdown();
@@ -557,27 +633,27 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       const other = { backup: vi.fn(async () => ({ managerName: 'Other', timestamp: '', data: 1 })), restore: vi.fn() };
       engine.managers.Other = other;
       database.getHandle<Db>().exec('CREATE TABLE app_notes (body TEXT)');
-      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
-      await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz' });
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
+      await backups.createBackup(CTX, { filename: '2026-01-02-ngdpbase-backup.json.gz.enc' });
 
-      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz');
-      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore', user: 'admin', resource: '2026-01-01-ngdpbase-backup.json.gz' });
+      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz.enc');
+      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore', user: 'admin', resource: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       expect(await done).not.toBeNull();
       expect(other.restore).not.toHaveBeenCalled();
-      expect(database.getStagedRestore()).toMatchObject({ source: '2026-01-01-ngdpbase-backup.json.gz', stagedBy: 'admin' });
+      expect(database.getStagedRestore()).toMatchObject({ source: '2026-01-01-ngdpbase-backup.json.gz.enc', stagedBy: 'admin' });
       // D6: the safety backup it took first is named, and is one of the stored backups.
       const safety = database.getStagedRestore()!.safetyBackup!;
-      expect(safety).toMatch(/-ngdpbase-backup\.json\.gz$/);
+      expect(safety).toMatch(/-ngdpbase-backup\.json\.gz\.enc$/);
       expect(safety).not.toMatch(/^2026-01-0[12]/);
       expect((await backups.listStoredBackups()).map((b) => b.filename)).toContain(safety);
       expect(notifications.find((n) => n.title === 'A database restore is staged')?.message).toContain(`backed up first, as ${safety}`);
       expect(backups.isRestoreRunning()).toBe(false);
 
-      await expect(backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz')).rejects.toThrow(/already staged; cancel it or replace it/);
-      const replaced = await backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz', { replace: true });
-      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore-replace', metadata: { replaces: '2026-01-01-ngdpbase-backup.json.gz' } });
+      await expect(backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz.enc')).rejects.toThrow(/already staged; cancel it or replace it/);
+      const replaced = await backups.startRestore(CTX, '2026-01-02-ngdpbase-backup.json.gz.enc', { replace: true });
+      expect(audits.at(-1)).toMatchObject({ eventType: 'backup-restore-replace', metadata: { replaces: '2026-01-01-ngdpbase-backup.json.gz.enc' } });
       await replaced.done;
-      expect(database.getStagedRestore()?.source).toBe('2026-01-02-ngdpbase-backup.json.gz');
+      expect(database.getStagedRestore()?.source).toBe('2026-01-02-ngdpbase-backup.json.gz.enc');
       await expect(backups.startRestore(CTX, '../../etc/passwd')).rejects.toThrow(/No backup named/);
       await backups.shutdown();
       await database.shutdown();
@@ -585,10 +661,10 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
 
     test('a restore that cannot be recorded does not start: no fresh backup, nothing staged (D1)', async () => {
       const { database, backups } = await site();
-      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       auditFails = true;
-      await expect(backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz')).rejects.toThrow(/audit sink down/);
-      expect(fs.readdirSync(backupDir).filter((f) => f.endsWith('.json.gz'))).toEqual(['2026-01-01-ngdpbase-backup.json.gz']);
+      await expect(backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz.enc')).rejects.toThrow(/audit sink down/);
+      expect(fs.readdirSync(backupDir).filter((f) => f.endsWith('.json.gz.enc'))).toEqual(['2026-01-01-ngdpbase-backup.json.gz.enc']);
       expect(database.getStagedRestore()).toBeNull();
       await backups.shutdown();
       await database.shutdown();
@@ -596,11 +672,11 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
 
     test('a restore that fails while staging tells the admins and changes nothing (D1)', async () => {
       const { database, backups } = await site();
-      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz' });
+      await backups.createBackup(CTX, { filename: '2026-01-01-ngdpbase-backup.json.gz.enc' });
       process.env[BACKUP_KEY_ENV] = 'another-key';
-      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz');
+      const { done } = await backups.startRestore(CTX, '2026-01-01-ngdpbase-backup.json.gz.enc');
       expect(await done).toBeNull();
-      expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'Restore of 2026-01-01-ngdpbase-backup.json.gz was not staged', message: expect.stringMatching(/different backup key/) });
+      expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'Restore of 2026-01-01-ngdpbase-backup.json.gz.enc was not staged', message: expect.stringMatching(/different backup key/) });
       expect(database.getStagedRestore()).toBeNull();
       await backups.shutdown();
       await database.shutdown();

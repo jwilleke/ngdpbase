@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-05-14'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -491,6 +491,7 @@ audited.
 | `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
 | `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
 | `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
+| `contact-manage` | Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values | continue | yes |
 | `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
 | `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
 | `vault-repair` | A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system | refuse | yes |
@@ -529,6 +530,7 @@ audited.
 | `backup-restore` | A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) | refuse | yes |
 | `backup-restore-replace` | A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723) | refuse | yes |
 | `backup-restore-cancel` | A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) | refuse | yes |
+| `backup-restore-applied` | A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876) | continue | yes |
 | `addon-install` | An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830) | refuse | yes |
 | `addon-update` | An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet) | refuse | no |
 | `addon-verify-failed` | An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830) | continue | yes |
@@ -1224,6 +1226,10 @@ __Recommendations:__
 
 - Enterprise: millions of events/day
 - Requires proper database tuning and indexing
+
+## Backup and restore
+
+With `fileauditprovider` the audit log is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `AuditManager.backup()` asks the provider's `backupFiles()`, which flushes the queue and writes the live log and every archive as `<stem>.audit.tar` (`.tar.enc` under the backup key) — the audit files only, never the application logs in the same folder. A provider that keeps no files (database, cloud) is not in the file backup. A restore is staged (`restoreIsStaged()` is true): `stageRestore()` refuses an archive holding anything but audit files and extracts it to `audit.log.staged/`. At the next start, before the chain head is read, every audit file now in the folder (newer archives included) moves into `audit.log.pre-restore/` and the backup's take their place. The chain then resumes from the backup's last record and verifies; the records written after the backup verify in the pre-restore folder; a chain-head witness holds heads past the restored log, which that folder answers. See the [backup and restore guide](../guides/backup-restore-guide.md#what-each-staged-part-does-at-the-restart).
 
 ## Security Considerations
 

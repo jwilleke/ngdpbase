@@ -39,3 +39,10 @@ export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager } from '../../src/managers/ExportManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';
+
+// Contacts (#1930): the person and organization doors, their records, and their refusal.
+export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';
+export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';
+export type { Person, PersonAffiliation, PersonInput, PersonUpdate } from '../../src/types/Person.js';
+export type { Organization, OrganizationInput, OrganizationUpdate } from '../../src/types/Organization.js';
+export type { ContactRefusedError } from '../../src/utils/contactAccess.js';

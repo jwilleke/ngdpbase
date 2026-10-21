@@ -1,10 +1,30 @@
 <!DOCTYPE html>
+<%#
+  #1432: one gate closes the instance for several reasons, and this page
+  is all of them. The heading used to read "We are currently performing
+  maintenance" whatever the reason, so a holiday closure announced
+  itself as maintenance. `reason` says which one; `message` is always
+  the operator's own wording for that reason.
+  #1906: the title and heading name the site (`siteName`, from
+  ngdpbase.application-name), never a hardcoded product name.
+%>
+<%
+  const closureReason = (typeof reason !== 'undefined' && reason) ? reason : 'maintenance';
+  const siteLabel = (typeof siteName === 'string' && siteName.trim() !== '') ? siteName : '';
+  const closureHeadings = {
+    maintenance: 'We are currently performing maintenance',
+    schedule: 'The site is closed right now',
+    holiday: 'The site is closed for a holiday',
+    misconfigured: 'The site is temporarily unavailable',
+    starting: 'The site is starting up'
+  };
+%>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="10">
-  <title>System Maintenance - ngdpbase</title>
+  <title><%= closureHeadings[closureReason] || closureHeadings.maintenance %><%= siteLabel ? ' - ' + siteLabel : '' %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
@@ -46,7 +66,7 @@
     <div class="maintenance-container">
       <div class="maintenance-header">
         <div class="maintenance-icon">🔧</div>
-        <h1 class="h3 mb-0">System Maintenance</h1>
+        <h1 class="h3 mb-0"><%= siteLabel || 'System Maintenance' %></h1>
         <p class="mb-0 opacity-75">We'll be back soon!</p>
       </div>
 
@@ -63,23 +83,6 @@
           <% }); %>
         <% } %>
 
-        <%#
-          #1432: one gate closes the instance for several reasons, and this page
-          is all of them. The heading used to read "We are currently performing
-          maintenance" whatever the reason, so a holiday closure announced
-          itself as maintenance. `reason` says which one; `message` is always
-          the operator's own wording for that reason.
-        %>
-        <%
-          const closureReason = (typeof reason !== 'undefined' && reason) ? reason : 'maintenance';
-          const closureHeadings = {
-            maintenance: 'We are currently performing maintenance',
-            schedule: 'The site is closed right now',
-            holiday: 'The site is closed for a holiday',
-            misconfigured: 'The site is temporarily unavailable',
-            starting: 'The site is starting up'
-          };
-        %>
         <div class="alert alert-warning border-0" data-closure-reason="<%= closureReason %>">
           <h5 class="alert-heading mb-3"><%= closureHeadings[closureReason] || closureHeadings.maintenance %></h5>
           <p class="mb-3"><%= message %></p>

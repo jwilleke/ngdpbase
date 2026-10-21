@@ -1,4 +1,5 @@
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -43,6 +44,8 @@ class RoleManager extends BaseManager {
 
   private provider: RoleProvider | null = null;
   private providerClass?: string;
+  /** `ngdpbase.application.roles.storagedir`, resolved at start: what a backup copies (#1876). */
+  private storageDir: string | null = null;
 
   // #620: in-memory caches for the two read paths UserManager hits per
   // request (resolveUserRoles → listByMember; the role-mirror writes use
@@ -71,6 +74,10 @@ class RoleManager extends BaseManager {
       'ngdpbase.application.roles.storagedir',
       './data/roles'
     );
+    this.storageDir = storageDir;
+    // #1876: a staged site restore goes in before the records are read.
+    const restored = applyDirectoryPartAtStart('RoleManager', storageDir, configManager);
+    if (restored?.refused) this.markDegraded(`A staged restore of role membership was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.roles.storagedir',
       storageDir
@@ -140,6 +147,25 @@ class RoleManager extends BaseManager {
       this.invalidateCache();
       logger.info(`🔑 RoleManager: removed the stale catalogue copy from ${cleaned} role record(s) (#1431)`);
     }
+  }
+
+  /**
+   * Role membership is in the backup (#1876): the role records folder, as
+   * `<stem>.roles.tar` beside the document. Without it restored users would
+   * have no roles.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('RoleManager', 'roles', this.storageDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('RoleManager', this.storageDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /** Provider accessor, mainly for tests. */
@@ -360,6 +386,22 @@ class RoleManager extends BaseManager {
     await this.getOrCreateRoleRecord(installOrg, roleName);
     logger.info(`🔑 Gave '${roleName}' to ${usernames.length} existing account(s), once (#1539)`);
     return usernames.length;
+  }
+
+  /**
+   * Move every membership held by one Person `@id` to another (#1930): when
+   * PersonManager joins an account to an existing person, the roles the
+   * account's person held go with the account. One write per role record;
+   * returns how many records changed. PersonManager's join records the change.
+   */
+  async moveMemberships(fromPersonId: string, toPersonId: string): Promise<number> {
+    const held = await this.listByMember(fromPersonId);
+    for (const role of held) {
+      const members = (role.member ?? []).filter((m) => m['@id'] !== fromPersonId);
+      if (!members.some((m) => m['@id'] === toPersonId)) members.push({ '@id': toPersonId });
+      await this.update(role['@id'], { member: members });
+    }
+    return held.length;
   }
 
   /** Remove a deleted account's Person from every role it held. */

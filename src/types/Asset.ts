@@ -9,6 +9,15 @@
 import type { ActorContext } from '../context/ActorContext.js';
 
 /**
+ * What an attachment record says when it was stored with no uploader, in the
+ * pool's `author.name`, and what `uploadedBy` shows for a record with none.
+ * Only records written before #1926 carry it: a new upload names its
+ * uploader's username or is refused. Not a user; the files layer reads it as
+ * "no owner" (#1852).
+ */
+export const UNKNOWN_UPLOADER = 'Unknown';
+
+/**
  * Capabilities that an AssetProvider may declare.
  * Used to advertise which optional operations the provider supports.
  */
@@ -224,6 +233,8 @@ export interface AssetRecord {
   author?: string;
   /** ISO 8601 timestamp of the last metadata or file modification — schema.org/dateModified */
   dateModified?: string;
+  /** Username of whoever last changed it, when the provider records one — schema.org/editor */
+  editor?: string;
 
   // --- Rights & Usage ---
   /** Licensing and rights information */

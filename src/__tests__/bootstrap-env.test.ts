@@ -108,4 +108,47 @@ describe('bootstrap-env', () => {
     await expect(loadBootstrap()).resolves.toBeUndefined();
     expect(process.env[KEY]).toBeUndefined();
   });
+
+  describe('the backup key and a restored .env (#1876)', () => {
+    const saved = { backup: process.env.NGDPBASE_BACKUP_KEY };
+    beforeEach(() => { delete process.env.NGDPBASE_BACKUP_KEY; });
+    afterEach(() => {
+      if (saved.backup === undefined) delete process.env.NGDPBASE_BACKUP_KEY; else process.env.NGDPBASE_BACKUP_KEY = saved.backup;
+    });
+
+    test('a site with no backup key gets one at first start, written to <FAST_STORAGE>/.env, and keeps it', async () => {
+      process.env.FAST_STORAGE = path.join(tmpRoot, 'data');
+      await loadBootstrap();
+      const made = process.env.NGDPBASE_BACKUP_KEY;
+      expect(made).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
+      const file = fs.readFileSync(path.join(tmpRoot, 'data', '.env'), 'utf8');
+      expect(file).toContain(`NGDPBASE_BACKUP_KEY=${made}`);
+      expect(file).toMatch(/SAVE A COPY OFF THIS SERVER/);
+      delete process.env.NGDPBASE_BACKUP_KEY;
+      await loadBootstrap();
+      expect(process.env.NGDPBASE_BACKUP_KEY).toBe(made);
+    });
+
+    test('a staged .env goes in before it is loaded: its values replace the old file\'s, never an ambient one, and the live backup key stays', async () => {
+      const data = path.join(tmpRoot, 'data');
+      process.env.FAST_STORAGE = data;
+      process.env[KEY] = 'from-ambient';
+      fs.writeFileSync(path.join(data, '.env'), `NGDPBASE_BOOTSTRAP_RESTORED=live\n${KEY}=from-file\nNGDPBASE_BACKUP_KEY=live-backup-key\n`);
+      fs.writeFileSync(path.join(data, '.env.staged'), `NGDPBASE_BOOTSTRAP_RESTORED=from-backup\n${KEY}=from-backup\n`);
+      const { beginSiteRestore, recordStagedPart, commitSiteRestore } = await import('../utils/siteRestore');
+      const site = path.join(data, 'site-restore.json');
+      beginSiteRestore(site, { stagedAt: '', backup: '', source: 'b1', stagedBy: 'admin' });
+      recordStagedPart(site, { manager: 'BackupManager', swaps: [{ live: path.join(data, '.env'), staged: path.join(data, '.env.staged') }] });
+      commitSiteRestore(site);
+      try {
+        await loadBootstrap();
+        expect(process.env.NGDPBASE_BOOTSTRAP_RESTORED).toBe('from-backup');
+        expect(process.env[KEY]).toBe('from-ambient');
+        expect(process.env.NGDPBASE_BACKUP_KEY).toBe('live-backup-key');
+        expect(fs.readFileSync(path.join(data, '.env.pre-restore'), 'utf8')).toContain('NGDPBASE_BOOTSTRAP_RESTORED=live');
+      } finally {
+        delete process.env.NGDPBASE_BOOTSTRAP_RESTORED;
+      }
+    });
+  });
 });

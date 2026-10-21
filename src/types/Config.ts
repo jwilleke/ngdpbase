@@ -140,6 +140,12 @@ export interface WikiConfig {
   'ngdpbase.mail.rate-limit.enabled': boolean;
 
   /**
+   * Outbound email failures: one administrator notice per this many minutes,
+   * counting every failure inside it (#1916). Default: 60.
+   */
+  'ngdpbase.mail.failure-notice.window-minutes': number;
+
+  /**
    * Anti-spam: max submissions per IP per `window-minutes` window before
    * the 429 trips (#670 Phase E). Default: 5.
    */
@@ -403,6 +409,15 @@ export interface ApplicationOrganizationConfig {
 
   /** Active Person provider class (lowercased; falls back to .default) */
   'ngdpbase.application.persons.provider': string;
+
+  /** #1930: the most results `PersonManager.search` returns when the caller gives no limit */
+  'ngdpbase.application.persons.search.limit': number;
+
+  /** #1930: minutes the emailed "Is this you?" sign-up link stays usable */
+  'ngdpbase.application.persons.link-offer.ttl-minutes': number;
+
+  /** #1930: the most results `OrganizationManager.search` returns when the caller gives no limit */
+  'ngdpbase.application.organization.search.limit': number;
 
   /** Storage directory for OrganizationRole JSON files (one per (org, namedPosition) pair) */
   'ngdpbase.application.roles.storagedir': string;

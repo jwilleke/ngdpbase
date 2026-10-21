@@ -19,6 +19,9 @@ describe('Identity manager caches (#620 Option B)', () => {
   const ORG_ID = 'https://example.com/';
   const PERSON_A = 'urn:uuid:11111111-1111-1111-1111-111111111111';
   const PERSON_B = 'urn:uuid:22222222-2222-2222-2222-222222222222';
+  // #1930: the person and organization doors take a context and ask the PDP.
+  const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
+  const PERMIT_ALL = { decide: vi.fn(async () => ({ permit: true, applicable: true, reason: 'test' })) };
 
   const makeConfig = (overrides: Record<string, unknown> = {}) => ({
     getProperty: vi.fn((key: string, defaultValue: unknown) => {
@@ -231,7 +234,7 @@ describe('Identity manager caches (#620 Option B)', () => {
         'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
       });
       const engine = {
-        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : null)
+        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null)
       };
       const manager = new PersonManager(engine);
       await manager.initialize();
@@ -264,7 +267,7 @@ describe('Identity manager caches (#620 Option B)', () => {
 
       await manager.getByIdentifier('alice');
       await manager.getById(mockPerson('alice')['@id']);
-      await manager.create(mockPerson('bob'));
+      await manager.create(CTX, { name: 'Bob' });
       await manager.getByIdentifier('alice');
       await manager.getById(mockPerson('alice')['@id']);
 
@@ -277,7 +280,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const { manager, provider } = await makeManager([alice]);
 
       await manager.getByIdentifier('alice');
-      await manager.update(alice['@id'], { name: 'Alice Smith' });
+      await manager.update(CTX, alice['@id'], { name: 'Alice Smith' });
       await manager.getByIdentifier('alice');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(2);
@@ -288,7 +291,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const { manager, provider } = await makeManager([alice]);
 
       await manager.getByIdentifier('alice');
-      await manager.delete(alice['@id']);
+      await manager.delete(CTX, alice['@id']);
       const after = await manager.getByIdentifier('alice');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(2);
@@ -345,7 +348,7 @@ describe('Identity manager caches (#620 Option B)', () => {
         'ngdpbase.application.organization.file': anchorFile
       });
       const engine = {
-        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : null)
+        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null)
       };
       const manager = new OrganizationManager(engine);
       await manager.initialize();
@@ -383,7 +386,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       await manager.getInstallOrg();
       await manager.getByFile('anchor.json');
       await manager.getById(ORG_ID);
-      await manager.create(mockOrg('urn:other', 'Other'));
+      await manager.create(CTX, mockOrg('urn:other', 'Other'));
       await manager.getInstallOrg();
       await manager.getByFile('anchor.json');
       await manager.getById(ORG_ID);
@@ -397,7 +400,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const { manager, provider } = await makeManager([anchor], { 'anchor.json': anchor }, 'anchor.json');
 
       await manager.getInstallOrg();
-      await manager.update(ORG_ID, { name: 'Renamed' });
+      await manager.update(CTX, ORG_ID, { name: 'Renamed' });
       await manager.getInstallOrg();
 
       expect(provider.getByFile).toHaveBeenCalledTimes(2);
@@ -408,7 +411,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const { manager, provider } = await makeManager([anchor], { 'anchor.json': anchor }, 'anchor.json');
 
       await manager.getById(ORG_ID);
-      await manager.delete(ORG_ID);
+      await manager.delete(CTX, ORG_ID);
       await manager.getById(ORG_ID);
 
       expect(provider.getById).toHaveBeenCalledTimes(2);
@@ -620,7 +623,7 @@ describe('Identity manager caches (#620 Option B)', () => {
         'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
       });
       const engine = {
-        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : null)
+        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null)
       };
       const manager = new PersonManager(engine);
       await manager.initialize();

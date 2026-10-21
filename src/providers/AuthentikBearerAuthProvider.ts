@@ -31,6 +31,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyResult, t
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemPrincipalOf } from '../context/bootActions.js';
 import logger from '../utils/logger.js';
+import { emailDomain } from '../utils/emailForLog.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
 import type {
@@ -175,7 +176,7 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
         isExternal: true,
         isActive: true
       }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by authentik-bearer')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
-      logger.info(`[AuthentikBearerAuthProvider] JIT-provisioned user: ${username} (${email}) with roles=[${roles.join(', ')}]`);
+      logger.info(`[AuthentikBearerAuthProvider] JIT-provisioned user: ${username} (an address at ${emailDomain(email)}) with roles=[${roles.join(', ')}]`);
       return { username: created.username }; // #1882: the account as stored
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-09-22'
+dateModified: '2026-10-20'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -25,7 +25,7 @@ AttachmentManager handles file attachments for wiki pages. Following JSPWiki's p
 - __Content Deduplication__ - SHA-256 hash-based storage prevents duplicates
 - __Page Mentions Tracking__ - Track which pages reference attachments
 - __Permission Enforcement__ - Integration with authenticated user context
-- __Backup/Restore Support__ - Full backup via BackupManager
+- __Backup/Restore Support__ - The files and their metadata are in every backup; a restore is staged with the rest of the site (#1876, [below](#backup-and-restore))
 
 ## Quick Example
 
@@ -36,7 +36,8 @@ const attachmentManager = engine.getManager('AttachmentManager');
 const attachment = await attachmentManager.uploadAttachment(
   fileBuffer,
   { originalName: 'doc.pdf', mimeType: 'application/pdf', size: 1024 },
-  { pageName: 'ProjectDocs', context: wikiContext }
+  wikiContext.userContext, // who is uploading: mandatory, positional
+  { pageName: 'ProjectDocs' }
 );
 
 // Get attachment
@@ -53,7 +54,7 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `uploadAttachment(buffer, fileInfo, options)` | `Promise<Object>` | Upload new attachment |
+| `uploadAttachment(buffer, fileInfo, ctx, options)` | `Promise<Object>` | Upload new attachment, recorded under `ctx`'s username ([below](#who-uploaded-it-1926)) |
 | `getAttachment(id)` | `Promise<{buffer, metadata}>` | Get attachment data and metadata |
 | `getAttachmentMetadata(id)` | `Promise<Object>` | Get metadata only |
 | `getAttachmentsForPage(pageName)` | `Promise<Array>` | List page attachments |
@@ -68,6 +69,12 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | `resolveAttachmentSrc(src, pageName, ctx)` | `Promise<{url, mimeType}\|null>` | Canonical src resolution used by Image/ATTACH plugins; the viewer's context reaches their own sealed files |
 | `getSealedAttachment(id, ctx)` | `Promise<{buffer, metadata}\|null>` | A file from the requester's own unlocked encrypted stores, decrypted (#1400) |
 | `getSealedAttachmentsForPage(pageName, ctx)` | `Promise<Array>` | The requester's own sealed files uploaded onto a page (#1400) |
+
+## Who uploaded it (#1926)
+
+An upload's author and editor are the uploader's __username__, read from the context passed to `uploadAttachment`. The provider is handed `{ username }` (the `User` type in `BaseAttachmentProvider`); an email is never recorded as the uploader, and nothing is recorded as `Unknown`.
+
+No one uploads anonymously. After policy allows the upload and before anything is written, a context with no username, or the anonymous subject's (`Anonymous`, which a share visitor carries too), is refused with `Permission denied: you must be signed in to upload a file`; the upload route answers it 401. `BasicAttachmentProvider.storeAttachment` also refuses a call that names no username. A vault upload by nobody is refused earlier, by the vault's container rule. Records written before #1926 keep what they have.
 
 ## Attachment Resolution Order
 
@@ -103,6 +110,16 @@ A file uploaded into an __encrypted__ private store never enters the global `att
 
 See the wiki page [Attachments](/wiki/Attachments) for end-user documentation.
 
+## Backup and restore
+
+The files are in every backup, beside the document, never in it ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876); `src/providers/attachmentFilesBackup.ts`):
+
+- `<stem>.attachments.tar` — the shared pool folder, without `.thumbs` (made again on demand) and without the metadata file; the metadata is in the document (`providerBackup`).
+- `<stem>.vault-attachments.tar` — each vault's `attachments/` folder and `files-index.json`, the bytes as stored: a sealed vault's files stay sealed, nothing is decrypted. PageManager's backup of the vaults leaves these out.
+- Both are streamed, file by file. `backup()` throws outside BackupManager, and for a provider without `backupFiles`.
+
+`restore()` is staged (`restoreIsStaged()`), as part of a site restore only: the pool is extracted to `<pool>.staged` with the metadata file written from the document, and each vault's files to `attachments.staged` and `files-index.json.staged` beside the live ones. A vault that must be sealed on this site whose files in the backup aren't all sealed bytes refuses the whole staging (#1836). A vault the site no longer has is not staged, and admins are told. A backup from another provider, or one taken before #1876, refuses. At the next start, before the metadata is read, the provider swaps the staged paths in when the whole site restore goes in, and only paths that are its own. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
+
 ## Configuration
 
 ```json
@@ -130,6 +147,7 @@ See the wiki page [Attachments](/wiki/Attachments) for end-user documentation.
 - [PolicyManager](PolicyManager.md) - Access control policies
 - [BackupManager](BackupManager.md) - Backup/restore operations
 - [ConfigurationManager](ConfigurationManager.md) - Configuration settings
+- [FileManager](FileManager.md) - The files door (#1852): reads today's attachments as file records through `sharedPoolAssetRecords`, `readableVaultAssetRecords` and, for the operator dry run, `vaultFileInventory`; the provider opens `{ readOnly: true }` for it
 
 ## Developer Documentation
 

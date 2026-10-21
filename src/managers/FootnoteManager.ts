@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -57,6 +58,9 @@ export default class FootnoteManager extends BaseManager {
         'ngdpbase.footnotes.storagedir',
         './data/footnotes'
       );
+      // #1876: a staged site restore goes in before anything is read.
+      const restored = applyDirectoryPartAtStart('FootnoteManager', this.storageDir, configManager);
+      if (restored?.refused) this.markDegraded(`A staged restore of the public pages' footnotes was not applied: ${restored.refused}`);
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(
@@ -72,6 +76,25 @@ export default class FootnoteManager extends BaseManager {
       await this.outsideCheck.run({ notify: true });
       logger.debug('FootnoteManager initialized');
     }
+  }
+
+  /**
+   * The public folder is in the backup (#1876), as `<stem>.footnotes.tar` beside
+   * the document: the public pages' footnotes. A vault page's are in its vault, which
+   * PageManager backs up with the vault, sealed as stored.
+   */
+  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+    return backupDirectoryPart('FootnoteManager', 'footnotes', this.storageDir, options);
+  }
+
+  /** Staged for the next start with the rest of a site restore (#1876); the live folder is untouched. */
+  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
+    await super.restore(backupData);
+    await stageDirectoryPart('FootnoteManager', this.storageDir, backupData, options);
+  }
+
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   isEnabled(): boolean {

@@ -1,7 +1,7 @@
 ---
 name: BackupManager
-description: "System-wide backup and restore — pages, attachments, config, search indices"
-dateModified: '2026-10-18'
+description: "Writes a site backup from every manager's backup(), keeps and prunes them, and stages restores — the databases from Admin → Backup, and the staged site restore"
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/BackupManager.ts
 ---
@@ -10,203 +10,66 @@ code: src/managers/BackupManager.ts
 
 __Module:__ `src/managers/BackupManager.ts`
 __Extends:__ [BaseManager](BaseManager.md)
-__Complete Guide:__ [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md)
+__Guide:__ [Backup and restore guide](../guides/backup-restore-guide.md) — the one source for what a backup holds, what restores, and the gaps. This page is the API.
 
----
+## What it does
 
-## Overview
+BackupManager asks every registered manager for its `backup()`, writes the answers as one gzipped JSON document — encrypted under `NGDPBASE_BACKUP_KEY` when it is set (#1561) — and keeps the files the managers write beside it with it. It does not know what any manager's data is: each owner backs up and restores its own (Manager-SOT).
 
-BackupManager coordinates backup and restore operations across all registered managers in ngdpbase. It provides centralized system-wide backups with compression, retention policies, and automatic cleanup.
+## Backup
 
-## Key Features
+`createBackup(ctx, options)` returns the document's path.
 
-- __Auto-Discovery__ - Automatically backs up all registered managers
-- __Compression__ - Gzip compression for efficient storage
-- __Retention Policy__ - Configurable maximum backup count
-- __Atomic Backups__ - Full-system backups in single operation
-- __Restore Coordination__ - Coordinated restore across all managers
-- __Error Resilience__ - One manager failure doesn't stop backup
-- __Statistics Tracking__ - Backup sizes, compression ratios, timing
+- `ctx` is mandatory: the request's subject, or the schedule's job context. A successful backup records `backup-create`.
+- With `NGDPBASE_BACKUP_KEY` set the document is `<timestamp>-ngdpbase-backup.json.gz.enc`, gzipped then encrypted (`src/utils/backupCrypto.ts`); without it `.json.gz`, in the clear. While the key is missing BackupManager is degraded (`BACKUP_KEY_MISSING`, the dashboard banner), checked at start and at each backup, and cleared once the key is set; admins get one notification, "Backups are not encrypted", the first time only — deduplicated by its title among the stored notifications, which persist across restarts and keep a dismissed one (as `pageMetadataMissing` does) (operator, #1912).
+- Each manager's `backup(options)` gets `{ ctx, directory, stem }` (`ManagerBackupOptions`): who asked, the backup directory, and the document's filename without `.json.gz` / `.json.gz.enc`. A manager whose data is too large or not JSON writes its own files into `directory`, named `<stem>.<name>.db` (a database, `DatabaseManager`, #1723) or `<stem>.<part>.tar` / `.tar.enc` (a folder of files, #1876, encrypted under the backup key when it is set), and names them in its entry. They are listed, downloaded and pruned with the document (`isCompanionOf`); a backup whose document is never written removes the files it made.
+- A manager that throws gets `{ error, timestamp }` in its slot; one that missed a part lists it in `warnings`. The backup is still written, and admins get "A backup is incomplete" naming each part. A part left out only because there is no backup key (its message starts `LEFT_OUT_FOR_NO_KEY`, `src/utils/backupKey.ts`: the credentials store, the databases) is not named there and alone sends no notice: the banner and the one-time notification, which names what is left out, cover it (operator, #1912). Any other failure still notifies at every backup. A restore's safety backup (`requireComplete`) still refuses either kind.
+- BackupManager's own part: the instance `.env` without the `NGDPBASE_BACKUP_KEY` line, `<stem>.env.tar.enc`, only ever encrypted (`backupInstanceEnv`, `src/utils/instanceEnvBackup.ts`). A site restore stages it as `.env.staged`; `bootstrap-env.ts` applies it before the file is loaded, keeping the live backup and database key lines.
+- The backup key (#1876, "one thing to save"): `backupKeyInfo()` (set, fingerprint, saved — never the key), `revealBackupKey()` (only for `GET /admin/backup/key`, behind `config-manage` and its fresh sign-in), `confirmBackupKeySaved(ctx, fingerprint)` (records `ngdpbase.backup.key-saved-fingerprint`). Until an admin confirms, BackupManager is degraded with "Save the backup key off this server …" and the fingerprint: the dashboard banner. A different key asks again.
+- Options: `filename`, `compress` (default true), `skipCleanup`, `requireComplete` (throw after notifying when any part failed), `safetyBackup` (this is a restore's backup of the live data, #1892).
+- Retention: after each backup the oldest beyond `ngdpbase.backup.max-backups` are removed with their files (`cleanupOldBackups`).
+- Automatic backups are the scheduled job `backup.auto` (#1720): `ngdpbase.backup.auto-backup`, `-time` (`HH:MM`, server time zone) and `-days`.
 
-## Quick Example
+## Stored backups
 
-```javascript
-const backupManager = engine.getManager('BackupManager');
+- `listBackups()` — the documents, newest first.
+- `listStoredBackups()` / `findStoredBackup(filename)` — each with `databases` (its `.db` files by name), `parts` (its `.tar` / `.tar.enc` files by part), `files` (every file beside it), `encrypted` (the document is) and `totalSize`. A filename is only ever matched against this list, never used as a path.
+- `backupArchive(filename)` — one backup as a streamed `.tar` of the document and every file beside it, read as the stream is consumed.
 
-// Create full system backup
-const backupPath = await backupManager.backup();
-console.log('Backup created:', backupPath);
-// Output: /path/to/backups/backup-2025-12-21-120530.gz
+## Restore
 
-// List available backups
-const backups = await backupManager.listBackups();
-console.log('Available backups:', backups);
+`restoreFromFile(ctx, backupPath, options)` reads the document — an encrypted one only under the backup key it was made with, refused by its fingerprint otherwise — validates it, then:
 
-// Restore from latest backup
-const latest = await backupManager.getLatestBackup();
-await backupManager.restore(latest.path);
+- __Databases only__ (`managerFilter: ['DatabaseManager']`, what Admin → Backup does through `startRestore`): a complete backup of the live data, then `DatabaseManager` stages the databases for the next start ([DatabaseManager.md](DatabaseManager.md#backup-and-restore)).
+- __A site restore__ (no filter, or a filter naming any other manager whose `restoreIsStaged()` is true): every such manager in the backup stages its part under one site restore manifest, `ngdpbase.backup.restore-manifest`, all or nothing, after a complete backup of the live data, and the next start applies every part or none. Refused when a site or database restore is already staged (unless `replaceStaged`), or when a staged part's backup slot is an error. Details in the [guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876).
+- In a site restore the managers without a staged restore are __not__ restored: they are listed in `skipped` and named in the notification below. While a site restore is staged, a call that would restore any manager live is refused.
+- Otherwise (a `managerFilter` naming managers without a staged restore, and no site restore staged) each is restored __live__ by its own `restore()`, a failure listed in `failed`, not rolled back. Nothing calls `restoreFromFile` that way today.
+- Either restore writes BackupManager's report beside the manifest (`<manifest>.report.json`): the backup's parts that were not staged, and the job runs since the backup from `BackgroundJobManager.runsSince`, read now, before the restore replaces the job state.
 
-// Cleanup old backups (keeps maxBackups)
-await backupManager.cleanupOldBackups();
-```
+Each manager's `restore(data, options)` gets `{ ctx, directory, source, replaceStaged, safetyBackup, siteRestore }` (`ManagerRestoreOptions`).
 
-## Core Methods
+Also:
 
-| Method | Returns | Description |
-| -------- | --------- | ------------- |
-| `backup(options)` | `Promise<string>` | Create full system backup, returns path |
-| `restore(backupPath, options)` | `Promise<void>` | Restore from backup file |
-| `listBackups()` | `Promise<Array>` | List all available backups with metadata |
-| `getLatestBackup()` | `Promise<Object>` | Get latest backup information |
-| `cleanupOldBackups()` | `Promise<number>` | Remove old backups, return count deleted |
-
-## Backup Options
-
-```javascript
-await backupManager.backup({
-  filename: 'custom-backup.gz',  // Custom filename (optional)
-  compress: true                  // Enable compression (default: true)
-});
-```
-
-## Restore Options
-
-```javascript
-await backupManager.restore(backupPath, {
-  skipValidation: false,          // Skip JSON validation (default: false)
-  overwrite: true,                // Overwrite existing data (default: true)
-  managers: ['PageManager']       // Restore only specific managers (optional)
-});
-```
-
-### Databases
-
-Each manager's `backup(options)` receives `{ ctx, directory, stem }`: who asked, the backup directory, and the document's name without `.json.gz`. `DatabaseManager` uses it to write each database as its own encrypted file, `<stem>.<name>.db`, beside the document, and lists them in its entry ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Retention removes those files with their document, and a backup whose document is never written removes the files it made.
-
-A part that fails is named in the entry's `warnings` (or the entry is an `error`); the backup is still written, and admins get an "A backup is incomplete" notification.
-
-Admin → Backup (#1723): `listStoredBackups()` lists the backups with the database files beside each; `backupArchive(filename)` streams one as a `.tar` (document and database files, read as the stream is consumed); `startRestore(ctx, filename, { replace })` records `backup-restore` / `backup-restore-replace` (refuse), then restores the databases only, in the background, and notifies admins when it fails. A filename is always matched against the stored list, never used as a path.
-
-`restoreFromFile(ctx, backupPath, options)` takes the caller's context. When the backup holds databases it takes a complete backup of the live data first (`skipCleanup`, `requireComplete`), then has `DatabaseManager` stage them for the next start; if either fails, no manager is restored. A restore already staged is refused unless `replaceStaged` is set. Details in [DatabaseManager.md](DatabaseManager.md#backup-and-restore).
-
-### Encrypted private stores
-
-A backup copies each person's private folder byte for byte, including `user-keys.json`, the file that holds their key wrapped by their password and by their recovery words. Restoring a backup brings back the key file as it was when the backup was taken: if the person has changed their password since, their encrypted stores open with the password they had then (or with their recovery words). The key file is always replaced whole and atomically (#1625), so a backup never captures a half-written one.
-
-## Backup Object Structure
-
-```javascript
-{
-  path: string,           // Full path to backup file
-  filename: string,       // Backup filename
-  size: number,           // File size in bytes
-  created: Date,          // Creation timestamp
-  compressed: boolean,    // Whether file is compressed
-  managers: string[]      // List of backed up managers
-}
-```
+- `startRestore(ctx, filename, { replace })` — Admin → Backup's databases restore: records `backup-restore` / `backup-restore-replace` first (refuse), then runs in the background and notifies admins. Refused while a site restore is staged.
+- `getStagedSiteRestore()` — the staged site restore manifest, or null.
+- `cancelStagedSiteRestore(ctx)` — records `backup-restore-cancel` (refuse), then removes every staged file and the manifest. Not on Admin → Backup yet.
+- `reportRestoreAtBoot()` — called once every manager and add-on has started (end of `WikiEngine.initializeAddons`): tells admins what the start did with a staged site restore (applied, not applied, or applied only in part), records `backup-restore-applied` into the restored audit log (the backup, who started it, the parts), and after any restore that was applied, site or databases-only, sends the critical "Critical: a restore did not bring everything back" (error level): what was put back, what was not (`NEVER_IN_A_BACKUP` plus the report's parts), and per job the runs between the backup and the restore — name, last run, result (`describeNotRestored`). Jobs are never re-run.
 
 ## Configuration
 
-```json
-{
-  "ngdpbase.backup.directory": "./data/backups",
-  "ngdpbase.backup.max-backups": 10,
-  "ngdpbase.backup.compression": true,
-  "ngdpbase.backup.retention.days": 30
-}
-```
+| Key | Default | |
+| --- | --- | --- |
+| `ngdpbase.backup.directory` | `${SLOW_STORAGE}/backups` | where backups are written |
+| `ngdpbase.backup.provider` | `filebackupprovider` | the storage provider (the only one) |
+| `ngdpbase.backup.max-backups` | `10` | retention |
+| `ngdpbase.backup.auto-backup`, `-time`, `-days` | `false`, `02:00`, `daily` | automatic backups |
+| `ngdpbase.backup.restore-manifest` | `${FAST_STORAGE}/site-restore.json` | the staged site restore's record (#1876); also found at boot, before the configuration loads (`siteRestoreFileAtBoot`) |
+| `ngdpbase.backup.key-saved-fingerprint` | `""` | the fingerprint of the backup key an admin confirmed is saved off the server (#1876) |
 
-## Backup Coverage
+`ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` are in the default config, but nothing reads them.
 
-Automatically backs up all registered managers that implement `backup()`:
+## Related
 
-| Manager | Coverage | Notes |
-| --------- | ---------- | ------- |
-| PageManager | ✅ Full | All pages via provider |
-| UserManager | ✅ Full | All users via provider |
-| ConfigurationManager | ✅ Full | Custom configuration |
-| CacheManager | ✅ Partial | Cache metadata only |
-| NotificationManager | ✅ Full | All notifications |
-| SearchManager | ⚠️ Excluded | Index can be rebuilt |
-
-## How It Works
-
-1. __Auto-Discovery__: Calls `engine.getRegisteredManagers()` to get all managers
-2. __Backup Loop__: Calls `manager.backup()` on each manager
-3. __Aggregation__: Collects all backup data into single object
-4. __Compression__: Serializes to JSON and compresses with gzip
-5. __Storage__: Saves as timestamped `.gz` file
-6. __Cleanup__: Removes old backups exceeding retention policy
-
-## Backup File Format
-
-```javascript
-{
-  metadata: {
-    version: "1.5.0",
-    timestamp: "2025-12-21T12:05:30.000Z",
-    engine: "WikiEngine",
-    managers: ["PageManager", "UserManager", ...]
-  },
-  data: {
-    PageManager: { /* page data */ },
-    UserManager: { /* user data */ },
-    ConfigurationManager: { /* config */ }
-  }
-}
-```
-
-File is compressed with gzip and saved as `.gz`.
-
-## CLI Usage
-
-```bash
-# Create backup
-node scripts/backup-create.js
-
-# List backups
-node scripts/backup-list.js
-
-# Restore from latest
-node scripts/backup-restore.js --latest
-
-# Restore from specific file
-node scripts/backup-restore.js --file backup-2025-12-21-120530.gz
-
-# Cleanup old backups
-node scripts/backup-cleanup.js
-```
-
-## Best Practices
-
-1. __Regular Backups__: Turn on automatic backups (`ngdpbase.backup.auto-backup`); they run as a scheduled job, and one missed while the server was down runs when it is back
-2. __Off-site Storage__: Copy backups to remote location
-3. __Test Restores__: Periodically test restore process
-4. __Monitor Size__: Watch backup sizes for anomalies
-5. __Retention Policy__: Set appropriate maxBackups value
-
-## Error Handling
-
-```javascript
-try {
-  const backupPath = await backupManager.backup();
-  console.log('✅ Backup successful:', backupPath);
-} catch (error) {
-  console.error('❌ Backup failed:', error.message);
-  // BackupManager continues even if individual managers fail
-}
-```
-
-## Related Managers
-
-- [ConfigurationManager](ConfigurationManager.md) - Backup settings
-- [PageManager](PageManager.md) - Page data backup
-- [UserManager](UserManager.md) - User data backup
-- [NotificationManager](NotificationManager.md) - Notification backup
-
-## Developer Documentation
-
-For complete architecture, backup format details, provider integration, and troubleshooting:
-
-- [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md)
+- [Backup and restore guide](../guides/backup-restore-guide.md)
+- [DatabaseManager](DatabaseManager.md#backup-and-restore), [AttachmentManager](AttachmentManager.md#backup-and-restore), [RoleManager](RoleManager.md#backup-and-restore), [AuthManager](AuthManager.md#backup-and-restore), [AuditManager](AuditManager.md#backup-and-restore), [BackgroundJobManager](BackgroundJobManager.md#backup-and-restore)
+- [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md) (older; the guide above wins where they differ)
