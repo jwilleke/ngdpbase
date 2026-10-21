@@ -13,7 +13,7 @@
  */
 
 // The module an add-on exports, and what `register` is handed.
-export type { AddonModule, AddonManifest } from '../../src/managers/AddonsManager.js';
+export type { AddonModule, AddonManifest, AddonListing } from '../../src/managers/AddonsManager.js';
 export type { AddonHost, PersonSwitchSetter } from '../../src/utils/addonHost.js';
 export type { WikiEngine } from '../../src/types/WikiEngine.js';
 
