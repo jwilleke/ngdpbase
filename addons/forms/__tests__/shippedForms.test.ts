@@ -1,8 +1,10 @@
 /**
- * Shipped form definitions (#1880): an add-on registers a form it ships; the
- * site's copy is saved on first install, shown as outdated when the add-on
- * ships a change, synced only when unedited, and replaced over site edits
- * only on an explicit overwrite. A copy saved before #1880 has no stamp.
+ * Forms an add-on provides (#1973). The add-on's form wins: the site's copy
+ * is replaced whenever the installed add-on's version is newer than the one
+ * that wrote it, left alone at the same version, and kept (with a log line and
+ * an administrator notice) when the installed add-on is older. A copy with no
+ * `providedBy` (saved before #1973) is replaced at the next start. Such a form
+ * is read-only on the site; site-built forms are unaffected.
  *
  * Each test works in its own mkdtemp folder and removes only that folder.
  */
@@ -10,183 +12,228 @@
 import os from 'os';
 import path from 'path';
 import { promises as fsp } from 'fs';
-import FormsDataManager from '../managers/FormsDataManager';
+import FormsDataManager, { ProvidedFormError } from '../managers/FormsDataManager';
 import type { FormDefinition } from '../managers/FormsDataManager';
 
-const V1: FormDefinition = {
+/** The add-on's boot context, as `host.systemContext(reason)` makes it. */
+const BOOT = { username: 'system', origin: 'boot' as const, requestedAt: new Date().toISOString(), reason: 'test: register forms' };
+/** An admin in the form builder. */
+const ADMIN = { username: 'admin', roles: ['admin'], isAuthenticated: true };
+
+const V1 = {
   id: 'record-entry',
   title: 'Record an Entry',
-  proxySubmission: false,
-  notifyRole: 'admin',
-  store: true,
   fields: [
-    { name: 'direction', type: 'dropdown', label: 'In or out', required: true, options: ['in', 'out'] },
-    { name: 'check', type: 'text', label: 'Check number', required: false }
+    { name: 'direction', type: 'dropdown' as const, label: 'In or out', required: true, options: ['in', 'out'] },
+    { name: 'check', type: 'text' as const, label: 'Check number' }
   ]
 };
+const V2 = { ...V1, store: false, notify: false, fields: [{ name: 'check', type: 'text' as const, label: 'Reference' }] };
 
-const V2: FormDefinition = {
-  ...V1,
-  fields: [{ name: 'check', type: 'text', label: 'Reference', required: false }]
-};
+interface Sent { type: string; level: string; title: string; message: string; targetUsers: string[] }
 
 let dir: string;
+let sent: Sent[];
+let versions: Record<string, string>;
 
 beforeEach(async () => {
-  dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1880-'));
+  dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1973-'));
+  sent = [];
+  versions = { accounting: '1.0.0', phr: '1.0.0' };
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fsp.rm(dir, { recursive: true, force: true });
 });
 
+/** An engine with the managers asked: the add-on's version, who holds admin-system, where to send. */
+function engine(): { getManager: (name: string) => unknown } {
+  const managers: Record<string, unknown> = {
+    AddonsManager: { getAddonVersion: (slug: string) => versions[slug] },
+    NotificationManager: { createNotification: async (n: Sent) => { sent.push(n); return `n${sent.length}`; } },
+    UserManager: { getUsers: async () => [{ username: 'admin' }, { username: 'reader' }] },
+    PolicyDecisionPoint: { userHoldsPermission: async (u: string, p: string) => p === 'admin-system' && u === 'admin' }
+  };
+  return { getManager: (name: string) => managers[name] };
+}
+
 /** A fresh manager over the same folder: what the next start sees. */
 async function boot(): Promise<FormsDataManager> {
-  const m = new FormsDataManager(null, dir);
+  const m = new FormsDataManager(engine(), dir);
   await m.initialize();
   return m;
 }
 
+const file = (id: string) => path.join(dir, 'definitions', `${id}.json`);
+
 async function stored(id: string): Promise<FormDefinition> {
-  return JSON.parse(await fsp.readFile(path.join(dir, 'definitions', `${id}.json`), 'utf8')) as FormDefinition;
+  return JSON.parse(await fsp.readFile(file(id), 'utf8')) as FormDefinition;
 }
 
-/** An edit in the form builder: the builder's payload never carries the stamp. */
-async function builderEdit(m: FormsDataManager, title: string): Promise<void> {
-  const { shipped: _stamp, ...live } = m.getDefinition('record-entry')!;
-  await m.saveDefinition({ ...live, title });
+/** A definition file as an earlier release left it on disk. */
+async function writeRaw(id: string, body: Record<string, unknown>): Promise<void> {
+  await fsp.mkdir(path.join(dir, 'definitions'), { recursive: true });
+  await fsp.writeFile(file(id), JSON.stringify(body, null, 2), 'utf8');
 }
 
-describe('registerShippedForm (#1880)', () => {
-  test('first install saves the shipped definition, stamped, and it is current', async () => {
+describe('registerShippedForm (#1973)', () => {
+  test('first install writes the form with providedBy: the add-on and its version', async () => {
+    expect(await (await boot()).registerShippedForm('accounting', V1, BOOT)).toBe('saved');
+    const f = await stored('record-entry');
+    expect(f.providedBy).toEqual({ addon: 'accounting', version: '1.0.0' });
+    expect(f.fields.map(x => x.label)).toEqual(['In or out', 'Check number']);
+    expect(f.notify).toBe(true);
+  });
+
+  test('a newer add-on replaces the copy, and its store and notify win', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    versions.accounting = '1.1.0';
     const m = await boot();
-    const state = await m.registerShippedForm('accounting', V1);
-    expect(state).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
-    const file = await stored('record-entry');
-    expect(file.fields.map(f => f.label)).toEqual(['In or out', 'Check number']);
-    expect(file.shipped?.addon).toBe('accounting');
-    expect(file.shipped?.sourceHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(await m.registerShippedForm('accounting', V2, BOOT)).toBe('replaced');
+    const f = await stored('record-entry');
+    expect(f.providedBy).toEqual({ addon: 'accounting', version: '1.1.0' });
+    expect(f.fields.map(x => x.label)).toEqual(['Reference']);
+    expect(f.store).toBe(false);
+    expect(f.notify).toBe(false);
+    expect(m.getDefinition('record-entry')?.notify).toBe(false);
+    expect(sent).toEqual([]);
   });
 
-  test('an upgrade that changes the form shows the unedited copy as outdated, and does not overwrite it', async () => {
-    await (await boot()).registerShippedForm('accounting', V1);
+  test('versions compare as numbers: 1.10.0 is newer than 1.9.0', async () => {
+    versions.accounting = '1.9.0';
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    versions.accounting = '1.10.0';
+    expect(await (await boot()).registerShippedForm('accounting', V2, BOOT)).toBe('replaced');
+  });
+
+  test('the same version writes nothing, even when the definition differs', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    const before = await fsp.stat(file('record-entry'));
     const m = await boot();
-    const state = await m.registerShippedForm('accounting', V2);
-    expect(state.status).toBe('outdated');
-    expect(state.stamped).toBe(true);
-    expect(m.getDefinition('record-entry')?.fields).toHaveLength(2);
+    expect(await m.registerShippedForm('accounting', V2, BOOT)).toBe('unchanged');
+    expect((await fsp.stat(file('record-entry'))).mtimeMs).toBe(before.mtimeMs);
+    expect((await stored('record-entry')).fields).toHaveLength(2);
+    expect(sent).toEqual([]);
   });
 
-  test('sync updates an unedited outdated copy to what the add-on ships now', async () => {
-    await (await boot()).registerShippedForm('accounting', V1);
-    const m = await boot();
-    await m.registerShippedForm('accounting', V2);
-    expect(await m.syncShippedForm('record-entry')).toBe('synced');
-    expect((await stored('record-entry')).fields.map(f => f.label)).toEqual(['Reference']);
-    expect(m.shippedFormState('record-entry')?.status).toBe('current');
-    // and the next start agrees
-    expect((await (await boot()).registerShippedForm('accounting', V2)).status).toBe('current');
+  test('an older add-on is refused: the copy is kept, logged, and administrators are told both versions', async () => {
+    versions.accounting = '2.0.0';
+    await (await boot()).registerShippedForm('accounting', V2, BOOT);
+    versions.accounting = '1.4.0';
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await (await boot()).registerShippedForm('accounting', V1, BOOT)).toBe('refused');
+    const f = await stored('record-entry');
+    expect(f.providedBy).toEqual({ addon: 'accounting', version: '2.0.0' });
+    expect(f.fields.map(x => x.label)).toEqual(['Reference']);
+
+    expect(logged.mock.calls.some(c => String(c[0]).includes('record-entry') && String(c[0]).includes('1.4.0') && String(c[0]).includes('2.0.0'))).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: 'system', level: 'warning', targetUsers: ['admin'] });
+    expect(sent[0].title).toContain('"Record an Entry" (record-entry)');
+    expect(sent[0].title).toContain('accounting 1.4.0 is older than 2.0.0');
+    expect(sent[0].message).toContain('Install accounting 2.0.0 or later');
   });
 
-  test('a copy edited in the form builder is protected: it shows as edited and sync refuses it', async () => {
-    const first = await boot();
-    await first.registerShippedForm('accounting', V1);
-    await builderEdit(first, 'Record an Entry (ours)');
-    expect((await stored('record-entry')).shipped?.addon).toBe('accounting'); // the edit kept the stamp
-
-    const m = await boot();
-    const state = await m.registerShippedForm('accounting', V2);
-    expect(state.status).toBe('locally-modified');
-    expect(await m.syncShippedForm('record-entry')).toBe('edited');
-    expect((await stored('record-entry')).title).toBe('Record an Entry (ours)');
-  });
-
-  test('an edited copy is replaced only on an explicit overwrite', async () => {
-    const first = await boot();
-    await first.registerShippedForm('accounting', V1);
-    await builderEdit(first, 'Record an Entry (ours)');
-    const m = await boot();
-    await m.registerShippedForm('accounting', V2);
-
-    expect(await m.syncShippedForm('record-entry', { overwriteEdited: true })).toBe('synced');
-    const file = await stored('record-entry');
-    expect(file.title).toBe('Record an Entry');
-    expect(file.fields.map(f => f.label)).toEqual(['Reference']);
-    expect(m.shippedFormState('record-entry')?.status).toBe('current');
-  });
-
-  test('an edited copy that the add-on has not changed is left alone and is not offered as an update', async () => {
-    const first = await boot();
-    await first.registerShippedForm('accounting', V1);
-    await builderEdit(first, 'Ours');
-    const state = await (await boot()).registerShippedForm('accounting', V1);
-    expect(state.status).toBe('locally-modified');
-    expect(state.shippedChanged).toBe(false);
-    expect((await stored('record-entry')).title).toBe('Ours');
-  });
-
-  describe('a copy saved before #1880 (no stamp)', () => {
-    test('that says the same as the shipped form is stamped, and an edit after that is protected', async () => {
-      await (await boot()).saveDefinition(V1); // the old "save if missing"
-      expect((await stored('record-entry')).shipped).toBeUndefined();
-
-      const m = await boot();
-      expect(await m.registerShippedForm('accounting', V1)).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
-      expect((await stored('record-entry')).shipped?.addon).toBe('accounting');
-
-      await builderEdit(m, 'Ours');
-      expect((await (await boot()).registerShippedForm('accounting', V2)).status).toBe('locally-modified');
+  test('migration: a copy with no providedBy (saved before #1973) is replaced at the next start', async () => {
+    // What a #1880 site holds: the old stamp, core-filled defaults, and no `notify` (phr-note on yourPHR).
+    await writeRaw('phr-note', {
+      id: 'phr-note', title: 'Health note', proxySubmission: false, notifyRole: 'admin', store: false,
+      fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }],
+      shipped: { addon: 'phr', sourceHash: 'a'.repeat(64) }
     });
+    const m = await boot();
+    expect(m.getDefinition('phr-note')?.notify).toBe(true); // the default the bug left in place
 
-    test('that differs is outdated, unstamped, left as it is at start, and Sync replaces it', async () => {
-      await (await boot()).saveDefinition(V1);
-      const m = await boot();
-      const state = await m.registerShippedForm('accounting', V2);
-      expect(state).toEqual({ addon: 'accounting', status: 'outdated', stamped: false, shippedChanged: true, behind: true, required: false });
-      expect((await stored('record-entry')).shipped).toBeUndefined();
-      expect((await stored('record-entry')).fields).toHaveLength(2);
+    const result = await m.registerShippedForm('phr', {
+      id: 'phr-note', title: 'Health note', store: false, notify: false,
+      fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }]
+    }, BOOT);
+    expect(result).toBe('replaced');
+    const f = await stored('phr-note');
+    expect(f.notify).toBe(false);
+    expect(f.providedBy).toEqual({ addon: 'phr', version: '1.0.0' });
+    expect(f).not.toHaveProperty('shipped');
+    expect(sent).toEqual([]);
+  });
 
-      expect(await m.syncShippedForm('record-entry')).toBe('synced');
-      expect((await stored('record-entry')).fields.map(f => f.label)).toEqual(['Reference']);
-      expect(m.shippedFormState('record-entry')).toEqual({ addon: 'accounting', status: 'current', stamped: true, shippedChanged: false, behind: false, required: false });
+  test('a definition that gains a new core default field (notify) still replaces cleanly', async () => {
+    // Written by phr 1.0.0 under a core that had no `notify` key.
+    await writeRaw('phr-note', {
+      id: 'phr-note', title: 'Health note', proxySubmission: false, notifyRole: 'admin', store: false,
+      fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }],
+      providedBy: { addon: 'phr', version: '1.0.0' }
     });
-  });
+    expect(await (await boot()).registerShippedForm('phr', { id: 'phr-note', title: 'Health note', store: false, fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }] }, BOOT)).toBe('unchanged');
 
-  test('defaults and key order do not read as a change', async () => {
+    versions.phr = '1.0.1';
     const m = await boot();
-    await m.registerShippedForm('accounting', V1);
-    // The add-on's object without the defaults the schema fills, keys reordered.
-    const sparse = {
-      fields: V1.fields.map(({ required, ...f }) => (required ? { required, ...f } : f)),
-      title: V1.title,
-      id: V1.id
-    } as unknown as FormDefinition;
-    expect((await (await boot()).registerShippedForm('accounting', sparse)).status).toBe('current');
+    expect(await m.registerShippedForm('phr', {
+      id: 'phr-note', title: 'Health note', store: false, notify: false,
+      fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }]
+    }, BOOT)).toBe('replaced');
+    expect((await stored('phr-note')).notify).toBe(false);
+    expect(m.getDefinition('phr-note')?.notify).toBe(false);
   });
 
-  test('a form no add-on registered has no shipped state, and sync says so', async () => {
+  test('a stored version that is not x.y.z cannot be compared, so the add-on\'s form wins', async () => {
+    await writeRaw('record-entry', { ...V1, providedBy: { addon: 'accounting', version: 'garbage' } });
+    expect(await (await boot()).registerShippedForm('accounting', V2, BOOT)).toBe('replaced');
+    expect((await stored('record-entry')).providedBy).toEqual({ addon: 'accounting', version: '1.0.0' });
+  });
+
+  test('a form another add-on provides is refused and kept', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await (await boot()).registerShippedForm('phr', V2, BOOT)).toBe('refused');
+    expect((await stored('record-entry')).providedBy?.addon).toBe('accounting');
+  });
+
+  test('an invalid definition, an unknown add-on and a version that is not x.y.z throw at registration', async () => {
     const m = await boot();
-    await m.saveDefinition({ ...V1, id: 'site-made' });
-    expect(m.shippedFormState('site-made')).toBeUndefined();
-    expect(await m.syncShippedForm('site-made')).toBe('not-shipped');
+    await expect(m.registerShippedForm('accounting', { ...V1, id: 'Bad Id' }, BOOT)).rejects.toThrow();
+    await expect(m.registerShippedForm('nobody', V1, BOOT)).rejects.toThrow(/no installed add-on 'nobody'/);
+    versions.accounting = '1.0';
+    await expect(m.registerShippedForm('accounting', V1, BOOT)).rejects.toThrow(/not x\.y\.z/);
   });
 
-  test('a change inside a lines field\'s sub-fields reads as a change (#1913)', async () => {
-    const withLines = (label: string): FormDefinition => ({
-      ...V1,
-      fields: [{
-        name: 'lines', type: 'lines', label: 'Lines', required: true,
-        fields: [{ name: 'amount', type: 'amount', label: 'Amount', required: true }, { name: 'memo', type: 'text', label, required: false }]
-      }]
-    });
-    await (await boot()).registerShippedForm('accounting', withLines('Note'));
-    expect((await stored('record-entry')).fields[0].fields?.map(f => f.label)).toEqual(['Amount', 'Note']);
-    expect((await (await boot()).registerShippedForm('accounting', withLines('Note'))).status).toBe('current');
-    expect((await (await boot()).registerShippedForm('accounting', withLines('Memo'))).status).toBe('outdated');
-  });
-
-  test('an invalid shipped definition throws at registration', async () => {
+  test('an add-on that passes no context (built before #1973) still registers, with a warning', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const m = await boot();
-    await expect(m.registerShippedForm('accounting', { ...V1, id: 'Bad Id' })).rejects.toThrow();
+    expect(await m.registerShippedForm('accounting', V1, { required: true })).toBe('saved');
+    expect(warned.mock.calls.some(c => String(c[0]).includes('without a context'))).toBe(true);
+  });
+});
+
+describe('a form an add-on provides is read-only on the site (#1973)', () => {
+  test('saving, renaming over or deleting it is refused at the manager', async () => {
+    const m = await boot();
+    await m.registerShippedForm('accounting', V1, BOOT);
+    const live = m.getDefinition('record-entry')!;
+    const { providedBy: _p, ...builderPayload } = live;
+
+    await expect(m.saveDefinition({ ...builderPayload, title: 'Ours' }, ADMIN)).rejects.toThrow(ProvidedFormError);
+    await expect(m.deleteDefinition('record-entry', ADMIN)).rejects.toThrow(/provided by accounting 1\.0\.0/);
+    // A site form cannot claim providedBy through the builder's door either.
+    await expect(m.saveDefinition({ ...builderPayload, id: 'mine', providedBy: { addon: 'accounting', version: '9.9.9' } }, ADMIN)).rejects.toThrow(ProvidedFormError);
+    expect((await stored('record-entry')).title).toBe('Record an Entry');
+    expect(m.getDefinition('mine')).toBeUndefined();
+  });
+
+  test('site-built forms are unaffected: saved, edited and deleted as before, untouched by registration', async () => {
+    const m = await boot();
+    const site: FormDefinition = { id: 'site-made', title: 'Ours', proxySubmission: false, notifyRole: 'admin', store: true, notify: true, fields: [{ name: 'a', type: 'text', label: 'A', required: false }] };
+    await m.saveDefinition(site, ADMIN);
+    await m.registerShippedForm('accounting', V1, BOOT);
+    versions.accounting = '1.1.0';
+    await (await boot()).registerShippedForm('accounting', V2, BOOT);
+
+    const again = await boot();
+    expect(again.getDefinition('site-made')).toEqual(site);
+    expect((await stored('site-made'))).not.toHaveProperty('providedBy');
+    await again.saveDefinition({ ...site, title: 'Ours, edited' }, ADMIN);
+    expect((await stored('site-made')).title).toBe('Ours, edited');
+    expect(await again.deleteDefinition('site-made', ADMIN)).toBe(true);
   });
 });

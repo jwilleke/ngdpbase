@@ -8,6 +8,9 @@ import * as os from 'os';
 import FormsDataManager from '../managers/FormsDataManager';
 import type { FormDefinition } from '../managers/FormsDataManager';
 
+/** The admin saving in the form builder: the request subject the route forwards (P1). */
+const ADMIN = { username: 'admin', roles: ['admin'], isAuthenticated: true };
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function makeTmpDir(): string {
@@ -43,7 +46,7 @@ describe('FormsDataManager.saveDefinition', () => {
   afterEach(() => cleanDir(dir));
 
   test('writes file to definitions directory and updates in-memory map', async () => {
-    await mgr.saveDefinition(validForm);
+    await mgr.saveDefinition(validForm, ADMIN);
 
     const filePath = path.join(dir, 'definitions', 'test-form.json');
     expect(fs.existsSync(filePath)).toBe(true);
@@ -58,8 +61,8 @@ describe('FormsDataManager.saveDefinition', () => {
   });
 
   test('overwrites existing file on second save', async () => {
-    await mgr.saveDefinition(validForm);
-    await mgr.saveDefinition({ ...validForm, title: 'Updated Title' });
+    await mgr.saveDefinition(validForm, ADMIN);
+    await mgr.saveDefinition({ ...validForm, title: 'Updated Title' }, ADMIN);
 
     expect(mgr.getDefinition('test-form')?.title).toBe('Updated Title');
 
@@ -69,8 +72,8 @@ describe('FormsDataManager.saveDefinition', () => {
 
   test('saves multiple forms independently', async () => {
     const form2: FormDefinition = { ...validForm, id: 'second-form', title: 'Second' };
-    await mgr.saveDefinition(validForm);
-    await mgr.saveDefinition(form2);
+    await mgr.saveDefinition(validForm, ADMIN);
+    await mgr.saveDefinition(form2, ADMIN);
 
     expect(mgr.getAllDefinitions()).toHaveLength(2);
     expect(mgr.getDefinition('test-form')).toBeDefined();
@@ -88,28 +91,28 @@ describe('FormsDataManager.deleteDefinition', () => {
     dir = makeTmpDir();
     mgr = new FormsDataManager(null, dir);
     await mgr.initialize();
-    await mgr.saveDefinition(validForm);
+    await mgr.saveDefinition(validForm, ADMIN);
   });
 
   afterEach(() => cleanDir(dir));
 
   test('removes file and in-memory entry', async () => {
-    const ok = await mgr.deleteDefinition('test-form');
+    const ok = await mgr.deleteDefinition('test-form', ADMIN);
     expect(ok).toBe(true);
     expect(mgr.getDefinition('test-form')).toBeUndefined();
     expect(fs.existsSync(path.join(dir, 'definitions', 'test-form.json'))).toBe(false);
   });
 
   test('returns false for non-existent form', async () => {
-    const ok = await mgr.deleteDefinition('no-such-form');
+    const ok = await mgr.deleteDefinition('no-such-form', ADMIN);
     expect(ok).toBe(false);
   });
 
   test('does not affect other forms', async () => {
     const form2: FormDefinition = { ...validForm, id: 'keep-me', title: 'Keep' };
-    await mgr.saveDefinition(form2);
+    await mgr.saveDefinition(form2, ADMIN);
 
-    await mgr.deleteDefinition('test-form');
+    await mgr.deleteDefinition('test-form', ADMIN);
 
     expect(mgr.getDefinition('keep-me')).toBeDefined();
     expect(mgr.getDefinition('test-form')).toBeUndefined();
@@ -126,7 +129,7 @@ describe('FormsDataManager.reloadDefinition', () => {
     dir = makeTmpDir();
     mgr = new FormsDataManager(null, dir);
     await mgr.initialize();
-    await mgr.saveDefinition(validForm);
+    await mgr.saveDefinition(validForm, ADMIN);
   });
 
   afterEach(() => cleanDir(dir));
@@ -170,7 +173,7 @@ describe('FormsDataManager.getSubmissionCount gates delete', () => {
     dir = makeTmpDir();
     mgr = new FormsDataManager(null, dir);
     await mgr.initialize();
-    await mgr.saveDefinition(validForm);
+    await mgr.saveDefinition(validForm, ADMIN);
   });
 
   afterEach(() => cleanDir(dir));

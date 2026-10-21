@@ -18,6 +18,8 @@ import type { FormDefinition } from '../managers/FormsDataManager';
 vi.mock('../../../dist/src/context/ApiContext', () => ({
   ApiContext: {
     from: () => ({
+      // The request's subject the route forwards to the manager (P1).
+      getActor: () => ({ username: 'admin', roles: ['admin'], isAuthenticated: true }),
       requireAuthenticated: () => undefined,
       requirePermission: async () => undefined
     })
@@ -215,58 +217,66 @@ describe('POST /forms/builder — the Send notices box (#1954)', () => {
 });
 
 /**
- * #1921 with the real manager: an unchanged builder save of a shipped
- * store:false form is not an edit, so it stays up to date (#1880). Works in its
- * own mkdtemp folder and removes only that folder.
+ * #1973 with the real manager: a form an add-on provides is read-only on the
+ * site. The builder refuses to open, save or delete it on the server, and a
+ * new form cannot take its id. A site-built form still saves through the same
+ * routes. Works in its own mkdtemp folder and removes only that folder.
  */
-describe('builder save of a shipped store:false form (#1921, #1880)', () => {
+describe('builder routes refuse a form an add-on provides (#1973)', () => {
+  const BOOT = { username: 'system', origin: 'boot' as const, requestedAt: new Date().toISOString(), reason: 'test' };
   let dir: string;
-  beforeEach(async () => { dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1921-')); });
+  beforeEach(async () => { dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1973-builder-')); });
   afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
 
-  test('an unchanged save keeps store:false and the copy stays up to date', async () => {
-    const m = new FormsDataManager(null, dir);
-    await m.initialize();
-    await m.registerShippedForm('ledger', {
-      id: 'deposit', title: 'Deposit', proxySubmission: false, notifyRole: 'admin', store: false,
-      fields: [{ name: 'total', type: 'amount', label: 'Total', required: true }]
-    });
-    const app = express();
-    app.use(express.urlencoded({ extended: false }));
-    const engine = { getManager: () => m, createRouter: () => express.Router() };
-    app.use('/forms/builder', builderRoutes(engine as never));
-
-    const live = m.getDefinition('deposit')!;
-    const res = await request(app).post('/forms/builder/deposit').type('form')
-      .send({ title: live.title, notifyRole: live.notifyRole, storeShown: '1', fieldsJson: JSON.stringify(live.fields) });
-    expect(res.status).toBe(302);
-    expect(m.getDefinition('deposit')!.store).toBe(false);
-    expect(m.shippedFormState('deposit')!.status).toBe('current');
-  });
-
-  test('#1954: a shipped notify:false form keeps it through an unchanged save, and a shipped form that omits it notifies', async () => {
-    const m = new FormsDataManager(null, dir);
+  async function setUp() {
+    const addons = { getAddonVersion: (slug: string) => (slug === 'phr' ? '1.2.0' : undefined) };
+    const m = new FormsDataManager({ getManager: (name: string) => (name === 'AddonsManager' ? addons : undefined) }, dir);
     await m.initialize();
     await m.registerShippedForm('phr', {
       id: 'phr-note', title: 'Health note', store: false, notify: false,
       fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }]
-    });
-    await m.registerShippedForm('phr', {
-      id: 'phr-loud', title: 'Loud', fields: [{ name: 'note', type: 'text', label: 'Note', required: true }]
-    });
-    expect(m.getDefinition('phr-note')!.notify).toBe(false);
-    expect(m.getDefinition('phr-loud')!.notify).toBe(true);
-
+    }, BOOT);
     const app = express();
     app.use(express.urlencoded({ extended: false }));
+    app.use((_req, res, next) => {
+      res.render = ((view: string, locals?: object) => { res.json({ view, ...locals }); });
+      next();
+    });
     const engine = { getManager: () => m, createRouter: () => express.Router() };
     app.use('/forms/builder', builderRoutes(engine as never));
+    const file = path.join(dir, 'definitions', 'phr-note.json');
+    return { m, app, file, before: await fsp.readFile(file, 'utf8') };
+  }
 
-    const live = m.getDefinition('phr-note')!;
-    const res = await request(app).post('/forms/builder/phr-note').type('form')
-      .send({ title: live.title, notifyRole: live.notifyRole, storeShown: '1', notifyShown: '1', fieldsJson: JSON.stringify(live.fields) });
-    expect(res.status).toBe(302);
-    expect(m.getDefinition('phr-note')!.notify).toBe(false);
-    expect(m.shippedFormState('phr-note')!.status).toBe('current');
+  test('the builder page, a save and a delete are 403, naming the add-on and version, and nothing changes', async () => {
+    const { app, file, before } = await setUp();
+    const open = await request(app).get('/forms/builder/phr-note');
+    expect(open.status).toBe(403);
+    expect(open.text).toContain('provided by phr 1.2.0');
+
+    const save = await request(app).post('/forms/builder/phr-note').type('form')
+      .send({ title: 'Ours', notifyRole: 'admin', storeShown: '1', notifyShown: '1', notify: 'on', fieldsJson: oneField });
+    expect(save.status).toBe(403);
+
+    const del = await request(app).post('/forms/builder/phr-note/delete').type('form').send({});
+    expect(del.status).toBe(403);
+    expect(await fsp.readFile(file, 'utf8')).toBe(before);
+  });
+
+  test('a new form cannot take its id', async () => {
+    const { app, file, before } = await setUp();
+    const res = await request(app).post('/forms/builder').type('form').send({ id: 'phr-note', title: 'T', fieldsJson: oneField });
+    expect(res.status).toBe(409);
+    expect(await fsp.readFile(file, 'utf8')).toBe(before);
+  });
+
+  test('a site-built form still saves and deletes through the same routes', async () => {
+    const { app, m } = await setUp();
+    expect((await request(app).post('/forms/builder').type('form').send({ id: 'ours', title: 'Ours', fieldsJson: oneField })).status).toBe(302);
+    expect((await request(app).post('/forms/builder/ours').type('form').send({ title: 'Ours 2', fieldsJson: oneField })).status).toBe(302);
+    expect(m.getDefinition('ours')?.title).toBe('Ours 2');
+    expect(m.getDefinition('ours')?.providedBy).toBeUndefined();
+    expect((await request(app).post('/forms/builder/ours/delete').type('form').send({})).status).toBe(302);
+    expect(m.getDefinition('ours')).toBeUndefined();
   });
 });

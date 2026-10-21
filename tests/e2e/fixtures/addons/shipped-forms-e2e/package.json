@@ -1,7 +1,7 @@
 {
   "name": "@ngdpbase/shipped-forms-e2e",
   "version": "1.0.0",
-  "description": "E2E fixture add-on for shipped form definitions (#1880); never bundled",
+  "description": "E2E fixture add-on for forms an add-on provides (#1973); never bundled",
   "private": true,
   "type": "module",
   "ngdpbase": {

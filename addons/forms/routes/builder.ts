@@ -3,7 +3,7 @@ import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
-import { FormDefinitionSchema, type FormDefinition, type FormField } from '../managers/FormsDataManager.js';
+import { FormDefinitionSchema, ProvidedFormError, type FormDefinition, type FormField } from '../managers/FormsDataManager.js';
 
 export default function builderRoutes(engine: WikiEngine): Router {
   const router = engine.createRouter();
@@ -52,7 +52,22 @@ export default function builderRoutes(engine: WikiEngine): Router {
       sendApiError(res, err, 'text');
       return true;
     }
+    // #1973: the manager refuses a write to a form an add-on provides.
+    if (err instanceof ProvidedFormError) {
+      res.status(403).send(err.message);
+      return true;
+    }
     return false;
+  }
+
+  /**
+   * #1973: a form an add-on provides is read-only on the site. Refused here,
+   * before the builder page or a save is reached, and again by the manager.
+   */
+  function refuseProvided(form: FormDefinition, res: Response): boolean {
+    if (!form.providedBy) return false;
+    res.status(403).send(new ProvidedFormError(form).message);
+    return true;
   }
 
   // ── GET / → redirect to list ─────────────────────────────────────────────────
@@ -79,6 +94,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       const form = fdm()?.getDefinition(String(req.params['formId']));
       if (!form) { res.status(404).send('Form not found'); return; }
+      if (refuseProvided(form, res)) return;
       res.render('forms-builder', { ...(await engine.templateData?.(req)), currentUser: req.userContext, form, isNew: false, errors: [] });
     } catch (err) {
       if (handleAuthError(err, res)) return;
@@ -132,7 +148,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
           return;
         }
 
-        await m.saveDefinition(result.data);
+        await m.saveDefinition(result.data, ctx.getActor());
         res.redirect('/addons/forms?flash=saved');
       } catch (err) {
         if (handleAuthError(err, res)) return;
@@ -153,6 +169,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         if (!m) { res.status(503).send('Forms addon not available'); return; }
         const current = m.getDefinition(formId);
         if (!current) { res.status(404).send('Form not found'); return; }
+        if (refuseProvided(current, res)) return;
 
         const body = req.body as Record<string, unknown>;
         const fields = parseFields(body['fieldsJson']);
@@ -179,7 +196,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
           return;
         }
 
-        await m.saveDefinition(result.data);
+        await m.saveDefinition(result.data, ctx.getActor());
         res.redirect('/addons/forms?flash=saved');
       } catch (err) {
         if (handleAuthError(err, res)) return;
@@ -201,6 +218,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
 
         const form = m.getDefinition(formId);
         if (!form) { res.status(404).send('Form not found'); return; }
+        if (refuseProvided(form, res)) return;
 
         const count = await m.getSubmissionCount(formId);
         if (count > 0) {
@@ -213,7 +231,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
           return;
         }
 
-        await m.deleteDefinition(formId);
+        await m.deleteDefinition(formId, ctx.getActor());
         res.redirect('/addons/forms?flash=deleted');
       } catch (err) {
         if (handleAuthError(err, res)) return;
