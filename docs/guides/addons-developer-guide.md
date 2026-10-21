@@ -1174,6 +1174,8 @@ async register(engine, config) {
 }
 ```
 
+A manager's backup is not code you write ([#1943](https://github.com/jwilleke/ngdpbase/issues/1943)). An add-on's data is backed up through its declared add-on databases (`DatabaseManager` copies every declared one) and its add-on files. So an add-on manager does not implement `backup()`/`restore()`, and must not add no-op ones: the site backup skips a registered manager that has none, and never counts it as missing. The one exception is a manager that keeps files under the add-on's `dataPath` (the bundled forms, calendar and feeds managers): its `backup()`/`restore()` call `backupDirectoryPart` / `stageDirectoryPart`, as the [backup and restore guide](backup-restore-guide.md#rules-for-developers-and-add-on-authors) says.
+
 ---
 
 ## 7. Writing Routes
