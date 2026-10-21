@@ -14,7 +14,7 @@ in jimstest it is at the edge of comfortable operation:
   to silently not appear in search (required the fix in #433)
 - Not suitable for multi-node deployment or wikis with hundreds of thousands of pages
 
-An Elasticsearch instance is already running at `http://192.168.68.71:9200` for the sist2 NAS
+An Elasticsearch instance is already running at `http://elasticsearch.example.com:9200` for the sist2 NAS
 asset addon. The `SearchManager` was designed for pluggable providers from the start — switching
 is a single config key. Config stubs for an ES search provider already exist in SearchManager
 comments. The `@elastic/elasticsearch` ^8.15.0 client is already in the addon; just needs to
@@ -101,7 +101,7 @@ jimstest `app-custom-config.json` additions:
 
 ```json
 "ngdpbase.search.provider":                              "elasticsearchsearchprovider",
-"ngdpbase.search.provider.elasticsearch.url":            "http://192.168.68.71:9200"
+"ngdpbase.search.provider.elasticsearch.url":            "http://elasticsearch.example.com:9200"
 ```
 
 ---

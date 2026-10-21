@@ -199,17 +199,17 @@ With `allowed-ranges: []` (what ships):
 
 Set the key only when this process must reach __private infrastructure__: a LAN sist2, an internal Elasticsearch, a NAS. Then put the __narrowest prefix that is actually needed__, not `0.0.0.0/0` and not all of `10.0.0.0/8`.
 
-A home instance on `192.168.68.0/24` that must reach sist2 or Elasticsearch on that segment:
+A home instance on `192.168.0.0/24` that must reach sist2 or Elasticsearch on that segment:
 
 ```json
-"ngdpbase.security.egress.allowed-ranges": ["192.168.68.0/24"]
+"ngdpbase.security.egress.allowed-ranges": ["192.168.0.0/24"]
 ```
 
-That is the example the config comment already uses. It belongs in __this instance's__ custom config, not in shipped `app-default-config.json`. It lets this process fetch `http://192.168.68.71:4090` and `:9200`. It still refuses `localhost` / `127.0.0.1`, link-local, and every other private range.
+It belongs in __this instance's__ custom config, not in shipped `app-default-config.json`. It lets this process fetch `http://192.168.0.10:4090` and `:9200`. It still refuses `localhost` / `127.0.0.1`, link-local, and every other private range.
 
 Bounds:
 
-- `/24` opens the whole segment, not only `.71`. If nothing else on that LAN should be reachable from the app, `192.168.68.71/32` is tighter.
+- `/24` opens the whole segment, not only `.10`. If nothing else on that LAN should be reachable from the app, `192.168.0.10/32` is tighter.
 - The key is `restart: true` — change it, then `./server.sh restart`.
 - IPv6 unique-local is still denied unless you add that prefix too.
 - Do not set a dummy or overly broad list “to have a value.” That weakens the default-deny.

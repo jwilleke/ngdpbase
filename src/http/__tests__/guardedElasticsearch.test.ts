@@ -54,15 +54,15 @@ describe('#1188 — the client is wired to the guarded lookup', () => {
   });
 
   test('a LAN node passes only when its prefix is allowed', async () => {
-    const resolver = resolverOf({ 'es.lan': '192.168.68.71' });
-    const refused = guardedClientOptions('http://es.lan:9200', CLOSED, { resolver });
-    const allowed = guardedClientOptions('http://es.lan:9200', { deniedRanges: [], allowedRanges: ['192.168.68.0/24'] }, { resolver });
-    const via = (o: typeof refused) => lookupOf((o.agent as (c: { url: URL }) => unknown)({ url: new URL('http://es.lan:9200') }));
-    const r = await new Promise<NodeJS.ErrnoException | null>((res) => via(refused)('es.lan', {}, (e) => res(e)));
+    const resolver = resolverOf({ 'es.home.example': '192.168.0.10' });
+    const refused = guardedClientOptions('http://es.home.example:9200', CLOSED, { resolver });
+    const allowed = guardedClientOptions('http://es.home.example:9200', { deniedRanges: [], allowedRanges: ['192.168.0.0/24'] }, { resolver });
+    const via = (o: typeof refused) => lookupOf((o.agent as (c: { url: URL }) => unknown)({ url: new URL('http://es.home.example:9200') }));
+    const r = await new Promise<NodeJS.ErrnoException | null>((res) => via(refused)('es.home.example', {}, (e) => res(e)));
     expect(r?.code).toBe(ESSRF_BLOCKED);
-    const a = await new Promise<{ err: unknown; addr: unknown }>((res) => via(allowed)('es.lan', {}, (err, addr) => res({ err, addr })));
+    const a = await new Promise<{ err: unknown; addr: unknown }>((res) => via(allowed)('es.home.example', {}, (err, addr) => res({ err, addr })));
     expect(a.err).toBeNull();
-    expect(a.addr).toBe('192.168.68.71');
+    expect(a.addr).toBe('192.168.0.10');
   });
 
   test('requestTimeout is forwarded only when given', () => {
@@ -112,7 +112,7 @@ describe('#1188 — an IP-literal node never reaches the lookup, so the connect 
 
   test('loopback and RFC1918 literals are refused at connect time under a closed policy', async () => {
     const agent = agentOf(guardedClientOptions('http://127.0.0.1:9200', CLOSED), 'http://127.0.0.1:9200');
-    for (const host of ['127.0.0.1', '10.0.0.5', '192.168.68.71']) {
+    for (const host of ['127.0.0.1', '10.0.0.5', '192.168.0.10']) {
       const err = await new Promise<NodeJS.ErrnoException | null>((r) => { agent.createConnection({ host, port: 9200 }, (e) => r(e)); });
       expect(err?.code).toBe(ESSRF_BLOCKED);
       expect(err?.message).toContain(host);
@@ -120,8 +120,8 @@ describe('#1188 — an IP-literal node never reaches the lookup, so the connect 
   });
 
   test('an allowed literal is connected, and the socket is a real one', async () => {
-    const agent = agentOf(guardedClientOptions('http://192.168.68.71:9200', { deniedRanges: [], allowedRanges: ['192.168.68.0/24'] }), 'http://192.168.68.71:9200');
-    const socket = agent.createConnection({ host: '192.168.68.71', port: 9200 }, () => undefined) as { destroy: () => void } | undefined;
+    const agent = agentOf(guardedClientOptions('http://192.168.0.10:9200', { deniedRanges: [], allowedRanges: ['192.168.0.0/24'] }), 'http://192.168.0.10:9200');
+    const socket = agent.createConnection({ host: '192.168.0.10', port: 9200 }, () => undefined) as { destroy: () => void } | undefined;
     expect(socket).toBeDefined();
     socket?.destroy();
   });

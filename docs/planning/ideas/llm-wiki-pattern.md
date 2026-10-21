@@ -253,7 +253,7 @@ The first four tiers all return AssetRecord-shaped data through `AssetManager`. 
 
 ### sist2 as a new AssetProvider
 
-[sist2](https://github.com/simon987/sist2) is an Elasticsearch-backed file/document indexer that's already running on the operator's NAS at `http://192.168.68.71:4090` indexing personal data outside ngdpbase. Wiring it up as an `AssetProvider`:
+[sist2](https://github.com/simon987/sist2) is an Elasticsearch-backed file/document indexer that's already running on the operator's NAS at `http://sist2.example.com:4090` indexing personal data outside ngdpbase. Wiring it up as an `AssetProvider`:
 
 - Implements the `search()` interface — returns AssetRecord-shaped results mapped from sist2's document model.
 - Returns `getById()` to resolve a sist2 document ID to file metadata + a URL the user can click through to view it.

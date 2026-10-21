@@ -7,6 +7,7 @@
  * CloudflareAccessAuthProvider test harness (#649).
  */
 
+import { randomUUID } from 'node:crypto';
 import { describe, test, expect, beforeAll, vi } from 'vitest';
 import {
   createLocalJWKSet,
@@ -203,7 +204,7 @@ describe('AuthentikBearerAuthProvider (#818)', () => {
     const provider = buildProvider(engine);
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     try {
-      const result = await provider.verify({ token: 'ngdp_at_abcdefABCDEF0123456789' });
+      const result = await provider.verify({ token: `ngdp_at_${randomUUID().replace(/-/g, '')}` });
       expect(result).toBeNull();
       expect(warn).not.toHaveBeenCalled();
     } finally {

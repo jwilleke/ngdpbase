@@ -7,6 +7,7 @@
  * at startup: the manager is degraded and admins are notified.
  */
 
+import { randomUUID } from 'node:crypto';
 import UserManager from '../UserManager';
 import { UserCreateError, safeRegistrationMessage } from '../../utils/userCreateError';
 import type { ActorContext } from '../../context/ActorContext';
@@ -41,7 +42,7 @@ function makeManager() {
   return { manager, store, notes };
 }
 
-const person = (username: string, email: string) => ({ username, email, displayName: username, password: 'pw-123456789' });
+const person = (username: string, email: string) => ({ username, email, displayName: username, password: `pw-${randomUUID()}` });
 
 describe('one email, one account (#1748)', () => {
   test('a new account cannot take an email another account has — in any case, with spaces', async () => {
