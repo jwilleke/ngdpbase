@@ -39,6 +39,8 @@
  * having chosen nothing. That is the right trade.
  */
 
+import { REQUIRED_SETTINGS_HELP } from './requiredSettings.js';
+
 /** The bootstrap password shipped in `config/app-default-config.json`. */
 export const SHIPPED_BOOTSTRAP_PASSWORD = 'admin123';
 
@@ -78,6 +80,6 @@ export function assertHeadlessBootstrapPassword(
     'repository. An unattended deploy has nobody to read the startup warning. ' +
     `Set NGDPBASE_ADMIN_PASSWORD and point \`${PASSWORD_CONFIG_KEY}\` at it ` +
     `("$NGDPBASE_ADMIN_PASSWORD"), or set \`${PASSWORD_CONFIG_KEY}\` directly in ` +
-    'app-custom-config.json, then restart. (#1087)'
+    `app-custom-config.json, then restart. (#1087) ${REQUIRED_SETTINGS_HELP}`
   );
 }

@@ -24,6 +24,36 @@ import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
+import { REQUIRED_SETTINGS_HELP } from '../utils/requiredSettings.js';
+
+/**
+ * The system principal's name from configuration, or a refusal (#631, #1953).
+ *
+ * `ngdpbase.system.principal` ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`,
+ * which throws when the variable is unset; an empty value is refused the same
+ * way. One rule for both readers: the PIP at run time, and `WikiEngine` right
+ * after configuration loads, before any manager writes — so a first boot
+ * without a principal refuses before the admin account exists, not after it
+ * was written without its person (#1953).
+ */
+export function systemPrincipalFromConfig(configManager: { getProperty(key: string, defaultValue: unknown): unknown } | null | undefined): string {
+  let name: unknown;
+  try {
+    name = configManager?.getProperty(SYSTEM_PRINCIPAL_KEY, '');
+  } catch (cause) {
+    throw new Error(systemPrincipalRefusal('is not set'), { cause });
+  }
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new Error(systemPrincipalRefusal('is empty'));
+  }
+  return name.trim();
+}
+
+function systemPrincipalRefusal(why: string): string {
+  return `Refusing to start: NGDPBASE_SYSTEM_USER ${why}. It names the system principal, the identity the server acts ` +
+    'under at boot and from timers; it is a name, not an account. Set it in .env, e.g. NGDPBASE_SYSTEM_USER=system, ' +
+    `and restart (#631). ${REQUIRED_SETTINGS_HELP}`;
+}
 
 /** The one thing the page tiers need from PageManager (#1431 7c). */
 interface PrivateAccessCheck {
@@ -201,12 +231,7 @@ class PolicyInformationPoint extends BaseManager {
    * UI, so the identity cannot be renamed through a form.
    */
   systemPrincipalName(): string {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const name = configManager?.getProperty(SYSTEM_PRINCIPAL_KEY, '');
-    if (typeof name !== 'string' || name.trim() === '') {
-      throw new Error(`${SYSTEM_PRINCIPAL_KEY} is empty. Set NGDPBASE_SYSTEM_USER in .env (#631).`);
-    }
-    return name.trim();
+    return systemPrincipalFromConfig(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
   }
 
   /** Whether `username` names the system principal. Case-insensitive, like the user store. */
