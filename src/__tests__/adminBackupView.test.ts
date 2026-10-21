@@ -140,3 +140,15 @@ describe('#1876 the page that shows the backup key', () => {
   });
 });
 
+describe('#1938 Admin → Backup, download the .env', () => {
+  test('the button sits in the backup-key card, links to the download, and says plainly what the file is', async () => {
+    for (const backupKey of [{ set: true, fingerprint: 'f', saved: true }, { set: true, fingerprint: 'f', saved: false }, { set: false, fingerprint: null, saved: false }]) {
+      const doc = await render({ backupKey });
+      const button = doc.querySelector('#backup-key-card #backup-env-download');
+      expect(button?.getAttribute('href')).toBe('/admin/backup/env');
+      // Not a download attribute: a stale sign-in must reach the prompt, not be saved as the file.
+      expect(button?.hasAttribute('download')).toBe(false);
+      expect(text(doc.querySelector('#backup-env-warning'))).toBe('This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.');
+    }
+  });
+});

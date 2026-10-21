@@ -11745,6 +11745,31 @@ ${panes}
     }
   }
 
+  /**
+   * GET /admin/backup/env — the instance `.env` exactly as it is, as a
+   * download named after the site, for an admin to keep off the server
+   * (#1938). `config-manage`, with its fresh sign-in (step-up); never cached;
+   * recorded by BackupManager as `secret-reveal`; never logged.
+   */
+  async adminBackupEnv(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      const content = await backupManager.revealInstanceEnv(wikiContext.userContext);
+      if (!content) return res.redirect('/admin/backup?error=' + encodeURIComponent('This site has no .env file to download.'));
+      const stem = this.siteName().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'ngdpbase';
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${stem}.env"`);
+      return res.send(content);
+    } catch (err: unknown) {
+      logger.error('Error sending the instance .env:', getErrorMessage(err));
+      return res.status(500).send('Internal server error');
+    }
+  }
+
   /** POST /admin/backup/key/saved — an admin confirms the backup key is saved off the server (#1876, config-manage). */
   async adminBackupKeySaved(req: Request, res: Response) {
     try {
@@ -16236,6 +16261,7 @@ ${panes}
     app.post('/admin/backup/restore', (req: Request, res: Response) => void this.adminBackupRestore(req, res));
     app.post('/admin/backup/restore/cancel', (req: Request, res: Response) => void this.adminBackupRestoreCancel(req, res));
     app.get('/admin/backup/key', (req: Request, res: Response) => void this.adminBackupKey(req, res));
+    app.get('/admin/backup/env', (req: Request, res: Response) => void this.adminBackupEnv(req, res));
     app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)

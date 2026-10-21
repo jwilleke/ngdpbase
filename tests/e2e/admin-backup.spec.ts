@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 
 /**
@@ -75,6 +77,26 @@ test.describe('Admin Backup', () => {
     await expect(page.locator('#backup-key-fingerprint')).toHaveText(fingerprint);
     await expect(page.locator('#backup-key-confirm input[name="fingerprint"]')).toHaveValue(fingerprint);
     // (Confirming is left to the admin: it records a setting.)
+  });
+
+  test('Download .env sends the site\'s .env as an attachment, never cached, with the warning beside it (#1938)', async ({ page }) => {
+    await page.goto('/admin/backup');
+    await expect(page.locator('#backup-key-card #backup-env-warning')).toContainText('This file holds every secret of the site in plain text');
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#backup-key-card #backup-env-download').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.env$/);
+    expect(await download.failure()).toBeNull();
+
+    const response = await page.request.get('/admin/backup/env');
+    expect(response.status()).toBe(200);
+    expect(response.headers()['cache-control']).toBe('no-store');
+    expect(response.headers()['content-disposition']).toMatch(/^attachment; filename=".+\.env"$/);
+    const body = await response.body();
+    // On an instance whose data folder this run can read (a throwaway one), byte for byte.
+    const local = process.env.FAST_STORAGE ? path.join(process.env.FAST_STORAGE, '.env') : '';
+    if (local && fs.existsSync(local)) expect(body.equals(fs.readFileSync(local))).toBe(true);
+    else expect(body.toString('utf8')).toMatch(/^NGDPBASE_[A-Z_]+=/m);
   });
 
   test('the restore button waits for the site name', async ({ page }) => {

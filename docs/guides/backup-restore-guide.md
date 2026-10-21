@@ -1,7 +1,7 @@
 ---
 name: Backup and restore guide
 description: How a site is backed up and restored today — triggers, files, retention, the staged databases restore and the staged site restore, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
-dateModified: 2026-10-19
+dateModified: 2026-10-21
 category: guides
 relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManager, PageManager, AttachmentManager, UserManager, ConfigurationManager, RoleManager, PersonManager, OrganizationManager, FootnoteManager, CommentManager, AuthManager, AuditManager]
 ---
@@ -152,6 +152,7 @@ Pages (with history, trash and vaults), users, settings, the search index, the u
 The operator plan "one thing to save" ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6286342587), 2026-10-20):
 
 - __The operator keeps the backup key.__ Every site has one (`NGDPBASE_BACKUP_KEY`, made at first start). Every backup is encrypted under it, and it is the one thing a restore on a new server needs: set the one saved key, restore, and everything in the backup returns — the `.env` keys, the credentials store with every admin's passkeys, the databases. Admin → Backup shows its fingerprint; __Show the key to copy it__ (`GET /admin/backup/key`, `config-manage` with its fresh sign-in, never cached; the only place the key is ever shown) and __I have saved this key off the server__ (`POST /admin/backup/key/saved`) records the fingerprint in `ngdpbase.backup.key-saved-fingerprint`. Until then the dashboard banner says "Save the backup key off this server" with the fingerprint; a new key asks again. On a new server put the saved key in `<FAST_STORAGE>/.env` before the first start (or replace the one that server made, then restart).
+- __The operator may also keep the whole `.env`__ ([#1938](https://github.com/jwilleke/ngdpbase/issues/1938), operator decision 2026-10-21: the browser downloads it and the operator chooses where it is kept; no server-side copy). __Download .env__ in the backup-key card (`GET /admin/backup/env`, `WikiRoutes.adminBackupEnv`) sends `<FAST_STORAGE>/.env` exactly as it is on disk, the backup key line included, as an attachment named `<application-name>.env`. It needs `config-manage` with its fresh sign-in, as the key page does (a stale sign-in goes to the prompt and comes back to the download), is sent `Cache-Control: no-store`, and is recorded by `BackupManager.revealInstanceEnv` as `secret-reveal` (`resource: .env`, `resourceType: instance-env`, who and the byte count, never the contents); the contents are never logged. The card says beside the button that the file holds every secret of the site in plain text.
 - __Each person keeps their recovery words__ (#1452). A private vault opens only with its owner's password or passkey; a forgotten password and no recovery words means the vault is gone, and no backup or administrator can open it. Each person with vault keys gets one notification, addressed to them, "Keep your recovery words safe", at their first password sign-in after this change (`src/utils/recoveryWordsReminder.ts`); dismissing it is their confirmation, and it is not sent again (deduplicated by title and person among the stored notifications).
 
 ### Not in any backup
@@ -215,6 +216,8 @@ Only what the code supports:
 - __Private stores over 256 MB are left out whole__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238); #1387 closed). The backup is built in memory. Over that size `privateOmitted` is set and an error logged, but no admin is notified, and every vault is missing from the backup.
 - __Elasticsearch search backups stop at 10,000 documents__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)). It can be rebuilt from the pages.
 - __A leftover legacy `pages/private/` folder is not backed up__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
+- __Download .env is only the instance file__ ([#1938](https://github.com/jwilleke/ngdpbase/issues/1938)). A variable set in the environment (a Kubernetes Secret, `PORT=… node`) or in the checkout's root `.env` is not in it; keep those where they are set. A site with no `<FAST_STORAGE>/.env` is told so on Admin → Backup.
+- __Showing the backup key is not audited__ (#1876). `GET /admin/backup/key` records nothing of its own; Download .env records `secret-reveal`.
 - __Two default-config keys do nothing__: `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876#issuecomment-6248952238)).
 
 ## Checklist
