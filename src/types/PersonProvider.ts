@@ -24,6 +24,13 @@ export interface PersonProvider extends BaseProvider {
   /** Persist a new Person. Returns the stored record. */
   create(person: Person): Promise<Person>;
 
+  /**
+   * Write the whole record in place of the one with the same `@id` (#1930).
+   * The only write that may change `identifier`: PersonManager uses it to join
+   * a person to an account.
+   */
+  replace(person: Person): Promise<Person>;
+
   /** Apply a partial update by `@id`. Returns the updated record, or null if not found. */
   update(id: string, patch: PersonUpdate): Promise<Person | null>;
 

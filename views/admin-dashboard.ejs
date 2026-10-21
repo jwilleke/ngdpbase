@@ -312,6 +312,13 @@
                             </a>
                             <a href="/view/organizations" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
                         </span>
+                        <% if ((typeof can === 'function' && can('contact-read'))) { %>
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/contacts" class="btn btn-secondary btn-sm" data-testid="admin-contacts-link">
+                                <i class="fas fa-address-book"></i> Contacts
+                            </a>
+                        </span>
+                        <% } %>
                     </div>
                 </div>
             </div>
@@ -399,6 +406,17 @@
                             <small class="text-danger">
                                 <i class="fas fa-exclamation-triangle"></i> Maintenance mode is currently <strong>ACTIVE</strong>
                             </small>
+                        </div>
+                    <% } %>
+                    <%# #1906: every reason the site is in maintenance mode, for administrators only. Visitors see the maintenance message. %>
+                    <% if (typeof maintenanceReasons !== 'undefined' && maintenanceReasons && maintenanceReasons.length > 0) { %>
+                        <div class="alert alert-danger mt-2 mb-0 small" data-maintenance-reasons>
+                            <strong>The site is in maintenance mode because:</strong>
+                            <ul class="mb-0">
+                                <% maintenanceReasons.forEach(function (r) { %>
+                                    <li><%= r %></li>
+                                <% }); %>
+                            </ul>
                         </div>
                     <% } %>
                     <% } else { %>

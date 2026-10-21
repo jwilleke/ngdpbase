@@ -1,7 +1,7 @@
 ---
 name: Testing developer guide
 description: Non-negotiable rules for tests in this repo — teardown, proving a test can fail, reproducing the way the suite runs
-dateModified: 2026-10-18
+dateModified: 2026-10-19
 category: guides
 ---
 
@@ -16,6 +16,7 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 - Reproduce a failure the way the suite runs it. Do not skip fixture reset, reuse state, or run one spec alone when the suite runs it in a batch.
 - Do not invent a system principal to satisfy a mandatory context. Use `jobContextFromSystem(reason)` or the request subject you were given.
 - Test credentials are generated at run time (`pw-${randomUUID()}`), never written as literals, and no real secret is ever committed, in tests or anywhere else. GitGuardian skips test paths (`**/__tests__/**`, `tests/**`, in `.gitguardian.yaml` on master) because its username/password detector matches the shape of test code, not the value; that skip is only safe while this rule holds.
+- An E2E request sent with `maxRedirects: 0` goes to `instanceOrigin(page)` (`tests/e2e/fixtures/helpers.ts`), never to a bare `/path`. jimstest's base URL is https, so it answers plain-http requests with 308, and a spec written against an http throwaway instance then fails the release gate there.
 
 ## How to add a test
 
@@ -49,6 +50,7 @@ Run E2E against an instance you start for the run, never against one an operator
 - Build first: `npm run build`. The instance runs `dist/`.
 - Seed the folder: `FAST_STORAGE=<dir> SLOW_STORAGE=<dir> PUID=$(id -u) PGID=$(id -g) npx tsx scripts/seed-e2e-test-data.ts`.
 - Start it with `node dist/src/app.js`, the way CI does, and stop it by its own PID. `./server.sh` is for long-running pm2-managed instances; from a worktree it can reach another instance by pm2 name or by path — the reasons are in the [bootstrap guide](bootstrap-developer-guide.md#multiple-instances-on-one-machine). Set `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, `NGDPBASE_BASE_URL=http://localhost:<port>`, `NGDPBASE_SYSTEM_USER`, `PUID` and `PGID`.
+- The forms specs skip unless `ngdpbase.addons.forms.enabled` is true in the folder's `config/app-custom-config.json`. `forms-shipped.spec.ts` also needs the fixture add-on in `tests/e2e/fixtures/addons/shipped-forms-e2e`; its header names the keys that load it.
 - Run `PORT=<port> npm run test:e2e`, then stop the server and remove the folder.
 
 The admin password has one source:

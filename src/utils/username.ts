@@ -60,7 +60,15 @@ export function sameUsername(a: unknown, b: unknown): boolean {
  */
 export const RESERVED_USERNAMES: readonly string[] = ['anonymous', 'asserted'];
 
-/** True when the name belongs to a principal rather than a person. */
+/**
+ * The prefix of a person's identifier when the person has no account (#1930):
+ * `person:<uuid>`. No username may start with it, so an account-less person's
+ * identifier can never be, or later become, someone's username.
+ */
+export const ACCOUNTLESS_PERSON_PREFIX = 'person:';
+
+/** True when the name belongs to a principal rather than a person, or has the account-less person prefix. */
 export function isReservedUsername(username: unknown): boolean {
-  return RESERVED_USERNAMES.includes(normalizeUsername(username));
+  const name = normalizeUsername(username);
+  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX);
 }

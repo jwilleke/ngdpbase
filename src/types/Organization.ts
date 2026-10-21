@@ -76,6 +76,12 @@ export interface Organization {
 }
 
 /**
+ * What a caller gives `OrganizationManager.create` (#1930): the fields, with
+ * `@id` optional (it defaults to the `url`, else a new `urn:uuid:`).
+ */
+export type OrganizationInput = Partial<Organization> & { name: string };
+
+/**
  * Patch shape for update operations.
  * `@context`/`@type` are immutable; `@id` cannot be changed via update.
  */

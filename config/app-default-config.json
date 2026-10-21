@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.20.0",
+  "ngdpbase.version": "5.22.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -39,6 +39,7 @@
     "ngdpbase.auth.oidc.providers": "sensitive",
     "ngdpbase.access.policies": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
+    "ngdpbase.backup.restore-manifest": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
     "ngdpbase.auth.agent-token.directory": "sensitive",
     "ngdpbase.auth.proxy-access.enabled": "sensitive",
@@ -114,6 +115,10 @@
   "ngdpbase.application.persons.storagedir": "${FAST_STORAGE}/persons",
   "ngdpbase.application.persons.provider.default": "filepersonprovider",
   "ngdpbase.application.persons.provider": "filepersonprovider",
+  "_comment_application_contacts": "Contacts (#1930): the most results PersonManager.search / OrganizationManager.search return when the caller gives no limit, and how long the 'Is this you?' sign-up link stays usable.",
+  "ngdpbase.application.persons.search.limit": 50,
+  "ngdpbase.application.persons.link-offer.ttl-minutes": 30,
+  "ngdpbase.application.organization.search.limit": 50,
   "ngdpbase.application.organization.provider.default": "fileorganizationprovider",
   "ngdpbase.application.organization.provider": "fileorganizationprovider",
   "_comment_application_roles": "OrganizationRole records storage (#617 follow-up). One file per (organization, namedPosition) pair under storagedir, named <namedPosition>.json. Snapshot at create time from the catalog at ngdpbase.roles.definitions.",
@@ -330,6 +335,8 @@
   "ngdpbase.mail.enabled": false,
   "ngdpbase.mail.provider": "console",
   "ngdpbase.mail.from": "",
+  "_comment_mail_failure_notice": "#1916 — a failed send is logged and administrators (admin-system holders) get one notification per window, with a running count of the failures in it, not one per email. EmailManager shows degraded until the next send succeeds. Minutes; read at startup.",
+  "ngdpbase.mail.failure-notice.window-minutes": 60,
   "_comment_mail_smtp": "SMTP settings (provider='smtp'). Works with any relay: Gmail, Resend, SendGrid, SES, self-hosted. smtp.from overrides mail.from and allows display names.",
   "ngdpbase.mail.provider.smtp.host": "",
   "ngdpbase.mail.provider.smtp.port": 587,
@@ -411,6 +418,10 @@
   "ngdpbase.attachment.provider.basic.hashmethod": "sha256",
   "_comment_attachment_legacy_private": "Migrate-FROM folder under attachment storagedir (pre-#1386 attachments/private/{user}/). Not a live write target. Destination is the page store under pages storagedir.",
   "ngdpbase.attachment.provider.basic.legacyprivateroot": "private",
+  "_comment_files_migration": "Files migration (#1859, epic #1851): values the dry run (npm run files:migration:dry) and, later, the copy apply. owner-map maps an uploader a record names to a username, and is applied first (e.g. {\"jim@willeke.com\": \"jim\", \"Unknown\": \"jim\"}). default-owner is given to a public file whose record names no user (Unknown, empty, or an email used as a name) and that owner-map does not cover. clash-suffix-digits is the width of the suffix two different files with the same name in one place get: 3 gives report-001.pdf.",
+  "ngdpbase.files.migration.owner-map": {},
+  "ngdpbase.files.migration.default-owner": "admin",
+  "ngdpbase.files.migration.clash-suffix-digits": 3,
   "ngdpbase.directories.templates": "./templates",
   "ngdpbase.directories.exports": "${FAST_STORAGE}/exports",
   "ngdpbase.directories.resources": "./resources",
@@ -439,8 +450,7 @@
   "ngdpbase.managers.addons-manager.install.max-metadata-bytes": 16777216,
   "ngdpbase.managers.addons-manager.install.max-tarball-bytes": 52428800,
   "ngdpbase.managers.addons-manager.install.max-unpacked-bytes": 209715200,
-  "_comment_addons_site_critical": "#1883 — an add-on is site-critical when ngdpbase.addons.<slug>.site-critical is true (exactly true or false; set in the add-on's config/default-config.json, and app-custom-config.json wins either way). When a site-critical add-on does not load, for any reason, the whole site starts in maintenance mode: visitors see only this message, with no details; administrators can still sign in and reach /admin, and get a notification naming the add-on, the reason and the fix. Empty shows only the page's heading.",
-  "ngdpbase.managers.addons-manager.site-critical.public-message": "We're having temporary issues. Please try again later.",
+  "_comment_addons_site_critical": "#1883 — an add-on is site-critical when ngdpbase.addons.<slug>.site-critical is true (exactly true or false; set in the add-on's config/default-config.json, and app-custom-config.json wins either way). When a site-critical add-on does not load, for any reason, the whole site starts in maintenance mode: visitors see only the maintenance message (ngdpbase.features.maintenance.message), with no details; administrators can still sign in and reach /admin, and get a notification naming the add-on, the reason and the fix.",
   "_comment_addons": "Add-on system configuration - individual add-ons configured under ngdpbase.addons.<name>",
   "ngdpbase.addons": {},
   "_comment_cache_storage": "Cache storage configuration (ALL LOWERCASE)",
@@ -1033,6 +1043,7 @@
   "ngdpbase.features.images.default-class": "wiki-image",
   "_comment_location": "Location plugin configuration",
   "ngdpbase.location.default-provider": "osm",
+  "_comment_features_maintenance": "#1906 — maintenance mode has one owner, MaintenanceState (engine.maintenance). Anything that needs the site closed enters it with a reason: the admin toggle, a broken audit provider under refuse-boot, a site-critical add-on that did not load, an application database that can't be opened, an unusable TLS file or egress range. Reasons are for administrators only (the log, the admin dashboard, notifications); visitors and /health/readiness get only the message. message and estimated-duration are what visitors see unless the reason brought its own; set message to any text. The retired ngdpbase.managers.addons-manager.site-critical.public-message is still used when a site set it and has not set message. enabled is the admin switch's record: the toggle writes it so the switch survives a restart, and it is read at boot — change it with the toggle, not here, for it to apply at once. allow-admins lets signed-in administrators use the whole site while only the admin switch holds it; a failure keeps everyone to /admin, /login and /logout.",
   "ngdpbase.features.maintenance.enabled": false,
   "ngdpbase.features.maintenance.message": "System is currently under maintenance. Please try again later.",
   "ngdpbase.features.maintenance.allow-admins": true,
@@ -1962,6 +1973,22 @@
         "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
       }
     },
+    "contact-read": {
+      "description": "List, search and view contacts: persons (with or without an account) and organizations, and their affiliations, through PersonManager and OrganizationManager, and the /admin/contacts and /admin/organizations views (#1930). Admins and demo admins by default; an add-on grants it to its own roles in its own policy",
+      "label": "Find and view contacts (people and organizations)",
+      "icon": "address-book",
+      "color": "#6c757d"
+    },
+    "contact-manage": {
+      "description": "Create, edit, delete and link contacts: persons (with or without an account) and organizations, and a person's affiliations, through PersonManager and OrganizationManager (#1930). Reading them is contact-read. Admins by default; an add-on grants it to its own roles in its own policy",
+      "label": "Add, change and link contacts (people and organizations)",
+      "icon": "address-book",
+      "color": "#0d6efd",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values"
+      }
+    },
     "admin-read": {
       "description": "View administration screens (read-only, no changes)",
       "label": "View administration screens without changing anything",
@@ -2248,6 +2275,13 @@
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
+      }
+    },
+    "backup-restore-applied": {
+      "description": "A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
       }
     },
     "addon-install": {
@@ -2557,6 +2591,54 @@
       ]
     },
     {
+      "id": "contact-read-access",
+      "name": "Administrators and demo administrators find and view contacts",
+      "description": "List, search and view persons and organizations (#1930). Changing them is contact-manage, admins only. An add-on that needs contacts grants contact-read to its own roles in its own policy",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "contact-read"
+      ]
+    },
+    {
+      "id": "contact-manage-admin",
+      "name": "Administrators change contacts",
+      "description": "Admins create, edit, delete and link persons and organizations (#1930). An add-on that needs to change contacts grants contact-manage to its own roles in its own policy",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "contact-manage"
+      ]
+    },
+    {
       "id": "user-admin-permissions",
       "name": "User Administrator Permissions",
       "description": "Can manage users — create, edit, deactivate, delete",
@@ -2855,6 +2937,10 @@
   "ngdpbase.backup.auto-backup-interval": 86400000,
   "ngdpbase.backup.auto-backup-time": "02:00",
   "ngdpbase.backup.auto-backup-days": "daily",
+  "_comment_backup_restore_manifest": "#1876 — the record of a whole-site restore staged for the next start: which parts (attachments, role membership, persons, organizations, public footnotes and comments, databases) are staged beside their live data, and whether the set is complete. Each part goes in at the next start only when every part does; otherwise each is set aside as *.incomplete. Becomes <file>.last once the start has applied or refused it. Instance data: keep it in FAST_STORAGE.",
+  "ngdpbase.backup.restore-manifest": "${FAST_STORAGE}/site-restore.json",
+  "_comment_backup_key_saved": "#1876: the fingerprint of the backup key (NGDPBASE_BACKUP_KEY) an admin confirmed is saved off the server, set from Admin -> Backup. Empty: the dashboard asks for the key to be saved. A different key asks again. The fingerprint never reveals the key.",
+  "ngdpbase.backup.key-saved-fingerprint": "",
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

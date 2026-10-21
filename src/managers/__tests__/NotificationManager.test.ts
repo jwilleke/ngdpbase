@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import NotificationManager from '../NotificationManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { loggedText } from './__fixtures__/loggedText';
 
 /** #1235: dismissal takes the caller's context; the dismisser is its username. */
 const TESTUSER = { username: 'testuser', roles: ['admin'], isAuthenticated: true };
@@ -873,6 +874,46 @@ describe('NotificationManager — email escalation', () => {
 
     expect(id).toMatch(/^notification_\d+$/);
     expect(mgr.getAllNotifications()).toHaveLength(1);
+    await mgr.shutdown();
+  });
+  // #1916: the server log names the recipient's domain only.
+  test('escalation sent: the log line names the username and the domain, never the address', async () => {
+    const { engine } = makeEscalationEngine({ dataDir: tempDir, escalationEnabled: true });
+    const mgr = new NotificationManager(engine as any);
+    await mgr.initialize({});
+    await mgr.createNotification({ level: 'error', title: 'Disk full', message: 'Storage at 100%' });
+    // Escalation is fire-and-forget: wait for its line rather than a fixed delay.
+    await vi.waitFor(() => expect(loggedText((mgr as any).logger)).toContain('Escalation email sent to jim (an address at example.com)'));
+
+    const text = loggedText((mgr as any).logger);
+    expect(text).not.toContain('jim@example.com');
+    await mgr.shutdown();
+  });
+
+  test('escalation send fails: not logged again (EmailManager reported it), no address, and the next recipient is still tried', async () => {
+    const sendTo = vi.fn()
+      .mockRejectedValueOnce(new Error('550 <jim@example.com>: Recipient address rejected'))
+      .mockResolvedValueOnce(undefined);
+    const { engine } = makeEscalationEngine({
+      dataDir: tempDir,
+      escalationEnabled: true,
+      sendTo,
+      adminUsers: [
+        { username: 'jim', email: 'jim@example.com', roles: ['admin'] },
+        { username: 'alice', email: 'alice@example.com', roles: ['admin'] }
+      ]
+    });
+    const mgr = new NotificationManager(engine as any);
+    await mgr.initialize({});
+    await mgr.createNotification({ level: 'error', title: 'Fail', message: 'Error' });
+    await vi.waitFor(() => expect(loggedText((mgr as any).logger)).toContain('Escalation email sent to alice'));
+
+    expect(sendTo).toHaveBeenCalledTimes(2);
+    const text = loggedText((mgr as any).logger);
+    expect(text).not.toContain('550');
+    expect(text).not.toContain('jim@example.com');
+    expect(text).not.toContain('alice@example.com');
+    expect(text).toContain('Escalation email sent to alice (an address at example.com)');
     await mgr.shutdown();
   });
 });

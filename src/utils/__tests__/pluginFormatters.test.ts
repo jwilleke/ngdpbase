@@ -664,6 +664,29 @@ describe('resolveManagerOptions', () => {
     expect(r).toEqual({ status: 'ok', options: [{ value: 'Cash', label: 'Cash' }, { value: '20', label: 'Cheque' }] });
   });
 
+  test('a choice keeps its amount when it is whole minor units, and drops any other (#1904)', async () => {
+    const ctx = makeContext({
+      M: {
+        toFormOptions: async () => [
+          { value: 'r1', label: 'Receipt 1', amount: 12000 },
+          { value: 'r2', label: 'Receipt 2', amount: 12.5 },
+          { value: 'r3', label: 'Receipt 3', amount: '300' },
+          { value: 'r4', label: 'Receipt 4', amount: 0 }
+        ]
+      }
+    });
+    const r = await resolveManagerOptions('M.toFormOptions()', ctx);
+    expect(r).toEqual({
+      status: 'ok',
+      options: [
+        { value: 'r1', label: 'Receipt 1', amount: 12000 },
+        { value: 'r2', label: 'Receipt 2' },
+        { value: 'r3', label: 'Receipt 3' },
+        { value: 'r4', label: 'Receipt 4', amount: 0 }
+      ]
+    });
+  });
+
   test('a non-array answer is no choices', async () => {
     const ctx = makeContext({ M: { toFormOptions: async () => 'oops' } });
     expect(await resolveManagerOptions('M.toFormOptions()', ctx)).toEqual({ status: 'ok', options: [] });

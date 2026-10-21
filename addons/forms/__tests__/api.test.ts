@@ -311,3 +311,259 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     expect(saved).toEqual([]);
   });
 });
+
+// ── Checklist: an array of the ticked values (#1904) ──────────────────────────
+
+describe('POST /api/forms/submit/:formId — checklist', () => {
+  const depositForm = (required: boolean) => ({
+    id: 'test-form',
+    title: 'Make a deposit',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      { name: 'receiptIds', type: 'checklist', label: 'Receipts', required, optionsSource: 'fetch:LedgerManager.toFormOptions(list=deposit-receipts)', totalField: 'total' },
+      { name: 'total', type: 'amount', label: 'Total', required: false }
+    ]
+  });
+
+  function depositApp(required = true) {
+    const seen: unknown[] = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => depositForm(required), saveSubmission: async (s: object) => s },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'r1', label: 'Receipt 1', amount: 12000 }, { value: 'r2', label: 'Receipt 2', amount: 22000 }];
+        }
+      }
+    });
+    const addon = { callHandler: async (_id: string, s: { data: unknown }) => { seen.push(s.data); return { ok: true }; } };
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    return { app, seen, viewers };
+  }
+
+  test('the ticked values reach the handler as an array, the options resolved as the viewer', async () => {
+    const { app, seen, viewers } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: ['r1', 'r2'], total: '340' });
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{ receiptIds: ['r1', 'r2'], total: 34000 }]);
+    expect(viewers).toEqual([{ username: 'molly' }]);
+  });
+
+  test('a value the checklist did not offer is refused next to the field, and the handler never runs', async () => {
+    const { app, seen } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: ['r1', 'someone-elses'] });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.receiptIds).toMatch(/only the listed options/i);
+    expect(seen).toEqual([]);
+  });
+
+  test('a comma string is not an array, and is refused', async () => {
+    const { app, seen } = depositApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ receiptIds: 'r1,r2' });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.receiptIds).toMatch(/Receipts/);
+    expect(seen).toEqual([]);
+  });
+
+  test('required: nothing ticked is refused with "tick at least one"', async () => {
+    const { app } = depositApp(true);
+    for (const body of [{ receiptIds: [] }, {}]) {
+      const res = await request(app).post('/api/forms/submit/test-form').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.fields.receiptIds).toMatch(/tick at least one/i);
+    }
+  });
+
+  test('optional: nothing ticked is an empty array', async () => {
+    const { app, seen } = depositApp(false);
+    const res = await request(app).post('/api/forms/submit/test-form').send({});
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{ receiptIds: [] }]);
+  });
+});
+
+// ── #1916: a failed confirmation email is reported, and the submission still succeeds
+
+describe('POST /api/forms/submit/:formId — confirmation email fails (#1916)', () => {
+  test('201 for the submitter; EmailManager records the failure and tells the administrators', async () => {
+    const { default: EmailManager } = await import('../../../dist/src/managers/EmailManager.js');
+    const createNotification = vi.fn(async () => 'notification_1');
+    // EmailManager's own engine: where its failure report goes.
+    const core: Record<string, unknown> = {
+      ConfigurationManager: { getProperty: (key: string, def: unknown) => (key === 'ngdpbase.mail.enabled' ? true : def) },
+      NotificationManager: { createNotification, updateNotificationMessage: vi.fn(async () => true) },
+      UserManager: { getUsers: async () => [{ username: 'admin' }] },
+      PolicyDecisionPoint: { userHoldsPermission: async (u: string) => u === 'admin' }
+    };
+    const emailManager = new EmailManager({ getManager: (n: string) => core[n] } as never);
+    await emailManager.initialize();
+    const send = vi.fn(async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:587'); });
+    (emailManager as unknown as { provider: unknown }).provider = { send };
+
+    const app = makeContext(makeEngine({ EmailManager: emailManager, ConfigurationManager: core.ConfigurationManager }));
+    const res = await request(app).post('/api/forms/submit/test-form').send({ name: 'Alice', email: 'alice@example.com' });
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+
+    await vi.waitFor(() => expect(createNotification).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(emailManager.isDeliveryFailing()).toBe(true);
+    expect(createNotification.mock.calls[0][0]).toMatchObject({ title: 'Email could not be sent', targetUsers: ['admin'] });
+  });
+});
+
+// ── Lines: an array of row objects (#1913) ────────────────────────────────────
+
+describe('POST /api/forms/submit/:formId — lines', () => {
+  const receiptForm = {
+    id: 'test-form',
+    title: 'Record a receipt',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      {
+        name: 'lines', type: 'lines', label: 'Lines', required: true, minRows: 1, maxRows: 20,
+        fields: [
+          { name: 'amount', type: 'amount', label: 'Amount', required: true },
+          { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+          { name: 'memo', type: 'text', label: 'Note', required: false }
+        ],
+        amountField: 'amount', totalField: 'total'
+      },
+      { name: 'total', type: 'amount', label: 'Total', required: true }
+    ]
+  };
+
+  function receiptApp(handler: (s: { data: unknown }) => Promise<{ ok: boolean; [k: string]: unknown }> = async () => ({ ok: true })) {
+    const seen: unknown[] = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => receiptForm, saveSubmission: async (s: object) => s },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'general', label: 'General' }, { value: 'reserve', label: 'Reserve' }];
+        }
+      }
+    });
+    const addon = { callHandler: async (_id: string, s: { data: unknown }) => { seen.push(s.data); return handler(s); } };
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    return { app, seen, viewers };
+  }
+
+  test('the rows reach the handler as an array of objects, amounts in minor units, options resolved once as the viewer', async () => {
+    const { app, seen, viewers } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      lines: [
+        { amount: '50', fundId: 'general', memo: '' },
+        { amount: '12.50', fundId: 'reserve', memo: 'dues' },
+        { amount: '', fundId: '', memo: '' }
+      ],
+      total: '62.50'
+    });
+    expect(res.status).toBe(201);
+    expect(seen).toEqual([{
+      lines: [{ amount: 5000, fundId: 'general', memo: '' }, { amount: 1250, fundId: 'reserve', memo: 'dues' }],
+      total: 6250
+    }]);
+    expect(viewers).toEqual([{ username: 'molly' }]);
+  });
+
+  test('a fund the row did not offer is refused next to that row\'s field, and the handler never runs', async () => {
+    const { app, seen } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      lines: [{ amount: '50', fundId: 'general', memo: '' }, { amount: '5', fundId: 'someone-elses', memo: '' }],
+      total: '55'
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.fields).toEqual({ 'lines[1].fundId': 'Fund: choose one of the listed options' });
+    expect(seen).toEqual([]);
+  });
+
+  test('a handler\'s per-row field errors are sent as it returned them', async () => {
+    const { app } = receiptApp(async () => ({ ok: false, error: 'Please correct the marked fields', fields: { 'lines[0].fundId': 'That fund is closed', total: 'Does not match the lines' } }));
+    const res = await request(app).post('/api/forms/submit/test-form').send({ lines: [{ amount: '50', fundId: 'general', memo: '' }], total: '1' });
+    expect(res.status).toBe(409);
+    expect(res.body.fields).toEqual({ 'lines[0].fundId': 'That fund is closed', total: 'Does not match the lines' });
+  });
+
+  test('required: no lines is refused on the field', async () => {
+    const { app, seen } = receiptApp();
+    const res = await request(app).post('/api/forms/submit/test-form').send({ lines: [], total: '1' });
+    expect(res.status).toBe(400);
+    expect(res.body.fields.lines).toBe('Lines: add at least one line');
+    expect(seen).toEqual([]);
+  });
+});
+
+// ── The submission email reads as the form did (#1915) ────────────────────────
+
+describe('POST /api/forms/submit/:formId — submission email', () => {
+  const emailForm = {
+    id: 'test-form',
+    title: 'Record a receipt',
+    proxySubmission: false,
+    store: true,
+    fields: [
+      { name: 'email', type: 'email', label: 'Your email', required: true },
+      { name: 'fundId', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      {
+        name: 'lines', type: 'lines', label: 'Lines', required: true,
+        fields: [
+          { name: 'amount', type: 'amount', label: 'Amount', required: true },
+          { name: 'fundId', type: 'dropdown', label: 'Line fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' }
+        ]
+      },
+      { name: 'total', type: 'amount', label: 'Receipt total', required: true }
+    ]
+  };
+
+  test('labels, choice names resolved once as the submitter, formatted money, and each line', async () => {
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const viewers: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => emailForm, saveSubmission: async (s: object) => s },
+      ConfigurationManager: { getProperty: () => '' },
+      // #1916: the route sends through sendInBackground, which never rejects.
+      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      LedgerManager: {
+        toFormOptions: async (_o: unknown, viewer: unknown) => {
+          viewers.push(viewer);
+          return [{ value: 'general', label: 'General Fund' }, { value: 'reserve', label: 'Reserve Fund' }];
+        }
+      }
+    });
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+    const res = await request(app).post('/api/forms/submit/test-form').send({
+      email: 'molly@example.com',
+      fundId: 'general',
+      lines: [{ amount: '50', fundId: 'reserve' }, { amount: '12.50', fundId: 'general' }],
+      total: '62.50'
+    });
+    expect(res.status).toBe(201);
+    expect(sent).toHaveLength(1);
+    const money = (c: number): string => TEST_PLUGIN_MANAGER.formatters.formatMoney(c, 'USD');
+    expect(sent[0].text).toContain([
+      'Details:',
+      '  Your email: molly@example.com',
+      '  Fund: General Fund',
+      '  Lines:',
+      `    1. Amount: ${money(5000)} · Line fund: Reserve Fund`,
+      `    2. Amount: ${money(1250)} · Line fund: General Fund`,
+      `  Receipt total: ${money(6250)}`
+    ].join('\n'));
+    // Asked once per choice field, as the submitter: the validation's own resolution.
+    expect(viewers).toEqual([{ username: 'molly' }, { username: 'molly' }]);
+  });
+});

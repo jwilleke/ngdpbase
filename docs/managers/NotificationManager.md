@@ -1,7 +1,7 @@
 ---
 name: NotificationManager
 description: "System and per-user notifications — toast popups, persistent inbox, scheduled expiry"
-dateModified: '2026-05-14'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/NotificationManager.ts
 ---
@@ -48,6 +48,10 @@ const userNotifications = notifyManager.getUserNotifications('alice');
 // Dismiss notification
 await notifyManager.dismissNotification(id, 'alice');
 ```
+
+## One notice with a running count
+
+`createNotification({ ..., escalate: false })` never emails the notification, whatever the escalation settings. `updateNotificationMessage(id, message)` replaces an existing notification's message without escalating, so one notice can carry a running count instead of one notice per event. EmailManager uses both for its "Email could not be sent" notice ([#1916](https://github.com/jwilleke/ngdpbase/issues/1916)).
 
 ## Notification Types
 
