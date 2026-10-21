@@ -834,7 +834,7 @@ On every page of the add-on's own system-category, in its `config/default-config
 
 - The page's flag wins over the system-category, both ways. Unset is on.
 - Only `true` and `false` count. Any other value in an add-on's entry refuses the entry, and the add-on is not loaded.
-- The site can change a system-category's `comments` and `footnotes` (they are not owner-decided), so a page whose privacy depends on them also sets its own flag.
+- On your system-category, `comments` and `footnotes` are your declaration, like `encrypt`: a site's `app-custom-config.json` cannot turn them back on, nor off where you leave them unset (it gets a startup warning instead).
 - When off, the tab is not rendered and the server refuses posting, editing or deleting with 403. Comments already on the page are kept and hidden; footnotes are kept and stay readable where the page's own content calls `[{FootnotesPlugin}]`, without controls.
 - Seeding writes the frontmatter as shipped, so the flag is in place on first load. A page already seeded does not get a flag added later: reseed and Required Pages Sync compare the body only (see Known gaps).
 
@@ -1678,7 +1678,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
 - [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
-- [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's system-category, which applies to its pages already seeded.
+- [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---

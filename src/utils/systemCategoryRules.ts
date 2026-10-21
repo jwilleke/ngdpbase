@@ -11,10 +11,11 @@ export const SYSTEM_CATEGORY_KEY = 'ngdpbase.system-category';
 /**
  * The fields of an entry that are its `owner`'s declaration (operator,
  * 2026-09-29): `encrypt` and `defaultPrivate` stand, and `shareMaxDays` is
- * decided by the owner. For an entry an add-on declares, a site's
+ * decided by the owner; `comments` and `footnotes` stand too (operator,
+ * 2026-10-21, #1951). For an entry an add-on declares, a site's
  * `app-custom-config.json` never changes them, nor `owner` itself.
  */
-export const OWNER_DECIDED_FIELDS = ['owner', 'encrypt', 'defaultPrivate', 'shareMaxDays'] as const;
+export const OWNER_DECIDED_FIELDS = ['owner', 'encrypt', 'defaultPrivate', 'shareMaxDays', 'comments', 'footnotes'] as const;
 
 /** One mistyped value: what is wrong, and what every reader takes it to mean. */
 export interface SystemCategoryValueProblem {

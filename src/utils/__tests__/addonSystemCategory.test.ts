@@ -170,6 +170,30 @@ describe('#1559 the owner\'s encrypt and defaultPrivate stand', () => {
     expect(categories(merged).general.encrypt).toBe(true);
     expect(problems).toEqual([]);
   });
+
+  // #1951 (operator, 2026-10-21): comments and footnotes are the owner's too.
+  test('a site cannot turn an add-on\'s comments or footnotes back on', () => {
+    addon('phr', { [SC]: { phr: { ...phrEntry, comments: false, footnotes: false } } });
+    const custom = { [SC]: { phr: { comments: true, footnotes: true } } };
+    const { merged, problems } = mergeConfigWithAddons(shipped, custom, root);
+    expect(categories(merged).phr).toMatchObject({ comments: false, footnotes: false });
+    expect(problems.join('\n')).toMatch(/ngdpbase\.system-category\.phr\.comments.*owner 'phr'.*ignored/);
+    expect(problems.join('\n')).toMatch(/ngdpbase\.system-category\.phr\.footnotes.*owner 'phr'.*ignored/);
+  });
+
+  test('a site cannot turn off comments or footnotes the add-on leaves unset', () => {
+    addon('phr', phrDefaults);
+    const { merged, problems } = mergeConfigWithAddons(shipped, { [SC]: { phr: { comments: false, footnotes: false } } }, root);
+    expect(categories(merged).phr.comments).toBeUndefined();
+    expect(categories(merged).phr.footnotes).toBeUndefined();
+    expect(problems).toHaveLength(2);
+  });
+
+  test('on the site\'s own entries, comments and footnotes stay site-settable', () => {
+    const { merged, problems } = mergeConfigWithAddons(shipped, { [SC]: { general: { comments: false, footnotes: false } } }, root);
+    expect(categories(merged).general).toMatchObject({ comments: false, footnotes: false });
+    expect(problems).toEqual([]);
+  });
 });
 
 describe('#1559 refused declarations', () => {
