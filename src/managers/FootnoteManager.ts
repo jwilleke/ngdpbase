@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import matter from 'gray-matter';
 import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
 import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
 import logger from '../utils/logger.js';
@@ -13,6 +14,8 @@ import {
   pageNotesPlace,
   pageNotesRoots,
   moveOutsideNotesIntoVault,
+  pageNotesAllowed,
+  PageNotesTurnedOffError,
   VaultPageNotesCheck,
   type VaultPageNotesOutside,
   type PageNotesRoots,
@@ -117,6 +120,25 @@ export default class FootnoteManager extends BaseManager {
     return pageNotesPlace(ctx, page, this.roots());
   }
 
+  /**
+   * Whether footnotes are on for `page` (#1951): the page's `footnotes:` flag,
+   * else its system-category's, else on (`pageNotesAllowed`). Each page is
+   * asked about itself, so one page's flag never reaches another's. The view
+   * asks this before it shows the Footnotes tab, and every write here asks it
+   * first. When off, the page's footnotes are kept and stay readable where
+   * the page's own content lists them (`[{FootnotesPlugin}]`), without the
+   * add, edit and delete controls. `metadata` saves a read when the caller
+   * already holds it.
+   */
+  isAllowedOn(page: PageRef, ctx: ActorContext, metadata?: Record<string, unknown> | null): Promise<boolean> {
+    return pageNotesAllowed(this.engine, 'footnotes', page, ctx, metadata);
+  }
+
+  /** Throws {@link PageNotesTurnedOffError} when footnotes are off for `page` (#1951). */
+  private async refuseWhenOff(page: PageRef, ctx: ActorContext): Promise<void> {
+    if (!await this.isAllowedOn(page, ctx)) throw new PageNotesTurnedOffError('footnotes');
+  }
+
   private async readMap(place: FootnotePlace): Promise<FootnoteMap> {
     if (!await fs.pathExists(place.path)) return {};
     const text = await place.io.readText(place.path);
@@ -160,6 +182,7 @@ export default class FootnoteManager extends BaseManager {
   ): Promise<PageFootnote> {
     const pageUuid = page.uuid;
     const createdBy = ctx.username;
+    await this.refuseWhenOff(page, ctx);
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
 
@@ -198,6 +221,7 @@ export default class FootnoteManager extends BaseManager {
     data: { display: string; url: string; note: string },
     ctx: ActorContext
   ): Promise<boolean> {
+    await this.refuseWhenOff(page, ctx);
     const ok = await this.putImported(page, id, data, ctx);
     if (ok) await this.recordEdit('import', page.uuid, ctx, { footnoteId: id });
     return ok;
@@ -240,6 +264,14 @@ export default class FootnoteManager extends BaseManager {
     const { extractFootnoteDefs, ensureFootnotesPlugin } = await import('../converters/ncm/footnotes.js');
     const extracted = extractFootnoteDefs(content);
     if (extracted.defs.length === 0) return { content, warnings: [] };
+    // #1951: the frontmatter being saved is the page's, when the text carries
+    // one; otherwise the stored page's. Off: nothing moves, the body keeps its
+    // definitions as written.
+    let frontmatter: Record<string, unknown> = {};
+    try { frontmatter = matter(content).data; } catch { /* no readable frontmatter: the stored page's decides */ }
+    if (!await this.isAllowedOn(page, ctx, Object.keys(frontmatter).length > 0 ? frontmatter : undefined)) {
+      return { content, warnings: ['footnotes-off: footnotes are turned off for this page; body definitions kept'] };
+    }
 
     const warnings: string[] = [];
     const kept: string[] = [];
@@ -277,6 +309,7 @@ export default class FootnoteManager extends BaseManager {
     ctx: ActorContext
   ): Promise<PageFootnote | null> {
     const pageUuid = page.uuid;
+    await this.refuseWhenOff(page, ctx);
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
     if (!map[id]) return null;
@@ -295,6 +328,7 @@ export default class FootnoteManager extends BaseManager {
 
   async deleteFootnote(page: PageRef, id: string, ctx: ActorContext): Promise<boolean> {
     const pageUuid = page.uuid;
+    await this.refuseWhenOff(page, ctx);
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
     if (!map[id]) return false;

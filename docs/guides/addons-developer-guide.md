@@ -37,6 +37,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
   - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
   - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); the string `"true"` is read as false. Turning the addon off removes the category until #1559.
+  - __A page whose content is private to each viewer__ turns off core's shared Comments and Footnotes: `comments: false` / `footnotes: false` in its frontmatter, or on its system-category entry for all its pages ([Turning off Comments and Footnotes](#turning-off-comments-and-footnotes)).
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - An addon's permission entries don't set `"step-up": true` for now (operator, 2026-10-18): a form loses its typed fields across the fresh sign-in. Say so in your own docs; the rule is in the [authentication guide](authentication-developer-guide.md#standing-rules).
 - An addon that keeps rows declares its database under `ngdpbase.addons.<slug>.database` in its `config/default-config.json` before it calls `DatabaseManager.openAddonDatabase`; an undeclared one is refused, and an invalid declaration stops the addon loading ([storage guide](storage-developer-guide.md#declaring-a-database), #1860).
@@ -806,6 +807,39 @@ __Pushing updated addon page content is supported__ two ways ([#920](https://git
 
 (The original first-boot seeding lives in the now-closed #442. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.)
 
+#### Turning off Comments and Footnotes
+
+Core shows a Comments and a Footnotes tab under every page (`Template:PageTabs`). Whatever a reader types there is shared with everyone who can see the page. A page whose plugin output is private to each viewer, such as a health record, turns them off, and keeps its own notes in the add-on's data through its manager.
+
+On one page, in the seed page's frontmatter:
+
+```markdown
+---
+title: My Health Records
+uuid: 0c0e7a52-6f7e-4f63-9a59-8e5a3f0f2b61
+slug: my-health-records
+system-category: addon
+comments: false
+footnotes: false
+---
+```
+
+On every page of the add-on's own system-category, in its `config/default-config.json`:
+
+```json
+"ngdpbase.system-category": {
+  "phr": { "label": "phr", "owner": "phr", "comments": false, "footnotes": false }
+}
+```
+
+- The page's flag wins over the system-category, both ways. Unset is on.
+- Only `true` and `false` count. Any other value in an add-on's entry refuses the entry, and the add-on is not loaded.
+- On your system-category, `comments` and `footnotes` are your declaration, like `encrypt`: a site's `app-custom-config.json` cannot turn them back on, nor off where you leave them unset (it gets a startup warning instead).
+- When off, the tab is not rendered and the server refuses posting, editing or deleting with 403. Comments already on the page are kept and hidden; footnotes are kept and stay readable where the page's own content calls `[{FootnotesPlugin}]`, without controls.
+- Seeding writes the frontmatter as shipped, so the flag is in place on first load. A page already seeded does not get a flag added later: reseed and Required Pages Sync compare the body only (see Known gaps).
+
+The rule and what each surface does: [system-category.md](../system-category.md#comments-footnotes).
+
 #### Overriding the Left Menu and Footer
 
 Two special slugs let an add-on replace the instance-wide navigation and footer without editing system pages:
@@ -1476,6 +1510,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Core values come from `host`; anything still imported comes through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
+- [ ] A page whose content is private to each viewer sets `comments: false` and `footnotes: false` in its frontmatter ([Turning off Comments and Footnotes](#turning-off-comments-and-footnotes))
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
 - [ ] If the addon holds a user's own data: its vault is a system-category entry (manifest declaration is not built — [#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559); the journal entry lives in core config today), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
@@ -1650,8 +1685,9 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
 - [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
+- [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
