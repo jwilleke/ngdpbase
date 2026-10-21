@@ -2,6 +2,7 @@ import { sensitiveValueProblems, usesLegacyName } from './utils/sensitiveValues.
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
+import { setUserAgentSource, userAgentFromConfig } from './http/userAgent.js';
 import type { WikiConfig } from './types/Config.js';
 import express, { type Router, type RouterOptions, type RequestHandler } from 'express';
 
@@ -165,6 +166,10 @@ class WikiEngine extends Engine {
     if (usesLegacyName((k, d) => configManager.getProperty(k, d))) {
       logger.warn('[config] ngdpbase.config.secret-keys is still set — rename it to ngdpbase.config.sensitive-values, each entry "secret" (#1750). It is still honoured.');
     }
+    // #1947: outbound requests that name no User-Agent get the configured one.
+    // guardedFetch has no engine, so it is handed the source; the template is
+    // read on every request, so an edit to ngdpbase.http.user-agent applies at once.
+    setUserAgentSource(() => userAgentFromConfig(configManager));
     // #1889: an entry that is no key or path, or has no level, hides nothing.
     for (const problem of sensitiveValueProblems((k, d) => configManager.getProperty(k, d))) {
       logger.warn(`[config] ${problem}`);

@@ -16,6 +16,7 @@
 import { guardedFetch, type Transport, type TransportInit, type TransportResponse } from '../guardedFetch';
 import type { EgressPolicy } from '../ssrf';
 import type { Resolver } from '../guardedLookup';
+import { setUserAgentSource, userAgentFromConfig } from '../userAgent';
 
 const CLOSED: EgressPolicy = { deniedRanges: [], allowedRanges: [] };
 
@@ -243,5 +244,67 @@ describe('guardedFetch — a POST body (#1743)', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0].body?.toString()).toBe('a=1&b=2');
     expect(seen[0].headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': '7' });
+  });
+});
+
+describe('guardedFetch — the default User-Agent (#1947)', () => {
+  afterEach(() => setUserAgentSource(null));
+
+  async function headersSent(headers?: Record<string, string>): Promise<Record<string, string>> {
+    const seen: TransportInit[] = [];
+    const transport: Transport = async (url, init) => {
+      seen.push(init);
+      await connectThroughAgent(url, init);
+      return { status: 200, headers: {}, body: chunks('ok') };
+    };
+    await guardedFetch('https://a.example.com/x', { policy: CLOSED, resolver: PUBLIC, transport, ...(headers ? { headers } : {}) });
+    return seen[0].headers;
+  }
+
+  it('adds the configured User-Agent when the caller names none', async () => {
+    setUserAgentSource(() => 'ngdpbase/5.23.0 (+https://site.example.com)');
+    expect(await headersSent()).toEqual({ 'User-Agent': 'ngdpbase/5.23.0 (+https://site.example.com)' });
+    expect(await headersSent({ Accept: 'application/json' }))
+      .toEqual({ Accept: 'application/json', 'User-Agent': 'ngdpbase/5.23.0 (+https://site.example.com)' });
+  });
+
+  it("keeps the caller's own User-Agent, in any case", async () => {
+    setUserAgentSource(() => 'ngdpbase/5.23.0');
+    expect(await headersSent({ 'User-Agent': 'geohazardwatch.com (ops@example.com)' }))
+      .toEqual({ 'User-Agent': 'geohazardwatch.com (ops@example.com)' });
+    expect(await headersSent({ 'user-agent': 'mine' })).toEqual({ 'user-agent': 'mine' });
+  });
+
+  it('adds none when no source is set, or the source is empty', async () => {
+    expect(await headersSent()).toEqual({});
+    setUserAgentSource(() => '');
+    expect(await headersSent()).toEqual({});
+  });
+});
+
+describe('userAgentFromConfig (#1947)', () => {
+  const configOf = (values: Record<string, unknown>, explicit: boolean) => ({
+    getProperty: (key: string, fallback?: unknown) => (key in values ? values[key] : fallback),
+    isBaseUrlExplicit: () => explicit
+  });
+  const shipped = {
+    'ngdpbase.http.user-agent': 'ngdpbase/{version} (+{base-url})',
+    'ngdpbase.version': '5.23.0',
+    'ngdpbase.application.base-url': 'https://site.example.com/'
+  };
+
+  it('fills the version and the explicit base URL', () => {
+    expect(userAgentFromConfig(configOf(shipped, true))).toBe('ngdpbase/5.23.0 (+https://site.example.com)');
+  });
+
+  it('leaves out the (+…) part when the base URL is not set explicitly', () => {
+    expect(userAgentFromConfig(configOf({ ...shipped, 'ngdpbase.application.base-url': 'http://localhost:3000' }, false)))
+      .toBe('ngdpbase/5.23.0');
+  });
+
+  it('sends a literal template as it is, and an empty one as none', () => {
+    expect(userAgentFromConfig(configOf({ ...shipped, 'ngdpbase.http.user-agent': 'my-site (ops@example.com)' }, true)))
+      .toBe('my-site (ops@example.com)');
+    expect(userAgentFromConfig(configOf({ ...shipped, 'ngdpbase.http.user-agent': '' }, true))).toBe('');
   });
 });

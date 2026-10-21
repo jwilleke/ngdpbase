@@ -69,4 +69,16 @@ export interface FeedSourceConfig {
    * what the catalog projection's `dateCreated` uses.
    */
   dedupeDateField?: string;
+  /**
+   * Extra request headers for every fetch of this source (#1947), validated at
+   * config parse. The source's `userAgent` key is folded in here as
+   * `User-Agent`; without one, guardedFetch sends the site default.
+   */
+  headers?: Record<string, string>;
+  /**
+   * Request timeout in ms for each fetch of this source (#1955). Absent: the
+   * guardedFetch default (30 s). Config parse refuses a value outside
+   * `ngdpbase.addons.feeds.timeout-min-ms` … `timeout-max-ms`.
+   */
+  timeoutMs?: number;
 }

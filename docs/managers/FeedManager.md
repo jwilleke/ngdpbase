@@ -1,7 +1,7 @@
 ---
 name: FeedManager
 description: "Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler."
-dateModified: '2026-07-16'
+dateModified: '2026-10-21'
 category: managers
 code: addons/feeds/src/FeedManager.ts
 ---
@@ -56,6 +56,8 @@ Adapters are looked up by name from the static registry in `addons/feeds/src/ada
 
 `startScheduler()` / `stopScheduler()` wrap `FeedScheduler`, which polls each source on its configured cadence (`intervalMinutes` or `dailyAt`) with back-off on failures and a stale-feed WARN. The addon starts the scheduler when enabled with sources; `stopScheduler()` runs at addon shutdown.
 
+Due sources ingest side by side, at most `ngdpbase.addons.feeds.max-concurrent-ingests` (default 4) at once; the rest wait for a free slot on the same pass ([#1955](https://github.com/jwilleke/ngdpbase/issues/1955)). A source whose upstream hangs until its timeout holds one slot and delays no other source. A source is marked running when it is queued, so it never runs beside itself, and a later pass skips it until it finishes.
+
 ## Consumer surface
 
 - __`getRecords(sourceId)`__ — full normalized records (with `properties`); the data behind the [`[{DataFeed}]` plugin](../plugins/DataFeedPlugin.md).
@@ -83,9 +85,29 @@ All under `ngdpbase.addons.feeds.*` (flat dotted keys in instance config):
 }
 ```
 
-Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`), `delimiter` + `skipLines` (`csv`), `linkPattern` + `maxItems` (`xml-index`).
+Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`), `delimiter` + `skipLines` (`csv`), `linkPattern` + `maxItems` (`xml-index`), and the request options `userAgent`, `headers` and `timeoutMs` (below).
 
 `skipLines` (#1102) drops N leading lines before the header row, for feeds that emit a human-readable caption above it — common in government data exports. Without it the caption becomes the sole column name, the real header is consumed as the first record, and every column but the first is discarded. That failure is silent: HTTP 200, a successful parse, records upserted, and a rendered table of empty values. The adapter therefore logs a warning once per poll when a parse yields a single column whose name reads like prose, naming the source and suggesting `skipLines`. It warns rather than throws — a genuine one-column CSV is legal, just unusual.
+
+### Request options — `headers` / `userAgent` / `timeoutMs` ([#1947](https://github.com/jwilleke/ngdpbase/issues/1947), [#1955](https://github.com/jwilleke/ngdpbase/issues/1955))
+
+Every adapter passes these to `guardedFetch` on every fetch of the source, `xml-index`'s item fetches included. They are checked when the config is read; a refused value is dropped with a warning naming the source, and the source still loads, as `maxAgeHours` is.
+
+| Key | Effect |
+|---|---|
+| `userAgent` | The `User-Agent` for this source. Without it the request carries the site's, `ngdpbase.http.user-agent` (`ngdpbase/<version> (+<base URL>)`). Some providers ask for a contact: api.weather.gov refuses a request without a User-Agent |
+| `headers` | A map of extra request headers, name to string value. A `User-Agent` here is replaced by `userAgent` when both are set. Refused: `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Proxy-Connection`, `TE`, `Trailer`, `Upgrade`, `Expect`, `Cookie`, `Authorization`, `Proxy-Authorization`, `Proxy-Authenticate`, and any name or value that is not a valid HTTP header |
+| `timeoutMs` | The request timeout in ms. Absent: 30 s. A whole number from `ngdpbase.addons.feeds.timeout-min-ms` (default 5000) to `timeout-max-ms` (default 300000); anything else is refused and the 30 s default applies |
+
+```jsonc
+"ngdpbase.addons.feeds.sources.tsunami-alerts.userAgent": "geohazardwatch.com (ops@example.com)",
+"ngdpbase.addons.feeds.sources.tsunami-alerts.headers": { "Accept": "application/geo+json" },
+"ngdpbase.addons.feeds.sources.gvp-wfs.timeoutMs": 120000
+```
+
+Credentials are refused rather than supported: a literal one would sit in the config file, and an unset `$NAME` reference inside `sources` drops the whole `sources` map, stopping every feed for one missing variable.
+
+The addon-wide keys `max-concurrent-ingests`, `timeout-min-ms` and `timeout-max-ms` ship in `addons/feeds/config/default-config.json`; each must be a whole number > 0, and an inverted range falls back to the shipped one, with a warning.
 
 ### Record shaping — `dedupeBy` / `maxAgeHours` (#989)
 

@@ -46,6 +46,8 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 - `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts importing something core added (a `dist/src/...` module, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
 - Reach core values through `host`, the third argument to `register` ([Using the Engine](#4-using-the-engine)). Host HTTP is `host.guardedFetch`; an addon that still imports it uses `../../dist/src/http/guardedFetch.js`, never `src/http/`.
+- A request through `guardedFetch` that names no `User-Agent` (any case) is sent with the site's, `ngdpbase.http.user-agent` (default `ngdpbase/<version> (+<base URL>)`, the bracketed part only when `ngdpbase.application.base-url` is set explicitly) ([#1947](https://github.com/jwilleke/ngdpbase/issues/1947)). Do not invent one of your own. Pass `headers` only for what a provider asks for (a contact in the User-Agent, an `Accept`), and pass `timeoutMs` where the 30 s default is wrong for that endpoint. An option the operator sets per source is validated when the config is read, not at fetch: the feeds addon refuses hop-by-hop, framing and credential headers, and a `timeoutMs` outside its configured range, each with a warning ([FeedManager](../managers/FeedManager.md#configuration)).
+- One slow upstream must not hold up unrelated work. The feeds scheduler ingests due sources side by side, up to `ngdpbase.addons.feeds.max-concurrent-ingests`, so a source hanging until its timeout delays no other ([#1955](https://github.com/jwilleke/ngdpbase/issues/1955)).
 - Recurring work is a scheduled job ([Background Jobs](#8-background-jobs)), never `setInterval`: a timer catches nothing up, runs twice during a rolling update, and records nothing when it misses.
 
 ---
@@ -491,7 +493,7 @@ async register(engine, config) {
 | `actorOf` | The "who" of an audit record, from a context |
 | `jobContextFromRequest`, `jobContextFromSystem` | Contexts for [Background Jobs](#8-background-jobs) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
-| `guardedFetch` | Outbound HTTP through the egress guard |
+| `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
 
 ```typescript
 async register(engine, config, host) {

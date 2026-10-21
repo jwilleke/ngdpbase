@@ -1,6 +1,6 @@
 import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
-import { isOk, reason } from './http.js';
+import { isOk, reason, requestOptions } from './http.js';
 /**
  * xml-index adapter (#912) — dependency: fast-xml-parser (shared with the xml
  * adapter). For "index page + N item documents, no combined feed" sources
@@ -67,7 +67,7 @@ export const xmlIndexAdapter: SourceAdapter = {
       throw new Error(`feed '${cfg.sourceId}': xml-index adapter requires 'linkPattern'`);
     }
     // Phase 1 — index.
-    const idxRes = await guardedFetch(cfg.url, { policy });
+    const idxRes = await guardedFetch(cfg.url, requestOptions(cfg, policy));
     if (!isOk(idxRes)) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${idxRes.status} ${reason(idxRes)} from ${cfg.url}`);
     }
@@ -78,7 +78,7 @@ export const xmlIndexAdapter: SourceAdapter = {
     const records: RawRecord[] = [];
     for (const url of urls) {
       try {
-        const res = await guardedFetch(url, { policy });
+        const res = await guardedFetch(url, requestOptions(cfg, policy));
         if (!isOk(res)) { warn(`feed '${cfg.sourceId}': item HTTP ${res.status} from ${url} — skipped`); continue; }
         const doc: unknown = xmlParser.parse(res.body.toString('utf8'));
         let items: RawRecord[];
