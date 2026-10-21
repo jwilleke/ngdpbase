@@ -339,7 +339,7 @@ function resetMocks() {
   mockNotificationManager.clearAllActive.mockResolvedValue(3);
 }
 
-function buildApp() {
+function buildApp(onRender?: (view: string, data: unknown) => void) {
   const appInstance = express();
   appInstance.use(express.json());
   appInstance.use(express.urlencoded({ extended: true }));
@@ -348,6 +348,7 @@ function buildApp() {
 
   appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
     res.render = (_view: string, _data: unknown, cb?: (err: Error | null, str?: string) => void) => {
+      onRender?.(_view, _data);
       if (cb) cb(null, '<html>stub</html>');
       else res.send('<html>stub</html>');
     };
@@ -693,6 +694,23 @@ describe('WikiRoutes — coverage batch 4', () => {
     test('renders admin dashboard for authenticated admin', async () => {
       const res = await request(app).get('/admin');
       expect(res.status).toBe(200);
+    });
+
+    test('#1946: hands the view the subsystems that are down apart from the ones that need attention', async () => {
+      const rendered: Array<{ view: string; data: Record<string, unknown> }> = [];
+      const own = buildApp((view, data) => rendered.push({ view, data: data as Record<string, unknown> }));
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const engine = new WikiEngine();
+      const down = { manager: 'MetricsManager', state: 'degraded', kind: 'outage', reason: 'Metrics were configured but could not start' };
+      const failed = { manager: 'DatabaseManager', state: 'failed', kind: 'outage', reason: 'could not open' };
+      const reminder = { manager: 'BackupManager', state: 'degraded', kind: 'attention', reason: 'Save the backup key off this server' };
+      (engine as unknown as { getDegradedManagers: () => unknown[] }).getDegradedManagers = () => [down, reminder, failed];
+      new WikiRoutes(engine).registerRoutes(own);
+      const res = await request(own).get('/admin');
+      expect(res.status).toBe(200);
+      const dashboard = rendered.find((r) => r.view === 'admin-dashboard');
+      expect(dashboard?.data.degradedManagers).toEqual([down, failed]);
+      expect(dashboard?.data.attentionManagers).toEqual([reminder]);
     });
 
     test('returns 403 when a signed-in user lacks admin-read', async () => {

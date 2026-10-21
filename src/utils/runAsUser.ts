@@ -25,6 +25,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { REQUIRED_SETTINGS_HELP } from './requiredSettings.js';
 
 /** What the run-as step needs from the process; the real one in production, a stand-in in tests. */
 export interface ProcessIds {
@@ -42,7 +43,7 @@ export interface RunAsResult {
   notes: string[];
 }
 
-const HOW_TO_SET = 'Set PUID and PGID (in .env, or the container\'s environment) to the user the server runs as — the standard default is PUID=1000 and PGID=1000 (#1693).';
+const HOW_TO_SET = 'Set PUID and PGID (in .env, or the container\'s environment) to the user the server runs as — the standard default is PUID=1000 and PGID=1000 (#1693). ' + REQUIRED_SETTINGS_HELP;
 
 /** Parse one id variable: a whole number, never 0 (root). */
 function idFrom(env: NodeJS.ProcessEnv, name: 'PUID' | 'PGID'): number {
@@ -152,7 +153,7 @@ export function becomeRunAsUser(
   } else if (ids.getuid() !== uid || ids.getgid() !== gid) {
     throw new Error(
       `Refusing to start: running as ${ids.getuid()}:${ids.getgid()}, but PUID/PGID say ${uid}:${gid}. ` +
-      `Start the server as ${uid}:${gid}, or set PUID=${ids.getuid()} and PGID=${ids.getgid()} (#1693).`
+      `Start the server as ${uid}:${gid}, or set PUID=${ids.getuid()} and PGID=${ids.getgid()} (#1693). ${REQUIRED_SETTINGS_HELP}`
     );
   }
 

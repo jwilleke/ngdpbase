@@ -38,6 +38,7 @@ import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js
 import https from 'https';
 import net from 'net';
 import { initialisationGate, describeBlocked } from './utils/startupState.js';
+import { systemPrincipalFromConfig } from './security/PolicyInformationPoint.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -49,7 +50,7 @@ import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf, newCspNonce } from './utils/securityHeaders.js';
-import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
+import { checkSessionAccount, type AccountEndReason } from './utils/sessionAccount.js';
 import { effectiveIdleTimeoutMs, IDLE_STATUS_PATH } from './utils/sessionIdle.js';
 import { anonymousSessionMs, checkSessionLimits, DEFAULT_ANONYMOUS_SESSION_MS, DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from './utils/sessionLimits.js';
 import { throttlePerCopyWarning } from './utils/LoginThrottle.js';
@@ -81,6 +82,12 @@ const projectRoot = process.cwd();
 const PID_FILE = pidLockPath(projectRoot);
 /** How often unlocked keys of ended sessions are swept (#1626). */
 const ORPHANED_KEY_SWEEP_MS = 10 * 60 * 1000;
+/** Why a session no longer belongs to its account, for the log line (#1937, #1482). */
+const ACCOUNT_END_WHY: Record<AccountEndReason, string> = {
+  'account-deleted': 'the account it signed in to no longer exists (#1937)',
+  'account-disabled': 'the account is turned off (#1937)',
+  'password-changed': 'the password changed after this session signed in (#1482)'
+};
 
 // Mutable reference populated once the engine is ready — used by the SIGTERM handler
 let engineRef: IWikiEngine | null = null;
@@ -691,17 +698,10 @@ void (async (): Promise<void> => {
     logger.info(`🔐 Session secret: from ${sessionSecretOrigin.path} (the environment had it blank)`);
   }
 
-  // #631: the system principal is named in .env and nowhere else. The config
-  // key ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`, and a bare ref
-  // THROWS when the variable is unset — so this read IS the refusal: an
-  // instance with no named principal does not come up. Read here, once, at
-  // boot, so the failure is a startup message naming the variable rather than
-  // the first background job dying months later.
-  const systemPrincipal = configManager.getProperty<unknown>('ngdpbase.system.principal', '');
-  if (typeof systemPrincipal !== 'string' || systemPrincipal.trim() === '') {
-    throw new Error('ngdpbase.system.principal resolved empty. Set NGDPBASE_SYSTEM_USER in .env and restart (#631).');
-  }
-  logger.info(`🔐 System principal: ${systemPrincipal.trim()} (NGDPBASE_SYSTEM_USER)`);
+  // #631: the system principal is named in .env and nowhere else. The refusal
+  // when it is unset is WikiEngine.initialize's, right after configuration
+  // loads and before any manager writes (#1953); by here it is known good.
+  logger.info(`🔐 System principal: ${systemPrincipalFromConfig(configManager)} (NGDPBASE_SYSTEM_USER)`);
 
   // #1767: sign-in throttling counts in this process's memory. Several copies
   // of the server each count separately, so say so once at startup.
@@ -728,6 +728,12 @@ void (async (): Promise<void> => {
   // the manager so SessionsPlugin reads it in-process instead of requesting
   // this server's own URL.
   (engine.getManager('SessionStatsManager') as { attachStore(store: unknown): void } | null)?.attachStore(sessionStore);
+  // #1937: once at startup, end every stored session whose account is gone,
+  // turned off or another of the same name — leftovers from before the fix,
+  // or from a close the store missed. Off the request path; never stops the boot.
+  void (engine.getManager('UserManager') as { endStaleSessions(): Promise<number> } | null)?.endStaleSessions()
+    .then((ended) => { if (ended > 0) logger.info(`[SESSION] Ended ${ended} session(s) that no longer belong to their account (#1937)`); })
+    .catch((err: unknown) => logger.error('[SESSION] Could not sweep sessions of closed accounts at startup (#1937):', err));
 
   // #1626: a session that expires in the store, or is destroyed by a path that
   // could not reach endSessionKeys, leaves its unlocked keys with no owner.
@@ -803,6 +809,7 @@ void (async (): Promise<void> => {
         authenticate?: (id: string, creds: { token?: string }) => Promise<import('./managers/AuthManager.js').AuthenticateResult>;
         signInRecord?: (result: import('./managers/AuthManager.js').AuthenticateResult) => import('./managers/AuthManager.js').SignInRecord | null;
         getProviders?: () => Array<{ id: string }>;
+        stampSessionGeneration?: (req: Request, username: string) => Promise<void>;
       } | null;
       const hasCf = authManager?.getProviders?.().some(p => p.id === 'cloudflare-access');
       if (!authManager?.authenticate || !hasCf) { next(); return; }
@@ -812,9 +819,8 @@ void (async (): Promise<void> => {
         // #1523: how this session signed in, as every other sign-in path records it.
         const record = authManager.signInRecord?.(result);
         if (record) req.session.signIn = record;
-        // #1482: stamped at sign-in, like every other sign-in path.
-        const users = engine.getManager('UserManager') as { getUser(u: string): Promise<{ sessionGeneration?: number } | null> } | null;
-        req.session.sessionGeneration = sessionGenerationOf(await users?.getUser(result.username));
+        // #1482, #1937: stamped at sign-in, like every other sign-in path.
+        await authManager.stampSessionGeneration?.(req, result.username);
       }
     } catch (err) {
       logger.warn('[CloudflareAccess middleware] failed:', err);
@@ -871,6 +877,7 @@ void (async (): Promise<void> => {
         delete req.session.username;
         delete req.session.privateStoreHandle;
         delete req.session.sessionGeneration;
+        delete req.session.accountCreatedAt;
         delete req.session.lastActivity;
         delete req.session.signedInAt;
         delete req.session.signIn;
@@ -879,13 +886,13 @@ void (async (): Promise<void> => {
         if (req.session.cookie) req.session.cookie.maxAge = anonymousSession;
       };
 
-      // #1482: a session signed in before the account's password last changed
-      // is over — every other session ends when the password does.
+      // #1937: a session whose account is gone, turned off, or is another
+      // account of the same name is over; #1482: so is one signed in before
+      // the account's password last changed. One rule, checkSessionAccount.
       if (req.session?.username && req.session.isAuthenticated) {
-        const account = await userManager.getUser(req.session.username);
-        if (account && !sessionIsCurrent(req.session.sessionGeneration, account)) {
-          signOut('password-changed', 'the password changed after this session signed in (#1482)');
-        }
+        const verdict = checkSessionAccount(req.session, await userManager.getUser(req.session.username));
+        if (verdict.end) signOut(verdict.end, ACCOUNT_END_WHY[verdict.end]);
+        else if (verdict.bind !== undefined) req.session.accountCreatedAt = verdict.bind;
       }
 
       // #1767: a session past ngdpbase.session.max-age from its sign-in is over,

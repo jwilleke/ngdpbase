@@ -20,6 +20,8 @@ const CommentsPlugin = asExecuted(CommentsPluginModule);
 
 const makeCommentManager = (enabled = true, comments: unknown[] = []) => ({
   isEnabled: () => enabled,
+  // #1951: comments are on for the page unless a test turns them off.
+  isAllowedOn: vi.fn().mockResolvedValue(true),
   getComments: vi.fn().mockResolvedValue(comments)
 });
 
@@ -257,6 +259,20 @@ describe('CommentsPlugin', () => {
   });
 
   // #1839: a vault page's comments are in its vault, found by its name.
+  // #1951: comments turned off for the page are kept, and hidden — no list, no form.
+  describe('a page whose comments are off (#1951)', () => {
+    test('renders nothing, and the comments are never read', async () => {
+      const cm = makeCommentManager(true, [sampleComment()]);
+      cm.isAllowedOn.mockResolvedValue(false);
+      const metadata = { uuid: 'page-uuid-1', comments: false };
+      const reader = { isAuthenticated: true, username: 'alice', roles: ['editor'] };
+      const result = await CommentsPlugin.execute({ engine: makeEngine({ CommentManager: cm }), pageName: 'P', pageMetadata: metadata, userContext: reader }, {});
+      expect(result).toBe('');
+      expect(cm.getComments).not.toHaveBeenCalled();
+      expect(cm.isAllowedOn).toHaveBeenCalledWith({ name: 'P', uuid: 'page-uuid-1' }, reader, metadata);
+    });
+  });
+
   describe('a vault page (#1839)', () => {
     const VAULT_PAGE = 'vaults/molly/phr/Lab Results';
     const molly = { isAuthenticated: true, username: 'molly', roles: ['editor'] };

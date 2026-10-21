@@ -27,6 +27,7 @@ import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { validateUrl, type EgressPolicy } from './ssrf.js';
 import { guardedLookup, type Resolver } from './guardedLookup.js';
+import { defaultUserAgent } from './userAgent.js';
 
 export interface TransportResponse {
   status: number;
@@ -60,6 +61,10 @@ export interface GuardedFetchOptions {
   maxRedirects?: number;
   maxBytes?: number;
   timeoutMs?: number;
+  /**
+   * Request headers. Without a `User-Agent` (any case), the configured default
+   * is added (#1947, ./userAgent.ts).
+   */
   headers?: Record<string, string>;
   method?: 'GET' | 'HEAD' | 'POST';
   /**
@@ -124,6 +129,15 @@ async function readCapped(body: AsyncIterable<Buffer>, maxBytes: number): Promis
   return Buffer.concat(parts);
 }
 
+/** The caller's headers, plus the default User-Agent when they name none (#1947). */
+function withDefaultUserAgent(headers: Record<string, string> | undefined): Record<string, string> {
+  const out = { ...headers };
+  if (Object.keys(out).some((name) => name.toLowerCase() === 'user-agent')) return out;
+  const userAgent = defaultUserAgent();
+  if (userAgent) out['User-Agent'] = userAgent;
+  return out;
+}
+
 /** The first header value, since node presents repeated headers as an array. */
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -142,6 +156,7 @@ export async function guardedFetch(target: string, options: GuardedFetchOptions)
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
   const transport = options.transport ?? nodeTransport;
   const body = options.body === undefined ? undefined : Buffer.from(options.body);
+  const headers = withDefaultUserAgent(options.headers);
 
   // keepAlive: false is load-bearing. A pooled connection skips resolution on
   // reuse, so the guard would run for the first request to a host and never
@@ -162,7 +177,7 @@ export async function guardedFetch(target: string, options: GuardedFetchOptions)
 
     const res = await transport(url, {
       method: options.method ?? 'GET',
-      headers: body ? { ...options.headers, 'Content-Length': String(body.length) } : (options.headers ?? {}),
+      headers: body ? { ...headers, 'Content-Length': String(body.length) } : headers,
       agent: url.protocol === 'https:' ? agents.https : agents.http,
       timeoutMs,
       ...(body ? { body } : {})

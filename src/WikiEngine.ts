@@ -2,6 +2,7 @@ import { sensitiveValueProblems, usesLegacyName } from './utils/sensitiveValues.
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
+import { setUserAgentSource, userAgentFromConfig } from './http/userAgent.js';
 import type { WikiConfig } from './types/Config.js';
 import express, { type Router, type RouterOptions, type RequestHandler } from 'express';
 
@@ -14,7 +15,7 @@ import PluginManager from './managers/PluginManager.js';
 import RenderingManager from './managers/RenderingManager.js';
 import SearchManager from './managers/SearchManager.js';
 import UserManager from './managers/UserManager.js';
-import PolicyInformationPoint from './security/PolicyInformationPoint.js';
+import PolicyInformationPoint, { systemPrincipalFromConfig } from './security/PolicyInformationPoint.js';
 import SchemaManager from './managers/SchemaManager.js';
 import VariableManager from './managers/VariableManager.js';
 import ValidationManager from './managers/ValidationManager.js';
@@ -131,6 +132,12 @@ class WikiEngine extends Engine {
     this.registerManager('ConfigurationManager', configManager);
     await configManager.initialize(config);
 
+    // #1953: the boot refuses without a system principal (#631). Asked here,
+    // before any manager writes, so a refused first boot leaves nothing half
+    // made. It used to be asked in app.ts after initialize(), by which time the
+    // bootstrap admin had been written without its person record.
+    systemPrincipalFromConfig(configManager);
+
     // Reconfigure logger with settings from ConfigurationManager
     // Logger starts with defaults, then reconfigures here after config is available.
     // #169: select the logging provider before rebuilding transports.
@@ -165,6 +172,10 @@ class WikiEngine extends Engine {
     if (usesLegacyName((k, d) => configManager.getProperty(k, d))) {
       logger.warn('[config] ngdpbase.config.secret-keys is still set — rename it to ngdpbase.config.sensitive-values, each entry "secret" (#1750). It is still honoured.');
     }
+    // #1947: outbound requests that name no User-Agent get the configured one.
+    // guardedFetch has no engine, so it is handed the source; the template is
+    // read on every request, so an edit to ngdpbase.http.user-agent applies at once.
+    setUserAgentSource(() => userAgentFromConfig(configManager));
     // #1889: an entry that is no key or path, or has no level, hides nothing.
     for (const problem of sensitiveValueProblems((k, d) => configManager.getProperty(k, d))) {
       logger.warn(`[config] ${problem}`);

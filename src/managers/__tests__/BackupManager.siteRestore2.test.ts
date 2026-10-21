@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { applyInstanceEnvAtStart } from '../../utils/instanceEnvBackup';
-import BackupManager, { BACKUP_KEY_MISSING, BACKUP_KEY_MISSING_TITLE, describeNotRestored } from '../BackupManager';
+import BackupManager, { BACKUP_KEY_MISSING, BACKUP_KEY_MISSING_TITLE, BACKUPS_NOT_WORKING_TITLE, describeNotRestored } from '../BackupManager';
 import AuthManager from '../AuthManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import FileCredentialsProvider from '../../providers/FileCredentialsProvider';
@@ -171,7 +171,9 @@ describe('slice 2 of the site restore (#1876)', () => {
     // Listed, downloaded and pruned with the document.
     const stored = await site.backup.findStoredBackup(path.basename(file));
     expect(stored).toMatchObject({ encrypted: true, parts: ['credentials', 'env', 'forms', 'jobs'], files: companions });
-    expect(notifications.filter((n) => n.level === 'error')).toEqual([]);
+    // #1563: the one error is the fresh site's "no backup yet" at start, before this one.
+    expect(notifications.filter((n) => n.level === 'error').map((n) => n.title)).toEqual([BACKUPS_NOT_WORKING_TITLE]);
+    expect(site.backup.getManagerStatus().kind).not.toBe('outage');
     await stop(site);
   });
 
@@ -258,8 +260,10 @@ describe('slice 2 of the site restore (#1876)', () => {
   test('without the backup key: a persistent banner and ONE notification across backups and restarts; with the key the banner goes', async () => {
     delete process.env[BACKUP_KEY_ENV];
     const site = await start();
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
+    // #1563: a site with no backup at all is an outage, which the reminder never hides.
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^No good backup since: never/) });
     await site.backup.createBackup(CTX, { filename: '2026-01-01T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
     await site.backup.createBackup(CTX, { filename: '2026-01-02T00-00-00-000Z-ngdpbase-backup.json.gz' });
     await stop(site);
     const restarted = await start();
@@ -303,9 +307,11 @@ describe('slice 2 of the site restore (#1876)', () => {
   test('the backup key: a banner with its fingerprint until an admin confirms it is saved, recorded across restarts; a new key asks again', async () => {
     const { backupKeyFingerprint } = await import('../../utils/backupKey');
     const site = await start();
+    // #1563: with no backup at all the outage shows instead; this is about the reminder.
+    await site.backup.createBackup(CTX);
     const info = site.backup.backupKeyInfo();
     expect(info).toEqual({ set: true, fingerprint: backupKeyFingerprint(KEY), saved: false });
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
     expect(site.backup.getManagerStatus().reason).not.toContain(KEY);
     await expect(site.backup.confirmBackupKeySaved(CTX, 'not-the-fingerprint')).rejects.toThrow(/not the fingerprint of the current backup key/);
     await site.backup.confirmBackupKeySaved(CTX, info.fingerprint);

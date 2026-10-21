@@ -23,13 +23,14 @@ export default function builderRoutes(engine: WikiEngine): Router {
   }
 
   /**
-   * The "Store submissions" box (#1921). An unticked checkbox sends nothing, so
-   * the page sends `storeShown` beside it; a post without that marker (a page
-   * loaded before the box existed) keeps `current`.
+   * A default-on box: "Store submissions" (#1921), "Send notices" (#1954). An
+   * unticked checkbox sends nothing, so the page sends `<name>Shown` beside it;
+   * a post without that marker (a page loaded before the box existed) keeps
+   * `current`.
    */
-  function readStore(body: Record<string, unknown>, current: boolean): boolean {
-    if (body['storeShown'] === undefined) return current;
-    return body['store'] === 'on' || body['store'] === 'true';
+  function readBox(body: Record<string, unknown>, name: 'store' | 'notify', current: boolean): boolean {
+    if (body[`${name}Shown`] === undefined) return current;
+    return body[name] === 'on' || body[name] === 'true';
   }
 
   function assemblePayload(body: Record<string, unknown>, formId: string, current?: FormDefinition): Record<string, unknown> {
@@ -41,7 +42,8 @@ export default function builderRoutes(engine: WikiEngine): Router {
       proxySubmission: body['proxySubmission'] === 'on' || body['proxySubmission'] === 'true',
       notifyRole: typeof body['notifyRole'] === 'string' && body['notifyRole'].trim() ? body['notifyRole'].trim() : 'admin',
       confirmationUrl: typeof body['confirmationUrl'] === 'string' && body['confirmationUrl'].trim() ? body['confirmationUrl'].trim() : undefined,
-      store: readStore(body, current?.store ?? true)
+      store: readBox(body, 'store', current?.store ?? true),
+      notify: readBox(body, 'notify', current?.notify ?? true)
     };
   }
 

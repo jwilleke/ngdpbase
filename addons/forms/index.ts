@@ -36,7 +36,8 @@
  *
  * The handler runs before the submission is stored; a refused submission leaves
  * nothing behind. A form with "store": false keeps no submission file at all —
- * the handler's own record is the record.
+ * the handler's own record is the record. A form with "notify": false sends no
+ * "New form submission" notification and no email of the details (#1954).
  *
  * Who may submit: `form-submit`, asked through ApiContext.requirePermission like
  * every add-on route (#1749), so refusals, step-up and audit come from core. A
@@ -86,11 +87,6 @@ const formsAddon = {
   dependencies: [] as string[],
 
   _handlers: new Map<string, FormHandler>(),
-
-  /** Registered with the engine, so backed up like every manager (#1876): its files are FormsDataManager's, so it has none of its own. */
-  backup(): Promise<{ managerName: string; timestamp: string; data: null; note: string }> {
-    return Promise.resolve({ managerName: 'FormsAddon', timestamp: new Date().toISOString(), data: null, note: 'The forms are backed up by FormsDataManager' });
-  },
 
   registerHandler(formId: string, handler: FormHandler): void {
     this._handlers.set(formId, handler);

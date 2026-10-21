@@ -131,6 +131,21 @@ export interface ManagerRestoreOptions {
 export type ManagerState = 'ready' | 'degraded' | 'disabled' | 'failed';
 
 /**
+ * What a `degraded` or `failed` state means for the person reading it (#1946).
+ *
+ * - `outage`    — the feature is NOT working: what it provides is not happening
+ * - `attention` — the feature works, but an administrator has something to do:
+ *   save the backup key off the server, fix a mistyped value that is read as
+ *   false, move vault files in. Telling them their backups are "silently doing
+ *   nothing" while backups run is a false alarm, and false alarms teach people
+ *   to skip the real one.
+ *
+ * Declared where the state is set (`markDegraded` versus `markNeedsAttention`),
+ * never inferred from the reason's wording.
+ */
+export type DegradedKind = 'outage' | 'attention';
+
+/**
  * What a manager holds, in one shape (#1006).
  *
  * Three managers already answered versions of this question in three different
@@ -164,6 +179,8 @@ export interface ManagerStatus {
   reason?: string;
   /** The config key at fault, when there is one, so the admin UI can link to it. */
   configKey?: string;
+  /** Whether the feature is down or works but needs an admin (#1946). Present when degraded or failed. */
+  kind?: DegradedKind;
 }
 
 abstract class BaseManager {
@@ -329,7 +346,17 @@ abstract class BaseManager {
    *   the signal is buried in its own noise.
    */
   protected markDegraded(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey });
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage' });
+  }
+
+  /**
+   * Record that this manager works, but an administrator has something to do
+   * (#1946). Still `degraded` — it stays on the dashboard, is audited, and
+   * clears with `markReadyIfDegradedBy` — but shown as needing attention, not
+   * as down.
+   */
+  protected markNeedsAttention(reason: string, configKey?: string): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'attention' });
   }
 
   /** Record that this manager is deliberately off. Not a problem (#1155). */
@@ -339,7 +366,7 @@ abstract class BaseManager {
 
   /** Record that this manager could not initialise at all (#1155). */
   protected markFailed(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'failed', reason, configKey });
+    return this.transition({ state: 'failed', reason, configKey, kind: 'outage' });
   }
 
   /**
@@ -376,7 +403,7 @@ abstract class BaseManager {
    * PROVABLE.
    */
   private transition(next: ManagerStatus): boolean {
-    const changed = this.status.state !== next.state || this.status.reason !== next.reason;
+    const changed = this.status.state !== next.state || this.status.reason !== next.reason || this.status.kind !== next.kind;
     this.status = next;
     if (!changed) return false;
 

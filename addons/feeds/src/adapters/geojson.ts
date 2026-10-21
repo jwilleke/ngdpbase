@@ -1,6 +1,6 @@
 import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
-import { isOk, reason } from './http.js';
+import { isOk, reason, requestOptions } from './http.js';
 /**
  * GeoJSON adapter (#685 slice 4) — zero dependency (native fetch + JSON.parse).
  *
@@ -21,7 +21,7 @@ export const geojsonAdapter: SourceAdapter = {
   name: 'geojson',
 
   async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
-    const res = await guardedFetch(cfg.url, { policy });
+    const res = await guardedFetch(cfg.url, requestOptions(cfg, policy));
     if (!isOk(res)) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }

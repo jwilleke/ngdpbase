@@ -18,6 +18,9 @@
  *   ngdpbase.addons.feeds.sources.<id>.type        — schema.org @type
  *   ngdpbase.addons.feeds.sources.<id>.intervalMinutes | .dailyAt
  *   ngdpbase.addons.feeds.sources.<id>.recordIdField | .map  (optional)
+ *   ngdpbase.addons.feeds.sources.<id>.headers | .userAgent | .timeoutMs  (optional, #1947/#1955)
+ *   ngdpbase.addons.feeds.max-concurrent-ingests | .timeout-min-ms | .timeout-max-ms
+ *     — addon-wide, shipped in config/default-config.json
  */
 
 import path from 'path';
@@ -28,7 +31,7 @@ import type ConfigurationManager from '../../dist/src/managers/ConfigurationMana
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import logger from '../../dist/src/utils/logger.js';
 import { FeedManager } from './src/FeedManager.js';
-import { parseSourceConfigs } from './src/config.js';
+import { parseSourceConfigs, readFeedSettings } from './src/config.js';
 import DataFeedPlugin from './src/DataFeedPlugin.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,7 +47,8 @@ const feedsAddon = {
   dependencies: [] as string[],
 
   async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
-    const sourceConfigs = parseSourceConfigs(config.sources);
+    const settings = readFeedSettings(config);
+    const sourceConfigs = parseSourceConfigs(config.sources, settings);
 
     // Record store lives under FAST_STORAGE (operational data); override via dataPath.
     const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -95,7 +99,7 @@ const feedsAddon = {
     const notify = (n: { level: string; title: string; message: string }): void => {
       if (nm?.addNotification) nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
     };
-    feedManager.startScheduler({ notify });
+    feedManager.startScheduler({ notify, maxConcurrent: settings.maxConcurrentIngests });
   },
 
   status(): Promise<AddonStatusDetails> {

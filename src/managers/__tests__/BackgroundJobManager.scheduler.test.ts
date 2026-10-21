@@ -572,6 +572,9 @@ describe('what an administrator does (#1718)', () => {
       nextSlot: '2026-10-09T11:00:00.000Z', lastSlotDone: '2026-10-09T10:00:00.000Z', current: null
     });
     expect(view.runs[0]).toMatchObject({ slot: '2026-10-09T10:00:00.000Z', status: 'completed' });
+    // #1563: one job's view, the same without its history; null for a job that is not scheduled.
+    expect(await m.scheduledJobView('test.hourly')).toEqual({ ...view, runs: [] });
+    expect(await m.scheduledJobView('no.such.job')).toBeNull();
   });
 
   test('run now runs as the person asking, outside the schedule, and marks no slot done', async () => {

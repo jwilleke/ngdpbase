@@ -51,7 +51,7 @@ type CreateConnection = (
  * The connect step, guarding the case the lookup never sees.
  *
  * Node calls an agent's `lookup` only for a NAME. A URL whose host is an IP
- * literal — `http://192.168.68.71:9200`, `http://127.0.0.1:9200` — goes
+ * literal — `http://192.168.0.10:9200`, `http://127.0.0.1:9200` — goes
  * straight to the socket, so a guard that lives only in `lookup` waves every
  * literal address through. Found by pointing the first version of this at
  * jimstest's LAN node under an empty policy and watching `ping` return true.

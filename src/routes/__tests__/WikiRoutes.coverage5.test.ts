@@ -146,10 +146,14 @@ const mockSearchManager = {
 
 const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
+  getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
   listBackups: vi.fn(),
   listStoredBackups: vi.fn().mockResolvedValue([]),
   isRestoreRunning: vi.fn().mockReturnValue(false),
-  backupKeyInfo: vi.fn().mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: true })
+  backupKeyInfo: vi.fn().mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: true }),
+  // #1945
+  getStagedSiteRestore: vi.fn().mockReturnValue(null),
+  siteRestoreScope: vi.fn().mockReturnValue({ restored: [], notRestored: [] })
 };
 
 const mockConfigManager = {

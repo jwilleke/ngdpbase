@@ -21,14 +21,14 @@ Sign in to each instance as an admin user. Have a second browser tab open to the
 
 Use this URL to run the kiosk through the curated demo page sequence:
 
-[kiodk Mode](http://jminim4:3000/kiosk?pages=Why+Use+This+Platform,Platform+Variables,Syntax+Highlighting,Using+Emoji,ConfigAccessorPlugin,My+Links,Kiosk+Mode,Search+Documentation,Markdown+Cheat+Sheet,Plugin,User+Roles+and+Permissions&interval=12)
+[kiodk Mode](http://localhost:3000/kiosk?pages=Why+Use+This+Platform,Platform+Variables,Syntax+Highlighting,Using+Emoji,ConfigAccessorPlugin,My+Links,Kiosk+Mode,Search+Documentation,Markdown+Cheat+Sheet,Plugin,User+Roles+and+Permissions&interval=12)
 `
 
 Open it in a separate browser window at the start of the session and leave it running as ambient background during breaks.
 
 Demo Sites
 
-- <http://jminim4:3000/view/Welcome>
+- <http://localhost:3000/view/Welcome>
 - <http://localhost:2121/view/home>
 
 ---
@@ -338,4 +338,4 @@ highlight.js runs in Phase 7 (post-processing) — no client-side JS needed to a
 
 ## Other stuff
 
-- [Elescticsearch](http://192.168.68.71:4090/#/?i=69e22067&i=69e814ef)
+- [Elescticsearch](http://sist2.example.com:4090/#/?i=69e22067&i=69e814ef)

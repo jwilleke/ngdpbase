@@ -28,7 +28,7 @@ Add to your instance `app-custom-config.json`:
 
 ```json
 "ngdpbase.search.provider": "elasticsearchsearchprovider",
-"ngdpbase.search.provider.elasticsearch.url": "http://192.168.68.71:9200"
+"ngdpbase.search.provider.elasticsearch.url": "http://elasticsearch.example.com:9200"
 ```
 
 All other keys default to sensible values (see below).

@@ -8,6 +8,9 @@
 
 import express from 'express';
 import request from 'supertest';
+import { promises as fsp } from 'fs';
+import os from 'os';
+import path from 'path';
 import apiRoutes from '../routes/api';
 import { TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 
@@ -17,6 +20,8 @@ import { TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 // lives in dist/ which may not exist when tests run from source, hence virtual.
 // requirePermission refuses when a test sets `refusal`; sendApiError is the real one.
 const permission: { refusal: Error | null; asked: string[] } = { refusal: null, asked: [] };
+// The request's subject the route forwards to core (#1957). vi.hoisted: the mock factory reads it.
+const { SUBMITTER } = vi.hoisted(() => ({ SUBMITTER: { username: 'testuser', roles: ['reader'], isAuthenticated: true } }));
 vi.mock('../../../dist/src/context/ApiContext', async () => {
   const real = await vi.importActual<typeof import('../../../dist/src/context/ApiContext.js')>('../../../dist/src/context/ApiContext.js');
   return {
@@ -24,6 +29,7 @@ vi.mock('../../../dist/src/context/ApiContext', async () => {
     ApiContext: {
       from: () => ({
         username: 'testuser',
+        subject: SUBMITTER,
         requirePermission: async (p: string) => { permission.asked.push(p); if (permission.refusal) throw permission.refusal; }
       })
     }
@@ -565,5 +571,153 @@ describe('POST /api/forms/submit/:formId — submission email', () => {
     ].join('\n'));
     // Asked once per choice field, as the submitter: the validation's own resolution.
     expect(viewers).toEqual([{ username: 'molly' }, { username: 'molly' }]);
+  });
+});
+
+// ── "notify": false sends no notice and no email (#1954) ──────────────────────
+
+describe('POST /api/forms/submit/:formId — notify (#1954)', () => {
+  const noteForm = {
+    id: 'test-form',
+    title: 'Health note',
+    proxySubmission: false,
+    store: false,
+    fields: [
+      { name: 'email', type: 'email', label: 'Your email', required: true },
+      { name: 'note', type: 'textarea', label: 'Note', required: true }
+    ]
+  };
+
+  function noteApp(notify?: boolean) {
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const notices: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: {
+        getDefinition: () => (notify === undefined ? noteForm : { ...noteForm, notify }),
+        saveSubmission: async (s: object) => s
+      },
+      ConfigurationManager: { getProperty: () => '' },
+      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      NotificationManager: { createNotification: async (n: unknown) => { notices.push(n); return 'n1'; } },
+      UserManager: { searchUsers: async () => [{ username: 'admin' }] }
+    });
+    return { app: makeContext(engine), sent, notices };
+  }
+
+  const body = { email: 'pat@example.com', note: 'private health text' };
+
+  test('notify: false creates no notification and sends no email, even with an email field', async () => {
+    const { app, sent, notices } = noteApp(false);
+    const res = await request(app).post('/api/forms/submit/test-form').send(body);
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(sent).toEqual([]);
+    expect(notices).toEqual([]);
+  });
+
+  test('a form that does not say notify still notifies and emails, as before', async () => {
+    for (const notify of [undefined, true]) {
+      const { app, sent, notices } = noteApp(notify);
+      const res = await request(app).post('/api/forms/submit/test-form').send(body);
+      expect(res.status).toBe(201);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe('pat@example.com');
+      await vi.waitFor(() => expect(notices).toHaveLength(1));
+      expect(notices[0]).toMatchObject({ title: 'New form submission: Health note', targetUsers: ['admin'] });
+    }
+  });
+});
+
+// ── The submission notice goes to the form's notifyRole only (#1957) ─────────
+
+describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () => {
+  // Real core: UserManager.searchUsers over RoleManager membership, and a
+  // NotificationManager in a temp folder. Only the stores beneath are stubbed.
+  const holders: Record<string, string[]> = { reader: ['alice'], admin: ['root'], treasurer: ['tess'] };
+  let tempDir: string;
+  let notifications: InstanceType<typeof import('../../../dist/src/managers/NotificationManager.js').default> | undefined;
+  let searched: unknown[][];
+
+  async function app(form: Record<string, unknown>) {
+    const [{ default: NotificationManager }, { default: UserManager }, { default: RoleManager }] = await Promise.all([
+      import('../../../dist/src/managers/NotificationManager.js'),
+      import('../../../dist/src/managers/UserManager.js'),
+      import('../../../dist/src/managers/RoleManager.js')
+    ]);
+    const managers: Record<string, unknown> = {
+      PluginManager: TEST_PLUGIN_MANAGER,
+      FormsDataManager: { getDefinition: () => form, saveSubmission: async (s: object) => s },
+      ConfigurationManager: {
+        getProperty: (_key: string, def: unknown) => def,
+        getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.notifications.dir' ? tempDir : def)
+      },
+      PersonManager: { getByIdentifier: async (username: string) => ({ '@id': `urn:person:${username}`, identifier: username }) }
+    };
+    const engine = { getManager: (name: string) => managers[name], createRouter: () => express.Router() };
+
+    const roleManager = new RoleManager(engine as never);
+    Object.assign(roleManager, {
+      listByMember: async (personId: string) => Object.entries(holders)
+        .filter(([, members]) => members.some((u) => `urn:person:${u}` === personId))
+        .map(([namedPosition]) => ({ '@id': namedPosition, namedPosition, organization: { '@id': 'org' } }))
+    });
+    const userManager = new UserManager(engine as never);
+    const realSearch = userManager.searchUsers.bind(userManager);
+    Object.assign(userManager, {
+      getUsers: async () => ['alice', 'root', 'tess'].map((username) => ({ username, isActive: true })),
+      searchUsers: async (...args: Parameters<typeof realSearch>) => { searched.push(args); return realSearch(...args); }
+    });
+    notifications = new NotificationManager(engine as never);
+    await notifications.initialize({});
+    Object.assign(managers, { RoleManager: roleManager, UserManager: userManager, NotificationManager: notifications });
+    return makeContext(engine);
+  }
+
+  const form = { id: 'test-form', title: 'Repair request', proxySubmission: false, fields: [{ name: 'name', type: 'text', label: 'Name', required: true }] };
+  const titles = (username: string) => notifications.getUserNotifications(username).map((n) => n.title);
+
+  beforeEach(async () => {
+    searched = [];
+    tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-notify-'));
+  });
+  afterEach(async () => {
+    await notifications?.shutdown();
+    notifications = undefined;
+    // Only this test's own temp folder; never a data/ directory.
+    await fsp.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('the default notifyRole (admin): an admin gets the notice, a reader gets nothing', async () => {
+    const res = await request(await app({ ...form, notifyRole: 'admin' })).post('/api/forms/submit/test-form').send({ name: 'Pat' });
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(titles('root')).toEqual(['New form submission: Repair request']));
+    expect(titles('alice')).toEqual([]);
+    expect(titles('tess')).toEqual([]);
+    expect(notifications.getAllNotifications().map((n) => n.targetUsers)).toEqual([['root']]);
+    // The lookup carries the request's subject, forwarded as it came.
+    expect(searched).toEqual([['', { role: 'admin', limit: 0 }, SUBMITTER]]);
+  });
+
+  test('a custom notifyRole is honoured: only its holders are told', async () => {
+    await request(await app({ ...form, notifyRole: 'treasurer' })).post('/api/forms/submit/test-form').send({ name: 'Pat' });
+    await vi.waitFor(() => expect(titles('tess')).toEqual(['New form submission: Repair request']));
+    expect(titles('root')).toEqual([]);
+    expect(titles('alice')).toEqual([]);
+  });
+
+  test('a role nobody holds sends nothing — never a notice to everyone', async () => {
+    const res = await request(await app({ ...form, notifyRole: 'clubhouse-manager' })).post('/api/forms/submit/test-form').send({ name: 'Pat' });
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(searched).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(notifications.getAllNotifications()).toEqual([]);
+    for (const u of ['alice', 'root', 'tess']) expect(titles(u)).toEqual([]);
+  });
+
+  test('a definition that leaves notifyRole out notifies admins (the schema default)', async () => {
+    const { FormDefinitionSchema } = await import('../managers/FormsDataManager');
+    await request(await app(FormDefinitionSchema.parse(form))).post('/api/forms/submit/test-form').send({ name: 'Pat' });
+    await vi.waitFor(() => expect(titles('root')).toHaveLength(1));
+    expect(titles('alice')).toEqual([]);
   });
 });

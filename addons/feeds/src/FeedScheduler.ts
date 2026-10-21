@@ -9,6 +9,10 @@
  *   a flapping endpoint isn't hammered; reset on success.
  * - Stale-feed WARN: when a source hasn't succeeded within the staleness window,
  *   emit one admin notification (via the injected notifier) until it recovers.
+ * - Isolation (#1955): due sources ingest concurrently, at most
+ *   `maxConcurrent` at once (`ngdpbase.addons.feeds.max-concurrent-ingests`),
+ *   so a source whose upstream hangs until its timeout holds no other source.
+ *   A source is never run beside itself: it is marked running when queued.
  *
  * Clock + notifier + ingest are injected, so the whole policy is unit-testable
  * without real timers or network.
@@ -17,6 +21,7 @@
 import logger from '../../../dist/src/utils/logger.js';
 import type { FeedSourceConfig } from './types.js';
 import type { UpsertResult } from './RecordStore.js';
+import { FEED_SETTING_DEFAULTS } from './config.js';
 
 const MINUTE_MS = 60_000;
 const DEFAULT_INTERVAL_MINUTES = 60;
@@ -34,6 +39,8 @@ export interface FeedSchedulerOptions {
   notify?: SchedulerNotify;
   tickMs?: number;
   defaultIntervalMinutes?: number;
+  /** Most sources ingesting at once (#1955). */
+  maxConcurrent?: number;
 }
 
 interface SourceState {
@@ -49,6 +56,10 @@ export class FeedScheduler {
   private readonly notify: SchedulerNotify;
   private readonly tickMs: number;
   private readonly defaultIntervalMinutes: number;
+  private readonly maxConcurrent: number;
+  /** Ingests holding a slot now, and the queued ones waiting for a slot. */
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
   private readonly state = new Map<string, SourceState>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -61,6 +72,7 @@ export class FeedScheduler {
     this.notify = opts.notify ?? (() => { /* no-op */ });
     this.tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
     this.defaultIntervalMinutes = opts.defaultIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES;
+    this.maxConcurrent = opts.maxConcurrent ?? FEED_SETTING_DEFAULTS.maxConcurrentIngests;
   }
 
   start(): void {
@@ -79,14 +91,35 @@ export class FeedScheduler {
     }
   }
 
-  /** One scheduler pass: warn on staleness, then ingest any due source. */
+  /**
+   * One scheduler pass: warn on staleness, then start every due source. They
+   * run side by side, up to `maxConcurrent`; the rest queue for a free slot.
+   * Resolves when this pass's ingests have all finished.
+   */
   async tick(): Promise<void> {
     const now = this.now();
+    const runs: Promise<void>[] = [];
     for (const cfg of this.configs) {
       const st = this.stateOf(cfg.sourceId);
       this.checkStale(cfg, st, now);
-      if (this.isDue(cfg, st, now)) await this.runOnce(cfg, st, now);
+      if (this.isDue(cfg, st, now)) runs.push(this.runOnce(cfg, st, now));
     }
+    await Promise.all(runs);
+  }
+
+  /** Wait for a free slot. A released slot passes straight to the next in line. */
+  private acquireSlot(): Promise<void> {
+    if (this.active < this.maxConcurrent) {
+      this.active++;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => this.waiting.push(resolve));
+  }
+
+  private releaseSlot(): void {
+    const next = this.waiting.shift();
+    if (next) next();
+    else this.active--;
   }
 
   private stateOf(sourceId: string): SourceState {
@@ -133,8 +166,10 @@ export class FeedScheduler {
   }
 
   private async runOnce(cfg: FeedSourceConfig, st: SourceState, now: number): Promise<void> {
+    // Marked before the slot wait, so a later tick never queues it a second time.
     st.running = true;
     st.lastAttemptAt = now;
+    await this.acquireSlot();
     try {
       const res = await this.ingest(cfg.sourceId);
       st.lastSuccessAt = now;
@@ -146,6 +181,7 @@ export class FeedScheduler {
       logger.warn(`[feeds] ${cfg.sourceId}: ingest failed (${st.failures} consecutive): ${String(err)}`);
     } finally {
       st.running = false;
+      this.releaseSlot();
     }
   }
 

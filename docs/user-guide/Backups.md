@@ -2,7 +2,7 @@
 
 ## Overview
 
-A backup made from __Admin → Backup__ is a partial copy of the site. It holds most of the site's data, and __only its databases can be restored from Admin → Backup__. A complete, restorable copy is still the data folders, copied while the server is stopped, plus the keys kept somewhere else.
+A backup made from __Admin → Backup__ is a partial copy of the site. It holds most of the site's data, and __Admin → Backup can restore the whole site from it__, except pages, users and settings. A complete, restorable copy is still the data folders, copied while the server is stopped, plus the keys kept somewhere else.
 
 The full, current detail — every kind of data, what restores, and every known gap — is in the [backup and restore guide](../guides/backup-restore-guide.md). This page is the short version.
 
@@ -13,6 +13,17 @@ The full, current detail — every kind of data, what restores, and every known 
 - __By hand:__ Admin → Backup → __Create & Download Backup__. The backup is written to the server's backup folder and downloaded as one `.tar`.
 - __Automatically:__ turn on automatic backups on Admin → Backup, with a time of day and the days to run. A backup missed while the server was down runs when it is back.
 - The server keeps the last 10 backups (`ngdpbase.backup.max-backups`), each with the files beside it.
+
+### When backups stop working
+
+Backups never fail silently ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). The `/admin` dashboard lists Backup under "not working", and admins get one "Backups are not working" notification (emailed when notification escalation is on), when:
+
+- __a backup fails__: the backup folder is out of space or can't be written, the encryption fails, a part is missing ("A backup is incomplete"), or the backup does not read back. The banner gives the reason and the date of the last good backup, and it stays — through restarts — until a backup succeeds.
+- __no good backup is recent enough__: "No good backup since" a date, or "never" on a site that has none yet (a new site shows it until its first backup). With automatic backups on, that is twice the longest gap between scheduled backups (two days for daily ones); with them off, 7 days. Both are settings (`ngdpbase.backup.stale-interval-multiplier`, `ngdpbase.backup.stale-fallback-days`). It is checked at start and every hour (`ngdpbase.backup.health-check-interval`).
+
+Before writing, a backup checks there is room for it — free space at least the last backup's size times 1.5 (`ngdpbase.backup.space-margin`) — and stops with a clear reason instead of writing half a file. After writing, it reads the backup back (decrypt, decompress, parse); one that does not read back is removed and counts as a failure.
+
+Admin → Backup and the dashboard show the last successful backup (when, in your local time, its size and where), the next automatic backup, and the free space at the backup folder.
 
 A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar.enc` (attachments, vault files, role membership, persons, organizations, footnotes, comments, the credentials store, the audit log, file-based job state, add-on files). With `NGDPBASE_BACKUP_KEY` set every one of them is encrypted under it; without it the names end `.json.gz` and `.tar`, and nothing is encrypted (below).
 
@@ -54,7 +65,7 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 ### Encryption
 
 - __With `NGDPBASE_BACKUP_KEY` set__ every file of a backup is encrypted under it: the document, every `.tar.enc` and the databases. Each records a short fingerprint of the key (never the key); a restore under another key is refused, and one without the key can't read anything.
-- __Without it__ the backup is __not encrypted__: the document holds password hashes and settings with their secrets, the `.tar` files hold attachments and records as they are on disk. The credentials store and the databases are left out. The missing key is shown as a banner on the admin dashboard (Backup degraded) for as long as it lasts, and admins get one notification about it, "Backups are not encrypted", the first time only, naming what is left out; a backup sends no notice of its own for that. A part missing for any other reason still notifies admins at every backup ("A backup is incomplete", naming only that part). A restore of the rest of the site also needs the key, since it starts with a complete backup of the live data.
+- __Without it__ the backup is __not encrypted__: the document holds password hashes and settings with their secrets, the `.tar` files hold attachments and records as they are on disk. The credentials store and the databases are left out. The missing key is shown on the admin dashboard under "Working, but needs your attention", since backups still run for as long as it lasts, and admins get one notification about it, "Backups are not encrypted", the first time only, naming what is left out; a backup sends no notice of its own for that. A part missing for any other reason still notifies admins at every backup ("A backup is incomplete", naming only that part). A restore of the rest of the site also needs the key, since it starts with a complete backup of the live data.
 
 ---
 
@@ -71,26 +82,33 @@ When `ngdpbase.database.provider` is `sqlite`, every backup also copies the appl
 
 ## Restoring
 
-### The databases (Admin → Backup)
+### The whole site (Admin → Backup)
 
-__Admin → Backup → Restore Databases__: pick a backup stored on the server, type the site name, and restart when the notification says it is staged. A fresh backup of the current data is taken first, the databases are prepared beside the live files, all or nothing, and the next start puts them in place, keeping the old files as `*.pre-restore`. A staged restore is shown there and can be cancelled or replaced. __Only the databases are restored__; pages, users and settings are not changed. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
+__Admin → Backup → Restore the whole site__, on every site ([#1945](https://github.com/jwilleke/ngdpbase/issues/1945)): pick a backup stored on the server, type the site name, and restart when the notification says it is staged. It needs `config-manage` and a fresh sign-in, as the other backup actions do. The card lists what it puts back and what it does not, before you confirm.
 
-### Everything else
+- It puts back the databases, attachment files, role membership, persons, organizations, footnotes and comments of public pages, the credentials store, the audit log, file-based job state and add-on files, all together or none of them.
+- The instance `.env` (the site's keys and secrets) comes back only from an encrypted backup, and an encrypted backup needs the same backup key on this server.
+- A fresh backup of the current data is taken first; restoring it undoes the restore. Nothing changes until you restart the site, and the site never restarts by itself. The current data is kept beside the restored data as `*.pre-restore`.
+- A staged restore is shown there and can be cancelled or replaced (with the same typed confirmation); a second restore is never started over it silently.
 
-Nothing on Admin → Backup restores anything but the databases yet ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). The attachment files, role membership, persons, organizations, footnotes and comments, the credentials store, the audit log, file-based job state and add-on files in a backup can be restored together with the databases, staged for the next start, by the site restore that #1876 is building; it has no button yet.
+Details: [the backup and restore guide](../guides/backup-restore-guide.md#restoring-the-whole-site).
+
+### The databases only (Admin → Backup)
+
+On a site that keeps databases, __Restore the databases only__ is the second option below it: the same steps, but __only the databases are restored__; everything else is not changed. It is not offered while a whole-site restore is staged. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
 
 ### Not restored
 
 After any restore is put in place, admins get a __critical__ notification ("Critical: a restore did not bring everything back") listing what it did not bring back. The list is known before a restore too:
 
 - shares and notifications (they stay as they are), sign-in sessions, the backup key and database key (the site keeps its own), TLS certificate files, the media library and its index — no backup holds them;
-- pages, user accounts and settings — they have no staged restore yet;
+- pages, user accounts and settings: they have no staged restore yet, so a whole-site restore leaves them as they are;
 - for a databases-only restore, everything but the databases;
 - anything the backup left out, such as the credentials store of a backup taken without the key.
 
 The notification also names each scheduled job that ran between the backup and the restore, with its last run time and result. Those runs are not in the restored job history, and a restore never runs a job again: a run the backup caught in progress is closed as cut off, and each schedule goes on from the next time after the restart. Decide yourself whether any of them needs running again.
 
-To bring back anything else today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
+To bring back pages, users and settings today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
 
 ---
 

@@ -711,29 +711,42 @@ class BackgroundJobManager extends BaseManager {
   /** Every scheduled job, its state and its recent history. */
   async listScheduledJobs(): Promise<ScheduledJobView[]> {
     const views: ScheduledJobView[] = [];
-    for (const job of this.scheduled.values()) {
-      const enabled = this.refreshFromConfig(job);
-      const state = await this.loadState(job);
-      const runs = job.persist && this.stateProvider ? await this.stateProvider.listRuns(job.def.id) : [];
-      views.push({
-        id: job.def.id,
-        displayName: job.def.displayName,
-        schedule: job.source,
-        rrule: job.schedule.rrule,
-        timeZone: job.schedule.timeZone,
-        catchUp: job.catchUp,
-        overlap: job.overlap,
-        maxAttempts: job.maxAttempts,
-        persist: job.persist,
-        enabled,
-        running: job.draining || this.activeByJobId.has(job.def.id),
-        nextSlot: state?.nextSlot ?? null,
-        lastSlotDone: state?.lastSlotDone ?? null,
-        current: state?.current ?? null,
-        runs
-      });
-    }
+    for (const job of this.scheduled.values()) views.push(await this.viewOf(job, true));
     return views;
+  }
+
+  /**
+   * One scheduled job as `listScheduledJobs` shows it, without its run
+   * history, or null when no job of that id is scheduled. For a manager that
+   * shows its own job's next run (BackupManager, #1563) without reading every
+   * job's history.
+   */
+  async scheduledJobView(jobId: string): Promise<ScheduledJobView | null> {
+    const job = this.scheduled.get(jobId);
+    return job ? this.viewOf(job, false) : null;
+  }
+
+  private async viewOf(job: ScheduledJob, withRuns: boolean): Promise<ScheduledJobView> {
+    const enabled = this.refreshFromConfig(job);
+    const state = await this.loadState(job);
+    const runs = withRuns && job.persist && this.stateProvider ? await this.stateProvider.listRuns(job.def.id) : [];
+    return {
+      id: job.def.id,
+      displayName: job.def.displayName,
+      schedule: job.source,
+      rrule: job.schedule.rrule,
+      timeZone: job.schedule.timeZone,
+      catchUp: job.catchUp,
+      overlap: job.overlap,
+      maxAttempts: job.maxAttempts,
+      persist: job.persist,
+      enabled,
+      running: job.draining || this.activeByJobId.has(job.def.id),
+      nextSlot: state?.nextSlot ?? null,
+      lastSlotDone: state?.lastSlotDone ?? null,
+      current: state?.current ?? null,
+      runs
+    };
   }
 
   private scheduledOrThrow(jobId: string): ScheduledJob {
@@ -1384,7 +1397,7 @@ class BackgroundJobManager extends BaseManager {
     } catch { /* the gate below says so */ }
     const replaced = since ? this.readLiveRunsSince(stateDir, since) : [];
     const outcome = applyDirectoryPartAtStart('BackgroundJobManager', stateDir, configManager);
-    if (outcome?.refused) this.markDegraded(`A staged restore of the job state was not applied: ${outcome.refused}`);
+    if (outcome?.refused) this.markNeedsAttention(`A staged restore of the job state was not applied: ${outcome.refused}`);
     if (outcome && !outcome.refused && outcome.applied.length > 0) {
       this.restoredAtStart = true;
       this.runsReplacedAtStart = replaced;

@@ -74,7 +74,7 @@ const PREFILL_PATHS = [
             <label class="form-label fw-semibold">Notify Role</label>
             <input type="text" class="form-control" name="notifyRole"
               value="<%= form?.notifyRole ?? 'admin' %>">
-            <div class="form-text">Role that receives an in-app notification on submission.</div>
+            <div class="form-text">Only people who hold this role are told about each submission.</div>
           </div>
 
           <div class="col-md-4">
@@ -103,6 +103,18 @@ const PREFILL_PATHS = [
                 <%= form?.store === false ? '' : 'checked' %>>
               <label class="form-check-label" for="store">
                 <strong>Store submissions</strong> — keep a copy of each submission. Untick when the handler's own record is the record (a ledger entry, say)
+              </label>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <%/* Same marker pattern as storeShown (#1954). */%>
+            <input type="hidden" name="notifyShown" value="1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="notify" id="notify"
+                <%= form?.notify === false ? '' : 'checked' %>>
+              <label class="form-check-label" for="notify">
+                <strong>Send notices</strong> — post a "New form submission" notice for each submission, and email the details to the address in the form's email field. Untick when the details are private (health notes, say)
               </label>
             </div>
           </div>
