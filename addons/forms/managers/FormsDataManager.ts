@@ -66,6 +66,8 @@ export const FormDefinitionSchema = z.object({
   confirmationUrl: z.string().optional(),
   // false: the handler's answer is the record, and no submission file is kept
   store:           z.boolean().default(true),
+  // false: no "New form submission" notice and no email of the details (#1954)
+  notify:          z.boolean().default(true),
   fields:          z.array(FieldSchema).min(1),
   // A form an add-on ships (#1880): who shipped it, and the hash of the shipped
   // definition this copy was saved or synced from. Not part of the hash itself.
@@ -475,11 +477,12 @@ export default class FormsDataManager {
    * the first start.
    *
    * @param addon - The add-on's name, shown in the forms admin
-   * @param definition - The definition the add-on ships
+   * @param definition - The definition the add-on ships; keys with a default
+   *   (`store`, `notify`, ...) may be left out
    * @param options - `required`: what ships now is needed for the add-on to work
    * @returns Where the site's copy stands after registering
    */
-  async registerShippedForm(addon: string, definition: FormDefinition, options: ShippedFormOptions = {}): Promise<ShippedFormState> {
+  async registerShippedForm(addon: string, definition: z.input<typeof FormDefinitionSchema>, options: ShippedFormOptions = {}): Promise<ShippedFormState> {
     const { shipped: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
     this.shippedForms.set(parsed.id, { addon, definition: parsed, required: options.required === true });
 

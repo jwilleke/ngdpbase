@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { waitForServerReady, instanceOrigin } from './fixtures/helpers';
 
 /**
- * #1921 — the form builder's "Store submissions" box, and the properties the
+ * #1921 — the form builder's "Store submissions" box (and #1954's "Send
+ * notices" box, the same pattern), and the properties the
  * builder has no input for.
  *
  * Creates a form in the builder with the box unticked, saves it again
@@ -117,5 +118,18 @@ test.describe('forms: the builder keeps store and what it has no input for (#192
     test.skip(!enabled, 'forms add-on not enabled on this instance');
     await saveInBuilder(page, async p => { await p.locator('#store').check(); });
     expect((await definition(page))['store']).toBe(true);
+  });
+
+  test('#1954: unticking Send notices saves notify:false, and an unchanged save keeps it', async ({ page }) => {
+    test.skip(!enabled, 'forms add-on not enabled on this instance');
+    await saveInBuilder(page, async p => {
+      await expect(p.locator('#notify')).toBeChecked();
+      await p.locator('#notify').uncheck();
+    });
+    const quiet = await definition(page);
+    expect(quiet['notify']).toBe(false);
+
+    await saveInBuilder(page, async p => { await expect(p.locator('#notify')).not.toBeChecked(); });
+    expect(await definition(page)).toEqual(quiet);
   });
 });

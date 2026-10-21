@@ -96,7 +96,7 @@ describe('POST /forms/builder — store and the properties the builder has no in
   ];
   const noStore: FormDefinition = {
     id: 'deposit', title: 'Deposit', handler: 'ledger', proxySubmission: true, notifyRole: 'treasurer',
-    confirmationUrl: '/view/deposits', store: false, fields: fields as FormDefinition['fields']
+    confirmationUrl: '/view/deposits', store: false, notify: true, fields: fields as FormDefinition['fields']
   };
 
   /** What the builder page posts for this form when the admin changes nothing. */
@@ -105,6 +105,7 @@ describe('POST /forms/builder — store and the properties the builder has no in
       title: form.title, handler: form.handler ?? '', notifyRole: form.notifyRole,
       confirmationUrl: form.confirmationUrl ?? '', proxySubmission: form.proxySubmission ? 'on' : '',
       storeShown: '1', ...(form.store === false ? {} : { store: 'on' }),
+      notifyShown: '1', ...(form.notify === false ? {} : { notify: 'on' }),
       fieldsJson: JSON.stringify(form.fields)
     };
   }
@@ -162,6 +163,58 @@ describe('POST /forms/builder — store and the properties the builder has no in
 });
 
 /**
+ * #1954 — the "Send notices" box: the same marker pattern as Store submissions,
+ * so a builder save keeps `notify: false` (the #1922 store bug, for notify).
+ */
+describe('POST /forms/builder — the Send notices box (#1954)', () => {
+  const quiet: FormDefinition = {
+    id: 'note', title: 'Health note', proxySubmission: false, notifyRole: 'admin', store: false, notify: false,
+    fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }]
+  };
+  const post = (form: FormDefinition, extra: Record<string, string> = {}): Record<string, string> => ({
+    title: form.title, notifyRole: form.notifyRole, storeShown: '1', notifyShown: '1',
+    fieldsJson: JSON.stringify(form.fields), ...extra
+  });
+
+  test('saving a notify:false form unchanged keeps notify:false', async () => {
+    const { app, saved } = makeApp({ note: quiet });
+    const res = await request(app).post('/forms/builder/note').type('form').send(post(quiet));
+    expect(res.status).toBe(302);
+    expect(saved[0]).toEqual(quiet);
+  });
+
+  test('ticking the box turns notices on; unticking turns them off', async () => {
+    const on = makeApp({ note: quiet });
+    await request(on.app).post('/forms/builder/note').type('form').send(post(quiet, { notify: 'on' }));
+    expect((on.saved[0] as FormDefinition).notify).toBe(true);
+
+    const loud = { ...quiet, notify: true };
+    const off = makeApp({ note: loud });
+    await request(off.app).post('/forms/builder/note').type('form').send(post(loud));
+    expect((off.saved[0] as FormDefinition).notify).toBe(false);
+  });
+
+  test('a post without the marker keeps the form\'s value; a new form notifies by default', async () => {
+    const { app, saved } = makeApp({ note: quiet });
+    const { notifyShown: _marker, ...old } = post(quiet);
+    await request(app).post('/forms/builder/note').type('form').send(old);
+    expect((saved[0] as FormDefinition).notify).toBe(false);
+
+    const fresh = makeApp();
+    await request(fresh.app).post('/forms/builder').type('form').send({ id: 'fresh', title: 'T', fieldsJson: oneField });
+    expect((fresh.saved[0] as FormDefinition).notify).toBe(true);
+  });
+
+  test('a re-rendered builder after a validation error shows the box as the admin left it', async () => {
+    const { app, saved } = makeApp({ note: quiet });
+    const res = await request(app).post('/forms/builder/note').type('form').send(post(quiet, { fieldsJson: '[]' }));
+    expect(res.status).toBe(400);
+    expect(res.body.form.notify).toBe(false);
+    expect(saved).toHaveLength(0);
+  });
+});
+
+/**
  * #1921 with the real manager: an unchanged builder save of a shipped
  * store:false form is not an edit, so it stays up to date (#1880). Works in its
  * own mkdtemp folder and removes only that folder.
@@ -189,5 +242,31 @@ describe('builder save of a shipped store:false form (#1921, #1880)', () => {
     expect(res.status).toBe(302);
     expect(m.getDefinition('deposit')!.store).toBe(false);
     expect(m.shippedFormState('deposit')!.status).toBe('current');
+  });
+
+  test('#1954: a shipped notify:false form keeps it through an unchanged save, and a shipped form that omits it notifies', async () => {
+    const m = new FormsDataManager(null, dir);
+    await m.initialize();
+    await m.registerShippedForm('phr', {
+      id: 'phr-note', title: 'Health note', store: false, notify: false,
+      fields: [{ name: 'note', type: 'textarea', label: 'Note', required: true }]
+    });
+    await m.registerShippedForm('phr', {
+      id: 'phr-loud', title: 'Loud', fields: [{ name: 'note', type: 'text', label: 'Note', required: true }]
+    });
+    expect(m.getDefinition('phr-note')!.notify).toBe(false);
+    expect(m.getDefinition('phr-loud')!.notify).toBe(true);
+
+    const app = express();
+    app.use(express.urlencoded({ extended: false }));
+    const engine = { getManager: () => m, createRouter: () => express.Router() };
+    app.use('/forms/builder', builderRoutes(engine as never));
+
+    const live = m.getDefinition('phr-note')!;
+    const res = await request(app).post('/forms/builder/phr-note').type('form')
+      .send({ title: live.title, notifyRole: live.notifyRole, storeShown: '1', notifyShown: '1', fieldsJson: JSON.stringify(live.fields) });
+    expect(res.status).toBe(302);
+    expect(m.getDefinition('phr-note')!.notify).toBe(false);
+    expect(m.shippedFormState('phr-note')!.status).toBe('current');
   });
 });
