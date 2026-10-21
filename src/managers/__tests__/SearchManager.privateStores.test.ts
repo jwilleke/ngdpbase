@@ -42,6 +42,7 @@ import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const VAULT_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SEALED_STORE = 'vault';
+const WELCOME_UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 const MOLLY: ActorContext = { ...actor('molly'), privateStoreHandle: 'sid' };
 const DIARY = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Diary');
@@ -74,11 +75,19 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
     };
     let validation: unknown = null;
     let pages: unknown = null;
+    // #1962: every shared-index hit goes through the page-list door. This file
+    // is about the private merge, so the door keeps every page that exists;
+    // the access decision itself is SearchManager.accessFilter.test.ts's.
+    const pip = {
+      filterAccessiblePages: vi.fn(async (_s: unknown, _a: string, candidates: Array<{ title: string; metadata: unknown }>) =>
+        candidates.filter((c) => c.metadata).map((c) => c.title))
+    };
     const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'ValidationManager') return validation;
         if (name === 'PageManager') return pages;
+        if (name === 'PolicyInformationPoint') return pip;
         return null;
       })
     };
@@ -88,6 +97,7 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
     pageManager = new PageManager(engine);
     (pageManager as unknown as { provider: unknown }).provider = provider;
     pages = pageManager;
+    await pageManager.savePage('Welcome', 'apricot orchard tour', { uuid: WELCOME_UUID }, actor('admin'));
 
     providerSearch = vi.fn().mockResolvedValue([PUBLIC_HIT]);
     providerAdvanced = vi.fn().mockResolvedValue([PUBLIC_HIT]);

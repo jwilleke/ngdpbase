@@ -611,7 +611,8 @@ class PageManager extends BaseManager implements CatalogSource {
       }
       const reason = reasons.join('. ');
       logger.error(`📄 ${reason}`);
-      if (this.markDegraded(reason)) {
+      // Closed vaults are down; open ones holding plaintext work and need an admin (#1946).
+      if (found.length > 0 ? this.markDegraded(reason) : this.markNeedsAttention(reason)) {
         try {
           await this.engine.getManager<NotificationManager>('NotificationManager')?.addNotification({
             type: 'system', level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
@@ -3213,6 +3214,42 @@ class PageManager extends BaseManager implements CatalogSource {
     const infos = await this.provider.getAllPageInfo();
     const titles = await acl.filterAccessiblePages(subject, action, infos.map((i) => ({ title: i.title, metadata: i.metadata ?? null })));
     return titles.sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * Which of these named pages may `subject` perform `action` on — the
+   * {@link listPagesFor} door for a list someone else found: search hits
+   * (#1962), whatever index they came from.
+   *
+   * Each name is resolved as `/view/<name>` resolves it, and the batch is
+   * decided by `PolicyInformationPoint.filterAccessiblePages`, so a hit is
+   * kept exactly when its reader may open the page. A name that resolves to
+   * no page (a ghost in the index) is dropped. Order is preserved; no log line
+   * or audit record per page. Without a PolicyInformationPoint nothing is kept.
+   *
+   * @param subject - The reader's own context, forwarded
+   * @param names   - Page names, as the index holds them
+   * @param action  - Legacy verb (`view`, `edit`) or policy action; default `view`
+   */
+  async filterPagesFor(subject: ActorContext | PermissionSubject | null | undefined, names: readonly string[], action: string = 'view'): Promise<string[]> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    if (names.length === 0) return [];
+    const acl = this.engine.getManager<{
+      filterAccessiblePages(subject: PermissionSubject | null | undefined, action: string, candidates: Array<{ title: string; metadata: PageFrontmatter | null }>): Promise<string[]>;
+        }>('PolicyInformationPoint');
+    if (!acl) {
+      logger.warn('[PageManager] filterPagesFor: PolicyInformationPoint unavailable — keeping nothing');
+      return [];
+    }
+    const provider = this.provider;
+    const asReader = subject ?? ANONYMOUS_SUBJECT;
+    const candidates = await Promise.all(names.map(async (title) => ({
+      title,
+      metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
+    })));
+    return acl.filterAccessiblePages(subject as PermissionSubject | null | undefined, action, candidates);
   }
 
   /**

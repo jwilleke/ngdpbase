@@ -7,10 +7,9 @@ import { test, expect } from '@playwright/test';
  *
  * Every required page with the system keyword `test-page` carries
  * `audience: [admin]`. An admin can open it; anyone else is refused.
- * Listings and search apply the same rule (`src/utils/frontmatterAccess.ts`,
- * #1054, unit-tested there). They are not asserted here: on jimstest these
- * pages reach neither search nor the page index even for an admin, so a
- * "not listed" check would pass without proving anything.
+ * Listings and search apply the same rule through PolicyInformationPoint
+ * (#1219, #1962); search is asserted end to end in search-access.spec.ts, on a
+ * page that spec makes itself.
  *
  * The pages reach an instance by install seeding or Admin → Required Pages
  * Sync. A missing page fails here on purpose: it means the instance under
