@@ -510,6 +510,7 @@ async register(engine, config) {
 | `recordAuditEvent`, `addonAuditEventName` | Audit, limited to this addon's own events (below) |
 | `actorOf` | The "who" of an audit record, from a context |
 | `jobContextFromRequest`, `jobContextFromSystem` | Contexts for [Background Jobs](#8-background-jobs) |
+| `systemContext(reason)` | The context your own start-up work runs under: core's system principal (`NGDPBASE_SYSTEM_USER`, never a name you choose), with `reason` for the record ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
 | `setEnabledForPerson` | Turn this add-on on or off for a person, when it is [per-person](#per-person-add-ons-and-their-switch) |
@@ -589,7 +590,7 @@ npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersio
 
 - __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
-  - `buildAddonHost(slug, defaults, setEnabledForPerson?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts.
+  - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
   - `toCsv(headers, rows)`: `ExportManager.toCsv`, the one CSV writer.
   - `formatters`: the object a plugin gets as `context.formatters`.
@@ -930,46 +931,49 @@ author: my-addon
 
 ### Ship form definitions
 
-An add-on that ships forms for the bundled forms add-on registers each one in its `register()`, at every start, with the definition as this release ships it ([#1880](https://github.com/jwilleke/ngdpbase/issues/1880)):
+An add-on that ships forms for the bundled forms add-on registers each one in its `register()`, at every start, with the definition as this release ships it ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)):
 
 ```ts
-const forms = engine.getManager<FormsDataManager>('FormsDataManager');
-await forms?.registerShippedForm('my-addon', definition);
-// a change your add-on cannot work without (#1918):
-await forms?.registerShippedForm('my-addon', definition, { required: true });
+async register(engine, config, host) {
+  const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+  await forms?.registerShippedForm('my-addon', definition, host.systemContext('my-addon: register its forms'));
+}
 ```
 
-The forms add-on keeps the site's copy in `<dataPath>/definitions/<id>.json` (`ngdpbase.addons.forms.dataPath`, default `${FAST_STORAGE}/forms`), stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
+The forms add-on stores it as an ordinary definition in `<dataPath>/definitions/<id>.json` (`ngdpbase.addons.forms.dataPath`, default `${FAST_STORAGE}/forms`), with `providedBy: { addon, version }`. The version is your add-on's `package.json` `version`, read from core's add-on registry (`AddonsManager.getAddonVersion`). There is no per-form version: your release is the form's version.
 
-- No copy on the site: it is saved. That is the first install.
-- The copy is what you ship: __Current__.
-- You ship a change and the copy is unedited since it was stamped: __Modified__ in the forms admin's Shipped Forms (`/addons/forms`), with __Sync__. Nothing is replaced at start; the admin syncs.
-- The copy was edited in the form builder (its hash no longer matches its stamp): __Modified__ and __User Edited__. Sync never replaces it; __Force Sync__ does, after the admin confirms.
-- A copy saved before #1880 has no stamp. When it says the same as what you ship it is stamped at start, as unstamped required pages are ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)). When it differs it cannot be proven unedited, so it shows as __Modified__, and its Sync warns that builder edits would be replaced (a form keeps no version history to revert to).
+Your form wins. Each start compares your installed version with the one recorded on the stored copy (as `x.y.z`, the way `minVersion` is compared):
 
-The status words, badges and Sync / Force Sync are Admin → Required Pages' own ([#1918](https://github.com/jwilleke/ngdpbase/issues/1918)), drawn by core's shared partials `views/_sync-status.ejs`, `views/_sync-button.ejs` and `views/_sync-counts.ejs` from `syncRowState` (`src/utils/addonPageSync.ts`). Any add-on screen that syncs shipped content uses them rather than its own design.
+- No copy on the site: it is written. That is the first install.
+- Your version is newer: the copy is replaced with what you ship now. Nothing checks whether it was edited, because a form you provide cannot be edited on the site.
+- The same version: nothing is written. A release that did not change its forms rewrites nothing.
+- Your version is older (an older release reinstalled): the copy is kept. The forms add-on logs an error and tells administrators (whoever holds `admin-system`) which form, the version that wrote it and the installed version, at each start until a release at least as new is installed.
+- A copy with no `providedBy` (saved before #1973, or by the builder under the same id) is replaced at the next start.
+- A form another add-on provides is not replaced; an error is logged.
 
-A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `<dataPath>/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
+`registerShippedForm` returns what it did: `saved`, `replaced`, `unchanged` or `refused`. It throws on a definition that does not parse, on an add-on core does not know, and on a version that is not `x.y.z`, so each shows at the first start. Values you leave out take the schema's defaults, and a key core adds later (such as `notify`) is filled with its default when a copy is loaded, so it never blocks your next release from replacing the copy.
 
-- Ordinary change: an info notice, "Form update available: …".
-- `{ required: true }`: what ships now is needed for your add-on to work. The notice is critical ("Critical: form … needs syncing", error level), as a failed add-on load is ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883)), and the forms admin flags the form __Required__ until it is synced. Mark only a change your add-on breaks without, such as a field your handler now reads.
+A form you provide is read-only on the site:
 
-`registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
+- The forms admin (`/addons/forms`) shows "Provided by `<addon>` `<version>`; it updates this form", linked to Admin → Add-ons, with no Edit or Delete.
+- The form builder refuses it on the server, not only by hiding the buttons: opening it, saving it and deleting it answer 403, and a new form cannot take its id (409). `FormsDataManager.saveDefinition` and `deleteDefinition`, the builder's door, refuse it too (`ProvidedFormError`), and a definition cannot set `providedBy` through them. An administrator who wants something different builds their own form under another id.
 
-A form whose submissions are private (health notes, say) ships with `"store": false` and `"notify": false` ([#1954](https://github.com/jwilleke/ngdpbase/issues/1954)). Both default to `true`, and both may be left out of the definition you register.
+Each submission records `formVersion`: the `providedBy` version of the form it was submitted on. Your handler receives it on the submission, and the stored submission keeps it. A site-built form's submissions have none.
+
+A form whose submissions are private (health notes, say) ships with `"store": false` and `"notify": false` ([#1954](https://github.com/jwilleke/ngdpbase/issues/1954)). Both default to `true`, and both may be left out of the definition you register. On a replace, the values you ship are the values stored.
 
 - `"store": false`: no submission file is kept; your handler's record is the record.
 - `"notify": false`: after your handler accepts the submission, the forms add-on sends nothing about it. There is no "New form submission" notification, and no email of the details, even when the form has an `email` field or a For Another Occupant email.
 - With `notify` on, the "New form submission" notification goes only to the accounts that hold the form's `notifyRole` (default `admin`; [#1957](https://github.com/jwilleke/ngdpbase/issues/1957)). The forms add-on asks core who holds it (`UserManager.searchUsers('', { role, limit: 0 }, ctx)`, which reads `RoleManager` membership, active accounts only) under the submitter's context. When nobody holds the role it sends nothing and logs at debug: NotificationManager reads an empty `targetUsers` as every user, so an empty list is never passed on. Name a role your site declares; a role nobody holds is a silent form.
 - With both off, the forms add-on leaves nothing of the submission outside your handler. The one record it can leave is the `form-submit` audit event, which the forms add-on declares switched off (`audit.enabled: false` in `addons/forms/config/default-config.json`). It is written only on a site that turns it on, and then it records the permission decision (who, when, allowed or refused), not what was submitted. `notify` does not change it.
 
-The form builder saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)), so saving your form unchanged leaves it __Current__:
+The form builder, for forms built on the site, saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)):
 
 - `store` is its __Store submissions__ box, ticked unless the form says `"store": false`. The page sends `storeShown` beside the box (an unticked box sends nothing), and a post without it keeps the form's value.
 - `notify` is its __Send notices__ box, the same way: ticked unless the form says `"notify": false`, with `notifyShown` beside it.
-- A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged. The `shipped` stamp is kept by `saveDefinition`.
+- A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged.
 
-Migrating from the interim rule: replace `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)` with `await forms.registerShippedForm('<your add-on>', definition)`, called on every start. Existing sites need nothing else: their unedited copies are stamped or offered as updates by the rule above.
+Migrating from #1880/#1918: pass `host.systemContext(reason)` as the third argument, in place of the old `{ required: true }` option, which is gone (an update always applies, so nothing is "required"). An add-on not yet updated still registers: core logs a warning and uses a boot context. Do not call `saveDefinition` for your form; it refuses a form you provide. Existing sites need nothing: their copies have no `providedBy`, so your next start replaces them.
 
 ### Choices from your manager, and checklists
 
@@ -988,7 +992,7 @@ A `lines` field ([#1913](https://github.com/jwilleke/ngdpbase/issues/1913)) repe
 - Each row is validated by the same rules as top-level fields (`buildSubmissionValidator` builds the row from the same per-field rule). A sub-field's `optionsSource` is asked once per render and once per submit, as the viewer, whatever the row count; a value it did not offer is refused before your handler runs. `required`, `minRows` and `maxRows` are enforced on both sides.
 - Errors are keyed `<name>[<0-based row>].<field>`, for example `lines[1].category`. Answer `{ ok: false, fields: { 'lines[1].category': '...' } }` and the message shows next to that row's field; a key for the whole field (`lines`) shows under the field.
 - With `amountField` the form shows "Lines: N · $sum"; with `totalField`, whether it matches that field. It is the checklist's total (one drawing for both), and a hint only: a handler that needs the lines to add up to the total checks it.
-- A row holds one value per sub-field: `lines`, `section`, `hidden` and `checklist` sub-fields are refused when the definition is parsed, so `registerShippedForm` throws on them. The shipped-form hash covers the sub-fields, so a changed sub-field ships as an update.
+- A row holds one value per sub-field: `lines`, `section`, `hidden` and `checklist` sub-fields are refused when the definition is parsed, so `registerShippedForm` throws on them. A changed sub-field reaches sites with your next release, as any change to the form does.
 
 ### Ship a Theme
 
@@ -1732,6 +1736,12 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
 - [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
 - [#1957](https://github.com/jwilleke/ngdpbase/issues/1957) — [form notices](#ship-form-definitions): the "New form submission" notification is addressed to the holders of the form's `notifyRole`, but `/admin/notifications` and the admin dashboard list every notification (`getAllNotifications`), whatever its targets. Anyone who can view those admin pages sees a notice addressed to `treasurer`. No other page shows notifications by target yet.
+- [#1973](https://github.com/jwilleke/ngdpbase/issues/1973) — [forms an add-on provides](#ship-form-definitions):
+  - Versions compare as `x.y.z` only. A pre-release version (`1.2.0-rc.1`) makes `registerShippedForm` throw, as a malformed `minVersion` is refused.
+  - The version recorded is the `package.json` `version`; Admin → Add-ons shows the module's own `version`. Keep them the same, or the two pages disagree.
+  - The notice for an older add-on is raised at every start until a newer one is installed; nothing remembers it was sent.
+  - An add-on cannot remove a form it no longer ships: the copy stays, read-only. Nothing on the site removes it either.
+  - `formVersion` is stored on the submission and passed to your handler; the forms admin does not show it yet.
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 

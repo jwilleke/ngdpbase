@@ -34,10 +34,18 @@ export { formatters } from '../../src/managers/PluginManager.js';
  * @param addonDefaults - The add-on's own `config/default-config.json`
  * @param setEnabledForPerson - What `host.setEnabledForPerson` does in the
  *   test (#1963); a site binds core's setter. Without one it refuses.
+ * @param engine - Optional: an engine (or stand-in) whose PolicyInformationPoint
+ *   names the system principal for `host.systemContext`; without one it is
+ *   core's fallback principal
  */
-export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>, setEnabledForPerson?: PersonSwitchSetter): AddonHost {
+export function buildAddonHost(
+  slug: string,
+  addonDefaults: Record<string, unknown>,
+  setEnabledForPerson?: PersonSwitchSetter,
+  engine?: Parameters<typeof buildHost>[3]
+): AddonHost {
   bindAuditEvents((key, fallback) => addonDefaults[key] ?? fallback);
-  return buildHost(slug, addonDefaults, setEnabledForPerson);
+  return buildHost(slug, addonDefaults, setEnabledForPerson, engine);
 }
 
 /** The add-on whose declaration a test database is checked against: its slug and its own `config/default-config.json`. */
