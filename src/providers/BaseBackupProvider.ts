@@ -93,6 +93,15 @@ abstract class BaseBackupProvider extends BaseProvider {
     };
   }
 
+  /**
+   * Free bytes at the storage target, or null when this provider can't tell
+   * (#1563). BackupManager compares it with the last backup's size before
+   * writing, and shows it on Admin → Backup.
+   */
+  async freeSpace(): Promise<number | null> {
+    return null;
+  }
+
   /** Health check — overridable by providers with remote dependencies. */
   async isHealthy(): Promise<boolean> {
     return true;

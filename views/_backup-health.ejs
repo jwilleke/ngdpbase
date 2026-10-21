@@ -1,0 +1,36 @@
+<%# #1563 — whether backups work, as BackupManager.getBackupHealth() says: the
+    last successful backup (when, size, where), the next automatic one, and
+    free space at the destination. Shown on Admin → Backup and the /admin
+    dashboard; the outage itself is BackupManager's banner. Times go out as
+    <time datetime data-local-time> with the UTC text as the fallback;
+    /js/local-time.js shows them in the viewer's own zone.
+    Locals: health (BackupHealth or null), formatBytes (BackupManager's). %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+  const bytes = function (n) { return typeof n === 'number' && isFinite(n) ? formatBytes(n) : 'unknown'; };
+%>
+<% if (health) { %>
+<div id="backup-health" class="small">
+    <% if (health.fault) { %>
+        <div class="text-danger mb-1" data-testid="backup-health-fault"><i class="fas fa-triangle-exclamation me-1" aria-hidden="true"></i><strong>Backups are not working.</strong> <%= health.fault %></div>
+    <% } %>
+    <div data-testid="backup-last-good">
+        <strong>Last successful backup:</strong>
+        <% if (health.lastGood) { %>
+            <time datetime="<%= health.lastGood.at %>" data-local-time><%= utc(health.lastGood.at) %></time>,
+            <%= bytes(health.lastGood.size) %>, in <code><%= health.lastGood.location %></code>
+        <% } else { %>
+            <em>never</em>
+        <% } %>
+    </div>
+    <div data-testid="backup-next-run">
+        <strong>Next automatic backup:</strong>
+        <% if (health.nextRun) { %>
+            <time datetime="<%= health.nextRun %>" data-local-time><%= utc(health.nextRun) %></time>
+        <% } else { %>
+            <em><%= health.autoBackup ? 'not scheduled' : 'automatic backups are off' %></em>
+        <% } %>
+    </div>
+    <div data-testid="backup-free-space"><strong>Free space at the destination:</strong> <%= bytes(health.freeBytes) %></div>
+</div>
+<% } %>

@@ -119,7 +119,14 @@ describe('#1215 backup-create', () => {
     const sink: Recorded[] = [];
     const engine = sinkEngine(sink, { extra: { ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => os.tmpdir() } } });
     const bm = new BackupManager(engine);
-    (bm as unknown as { provider: unknown }).provider = { writeBackup: async (name: string) => `/backups/${name}`, listBackups: async () => [], listBackupObjects: async () => [], deleteBackup: async () => undefined };
+    // #1563: every backup is read back after it is written, so the provider keeps what it was given.
+    const written = new Map<string, Buffer>();
+    (bm as unknown as { provider: unknown }).provider = {
+      writeBackup: async (name: string, data: Buffer) => { written.set(`/backups/${name}`, data); return `/backups/${name}`; },
+      readBackup: async (where: string) => written.get(where),
+      freeSpace: async () => null,
+      listBackups: async () => [], listBackupObjects: async () => [], deleteBackup: async () => undefined, removeBackup: async () => undefined
+    };
     (bm as unknown as { cleanupOldBackups: () => Promise<void> }).cleanupOldBackups = async () => undefined;
     (bm as unknown as { initialized: boolean; backupDirectory: string }).initialized = true;
     (bm as unknown as { backupDirectory: string }).backupDirectory = os.tmpdir();

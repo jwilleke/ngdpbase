@@ -169,6 +169,7 @@ import type { AuthenticateResult, AuthAttempt } from '../managers/AuthManager.js
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
+import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
@@ -11220,6 +11221,14 @@ ${panes}
         logger.warn('[adminDashboard] CatalogManager not available for source listing:', catalogErr);
       }
 
+      // #1563: the last successful backup, the next one and free space at the destination.
+      let backupHealth: BackupHealth | null = null;
+      try {
+        backupHealth = await this.engine.getManager<BackupManager>('BackupManager')?.getBackupHealth?.() ?? null;
+      } catch (backupErr) {
+        logger.warn('[adminDashboard] Backup health could not be read:', backupErr);
+      }
+
       const degraded = (this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
       }).getDegradedManagers?.() ?? [];
@@ -11270,6 +11279,8 @@ ${panes}
         // work but need an admin, by the kind each manager declared.
         degradedManagers: degraded.filter((m) => m.kind !== 'attention'),
         attentionManagers: degraded.filter((m) => m.kind === 'attention'),
+        backupHealth,
+        formatBytes,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
@@ -11750,6 +11761,8 @@ ${panes}
       }
       const status = await backupManager.getAutoBackupStatus();
       const recentBackups = await backupManager.listStoredBackups();
+      // #1563: whether backups work — BackupManager's answer, shown as it is.
+      const backupHealth = await backupManager.getBackupHealth();
       // #1723: what a restore needs on the page — the staged one, whether one
       // is being prepared, and the name an admin types to confirm.
       const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown; getUnavailableReason?(): string | null }>('DatabaseManager');
@@ -11777,6 +11790,8 @@ ${panes}
         restoreRunning: backupManager.isRestoreRunning(),
         // #1876: the backup key's fingerprint and whether it is saved off the server — never the key.
         backupKey: backupManager.backupKeyInfo(),
+        backupHealth,
+        formatBytes,
         siteName: this.siteName(),
         success: req.query.success as string | undefined,
         error: req.query.error as string | undefined,
