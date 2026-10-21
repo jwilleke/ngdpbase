@@ -217,22 +217,16 @@
             </span>
         </div>
         <div class="card-body">
+            <%# #1563: whether backups work — BackupManager's answer. %>
+            <% if (typeof backupHealth !== 'undefined' && backupHealth) { %>
+                <div class="mb-3"><%- include('_backup-health', { health: backupHealth, formatBytes: formatBytes }) %></div>
+            <% } %>
             <table class="table table-sm mb-3" style="max-width:400px;">
                 <tr><th>Status</th><td><%= status.config.enabled ? 'Enabled' : 'Disabled' %></td></tr>
                 <tr><th>Time</th><td><%= status.config.time %></td></tr>
                 <tr><th>Days</th><td><%= status.config.days %></td></tr>
                 <tr><th>Max backups kept</th><td><%= status.config.maxBackups %></td></tr>
                 <tr><th>Backup directory</th><td><code style="font-size:0.8em;"><%= status.config.directory %></code></td></tr>
-                <tr>
-                    <th>Last backup</th>
-                    <td>
-                        <% if (status.lastBackup) { %>
-                            <%= new Date(status.lastBackup).toLocaleString() %>
-                        <% } else { %>
-                            <em class="text-muted">None recorded</em>
-                        <% } %>
-                    </td>
-                </tr>
             </table>
 
             <!-- Configure Auto Backup (collapsible) -->

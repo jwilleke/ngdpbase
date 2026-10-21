@@ -11,7 +11,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import type { JobDefinition } from './BackgroundJobManager.js';
-import type { ScheduleInput } from '../utils/schedule.js';
+import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
 import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -19,7 +19,8 @@ import {
   beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, readSiteRestore, siteRestoreFile,
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
-import { decryptBuffer, encryptBuffer, ENCRYPTED_SUFFIX, isEncryptedBackup } from '../utils/backupCrypto.js';
+import { encryptBuffer, ENCRYPTED_SUFFIX } from '../utils/backupCrypto.js';
+import { readBackupDocument, verifyBackupOffThread, type BackupDocument } from '../utils/backupDocument.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, isLeftOutForNoKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 import { archiveTarget, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
 import { writeTreeArchive } from '../utils/treeArchive.js';
@@ -27,9 +28,9 @@ import { envForBackup, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/insta
 import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 
 const gzip = promisify(zlib.gzip);
-const gunzip = promisify(zlib.gunzip);
 
 /**
  * Backup options
@@ -73,15 +74,8 @@ export interface StoredBackup extends BackupFileInfo {
   totalSize: number;
 }
 
-/**
- * Backup data structure
- */
-export interface BackupData {
-  version: string;
-  timestamp: string;
-  application: string;
-  managers: Record<string, unknown>;
-}
+/** Backup data structure: the document (`src/utils/backupDocument.ts`). */
+export type BackupData = BackupDocument;
 
 /**
  * Restore results
@@ -259,6 +253,104 @@ export interface BackupKeyInfo {
 /** The scheduled job automatic backups run as (#1720). */
 export const AUTO_BACKUP_JOB_ID = 'backup.auto';
 
+/** The routine check that backups are still happening (#1563). */
+export const BACKUP_HEALTH_JOB_ID = 'backup.health';
+
+/** The title of the notification sent when backups stop working (#1563): a backup failed, or none is recent enough. */
+export const BACKUPS_NOT_WORKING_TITLE = 'Backups are not working';
+
+const DAY_MS = 86_400_000;
+
+/** A backup that failed (#1563), as kept in the health record until a backup succeeds. */
+export interface BackupFailure {
+  /** When it failed, ISO 8601. */
+  at: string;
+  /** Why, in words an admin can act on. */
+  reason: string;
+  /** The document that was written anyway (a backup with a part missing), so it is not counted as good. */
+  filename?: string;
+}
+
+/**
+ * What BackupManager keeps across restarts about whether backups work
+ * (#1563): `ngdpbase.backup.health-file`. The last good backup is never
+ * stored here — it is read from the backup directory every time.
+ */
+interface BackupHealthRecord {
+  version: 1;
+  failure?: BackupFailure;
+  /** The last good backup (its time, or `never`) the "no recent backup" notification was sent for: once per stretch. */
+  staleNotified?: string;
+}
+
+/** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
+export interface BackupHealth {
+  /** The newest backup in the backup directory that is not a failed one: when, how big (with the files beside it), where. */
+  lastGood: { filename: string; at: string; size: number; location: string } | null;
+  /** Automatic backups are on and scheduled. */
+  autoBackup: boolean;
+  /** The next automatic backup, ISO 8601, or null. */
+  nextRun: string | null;
+  /** Free bytes at the backup destination, or null when it can't be told. */
+  freeBytes: number | null;
+  /** The backup that failed, until one succeeds. */
+  failure: BackupFailure | null;
+  /** How long the site may go without a good backup before that is an outage, in ms. */
+  staleAfterMs: number;
+  /** No good backup within `staleAfterMs`, or none at all. */
+  stale: boolean;
+  /** The outage, in one line, while backups are not working; null when they are. */
+  fault: string | null;
+}
+
+/** A number of bytes as admins read it. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+/** Why a backup could not be written, in words an admin can act on: the system's error codes named (#1563). */
+export function describeBackupError(err: unknown): string {
+  const e = err as NodeJS.ErrnoException;
+  const message = e?.message ?? String(err);
+  switch (e?.code) {
+  case 'ENOSPC': return `the backup destination is out of space (${message})`;
+  case 'EDQUOT': return `the backup destination is over its quota (${message})`;
+  case 'EACCES':
+  case 'EPERM': return `permission denied writing to the backup destination (${message})`;
+  case 'EROFS': return `the backup destination is read-only (${message})`;
+  case 'ENOENT': return `the backup destination is not there (${message})`;
+  case 'EIO': return `the backup destination reported a write error (${message})`;
+  default: return message;
+  }
+}
+
+/**
+ * The longest gap between two runs of a schedule (#1563): what "the
+ * auto-backup interval" is for a schedule that is not evenly spaced (Monday,
+ * Wednesday and Friday is three days at its longest; monthly is 31). Counted
+ * over the next year's runs, at most 400 of them.
+ */
+export function longestGapMs(schedule: Schedule, from: Date): number {
+  let previous = schedule.nextSlot(from);
+  let longest = 0;
+  const until = from.getTime() + 400 * DAY_MS;
+  for (let i = 0; previous && i < 400 && previous.getTime() < until; i++) {
+    const next = schedule.nextSlot(previous);
+    if (!next) break;
+    longest = Math.max(longest, next.getTime() - previous.getTime());
+    previous = next;
+  }
+  return longest;
+}
+
 const BYDAY: Record<string, string> = { sun: 'SU', mon: 'MO', tue: 'TU', wed: 'WE', thu: 'TH', fri: 'FR', sat: 'SA' };
 
 /**
@@ -349,6 +441,8 @@ class BackupManager extends BaseManager {
   private providerClass: string;
   /** A restore started from Admin → Backup, while it runs (#1723). */
   private restoreRunning: Promise<RestoreResults | null> | null = null;
+  /** The outage this manager set because backups are not working (#1563), so only that one is cleared when they work again. */
+  private healthFault: string | null = null;
 
   /**
    * Creates a new BackupManager instance
@@ -461,11 +555,14 @@ class BackupManager extends BaseManager {
     // #170: load the storage provider — it owns ensuring the container exists.
     await this.loadProvider();
 
-    // #1561: without the backup key, the dashboard says so for as long as it lasts.
-    await this.checkBackupKey();
-
     // #1720: automatic backups are a scheduled job.
     this.scheduleAutoBackup();
+
+    // #1563: whether backups work — a failure kept from before a restart, or
+    // no good backup recently enough — checked now and on a timer. #1561:
+    // without the backup key, the dashboard says so for as long as it lasts.
+    this.registerHealthCheck();
+    await this.refreshBackupHealth();
 
     logger.info('✅ BackupManager initialized');
     logger.info(`📁 Backup directory: ${this.backupDirectory}`);
@@ -523,11 +620,17 @@ class BackupManager extends BaseManager {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
     let pending: { filename: string; existing: Set<string> } | null = null;
+    // #1563: every backup that fails is said, and kept, until one succeeds —
+    // except where the failure was already recorded, or is not one of backups.
+    let recorded = false;
 
     try {
       if (!this.backupDirectory || !this.provider) {
         throw new Error('Backup directory not initialized');
       }
+
+      // #1563: refused before anything is written, rather than half a backup.
+      await this.checkFreeSpace();
 
       // Generate filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -628,7 +731,17 @@ class BackupManager extends BaseManager {
       if (backupKey) finalData = await encryptBuffer(Buffer.isBuffer(finalData) ? finalData : Buffer.from(finalData, 'utf8'), backupKey);
 
       // Write via the storage provider (#170)
-      const backupPath = await this.provider.writeBackup(filename, finalData);
+      let backupPath: string;
+      try {
+        backupPath = await this.provider.writeBackup(filename, finalData);
+      } catch (err) {
+        // #1563: half a file (out of space mid-write) is not left to look like a backup.
+        await this.provider.removeBackup(filename).catch(() => undefined);
+        throw err;
+      }
+
+      // #1563: a file is not a backup until it reads back.
+      await this.verifyWrittenBackup(backupPath, filename, backupKey);
       pending = null;
 
       const duration = Date.now() - startTime;
@@ -650,16 +763,21 @@ class BackupManager extends BaseManager {
         metadata: { ...who.metadata, filename, bytes: finalData.length, managers: managerNames.length }
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
-      // #1723, #1563: a backup with a part missing is said, not just logged.
+      // #1723, #1563: a backup with a part missing is said, not just logged,
+      // and it is a failed backup: the outage stays until one is whole.
       // #1561: a backup that is not encrypted is said by the dashboard banner
       // and one notification (checkBackupKey), never once per backup.
-      await this.checkBackupKey();
-      if (failures.length > 0) {
-        const message = `Backup ${filename} was written, but without: ${failures.join('; ')}`;
-        logger.error(`❌ ${message}`);
-        await this.notifyAdmins('error', 'A backup is incomplete', message);
-        if (options.requireComplete) throw new Error(message);
+      const incomplete = failures.length > 0 ? `Backup ${filename} was written, but without: ${failures.join('; ')}` : null;
+      if (incomplete) {
+        logger.error(`❌ ${incomplete}`);
+        await this.notifyAdmins('error', 'A backup is incomplete', incomplete);
+        await this.recordBackupFailure(`a backup is incomplete — ${failures.join('; ')}`, { filename, notify: false });
+      } else {
+        await this.clearBackupFailure();
       }
+      await this.refreshBackupHealth();
+      recorded = true;
+      if (incomplete && options.requireComplete) throw new Error(incomplete);
       if (!backupKey) {
         logger.warn(`⚠️  Backup ${filename} was written NOT encrypted (${BACKUP_KEY_ENV} is not set)${leftOutForNoKey.length > 0 ? `, without: ${leftOutForNoKey.join('; ')}` : ''}`);
       }
@@ -674,6 +792,10 @@ class BackupManager extends BaseManager {
       logger.error('❌ Backup operation failed:', error);
       // #1723: files the managers wrote for a document that was never written are removed.
       if (pending) await this.removeCompanions(pending.filename, pending.existing);
+      if (!recorded) {
+        await this.recordBackupFailure(describeBackupError(error));
+        await this.refreshBackupHealth();
+      }
       throw error;
     }
   }
@@ -801,6 +923,241 @@ class BackupManager extends BaseManager {
     await this.checkBackupKey();
   }
 
+  // ---------------------------------------------------------------------------
+  // Backups never fail silently (#1563). A failed backup, or no good backup
+  // recently enough, is an outage on the /admin dashboard until a backup
+  // succeeds. BackupManager decides; the pages only show what it says.
+  // ---------------------------------------------------------------------------
+
+  private configManager(): ConfigurationManager | null {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager') ?? null;
+  }
+
+  private setting<T>(key: string, fallback: T): T {
+    return (this.configManager()?.getProperty(key, fallback) ?? fallback) as T;
+  }
+
+  /** `ngdpbase.backup.health-file`: the failure kept across restarts. */
+  private healthFile(): string | null {
+    return this.configManager()?.getResolvedDataPath?.('ngdpbase.backup.health-file', './data/backup-health.json') || null;
+  }
+
+  private async readHealthRecord(): Promise<BackupHealthRecord> {
+    const file = this.healthFile();
+    if (!file) return { version: 1 };
+    try {
+      const record = JSON.parse(await readFileAsync(file, 'utf8')) as BackupHealthRecord;
+      return record && typeof record === 'object' ? record : { version: 1 };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.error(`❌ The backup health record ${file} could not be read:`, err);
+      return { version: 1 };
+    }
+  }
+
+  private async writeHealthRecord(record: BackupHealthRecord): Promise<void> {
+    const file = this.healthFile();
+    if (!file) return;
+    try {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFileAsync(file, JSON.stringify(record, null, 2) + '\n', { mode: 0o600 });
+    } catch (err) {
+      // The outage still shows until the restart; it just isn't kept across one.
+      logger.error(`❌ The backup health record ${file} could not be written:`, err);
+    }
+  }
+
+  /**
+   * A backup failed (#1563): kept until one succeeds, across restarts, and
+   * said once — admins get one "Backups are not working" notification per
+   * reason, not one per failed attempt. `notify: false` where another
+   * notification already said it ("A backup is incomplete").
+   */
+  private async recordBackupFailure(reason: string, options: { filename?: string; notify?: boolean } = {}): Promise<void> {
+    const record = await this.readHealthRecord();
+    const repeated = record.failure?.reason === reason;
+    const failure: BackupFailure = { at: repeated ? record.failure!.at : new Date().toISOString(), reason, ...(options.filename ? { filename: options.filename } : {}) };
+    await this.writeHealthRecord({ ...record, failure });
+    logger.error(`❌ Backups are not working: ${reason}`);
+    if (options.notify !== false && !repeated) {
+      const lastGood = (await this.lastGoodBackup(failure))?.at;
+      await this.notifyAdmins('error', BACKUPS_NOT_WORKING_TITLE,
+        `A backup failed: ${reason}. Last good backup: ${lastGood ? localTime(lastGood) : 'never'}. The /admin dashboard lists Backup as not working until a backup succeeds.`);
+    }
+  }
+
+  /** A backup succeeded (#1563): the failure kept since the last one is cleared. */
+  private async clearBackupFailure(): Promise<void> {
+    const record = await this.readHealthRecord();
+    if (!record.failure && !record.staleNotified) return;
+    await this.writeHealthRecord({ version: 1 });
+  }
+
+  /** The newest backup in the backup directory that is not the failed one: read from the directory, never remembered. */
+  private async lastGoodBackup(failure?: BackupFailure): Promise<BackupHealth['lastGood']> {
+    const good = (await this.listStoredBackups()).find((b) => b.filename !== failure?.filename);
+    if (!good) return null;
+    const at = good.created.getTime() > 0 ? good.created : good.modified;
+    return { filename: good.filename, at: at.toISOString(), size: good.totalSize, location: this.backupDirectory ?? '' };
+  }
+
+  /** Automatic backups as they run (#1563): on only when scheduled and not paused, with the schedule in force and the next run. */
+  private async autoBackupRun(now: Date): Promise<{ schedule: Schedule; nextRun: string | null } | null> {
+    if (!this.autoBackupEnabled || !this.provider) return null;
+    const jobs = this.engine.getManager<BackgroundJobManager>('BackgroundJobManager');
+    if (!jobs) return null;
+    const view = typeof jobs.scheduledJobView === 'function' ? await jobs.scheduledJobView(AUTO_BACKUP_JOB_ID) : undefined;
+    if (view === null || view?.enabled === false) return null;
+    try {
+      const timeZone = serverTimeZone();
+      const schedule = parseSchedule(view ? { rrule: view.rrule, tz: view.timeZone } : autoBackupSchedule(this.autoBackupTime, this.autoBackupDays, timeZone), { defaultTimeZone: timeZone });
+      return { schedule, nextRun: view?.nextSlot ?? schedule.nextSlot(now)?.toISOString() ?? null };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Whether backups are working (#1563), from what is on disk: the newest
+   * good backup in the backup directory, the failure kept in the health
+   * record, the automatic-backup schedule, and free space at the destination.
+   *
+   * No good backup within the window is an outage. The window is
+   * `ngdpbase.backup.stale-interval-multiplier` (default 2) times the longest
+   * gap between automatic backups when they are on, and
+   * `ngdpbase.backup.stale-fallback-days` (default 7) when they are off.
+   */
+  async getBackupHealth(): Promise<BackupHealth> {
+    const now = new Date();
+    const record = await this.readHealthRecord();
+    const failure = record.failure ?? null;
+    const lastGood = await this.lastGoodBackup(failure ?? undefined);
+    const auto = await this.autoBackupRun(now);
+    const fallbackMs = Math.max(0, Number(this.setting('ngdpbase.backup.stale-fallback-days', 7))) * DAY_MS;
+    const gap = auto ? longestGapMs(auto.schedule, now) : 0;
+    const staleAfterMs = gap > 0 ? Math.max(1, Number(this.setting('ngdpbase.backup.stale-interval-multiplier', 2))) * gap : fallbackMs;
+    const stale = !lastGood || now.getTime() - Date.parse(lastGood.at) > staleAfterMs;
+    let freeBytes: number | null = null;
+    try {
+      freeBytes = await this.provider?.freeSpace?.() ?? null;
+    } catch (err) {
+      logger.warn('[BackupManager] Free space at the backup destination could not be read:', err);
+    }
+    const since = lastGood ? localTime(lastGood.at) : null;
+    let fault: string | null = null;
+    if (failure) {
+      fault = `Backups are not working: ${failure.reason} (${localTime(failure.at)}). Last good backup: ${since ?? 'never'}`;
+    } else if (stale) {
+      const why = auto ? 'automatic backups are on, but none has succeeded' : 'automatic backups are off';
+      fault = `${since ? `No good backup since ${since}` : 'No good backup since: never — this site has no backup'} (${why}). Make one from Admin → Backup`;
+    }
+    return { lastGood, autoBackup: Boolean(auto), nextRun: auto?.nextRun ?? null, freeBytes, failure, staleAfterMs, stale, fault };
+  }
+
+  /**
+   * Bring the dashboard in line with whether backups work (#1563): an outage
+   * (`markDegraded`) while a backup has failed or none is recent enough,
+   * cleared — only that one — once they work, then the backup key's reminder
+   * (`checkBackupKey`), which never hides an outage. A stretch with no recent
+   * backup notifies admins once, kept across restarts. Run at start, on the
+   * `backup.health` timer, and after every backup.
+   */
+  async refreshBackupHealth(): Promise<BackupHealth | null> {
+    let health: BackupHealth | null = null;
+    try {
+      // A backup directory that could not be used at start is the outage already shown.
+      if (this.provider) {
+        health = await this.getBackupHealth();
+        if (health.fault) {
+          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup');
+          this.healthFault = health.fault;
+          if (!health.failure) await this.notifyStaleOnce(health);
+        } else if (this.healthFault) {
+          this.markReadyIfDegradedBy(this.healthFault);
+          this.healthFault = null;
+        }
+      }
+    } catch (err) {
+      logger.error('❌ Whether backups are working could not be checked:', err);
+    }
+    await this.checkBackupKey();
+    return health;
+  }
+
+  /** One notification per stretch without a recent good backup (#1563), kept across restarts by the health record. */
+  private async notifyStaleOnce(health: BackupHealth): Promise<void> {
+    const marker = health.lastGood?.at ?? 'never';
+    const record = await this.readHealthRecord();
+    if (record.staleNotified === marker) return;
+    await this.writeHealthRecord({ ...record, staleNotified: marker });
+    logger.error(`❌ ${health.fault}`);
+    await this.notifyAdmins('error', BACKUPS_NOT_WORKING_TITLE, `${health.fault}. The /admin dashboard lists Backup as not working until a backup succeeds.`);
+  }
+
+  /**
+   * The routine check (#1563): `backup.health`, every
+   * `ngdpbase.backup.health-check-interval` ms (default one hour), as the
+   * system principal (BackgroundJobManager's routine maintenance). It is how
+   * a backup that never comes is noticed.
+   */
+  private registerHealthCheck(): void {
+    const jobs = this.engine.getManager<BackgroundJobManager>('BackgroundJobManager');
+    if (typeof jobs?.registerMaintenance !== 'function') return;
+    jobs.registerMaintenance({
+      id: BACKUP_HEALTH_JOB_ID,
+      displayName: 'Check that backups are working',
+      everyMs: Number(this.setting('ngdpbase.backup.health-check-interval', 3_600_000)),
+      run: async () => {
+        const health = await this.refreshBackupHealth();
+        return health?.fault ?? undefined;
+      }
+    });
+  }
+
+  /**
+   * Refuse a backup there is no room for (#1563), before anything is
+   * written: free space at the destination against the last backup's size
+   * (the document and every file beside it) times
+   * `ngdpbase.backup.space-margin` (default 1.5). Skipped when there is no
+   * earlier backup or the free space can't be told; a write that then runs
+   * out still fails, and says so.
+   */
+  private async checkFreeSpace(): Promise<void> {
+    const last = (await this.listStoredBackups())[0];
+    if (!last || !this.provider) return;
+    let free: number | null;
+    try {
+      free = await this.provider.freeSpace();
+    } catch (err) {
+      logger.warn('[BackupManager] Free space at the backup destination could not be read; the backup goes ahead:', err);
+      return;
+    }
+    if (free === null) return;
+    const needed = Math.ceil(last.totalSize * Math.max(1, Number(this.setting('ngdpbase.backup.space-margin', 1.5))));
+    if (free < needed) {
+      throw new Error(`not enough free space at the backup destination ${this.backupDirectory}: ${formatBytes(free)} free, and the last backup took ${formatBytes(last.totalSize)} (about ${formatBytes(needed)} is needed). Nothing was written`);
+    }
+  }
+
+  /**
+   * Read a backup just written back (#1563): decrypt it (every record's GCM
+   * tag), decompress it, parse it and check its shape, on a worker thread.
+   * A document that does not read back is removed — it is not a backup — and
+   * the backup fails, naming why.
+   */
+  private async verifyWrittenBackup(backupPath: string, filename: string, backupKey: string): Promise<void> {
+    try {
+      const bytes = await this.provider!.readBackup(backupPath);
+      await verifyBackupOffThread(bytes, backupKey, filename, Number(this.setting('ngdpbase.backup.verify-timeout-ms', 600_000)));
+    } catch (err) {
+      try {
+        await this.provider?.removeBackup(backupPath);
+      } catch (removeErr) {
+        logger.error(`❌ The unreadable backup ${filename} could not be removed:`, removeErr);
+      }
+      throw new Error(`the backup ${filename} was written but does not read back, so it was removed: ${(err as Error).message}`, { cause: err });
+    }
+  }
+
   private async notifyAdmins(level: 'error' | 'warning' | 'success', title: string, message: string): Promise<void> {
     try {
       await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
@@ -850,37 +1207,17 @@ class BackupManager extends BaseManager {
 
       logger.info(`📁 Read backup file: ${(fileData.length / 1024).toFixed(2)} KB`);
 
-      // #1561: an encrypted document is read only under the backup key it was made with.
-      let documentBytes: Buffer = fileData;
-      if (isEncryptedBackup(fileData)) {
-        const key = currentBackupKey();
-        if (!key) throw new Error(`The backup ${path.basename(backupPath)} is encrypted under the backup key, and ${BACKUP_KEY_ENV} is not set; nothing was restored`);
-        try {
-          documentBytes = await decryptBuffer(fileData, key);
-        } catch (err) {
-          throw new Error(`The backup ${path.basename(backupPath)} could not be read: ${(err as Error).message}; nothing was restored`, { cause: err });
-        }
+      // #1561: an encrypted document is read only under the backup key it was
+      // made with; #1563: read the one way every backup is read back.
+      let backupData: BackupData;
+      try {
+        backupData = await readBackupDocument(fileData, currentBackupKey(), path.basename(backupPath), { validate: !options.skipValidation });
+      } catch (err) {
+        const message = (err as Error).message;
+        throw new Error(message.startsWith('Invalid backup') ? message : `${message}; nothing was restored`, { cause: err });
       }
-
-      // Decompress if needed (gzip's first bytes, whatever the name says)
-      let jsonData: string;
-      if (documentBytes[0] === 0x1f && documentBytes[1] === 0x8b) {
-        const decompressed = await gunzip(documentBytes);
-        jsonData = decompressed.toString('utf8');
-        logger.info(`🗜️  Decompressed to: ${(jsonData.length / 1024).toFixed(2)} KB`);
-      } else {
-        jsonData = documentBytes.toString('utf8');
-      }
-
-      // Parse JSON
-      const backupData = JSON.parse(jsonData) as BackupData;
       logger.info(`📊 Backup version: ${backupData.version}`);
       logger.info(`📅 Backup timestamp: ${backupData.timestamp}`);
-
-      // Validate backup structure
-      if (!options.skipValidation) {
-        this.validateBackupData(backupData);
-      }
 
       // Restore results
       const results: RestoreResults = {
@@ -1262,25 +1599,6 @@ class BackupManager extends BaseManager {
       logger.error(`❌ ${message} (#1876)`);
       await this.notifyAdmins('error', 'A site restore was applied only in part', message);
     }
-  }
-
-  /**
-   * Validate backup data structure
-   * @param {BackupData} backupData - Backup data to validate
-   * @throws {Error} If validation fails
-   * @private
-   */
-  private validateBackupData(backupData: BackupData): void {
-    if (!backupData.version) {
-      throw new Error('Invalid backup: missing version');
-    }
-    if (!backupData.timestamp) {
-      throw new Error('Invalid backup: missing timestamp');
-    }
-    if (!backupData.managers || typeof backupData.managers !== 'object') {
-      throw new Error('Invalid backup: missing or invalid managers data');
-    }
-    logger.info('✅ Backup validation passed');
   }
 
   /**

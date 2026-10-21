@@ -149,6 +149,7 @@ const mockExportManager = {
 
 const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
+  getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
   listBackups: vi.fn(),
   updateAutoBackupConfig: vi.fn(),
   // #1723

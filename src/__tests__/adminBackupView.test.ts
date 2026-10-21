@@ -140,3 +140,34 @@ describe('#1876 the page that shows the backup key', () => {
   });
 });
 
+describe('#1563 Admin → Backup shows whether backups work', () => {
+  const formatBytes = (n: number): string => `${n} bytes`;
+
+  test('the last successful backup (local time, size, where), the next run and free space', async () => {
+    const doc = await render({
+      formatBytes,
+      backupHealth: {
+        lastGood: { filename: 'b.json.gz.enc', at: '2026-10-20T02:00:00.000Z', size: 4096, location: '/b' },
+        autoBackup: true, nextRun: '2026-10-22T02:00:00.000Z', freeBytes: 1000, failure: null, staleAfterMs: 1, stale: false, fault: null
+      }
+    });
+    const last = doc.querySelector('[data-testid=backup-last-good]');
+    expect(last?.querySelector('time[data-local-time]')?.getAttribute('datetime')).toBe('2026-10-20T02:00:00.000Z');
+    expect(text(last)).toMatch(/4096 bytes, in \/b/);
+    expect(doc.querySelector('[data-testid=backup-next-run] time')?.getAttribute('datetime')).toBe('2026-10-22T02:00:00.000Z');
+    expect(text(doc.querySelector('[data-testid=backup-free-space]'))).toMatch(/1000 bytes/);
+    expect(doc.querySelector('[data-testid=backup-health-fault]')).toBeNull();
+  });
+
+  test('backups not working: the outage in words, and "never" with automatic backups off', async () => {
+    const doc = await render({
+      formatBytes,
+      backupHealth: { lastGood: null, autoBackup: false, nextRun: null, freeBytes: null, failure: null, staleAfterMs: 1, stale: true, fault: 'No good backup since: never — this site has no backup (automatic backups are off). Make one from Admin → Backup' }
+    });
+    expect(text(doc.querySelector('[data-testid=backup-health-fault]'))).toMatch(/^Backups are not working\. No good backup since: never/);
+    expect(text(doc.querySelector('[data-testid=backup-last-good]'))).toMatch(/never$/);
+    expect(text(doc.querySelector('[data-testid=backup-next-run]'))).toMatch(/automatic backups are off/);
+    expect(text(doc.querySelector('[data-testid=backup-free-space]'))).toMatch(/unknown/);
+  });
+});
+

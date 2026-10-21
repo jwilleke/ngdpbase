@@ -60,6 +60,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
         if (key === 'ngdpbase.backup.directory') return backupDir;
         // #1876: the site restore record, in this test's own data folder.
         if (key === 'ngdpbase.backup.restore-manifest') return path.join(dataDir, 'site-restore.json');
+        // #1563: whether backups work, kept in this test's own data folder.
+        if (key === 'ngdpbase.backup.health-file') return path.join(dataDir, 'backup-health.json');
         return (props['ngdpbase.database.file'] as string | undefined) ?? def;
       },
       getAddonDatabaseDeclarations: () => declarations,
@@ -476,7 +478,8 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       }
       // Beside, not inside: the document stays small.
       expect(fs.statSync(file).size).toBeLessThan(4096);
-      expect(notifications).toEqual([]);
+      // #1563: the one notice is the fresh site's "no backup yet", sent at start.
+      expect(notifications.map((n) => n.title)).toEqual(['Backups are not working']);
       await backups.shutdown();
       await database.shutdown();
     });

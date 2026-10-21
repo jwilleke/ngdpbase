@@ -146,6 +146,7 @@ const mockSearchManager = {
 
 const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
+  getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
   listBackups: vi.fn(),
   listStoredBackups: vi.fn().mockResolvedValue([]),
   isRestoreRunning: vi.fn().mockReturnValue(false),

@@ -13,6 +13,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
+import { statfs } from 'node:fs/promises';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import BaseBackupProvider, {
@@ -98,6 +99,13 @@ class FileBackupProvider extends BaseBackupProvider {
   async setBackupDirectory(directory: string): Promise<void> {
     this.backupDirectory = directory;
     await this.ensureContainer();
+  }
+
+  /** Free bytes on the backup directory's filesystem for this process (#1563). */
+  async freeSpace(): Promise<number | null> {
+    if (!this.backupDirectory) return null;
+    const stats = await statfs(this.backupDirectory);
+    return Number(stats.bavail) * Number(stats.bsize);
   }
 
   getProviderInfo(): BackupProviderInfo {
