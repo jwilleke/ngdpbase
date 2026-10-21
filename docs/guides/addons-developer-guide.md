@@ -913,9 +913,16 @@ A copy left behind what you ship (Modified, or User Edited with a change waiting
 
 `registerShippedForm` throws on a definition that does not parse, so a bad one shows at the first start. Defaults and key order are not a change: the hash is taken over the parsed definition. Do not call `saveDefinition` for a shipped form; that is the form builder's write, and it keeps the stamp so an edit reads as an edit.
 
+A form whose submissions are private (health notes, say) ships with `"store": false` and `"notify": false` ([#1954](https://github.com/jwilleke/ngdpbase/issues/1954)). Both default to `true`, and both may be left out of the definition you register.
+
+- `"store": false`: no submission file is kept; your handler's record is the record.
+- `"notify": false`: after your handler accepts the submission, the forms add-on sends nothing about it. There is no "New form submission" notification, and no email of the details, even when the form has an `email` field or a For Another Occupant email.
+- With both off, the forms add-on leaves nothing of the submission outside your handler. The one record it can leave is the `form-submit` audit event, which the forms add-on declares switched off (`audit.enabled: false` in `addons/forms/config/default-config.json`). It is written only on a site that turns it on, and then it records the permission decision (who, when, allowed or refused), not what was submitted. `notify` does not change it.
+
 The form builder saves only what the admin changed ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)), so saving your form unchanged leaves it __Current__:
 
 - `store` is its __Store submissions__ box, ticked unless the form says `"store": false`. The page sends `storeShown` beside the box (an unticked box sends nothing), and a post without it keeps the form's value.
+- `notify` is its __Send notices__ box, the same way: ticked unless the form says `"notify": false`, with `notifyShown` beside it.
 - A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged. The `shipped` stamp is kept by `saveDefinition`.
 
 Migrating from the interim rule: replace `if (!forms.getDefinition(id)) await forms.saveDefinition(definition)` with `await forms.registerShippedForm('<your add-on>', definition)`, called on every start. Existing sites need nothing else: their unedited copies are stamped or offered as updates by the rule above.

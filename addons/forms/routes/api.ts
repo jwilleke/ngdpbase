@@ -106,13 +106,17 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         // ── 6. Keep the submission, unless the form says the handler's record is the record
         if (form.store !== false) await m.saveSubmission(submission);
 
+        // Steps 7 and 8 tell someone about the submission; a form with
+        // "notify": false sends neither (#1954).
+        const notify = form.notify !== false;
+
         // ── 7. Email confirmation (fire-and-forget) ────────────────────────
         const emailManager = engine.getManager<EmailManager>('EmailManager');
         const submitterEmail = typeof body['email'] === 'string'
           ? body['email']
           : onBehalfOf?.email;
 
-        if (emailManager?.isEnabled() && submitterEmail) {
+        if (notify && emailManager?.isEnabled() && submitterEmail) {
           const subject = `[Submitted] ${form.title}`;
           const cm = engine.getManager<import('../../../dist/src/managers/ConfigurationManager.js').default>('ConfigurationManager');
           const baseUrl = (cm?.getProperty('ngdpbase.application.base-url', '') as string).replace(/\/$/, '');
@@ -148,7 +152,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
 
         // ── 8. In-app notification (fire-and-forget) ───────────────────────
         const nm = engine.getManager<NotificationManager>('NotificationManager');
-        if (nm) {
+        if (notify && nm) {
           nm.createNotification({
             type:    'system',
             title:   `New form submission: ${form.title}`,
