@@ -36,6 +36,36 @@ regexes = [
   '''(?i)://(?:[a-z0-9-]+\.)*example\.(?:com|org|net):''',
 ]
 
+# Reserved names (RFC 2606 / RFC 6761) resolve to nothing on any network:
+# `es.example`, `fairways.localhost`. Tests and docs use them as stand-ins.
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = [
+  '''(?i)://(?:[a-z0-9-]+\.)+(?:example|test|invalid|localhost):''',
+]
+
+# Single-label placeholders. `sist2` and `elasticsearch` are docker-compose
+# service names in examples; `host` and `your-server` are "substitute your own"
+# stand-ins in setup docs. None is anybody's machine.
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = [
+  '''(?i)://(?:sist2|elasticsearch|host|your-server):''',
+]
+
+# Fixed addresses that the egress-guard tests and docs need as literals because
+# the guard's behaviour depends on the address class. They name no host:
+# - 169.254.169.254 is the cloud metadata address, the same everywhere.
+# - 10.0.0.5 and 192.168.0.10 are invented RFC1918 examples.
+# - sist2.internal is an invented name for the ".internal is refused" case.
+# Add a real LAN address here and the rule stops protecting it — replace it in
+# the file instead.
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = [
+  '''://(?:169\.254\.169\.254|10\.0\.0\.5|192\.168\.0\.10|sist2\.internal):''',
+]
+
 # A file-share URL names a host on a private network by construction. This
 # repo's history carried one (a NAS path) before any scan existed.
 [[rules]]
@@ -43,3 +73,12 @@ id = "file-share-url"
 description = "SMB/NFS/AFP/CIFS URL: names a host on a private network"
 regex = '''(?i)\b(?:smb|nfs|afp|cifs)://[^\s'"<>)]+'''
 keywords = ["smb://", "nfs://", "afp://", "cifs://"]
+
+# A "your-..." value in a curl example is a placeholder the reader replaces,
+# not a credential (required-pages cache-eviction help: `x-csrf-token:
+# your-csrf-token`). Only the literal your-<words> shape is let through.
+[[allowlists]]
+description = "Placeholder header values in documentation curl examples"
+targetRules = ["curl-auth-header"]
+regexTarget = "secret"
+regexes = ['''^your-[a-z-]+$''']

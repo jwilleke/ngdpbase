@@ -100,8 +100,8 @@ describe('#1187 — healthCheck says why, and probes nothing it would refuse', (
   });
 
   test('an allowed LAN sist2 is probed', async () => {
-    const h = await provider('http://192.168.68.71:4090', () => ['192.168.68.0/24']).healthCheckDetailed();
-    expect(witness.requests).toEqual(['http://192.168.68.71:4090/i']);
+    const h = await provider('http://192.168.0.10:4090', () => ['192.168.0.0/24']).healthCheckDetailed();
+    expect(witness.requests).toEqual(['http://192.168.0.10:4090/i']);
     // The witness fails the probe, so health reports unreachable — not refused.
     expect(h.healthy).toBe(false);
     expect(h.message).not.toContain(REFUSAL);

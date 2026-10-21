@@ -6,6 +6,7 @@
  * the bootstrap admin gets it where that account is made.
  */
 
+import { randomUUID } from 'node:crypto';
 import UserManager from '../UserManager';
 import type { ActorContext } from '../../context/ActorContext';
 
@@ -38,7 +39,7 @@ function makeManager(accountRoles: unknown) {
   return { manager, roleManager, store };
 }
 
-const newUser = (roles?: string[]) => ({ username: 'molly', email: 'm@example.com', displayName: 'Molly', password: 'pw-123456789', ...(roles ? { roles } : {}) });
+const newUser = (roles?: string[]) => ({ username: 'molly', email: 'm@example.com', displayName: 'Molly', password: `pw-${randomUUID()}`, ...(roles ? { roles } : {}) });
 
 describe('account roles at creation (#1539)', () => {
   test('createUser adds vault-owner to the roles the sign-up path chose', async () => {

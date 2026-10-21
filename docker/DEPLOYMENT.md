@@ -92,7 +92,7 @@ For a brand new installation or to start over:
 
 ```bash
 # 1. SSH to server
-ssh root@192.168.68.71  # or your server
+ssh root@your-server
 
 # 2. Choose deployment location and clean if needed
 cd /opt/dosckers  # or your preferred location
@@ -121,7 +121,7 @@ docker-compose logs -f ngdpbase
 
 # 8. Test access
 curl http://localhost:3000
-# Or from another machine: curl http://192.168.68.71:3000
+# Or from another machine: curl http://your-server:3000
 ```
 
 __Important directories:__
