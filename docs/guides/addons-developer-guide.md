@@ -494,6 +494,7 @@ async register(engine, config) {
 | `jobContextFromRequest`, `jobContextFromSystem` | Contexts for [Background Jobs](#8-background-jobs) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
+| `setEnabledForPerson` | Turn this add-on on or off for a person, when it is [per-person](#per-person-add-ons-and-their-switch) |
 
 ```typescript
 async register(engine, config, host) {
@@ -536,6 +537,26 @@ The worked example is the journal addon: `profileSection` and `saveProfileSectio
 - 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
 - 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the person's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
 
+### Per-person add-ons and their switch
+
+Some add-ons are something each person turns on for themselves, such as a personal health record ([#1963](https://github.com/jwilleke/ngdpbase/issues/1963)). The site enables the add-on; then each person decides whether they use it. Core keeps track of who turned it on, so page access and listings can use it.
+
+- __Declare it__ in the `ngdpbase` block of `package.json`: `"perPerson": true`. Nothing else makes an add-on per-person.
+- __The switch__ is the person's preference `<slug>.enabled`, for example `phr.enabled`. It is on only when it is the boolean `true`.
+- __Set it only through `host.setEnabledForPerson(ctx, on)`__, normally from your `saveProfileSection(ctx, body)`: pass the `ctx` you were given and `true` or `false`. Do not write `<slug>.enabled` with `userManager.updateUser` yourself.
+  - It sets the switch of the person `ctx` acts as, and keeps their other preferences.
+  - The host is built for your add-on, so it sets only your own switch. There is no way to name another add-on's.
+  - It is refused, with an error, when your manifest does not say `perPerson: true`, when the person is not signed in, or when they do not hold `profile-manage`, which is the permission `/profile` asks for.
+- __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-person add-ons this person has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
+- An add-on the site has not enabled, or one that did not load, is not in the list, whatever the person's switch says. Turning it back on brings back what each person chose.
+
+```typescript
+async saveProfileSection(ctx, body) {
+  if (body['phr._rendered'] !== '1') return;   // the presence marker above
+  await host.setEnabledForPerson(ctx, body['phr.enabled'] === 'on');
+}
+```
+
 ---
 
 ## 4. Using the Engine
@@ -548,9 +569,9 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonHost`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
-  - `buildAddonHost(slug, defaults)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot.
+  - `buildAddonHost(slug, defaults, setEnabledForPerson?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
   - `toCsv(headers, rows)`: `ExportManager.toCsv`, the one CSV writer.
   - `formatters`: the object a plugin gets as `context.formatters`.

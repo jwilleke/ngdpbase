@@ -16,7 +16,7 @@ const HOST_KEYS = [
   'ApiContext', 'ApiError', 'sendApiError',
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem',
-  'logger', 'guardedFetch'
+  'logger', 'guardedFetch', 'setEnabledForPerson'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -87,7 +87,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     await fs.remove(tmpDir).catch(() => {});
   });
 
-  test('a three-argument add-on receives the host with all ten values', async () => {
+  test('a three-argument add-on receives the host with all eleven values', async () => {
     const manager = await load();
     expect((await manager.getStatus()).find((s: any) => s.name === 'ledger')).toMatchObject({ loaded: true, error: null });
 

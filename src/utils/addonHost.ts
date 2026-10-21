@@ -10,6 +10,8 @@
  * - `recordAuditEvent` and `addonAuditEventName` accept only the audit events
  *   this add-on declares in its own `config/default-config.json`, so one
  *   add-on cannot write records that look like another's or like core's;
+ * - `setEnabledForPerson` sets this add-on's own per-person switch (#1963),
+ *   bound to its slug, so it can never set another add-on's;
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -18,7 +20,7 @@
 
 import type { Logger } from 'winston';
 import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
-import { actorOf } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { jobContextFromRequest, jobContextFromSystem } from '../context/JobContext.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { recordAuditEvent } from './auditEvents.js';
@@ -38,7 +40,21 @@ export interface AddonHost {
   readonly jobContextFromSystem: typeof jobContextFromSystem;
   readonly logger: Logger;
   readonly guardedFetch: typeof guardedFetch;
+  /**
+   * #1963: turn this per-person add-on on (`true`) or off (`false`) for the
+   * person `ctx` acts as: their preference `<slug>.enabled`. Pass the context
+   * you were given (a profile hook's `ctx`). Refused when the add-on's manifest
+   * does not say `perPerson: true`, or the person may not manage their profile.
+   */
+  readonly setEnabledForPerson: PersonSwitchSetter;
 }
+
+/** Sets one add-on's per-person switch; core binds the slug when it builds the host (#1963). */
+export type PersonSwitchSetter = (ctx: ActorContext, on: boolean) => Promise<void>;
+
+/** A host built outside a site (the test kit, with no setter given) has no account store. */
+const noPersonSwitch: PersonSwitchSetter = () =>
+  Promise.reject(new Error('setEnabledForPerson is not available: this host was built without a site'));
 
 /**
  * The audit event names one add-on declares: the permission entries carrying
@@ -64,8 +80,10 @@ function refuseUndeclared(slug: string, name: string, declared: ReadonlySet<stri
  * @param slug - The add-on's canonical slug
  * @param addonDefaults - That add-on's own default-config.json, as folded into
  *   the configuration merge (`ConfigurationManager.getAddonDeclaredDefaults`)
+ * @param setEnabledForPerson - This add-on's switch setter, slug already bound
+ *   (`AddonsManager` supplies it); without one, the host's setter refuses
  */
-export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>): AddonHost {
+export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>, setEnabledForPerson: PersonSwitchSetter = noPersonSwitch): AddonHost {
   const declared = addonDeclaredAuditEvents(addonDefaults);
 
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
@@ -89,6 +107,7 @@ export function buildAddonHost(slug: string, addonDefaults: Record<string, unkno
     jobContextFromRequest,
     jobContextFromSystem,
     logger: logger.child({ addon: slug }),
-    guardedFetch
+    guardedFetch,
+    setEnabledForPerson
   });
 }

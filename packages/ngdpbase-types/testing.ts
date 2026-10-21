@@ -18,7 +18,7 @@ import ExportManager from '../../src/managers/ExportManager.js';
 import { addonDatabaseDeclarationFor, checkAddonDatabaseRequest, type AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
 import { addonDatabaseLayer } from '../../src/utils/addonConfigLayer.js';
 import SqliteDatabaseProvider, { type SqliteHandle } from '../../src/providers/SqliteDatabaseProvider.js';
-import { buildAddonHost as buildHost, type AddonHost } from '../../src/utils/addonHost.js';
+import { buildAddonHost as buildHost, type AddonHost, type PersonSwitchSetter } from '../../src/utils/addonHost.js';
 import { bindAuditEvents } from '../../src/utils/auditRegistry.js';
 
 export { formatters } from '../../src/managers/PluginManager.js';
@@ -32,10 +32,12 @@ export { formatters } from '../../src/managers/PluginManager.js';
  *
  * @param slug - The add-on's canonical slug
  * @param addonDefaults - The add-on's own `config/default-config.json`
+ * @param setEnabledForPerson - What `host.setEnabledForPerson` does in the
+ *   test (#1963); a site binds core's setter. Without one it refuses.
  */
-export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>): AddonHost {
+export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>, setEnabledForPerson?: PersonSwitchSetter): AddonHost {
   bindAuditEvents((key, fallback) => addonDefaults[key] ?? fallback);
-  return buildHost(slug, addonDefaults);
+  return buildHost(slug, addonDefaults, setEnabledForPerson);
 }
 
 /** The add-on whose declaration a test database is checked against: its slug and its own `config/default-config.json`. */
