@@ -33,6 +33,8 @@ const mockConfigurationManager = {
 const mockPageManager = {
   // #1419: every page here resolves as the anonymous subject (none is sealed).
   isSharedIndexable: vi.fn(() => true),
+  // #1962: the page-list door; these tests are not about access, so it keeps every hit.
+  filterPagesFor: vi.fn(async (_subject, names) => [...names]),
   getAllPages: vi.fn().mockResolvedValue([
     {
       title: 'Welcome',
@@ -524,7 +526,7 @@ describe('SearchManager', () => {
     });
 
     test('returns results from provider', async () => {
-      searchManager.provider = makeMockProvider({ search: vi.fn().mockResolvedValue([{ pageName: 'Test', title: 'Test' }]) });
+      searchManager.provider = makeMockProvider({ search: vi.fn().mockResolvedValue([{ name: 'Test', title: 'Test', score: 1 }]) });
       const result = await searchManager.searchWithContext(wikiCtx, 'test');
       expect(result).toHaveLength(1);
     });
@@ -548,7 +550,7 @@ describe('SearchManager', () => {
     });
 
     test('returns results from provider', async () => {
-      searchManager.provider = makeMockProvider({ advancedSearch: vi.fn().mockResolvedValue([{ pageName: 'Test', title: 'Test' }]) });
+      searchManager.provider = makeMockProvider({ advancedSearch: vi.fn().mockResolvedValue([{ name: 'Test', title: 'Test', score: 1 }]) });
       const result = await searchManager.advancedSearchWithContext(wikiCtx, { query: 'test' });
       expect(result).toHaveLength(1);
     });

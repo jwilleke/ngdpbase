@@ -52,9 +52,15 @@ function makeContext(opts = {}) {
     query = {}
   } = opts;
 
+  // #1962: the plugin asks only the context doors, which keep the pages its
+  // viewer may open. `advancedSearch` / `search` record what each was asked.
+  const advancedSearch = vi.fn().mockResolvedValue(advancedSearchResults);
+  const search = vi.fn().mockResolvedValue(searchResults);
   const mockSearchManager = {
-    advancedSearch: vi.fn().mockResolvedValue(advancedSearchResults),
-    search: vi.fn().mockResolvedValue(searchResults)
+    advancedSearch,
+    search,
+    advancedSearchWithContext: vi.fn((_ctx, options) => advancedSearch(options)),
+    searchWithContext: vi.fn((_ctx, q, options) => search(q, options))
   };
 
   return {
@@ -531,6 +537,8 @@ describe("SearchPlugin — user-keywords='current'", () => {
       }),
       search: vi.fn().mockResolvedValue([])
     };
+    mockSearchManager.advancedSearchWithContext = vi.fn((_ctx, opts) => mockSearchManager.advancedSearch(opts));
+    mockSearchManager.searchWithContext = vi.fn((_ctx, q, opts) => mockSearchManager.search(q, opts));
     const engine = {
       getManager: (name) => {
         if (name === 'SearchManager') return mockSearchManager;
@@ -565,5 +573,30 @@ describe("SearchPlugin — user-keywords='current'", () => {
     const { context, mockSearchManager } = makeCurrentContext('AnyPage', { travel: [makeResult('T', 'T')] });
     await SearchPlugin.execute(context, { 'user-keywords': 'travel', format: 'count' });
     expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(expect.objectContaining({ userKeywords: ['travel'] }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1962: the viewer decides what the plugin lists
+// ---------------------------------------------------------------------------
+
+describe('SearchPlugin — searches as its viewer (#1962)', () => {
+  test('a text query goes through searchWithContext with the render context', async () => {
+    const { context, mockSearchManager } = makeContext({ searchResults: [makeResult('A', 'A')] });
+    context.userContext = { username: 'reader1', roles: ['reader'] };
+    await SearchPlugin.execute(context, { query: 'alpha', format: 'count' });
+    expect(mockSearchManager.searchWithContext).toHaveBeenCalledTimes(1);
+    expect(mockSearchManager.searchWithContext.mock.calls[0][0].userContext).toEqual({ username: 'reader1', roles: ['reader'] });
+  });
+
+  test('a filtered or wildcard query goes through advancedSearchWithContext with the render context', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+    context.userContext = { username: 'reader1', roles: ['reader'] };
+    await SearchPlugin.execute(context, { format: 'count' });
+    await SearchPlugin.execute(context, { 'system-category': 'general', format: 'count' });
+    expect(mockSearchManager.advancedSearchWithContext).toHaveBeenCalledTimes(2);
+    for (const call of mockSearchManager.advancedSearchWithContext.mock.calls) {
+      expect(call[0].userContext).toEqual({ username: 'reader1', roles: ['reader'] });
+    }
   });
 });

@@ -108,3 +108,67 @@ describe('FeedScheduler (#685)', () => {
     expect(ingest).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('FeedScheduler — one slow source holds no other (#1955)', () => {
+  /** An ingest that hangs until released, like an upstream stalling to its timeout. */
+  function hanging() {
+    let release: () => void = () => undefined;
+    const done = new Promise<typeof ok>(resolve => { release = () => resolve(ok); });
+    return { done, release: () => release() };
+  }
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+
+  it('ingests the other due sources while one hangs', async () => {
+    const slow = hanging();
+    const ingest = vi.fn((id: string) => (id === 'slow' ? slow.done : Promise.resolve(ok)));
+    const s = new FeedScheduler([cfg({ sourceId: 'slow' }), cfg({ sourceId: 'a' }), cfg({ sourceId: 'b' })], ingest, { now: clock().now });
+
+    const pass = s.tick();
+    await flush();
+    expect(ingest.mock.calls.map(([id]) => id)).toEqual(['slow', 'a', 'b']);
+
+    slow.release();
+    await pass;
+  });
+
+  it('never runs a source beside itself: a later tick skips one still running', async () => {
+    const c = clock();
+    const slow = hanging();
+    const ingest = vi.fn(() => slow.done);
+    const s = new FeedScheduler([cfg({ sourceId: 'slow' })], ingest, { now: c.now });
+
+    const pass = s.tick();
+    c.set(1e9);
+    await s.tick();
+    expect(ingest).toHaveBeenCalledTimes(1);
+
+    slow.release();
+    await pass;
+  });
+
+  it('runs at most maxConcurrent at once; the rest start as slots free', async () => {
+    const gates = new Map<string, ReturnType<typeof hanging>>();
+    const ingest = vi.fn((id: string) => {
+      const g = hanging();
+      gates.set(id, g);
+      return g.done;
+    });
+    const ids = ['a', 'b', 'c', 'd'];
+    const s = new FeedScheduler(ids.map(sourceId => cfg({ sourceId })), ingest, { now: clock().now, maxConcurrent: 2 });
+
+    const pass = s.tick();
+    await flush();
+    expect(ingest.mock.calls.map(([id]) => id)).toEqual(['a', 'b']);
+
+    gates.get('a')?.release();
+    await flush();
+    expect(ingest.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'c']);
+
+    gates.get('b')?.release();
+    gates.get('c')?.release();
+    await flush();
+    gates.get('d')?.release();
+    await pass;
+    expect(ingest).toHaveBeenCalledTimes(4);
+  });
+});
