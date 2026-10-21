@@ -27,6 +27,8 @@
  *   [{ConfigAccessor type='authMethods'}]                                      - Auth providers; sensitive fields masked for non-admins
  *   [{ConfigAccessor type='features'}]                                         - Feature flags grouped by feature name
  *   [{ConfigAccessor type='permissionsList'}]                                  - All permissions grouped by target with name/icon/description
+ *   [{ConfigAccessor type='addons'}]                                           - The site's add-ons, grouped by family; version and status for admins
+ *   [{ConfigAccessor type='my-addons'}]                                        - The per-person add-ons the viewer has turned on, and the rest to turn on
  *
  * Note: Plugin names are case-insensitive. [{configaccessor}], [{ConfigAccessor}], and [{CONFIGACCESSOR}] all work the same.
  * Default 'after' value: '' (empty) for single values, '\n' (newline) for multiple values (wildcards)
@@ -38,6 +40,9 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { valueLevels, shownValue, type ValueLevel, type ValueViewer } from '../utils/sensitiveValues.js';
 import { categorySource } from '../managers/ValidationManager.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
+import { pageUrl } from '../utils/pageUrl.js';
+import type { AddonListing } from '../managers/AddonsManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 // ============================================================================
 // Type Definitions
@@ -1668,6 +1673,111 @@ function displayFeatureConfig(f: PluginFormatters, configManager: ConfigurationM
   }
 }
 
+// ─── addons / my-addons (#1965) ────────────────────────────────────────────
+
+/** What the add-on listings read from AddonsManager, which owns the answers. */
+interface AddonsSource {
+  listedAddons(): AddonListing[];
+  enabledAddonsFor(ctx: ActorContext): Promise<string[]>;
+}
+
+/** Families in name order, then the add-ons with none. */
+function groupByFamily(entries: AddonListing[]): Array<[string | null, AddonListing[]]> {
+  const groups = new Map<string | null, AddonListing[]>();
+  for (const entry of entries) {
+    const group = groups.get(entry.family) ?? [];
+    group.push(entry);
+    groups.set(entry.family, group);
+  }
+  return [...groups].sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)));
+}
+
+/** One add-on: its name, description and About link; `extra` is already-escaped markup. */
+function addonEntry(f: PluginFormatters, entry: AddonListing, extra = ''): string {
+  const { escapeHtml } = f;
+  let html = `        <li class="addon-entry mb-2" data-addon="${escapeHtml(entry.slug)}">\n`;
+  html += `          <strong>${escapeHtml(entry.slug)}</strong>${extra}\n`;
+  if (entry.description) html += `          <div class="text-muted">${escapeHtml(entry.description)}</div>\n`;
+  if (entry.aboutPage) html += `          <a class="addon-about" href="${escapeHtml(pageUrl(entry.aboutPage))}">More about it</a>\n`;
+  html += '        </li>\n';
+  return html;
+}
+
+/** The card both listings render in; `title` and `icon` are fixed strings, `body` is escaped markup. */
+function addonsCard(title: string, icon: string, body: string): string {
+  let html = '<div class="config-accessor-plugin config-accessor-addons">\n';
+  html += '  <div class="card">\n';
+  html += `    <div class="card-header"><h5 class="mb-0"><i class="fas fa-${icon}"></i> ${title}</h5></div>\n`;
+  html += `    <div class="card-body">\n${body}    </div>\n`;
+  html += '  </div>\n';
+  html += '</div>\n';
+  return html;
+}
+
+/**
+ * The site's enabled, listed add-ons, grouped by family. Version and status
+ * are shown only to a viewer who holds admin-read; anyone else sees only the
+ * add-ons that loaded.
+ */
+function displayAddons(f: PluginFormatters, source: AddonsSource | null, isAdmin: boolean): string {
+  const { escapeHtml } = f;
+  if (!source) return '<p class="text-muted">Add-ons are not available on this site.</p>';
+  const entries = source.listedAddons().filter((entry) => isAdmin || entry.loaded);
+  if (entries.length === 0) return '<p class="text-muted">This site has no add-ons turned on.</p>';
+
+  const groups = groupByFamily(entries);
+  const headed = groups.some(([family]) => family !== null);
+  let body = '';
+  for (const [family, members] of groups) {
+    if (headed) body += `      <h6 class="addon-family mt-2">${escapeHtml(family ?? 'Other')}</h6>\n`;
+    body += '      <ul class="list-unstyled addon-list">\n';
+    for (const entry of members) {
+      const status = entry.loaded
+        ? '<span class="badge bg-success">Loaded</span>'
+        : `<span class="badge bg-danger">Not loaded</span> <small class="text-danger">${escapeHtml(entry.error ?? '')}</small>`;
+      const extra = isAdmin ? ` <span class="badge bg-secondary addon-version">v${escapeHtml(entry.version)}</span> <span class="addon-status">${status}</span>` : '';
+      body += addonEntry(f, entry, extra);
+    }
+    body += '      </ul>\n';
+  }
+  return addonsCard('Add-ons', 'puzzle-piece', body);
+}
+
+/**
+ * The per-person add-ons this viewer has turned on, then the others they
+ * can turn on from their profile. Per viewer: the page cache keys a render
+ * by the viewer's username and roles, and UserManager bumps its topic when
+ * a preference (the switch) is saved, so no viewer is served another's list.
+ */
+async function displayMyAddons(f: PluginFormatters, source: AddonsSource | null, viewer: ActorContext | undefined): Promise<string> {
+  if (!viewer || !('isAuthenticated' in viewer) || !viewer.isAuthenticated) {
+    return '<p class="text-muted"><a href="/login">Sign in</a> to see the add-ons you have turned on.</p>';
+  }
+  if (!source) return '<p class="text-muted">Add-ons are not available on this site.</p>';
+  const perPerson = source.listedAddons().filter((entry) => entry.perPerson && entry.loaded);
+  if (perPerson.length === 0) return '<p class="text-muted">This site has no add-ons that you turn on for yourself.</p>';
+
+  const on = new Set(await source.enabledAddonsFor(viewer));
+  const mine = perPerson.filter((entry) => on.has(entry.slug));
+  const rest = perPerson.filter((entry) => !on.has(entry.slug));
+
+  let body = '      <h6 class="addon-family">Turned on</h6>\n';
+  if (mine.length === 0) {
+    body += '      <p class="text-muted addon-none">You have not turned on any add-ons yet.</p>\n';
+  } else {
+    body += '      <ul class="list-unstyled addon-list addon-mine">\n';
+    for (const entry of mine) body += addonEntry(f, entry);
+    body += '      </ul>\n';
+  }
+  if (rest.length > 0) {
+    body += '      <h6 class="addon-family mt-2">You can turn on</h6>\n';
+    body += '      <ul class="list-unstyled addon-list addon-available">\n';
+    for (const entry of rest) body += addonEntry(f, entry, ' <a class="addon-turn-on" href="/profile">Turn it on</a>');
+    body += '      </ul>\n';
+  }
+  return addonsCard('My add-ons', 'user-check', body);
+}
+
 // ============================================================================
 // Plugin Definition
 // ============================================================================
@@ -1763,8 +1873,16 @@ const ConfigAccessorPlugin: SimplePlugin = {
       case 'permissionslist':
         return displayPermissionsList(context.formatters, configManager);
 
+      case 'addons':
+        return displayAddons(context.formatters, context?.engine?.getManager?.('AddonsManager') as AddonsSource | null,
+          (await viewerOf(context)).sensitive);
+
+      case 'my-addons':
+        return displayMyAddons(context.formatters, context?.engine?.getManager?.('AddonsManager') as AddonsSource | null,
+          (context as ExtendedPluginContext).userContext as ActorContext | undefined);
+
       default:
-        return `<p class="error">Unknown type: ${escapeHtml(type)}. Valid types: 'roles', 'permissions', 'policy-summary', 'user-summary', 'actions', 'manager', 'feature', 'userKeywords', 'systemKeywords', 'systemCategories', 'policies', 'authMethods', 'features', 'permissionsList'.</p>`;
+        return `<p class="error">Unknown type: ${escapeHtml(type)}. Valid types: 'roles', 'permissions', 'policy-summary', 'user-summary', 'actions', 'manager', 'feature', 'userKeywords', 'systemKeywords', 'systemCategories', 'policies', 'authMethods', 'features', 'permissionsList', 'addons', 'my-addons'.</p>`;
       }
 
     } catch (error) {
