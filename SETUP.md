@@ -8,7 +8,8 @@ This page is the __direct install__ — a clone of the repository, built and run
 
 - __Node.js v24+__ - [Download](https://nodejs.org/) (Node 18 EOL April 2025; Node 20 EOL April 2026)
 - __npm__ - Included with Node.js
-- __PM2__ (for production) - `npm install -g pm2`
+- __PM2__ - installed by `npm install` as a dependency; `./server.sh` runs it through `npx`, so no global install is needed. It is only needed for `./server.sh`; see [Start the server](#5-start-the-server) for running without it
+- __`lsof`, `pgrep`, `perl`__ - used by `./server.sh` (Debian: `apt install lsof procps perl`)
 - __Git__ - For version control
 
 ## Quick Start
@@ -20,27 +21,85 @@ git clone https://github.com/jwilleke/ngdpbase.git
 cd ngdpbase
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies and Build
 
 ```bash
 npm install
+npm run build
 ```
 
-### 3. Start the Server
+The server runs from `dist/`; `./server.sh start` stops with "dist/ not found" until it is built.
+
+### 3. Create `.env`
+
+[`.env.example`](.env.example) is the one list of every variable the server reads, with what each does. Copy it and edit:
 
 ```bash
-# Development mode
-./server.sh start dev
-
-# Production mode (default)
-./server.sh start prod
+cp .env.example .env
 ```
 
-### 4. Open in Browser
+A minimal `.env` for a direct install needs only these. Every one is explained in [Required settings](#required-settings):
 
-Visit <http://localhost:3000>
+```bash
+PUID=1000                      # your user id:  id -u   (macOS: typically 501)
+PGID=1000                      # your group id: id -g   (macOS: typically 20)
+NGDPBASE_SYSTEM_USER=system    # a name for the server itself, not an account
+FAST_STORAGE=/srv/ngdpbase/data
+SLOW_STORAGE=/srv/ngdpbase/data   # may be the same folder as FAST_STORAGE
+PORT=3000
+```
 
-The installation wizard will guide you through first-time setup.
+Both storage folders must be writable by `PUID`:`PGID`. The session secret, credentials key and backup key are generated into `<FAST_STORAGE>/.env` on the first start; save the backup key somewhere off the server.
+
+### 4. Headless only: the admin password
+
+Skip this for an interactive install (the wizard). For a headless install, add to `.env`:
+
+```bash
+HEADLESS_INSTALL=true
+NGDPBASE_ADMIN_PASSWORD=<a strong password>
+```
+
+and create `<FAST_STORAGE>/config/app-custom-config.json` pointing the admin password at that variable:
+
+```json
+{
+  "ngdpbase.user.security.defaultpassword": "$NGDPBASE_ADMIN_PASSWORD"
+}
+```
+
+Both are needed: the server reads `NGDPBASE_ADMIN_PASSWORD` only through that config key. See [What Headless Install Does](#what-headless-install-does).
+
+### 5. Start the Server
+
+With PM2 (a long-running instance):
+
+```bash
+./server.sh start        # production (default)
+./server.sh start dev    # development
+```
+
+Without PM2, in the foreground, from the checkout (it reads the same `.env` files; stop it with Ctrl-C):
+
+```bash
+npm start                # NODE_ENV=production node dist/src/app.js
+```
+
+### 6. Open in Browser
+
+Visit <http://localhost:3000> (or your `PORT`).
+
+An interactive install shows the installation wizard. A headless install is ready: sign in as `admin` with the password from step 4.
+
+### Required settings
+
+The server refuses to start without these. Each refusal names the setting and links here; fix them all before the next start. A refused first start writes nothing but the generated secrets above, its log and empty folders, so you can fix the setting and start again without clearing the data folder.
+
+- `PUID` / `PGID` — the user and group the server runs as. Refused when unset, not a number, `0`, or not the user actually starting it: the server never runs as root, and must own its data folder ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). `SLOW_STORAGE` must be writable by that user.
+- `NGDPBASE_SYSTEM_USER` — the name the server acts under for its own work (startup, scheduled jobs) and records in the audit log. Refused when unset, because there is no safe default identity ([#631](https://github.com/jwilleke/ngdpbase/issues/631)). The Docker image sets it to `system`; a direct install sets it in `.env`.
+- The admin password, headless only — with `HEADLESS_INSTALL=true` and no `admin` account yet, `ngdpbase.user.security.defaultpassword` must be set to something other than the shipped `admin123`, because nobody is there to change a well-known password ([#1087](https://github.com/jwilleke/ngdpbase/issues/1087)). Step 4 sets it from `NGDPBASE_ADMIN_PASSWORD`; setting the key to a password directly in `app-custom-config.json` also works.
+- `NGDPBASE_ADMIN_PASSWORD` — when the config key is `"$NGDPBASE_ADMIN_PASSWORD"` and the `admin` account is about to be created, the variable must be set: an unset `$VAR` reference stops the start rather than falling back to a default.
+- `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, `NGDPBASE_BACKUP_KEY` — not required, generated on the first start. Refused only when `<FAST_STORAGE>/.env` cannot be written to save a generated one, or when the session secret is set to a known placeholder value.
 
 ## Installation Wizard
 
@@ -92,23 +151,23 @@ HEADLESS_INSTALL=true npm start
 
 When `HEADLESS_INSTALL=true`:
 
-- Copies required startup pages to `data/pages/`
-- Copies example configs to `data/config/`
-- Creates `.install-complete` marker
-- Creates the `admin` account with the password from `NGDPBASE_ADMIN_PASSWORD`
-- App is immediately ready - no wizard required
+- The wizard is skipped; the first request writes the `.install-complete` marker
+- On the first start, the `admin` account is created with the password from `ngdpbase.user.security.defaultpassword`, as on any new instance. Headless, that password must not be the shipped `admin123`, or the start is refused before the account is written. `NGDPBASE_ADMIN_PASSWORD` is used only when that key is set to `"$NGDPBASE_ADMIN_PASSWORD"` (Quick Start step 4)
+- Required pages are seeded at start, as on every install
+- No configuration file is created: supply `<FAST_STORAGE>/config/app-custom-config.json` yourself, or use the environment variables below
 
 ### Security Note
 
-The `admin` account is created on first start with the default password `admin123`. __Change it immediately after first login__ — the startup banner warns until you do. To avoid the default entirely, point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json` and set that variable in `.env`; a bare `$VAR` reference is strict, so an unset variable stops the boot rather than silently using the default.
+An __interactive__ install creates `admin` with the shipped password `admin123`, so the wizard is reachable; the startup banner warns until it is changed. A __headless__ install refuses that password, because nobody is there to change it: set the admin password as in [Quick Start step 4](#4-headless-only-the-admin-password) (or set `ngdpbase.user.security.defaultpassword` directly in `app-custom-config.json`). A bare `$VAR` reference is strict, so an unset variable stops the start rather than silently using the default. Either way, change the password after the first sign-in.
 
 ### Pre-configuring via Environment Variables
 
+Settings owned by the environment (application name, base URL and the others listed in `.env.example`) can be passed this way, on top of the [required settings](#required-settings):
+
 ```bash
 HEADLESS_INSTALL=true \
-NGDPBASE_APP_NAME="My Wiki" \
-NGDPBASE_BASE_URL="https://wiki.example.com" \
-NGDPBASE_SESSION_SECRET="your-secure-secret" \
+NGDPBASE_APP_NAME="My Site" \
+NGDPBASE_BASE_URL="https://site.example.com" \
 npm start
 ```
 
@@ -118,10 +177,7 @@ See [docker/DOCKER.md](./docker/DOCKER.md) for complete Docker headless deployme
 
 ### Environment Variables
 
-```bash
-NODE_ENV=development  # or production, test, staging
-PORT=3000            # Server port (default: 3000)
-```
+[`.env.example`](.env.example) lists every variable the server reads and what each does; [Required settings](#required-settings) lists the ones a start refuses without.
 
 ### Configuration Files
 
