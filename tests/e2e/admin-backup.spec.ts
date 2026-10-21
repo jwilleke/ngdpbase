@@ -11,6 +11,11 @@ import { test, expect, type Page } from '@playwright/test';
  * restart. Without E2E_RESTORE the confirmation is still checked, never sent.
  */
 test.describe('Admin Backup', () => {
+  // A full backup of a real instance takes as long as it takes (~49 s to 2 min
+  // on jimstest: attachment files, encryption, NAS writes), and the tests after
+  // it run while it finishes. They check what a backup contains, not its speed.
+  test.setTimeout(240_000);
+
   test.describe.configure({ mode: 'serial' });
   test.use({ storageState: './tests/e2e/.auth/user.json' });
 
@@ -37,7 +42,7 @@ test.describe('Admin Backup', () => {
 
   test('Create & Download Backup downloads one .tar', async ({ page }) => {
     await page.goto('/admin/backup');
-    const downloadPromise = page.waitForEvent('download');
+    const downloadPromise = page.waitForEvent('download', { timeout: 170_000 });
     await page.locator('form[action="/admin/backup/create"] button[type="submit"]').click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/-ngdpbase-backup\.tar$/);
