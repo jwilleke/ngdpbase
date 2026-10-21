@@ -14,6 +14,17 @@ The full, current detail — every kind of data, what restores, and every known 
 - __Automatically:__ turn on automatic backups on Admin → Backup, with a time of day and the days to run. A backup missed while the server was down runs when it is back.
 - The server keeps the last 10 backups (`ngdpbase.backup.max-backups`), each with the files beside it.
 
+### When backups stop working
+
+Backups never fail silently ([#1563](https://github.com/jwilleke/ngdpbase/issues/1563)). The `/admin` dashboard lists Backup under "not working", and admins get one "Backups are not working" notification (emailed when notification escalation is on), when:
+
+- __a backup fails__: the backup folder is out of space or can't be written, the encryption fails, a part is missing ("A backup is incomplete"), or the backup does not read back. The banner gives the reason and the date of the last good backup, and it stays — through restarts — until a backup succeeds.
+- __no good backup is recent enough__: "No good backup since" a date, or "never" on a site that has none yet (a new site shows it until its first backup). With automatic backups on, that is twice the longest gap between scheduled backups (two days for daily ones); with them off, 7 days. Both are settings (`ngdpbase.backup.stale-interval-multiplier`, `ngdpbase.backup.stale-fallback-days`). It is checked at start and every hour (`ngdpbase.backup.health-check-interval`).
+
+Before writing, a backup checks there is room for it — free space at least the last backup's size times 1.5 (`ngdpbase.backup.space-margin`) — and stops with a clear reason instead of writing half a file. After writing, it reads the backup back (decrypt, decompress, parse); one that does not read back is removed and counts as a failure.
+
+Admin → Backup and the dashboard show the last successful backup (when, in your local time, its size and where), the next automatic backup, and the free space at the backup folder.
+
 A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar.enc` (attachments, vault files, role membership, persons, organizations, footnotes, comments, the credentials store, the audit log, file-based job state, add-on files). With `NGDPBASE_BACKUP_KEY` set every one of them is encrypted under it; without it the names end `.json.gz` and `.tar`, and nothing is encrypted (below).
 
 ### What IS in a backup

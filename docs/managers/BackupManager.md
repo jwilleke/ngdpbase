@@ -29,6 +29,18 @@ BackupManager asks every registered manager for its `backup()`, writes the answe
 - Options: `filename`, `compress` (default true), `skipCleanup`, `requireComplete` (throw after notifying when any part failed), `safetyBackup` (this is a restore's backup of the live data, #1892).
 - Retention: after each backup the oldest beyond `ngdpbase.backup.max-backups` are removed with their files (`cleanupOldBackups`).
 - Automatic backups are the scheduled job `backup.auto` (#1720): `ngdpbase.backup.auto-backup`, `-time` (`HH:MM`, server time zone) and `-days`.
+- __Space first, read back after__ (#1563). Before anything is written, free space at the destination (`BaseBackupProvider.freeSpace()`; `FileBackupProvider` uses `statfs`) is compared with the last backup's `totalSize` times `ngdpbase.backup.space-margin`; too little refuses the backup ("not enough free space …, Nothing was written"). No earlier backup, or a provider that can't tell, skips the check. A write that fails part-way removes the half-written document. After writing, the document is read back on a worker thread (`verifyBackupOffThread`, `src/utils/backupDocument.ts`): decrypted under the key (every record's GCM tag), decompressed, parsed and checked for its shape — the same `readBackupDocument` a restore uses. One that does not read back is removed, with the files beside it, and the backup fails. `backup-create` is recorded only for a backup that read back.
+
+## Backups never fail silently
+
+(#1563, operator: "We need a persistent 'backups not working'".) BackupManager decides; Admin → Backup and the `/admin` dashboard show what it says.
+
+- __A failed backup is an outage__ (`markDegraded`, the dashboard's "not working" section): out of space, a write or permission error, a failed encryption, the space check, a failed read-back, or a part missing ("A backup is incomplete", whose own notification is kept). The reason (system error codes named, `describeBackupError`) and the last good backup's date are in the banner. It is kept in the health record, `ngdpbase.backup.health-file` (default `${FAST_STORAGE}/backup-health.json`), so a restart does not clear it; only a backup that succeeds does. Admins get one error notification, "Backups are not working", per reason — not one per failed attempt — through `NotificationManager`, so its email escalation applies.
+- __No good backup recently enough is an outage__: "No good backup since" and the date (server local time), or "No good backup since: never" on a site that has none (a new site shows it until its first backup). The window is `ngdpbase.backup.stale-interval-multiplier` (default 2) times the longest gap between `backup.auto` runs while automatic backups are on and scheduled (`longestGapMs`: daily is 1 day, Mon/Wed/Fri 3, monthly 31), and `ngdpbase.backup.stale-fallback-days` (default 7) while they are off, paused in Admin → Scheduled Jobs, or not scheduled. One notification per stretch, kept across restarts in the same record.
+- __The last good backup is never remembered__: it is the newest document in the backup directory (`listStoredBackups`) other than the one a kept failure names (an incomplete backup), so it survives restarts and follows what is really on disk.
+- __Checked__ at start, after every backup, and by the routine job `backup.health` every `ngdpbase.backup.health-check-interval` ms (default one hour; `BackgroundJobManager.registerMaintenance`, so it runs as the system principal and is listed on Admin → Scheduled Jobs).
+- __One status slot, outage first__: the outage replaces the backup key's reminders (`BACKUP_KEY_MISSING`, "Save the backup key …"), which come back once backups work (`checkBackupKey` never hides an outage). A backup directory that could not be used at start keeps its own outage.
+- `getBackupHealth()` — `{ lastGood: { filename, at, size, location } | null, autoBackup, nextRun, freeBytes, failure, staleAfterMs, stale, fault }`, read from disk each time; `nextRun` from `BackgroundJobManager.scheduledJobView('backup.auto')`. `refreshBackupHealth()` applies it to the status. Rendered by `views/_backup-health.ejs` on both pages, times as `<time data-local-time>`.
 
 ## Stored backups
 
@@ -68,6 +80,12 @@ Also:
 | `ngdpbase.backup.auto-backup`, `-time`, `-days` | `false`, `02:00`, `daily` | automatic backups |
 | `ngdpbase.backup.restore-manifest` | `${FAST_STORAGE}/site-restore.json` | the staged site restore's record (#1876); also found at boot, before the configuration loads (`siteRestoreFileAtBoot`) |
 | `ngdpbase.backup.key-saved-fingerprint` | `""` | the fingerprint of the backup key an admin confirmed is saved off the server (#1876) |
+| `ngdpbase.backup.stale-interval-multiplier` | `2` | with automatic backups on: no good backup within this many times the longest gap between runs is an outage (#1563) |
+| `ngdpbase.backup.stale-fallback-days` | `7` | the same window, in days, with automatic backups off (#1563) |
+| `ngdpbase.backup.health-check-interval` | `3600000` | ms between `backup.health` checks (#1563) |
+| `ngdpbase.backup.space-margin` | `1.5` | free space needed before writing, as a multiple of the last backup's size (#1563) |
+| `ngdpbase.backup.verify-timeout-ms` | `600000` | limit on reading a new backup back (#1563) |
+| `ngdpbase.backup.health-file` | `${FAST_STORAGE}/backup-health.json` | the failure (and the last "no recent backup" notice) kept across restarts (#1563) |
 
 `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` are in the default config, but nothing reads them.
 
