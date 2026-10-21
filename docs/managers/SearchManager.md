@@ -1,7 +1,7 @@
 ---
 name: SearchManager
 description: "Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker"
-dateModified: '2026-05-14'
+dateModified: '2026-10-21'
 category: managers
 code: src/managers/SearchManager.ts
 ---
@@ -26,7 +26,7 @@ SearchManager provides full-text search capabilities for ngdpbase through a plug
 - __Auto-Complete__ - Search suggestions and similar page recommendations
 - __Automatic Index Updates__ - Keep index synchronized with page changes
 - __Provider Fallback__ - Configurable default with automatic failover
-- __WikiContext Integration__ - Permission-aware search results
+- __WikiContext Integration__ - A hit is returned only to someone who may open its page ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962))
 
 ## Quick Example
 
@@ -64,10 +64,10 @@ const similar = await searchManager.suggestSimilarPages('HomePage', 5);
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `search(query, options)` | `Promise<Array>` | Simple full-text search |
-| `advancedSearch(options)` | `Promise<Array>` | Field-specific advanced search |
-| `searchWithContext(context, query, options)` | `Promise<Array>` | Permission-aware search |
-| `advancedSearchWithContext(context, options)` | `Promise<Array>` | Advanced permission-aware search |
+| `search(query, options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a person |
+| `advancedSearch(options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a person |
+| `searchWithContext(context, query, options)` | `Promise<Array>` | Text search; only pages the context's subject may open, see [Who sees a hit](#who-sees-a-hit) |
+| `advancedSearchWithContext(context, options)` | `Promise<Array>` | Filtered and no-text search; only pages the context's subject may open |
 | `getSuggestions(partial)` | `Promise<string[]>` | Auto-complete suggestions |
 | `suggestSimilarPages(pageName, limit)` | `Promise<Array>` | Find similar pages |
 | `buildSearchIndex()` | `Promise<void>` | Build initial index |
@@ -170,6 +170,18 @@ await searchManager.updatePageInIndex('HomePage', {
 await searchManager.removePageFromIndex('OldPage');
 ```
 
+## Who sees a hit
+
+A search index knows a page's words, not who may read it: not its `audience`, its `access` rules, nor the policies. So `searchWithContext` and `advancedSearchWithContext` put every hit from the provider through the page-list door, `PageManager.filterPagesFor(subject, names)`, which resolves each name as `/view` would and asks `PolicyInformationPoint.filterAccessiblePages` — the decision a page view and every page list make ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)). A hit is returned exactly when its reader may open the page; a hit for a page that no longer exists is dropped.
+
+- The decision is made before the result limit. SearchManager asks the provider for the number wanted, and asks again for twice as many while hidden hits leave the result short and the index may hold more. So a result count, a total, `hasMore` and a page number never count a page the reader cannot open.
+- `ngdpbase.search.access-filter.max-candidates` (default `5000`) bounds how many hits one search decides. At the bound the result is short rather than the site slow.
+- Without the door (no PageManager or no PolicyInformationPoint) no page hit is returned, never the unfiltered index.
+- The provider's own private-page check (`LunrSearchProvider.isDocVisible`, the Elasticsearch privacy filter) only narrows what the index offers; it is not the decision.
+- The requester's own private pages are in no shared index; they are merged in afterwards from the requester's own stores, through the page door ([#1458](https://github.com/jwilleke/ngdpbase/issues/1458)).
+
+The callers that return page hits to a person all use the context forms: `/api/assets/search` (`types=page` and "All sources", which the `/search` page and the asset picker load), `/api/keywords/related`, and `[{Search}]`. The standing rule is in [security-developer-guide.md](../guides/security-developer-guide.md#every-page-a-person-is-shown-goes-through-the-page-list-door).
+
 ## WikiContext Integration
 
 ```javascript
@@ -180,7 +192,7 @@ const results = await searchManager.searchWithContext(
   'secret',
   { limit: 10 }
 );
-// Only returns pages user has permission to view
+// Only pages the context's subject may open (see "Who sees a hit")
 
 // Advanced permission-aware search
 const filtered = await searchManager.advancedSearchWithContext(

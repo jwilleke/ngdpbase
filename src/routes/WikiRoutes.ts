@@ -5315,8 +5315,9 @@ ${panes}
   /**
    * GET /api/keywords/related?keyword=<kw> (#882) — user keywords that
    * co-occur with the given keyword, ranked by shared-page count.
-   * ACL-safe by construction: pages come from advancedSearchWithContext,
-   * so private pages the caller can't see never contribute counts.
+   * Pages come from advancedSearchWithContext, which keeps only the pages
+   * the caller may open (#1962), so a page they cannot open never
+   * contributes a count.
    */
   async relatedKeywords(req: Request, res: Response) {
     try {
@@ -14264,7 +14265,7 @@ ${panes}
       // #742: "All sources" (types absent or `all`) aggregates pages, users,
       // and the asset stores instead of 403'ing non-editors and returning
       // attachments/media only. Each source keeps its own access rule:
-      //   pages       → always; SearchManager applies per-page ACL (anon-safe)
+      //   pages       → search-page; SearchManager keeps only pages the reader may open (#1962)
       //   users       → authenticated viewers only (PII; mirrors types=user)
       //   attach/media → editor asset surface only (unchanged gate)
       // Placed before the editor gate so readers get page hits — the core
@@ -14274,8 +14275,9 @@ ${panes}
         const merged: Record<string, unknown>[] = [];
         let anyCapped = false;
 
-        // Pages — SearchManager filters per-page ACL via wikiContext, so this
-        // is anon-safe. Title-default recall per #739 (no category/keyword
+        // Pages — advancedSearchWithContext keeps only the pages this reader
+        // may open, decided by PolicyInformationPoint as /view decides it,
+        // before its limit (#1962). Title-default recall per #739 (no category/keyword
         // filter inputs exist on the all-sources surface).
         const searchManager = this.engine.getManager('SearchManager') as {
           advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
@@ -14405,8 +14407,8 @@ ${panes}
 
       // Auth model (#696, #1059):
       //   types=page  → search-page permission (anonymous holds it in the
-      //                 default catalogue); SearchManager then filters
-      //                 per-page ACL via wikiContext.
+      //                 default catalogue); SearchManager then keeps only
+      //                 the pages the reader may open (#1962).
       //   types=user  → handled inside the user branch (search-user permission).
       //   anything else (attachments, media) → editor surface, keep the
       //                 editor/contributor/admin gate.
@@ -14430,8 +14432,8 @@ ${panes}
       // the URL surface matches what /search supports today.
       if (typesParam === 'page') {
         // #1059: search-page gates page search (anonymous holds it in the
-        // default catalogue). SearchManager's per-page ACL filter still runs
-        // below — this decides whether the caller may search at all.
+        // default catalogue) — whether the caller may search at all. Which
+        // pages they may see is SearchManager's, per page, below (#1962).
         if (!(await wikiContext.hasPermission('search-page'))) {
           return res.status(403).json({ success: false, error: 'Access denied' });
         }

@@ -69,6 +69,8 @@ __Making a page public (#1504, built).__ Unticking Private moves a page out of i
 
 The role `All` no longer exists (#1429). A policy that names it matches nobody; name the roles meant instead.
 
+__Where the page decision applies.__ Everywhere a person is shown a page: opening it, a list of pages, a search hit, a count. Lists and search hits are decided by the same `PolicyInformationPoint` tiers as a page view — audience and `access` first, then these policies, `system-category` included — so a policy that refuses `page-read` also keeps the page out of that person's search results ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)). The rule for code is in [the security guide](guides/security-developer-guide.md#every-page-a-person-is-shown-goes-through-the-page-list-door).
+
 The three levels of checking built on this (the global `PolicyDecisionPoint.permits`, the page-aware `PolicyInformationPoint`, and this evaluator at the bottom) are described in [architecture/Access-Control.md](architecture/Access-Control.md#two-evaluation-engines).
 
 ## Decided, not yet built
