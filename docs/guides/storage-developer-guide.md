@@ -82,7 +82,7 @@ The journal's entry in `addons/journal/config/default-config.json` (#1507) has t
 
 So a wrong type is refused. An add-on's entry with one is left out entirely, with a startup warning and an admin notification naming the entry and the field. __The add-on itself is then not loaded__: none of its routes, plugins or other configuration keys apply, and `/admin/addons` shows it as not loaded with the reason. It loads again once its file is fixed. Write `true`, `false` or `"choice"` exactly. The same refusal applies to an entry whose `owner` isn't the add-on's slug, whose key is a site entry's or another add-on's, whose vault id another entry already uses, that sets `default: true`, or whose `privatestore` is malformed.
 
-The same mistake in one of the site's own entries (core's, or the site's `app-custom-config.json`) is not refused: the site keeps running and the value is still read as false. Startup logs an error, and admins get the dashboard's non-dismissible "subsystem not working" banner and a system notification. Both name the entry, the field, the bad value and what it is read as.
+The same mistake in one of the site's own entries (core's, or the site's `app-custom-config.json`) is not refused: the site keeps running and the value is still read as false. Startup logs an error, and admins get a non-dismissible dashboard entry under "Working, but needs your attention" (`markNeedsAttention`, [#1946](https://github.com/jwilleke/ngdpbase/issues/1946)) and a system notification. Both name the entry, the field, the bad value and what it is read as.
 
 ## Declaring a database
 

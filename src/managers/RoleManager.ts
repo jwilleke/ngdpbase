@@ -77,7 +77,7 @@ class RoleManager extends BaseManager {
     this.storageDir = storageDir;
     // #1876: a staged site restore goes in before the records are read.
     const restored = applyDirectoryPartAtStart('RoleManager', storageDir, configManager);
-    if (restored?.refused) this.markDegraded(`A staged restore of role membership was not applied: ${restored.refused}`);
+    if (restored?.refused) this.markNeedsAttention(`A staged restore of role membership was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.roles.storagedir',
       storageDir

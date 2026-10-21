@@ -11219,6 +11219,10 @@ ${panes}
         logger.warn('[adminDashboard] CatalogManager not available for source listing:', catalogErr);
       }
 
+      const degraded = (this.engine as unknown as {
+        getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
+      }).getDegradedManagers?.() ?? [];
+
       const templateData = {
         ...commonData,
         title: 'Admin Dashboard',
@@ -11260,10 +11264,11 @@ ${panes}
         // working. Thirteen could reach that state and only auditing said so,
         // so a bad backup directory meant backups silently never ran while
         // this page looked entirely healthy. Excludes `disabled`, which is a
-        // deliberate choice rather than a fault.
-        degradedManagers: (this.engine as unknown as {
-          getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string }>;
-        }).getDegradedManagers?.() ?? [],
+        // deliberate choice rather than a fault. #1946: `degradedManagers`
+        // holds only the ones that are down; `attentionManagers` the ones that
+        // work but need an admin, by the kind each manager declared.
+        degradedManagers: degraded.filter((m) => m.kind !== 'attention'),
+        attentionManagers: degraded.filter((m) => m.kind === 'attention'),
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []

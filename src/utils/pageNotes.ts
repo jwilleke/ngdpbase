@@ -353,8 +353,8 @@ export async function isVaultPageUuid(
 
 /** The manager state a startup check sets and clears: the manager's own (BaseManager). */
 export interface CheckStateHooks {
-  /** True when this is a new state. */
-  markDegraded(reason: string): boolean;
+  /** True when this is a new state. The pages work; an admin moves the notes in, so it needs attention, not down (#1946). */
+  markNeedsAttention(reason: string): boolean;
   /** Clears the degraded state only while it is still `reason`, so another fault stays reported. */
   markReadyIfDegradedBy(reason: string): boolean;
 }
@@ -406,7 +406,7 @@ export class VaultPageNotesCheck {
       'They are not shown on the page and were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1839, #1842)';
     logger.error(`📄 ${reason}`);
     this.reason = reason;
-    if (this.state.markDegraded(reason) && opts.notify) {
+    if (this.state.markNeedsAttention(reason) && opts.notify) {
       try {
         await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
           ?.addNotification({ type: 'system', level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });
