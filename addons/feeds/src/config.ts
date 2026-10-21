@@ -7,12 +7,99 @@
  * malformed ones (logged by the caller), and stamps the map key as `sourceId`.
  */
 
+import { validateHeaderName, validateHeaderValue } from 'node:http';
 import logger from '../../../dist/src/utils/logger.js';
 import { SUPPORTED_SCHEMA_TYPES } from './normalize.js';
 import type { FeedSourceConfig } from './types.js';
 
+/**
+ * Addon-wide settings (#1955), from `ngdpbase.addons.feeds.*`. The shipped
+ * values are in this addon's `config/default-config.json`; these are only the
+ * fallback when a key is missing or unusable.
+ */
+export interface FeedSettings {
+  /** `max-concurrent-ingests`: due sources ingested at once. */
+  maxConcurrentIngests: number;
+  /** `timeout-min-ms` / `timeout-max-ms`: the range a source's `timeoutMs` must fall in. */
+  timeoutMinMs: number;
+  timeoutMaxMs: number;
+}
+
+export const FEED_SETTING_DEFAULTS: Readonly<FeedSettings> = Object.freeze({
+  maxConcurrentIngests: 4,
+  timeoutMinMs: 5_000,
+  timeoutMaxMs: 300_000
+});
+
+const positiveInteger = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+
+/** Read the addon-wide settings from the `config` handed to `register()`. */
+export function readFeedSettings(config: Record<string, unknown>): FeedSettings {
+  const out: FeedSettings = { ...FEED_SETTING_DEFAULTS };
+  const read = (key: string, field: keyof FeedSettings): void => {
+    const v = config[key];
+    if (v === undefined) return;
+    if (positiveInteger(v)) out[field] = v;
+    else logger.warn(`[feeds] ignoring ${key}=${JSON.stringify(v)} — must be a whole number > 0; using ${out[field]}`);
+  };
+  read('max-concurrent-ingests', 'maxConcurrentIngests');
+  read('timeout-min-ms', 'timeoutMinMs');
+  read('timeout-max-ms', 'timeoutMaxMs');
+  if (out.timeoutMinMs > out.timeoutMaxMs) {
+    logger.warn(`[feeds] ignoring timeout-min-ms ${out.timeoutMinMs} > timeout-max-ms ${out.timeoutMaxMs}; using ${FEED_SETTING_DEFAULTS.timeoutMinMs}–${FEED_SETTING_DEFAULTS.timeoutMaxMs}`);
+    out.timeoutMinMs = FEED_SETTING_DEFAULTS.timeoutMinMs;
+    out.timeoutMaxMs = FEED_SETTING_DEFAULTS.timeoutMaxMs;
+  }
+  return out;
+}
+
+/**
+ * Headers a source may not set (#1947). Hop-by-hop and framing headers belong
+ * to the connection guardedFetch makes, and `Host` would point a validated
+ * connection at another name. Credentials are refused too: a literal one would
+ * sit in the config file, and an unset `$NAME` reference inside `sources`
+ * drops the whole map, so every feed would stop for one missing variable.
+ */
+const REFUSED_HEADERS = new Set([
+  'host', 'content-length', 'transfer-encoding', 'connection', 'keep-alive', 'proxy-connection',
+  'te', 'trailer', 'upgrade', 'expect', 'cookie', 'authorization', 'proxy-authorization', 'proxy-authenticate'
+]);
+
+/** A source's `headers` map plus its `userAgent`, each entry checked; a bad one is refused with a warning. */
+function parseHeaders(sourceId: string, raw: unknown, userAgent: unknown): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  const add = (name: string, value: unknown): void => {
+    const refuse = (why: string): void => {
+      logger.warn(`[feeds] source '${sourceId}': ignoring header '${name}' — ${why}`);
+    };
+    if (REFUSED_HEADERS.has(name.toLowerCase())) { refuse('a source may not set it'); return; }
+    if (typeof value !== 'string' || value.trim() === '') { refuse('the value must be a non-empty string'); return; }
+    try {
+      validateHeaderName(name);
+      validateHeaderValue(name, value);
+    } catch {
+      refuse('not a valid HTTP header');
+      return;
+    }
+    // One entry per name, whatever its case: the later one wins.
+    for (const existing of Object.keys(out)) {
+      if (existing.toLowerCase() === name.toLowerCase()) delete out[existing];
+    }
+    out[name] = value;
+  };
+  if (raw !== undefined) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [name, value] of Object.entries(raw as Record<string, unknown>)) add(name, value);
+    } else {
+      logger.warn(`[feeds] source '${sourceId}': ignoring headers=${JSON.stringify(raw)} — must be a map of name to value`);
+    }
+  }
+  if (userAgent !== undefined) add('User-Agent', userAgent);
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Returns the valid source configs; ignores anything missing the required adapter+url. */
-export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
+export function parseSourceConfigs(raw: unknown, settings: FeedSettings = FEED_SETTING_DEFAULTS): FeedSourceConfig[] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
 
   const out: FeedSourceConfig[] = [];
@@ -63,6 +150,17 @@ export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
         cfg.maxAgeHours = v.maxAgeHours;
       } else {
         logger.warn(`[feeds] source '${sourceId}': ignoring maxAgeHours=${JSON.stringify(v.maxAgeHours)} — must be a number > 0`);
+      }
+    }
+    // Request options (#1947, #1955), handed to guardedFetch by every adapter.
+    const headers = parseHeaders(sourceId, v.headers, v.userAgent);
+    if (headers) cfg.headers = headers;
+    if (v.timeoutMs !== undefined) {
+      const { timeoutMinMs: min, timeoutMaxMs: max } = settings;
+      if (typeof v.timeoutMs === 'number' && Number.isInteger(v.timeoutMs) && v.timeoutMs >= min && v.timeoutMs <= max) {
+        cfg.timeoutMs = v.timeoutMs;
+      } else {
+        logger.warn(`[feeds] source '${sourceId}': ignoring timeoutMs=${JSON.stringify(v.timeoutMs)} — must be a whole number of ms from ${min} to ${max}; the default applies`);
       }
     }
     if (v.map && typeof v.map === 'object' && !Array.isArray(v.map)) {

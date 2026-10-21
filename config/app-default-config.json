@@ -108,6 +108,8 @@
   "ngdpbase.translator-reader.inline-pattern.1": "s/\\{\\{([^}]+)\\}\\}/\\<tt\\>$1\\<\\/tt\\>/g",
   "_comment_http": "Global timeout (ms) for ngdpbase's own outbound HTTP fetches (NCM image fetch #728, URL import). Does NOT override third-party clients that manage their own timeouts (Elasticsearch, OTLP).",
   "ngdpbase.fetch-timeout-ms": 30000,
+  "_comment_http_user_agent": "#1947 — the User-Agent sent on ngdpbase's own outbound requests (guardedFetch) when the request names none; APIs such as api.weather.gov refuse a request without one. A template, read on every request: {version} is ngdpbase.version; {base-url} is ngdpbase.application.base-url when it is set explicitly, and when it is not, a bracketed part holding {base-url} is left out, so the default reads ngdpbase/<version>. Empty sends no default User-Agent. A feed source can send its own (ngdpbase.addons.feeds.sources.<id>.userAgent).",
+  "ngdpbase.http.user-agent": "ngdpbase/{version} (+{base-url})",
   "_comment_application_organization": "Identity of THIS install (#617). The org JSON-LD file at <storagedir>/<file> is the single source of truth — name, url, address, etc. live IN THE FILE, not in config. Install completion tracked via INSTANCE_DATA_FOLDER/.install-complete (not config).",
   "ngdpbase.application.organization.storagedir": "${FAST_STORAGE}/organizations",
   "ngdpbase.application.organization.file": "",

@@ -1,0 +1,8 @@
+{
+  "_comment": "Default configuration for the feeds addon. Override any key in app-custom-config.json. Sources are ngdpbase.addons.feeds.sources.<id>.*; see docs/managers/FeedManager.md.",
+  "_comment_max_concurrent_ingests": "#1955 — how many due sources ingest at the same time. A slow or hanging source holds one slot until its timeout, so the others still run. A whole number > 0.",
+  "ngdpbase.addons.feeds.max-concurrent-ingests": 4,
+  "_comment_timeout_range": "#1955 — the range, in ms, a source's timeoutMs must fall in. A value outside it is refused at startup with a warning, and the source keeps the 30 s default.",
+  "ngdpbase.addons.feeds.timeout-min-ms": 5000,
+  "ngdpbase.addons.feeds.timeout-max-ms": 300000
+}

@@ -13,7 +13,23 @@
  * `guardedFetch`, and one way is the point.
  */
 
-import type { GuardedResponse } from '../../../../dist/src/http/guardedFetch.js';
+import type { GuardedFetchOptions, GuardedResponse } from '../../../../dist/src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
+import type { FeedSourceConfig } from '../types.js';
+
+/**
+ * The guardedFetch options for one fetch of a source (#1947, #1955): the
+ * policy, plus the source's own headers and timeout when it sets them. Every
+ * adapter builds its options here, so a per-source option reaches every fetch,
+ * xml-index's item fetches included.
+ */
+export function requestOptions(cfg: FeedSourceConfig, policy: EgressPolicy): GuardedFetchOptions {
+  return {
+    policy,
+    ...(cfg.headers ? { headers: cfg.headers } : {}),
+    ...(cfg.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {})
+  };
+}
 
 /** 2xx, and only 2xx — the `res.ok` these call sites were written against. */
 export function isOk(res: GuardedResponse): boolean {

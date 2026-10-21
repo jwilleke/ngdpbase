@@ -1,6 +1,6 @@
 import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
-import { isOk, reason } from './http.js';
+import { isOk, reason, requestOptions } from './http.js';
 /**
  * rss-atom adapter (#913) — dependency: fast-xml-parser (shared with the xml
  * adapter). RSS 2.0 and Atom 1.0 are both XML, so this is a thin, sensible-
@@ -48,7 +48,7 @@ export const rssAtomAdapter: SourceAdapter = {
   name: 'rss-atom',
 
   async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
-    const res = await guardedFetch(cfg.url, { policy });
+    const res = await guardedFetch(cfg.url, requestOptions(cfg, policy));
     if (!isOk(res)) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
