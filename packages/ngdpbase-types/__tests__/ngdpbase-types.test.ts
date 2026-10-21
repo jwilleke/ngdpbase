@@ -71,6 +71,14 @@ describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
   });
 
+  test('buildAddonHost: setEnabledForPerson refuses unless the test gives it a setter (#1963)', async () => {
+    const ctx = { username: 'alice', roles: ['reader'], isAuthenticated: true };
+    await expect(buildAddonHost('ledger', defaults).setEnabledForPerson(ctx, true)).rejects.toThrow(/built without a site/);
+    const setter = vi.fn(async () => {});
+    await buildAddonHost('ledger', defaults, setter).setEnabledForPerson(ctx, true);
+    expect(setter).toHaveBeenCalledWith(ctx, true);
+  });
+
   test('openAddonTestDatabase runs the migrations and records them in the ledger', () => {
     const migrations: Migration[] = [
       { id: '20261017090000', description: 'entries', up: (db) => db.exec('CREATE TABLE ledger_entries (id INTEGER PRIMARY KEY, amount INTEGER NOT NULL)') },
