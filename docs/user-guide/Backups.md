@@ -60,6 +60,7 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 ### What to keep safe
 
 - __The operator: the backup key.__ Every site makes one at first start; every backup, including the `.env` copy (every line but the backup key's), is encrypted under it. Admin → Backup shows its fingerprint, and the dashboard asks for it to be saved off the server until an admin confirms (showing the key needs `config-manage` and a fresh sign-in). On a new server, put the saved key in `<FAST_STORAGE>/.env` before the first start, then restore.
+- __The operator, optionally: a copy of `.env`.__ Admin → Backup → __Download .env__ (`config-manage`, fresh sign-in). When the set of keys in `<FAST_STORAGE>/.env` changes — a key the site generates, or a hand edit — the dashboard lists Backup under "needs your attention" and admins get one notification naming the keys added or removed (names only, never values), until an admin downloads the file again and presses __I have saved .env off the server__. That press also records the backup key as saved when the file holds it. The first start with this feature records the keys already there without asking.
 - __Each person: their recovery words__, the only way into their private vaults after a forgotten password. Each person with a vault gets one reminder.
 
 ### Encryption

@@ -2952,6 +2952,8 @@
   "ngdpbase.backup.restore-manifest": "${FAST_STORAGE}/site-restore.json",
   "_comment_backup_key_saved": "#1876: the fingerprint of the backup key (NGDPBASE_BACKUP_KEY) an admin confirmed is saved off the server, set from Admin -> Backup. Empty: the dashboard asks for the key to be saved. A different key asks again. The fingerprint never reveals the key.",
   "ngdpbase.backup.key-saved-fingerprint": "",
+  "_comment_backup_env_keys_saved": "#1976: the names (never the values) the instance .env set when an admin last confirmed it is saved off the server, sorted, set from Admin -> Backup ('I have saved .env off the server'). null: not recorded yet; the first check records the names it finds without asking. Any name added or removed after that lists Backup under 'needs your attention' and notifies admins once, until an admin confirms again.",
+  "ngdpbase.backup.env-keys-saved": null,
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

@@ -53,7 +53,22 @@
                 <div class="alert alert-warning mb-2" id="backup-env-warning">
                     <i class="fas fa-exclamation-triangle"></i> This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.
                 </div>
+                <% const envKeys = locals.envKeys || null; %>
+                <% const envChanged = Boolean(envKeys && (envKeys.added.length > 0 || envKeys.removed.length > 0)); %>
+                <% if (envChanged) { %>
+                <div class="alert alert-warning mb-2" id="backup-env-changed">
+                    <strong>Save a new copy of .env.</strong> The keys in it changed since an admin last saved it<% if (envKeys.added.length > 0) { %> — added: <% envKeys.added.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %><% if (envKeys.removed.length > 0) { %> — removed: <% envKeys.removed.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %>. Download it, keep the copy off this server, then confirm below.
+                </div>
+                <% } %>
                 <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
+                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey))) { %>
+                <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
+                    <input type="hidden" name="envFingerprint" value="<%= envKeys.fingerprint %>">
+                    <button type="submit" class="btn btn-success btn-sm"<%- lockedUnless('config-manage') %>><i class="fas fa-check"></i> I have saved .env off the server</button>
+                </form>
+                <% } %>
             </div>
         </div>
     </div>

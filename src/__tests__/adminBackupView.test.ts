@@ -263,3 +263,31 @@ describe('#1945 Admin → Backup, Restore the whole site', () => {
   });
 });
 
+describe('#1976 Admin → Backup, the .env key set', () => {
+  const envKeys = (over: Record<string, unknown> = {}) => ({ names: ['NGDPBASE_BACKUP_KEY', 'SMTP_PASSWORD'], fingerprint: '0123456789abcdef', recorded: true, added: [], removed: [], holdsBackupKey: true, ...over });
+  const savedKey = { set: true, fingerprint: 'abcdef0123456789', saved: true };
+
+  test('a changed set names the keys added and removed, and offers the one confirmation through the backup key route', async () => {
+    const doc = await render({ backupKey: savedKey, envKeys: envKeys({ added: ['SMTP_PASSWORD'], removed: ['OLD_TOKEN'] }) });
+    const alert = text(doc.querySelector('#backup-env-changed'));
+    expect(alert).toMatch(/added: SMTP_PASSWORD/);
+    expect(alert).toMatch(/removed: OLD_TOKEN/);
+    const form = doc.querySelector('#backup-env-confirm')!;
+    expect(form.getAttribute('action')).toBe('/admin/backup/key/saved');
+    expect(form.querySelector<HTMLInputElement>('input[name=envFingerprint]')!.value).toBe('0123456789abcdef');
+    expect(form.querySelector<HTMLInputElement>('input[name=fingerprint]')!.value).toBe('abcdef0123456789');
+  });
+
+  test('an unchanged set with the key saved shows no reminder and no confirmation', async () => {
+    const doc = await render({ backupKey: savedKey, envKeys: envKeys() });
+    expect(doc.querySelector('#backup-env-changed')).toBeNull();
+    expect(doc.querySelector('#backup-env-confirm')).toBeNull();
+  });
+
+  test('an unsaved key the .env holds can be confirmed by saving .env', async () => {
+    const doc = await render({ backupKey: { ...savedKey, saved: false }, envKeys: envKeys() });
+    expect(doc.querySelector('#backup-env-changed')).toBeNull();
+    expect(doc.querySelector('#backup-env-confirm')).not.toBeNull();
+  });
+});
+
