@@ -52,6 +52,9 @@ export interface BackupOptions {
 /**
  * Restore options
  */
+/** What a restore started from Admin → Backup puts back (#1945): the whole site, or the databases only. */
+export type RestoreScope = 'site' | 'databases';
+
 export interface RestoreOptions {
   skipValidation?: boolean;
   managerFilter?: string[];
@@ -1333,26 +1336,101 @@ class BackupManager extends BaseManager {
     return this.restoreRunning !== null;
   }
 
+  /** The managers on this site whose restore is staged (#1876), in registration order: what a site restore stages. */
+  private stagedManagerNames(): string[] {
+    return this.engine.getRegisteredManagers().filter((name) => this.restoresStaged(name));
+  }
+
   /**
-   * Start a restore of a stored backup's databases (#1723, D1): recorded,
-   * then a fresh backup of the live data and the staging run in the
-   * background, and admins are told when it is staged or why it was not. The
-   * databases only: nothing else in the backup is restored, and nothing
-   * changes until the next restart. Refused while another is running, and
-   * when a restore is already staged unless `replace` says to replace it.
+   * What a whole-site restore on this site puts back and what it does not
+   * (#1945), in the words admins read: the labels of the "not restored"
+   * notification (`restoreLabel`, `NEVER_IN_A_BACKUP`), so the restore card
+   * and the notification after the restart say the same. Read from the
+   * managers on this site, not from any backup: a backup can hold less (the
+   * credentials store of one taken without the backup key), never more.
+   */
+  siteRestoreScope(): { restored: string[]; notRestored: string[] } {
+    const databases = this.engine.getManager<DatabaseManager>('DatabaseManager');
+    const restored = this.stagedManagerNames()
+      .filter((name) => name !== 'DatabaseManager' || databases?.isEnabled?.() !== false)
+      .map(restoreLabel);
+    const notRestored = Object.keys(RESTORE_LABELS)
+      .filter((name) => name !== 'BackupManager' && this.engine.getManager(name) && !this.restoresStaged(name))
+      .map(restoreLabel);
+    return { restored, notRestored: [...notRestored, ...NEVER_IN_A_BACKUP] };
+  }
+
+  /**
+   * The restore waiting for the next start, whichever it is (#1945): a site
+   * restore, or a databases-only one. A site restore stages the databases
+   * too, so it is the one named while both records are there.
+   */
+  getStagedRestore(): { scope: RestoreScope; source: string; stagedBy: string } | null {
+    let site: SiteRestoreManifest | null;
+    try {
+      site = this.getStagedSiteRestore();
+    } catch (err) {
+      throw new Error(`A site restore record is there but can't be read (${(err as Error).message})`, { cause: err });
+    }
+    if (site) return { scope: 'site', source: site.source || site.backup, stagedBy: site.stagedBy };
+    const databases = this.engine.getManager<DatabaseManager>('DatabaseManager')?.getStagedRestore?.() ?? null;
+    return databases ? { scope: 'databases', source: databases.source || databases.backup, stagedBy: databases.stagedBy } : null;
+  }
+
+  /**
+   * Throw away the restore waiting for the next start, whichever it is
+   * (#1945): a staged site restore through `cancelStagedSiteRestore`, a
+   * databases-only one through `DatabaseManager.cancelStagedRestore`. Each
+   * records `backup-restore-cancel` first (refuse).
+   */
+  async cancelStagedRestore(ctx: ActorContext): Promise<{ scope: RestoreScope; source: string }> {
+    const staged = this.getStagedRestore();
+    if (!staged) throw new Error('No restore is staged');
+    if (staged.scope === 'site') {
+      await this.cancelStagedSiteRestore(ctx);
+    } else {
+      const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
+      if (!databaseManager) throw new Error('DatabaseManager is not available');
+      await databaseManager.cancelStagedRestore(ctx);
+    }
+    return { scope: staged.scope, source: staged.source };
+  }
+
+  /**
+   * Start a restore of a stored backup from Admin → Backup: recorded, then a
+   * fresh backup of the live data and the staging run in the background, and
+   * admins are told when it is staged or why it was not. Nothing changes
+   * until the next restart, which the site never does by itself. Refused
+   * while another is being prepared, and when a restore is already staged
+   * unless `replace` says to replace it.
+   *
+   * - `scope: 'databases'` (the default; #1723, D1): the databases only.
+   *   Refused while a site restore is staged, since that includes them.
+   * - `scope: 'site'` (#1945): a whole-site restore, every manager whose
+   *   restore is staged and the instance .env, all or nothing
+   *   (`stageSiteRestore`), from any stored backup. It replaces a staged
+   *   restore of either kind only with `replace`.
    *
    * @returns the running restore, for a caller (a test) that waits on it.
    */
-  async startRestore(ctx: ActorContext, filename: string, options: { replace?: boolean } = {}): Promise<{ done: Promise<RestoreResults | null> }> {
+  async startRestore(ctx: ActorContext, filename: string, options: { replace?: boolean; scope?: RestoreScope } = {}): Promise<{ done: Promise<RestoreResults | null> }> {
+    const scope: RestoreScope = options.scope ?? 'databases';
+    if (scope !== 'databases' && scope !== 'site') throw new Error(`Unknown restore scope ${String(scope)}`);
     if (this.restoreRunning) throw new Error('A restore is already being prepared; wait for it to finish');
     const backup = await this.findStoredBackup(filename);
     if (!backup) throw new Error(`No backup named ${filename} in the backup directory`);
-    if (backup.databases.length === 0) throw new Error(`Backup ${filename} holds no database to restore`);
-    const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
-    if (!databaseManager) throw new Error('DatabaseManager is not available');
-    this.refuseIfSiteRestoreStaged();
-    const staged = databaseManager.getStagedRestore();
-    if (staged && !options.replace) throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it`);
+    let staged: { source: string; stagedBy: string } | null;
+    if (scope === 'databases') {
+      if (backup.databases.length === 0) throw new Error(`Backup ${filename} holds no database to restore`);
+      const databaseManager = this.engine.getManager<DatabaseManager>('DatabaseManager');
+      if (!databaseManager) throw new Error('DatabaseManager is not available');
+      this.refuseIfSiteRestoreStaged();
+      const manifest = databaseManager.getStagedRestore();
+      staged = manifest ? { source: manifest.source || manifest.backup, stagedBy: manifest.stagedBy } : null;
+    } else {
+      staged = this.getStagedRestore();
+    }
+    if (staged && !options.replace) throw new Error(`A restore from ${staged.source} is already staged; cancel it or replace it`);
     if (!staged && options.replace) throw new Error('There is no staged restore to replace');
 
     // Recorded before anything happens (refuse): a restore that cannot be recorded does not start.
@@ -1365,13 +1443,21 @@ class BackupManager extends BaseManager {
       severity: 'high',
       resource: backup.filename,
       resourceType: 'backup',
-      metadata: { ...who.metadata, databases: backup.databases, ...(staged ? { replaces: staged.source || staged.backup, replacesStagedBy: staged.stagedBy } : {}) }
+      metadata: {
+        ...who.metadata, scope, databases: backup.databases,
+        ...(scope === 'site' ? { parts: backup.parts } : {}),
+        ...(staged ? { replaces: staged.source, replacesStagedBy: staged.stagedBy } : {})
+      }
     });
 
-    const done = this.restoreFromFile(ctx, backup.path, { managerFilter: ['DatabaseManager'], replaceStaged: Boolean(staged) })
+    // A site restore names only the managers whose restore is staged, so
+    // nothing is ever restored live from here (#1945).
+    const managerFilter = scope === 'site' ? this.stagedManagerNames() : ['DatabaseManager'];
+    const unchanged = scope === 'site' ? "The site's data stays as it is." : 'The current databases stay as they are.';
+    const done = this.restoreFromFile(ctx, backup.path, { managerFilter, replaceStaged: Boolean(staged) })
       .catch(async (err: Error) => {
         logger.error(`❌ Restore of ${filename} was not staged:`, err);
-        await this.notifyAdmins('error', `Restore of ${filename} was not staged`, `${err.message}. The current databases stay as they are.`);
+        await this.notifyAdmins('error', `Restore of ${filename} was not staged`, `${err.message}. ${unchanged}`);
         return null;
       })
       .finally(() => { this.restoreRunning = null; });
