@@ -14,6 +14,8 @@ import RoleManager from '../RoleManager';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
+import { readFileSync } from 'fs';
+import { bindAuditEvents, AUDIT_EVENTS_KEY, PERMISSION_DEFINITIONS_KEY } from '../../utils/auditRegistry';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
 
@@ -154,6 +156,25 @@ describe('#1204 user-delete is critical', () => {
     await expect(um.deleteUser('alice', ADMIN)).rejects.toThrow(/audit disk full/);
     expect(users.has('alice')).toBe(true);
     expect(provider.deleteUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('#1916 audit records keep full email addresses', () => {
+  // The domain-only rule is for the server log; an audit record keeps the
+  // address an event carries (operator, 2026-10-20). search-user ships off, so
+  // it is switched on here, over the shipped configuration.
+  const shipped = JSON.parse(readFileSync('./config/app-default-config.json', 'utf8')) as Record<string, Record<string, unknown>>;
+  const bindShipped = (overrides: Record<string, unknown> = {}): void => bindAuditEvents((key, d) =>
+    key === AUDIT_EVENTS_KEY ? { ...shipped[key], ...overrides } : key === PERMISSION_DEFINITIONS_KEY ? shipped[key] : d);
+  afterEach(() => bindShipped());
+
+  test('a search by an email address is recorded with the full address', async () => {
+    bindShipped({ 'search-user': { enabled: true } });
+    const { um, sink, users } = makeManager();
+    users.set('bob', { username: 'bob', displayName: 'Bob', email: 'bob.private@example.org', isActive: true });
+    (um as unknown as { getUsers: () => Promise<unknown[]> }).getUsers = async () => [...users.values()];
+    await um.searchUsers('bob.private@example.org', {}, ADMIN);
+    expect(sink).toEqual([expect.objectContaining({ eventType: 'search-user', metadata: expect.objectContaining({ query: 'bob.private@example.org' }) })]);
   });
 });
 

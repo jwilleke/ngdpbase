@@ -5,6 +5,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
+import { emailDomain } from '../utils/emailForLog.js';
 import { isReservedUsername } from '../utils/username.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
@@ -17,8 +18,12 @@ import type OrganizationManager from './OrganizationManager.js';
 import type RoleManager from './RoleManager.js';
 import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
+import type SessionStatsManager from './SessionStatsManager.js';
+import { endSession, type SessionEndReason } from '../utils/sessionEnd.js';
+import { checkSessionAccount } from '../utils/sessionAccount.js';
 import type ValidationManager from './ValidationManager.js';
-import type { Person, PersonUpdate } from '../types/Person.js';
+import type { PersonUpdate } from '../types/Person.js';
+import type { JobContext } from '../context/JobContext.js';
 import type { ShareGrant } from '../types/Share.js';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
@@ -458,7 +463,9 @@ class UserManager extends BaseManager {
     if (shared.length === 0) return;
     const detail = shared.map(([email, names]) => `${email}: ${names.join(', ')}`).join('; ');
     const reason = `${shared.length} email address(es) are shared by more than one account — give each account its own (Admin → Users). Sign-in by email refuses them until then (#1748)`;
-    logger.error(`👤 ${reason}. ${detail}`);
+    // #1916: the log names each address's domain only; the notice names the address.
+    const logDetail = shared.map(([email, names]) => `an address at ${emailDomain(email)}: ${names.join(', ')}`).join('; ');
+    logger.error(`👤 ${reason}. ${logDetail}`);
     if (this.markDegraded(reason)) {
       try {
         await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
@@ -709,7 +716,7 @@ class UserManager extends BaseManager {
       metadata: { bootstrap: true }
     });
 
-    await this.syncPersonOnCreate(adminUser);
+    await this.syncPersonOnCreate(adminUser, systemContext(this.engine, 'create the bootstrap admin account at first boot'));
     await this.roleManager().applyRoleDiff(adminUser.username, [], this.withAccountRoles(['admin']));
 
     // Never log the value. `2b48d838` removed the equivalent echo from the
@@ -997,8 +1004,9 @@ class UserManager extends BaseManager {
 
     await this.writeAccounts(this.provider.createUser(user));
 
-    await this.syncPersonOnCreate(user);
+    await this.syncPersonOnCreate(user, ctx);
     await this.roleManager().applyRoleDiff(username, [], roles);
+    await this.offerContactLink(username, ctx);
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
 
@@ -1129,7 +1137,7 @@ class UserManager extends BaseManager {
     // #1765: turning an account off goes through the one deactivation step.
     if (disabling) await this.closeAccess(username, 'disable', ctx);
 
-    await this.syncPersonOnUpdate(username, updates);
+    await this.syncPersonOnUpdate(username, updates, ctx);
     if (incomingRoles) {
       await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles);
     }
@@ -1206,7 +1214,7 @@ class UserManager extends BaseManager {
     // Order matters: clear role memberships while the Person record still
     // exists, then delete the Person.
     await this.roleManager().removeAllMemberships(username);
-    await this.syncPersonOnDelete(username);
+    await this.syncPersonOnDelete(username, ctx);
 
     logger.info(`👤 Deleted user: ${username}`);
     return true;
@@ -1353,35 +1361,56 @@ class UserManager extends BaseManager {
 
 
   /**
+   * The account lifecycle reaches PersonManager's door under a system context
+   * (#1930): keeping an account's person in step with the account is core's
+   * own bookkeeping, not the caller's contact management, so it never depends
+   * on the caller holding `contact-manage`. The reason names the account and
+   * who changed it, so the record says why.
+   */
+  private personSyncContext(what: string, username: string, ctx: ActorContext): JobContext {
+    return systemContext(this.engine, `account lifecycle: ${what} the person for account ${username} (account changed by ${actorOf(ctx).user})`);
+  }
+
+  /**
    * Persist a Person record paired with a newly-created User. The install's
    * anchor org (when configured) is referenced via `memberOf`; without it
    * the Person is written without an org link. Failures are logged, not
    * thrown — auth must still succeed if Person storage is degraded.
    */
-  private async syncPersonOnCreate(user: User): Promise<void> {
+  private async syncPersonOnCreate(user: User, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
       const installOrg = await this.engine
         .getManager<OrganizationManager>('OrganizationManager')
         ?.getInstallOrg();
-      const person: Person = {
-        '@context': 'https://schema.org',
-        '@type': 'Person',
-        '@id': `urn:uuid:${crypto.randomUUID()}`,
+      await personManager.create(this.personSyncContext('create', user.username, ctx), {
         identifier: user.username,
         ...(user.displayName ? { name: user.displayName } : {}),
         ...(user.email ? { email: user.email } : {}),
         ...(installOrg ? { memberOf: { '@id': installOrg['@id'] } } : {})
-      };
-      await personManager.create(person);
+      });
       logger.info(`📋 Created Person record for ${user.username}`);
     } catch (error) {
       logger.error(`❌ Failed to create Person record for ${user.username}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private async syncPersonOnUpdate(username: string, updates: UserUpdateInput): Promise<void> {
+  /**
+   * At sign-up, offer the new account a person with no account who has the
+   * same email (#1930): PersonManager mails an "Is this you?" link, and joins
+   * them only when the account confirms. Skipped when email is off. Never
+   * fails the account write.
+   */
+  private async offerContactLink(username: string, ctx: ActorContext): Promise<void> {
+    try {
+      await this.engine.getManager<PersonManager>('PersonManager')?.offerSignUpLink(ctx, username);
+    } catch (error) {
+      logger.warn(`👤 Could not offer ${username} a contact record: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async syncPersonOnUpdate(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
@@ -1391,19 +1420,19 @@ class UserManager extends BaseManager {
       if (updates.displayName !== undefined) patch.name = updates.displayName;
       if (updates.email !== undefined) patch.email = updates.email;
       if (Object.keys(patch).length === 0) return;
-      await personManager.update(person['@id'], patch);
+      await personManager.update(this.personSyncContext('update', username, ctx), person['@id'], patch);
     } catch (error) {
       logger.error(`❌ Failed to update Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private async syncPersonOnDelete(username: string): Promise<void> {
+  private async syncPersonOnDelete(username: string, ctx: ActorContext): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
       const person = await personManager.getByIdentifier(username);
       if (!person) return;
-      await personManager.delete(person['@id']);
+      await personManager.delete(this.personSyncContext('delete', username, ctx), person['@id']);
     } catch (error) {
       logger.error(`❌ Failed to delete Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1443,18 +1472,46 @@ class UserManager extends BaseManager {
     await this.provider.deleteSession(sessionId);
   }
 
-  async deleteUserSessions(username: string): Promise<void> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
+  /**
+   * End every signed-in session of `username` in the live session store
+   * (#1937): the account was deleted or turned off (`AuthManager.closeAccess`).
+   * Each goes through `endSession` (its keys dropped, `authentication-logout`
+   * recorded with the reason) and is removed from the store. Returns how many.
+   * The provider's own session list was cleared here before; nothing writes it,
+   * and the store express-session reads was never touched.
+   */
+  async deleteUserSessions(username: string, reason: 'account-deleted' | 'account-disabled', from: { ipAddress?: string } = {}): Promise<number> {
+    return this.endStoredSessions(session => Promise.resolve(session.username === username ? reason : null), from);
+  }
 
-    const allSessions = await this.provider.getAllSessions();
+  /**
+   * End every signed-in session in the store that no longer belongs to its
+   * account (#1937): the account is gone, turned off, another account of the
+   * same name, or its password changed since (`checkSessionAccount`, the
+   * per-request rule). Run once at startup, so sessions left from before the
+   * fix, or from a close the store missed, do not wait for their next request.
+   */
+  async endStaleSessions(): Promise<number> {
+    return this.endStoredSessions(async session => checkSessionAccount(session, await this.getUser(session.username)).end, {});
+  }
 
-    for (const [sessionId, session] of allSessions.entries()) {
-      if (session.username === username) {
-        await this.provider.deleteSession(sessionId);
-      }
+  /** End and remove each signed-in session `which` names a reason for; none without a session store. */
+  private async endStoredSessions(
+    which: (session: Record<string, unknown> & { username: string }) => Promise<SessionEndReason | null>,
+    from: { ipAddress?: string }
+  ): Promise<number> {
+    const store = this.engine.getManager<SessionStatsManager>('SessionStatsManager');
+    if (!store?.hasStore()) return 0;
+    let ended = 0;
+    for (const { sid, session } of await store.sessions()) {
+      if (typeof session.username !== 'string' || session.username === '') continue;
+      const reason = await which(session as Record<string, unknown> & { username: string });
+      if (!reason) continue;
+      endSession(this.engine, session, reason, from);
+      await store.destroy(sid);
+      ended++;
     }
+    return ended;
   }
 
   async backup(): Promise<BackupData> {

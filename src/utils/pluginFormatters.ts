@@ -880,10 +880,15 @@ export async function resolveManagerFetch(
   return { status: 'ok', text: String(call.value) };
 }
 
-/** One choice in a form's dropdown: the value submitted, and the text shown. */
+/**
+ * One choice in a form's dropdown or checklist: the value submitted, the text
+ * shown, and optionally what it is worth in whole minor units (cents), which a
+ * checklist adds up as boxes are ticked (#1904).
+ */
 export interface FormOption {
   value: string;
   label: string;
+  amount?: number;
 }
 
 /** Outcome of resolveManagerOptions; the statuses mean what they mean for resolveManagerFetch. */
@@ -921,9 +926,11 @@ function toFormOptionList(value: unknown): FormOption[] {
     if (typeof item === 'string') {
       options.push({ value: item, label: item });
     } else if (item && typeof item === 'object') {
-      const { value: v, label } = item as { value?: unknown; label?: unknown };
+      const { value: v, label, amount } = item as { value?: unknown; label?: unknown; amount?: unknown };
       if ((typeof v === 'string' || typeof v === 'number') && String(v) !== '') {
-        options.push({ value: String(v), label: typeof label === 'string' && label !== '' ? label : String(v) });
+        const option: FormOption = { value: String(v), label: typeof label === 'string' && label !== '' ? label : String(v) };
+        if (typeof amount === 'number' && Number.isSafeInteger(amount)) option.amount = amount;
+        options.push(option);
       }
     }
   }

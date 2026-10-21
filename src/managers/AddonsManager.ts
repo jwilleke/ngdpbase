@@ -56,12 +56,6 @@ import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
 
 /**
- * #1883: what visitors see while a site-critical add-on that did not load
- * holds the site in maintenance mode. Empty leaves only the page's heading.
- */
-export const SITE_CRITICAL_PUBLIC_MESSAGE_KEY = 'ngdpbase.managers.addons-manager.site-critical.public-message';
-
-/**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
  * `UserManager.getUser()` returns at runtime — `User` minus the password
  * hash — so addons can read preferences/roles/email without coupling
@@ -884,9 +878,9 @@ class AddonsManager extends BaseManager {
    * not load, whatever the reason. Admins get a notification at the most
    * severe level naming it and the reason, which says how to fix it where the
    * reason does. A site-critical add-on (`ngdpbase.addons.<slug>.site-critical`)
-   * also holds the whole site in maintenance mode through core's survivable
-   * path (#1152): visitors see only the configured public message, with no
-   * details, and administrators can still sign in and reach /admin. Once per
+   * also holds the whole site in maintenance mode through the one door
+   * (`engine.maintenance`, #1906): visitors see only the site's maintenance
+   * message, with no details, and administrators can still sign in and reach /admin. Once per
    * add-on per start. Nothing is opened in its place.
    */
   private recordLoadFailure(slug: string, reason: string): void {
@@ -895,10 +889,8 @@ class AddonsManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const siteCritical = configManager?.isAddonSiteCritical?.(slug) === true;
     if (siteCritical) {
-      const publicMessage = configManager?.getProperty(SITE_CRITICAL_PUBLIC_MESSAGE_KEY, '');
-      this.engine.blockConfiguration(`Site-critical add-on '${slug}' did not load: ${reason}`, {
-        publicMessage: typeof publicMessage === 'string' ? publicMessage : ''
-      });
+      // #1906: no message of its own, so visitors see the site's maintenance message.
+      this.engine.maintenance.enter(`Site-critical add-on '${slug}' did not load: ${reason}`);
     }
     this.notifyAdmins('error', `Critical: add-on ${slug} did not load`, `${slug} did not load: ${reason}. ` + (siteCritical
       ? `It is site-critical (ngdpbase.addons.${slug}.site-critical), so the whole site is in maintenance mode: visitors see a short notice with no details, and administrators can still sign in and use /admin. Fix the cause and restart.`

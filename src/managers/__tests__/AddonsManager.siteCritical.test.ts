@@ -5,8 +5,8 @@
  * - Every one sends admins a notification at the most severe level, naming the
  *   add-on and the reason.
  * - A site-critical one (`ngdpbase.addons.<slug>.site-critical: true`) also
- *   holds the whole site in maintenance mode through engine.blockConfiguration
- *   (#1152), with a public message that carries no details.
+ *   holds the whole site in maintenance mode through the one door,
+ *   engine.maintenance (#1906), and visitors get a message with no details.
  *
  * Real add-on folders on disk, the real configuration merge, the real Engine
  * blocking list, the real DatabaseManager on a temporary SQLite file; only the
@@ -15,8 +15,7 @@
  * Sabotage (each done once, each turned these red): drop recordLoadFailure from
  * refuseAddon → every refused/import/no-register case; drop it from loadAddon's
  * catch → register-throws, migration and corrupt-database cases; drop the
- * blockConfiguration call → every "site-critical" case; drop the public
- * message from it → "visitors see none of the details"; read the add-on's value
+ * maintenance.enter call → every "site-critical" case; read the add-on's value
  * before the site's in addonSiteCriticalLayer → the site-override tests; accept
  * a non-boolean in addonSiteCriticalLayer → the invalid-value tests; drop the
  * prefix filter in notifySystemCategoryProblems → "declared once".
@@ -29,7 +28,7 @@ import path from 'node:path';
 import Engine from '../../core/Engine';
 import DatabaseManager, { DATABASE_KEY_ENV } from '../DatabaseManager';
 import { mergeConfigWithAddons } from '../../utils/addonConfigLayer';
-import { blockedForVisitors, gateDecision } from '../../utils/startupState';
+import { gateDecision } from '../../utils/startupState';
 
 const PUBLIC_MESSAGE = "We're having temporary issues. Please try again later.";
 const SLUG = 'phr';
@@ -68,6 +67,11 @@ interface Booted {
   engine: Engine;
   notifications: Array<{ level: string; title: string; message: string }>;
   status: { enabled: boolean; loaded: boolean; error?: string | null } | undefined;
+}
+
+/** The stand-in ConfigurationManager the boot registered. */
+function configOf(engine: Engine): { getProperty(k: string, d: unknown): unknown; getCustomProperty(k: string): unknown } {
+  return engine.getManager('ConfigurationManager') as never;
 }
 
 /** Boot the real AddonsManager against the real merge of these add-ons and this site file. */
@@ -202,11 +206,12 @@ describe('#1883 a site-critical add-on that does not load puts the site in maint
 
     expect(status).toMatchObject({ enabled: true, loaded: false });
     expect(status?.error).toMatch(kind.why);
-    const blocked = engine.getBlockingConditions();
+    const blocked = engine.maintenance.reasons();
     expect(blocked).toHaveLength(1);
     expect(blocked[0]).toMatch(/^Site-critical add-on 'phr' did not load: /);
     expect(blocked[0]).toMatch(kind.why);
-    expect(engine.getPublicBlockingMessage()).toBe(PUBLIC_MESSAGE);
+    // The site set the retired #1883 key and not the maintenance message, so it still speaks (#1906).
+    expect(engine.maintenance.visitorView(configOf(engine))?.message).toBe(PUBLIC_MESSAGE);
 
     const critical = notifications.filter((n) => n.level === 'error');
     expect(critical).toHaveLength(1);
@@ -223,8 +228,8 @@ describe('#1883 any other add-on that does not load is switched off, the site st
     const { engine, notifications, status } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true }, { database: kind.database });
 
     expect(status).toMatchObject({ enabled: true, loaded: false });
-    expect(engine.getBlockingConditions()).toEqual([]);
-    expect(engine.getPublicBlockingMessage()).toBeNull();
+    expect(engine.maintenance.reasons()).toEqual([]);
+    expect(engine.maintenance.isOn()).toBe(false);
     const critical = notifications.filter((n) => n.level === 'error');
     expect(critical).toHaveLength(1);
     expect(critical[0]).toMatchObject({ title: 'Critical: add-on phr did not load' });
@@ -241,7 +246,7 @@ describe('#1883 any other add-on that does not load is switched off, the site st
   test('a turned-off add-on that would fail is not reported: it was never meant to load', async () => {
     writeAddon(SLUG, { defaults: { [CRITICAL]: true }, index: "throw new Error('broken');\n" });
     const { engine, notifications } = await boot({});
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
     expect(notifications.filter((n) => n.level === 'error')).toEqual([]);
   });
 
@@ -249,13 +254,13 @@ describe('#1883 any other add-on that does not load is switched off, the site st
     writeAddon(SLUG, { defaults: { [CRITICAL]: true } });
     const { engine, notifications, status } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true });
     expect(status).toMatchObject({ loaded: true, error: null });
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
     expect(notifications).toEqual([]);
   });
 
   test('an enabled site-critical add-on that was never found (its install failed) blocks too', async () => {
     const { engine, notifications } = await boot({ 'ngdpbase.addons.ledger.enabled': true, 'ngdpbase.addons.ledger.site-critical': true });
-    expect(engine.getBlockingConditions()).toEqual([expect.stringMatching(/^Site-critical add-on 'ledger' did not load: it is enabled but was not found/)]);
+    expect(engine.maintenance.reasons()).toEqual([expect.stringMatching(/^Site-critical add-on 'ledger' did not load: it is enabled but was not found/)]);
     expect(notifications.map((n) => n.title)).toEqual(['Critical: add-on ledger did not load']);
   });
 });
@@ -265,7 +270,7 @@ describe('#1883 the site-critical value', () => {
     writeAddon(SLUG, { defaults: { [CRITICAL]: value }, index: "throw new Error('a refused add-on was imported');\n" });
     const { engine, notifications, status } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true });
     expect(status?.error).toMatch(/ngdpbase\.addons\.phr\.site-critical must be true or false, got .* in its config\/default-config\.json; it is treated as true/);
-    expect(engine.getBlockingConditions()).toEqual([expect.stringMatching(/^Site-critical add-on 'phr' did not load: .*site-critical must be true or false/)]);
+    expect(engine.maintenance.reasons()).toEqual([expect.stringMatching(/^Site-critical add-on 'phr' did not load: .*site-critical must be true or false/)]);
     expect(notifications.filter((n) => n.level === 'error')).toHaveLength(1);
   });
 
@@ -273,19 +278,19 @@ describe('#1883 the site-critical value', () => {
     writeAddon(SLUG, { defaults: { [CRITICAL]: false } });
     const { engine, status } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true, [CRITICAL]: 'yes' });
     expect(status?.error).toMatch(/got "yes" in app-custom-config\.json/);
-    expect(engine.getBlockingConditions()).toHaveLength(1);
+    expect(engine.maintenance.reasons()).toHaveLength(1);
   });
 
   test('the site can make an add-on site-critical', async () => {
     writeAddon(SLUG, { index: `export default { name: '${SLUG}', register: async () => { throw new Error('down'); } };\n` });
     const { engine } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true, [CRITICAL]: true });
-    expect(engine.getBlockingConditions()).toEqual([expect.stringMatching(/^Site-critical add-on 'phr' did not load: down/)]);
+    expect(engine.maintenance.reasons()).toEqual([expect.stringMatching(/^Site-critical add-on 'phr' did not load: down/)]);
   });
 
   test('the site wins over the add-on: it can turn site-critical off', async () => {
     writeAddon(SLUG, { defaults: { [CRITICAL]: true }, index: `export default { name: '${SLUG}', register: async () => { throw new Error('down'); } };\n` });
     const { engine, notifications } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true, [CRITICAL]: false });
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
     expect(notifications.filter((n) => n.level === 'error')).toHaveLength(1);
   });
 
@@ -293,45 +298,33 @@ describe('#1883 the site-critical value', () => {
     writeAddon('other', { defaults: { [CRITICAL]: true } });
     writeAddon(SLUG, { index: `export default { name: '${SLUG}', register: async () => { throw new Error('down'); } };\n` });
     const { engine } = await boot({ [`ngdpbase.addons.${SLUG}.enabled`]: true, 'ngdpbase.addons.other.enabled': true });
-    expect(engine.getBlockingConditions()).toEqual([]);
+    expect(engine.maintenance.reasons()).toEqual([]);
   });
 });
 
 describe('#1883 what visitors and administrators see while blocked', () => {
+  // #1906: visitors get the maintenance message, never a reason, whichever
+  // manager entered it; the reasons stay with the administrators.
+  const cm = { getProperty: (_k: string, d: unknown) => d, getCustomProperty: () => null };
+
   test('visitors see none of the details: neither the page nor /health/readiness', () => {
-    const reasons = ["Site-critical add-on 'phr' did not load: Add-on 'phr' declares database 'phr' with encrypt \"required\", but NGDPBASE_DATABASE_KEY is not set"];
-    const seen = blockedForVisitors(reasons, PUBLIC_MESSAGE);
-    expect(seen).toEqual({ message: PUBLIC_MESSAGE, detail: [PUBLIC_MESSAGE] });
+    const engine = new Engine();
+    engine.maintenance.enter("Site-critical add-on 'phr' did not load: Add-on 'phr' declares database 'phr' with encrypt \"required\", but NGDPBASE_DATABASE_KEY is not set");
+    const seen = engine.maintenance.visitorView(cm);
     expect(JSON.stringify(seen)).not.toMatch(/phr|NGDPBASE|database/);
+    expect(engine.maintenance.reasons()).toEqual([expect.stringMatching(/^Site-critical add-on 'phr'/)]);
   });
 
-  test('one private reason hides every reason, so no detail stands beside the notice', () => {
-    const seen = blockedForVisitors(['3 outbound range(s) do not parse as CIDR', "Site-critical add-on 'phr' did not load: x"], PUBLIC_MESSAGE);
-    expect(JSON.stringify(seen)).not.toMatch(/CIDR|phr/);
-  });
-
-  test('without a private reason the #1152 page is unchanged and names every reason', () => {
-    const seen = blockedForVisitors(['3 outbound range(s) do not parse as CIDR'], null);
-    expect(seen.message).toMatch(/configuration could not be used:\n• 3 outbound range/);
-    expect(seen.detail).toEqual(['3 outbound range(s) do not parse as CIDR']);
-  });
-
-  test('an empty configured message still hides the details', () => {
-    expect(blockedForVisitors(['secret detail'], '')).toEqual({ message: '', detail: [''] });
+  test('no reason stands beside the notice, a configuration reason included', () => {
+    const engine = new Engine();
+    engine.maintenance.enter('3 outbound range(s) do not parse as CIDR');
+    engine.maintenance.enter("Site-critical add-on 'phr' did not load: x");
+    expect(JSON.stringify(engine.maintenance.visitorView(cm))).not.toMatch(/CIDR|phr/);
   });
 
   test('administrators can still reach /admin, /login and /logout; everything else is closed', () => {
     // The add-on blocks after the engine finished, so the gate is the #1152 one.
     for (const p of ['/admin', '/admin/addons', '/login', '/logout']) expect(gateDecision(false, true, p)).toBe('serve');
     for (const p of ['/', '/view/Welcome', '/api/phr/records', '/adminish']) expect(gateDecision(false, true, p)).toBe('block');
-  });
-
-  test('the Engine keeps reasons for administrators and the public message apart', () => {
-    const engine = new Engine();
-    engine.blockConfiguration('a public reason');
-    expect(engine.getPublicBlockingMessage()).toBeNull();
-    engine.blockConfiguration('a private reason', { publicMessage: PUBLIC_MESSAGE });
-    expect(engine.getBlockingConditions()).toEqual(['a public reason', 'a private reason']);
-    expect(engine.getPublicBlockingMessage()).toBe(PUBLIC_MESSAGE);
   });
 });

@@ -22,6 +22,10 @@ describe('PersonManager (#617)', () => {
     getUser: vi.fn(async (username: string) => users[username])
   });
 
+  // #1930: the door takes a context and asks the PDP; these tests are about storage, so it permits.
+  const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
+  const PERMIT_ALL = { decide: vi.fn(async () => ({ permit: true, applicable: true, reason: 'test' })) };
+
   const makeEngine = (
     configManager: ReturnType<typeof makeConfigManager>,
     userManager: ReturnType<typeof makeUserManager> | null = null
@@ -29,6 +33,7 @@ describe('PersonManager (#617)', () => {
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'UserManager') return userManager;
+      if (name === 'PolicyDecisionPoint') return PERMIT_ALL;
       return null;
     })
   });
@@ -56,29 +61,20 @@ describe('PersonManager (#617)', () => {
     const manager = new PersonManager(engine);
     await manager.initialize();
 
-    const created = await manager.create({
-      '@context': 'https://schema.org',
-      '@type': 'Person',
-      '@id': 'urn:uuid:11111111-1111-1111-1111-111111111111',
-      identifier: 'jane',
-      name: 'Jane Doe',
-      email: 'jane@example.com'
-    });
-    expect(created.identifier).toBe('jane');
+    const created = await manager.create(CTX, { name: 'Jane Doe', email: 'jane@example.com' });
+    const id = created['@id'];
+    expect(id).toMatch(/^urn:uuid:/);
 
-    const fetched = await manager.getById('urn:uuid:11111111-1111-1111-1111-111111111111');
+    const fetched = await manager.getById(id);
     expect(fetched?.email).toBe('jane@example.com');
 
-    const updated = await manager.update(
-      'urn:uuid:11111111-1111-1111-1111-111111111111',
-      { name: 'Jane Renamed' }
-    );
+    const updated = await manager.update(CTX, id, { name: 'Jane Renamed', identifier: 'someone' });
     expect(updated?.name).toBe('Jane Renamed');
-    expect(updated?.identifier).toBe('jane'); // identifier stays immutable
+    expect(updated?.identifier).toBe(created.identifier); // identifier stays immutable
 
-    const removed = await manager.delete('urn:uuid:11111111-1111-1111-1111-111111111111');
+    const removed = await manager.delete(CTX, id);
     expect(removed).toBe(true);
-    expect(await manager.getById('urn:uuid:11111111-1111-1111-1111-111111111111')).toBeNull();
+    expect(await manager.getById(id)).toBeNull();
   });
 
   test('getByUserIdentifier lazy-migrates from a User on first call', async () => {

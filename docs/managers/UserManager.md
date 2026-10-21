@@ -58,7 +58,8 @@ const sessionId = await userManager.createSession('john');
 | `createSession(username, data)` | `string` | Create session, return ID |
 | `getSession(sessionId)` | `Object\|null` | Get session data |
 | `deleteSession(sessionId)` | `void` | Delete session |
-| `deleteUserSessions(username)` | `void` | Delete all user sessions |
+| `deleteUserSessions(username, reason, from?)` | `number` | End every live session of the account in the session store (`account-deleted` / `account-disabled`, through `endSession`), destroy each, return how many (#1937) |
+| `endStaleSessions()` | `number` | At startup: end and destroy every stored session that no longer belongs to its account (`checkSessionAccount`, #1937) |
 
 ## Authorization Methods
 

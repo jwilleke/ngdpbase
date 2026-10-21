@@ -29,6 +29,7 @@ vi.mock('../../http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 import { guardedFetch as guardedFetchImport } from '../../http/guardedFetch.js';
 import { readDoor } from './__fixtures__/pageReadDoor';
 import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
+import { MaintenanceState, ADMIN_SWITCH_REASON } from '../../utils/maintenanceState';
 const guardedFetchMock = vi.mocked(guardedFetchImport);
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -476,6 +477,8 @@ function buildApp() {
 
 describe('WikiRoutes — coverage batch 16', () => {
   let app: express.Application;
+  // #1906: the one maintenance door, real, as the Engine holds it.
+  let maintenance: MaintenanceState;
 
   beforeEach(async () => {
     mockUserContext = { ...adminUser };
@@ -483,6 +486,8 @@ describe('WikiRoutes — coverage batch 16', () => {
     app = buildApp();
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
+    maintenance = new MaintenanceState();
+    (engine as unknown as { maintenance: MaintenanceState }).maintenance = maintenance;
     const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
@@ -868,6 +873,8 @@ describe('WikiRoutes — coverage batch 16', () => {
       mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
         key === 'ngdpbase.features.maintenance.enabled' ? true : def
       );
+      // #1906: the persisted switch is entered again at boot, as app.ts does.
+      maintenance.restoreSwitch(mockConfigManager);
       await request(app)
         .post('/admin/maintenance/toggle')
         .set('x-csrf-token', 'test-csrf-token')
@@ -877,6 +884,23 @@ describe('WikiRoutes — coverage batch 16', () => {
         false,
         expect.objectContaining({ username: 'adminuser' })
       );
+    });
+
+    test('#1906: the toggle goes through the one door — enter, then leave', async () => {
+      const toggle = () => request(app).post('/admin/maintenance/toggle').set('x-csrf-token', 'test-csrf-token').send({});
+      expect((await toggle()).status).toBe(302);
+      expect(maintenance.reasons()).toEqual([ADMIN_SWITCH_REASON]);
+      // Nothing is broken, so administrators may use the whole site.
+      expect(maintenance.isClosedToAdmins()).toBe(false);
+      expect((await toggle()).status).toBe(302);
+      expect(maintenance.isOn()).toBe(false);
+    });
+
+    test('#1906: turning the switch off leaves a failure in place', async () => {
+      maintenance.enter('Audit provider X could not be used');
+      await request(app).post('/admin/maintenance/toggle').set('x-csrf-token', 'test-csrf-token').send({});
+      await request(app).post('/admin/maintenance/toggle').set('x-csrf-token', 'test-csrf-token').send({});
+      expect(maintenance.reasons()).toEqual(['Audit provider X could not be used']);
     });
 
     test('refuses a caller without admin-system', async () => {

@@ -155,7 +155,11 @@ const mockBackupManager = {
   listStoredBackups: vi.fn(),
   isRestoreRunning: vi.fn(),
   findStoredBackup: vi.fn(),
-  startRestore: vi.fn()
+  startRestore: vi.fn(),
+  // #1876
+  backupKeyInfo: vi.fn(),
+  revealBackupKey: vi.fn(),
+  confirmBackupKeySaved: vi.fn()
 };
 
 const mockDatabaseManager = {
@@ -322,6 +326,9 @@ function resetMocks() {
   mockBackupManager.isRestoreRunning.mockReturnValue(false);
   mockBackupManager.findStoredBackup.mockResolvedValue(null);
   mockBackupManager.startRestore.mockResolvedValue({ done: Promise.resolve(null) });
+  mockBackupManager.backupKeyInfo.mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: false });
+  mockBackupManager.revealBackupKey.mockReturnValue('the-backup-key-value');
+  mockBackupManager.confirmBackupKeySaved.mockResolvedValue(undefined);
   mockDatabaseManager.isEnabled.mockReturnValue(true);
   mockDatabaseManager.getStagedRestore.mockReturnValue(null);
   mockDatabaseManager.cancelStagedRestore.mockResolvedValue({ source: 'b.json.gz', backup: '' });
@@ -915,6 +922,35 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
       expect(res.status).toBe(403);
       expect(mockDatabaseManager.cancelStagedRestore).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the backup key (#1876)', () => {
+    test('the page that shows the key needs config-manage; it is never cached', async () => {
+      const res = await request(app).get('/admin/backup/key');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(mockBackupManager.revealBackupKey).toHaveBeenCalled();
+    });
+
+    test('refused without config-manage (or its fresh sign-in): the key is never read', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).get('/admin/backup/key');
+      expect(res.status).not.toBe(200);
+      expect(mockBackupManager.revealBackupKey).not.toHaveBeenCalled();
+    });
+
+    test('confirming it is saved passes the fingerprint and the caller\'s context', async () => {
+      const res = await request(app).post('/admin/backup/key/saved').set('x-csrf-token', 'test-csrf-token').send({ fingerprint: 'abcdef0123456789' });
+      expect(decodeURIComponent(res.headers.location)).toMatch(/success=.*saved off the server/);
+      expect(mockBackupManager.confirmBackupKeySaved).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'abcdef0123456789');
+    });
+
+    test('confirming is refused without config-manage', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).post('/admin/backup/key/saved').set('x-csrf-token', 'test-csrf-token').send({ fingerprint: 'abcdef0123456789' });
+      expect(res.status).toBe(403);
+      expect(mockBackupManager.confirmBackupKeySaved).not.toHaveBeenCalled();
     });
   });
 

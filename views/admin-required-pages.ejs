@@ -201,24 +201,8 @@
                                                 UUID Mismatch
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
-                                        <% } else if (page.status === 'new') { %>
-                                            <span class="badge bg-primary">New</span>
-                                        <% } else if (page.status === 'modified') { %>
-                                            <span class="badge bg-warning text-dark">Modified</span>
-                                            <% if (page.userModified) { %>
-                                            <br><span class="badge bg-secondary mt-1"
-                                                  title="This live page has also been edited in the wiki UI — syncing will overwrite those edits">
-                                                <i class="fas fa-user-edit me-1"></i>User Edited
-                                            </span>
-                                            <% } %>
                                         <% } else { %>
-                                            <% if (page.userModified) { %>
-                                            <span class="badge bg-secondary"
-                                                  title="This live page has been edited in the wiki UI">
-                                                <i class="fas fa-user-edit me-1"></i>User Edited
-                                            </span>
-                                            <% } %>
-                                            <span class="badge bg-success">Current</span>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, userModified: page.userModified } }) %>
                                         <% } %>
                                     </td>
                                     <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
@@ -252,18 +236,7 @@
                                         </button>
                                         <% } %>
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
-                                        <% if (page.userModified) { %>
-                                        <button class="btn btn-sm btn-outline-danger"
-                                                onclick="syncOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', true)"
-                                                title="This page was edited in the wiki UI. Syncing will overwrite those edits with the source version.">
-                                            <i class="fas fa-sync-alt"></i> Force Sync
-                                        </button>
-                                        <% } else { %>
-                                        <button class="btn btn-sm btn-outline-primary"
-                                                onclick="syncOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')">
-                                            <i class="fas fa-sync-alt"></i> Sync
-                                        </button>
-                                        <% } %>
+                                        <%- include('_sync-button', { syncItem: { userModified: page.userModified, id: page.uuid, name: page.title, forceNote: 'The edited version stays in the page history.' } }) %>
                                         <% } %>
                                         <% if (page.userModified || page.titleDrift) { %>
                                         <button class="btn btn-sm btn-outline-warning"
@@ -356,9 +329,7 @@
                     <div>
                         <h5 class="mb-0"><i class="fas fa-puzzle-piece me-2"></i>Addon Pages</h5>
                         <small class="text-muted">Pages shipped with enabled addons —
-                            <span class="badge bg-primary"><%= addonCounts.new %> New</span>
-                            <span class="badge bg-warning text-dark"><%= addonCounts.modified %> Modified</span>
-                            <span class="badge bg-success"><%= addonCounts.current %> Current</span>
+                            <%- include('_sync-counts', { syncCounts: addonCounts }) %>
                         </small>
                     </div>
                     <% if (addonCounts.outdatedSyncable > 0) { %>
@@ -410,22 +381,8 @@
                                         <% if (page.status === 'uuid-mismatch') { %>
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
-                                        <% } else if (page.status === 'new') { %>
-                                            <span class="badge bg-primary">New</span>
-                                        <% } else if (page.status === 'modified') { %>
-                                            <span class="badge bg-warning text-dark">Modified</span>
-                                            <% if (page.userModified) { %>
-                                            <br><span class="badge bg-secondary mt-1">
-                                                <i class="fas fa-user-edit me-1"></i>User Edited
-                                            </span>
-                                            <% } %>
                                         <% } else { %>
-                                            <% if (page.userModified) { %>
-                                            <span class="badge bg-secondary">
-                                                <i class="fas fa-user-edit me-1"></i>User Edited
-                                            </span>
-                                            <% } %>
-                                            <span class="badge bg-success">Current</span>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, userModified: page.userModified } }) %>
                                         <% } %>
                                     </td>
                                     <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
@@ -444,18 +401,7 @@
                                         </button>
                                         <% } %>
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
-                                        <% if (page.userModified) { %>
-                                        <button class="btn btn-sm btn-outline-danger"
-                                                onclick="syncOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', true)"
-                                                title="This page was edited in the wiki UI. Syncing will overwrite those edits.">
-                                            <i class="fas fa-sync-alt"></i> Force Sync
-                                        </button>
-                                        <% } else { %>
-                                        <button class="btn btn-sm btn-outline-primary"
-                                                onclick="syncOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')">
-                                            <i class="fas fa-sync-alt"></i> Sync
-                                        </button>
-                                        <% } %>
+                                        <%- include('_sync-button', { syncItem: { userModified: page.userModified, id: page.uuid, name: page.title, forceNote: 'The edited version stays in the page history.' } }) %>
                                         <% } %>
                                         <% if (page.slug) { %>
                                         <a href="/view/<%= encodeURIComponent(page.slug) %>"
@@ -738,6 +684,15 @@ function getSelectedUuids() {
 async function syncOne(uuid, title, force = false) {
     await doSync([uuid], `Syncing "${title}"…`, force);
 }
+
+// #1918: a row's Sync / Force Sync is the shared _sync-button partial; Force
+// Sync asks first (data-confirm), as on every screen that syncs shipped content.
+document.addEventListener('click', function (e) {
+    const button = e.target.closest('button[data-sync-id]');
+    if (!button) return;
+    if (button.dataset.confirm && !confirm(button.dataset.confirm)) return;
+    void syncOne(button.dataset.syncId, button.dataset.syncName, button.dataset.action === 'force-sync');
+});
 
 async function syncByStatus(status) {
     const uuids = getUuidsByStatus(status);

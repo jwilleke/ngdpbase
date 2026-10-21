@@ -10,6 +10,7 @@
 import UserManager from '../UserManager';
 import { UserCreateError, safeRegistrationMessage } from '../../utils/userCreateError';
 import type { ActorContext } from '../../context/ActorContext';
+import { loggedText } from './__fixtures__/loggedText';
 
 const ACTOR = { username: 'admin', isAuthenticated: true, roles: ['admin'] } as ActorContext;
 
@@ -95,6 +96,18 @@ describe('one email, one account (#1748)', () => {
     expect(state.state).toBe('degraded');
     expect(state.reason).toMatch(/shared by more than one account/);
     expect(notes).toEqual([expect.objectContaining({ level: 'error', title: 'Accounts share an email address' })]);
+  });
+
+  test('the shared-email log line names the domain and the accounts, never the address (#1916); the notice keeps it', async () => {
+    vi.clearAllMocks();
+    const { manager, store, notes } = makeManager();
+    store.set('alice', { username: 'alice', email: 'shared@example.com' });
+    store.set('bob', { username: 'bob', email: 'shared@example.com' });
+    await (manager as unknown as { reportDuplicateEmails(): Promise<void> }).reportDuplicateEmails();
+    const text = loggedText();
+    expect(text).toContain('an address at example.com: alice, bob');
+    expect(text).not.toContain('shared@example.com');
+    expect((notes[0] as unknown as { message: string }).message).toContain('shared@example.com: alice, bob');
   });
 
   test('no shared emails, nothing reported', async () => {

@@ -475,7 +475,9 @@ describe('BasicAttachmentProvider — Slice 5 of #755 (#759)', () => {
         meta?: Record<string, unknown>, user?: unknown, opts?: Record<string, unknown>
       ) => Promise<Record<string, unknown>> }).storeAttachmentInternal(
         Buffer.from('x'),
-        { originalName: 'reupload.pdf', mimeType: mime, size: 1 }
+        { originalName: 'reupload.pdf', mimeType: mime, size: 1 },
+        {},
+        { username: 'alice' }
       );
     };
 

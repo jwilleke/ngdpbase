@@ -106,6 +106,12 @@ class FilePersonProvider implements PersonProvider {
     return person;
   }
 
+  async replace(person: Person): Promise<Person> {
+    const dir = this.requireDir();
+    await this.writeAtomic(path.join(dir, `${uuidFromId(person['@id'])}.json`), person);
+    return person;
+  }
+
   async update(id: string, patch: PersonUpdate): Promise<Person | null> {
     const existing = await this.getById(id);
     if (!existing) return null;

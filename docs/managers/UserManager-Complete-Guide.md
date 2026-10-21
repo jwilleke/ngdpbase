@@ -340,13 +340,19 @@ __Parameters:__
 
 ---
 
-#### `deleteUserSessions(username)`
+#### `deleteUserSessions(username, reason, from?)`
 
-Deletes all sessions for a user.
+Ends every signed-in session of the account in the live session store (#1937): each goes through `endSession` (keys dropped, `authentication-logout` recorded with the reason) and is destroyed. Called by `AuthManager.closeAccess`. Returns how many.
 
 __Parameters:__
 
 - `username` (string) - Username
+- `reason` (`account-deleted` | `account-disabled`) - Why the sessions end
+- `from` (`{ ipAddress? }`) - Where the closing request came from
+
+#### `endStaleSessions()`
+
+Run once at startup: ends and destroys every stored session that no longer belongs to its account (gone, turned off, another account of the same name, or the password changed), by the per-request rule `checkSessionAccount` (#1937).
 
 ---
 

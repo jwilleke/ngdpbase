@@ -1,9 +1,9 @@
 ---
 name: Managers and providers developer guide
 description: How to add a manager or provider — one door per resource, config selects the implementation
-dateModified: 2026-10-10
+dateModified: 2026-10-20
 category: guides
-relatedModules: [BaseManager, BaseProvider]
+relatedModules: [BaseManager, BaseProvider, FileManager]
 ---
 
 # Managers and providers developer guide
@@ -19,6 +19,44 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - A capability that can be left unconfigured must still work (Null, console, or an in-process default). Log the resolved provider at boot.
 - Authorization and audit happen at the manager door, with an `ActorContext`. See [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md).
 - A manager whose data can appear on a page bumps its cache topic after every write, through one write helper at its door (`CacheManager.bump`). See [caching-developer-guide.md](caching-developer-guide.md).
+- A manager that needs the site closed puts it in maintenance mode through the one door, below. It never throws to stop the boot over something an administrator can fix, and never writes its own gate.
+- Server log: domain only; audit keeps addresses. A full email address never reaches the server log: a log line names the address's domain, through `emailDomain()`, and an error that may quote an address goes through `errorForLog()` (`src/utils/emailForLog.ts`). Audit records are not the server log and keep the full address an event carries; never pass them through these helpers (operator, 2026-10-20, [#1916](https://github.com/jwilleke/ngdpbase/issues/1916)). A failed send is logged once, by EmailManager; a caller does not log the error again.
+
+## Maintenance mode has one owner
+
+`MaintenanceState` (`src/utils/maintenanceState.ts`), held by the Engine as `engine.maintenance`, owns maintenance mode: whether the site is in it, the reasons, the visitor message and estimate, and whether administrators may enter ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906), operator 2026-10-19). `engine.blockConfiguration` is retired.
+
+- __Enter:__ `engine.maintenance.enter(reason, { message?, estimatedDuration? })`. The reason is for administrators: write what failed and how to fix it. Pass `message` only when visitors should hear something other than the site's own maintenance message.
+- __Leave:__ `engine.maintenance.leave(reason)`, with the same string, when the reason clears. The site reopens when none is left, without a restart.
+- __Who uses it:__ AuditManager (`refuse-boot`), AddonsManager (a site-critical add-on that did not load), DatabaseManager (the application database cannot be opened), `app.ts` (an unusable TLS file or egress range) and the admin toggle. A new one goes through the same call.
+- __Where the state lives:__ in memory on the Engine, created in its constructor, so a manager can enter it while the others are still initialising. A failure is true for one run, so it is never written into the operator's file. The admin switch is the one reason that survives a restart: the toggle also writes `ngdpbase.features.maintenance.enabled`, and `restoreSwitch` enters it again at boot.
+- __What visitors see:__ the manager's message if it passed one, else `ngdpbase.features.maintenance.message` (any text an administrator sets), else the retired `ngdpbase.managers.addons-manager.site-critical.public-message` when a site set it, else the shipped message; the estimate likewise from `ngdpbase.features.maintenance.estimated-duration`. Never a reason, on the page or in `/health/readiness`.
+- __Who gets in:__ a failure keeps everyone, administrators included, to `/admin`, `/login` and `/logout`, and `/health/readiness` answers 503. The admin switch alone lets administrators with `admin-system` use the whole site, when `ngdpbase.features.maintenance.allow-admins` is true.
+- __What administrators see:__ every reason in the startup log and on the admin dashboard, plus whatever notification the manager sends (the add-on and database failures send a critical one).
+
+## Files have one door
+
+`FileManager` owns files: the file record (`FileRecord`, `src/types/File.ts`), where a file lives (public or a vault), its owner and its system-category, for every type ([#1852](https://github.com/jwilleke/ngdpbase/issues/1852), epic [#1851](https://github.com/jwilleke/ngdpbase/issues/1851), operator 2026-10-20). It is the door and, as later steps land, the only writer of files.
+
+- __Today it reads only__, over AttachmentManager: today's attachments as file records. AttachmentManager still writes them, until FileManager takes the writes over.
+- __Ask it, not around it__: code that needs "the files this person may read" calls `FileManager.list` / `get` / `findByName` with the caller's context. It asks the PDP for `asset-read` and leaves the vault rule to AttachmentManager's vault reads, so neither rule has a second home.
+- __PageManager keeps pages__ and its own index for a long time (decision log, round 2); intake is ImportManager, extended, handing pages to PageManager and files to FileManager.
+- Details and what is built when: [storage developer guide](storage-developer-guide.md#files-one-record-one-door), [FileManager.md](../managers/FileManager.md).
+
+## Contacts have one door
+
+`PersonManager` owns persons and `OrganizationManager` owns organizations: core's contacts, used by every add-on that keeps people (accounting's donors, a club's members) ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930), operator 2026-10-20). An add-on keeps the contact's `@id`, never its own copy.
+
+- __A person may have no account.__ Its identifier is `person:<uuid>`; `isReservedUsername` refuses any username with that prefix, so it can never be an account's. A user is a person with an account: `identifier` is the username, and each account has exactly one person.
+- __The door.__ `create`, `update`, `delete`, `get`, `list` and `search` (name or email) on both managers, plus `OrganizationManager.people`, take the caller's context first and ask the PDP (`src/utils/contactAccess.ts`, the one rule for both): __`contact-read`__ to `list`, `search`, `get` and `people`, and the `/admin/contacts` and `/admin/organizations` views; __`contact-manage`__ to `create`, `update`, `delete` and link (operator, 2026-10-20). As shipped, `contact-read` is held by `admin` and `demo-admin` (`contact-read-access`), `contact-manage` by `admin` alone (`contact-manage-admin`); an add-on grants either to its own roles in its own policy. A refusal throws `ContactRefusedError` with the decision; a route hands it to `enforceDeny` (or `refuse` in core routes).
+- __Every change is recorded__ as `contact-manage`, by the door, with the actor and the fields changed (never their values), and the kind and operation (`person-create`, `organization-update`, `person-link`, …) as the action.
+- __The account lifecycle__ is UserManager's: creating, editing and deleting an account keeps its person in step through the door under a system context (`jobContextFromSystem`, the reason naming the account and who changed it), so a self-registration, which holds no `contact-manage`, still gets its person.
+- __Deleting an account deletes its person__, including one first made as a contact and later joined to the account (operator, 2026-10-20). A record that names a person by `@id` must cope with the person disappearing: keep what it needs to show (the name, say) on its own record as well.
+- __Affiliations live on the person__ (`affiliation: [{ organization, role? }]`, schema.org `affiliation`). `OrganizationManager.people` reads them; the organization stores no copy.
+- __Joining a later sign-up, never a second person.__ At sign-up, when exactly one person with no account has the new account's email and email links are available, PersonManager mails an "Is this you?" link; the new account, signed in, confirms it on `/contacts/link/confirm`. An administrator can also link by hand on `/admin/contacts` (`linkAccount`, which also asks `user-edit`). Either way the existing person keeps its `@id` and takes the username; the account's own person is folded into it, its role memberships move with it (`RoleManager.moveMemberships`), and it is removed.
+- __Values are configuration:__ `ngdpbase.application.persons.search.limit` and `ngdpbase.application.organization.search.limit` (50) when a caller gives no limit, and `ngdpbase.application.persons.link-offer.ttl-minutes` (30) for the sign-up link.
+- `getById` and `getByIdentifier` stay context-free lookups for core's own paths: RoleManager resolves roles through them on every request.
+- The calls an add-on makes are in the [add-ons guide](addons-developer-guide.md#contacts-persons-and-organizations).
 
 ## How to add a manager
 
@@ -54,3 +92,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - [#1109](https://github.com/jwilleke/ngdpbase/issues/1109)
 - [#1167](https://github.com/jwilleke/ngdpbase/issues/1167)
 - [#1136](https://github.com/jwilleke/ngdpbase/issues/1136)
+- [#1852](https://github.com/jwilleke/ngdpbase/issues/1852): FileManager reads only; files are still written through AttachmentManager. Its gaps are in the [storage developer guide](storage-developer-guide.md#known-gaps).
+- [#1916](https://github.com/jwilleke/ngdpbase/issues/1916): EmailManager reports every failed send ([EmailManager](../managers/EmailManager.md#when-a-send-fails)), but the count and the open notice are held in memory, so a restart starts a new notice. Second-factor enrolment shows the transport's error text to the person who asked.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930): contacts. A sign-up link offer is held in memory, so a restart drops it (an administrator then links by hand), and nothing is offered when several persons with no account share the address. A refusal at the door is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves affiliations naming it. `search` reads every record (no index). The JSON-LD export does not yet write `affiliation` as a schema.org `OrganizationRole`. `getByUserIdentifier` (the lazy migration, called by nothing in core) still writes a person without the door.
+- [#1906](https://github.com/jwilleke/ngdpbase/issues/1906): editing `ngdpbase.features.maintenance.enabled` on the configuration screen, rather than with the toggle, takes effect at the next restart. AuditManager and the TLS and egress checks send no notification of their own; their reasons are on the admin dashboard and in the log.

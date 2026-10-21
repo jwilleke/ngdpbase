@@ -358,11 +358,7 @@ export function applyStagedRestore(applicationFile: string, allowed: (live: stri
     return { applied: [], refused: `staged database files with no restore manifest (an interrupted staging): ${leftovers.map((f) => path.basename(f)).join(', ')} — set aside as *.incomplete` };
   }
 
-  const setAside = (reason: string): ApplyOutcome => {
-    for (const f of stray()) move(f, `${f}.incomplete`);
-    move(manifestFile, `${manifestFile}.incomplete`);
-    return { applied: [], refused: reason };
-  };
+  const setAside = (reason: string): ApplyOutcome => setAsideStagedRestore(applicationFile, reason);
 
   let manifest: StagedRestoreManifest;
   try {
@@ -398,6 +394,20 @@ export function applyStagedRestore(applicationFile: string, allowed: (live: stri
   }
   unlinkSync(manifestFile);
   return { applied };
+}
+
+/**
+ * Set a staged restore aside without applying any of it (#1876): every
+ * `*.db.staged` beside the application database and the manifest become
+ * `*.incomplete`. Used when the site restore it belongs to is not applied.
+ */
+export function setAsideStagedRestore(applicationFile: string, reason: string): ApplyOutcome {
+  const manifestFile = manifestPath(applicationFile);
+  const dir = path.dirname(applicationFile);
+  const staged = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.db.staged')).map((f) => path.join(dir, f)) : [];
+  for (const f of staged) move(f, `${f}.incomplete`);
+  if (existsSync(manifestFile)) move(manifestFile, `${manifestFile}.incomplete`);
+  return { applied: [], refused: reason };
 }
 
 /** A rename; a copy and unlink when the two paths are on different devices. */
