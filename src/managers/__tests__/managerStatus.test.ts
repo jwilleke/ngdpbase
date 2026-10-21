@@ -30,6 +30,8 @@ class Probe extends BaseManager {
   goReady(): void { this.markReady(); }
   goDegraded(reason: string, key?: string): void { this.markDegraded(reason, key); }
   goDegradedAndReport(reason: string, key?: string): boolean { return this.markDegraded(reason, key); }
+  goNeedsAttention(reason: string, key?: string): boolean { return this.markNeedsAttention(reason, key); }
+  goFailed(reason: string): void { this.markFailed(reason); }
 }
 
 const engine = () => ({ getManager: () => null }) as never;
@@ -108,5 +110,35 @@ describe('#1155 — only a TRANSITION is an event', () => {
     expect(m.goDegradedAndReport('broken', 'ngdpbase.x')).toBe(true);
     m.goReady();
     expect(m.goDegradedAndReport('broken', 'ngdpbase.x')).toBe(true);
+  });
+});
+
+describe('#1946 — down versus working but needs attention', () => {
+  test('markDegraded declares an outage; markFailed is always one', () => {
+    const m = new Probe(engine());
+    m.goDegraded('the directory is not writable', 'ngdpbase.x');
+    expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage' });
+    m.goFailed('could not open');
+    expect(m.getManagerStatus()).toMatchObject({ state: 'failed', kind: 'outage' });
+  });
+
+  test('markNeedsAttention stays degraded (reported, clearable) but declares attention', () => {
+    const m = new Probe(engine());
+    expect(m.goNeedsAttention('Save the backup key off this server', 'ngdpbase.backup.key-saved-fingerprint')).toBe(true);
+    expect(m.getManagerStatus()).toEqual({ state: 'degraded', kind: 'attention', reason: 'Save the backup key off this server', configKey: 'ngdpbase.backup.key-saved-fingerprint' });
+  });
+
+  test('the same reason changing kind is a transition', () => {
+    const m = new Probe(engine());
+    m.goNeedsAttention('broken');
+    expect(m.goDegradedAndReport('broken')).toBe(true);
+    expect(m.getManagerStatus().kind).toBe('outage');
+  });
+
+  test('ready carries no kind', () => {
+    const m = new Probe(engine());
+    m.goNeedsAttention('x');
+    m.goReady();
+    expect(m.getManagerStatus()).toEqual({ state: 'ready' });
   });
 });

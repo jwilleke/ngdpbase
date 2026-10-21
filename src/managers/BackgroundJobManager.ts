@@ -1384,7 +1384,7 @@ class BackgroundJobManager extends BaseManager {
     } catch { /* the gate below says so */ }
     const replaced = since ? this.readLiveRunsSince(stateDir, since) : [];
     const outcome = applyDirectoryPartAtStart('BackgroundJobManager', stateDir, configManager);
-    if (outcome?.refused) this.markDegraded(`A staged restore of the job state was not applied: ${outcome.refused}`);
+    if (outcome?.refused) this.markNeedsAttention(`A staged restore of the job state was not applied: ${outcome.refused}`);
     if (outcome && !outcome.refused && outcome.applied.length > 0) {
       this.restoredAtStart = true;
       this.runsReplacedAtStart = replaced;

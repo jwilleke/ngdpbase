@@ -1269,7 +1269,7 @@ class AuthManager extends BaseManager {
     this.credentialsFile = file;
     // #1876: a staged site restore puts the backed-up store in place before it is read.
     const restored = applyFilePartAtStart('AuthManager', file, configManager);
-    if (restored?.refused) this.markDegraded(`A staged restore of the credentials store was not applied: ${restored.refused}`, 'ngdpbase.auth.credentials.file');
+    if (restored?.refused) this.markNeedsAttention(`A staged restore of the credentials store was not applied: ${restored.refused}`, 'ngdpbase.auth.credentials.file');
     if (!key) {
       this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
       return;
@@ -2455,7 +2455,7 @@ class AuthManager extends BaseManager {
     const shipped = unreachable.filter(u => !u.operatorSet);
     if (shipped.length > 0) {
       const roles = shipped.map(u => `${u.role} (AAL${u.aal})`).join(', ');
-      this.markDegraded(`${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`, 'ngdpbase.auth.factors');
+      this.markNeedsAttention(`${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`, 'ngdpbase.auth.factors');
     }
     const descriptions = this.unreachableRequiredAal();
     return unreachable.flatMap((u, i) => (u.operatorSet ? [descriptions[i]] : []));

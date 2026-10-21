@@ -48,7 +48,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
+import type { BackupData, DegradedKind, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { ADDON_SLUG, ledgerPrefix, type AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import {
@@ -180,7 +180,7 @@ class DatabaseManager extends BaseManager {
   /** When the restored backup was taken, and where the replaced application database is kept, when a restore was applied at this start (#1876). */
   private replaced: { backup: string; applicationKept: string | null } | null = null;
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
-  private readonly faults = new Map<Fault, string>();
+  private readonly faults = new Map<Fault, { reason: string; kind: DegradedKind }>();
   /** Why the configured application database could not be opened safely (#1892); null otherwise. */
   private unavailable: string | null = null;
 
@@ -243,7 +243,8 @@ class DatabaseManager extends BaseManager {
     const keyProblem = this.backupKeyProblem();
     if (keyProblem) {
       logger.error(`[DatabaseManager] ${keyProblem}`);
-      this.fault('backup-key', keyProblem);
+      // No key: no database is backed up (down). The database key reused: still backed up (attention, #1946).
+      this.fault('backup-key', keyProblem, this.backupKey() ? 'attention' : 'outage');
     }
   }
 
@@ -433,7 +434,7 @@ class DatabaseManager extends BaseManager {
     const backupKey = this.backupKey();
     if (!backupKey) {
       const reason = `${LEFT_OUT_FOR_NO_KEY}no database was backed up. Database backups are always encrypted and are never written without it (#1723)`;
-      this.fault('backup-key', reason);
+      this.fault('backup-key', reason, 'outage');
       throw new Error(reason);
     }
     const key = process.env[DATABASE_KEY_ENV] ?? '';
@@ -441,7 +442,7 @@ class DatabaseManager extends BaseManager {
     if (keyProblem) {
       // D3: still backed up, but as loudly as a missing key.
       logger.error(`[DatabaseManager] ${keyProblem}`);
-      this.fault('backup-key', keyProblem);
+      this.fault('backup-key', keyProblem, 'attention');
       await this.notify('error', 'The backup key is the database key', `${keyProblem}. This backup was still taken.`);
     } else {
       this.clearFault('backup-key');
@@ -723,7 +724,8 @@ class DatabaseManager extends BaseManager {
     if (outcome.refused) {
       const reason = `A staged database restore was NOT applied: ${outcome.refused}. The site started on its current databases (#1723)`;
       logger.error(`[DatabaseManager] ${reason}`);
-      this.fault('restore', reason);
+      // The site runs on its current databases; an admin decides about the restore (#1946).
+      this.fault('restore', reason, 'attention');
       return;
     }
     this.restoredNow = outcome.applied.map((a) => a.name);
@@ -761,15 +763,23 @@ class DatabaseManager extends BaseManager {
   }
 
   /** Degrade for one cause; the dashboard shows every cause still standing. */
-  private fault(cause: Fault, reason: string): void {
-    this.faults.set(cause, reason);
-    this.markDegraded([...this.faults.values()].join('; '));
+  private fault(cause: Fault, reason: string, kind: DegradedKind): void {
+    this.faults.set(cause, { reason, kind });
+    this.markFaults();
   }
 
   private clearFault(cause: Fault): void {
     if (!this.faults.delete(cause)) return;
     if (this.faults.size === 0) this.markReady();
-    else this.markDegraded([...this.faults.values()].join('; '));
+    else this.markFaults();
+  }
+
+  /** Every cause still standing; down when any one of them is (#1946). */
+  private markFaults(): void {
+    const faults = [...this.faults.values()];
+    const reason = faults.map((f) => f.reason).join('; ');
+    if (faults.some((f) => f.kind === 'outage')) this.markDegraded(reason);
+    else this.markNeedsAttention(reason);
   }
 
   private async notify(level: 'success' | 'warning' | 'error', title: string, message: string): Promise<void> {
