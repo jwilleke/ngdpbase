@@ -9,7 +9,7 @@ user-keywords:
   - external links
   - citations
 slug: using-footnotesplugin
-lastModified: '2026-04-23T00:00:00.000Z'
+lastModified: '2026-10-21T00:00:00.000Z'
 author: system
 ---
 # Using FootnotesPlugin
@@ -94,3 +94,19 @@ External markdown links are automatically converted to footnote form by the site
 - If the page has no footnote definitions, the plugin renders: *No footnotes on this page.*
 - The `[^id]` inline references (e.g. `text[^1]`) are rendered by the markdown parser; FootnotesPlugin only renders the definition list.
 - Bare `https://` URLs in `[^id]: url` style definitions are auto-linked.
+
+## Turning footnotes off for a page
+
+A page's frontmatter can turn its Footnotes tab off with `footnotes: false`. The page editor has no field for it: an administrator adds the line with the raw editor (`/admin/edit-raw/` followed by the page name), and ordinary edits keep it. Pages that an add-on ships may already carry it.
+
+```
+---
+title: My Health Records
+footnotes: false
+---
+```
+
+- The Footnotes tab is not shown on that page, and nobody can add, edit or delete a footnote there.
+- Footnotes already on the page are kept. Where the page's own text contains [[{FootnotesPlugin}], they are still listed there, without the Add, Edit and Delete buttons. Footnote references such as `text[^1]` in the page are not changed.
+- An administrator can turn footnotes off for every page of a system category in the site configuration. A page's own `footnotes:` line wins over its category.
+- Other pages are not affected.

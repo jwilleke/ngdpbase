@@ -183,7 +183,7 @@ import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
-import type { PageRef } from '../utils/pageNotes.js';
+import { PageNotesTurnedOffError, type PageNotesKind, type PageRef } from '../utils/pageNotes.js';
 import type NotificationManager from '../managers/NotificationManager.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -2624,6 +2624,16 @@ class WikiRoutes {
     while ((m = TAB_SECTION_RE.exec(templateContent)) !== null) {
       tabs.push({ name: m[1].trim(), content: m[2].trim() });
     }
+    // #1951: a tab that shows the page's comments or footnotes is left out
+    // when that kind is turned off for THIS page. The template is shared by
+    // every page; each page's own rule is asked of the owning manager.
+    const turnedOff = await this.notesTurnedOff(wikiContext);
+    if (turnedOff.size > 0) {
+      const NOTES_PLUGIN_RE = /\[\{\s*(comments|footnotes)(?:plugin)?\b/gi;
+      const shown = tabs.filter(t => ![...t.content.matchAll(NOTES_PLUGIN_RE)]
+        .some(hit => turnedOff.has(hit[1].toLowerCase() as PageNotesKind)));
+      tabs.splice(0, tabs.length, ...shown);
+    }
     if (tabs.length === 0) return '';
 
     const style = (configManager as { getProperty?(k: string, d: unknown): unknown } | null)
@@ -2679,6 +2689,28 @@ ${navItems}
 ${panes}
 </div>
 </div>${persistScript}`;
+  }
+
+  /**
+   * The kinds of page notes turned off for the page being viewed (#1951), as
+   * CommentManager and FootnoteManager decide it from the page's metadata. A
+   * page without a uuid has no notes, so nothing is turned off.
+   */
+  private async notesTurnedOff(wikiContext: WikiContext): Promise<Set<PageNotesKind>> {
+    const off = new Set<PageNotesKind>();
+    const metadata = wikiContext.pageMetadata as Record<string, unknown> | null | undefined;
+    const uuid = metadata?.uuid;
+    if (typeof uuid !== 'string' || !uuid) return off;
+    const page: PageRef = { name: wikiContext.pageName || uuid, uuid };
+    const ctx = wikiContext.userContext ?? ANONYMOUS_SUBJECT;
+    const deciders: Array<[PageNotesKind, { isAllowedOn(p: PageRef, c: ActorContext, m?: Record<string, unknown> | null): Promise<boolean> } | null | undefined]> = [
+      ['comments', this.engine.getManager('CommentManager')],
+      ['footnotes', this.engine.getManager('FootnoteManager')]
+    ];
+    for (const [kind, manager] of deciders) {
+      if (manager && !await manager.isAllowedOn(page, ctx, metadata)) off.add(kind);
+    }
+    return off;
   }
 
   async isRequiredPage(pageName: string, ctx: ActorContext): Promise<boolean> {
@@ -10322,6 +10354,8 @@ ${panes}
       const comment = await commentManager.addComment(page, currentUser, content.trim());
       return res.json({ success: true, comment });
     } catch (err: unknown) {
+      // #1951: the manager refused — that kind is turned off for this page.
+      if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
       logger.error('Error adding comment:', err);
       return res.status(500).json({ success: false, error: 'Failed to add comment' });
     }
@@ -10748,6 +10782,8 @@ ${panes}
       await commentManager.deleteComment(page, commentId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
+      // #1951: the manager refused — that kind is turned off for this page.
+      if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
       logger.error('Error deleting comment:', err);
       return res.status(500).json({ success: false, error: 'Failed to delete comment' });
     }
@@ -10818,6 +10854,10 @@ ${panes}
       // #1839: only a page this reader may read, found by its name.
       const page = await this.notesPage(req, res, pageUuid, 'html');
       if (!page) return;
+      // #1951: comments turned off for this page are kept, and hidden.
+      if (!await commentManager.isAllowedOn(page, req.userContext ?? ANONYMOUS_SUBJECT)) {
+        return res.status(404).type('text/html').send('<p class="no-comments"><em>Comments are turned off for this page.</em></p>');
+      }
       const comments = await commentManager.getComments(page, req.userContext ?? ANONYMOUS_SUBJECT);
       // #1198: the affordances mirror the routes' own gates — comment-create
       // to add, admin-system to delete anyone's — asked of policy, not read
@@ -10899,6 +10939,8 @@ ${panes}
       );
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
+      // #1951: the manager refused — that kind is turned off for this page.
+      if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
       logger.error('Error adding footnote:', err);
       // #709: surface the underlying reason so the client dialog shows
       // something actionable instead of an opaque "Failed to add footnote".
@@ -10933,6 +10975,8 @@ ${panes}
       if (!footnote) return res.status(404).json({ success: false, error: 'Footnote not found' });
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
+      // #1951: the manager refused — that kind is turned off for this page.
+      if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
       logger.error('Error updating footnote:', err);
       // #709 (same family): surface the underlying reason.
       const reason = err instanceof Error ? err.message : String(err);
@@ -10969,6 +11013,8 @@ ${panes}
       await footnoteManager.deleteFootnote(page, footnoteId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
+      // #1951: the manager refused — that kind is turned off for this page.
+      if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
       logger.error('Error deleting footnote:', err);
       // #709 (same family): surface the underlying reason.
       const reason = err instanceof Error ? err.message : String(err);

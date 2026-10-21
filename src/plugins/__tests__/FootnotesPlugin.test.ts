@@ -32,6 +32,8 @@ const makeEngine = (overrides: Record<string, unknown> = {}) => ({
 
 const makeFootnoteManager = (footnotes: unknown[] = []) => ({
   isEnabled: () => true,
+  // #1951: footnotes are on for the page unless a test turns them off.
+  isAllowedOn: vi.fn().mockResolvedValue(true),
   getFootnotes: vi.fn().mockResolvedValue(footnotes)
 });
 
@@ -234,6 +236,26 @@ describe('FootnotesPlugin', () => {
       const result = await FootnotesPlugin.execute(context, {});
       expect(result).toContain('<script>');
       expect(result).toContain('uuid-999');
+    });
+  });
+
+  // #1951: footnotes turned off for the page stay readable where the page's
+  // own content lists them, without the controls the manager would refuse.
+  describe('execute() — a page whose footnotes are off (#1951)', () => {
+    test('lists the kept footnotes, with no add form and no edit or delete buttons', async () => {
+      const fm = makeFootnoteManager([{ id: '1', display: 'Kept', url: 'https://example.com', note: '', createdBy: 'alice' }]);
+      fm.isAllowedOn.mockResolvedValue(false);
+      const context = {
+        engine: makeEngine({ FootnoteManager: fm }),
+        pageName: 'TestPage',
+        pageMetadata: { uuid: 'abc-123', footnotes: false },
+        userContext: { isAuthenticated: true, username: 'alice', roles: ['admin'] }
+      };
+      const result = await FootnotesPlugin.execute(context, {});
+      expect(result).toContain('Kept');
+      expect(result).not.toContain('footnote-add-form');
+      expect(result).not.toContain('footnote-edit-btn');
+      expect(result).not.toContain('footnote-delete-btn');
     });
   });
 

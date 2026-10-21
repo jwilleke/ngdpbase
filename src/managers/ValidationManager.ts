@@ -128,6 +128,10 @@ export interface CategoryConfig {
   source?: CategorySource;
   enabled?: boolean;
   key?: string;
+  /** `false`: its pages show no Comments tab and take no comment, unless a page says otherwise (#1951). */
+  comments?: boolean;
+  /** `false`: its pages show no Footnotes tab and take no footnote change, unless a page says otherwise (#1951). */
+  footnotes?: boolean;
 }
 
 /**

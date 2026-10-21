@@ -567,3 +567,56 @@ describe('POST /api/forms/submit/:formId — submission email', () => {
     expect(viewers).toEqual([{ username: 'molly' }, { username: 'molly' }]);
   });
 });
+
+// ── "notify": false sends no notice and no email (#1954) ──────────────────────
+
+describe('POST /api/forms/submit/:formId — notify (#1954)', () => {
+  const noteForm = {
+    id: 'test-form',
+    title: 'Health note',
+    proxySubmission: false,
+    store: false,
+    fields: [
+      { name: 'email', type: 'email', label: 'Your email', required: true },
+      { name: 'note', type: 'textarea', label: 'Note', required: true }
+    ]
+  };
+
+  function noteApp(notify?: boolean) {
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const notices: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: {
+        getDefinition: () => (notify === undefined ? noteForm : { ...noteForm, notify }),
+        saveSubmission: async (s: object) => s
+      },
+      ConfigurationManager: { getProperty: () => '' },
+      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      NotificationManager: { createNotification: async (n: unknown) => { notices.push(n); return 'n1'; } }
+    });
+    return { app: makeContext(engine), sent, notices };
+  }
+
+  const body = { email: 'pat@example.com', note: 'private health text' };
+
+  test('notify: false creates no notification and sends no email, even with an email field', async () => {
+    const { app, sent, notices } = noteApp(false);
+    const res = await request(app).post('/api/forms/submit/test-form').send(body);
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(sent).toEqual([]);
+    expect(notices).toEqual([]);
+  });
+
+  test('a form that does not say notify still notifies and emails, as before', async () => {
+    for (const notify of [undefined, true]) {
+      const { app, sent, notices } = noteApp(notify);
+      const res = await request(app).post('/api/forms/submit/test-form').send(body);
+      expect(res.status).toBe(201);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe('pat@example.com');
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ title: 'New form submission: Health note' });
+    }
+  });
+});
