@@ -32,10 +32,13 @@ export { formatters } from '../../src/managers/PluginManager.js';
  *
  * @param slug - The add-on's canonical slug
  * @param addonDefaults - The add-on's own `config/default-config.json`
+ * @param engine - Optional: an engine (or stand-in) whose PolicyInformationPoint
+ *   names the system principal for `host.systemContext`; without one it is
+ *   core's fallback principal
  */
-export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>): AddonHost {
+export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>, engine?: Parameters<typeof buildHost>[2]): AddonHost {
   bindAuditEvents((key, fallback) => addonDefaults[key] ?? fallback);
-  return buildHost(slug, addonDefaults);
+  return buildHost(slug, addonDefaults, engine);
 }
 
 /** The add-on whose declaration a test database is checked against: its slug and its own `config/default-config.json`. */

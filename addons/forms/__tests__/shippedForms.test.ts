@@ -15,7 +15,7 @@ import { promises as fsp } from 'fs';
 import FormsDataManager, { ProvidedFormError } from '../managers/FormsDataManager';
 import type { FormDefinition } from '../managers/FormsDataManager';
 
-/** The add-on's boot context, as `systemContext(engine, reason)` makes it. */
+/** The add-on's boot context, as `host.systemContext(reason)` makes it. */
 const BOOT = { username: 'system', origin: 'boot' as const, requestedAt: new Date().toISOString(), reason: 'test: register forms' };
 /** An admin in the form builder. */
 const ADMIN = { username: 'admin', roles: ['admin'], isAuthenticated: true };

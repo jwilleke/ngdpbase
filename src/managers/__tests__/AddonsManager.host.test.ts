@@ -15,7 +15,7 @@ const SLOT = '__addonHostTest';
 const HOST_KEYS = [
   'ApiContext', 'ApiError', 'sendApiError',
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
-  'jobContextFromRequest', 'jobContextFromSystem',
+  'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
   'logger', 'guardedFetch'
 ].sort();
 
@@ -53,7 +53,9 @@ describe('AddonsManager — host passed to register (#1813)', () => {
       getCustomProperty: vi.fn(() => null),
       setRuntimeProperty: vi.fn()
     };
-    const manager = new AddonsManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? cm : null) });
+    // #1973: the system principal is the PolicyInformationPoint's, as on a site.
+    const pip = { systemPrincipalName: () => 'svc-site' };
+    const manager = new AddonsManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? cm : n === 'PolicyInformationPoint' ? pip : null) });
     await manager.initialize();
     return manager;
   };
@@ -87,7 +89,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     await fs.remove(tmpDir).catch(() => {});
   });
 
-  test('a three-argument add-on receives the host with all ten values', async () => {
+  test('a three-argument add-on receives the host with all eleven values', async () => {
     const manager = await load();
     expect((await manager.getStatus()).find((s: any) => s.name === 'ledger')).toMatchObject({ loaded: true, error: null });
 
@@ -115,6 +117,14 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     const legacy = (await manager.getStatus()).find((s: any) => s.name === 'legacy');
     expect(legacy).toMatchObject({ loaded: true, error: null });
     expect(calls.legacy).toHaveLength(2);
+  });
+
+  test('#1973: systemContext(reason) is a boot context under core\'s system principal, never one the add-on names', async () => {
+    await load();
+    const ctx = hostOf('ledger').systemContext('ledger: register its forms');
+    expect(ctx).toMatchObject({ username: 'svc-site', origin: 'boot', reason: 'ledger: register its forms' });
+    expect(typeof ctx.requestedAt).toBe('string');
+    expect(hostOf('ledger').systemContext.length).toBe(1);
   });
 
   test('the host is frozen', async () => {

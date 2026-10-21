@@ -442,13 +442,13 @@ export default class FormsDataManager {
    * @param addon - The add-on's slug
    * @param definition - The definition the add-on ships; keys with a default
    *   (`store`, `notify`, ...) may be left out
-   * @param ctx - Who is registering it: the add-on's boot context, `systemContext(engine, reason)`
+   * @param ctx - Who is registering it: the add-on's boot context, `host.systemContext(reason)`
    * @returns What was done with the site's copy
    */
   async registerShippedForm(addon: string, definition: z.input<typeof FormDefinitionSchema>, ctx: ActorContext): Promise<ShippedFormResult> {
     if (!isActorContext(ctx)) {
       // An add-on built before #1973 passes no context, or the old options object.
-      console.warn(`[FormsDataManager] ${addon} registered a form without a context; pass systemContext(engine, reason) as the third argument`);
+      console.warn(`[FormsDataManager] ${addon} registered a form without a context; pass host.systemContext(reason) as the third argument`);
       ctx = systemContext(this.engine, `${addon}: register a form it provides`);
     }
     const { providedBy: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);

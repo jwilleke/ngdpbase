@@ -492,6 +492,7 @@ async register(engine, config) {
 | `recordAuditEvent`, `addonAuditEventName` | Audit, limited to this addon's own events (below) |
 | `actorOf` | The "who" of an audit record, from a context |
 | `jobContextFromRequest`, `jobContextFromSystem` | Contexts for [Background Jobs](#8-background-jobs) |
+| `systemContext(reason)` | The context your own start-up work runs under: core's system principal (`NGDPBASE_SYSTEM_USER`, never a name you choose), with `reason` for the record ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
 
@@ -894,10 +895,10 @@ author: my-addon
 An add-on that ships forms for the bundled forms add-on registers each one in its `register()`, at every start, with the definition as this release ships it ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)):
 
 ```ts
-import { systemContext } from '<core>/dist/src/context/bootActions.js';
-
-const forms = engine.getManager<FormsDataManager>('FormsDataManager');
-await forms?.registerShippedForm('my-addon', definition, systemContext(engine, 'my-addon: register its forms'));
+async register(engine, config, host) {
+  const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+  await forms?.registerShippedForm('my-addon', definition, host.systemContext('my-addon: register its forms'));
+}
 ```
 
 The forms add-on stores it as an ordinary definition in `<dataPath>/definitions/<id>.json` (`ngdpbase.addons.forms.dataPath`, default `${FAST_STORAGE}/forms`), with `providedBy: { addon, version }`. The version is your add-on's `package.json` `version`, read from core's add-on registry (`AddonsManager.getAddonVersion`). There is no per-form version: your release is the form's version.
@@ -933,7 +934,7 @@ The form builder, for forms built on the site, saves only what the admin changed
 - `notify` is its __Send notices__ box, the same way: ticked unless the form says `"notify": false`, with `notifyShown` beside it.
 - A field's `optionsSource` and `totalField`, and a `lines` field's own `fields`, `minRows`, `maxRows` and `amountField`, have no input; the page carries them through the save unchanged.
 
-Migrating from #1880/#1918: pass the context as the third argument, in place of the old `{ required: true }` option, which is gone (an update always applies, so nothing is "required"). An add-on not yet updated still registers: core logs a warning and uses a boot context. Do not call `saveDefinition` for your form; it refuses a form you provide. Existing sites need nothing: their copies have no `providedBy`, so your next start replaces them.
+Migrating from #1880/#1918: pass `host.systemContext(reason)` as the third argument, in place of the old `{ required: true }` option, which is gone (an update always applies, so nothing is "required"). An add-on not yet updated still registers: core logs a warning and uses a boot context. Do not call `saveDefinition` for your form; it refuses a form you provide. Existing sites need nothing: their copies have no `providedBy`, so your next start replaces them.
 
 ### Choices from your manager, and checklists
 

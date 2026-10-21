@@ -12,8 +12,6 @@
  *                      from before #1973 holds it; registering it replaces it
  */
 
-import { systemContext } from '../../../../../dist/src/context/bootActions.js';
-
 const ADDON = 'shipped-forms-e2e';
 
 /** What an earlier release left on the site, with no providedBy. */
@@ -44,10 +42,10 @@ export default {
   author: 'ngdpbase tests',
   dependencies: ['forms'],
 
-  async register(engine) {
+  async register(engine, _config, host) {
     const forms = engine.getManager('FormsDataManager');
     if (!forms) return;
-    const ctx = systemContext(engine, `${ADDON}: register the forms it provides`);
+    const ctx = host.systemContext(`${ADDON}: register the forms it provides`);
     // The pre-#1973 copy exists only before the first registration replaces it.
     if (!forms.getDefinition('e2e-1973-legacy')) await forms.saveDefinition(previous('e2e-1973-legacy'), ctx);
     await forms.registerShippedForm(ADDON, current('e2e-1973-provided'), ctx);

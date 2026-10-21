@@ -20,7 +20,7 @@
  *
  * Shipping a form from another add-on (#1973):
  *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');
- *   await forms?.registerShippedForm('my-addon', definition, systemContext(engine, 'my-addon: register its forms'));
+ *   await forms?.registerShippedForm('my-addon', definition, host.systemContext('my-addon: register its forms'));
  * at every start. The site's copy is replaced whenever the installed add-on's
  * package.json version is newer than the one that wrote it, and is read-only
  * on the site.

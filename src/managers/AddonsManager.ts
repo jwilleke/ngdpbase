@@ -1734,7 +1734,7 @@ class AddonsManager extends BaseManager {
       // #1813: the host is built per add-on: its logger tagged with the slug,
       // its audit helpers limited to the events this add-on declares.
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {});
+      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {}, this.engine);
 
       // Call the add-on's register function
       await addon.module.register(this.engine, addonConfig, host);

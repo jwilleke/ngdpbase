@@ -10,6 +10,9 @@
  * - `recordAuditEvent` and `addonAuditEventName` accept only the audit events
  *   this add-on declares in its own `config/default-config.json`, so one
  *   add-on cannot write records that look like another's or like core's;
+ * - `systemContext(reason)` is bound to the running engine, so the system
+ *   principal's name comes from core (`NGDPBASE_SYSTEM_USER`), never from
+ *   the add-on (#1973);
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -19,7 +22,8 @@
 import type { Logger } from 'winston';
 import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
 import { actorOf } from '../context/ActorContext.js';
-import { jobContextFromRequest, jobContextFromSystem } from '../context/JobContext.js';
+import { jobContextFromRequest, jobContextFromSystem, type JobContext } from '../context/JobContext.js';
+import { systemContext } from '../context/bootActions.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
@@ -36,6 +40,13 @@ export interface AddonHost {
   readonly actorOf: typeof actorOf;
   readonly jobContextFromRequest: typeof jobContextFromRequest;
   readonly jobContextFromSystem: typeof jobContextFromSystem;
+  /**
+   * The context the add-on's own boot work runs under (#1973): core's system
+   * principal, with `reason` saying what and why, for the record. Pass it
+   * where a manager door asks for a context at start, such as
+   * `FormsDataManager.registerShippedForm`.
+   */
+  readonly systemContext: (reason: string) => JobContext;
   readonly logger: Logger;
   readonly guardedFetch: typeof guardedFetch;
 }
@@ -64,8 +75,10 @@ function refuseUndeclared(slug: string, name: string, declared: ReadonlySet<stri
  * @param slug - The add-on's canonical slug
  * @param addonDefaults - That add-on's own default-config.json, as folded into
  *   the configuration merge (`ConfigurationManager.getAddonDeclaredDefaults`)
+ * @param engine - The running engine, which names the system principal for
+ *   `systemContext`; without one (a test) it is core's fallback principal
  */
-export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>): AddonHost {
+export function buildAddonHost(slug: string, addonDefaults: Record<string, unknown>, engine?: Parameters<typeof systemContext>[0]): AddonHost {
   const declared = addonDeclaredAuditEvents(addonDefaults);
 
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
@@ -88,6 +101,7 @@ export function buildAddonHost(slug: string, addonDefaults: Record<string, unkno
     actorOf,
     jobContextFromRequest,
     jobContextFromSystem,
+    systemContext: (reason: string) => systemContext(engine, reason),
     logger: logger.child({ addon: slug }),
     guardedFetch
   });
