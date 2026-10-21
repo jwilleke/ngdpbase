@@ -571,6 +571,12 @@ class BackupManager extends BaseManager {
             logger.warn(`⚠️  Manager not found: ${managerName}`);
             continue;
           }
+          // #1943: an add-on manager (engine.registerManager) has no backup();
+          // its data is in its declared databases and add-on files.
+          if (typeof manager.backup !== 'function') {
+            logger.debug(`${managerName} has no backup part (no backup()); skipped`);
+            continue;
+          }
 
           logger.info(`📦 Backing up ${managerName}...`);
           const managerBackup = await manager.backup(managerOptions);

@@ -163,6 +163,42 @@ describe('BackupManager', () => {
       expect(mockPageManager.backup).toHaveBeenCalled();
     });
 
+    test('#1943 a registered manager without backup() is skipped, not a failure', async () => {
+      const mockPageManager = {
+        backup: vi.fn().mockResolvedValue({ managerName: 'PageManager', timestamp: new Date().toISOString(), data: {} })
+      };
+      const addonManager = { getLedger: vi.fn() };
+      const notify = vi.spyOn(bm as unknown as { notifyAdmins: () => Promise<void> }, 'notifyAdmins');
+      mockEngine.getRegisteredManagers.mockReturnValue(['PageManager', 'LedgerManager']);
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'PageManager') return mockPageManager;
+        if (name === 'LedgerManager') return addonManager;
+        return null;
+      });
+
+      const backupPath = await bm.createBackup(ADMIN_CTX, { compress: false, filename: 'addon.json.gz' });
+      const parsed = JSON.parse(await fs.readFile(backupPath, 'utf8'));
+
+      expect(mockPageManager.backup).toHaveBeenCalled();
+      expect(parsed.managers.PageManager).toBeDefined();
+      expect(parsed.managers.LedgerManager).toBeUndefined();
+      expect(notify).not.toHaveBeenCalledWith('error', 'A backup is incomplete', expect.anything());
+    });
+
+    test('#1943 a manager whose backup() throws is still a failure', async () => {
+      const brokenManager = { backup: vi.fn().mockRejectedValue(new Error('disk on fire')) };
+      mockEngine.getRegisteredManagers.mockReturnValue(['PageManager']);
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'PageManager') return brokenManager;
+        return null;
+      });
+
+      await expect(bm.createBackup(ADMIN_CTX, { compress: false, filename: 'broken.json.gz', requireComplete: true }))
+        .rejects.toThrow(/without: PageManager: disk on fire/);
+    });
+
     test('skips BackupManager itself when collecting data', async () => {
       const spyBackup = vi.spyOn(bm, 'backup');
       mockEngine.getRegisteredManagers.mockReturnValue(['BackupManager']);
