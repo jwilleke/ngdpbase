@@ -215,6 +215,8 @@
   "ngdpbase.search.provider": "lunrsearchprovider",
   "_comment_search_shared": "Shared search settings (all providers)",
   "ngdpbase.search.maxresults": 50,
+  "_comment_search_access_filter": "#1962: every page hit is decided by the page access check before the result limit. A search asks the index again for twice as many hits while hidden pages leave the result short; this bounds how many hits one search may decide",
+  "ngdpbase.search.access-filter.max-candidates": 5000,
   "ngdpbase.search.autocomplete.enabled": true,
   "ngdpbase.search.autocomplete.minlength": 2,
   "ngdpbase.search.suggestions.enabled": true,
@@ -1092,7 +1094,7 @@
   "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
-  "_comment_system_category": "System category definitions (docs/system-category.md). source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). Exactly one entry has default: true; its vault is where a private page goes when nothing names another. Add-ons declare their own entries in their own config/default-config.json (the journal's is there, #1507); core reads them live from the installed add-ons, whether on or off, and never persists them here (#1559).",
+  "_comment_system_category": "System category definitions (docs/system-category.md). source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). comments, footnotes: false turns off the Comments or Footnotes tab for its pages and refuses new ones; a page's own comments: or footnotes: frontmatter wins, and unset is on (#1951). Exactly one entry has default: true; its vault is where a private page goes when nothing names another. Add-ons declare their own entries in their own config/default-config.json (the journal's is there, #1507); core reads them live from the installed add-ons, whether on or off, and never persists them here (#1559).",
   "ngdpbase.system-category": {
     "general": {
       "label": "general",

@@ -273,7 +273,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
     const restarted = await start();
     expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.staged.incomplete'))).toBe(true);
     expect(fs.existsSync(path.join(dataDir, 'ngdpbase.db.pre-restore'))).toBe(false);
-    expect(restarted.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/NOT applied: only 1 of 2/) });
+    expect(restarted.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/NOT applied: only 1 of 2/) });
     await restarted.reportAtBoot();
     expect(notifications.at(-1)).toMatchObject({ level: 'error', title: 'A database restore was not applied' });
     await restarted.shutdown();
@@ -346,7 +346,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
   test('no backup key: the backup refuses loudly and writes nothing, and the start says so too', async () => {
     delete process.env[BACKUP_KEY_ENV];
     const manager = await populated();
-    expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/NGDPBASE_BACKUP_KEY is not set/) });
+    expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/NGDPBASE_BACKUP_KEY is not set/) });
     await expect(backupInto(manager)).rejects.toThrow(/NGDPBASE_BACKUP_KEY is not set, so no database was backed up/);
     expect(fs.readdirSync(backupDir)).toEqual([]);
     process.env[BACKUP_KEY_ENV] = 'backup-key-not-a-secret';
@@ -397,7 +397,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
   test('a backup key equal to the database key still backs up, as loudly as a missing key (D3)', async () => {
     process.env[BACKUP_KEY_ENV] = process.env[DATABASE_KEY_ENV]!;
     const manager = await populated();
-    expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/NGDPBASE_BACKUP_KEY is the same as NGDPBASE_DATABASE_KEY/) });
+    expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/NGDPBASE_BACKUP_KEY is the same as NGDPBASE_DATABASE_KEY/) });
     await manager.reportAtBoot();
     expect(notifications.at(-1)).toMatchObject({ level: 'error', message: expect.stringMatching(/same as NGDPBASE_DATABASE_KEY/) });
     const data = (await backupInto(manager)).data as DatabaseBackupData;

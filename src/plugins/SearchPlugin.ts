@@ -86,9 +86,15 @@ interface SearchOptions {
   dateField?: 'modified' | 'created';
 }
 
+/**
+ * The SearchManager doors this plugin uses. Only the context forms: the
+ * plugin renders inside a page for whoever is viewing it, so every hit must
+ * be one that viewer may open (#1962) — the no-context `search` /
+ * `advancedSearch` know no reader and decide nothing.
+ */
 interface SearchManager {
-  search(query: string, options: { maxResults: number }): Promise<SearchResult[]>;
-  advancedSearch(options: SearchOptions): Promise<SearchResult[]>;
+  searchWithContext(wikiContext: PluginContext, query: string, options: { maxResults: number }): Promise<SearchResult[]>;
+  advancedSearchWithContext(wikiContext: PluginContext, options: SearchOptions): Promise<SearchResult[]>;
 }
 
 interface FormatOptions {
@@ -359,19 +365,19 @@ const SearchPlugin: SimplePlugin = {
         const slugify = (n: string): string => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
         const resolved = await resolveCurrentKeyword<SearchResult>(
           'current', context.pageName ?? '', slugify,
-          (kw) => searchManager.advancedSearch({ ...searchOptions, userKeywords: [kw] })
+          (kw) => searchManager.advancedSearchWithContext(context, { ...searchOptions, userKeywords: [kw] })
         );
         results = resolved.results;
       } else if (systemCategory || userKeywords || author || editor || dateFrom || dateTo) {
         // Use advanced search for filtering
-        results = await searchManager.advancedSearch(searchOptions);
+        results = await searchManager.advancedSearchWithContext(context, searchOptions);
       } else {
         // Use basic search if no filters
         if (query === '*') {
           // Get all pages for wildcard search
-          results = await searchManager.advancedSearch(searchOptions);
+          results = await searchManager.advancedSearchWithContext(context, searchOptions);
         } else {
-          results = await searchManager.search(query, { maxResults });
+          results = await searchManager.searchWithContext(context, query, { maxResults });
         }
       }
 

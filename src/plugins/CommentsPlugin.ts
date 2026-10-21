@@ -101,6 +101,8 @@ const CommentsPlugin: SimplePlugin = {
     const pageName = context.pageName || pageUuid;
     let comments: PageComment[];
     try {
+      // #1951: comments turned off for this page are kept, and hidden.
+      if (!await commentManager.isAllowedOn({ name: pageName, uuid: pageUuid }, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext, context.pageMetadata as Record<string, unknown> | undefined)) return '';
       comments = await commentManager.getComments({ name: pageName, uuid: pageUuid }, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext);
     } catch {
       return '';

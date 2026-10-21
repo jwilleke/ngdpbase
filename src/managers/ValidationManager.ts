@@ -128,6 +128,10 @@ export interface CategoryConfig {
   source?: CategorySource;
   enabled?: boolean;
   key?: string;
+  /** `false`: its pages show no Comments tab and take no comment, unless a page says otherwise (#1951). */
+  comments?: boolean;
+  /** `false`: its pages show no Footnotes tab and take no footnote change, unless a page says otherwise (#1951). */
+  footnotes?: boolean;
 }
 
 /**
@@ -289,7 +293,7 @@ class ValidationManager extends BaseManager {
     if (lines.length === 0) return;
     const reason = `${lines.join('. ')}. Fix ${SYSTEM_CATEGORY_KEY} in the configuration`;
     logger.error(`[ValidationManager] ${reason}`);
-    if (this.markDegraded(reason, SYSTEM_CATEGORY_KEY)) {
+    if (this.markNeedsAttention(reason, SYSTEM_CATEGORY_KEY)) {
       try {
         await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
           type: 'system', level: 'error', title: 'A system-category value has the wrong type', message: `${reason}.`

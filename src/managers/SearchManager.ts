@@ -104,6 +104,16 @@ interface PrivateSearchDoor {
 }
 
 /**
+ * The page-list door, as the access filter below uses it (#1962): which of
+ * these pages may this reader open. PageManager resolves each name and asks
+ * PolicyInformationPoint.filterAccessiblePages — the decision `/view` and
+ * every page list make, so a hit is shown exactly when its page would open.
+ */
+interface PageListDoor {
+  filterPagesFor(subject: ActorContext | null, names: readonly string[], action?: string): Promise<string[]>;
+}
+
+/**
  * Base search provider interface
  */
 interface BaseSearchProvider {
@@ -389,20 +399,86 @@ class SearchManager extends BaseManager {
     logger.info(`[SearchManager] Search query="${query}" user=${username} options=${JSON.stringify(options)}`);
 
     try {
-      // Pass wikiContext in options so the provider can filter private results
-      const results = await this.provider.search(query, { ...options, wikiContext });
+      // #1962: only pages this reader may open, decided before the limit.
+      const provider = this.provider;
+      const wanted = this.resultLimit(options.maxResults);
+      const results = await this.hitsVisibleTo(
+        wikiContext,
+        (limit) => provider.search(query, { ...options, maxResults: limit, wikiContext }),
+        wanted
+      );
       // #1458: the shared index holds public pages only. The requester's own
       // private pages come from their own stores' saved search indexes.
       const merged = await this.mergeOwnPrivateResults(results, wikiContext, {
         query,
         searchIn: options.searchIn,
         snippetLength: options.snippetLength as number | undefined
-      }, options.maxResults);
+      }, wanted);
       logger.info(`[SearchManager] Search completed query="${query}" user=${username} results=${merged.length}`);
       return merged;
     } catch (err) {
       logger.error(`[SearchManager] Search failed query="${query}" user=${username}:`, err);
       return [];
+    }
+  }
+
+  /**
+   * How many hits a search returns when its caller does not say:
+   * `ngdpbase.search.maxresults`.
+   */
+  private resultLimit(asked: number | undefined): number {
+    if (typeof asked === 'number' && asked > 0) return asked;
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.search.maxresults', 50);
+    return typeof configured === 'number' && configured > 0 ? configured : 50;
+  }
+
+  /**
+   * The provider's hits that this reader may open, up to `wanted` (#1962).
+   *
+   * The search index knows nothing of a page's audience, its `access` rules
+   * or the policies, so every hit is decided by the page-list door
+   * (`PageManager.filterPagesFor` → `PolicyInformationPoint.filterAccessiblePages`),
+   * the same decision `/view` makes, in one batch per round. The decision is
+   * made BEFORE the limit: the provider is asked for `wanted`, and asked again
+   * for twice as many while hidden hits leave the page short and the index
+   * may hold more, so a result count, a total and a page number never count a
+   * page the reader cannot open. `ngdpbase.search.access-filter.max-candidates`
+   * bounds how many hits one search may decide; at the bound the result is
+   * short rather than the site slow.
+   *
+   * Without the door nothing is returned — never the unfiltered index.
+   */
+  private async hitsVisibleTo(
+    wikiContext: WikiContext,
+    ask: (limit: number) => Promise<SearchResult[]>,
+    wanted: number
+  ): Promise<SearchResult[]> {
+    const door = this.engine.getManager<PageListDoor>('PageManager');
+    if (!door?.filterPagesFor) {
+      logger.warn('[SearchManager] Page access filter unavailable — returning no page hits');
+      return [];
+    }
+    const subject = (wikiContext.userContext as unknown as ActorContext | undefined) ?? null;
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.search.access-filter.max-candidates', 5000);
+    const ceiling = Math.max(wanted, typeof configured === 'number' && configured > 0 ? configured : 5000);
+
+    const decided = new Map<string, boolean>();
+    let limit = Math.min(wanted, ceiling);
+    for (;;) {
+      const hits = await ask(limit);
+      const undecided = [...new Set(hits.map((h) => h.name))].filter((n) => !decided.has(n));
+      if (undecided.length > 0) {
+        const allowed = new Set(await door.filterPagesFor(subject, undecided, 'view'));
+        for (const name of undecided) decided.set(name, allowed.has(name));
+      }
+      const visible = hits.filter((h) => decided.get(h.name) === true);
+      const exhausted = hits.length < limit;
+      if (visible.length >= wanted || exhausted || limit >= ceiling) {
+        return visible.slice(0, wanted);
+      }
+      limit = Math.min(limit * 2, ceiling);
     }
   }
 
@@ -501,7 +577,14 @@ class SearchManager extends BaseManager {
       // no-text path (browse-all / category-only / keyword-only). Mirrors
       // searchWithContext above; without it those page searches return
       // private pages the caller cannot access.
-      const results = await this.provider.advancedSearch({ ...options, wikiContext });
+      // #1962: and only pages this reader may open, decided before the limit.
+      const provider = this.provider;
+      const wanted = this.resultLimit(options.maxResults);
+      const results = await this.hitsVisibleTo(
+        wikiContext,
+        (limit) => provider.advancedSearch({ ...options, maxResults: limit, wikiContext }),
+        wanted
+      );
       // #1458: the same merge as the text path — the requester's own private
       // pages are in no shared index and come from their own stores.
       const merged = await this.mergeOwnPrivateResults(results, wikiContext, {
@@ -509,7 +592,7 @@ class SearchManager extends BaseManager {
         categories: options.categories,
         userKeywords: options.userKeywords,
         searchIn: options.searchIn
-      }, options.maxResults);
+      }, wanted);
       logger.info(`[SearchManager] Advanced search completed user=${username} results=${merged.length}`);
       return merged;
     } catch (err) {

@@ -74,6 +74,7 @@ await pageManager.deletePage('My Page');
 | `pageExists(identifier)` | `boolean` | Check if page exists |
 | `getAllPages()` | `Promise<string[]>` | Every title — the raw index, for callers with no reader (indexing, link graphs, jobs, `admin-system` surfaces). Never rendered to a request ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
 | `listPagesFor(subject, action?)` | `Promise<string[]>` | The titles `subject` may `action` on (default `view`) — the door for anything listed to a reader; the evaluator's `filterAccessiblePages` over the in-memory index. Lists nothing without an PolicyInformationPoint |
+| `filterPagesFor(subject, names, action?)` | `Promise<string[]>` | The same door for a list found elsewhere — search hits ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)): which of `names` `subject` may `action` on, each resolved as `/view` resolves it, decided in one batch by `filterAccessiblePages`. Order kept; a name with no page is dropped; keeps nothing without an PolicyInformationPoint |
 | `refreshPageList()` | `Promise<void>` | Rescan storage |
 
 ## Page Object Structure

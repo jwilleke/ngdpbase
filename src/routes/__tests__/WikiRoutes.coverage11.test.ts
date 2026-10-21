@@ -8,6 +8,7 @@ import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
+import { PageNotesTurnedOffError } from '../../utils/pageNotes';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -158,6 +159,8 @@ const mockVariableManager = {
 
 const mockCommentManager = {
   isEnabled: vi.fn().mockReturnValue(true),
+  // #1951: comments are on for the page unless a test turns them off.
+  isAllowedOn: vi.fn().mockResolvedValue(true),
   addComment: vi.fn().mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' }),
   getComment: vi.fn().mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' }),
   deleteComment: vi.fn().mockResolvedValue(undefined),
@@ -320,6 +323,7 @@ function resetMocks() {
   });
 
   mockCommentManager.isEnabled.mockReturnValue(true);
+  mockCommentManager.isAllowedOn.mockResolvedValue(true);
   mockCommentManager.addComment.mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' });
   mockCommentManager.getComment.mockResolvedValue({ id: 'c1', author: 'testuser', content: 'hello' });
   mockCommentManager.deleteComment.mockResolvedValue(undefined);
@@ -835,6 +839,41 @@ describe('WikiRoutes — coverage batch 11', () => {
         .set('x-csrf-token', 'test-csrf-token');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+  });
+
+  // #1951: comments turned off for the page — the manager refuses, the route says so; the list is hidden.
+  describe('comments on a page whose comments are off (#1951)', () => {
+    beforeEach(() => {
+      notesPageIs('uuid-1');
+      mockCommentManager.getComments.mockClear();
+    });
+
+    test('POST is refused with 403 and the reason', async () => {
+      mockCommentManager.addComment.mockRejectedValueOnce(new PageNotesTurnedOffError('comments'));
+      const res = await request(app)
+        .post('/api/comments/uuid-1')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: 'ask Dr. X about my A1c' });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ success: false, error: 'Comments are turned off for this page.' });
+    });
+
+    test('DELETE is refused with 403', async () => {
+      mockCommentManager.deleteComment.mockRejectedValueOnce(new PageNotesTurnedOffError('comments'));
+      const res = await request(app)
+        .delete('/api/comments/uuid-1/c1')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Comments are turned off for this page.');
+    });
+
+    test('the HTML list is hidden: 404, and the comments are never read', async () => {
+      mockCommentManager.isAllowedOn.mockResolvedValue(false);
+      const res = await request(app).get('/api/comments/uuid-1/html');
+      expect(res.status).toBe(404);
+      expect(res.text).toContain('Comments are turned off for this page.');
+      expect(mockCommentManager.getComments).not.toHaveBeenCalled();
     });
   });
 

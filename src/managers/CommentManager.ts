@@ -15,6 +15,8 @@ import {
   pageNotesPlace,
   pageNotesRoots,
   moveOutsideNotesIntoVault,
+  pageNotesAllowed,
+  PageNotesTurnedOffError,
   VaultPageNotesCheck,
   type VaultPageNotesOutside,
   type PageNotesRoots,
@@ -34,7 +36,7 @@ export default class CommentManager extends BaseManager {
   private enabled: boolean = true;
   /** Vault pages whose comments are still in the public folder (#1839), and the repair's re-check (#1842). */
   private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
-    markDegraded: (reason) => this.markDegraded(reason),
+    markNeedsAttention: (reason) => this.markNeedsAttention(reason),
     markReadyIfDegradedBy: (reason) => this.markReadyIfDegradedBy(reason)
   });
 
@@ -52,7 +54,7 @@ export default class CommentManager extends BaseManager {
       );
       // #1876: a staged site restore goes in before anything is read.
       const restored = applyDirectoryPartAtStart('CommentManager', this.commentsDir, configManager);
-      if (restored?.refused) this.markDegraded(`A staged restore of the public pages' comments was not applied: ${restored.refused}`);
+      if (restored?.refused) this.markNeedsAttention(`A staged restore of the public pages' comments was not applied: ${restored.refused}`);
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(
@@ -109,6 +111,22 @@ export default class CommentManager extends BaseManager {
     return pageNotesPlace(ctx, page, this.roots());
   }
 
+  /**
+   * Whether comments are on for `page` (#1951): the page's `comments:` flag,
+   * else its system-category's, else on (`pageNotesAllowed`). The view asks
+   * this before it shows the Comments tab or the plugin's list, and every
+   * write here asks it first. When off, the page's comments are kept and
+   * hidden. `metadata` saves a read when the caller already holds it.
+   */
+  isAllowedOn(page: PageRef, ctx: ActorContext, metadata?: Record<string, unknown> | null): Promise<boolean> {
+    return pageNotesAllowed(this.engine, 'comments', page, ctx, metadata);
+  }
+
+  /** Throws {@link PageNotesTurnedOffError} when comments are off for `page` (#1951). */
+  private async refuseWhenOff(page: PageRef, ctx: ActorContext): Promise<void> {
+    if (!await this.isAllowedOn(page, ctx)) throw new PageNotesTurnedOffError('comments');
+  }
+
   private commentFile(place: CommentPlace, commentId: string): string {
     return path.join(place.path, `${assertPathSegment(commentId, 'comment id')}.json`);
   }
@@ -145,6 +163,7 @@ export default class CommentManager extends BaseManager {
    */
   async addComment(page: PageRef, ctx: ActorContext, content: string): Promise<PageComment> {
     const pageUuid = page.uuid;
+    await this.refuseWhenOff(page, ctx);
     const place = await this.place(page, ctx);
     const id = randomUUID();
     const displayName = (ctx as { displayName?: string }).displayName;
@@ -185,6 +204,7 @@ export default class CommentManager extends BaseManager {
    */
   async deleteComment(page: PageRef, commentId: string, ctx: ActorContext): Promise<boolean> {
     const pageUuid = page.uuid;
+    await this.refuseWhenOff(page, ctx);
     const place = await this.place(page, ctx);
     const filePath = this.commentFile(place, commentId);
     if (!await fs.pathExists(filePath)) return false;
