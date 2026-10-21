@@ -34,8 +34,10 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
+  const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')) };
   const managers: Record<string, unknown> = {
     OidcManager: oidc,
+    BackupManager: backup,
     AuthManager: authManager,
     // #1635: the PDP decides step-up. This double grants by policy and asks
     // AuthManager about freshness exactly as the real PDP does; `holds` is the
@@ -53,7 +55,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   authManager.engine = engine;
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>> & { getCommonTemplateData: unknown };
   (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({ csrfToken: 't' });
-  return { r, authManager, audit, oidc };
+  return { r, authManager, audit, oidc, backup };
 }
 
 const req = (s: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -97,6 +99,20 @@ describe('step-up at the route door (#1525)', () => {
     await r.renameOwnCredential(req(session(), { body: { label: 'Phone' } }), out);
     expect(authManager.renameCredential).toHaveBeenCalled();
     expect(out.redirect).toHaveBeenCalledWith('/profile?success=Renamed');
+  });
+});
+
+describe('downloading the instance .env (#1938)', () => {
+  test('a stale session is sent to re-authenticate and the file is never read', async () => {
+    // Sabotage (2026-10-21): asking holdsPermission instead of permitted() turns this red.
+    const { r, backup, audit } = routes(true);
+    const out = res();
+    await r.adminBackupEnv(req(session(), { method: 'GET', originalUrl: '/admin/backup/env', get: (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup' : 'ua') }), out);
+    // A GET comes back to itself: after the fresh sign-in the download starts.
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fenv');
+    expect(backup.revealInstanceEnv).not.toHaveBeenCalled();
+    expect(out.send).not.toHaveBeenCalled();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'config-manage' }));
   });
 });
 

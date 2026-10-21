@@ -911,6 +911,30 @@ class BackupManager extends BaseManager {
   }
 
   /**
+   * The instance `.env` exactly as it is on disk, backup key line included,
+   * for an admin to keep a copy off the server (#1938). The route asks
+   * `config-manage`, with its fresh sign-in. Recorded as `secret-reveal`:
+   * the file, never its contents. Null when the site has no instance `.env`.
+   */
+  async revealInstanceEnv(ctx: ActorContext): Promise<Buffer | null> {
+    const file = this.instanceEnvFile();
+    if (!file || !existsSync(file)) return null;
+    const content = readFileSync(file);
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.SECRET_REVEAL,
+      ...who,
+      action: 'secret-reveal',
+      result: 'success',
+      severity: 'high',
+      resource: '.env',
+      resourceType: 'instance-env',
+      metadata: { ...who.metadata, file: '.env', bytes: content.length }
+    }, (err) => logger.warn('[BackupManager] Audit record failed for the .env download:', err));
+    return content;
+  }
+
+  /**
    * An admin confirms the backup key with this fingerprint is saved off the
    * server (#1876). Recorded in the configuration (`ngdpbase.backup.key-saved-fingerprint`,
    * written through ConfigurationManager, which records the change), so it

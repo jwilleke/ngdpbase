@@ -147,6 +147,9 @@ const mockExportManager = {
   exportToMarkdown: vi.fn()
 };
 
+// #1938: what the instance .env holds, byte for byte (no real secret).
+const ENV_FILE = 'NGDPBASE_SESSION_SECRET=not-a-secret\nNGDPBASE_BACKUP_KEY=not-a-key\n# a comment, kept\n';
+
 const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
   getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
@@ -161,6 +164,8 @@ const mockBackupManager = {
   backupKeyInfo: vi.fn(),
   revealBackupKey: vi.fn(),
   confirmBackupKeySaved: vi.fn(),
+  // #1938
+  revealInstanceEnv: vi.fn(),
   // #1945
   getStagedSiteRestore: vi.fn(),
   siteRestoreScope: vi.fn(),
@@ -334,6 +339,7 @@ function resetMocks() {
   mockBackupManager.backupKeyInfo.mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: false });
   mockBackupManager.revealBackupKey.mockReturnValue('the-backup-key-value');
   mockBackupManager.confirmBackupKeySaved.mockResolvedValue(undefined);
+  mockBackupManager.revealInstanceEnv.mockResolvedValue(Buffer.from(ENV_FILE));
   mockBackupManager.getStagedSiteRestore.mockReturnValue(null);
   mockBackupManager.siteRestoreScope.mockReturnValue({ restored: ['the databases'], notRestored: ['sign-in sessions'] });
   mockBackupManager.cancelStagedRestore.mockResolvedValue({ scope: 'databases', source: 'b.json.gz' });
@@ -1003,6 +1009,34 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).post('/admin/backup/key/saved').set('x-csrf-token', 'test-csrf-token').send({ fingerprint: 'abcdef0123456789' });
       expect(res.status).toBe(403);
       expect(mockBackupManager.confirmBackupKeySaved).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /admin/backup/env — download the instance .env (#1938)', () => {
+    test('sends the file exactly as it is, as an attachment named after the site, never cached', async () => {
+      // Sabotage (2026-10-21): dropping the Cache-Control header, or sending a
+      // copy without the backup key line, turns this red.
+      const res = await request(app).get('/admin/backup/env').buffer(true).parse((r, cb) => { const chunks: Buffer[] = []; r.on('data', (c: Buffer) => chunks.push(c)); r.on('end', () => cb(null, Buffer.concat(chunks))); });
+      expect(res.status).toBe(200);
+      expect((res.body as Buffer).toString('utf8')).toBe(ENV_FILE);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['content-disposition']).toBe('attachment; filename="ngdpbase.env"');
+      expect(mockBackupManager.revealInstanceEnv).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }));
+    });
+
+    test('refused without config-manage (or its fresh sign-in): the file is never read', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).get('/admin/backup/env');
+      expect(res.status).not.toBe(200);
+      expect(res.text).not.toContain('NGDPBASE_BACKUP_KEY');
+      expect(mockBackupManager.revealInstanceEnv).not.toHaveBeenCalled();
+    });
+
+    test('a site with no .env says so on Admin → Backup', async () => {
+      mockBackupManager.revealInstanceEnv.mockResolvedValue(null);
+      const res = await request(app).get('/admin/backup/env');
+      expect(res.status).toBe(302);
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=This site has no \.env file to download/);
     });
   });
 

@@ -47,6 +47,14 @@
             <a class="btn btn-outline-primary btn-sm" id="backup-key-show" href="/admin/backup/key"><i class="fas fa-eye"></i> Show the key to copy it</a>
             <% } %>
             <% } %>
+            <hr>
+            <div id="backup-env">
+                <p class="mb-2">You can also download a copy of the site's <code>.env</code> file, the backup key included.</p>
+                <div class="alert alert-warning mb-2" id="backup-env-warning">
+                    <i class="fas fa-exclamation-triangle"></i> This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.
+                </div>
+                <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
+            </div>
         </div>
     </div>
 
