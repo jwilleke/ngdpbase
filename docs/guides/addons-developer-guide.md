@@ -8,7 +8,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 
 ### Before you write code
 
-- __Node.js `>=24.0.0` and npm `>=11.0.0`.__ That is `engines` in this repo's `package.json`.
+- __Node.js `>=24.15.0` and npm `>=11.0.0`.__ That is `engines` in this repo's `package.json`.
 - __A local instance.__ `./server.sh start`. Instance config is the operator file in [Configuration](#configuration).
 - __An account whose password you set.__ The shipped `admin` password is `admin123`. Change it on first login, or set `NGDPBASE_ADMIN_PASSWORD` and point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` before the first boot ([SETUP.md](../../SETUP.md)). Do not build or test an addon against the shipped password.
 - __A place for the code.__
@@ -36,7 +36,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
   - __A `general` page it helps a person create__ is that person's page, with no addon rules afterwards.
   - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
-  - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); the string `"true"` is read as false. Turning the addon off removes the category until #1559.
+  - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); any other value, the string `"true"` included, refuses the entry, and the add-on is not loaded. Core reads the entry from every installed add-on, enabled or not (#1559): turning the addon off keeps its category's pages and vault reachable, and only stops the category being offered.
   - __A page whose content is private to each viewer__ turns off core's shared Comments and Footnotes: `comments: false` / `footnotes: false` in its frontmatter, or on its system-category entry for all its pages ([Turning off Comments and Footnotes](#turning-off-comments-and-footnotes)).
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - An addon's permission entries don't set `"step-up": true` for now (operator, 2026-10-18): a form loses its typed fields across the fresh sign-in. Say so in your own docs; the rule is in the [authentication guide](authentication-developer-guide.md#standing-rules).
@@ -56,9 +56,9 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 
 The slug is the addon's identity. `resolveAddonSlug` (`src/utils/addonsPathResolver.ts`) computes it without loading the module:
 
-1. `package.json` `ngdpbase.slug`, when that field is set.
-2. Otherwise the folder name.
-3. An npm package with no slug drops a trailing `-addon` from the package directory name, so `@scope/geohazardwatch-addon` is `geohazardwatch`. A directory addon (bundled or drop-in) keeps its folder name verbatim, including a folder that ends in `-addon`.
+- 1 `package.json` `ngdpbase.slug`, when that field is set.
+- 2 Otherwise the folder name.
+- 3 An npm package with no slug drops a trailing `-addon` from the package directory name, so `@scope/geohazardwatch-addon` is `geohazardwatch`. A directory addon (bundled or drop-in) keeps its folder name verbatim, including a folder that ends in `-addon`.
 
 `npm run create:addon` rejects an `--id` that ends in `-addon`. That is the scaffolder's check. Directory discovery keeps the folder name, as in the rule above.
 
@@ -282,9 +282,9 @@ Worked examples: `addons/journal/config/default-config.json` declares `journal-r
 
 An addon under `addons/` is linted with the host. These run in `npm run lint`, in `lint:ci`, and (for the ones named) on the pre-commit hook:
 
-- `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
+- `npm run lint:code` — eslint on `src/**/*.ts`, `addons/**/*.ts` and `packages/`. The hook runs `eslint --fix` on the staged `.ts` files.
 - `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)), and no value import of `express` in addon runtime code ([#1861](https://github.com/jwilleke/ngdpbase/issues/1861); types and tests exempt). On the pre-commit hook.
-- `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
+- `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`. On the pre-commit hook.
 - `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `host.recordAuditEvent` and `host.addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
 
 `npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
@@ -433,7 +433,7 @@ add-ons (kept in `fairways-base/addons/`) with non-generic ones hosted in separa
 }
 ```
 
-Each path is scanned in order. If the same addon `name` appears in more than one path, the first
+Each path is scanned in order. If the same slug appears in more than one path, the first
 occurrence wins and subsequent duplicates are skipped with a warning in the logs.
 
 __Convention:__ keep generic/reusable add-ons in `fairways-base/addons/`; keep site-specific or
@@ -616,7 +616,7 @@ People and organizations an add-on keeps (donors, members, suppliers) are core's
 | `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | `contact-manage` | A person with no account; returns the record with its `@id` |
 | `persons.update(ctx, id, patch)` | `contact-manage` | Change fields, affiliations included. `@id` and `identifier` never change |
 | `persons.delete(ctx, id)` | `contact-manage` | Remove a person |
-| `organizations.search(ctx, query, { limit? })` | `contact-read` | Organizations whose name, legal name or email contains `query` |
+| `organizations.search(ctx, query, { limit? })` | `contact-read` | Organizations whose name, legal name, email or a contact point's email contains `query` |
 | `organizations.get(ctx, id)` / `organizations.list(ctx)` | `contact-read` | One organization, or all |
 | `organizations.create(ctx, { name, url?, … })` | `contact-manage` | `@id` is the `url`, else a new `urn:uuid:` |
 | `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `contact-manage` | Change or remove |
@@ -844,14 +844,16 @@ The rule and what each surface does: [system-category.md](../system-category.md#
 
 #### Overriding the Left Menu and Footer
 
-Two special slugs let an add-on replace the instance-wide navigation and footer without editing system pages:
+The left menu and the footer are named by `ngdpbase.chrome.left-menu-page` and `ngdpbase.chrome.footer-page` (shipped empty). When a key is set, the page it names is used and nothing else is tried; a missing page is logged at error and that slot is empty on every page (`PageManager.readChromePage`). A domain add-on can set them through [`domainDefaults`](#domaindefaults).
+
+While a key is empty, two special slugs are the legacy fallback, and let an add-on replace the instance-wide navigation and footer without editing system pages:
 
 | File | Slug | Replaces |
 |------|------|----------|
 | `pages/left-menu-content.md` | `left-menu-content` | `LeftMenu` required page |
 | `pages/footer-content.md` | `footer-content` | `Footer` required page |
 
-When the server renders any page it checks for `left-menu-content` first; if found, it is used instead of `LeftMenu`. Same for `footer-content` vs `Footer`. This means an add-on can ship its own navigation without touching the core system pages.
+With the key empty, the server checks for `left-menu-content` first; if found, it is used instead of `LeftMenu`, and an info line says so and names the key to set. Same for `footer-content` vs `Footer`. This means an add-on can ship its own navigation without touching the core system pages.
 
 Example `left-menu-content.md`:
 
@@ -898,7 +900,7 @@ await forms?.registerShippedForm('my-addon', definition);
 await forms?.registerShippedForm('my-addon', definition, { required: true });
 ```
 
-The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
+The forms add-on keeps the site's copy in `<dataPath>/definitions/<id>.json` (`ngdpbase.addons.forms.dataPath`, default `${FAST_STORAGE}/forms`), stamped with the add-on's name and a hash of the shipped definition it was saved or synced from. The rule is the one shipped pages follow in Admin → Required Pages (`evaluateSeededAddonPage`, [#931](https://github.com/jwilleke/ngdpbase/issues/931), [#1395](https://github.com/jwilleke/ngdpbase/issues/1395)):
 
 - No copy on the site: it is saved. That is the first install.
 - The copy is what you ship: __Current__.
@@ -908,7 +910,7 @@ The forms add-on keeps the site's copy in `data/forms/definitions/<id>.json`, st
 
 The status words, badges and Sync / Force Sync are Admin → Required Pages' own ([#1918](https://github.com/jwilleke/ngdpbase/issues/1918)), drawn by core's shared partials `views/_sync-status.ejs`, `views/_sync-button.ejs` and `views/_sync-counts.ejs` from `syncRowState` (`src/utils/addonPageSync.ts`). Any add-on screen that syncs shipped content uses them rather than its own design.
 
-A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `data/forms/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
+A copy left behind what you ship (Modified, or User Edited with a change waiting) raises a notification to administrators (whoever holds `admin-system`) at start. It names your add-on, the form and the fix: Sync on the forms admin, or Force Sync for an edited copy, whose notice says Sync will not replace it. It is raised once per form and shipped version. The version announced is kept in `<dataPath>/shipped-notices.json`, so a restart, or a dismissed or cleared notice, does not raise it again; your next change does.
 
 - Ordinary change: an info notice, "Form update available: …".
 - `{ required: true }`: what ships now is needed for your add-on to work. The notice is critical ("Critical: form … needs syncing", error level), as a failed add-on load is ([#1883](https://github.com/jwilleke/ngdpbase/issues/1883)), and the forms admin flags the form __Required__ until it is synced. Mark only a change your add-on breaks without, such as a field your handler now reads.
@@ -1025,7 +1027,7 @@ __You declare the kind. You do not implement encryption, keys, or recovery words
 
 #### Declaring the kind
 
-__Being reworked.__ Until [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) an addon declared its kind in `package.json` `ngdpbase.stores`, and core saved it as `ngdpbase.stores.{id}.owner` / `.encrypt`. That mechanism is gone: no addon used it, and a vault kind is now a __system-category entry with a vault__ (`storageLocation.privatestore`), carrying its own `encrypt` and `owner` ([system-category.md](../system-category.md)). An addon will declare its own system-category, owned by its __slug__ ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), in its manifest ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). That declaration is not built. The journal vault is already an entry in core `config/app-default-config.json` (`pages/vaults/{user}/journal/`); `addons/journal` does not ship it.
+Until [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) an addon declared its kind in `package.json` `ngdpbase.stores`, and core saved it as `ngdpbase.stores.{id}.owner` / `.encrypt`. That mechanism is gone: no addon used it, and a vault kind is now a __system-category entry with a vault__ (`storageLocation.privatestore`), carrying its own `encrypt` and `owner` ([system-category.md](../system-category.md)). An addon declares that entry under `ngdpbase.system-category.<key>` in its own `config/default-config.json`, with `owner` set to its __slug__ ([#927](https://github.com/jwilleke/ngdpbase/issues/927), [#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). Core reads it from every installed addon, enabled or not, and refuses an entry that claims another owner, reuses another entry's key or vault, or has a value of the wrong type; the addon is then not loaded. The worked example is the journal vault (`pages/vaults/{user}/journal/`) in `addons/journal/config/default-config.json`.
 
 What does not change:
 
@@ -1056,7 +1058,7 @@ Your addon's part:
 - Link to `/stores/{your-kind-id}` where your set-up step belongs ("set up your health records").
 - Assume the key exists once the door returns. By the time your addon writes anything, it does.
 
-The door renders core's own wording around your `label` and `blurb`.
+The door renders core's own wording around the kind's id ("Private store: `<id>`"); it does not show a label or description of yours yet (see [Known gaps](#known-gaps)).
 
 Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask for, store, or log one. There is no API that hands you key material, and there will not be.
 
@@ -1075,8 +1077,9 @@ The store kind is a system-category entry with a vault. Built:
 - `storageLocation.privatestore` is `pages/vaults/{user}/{vaultid}/`. The folders moved off `pages/private/` in [#1506](https://github.com/jwilleke/ngdpbase/issues/1506).
 - `encrypt`, `owner` and `defaultPrivate` (`true`, `false` or `choice`) live on that entry. Who may make a page public is the `page-public` policy, not an `allowPublic` field. `encrypt: true` keeps the vault's pages private.
 - The door is still `/stores/{kind}`.
+- The add-on declares that entry in its own `config/default-config.json`, and core reads it live from every installed add-on, enabled or not ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). Turning the addon off loses nothing: the category stays valid but is not offered, its public pages still show, and the vault shows the closed door.
 
-What is not built is the add-on declaring that entry in its manifest and core persisting it at first load ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). Turning the addon off still loses nothing: the category stays valid, its public pages still show, and the vault shows the closed door. The target is defined in [system-category.md](../system-category.md). Retiring an addon for good (moving its pages out, then removing its category) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
+The target is defined in [system-category.md](../system-category.md). Retiring an addon for good (moving its pages out, then removing its category) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
 ---
 
@@ -1475,10 +1478,10 @@ declared dependency is not installed or not enabled.
 
 ## 10. Development Workflow
 
-1. Edit files in your add-on repo. A TypeScript add-on in this repo needs `npm run build:addons` (or `npm run build`) so `index.js` is current; a plain-JS add-on has no compile step
-2. `./server.sh restart` to pick up changes
-3. Check logs: `pm2 logs` or `./server.sh logs`
-4. Visit `/admin` → Add-ons section to verify load status and `status()` output
+- 1 Edit files in your add-on repo. A TypeScript add-on in this repo needs `npm run build:addons` (or `npm run build`) so `index.js` is current; a plain-JS add-on has no compile step
+- 2 `./server.sh restart` to pick up changes
+- 3 Check logs: `pm2 logs` or `./server.sh logs`
+- 4 Visit `/admin` → Add-ons section to verify load status and `status()` output
 
 For faster iteration on routes/logic without full restart, you can temporarily
 `require()` your module inside a route handler and `delete require.cache[...]` —
@@ -1488,9 +1491,9 @@ but a restart is the reliable path.
 
 If you discover a missing API or bug in the core during add-on development:
 
-1. Fix it in the `ngdpbase` repo
-2. Commit and restart
-3. Continue add-on development
+- 1 Fix it in the `ngdpbase` repo
+- 2 Commit and restart
+- 3 Continue add-on development
 
 Keep core PRs self-contained — no add-on-specific code in the core repo.
 
@@ -1512,10 +1515,10 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Every inline `<script>` in a view carries `nonce="<%= locals.cspNonce %>"`; no `on*=` handler or `javascript:` URL anywhere in a view ([Scripts in a view](#scripts-in-a-view-the-csp-nonce-contract))
 - [ ] Core values come from `host`; anything still imported comes through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
-- [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
+- [ ] If the add-on owns the UI chrome: `ngdpbase.chrome.left-menu-page` / `ngdpbase.chrome.footer-page` name its pages, or `pages/left-menu-content.md` and `pages/footer-content.md` are present for the legacy fallback
 - [ ] A page whose content is private to each viewer sets `comments: false` and `footnotes: false` in its frontmatter ([Turning off Comments and Footnotes](#turning-off-comments-and-footnotes))
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
-- [ ] If the addon holds a user's own data: its vault is a system-category entry (manifest declaration is not built — [#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559); the journal entry lives in core config today), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
+- [ ] If the addon holds a user's own data: its vault is a system-category entry it declares in its own `config/default-config.json`, `owner` set to its slug ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559); the journal is the worked example), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
 ---
 
@@ -1601,9 +1604,9 @@ Add `renovate.json` to your site repo:
 
 Enable Renovate on the repo (GitHub App or self-hosted). On every ngdpbase release, Renovate opens a PR that:
 
-1. Bumps the `ARG NGDPBASE_VERSION=...` default in your Dockerfile.
-2. Includes the upstream changelog/release notes from `ghcr.io/jwilleke/ngdpbase`'s OCI labels.
-3. Triggers your CI to rebuild the image against the new base.
+- 1 Bumps the `ARG NGDPBASE_VERSION=...` default in your Dockerfile.
+- 2 Includes the upstream changelog/release notes from `ghcr.io/jwilleke/ngdpbase`'s OCI labels.
+- 3 Triggers your CI to rebuild the image against the new base.
 
 Reviewer merges → CI publishes a fresh combined image → your container is current. This is the __deterministic method for container deployment builds__ referenced in [#668](https://github.com/jwilleke/ngdpbase/issues/668): the platform handles publishing, Renovate handles propagation, no codegen required on either side.
 
@@ -1689,7 +1692,8 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
 - [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
 - [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
-- [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
+- [#1957](https://github.com/jwilleke/ngdpbase/issues/1957) — [form notices](#ship-form-definitions): the "New form submission" notification is addressed to the holders of the form's `notifyRole`, but `/admin/notifications` and the admin dashboard list every notification (`getAllNotifications`), whatever its targets. Anyone who can view those admin pages sees a notice addressed to `treasurer`. No other page shows notifications by target yet.
+- [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 
 ---
 
