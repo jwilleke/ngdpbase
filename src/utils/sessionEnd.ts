@@ -11,6 +11,11 @@
  *   why (#1670). Until this, only the idle timeout was recorded.
  * - a choice to act for someone (`actingFor`, #1762) ends with it.
  *
+ * An account deleted or turned off ends its sessions here too (#1937), with
+ * the reason `account-deleted` / `account-disabled`: on the session's next
+ * request (`checkSessionAccount`), and in the store when the account is
+ * closed (`UserManager.deleteUserSessions`) or at startup (`endStaleSessions`).
+ *
  * An admin revoking another person's session is recorded separately as
  * `session-revoke`, by the route that does it. A session that simply expires
  * in the store has no hook to call this; its keys are swept (#1626).
@@ -18,7 +23,7 @@
 import { endSessionKeys } from './privateStoreUnlock.js';
 import logger from './logger.js';
 
-export type SessionEndReason = 'logout' | 'idle-timeout' | 'max-age' | 'password-changed' | 'superseded';
+export type SessionEndReason = 'logout' | 'idle-timeout' | 'max-age' | 'password-changed' | 'superseded' | 'account-deleted' | 'account-disabled';
 
 interface AuditSink {
   logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<unknown>;
