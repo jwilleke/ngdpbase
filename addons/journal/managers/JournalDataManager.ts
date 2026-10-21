@@ -94,7 +94,10 @@ class JournalDataManager extends BaseManager implements JournalAuthorCounter {
     const pm = this.engine.getManager<PageManager>('PageManager');
     if (!sm || !pm) return [];
 
-    const publicNames = (await sm.searchByCategory('journal')).map(r => r.name);
+    // #1962: the shared index knows nothing of a page's audience or the
+    // policies, so its names go through the page-list door — the decision
+    // `/view` makes — before anything is read or listed.
+    const publicNames = await pm.filterPagesFor(ctx, (await sm.searchByCategory('journal')).map(r => r.name));
     const ownPrivateNames = ctx.username
       ? (await pm.getPagesByCreator(ctx.username, ctx)).flatMap(e => (e.isPrivate && e.name ? [e.name] : []))
       : [];

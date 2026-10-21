@@ -5315,8 +5315,9 @@ ${panes}
   /**
    * GET /api/keywords/related?keyword=<kw> (#882) — user keywords that
    * co-occur with the given keyword, ranked by shared-page count.
-   * ACL-safe by construction: pages come from advancedSearchWithContext,
-   * so private pages the caller can't see never contribute counts.
+   * Pages come from advancedSearchWithContext, which keeps only the pages
+   * the caller may open (#1962), so a page they cannot open never
+   * contributes a count.
    */
   async relatedKeywords(req: Request, res: Response) {
     try {
@@ -11219,6 +11220,10 @@ ${panes}
         logger.warn('[adminDashboard] CatalogManager not available for source listing:', catalogErr);
       }
 
+      const degraded = (this.engine as unknown as {
+        getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
+      }).getDegradedManagers?.() ?? [];
+
       const templateData = {
         ...commonData,
         title: 'Admin Dashboard',
@@ -11260,10 +11265,11 @@ ${panes}
         // working. Thirteen could reach that state and only auditing said so,
         // so a bad backup directory meant backups silently never ran while
         // this page looked entirely healthy. Excludes `disabled`, which is a
-        // deliberate choice rather than a fault.
-        degradedManagers: (this.engine as unknown as {
-          getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string }>;
-        }).getDegradedManagers?.() ?? [],
+        // deliberate choice rather than a fault. #1946: `degradedManagers`
+        // holds only the ones that are down; `attentionManagers` the ones that
+        // work but need an admin, by the kind each manager declared.
+        degradedManagers: degraded.filter((m) => m.kind !== 'attention'),
+        attentionManagers: degraded.filter((m) => m.kind === 'attention'),
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
@@ -11747,6 +11753,14 @@ ${panes}
       // #1723: what a restore needs on the page — the staged one, whether one
       // is being prepared, and the name an admin types to confirm.
       const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown; getUnavailableReason?(): string | null }>('DatabaseManager');
+      // #1945: a staged whole-site restore, or why its record can't be read.
+      let stagedSiteRestore: unknown = null;
+      let stagedSiteRestoreError: string | null = null;
+      try {
+        stagedSiteRestore = backupManager.getStagedSiteRestore();
+      } catch (err: unknown) {
+        stagedSiteRestoreError = getErrorMessage(err);
+      }
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-backup', {
         ...commonData,
@@ -11756,6 +11770,10 @@ ${panes}
         // #1892 D2: the application database can't be opened; a restore is still offered, and says what it leaves out.
         databaseUnavailable: databaseManager?.getUnavailableReason?.() ?? null,
         stagedRestore: databaseManager?.getStagedRestore() ?? null,
+        stagedSiteRestore,
+        stagedSiteRestoreError,
+        // #1945: what a whole-site restore puts back and what it does not, in the "not restored" notification's words.
+        siteRestoreScope: backupManager.siteRestoreScope(),
         restoreRunning: backupManager.isRestoreRunning(),
         // #1876: the backup key's fingerprint and whether it is saved off the server — never the key.
         backupKey: backupManager.backupKeyInfo(),
@@ -11930,25 +11948,29 @@ ${panes}
   }
 
   /**
-   * POST /admin/backup/restore — restore a stored backup's databases (#1723 D1, D5).
-   * The admin types the site name to confirm. A fresh backup is taken and the
-   * databases are staged in the background; the restart applies them. A
-   * staged restore is replaced only when `replace` says so.
+   * POST /admin/backup/restore — restore a stored backup (#1723 D1, D5;
+   * #1945): the whole site (`scope=site`) or its databases only (the
+   * default). The admin types the site name to confirm. BackupManager
+   * decides the rest: it records the restore, takes a fresh backup and
+   * stages in the background; the restart applies it. A staged restore is
+   * replaced only when `replace` says so.
    */
   async adminBackupRestore(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const currentUser = wikiContext.userContext;
-      const backupManager = this.engine.getManager('BackupManager');
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
       if (!currentUser || !backupManager) return res.redirect('/admin/backup?error=BackupManager+not+available');
       const body = req.body as Record<string, string | undefined>;
       const expected = this.siteName();
       if (!expected || (body.confirm ?? '').trim() !== expected) {
         return res.redirect('/admin/backup?error=' + encodeURIComponent('Nothing was restored: type the site name exactly to confirm'));
       }
-      await backupManager.startRestore(currentUser, String(body.backup ?? ''), { replace: body.replace === 'true' });
-      return res.redirect('/admin/backup?success=' + encodeURIComponent('Restore started: a fresh backup is being taken, then the databases are staged. You will be notified when it is ready. Restart the site to apply it.'));
+      const scope = body.scope === 'site' ? 'site' : 'databases';
+      await backupManager.startRestore(currentUser, String(body.backup ?? ''), { replace: body.replace === 'true', scope });
+      const what = scope === 'site' ? 'the whole site is staged' : 'the databases are staged';
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Restore started: a fresh backup is being taken, then ${what}. You will be notified when it is ready. Restart the site to apply it.`));
     } catch (err: unknown) {
       logger.error('Error starting restore:', err);
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
@@ -11956,17 +11978,20 @@ ${panes}
   }
 
   /**
-   * POST /admin/backup/restore/cancel — throw away a staged restore (#1723 D5).
+   * POST /admin/backup/restore/cancel — throw away the staged restore, a
+   * site restore or a databases-only one (#1723 D5, #1945); BackupManager
+   * decides which.
    */
   async adminBackupRestoreCancel(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const currentUser = wikiContext.userContext;
-      const databaseManager = this.engine.getManager<{ cancelStagedRestore(ctx: unknown): Promise<{ source: string; backup: string }> }>('DatabaseManager');
-      if (!currentUser || !databaseManager) return res.redirect('/admin/backup?error=DatabaseManager+not+available');
-      const cancelled = await databaseManager.cancelStagedRestore(currentUser);
-      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source || cancelled.backup} cancelled; the current databases stay as they are.`));
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      if (!currentUser || !backupManager) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      const cancelled = await backupManager.cancelStagedRestore(currentUser);
+      const unchanged = cancelled.scope === 'site' ? "the site's data stays as it is" : 'the current databases stay as they are';
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source} cancelled; ${unchanged}.`));
     } catch (err: unknown) {
       logger.error('Error cancelling staged restore:', err);
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
@@ -14240,7 +14265,7 @@ ${panes}
       // #742: "All sources" (types absent or `all`) aggregates pages, users,
       // and the asset stores instead of 403'ing non-editors and returning
       // attachments/media only. Each source keeps its own access rule:
-      //   pages       → always; SearchManager applies per-page ACL (anon-safe)
+      //   pages       → search-page; SearchManager keeps only pages the reader may open (#1962)
       //   users       → authenticated viewers only (PII; mirrors types=user)
       //   attach/media → editor asset surface only (unchanged gate)
       // Placed before the editor gate so readers get page hits — the core
@@ -14250,8 +14275,9 @@ ${panes}
         const merged: Record<string, unknown>[] = [];
         let anyCapped = false;
 
-        // Pages — SearchManager filters per-page ACL via wikiContext, so this
-        // is anon-safe. Title-default recall per #739 (no category/keyword
+        // Pages — advancedSearchWithContext keeps only the pages this reader
+        // may open, decided by PolicyInformationPoint as /view decides it,
+        // before its limit (#1962). Title-default recall per #739 (no category/keyword
         // filter inputs exist on the all-sources surface).
         const searchManager = this.engine.getManager('SearchManager') as {
           advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
@@ -14381,8 +14407,8 @@ ${panes}
 
       // Auth model (#696, #1059):
       //   types=page  → search-page permission (anonymous holds it in the
-      //                 default catalogue); SearchManager then filters
-      //                 per-page ACL via wikiContext.
+      //                 default catalogue); SearchManager then keeps only
+      //                 the pages the reader may open (#1962).
       //   types=user  → handled inside the user branch (search-user permission).
       //   anything else (attachments, media) → editor surface, keep the
       //                 editor/contributor/admin gate.
@@ -14406,8 +14432,8 @@ ${panes}
       // the URL surface matches what /search supports today.
       if (typesParam === 'page') {
         // #1059: search-page gates page search (anonymous holds it in the
-        // default catalogue). SearchManager's per-page ACL filter still runs
-        // below — this decides whether the caller may search at all.
+        // default catalogue) — whether the caller may search at all. Which
+        // pages they may see is SearchManager's, per page, below (#1962).
         if (!(await wikiContext.hasPermission('search-page'))) {
           return res.status(403).json({ success: false, error: 'Access denied' });
         }

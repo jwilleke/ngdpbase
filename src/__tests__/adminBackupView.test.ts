@@ -140,3 +140,82 @@ describe('#1876 the page that shows the backup key', () => {
   });
 });
 
+describe('#1945 Admin → Backup, Restore the whole site', () => {
+  const scope = { restored: ['the databases', 'attachment files'], notRestored: ['pages (with their history, trash and private stores)', 'sign-in sessions'] };
+
+  test('is shown on every site, before the databases-only restore, and says what it puts back and what it does not', async () => {
+    const doc = await render({ databasesEnabled: false, siteRestoreScope: scope });
+    expect(doc.querySelector('#site-restore-card')).not.toBeNull();
+    expect(doc.querySelector('#restore-card')).toBeNull();
+    const restored = [...doc.querySelectorAll('#site-restore-restored li')].map(text);
+    expect(restored.slice(0, 2)).toEqual(scope.restored);
+    expect(restored[2]).toMatch(/\.env file\), but only from an encrypted backup/);
+    expect([...doc.querySelectorAll('#site-restore-not-restored li')].map(text)).toEqual(scope.notRestored);
+    const how = text(doc.querySelector('#site-restore-how'));
+    expect(how).toMatch(/only on a server that has the same backup key/);
+    expect(how).toMatch(/Nothing changes until the site is restarted, which you do yourself: the site never restarts on its own/);
+    // The form says which restore it is, and waits for the site name.
+    const form = doc.querySelector('#site-restore-form')!;
+    expect(form.querySelector('input[name=scope]')?.getAttribute('value')).toBe('site');
+    expect(form.querySelector('input[name=replace]')).toBeNull();
+    expect(form.querySelector('#siteRestoreConfirm')?.getAttribute('data-expected')).toBe('jimstest');
+    expect(text(form.querySelector('#site-restore-submit'))).toBe('Restore the whole site');
+    // The main card comes first.
+    const both = await render({ siteRestoreScope: scope });
+    expect(both.querySelector('#site-restore-card')!.compareDocumentPosition(both.querySelector('#restore-card')) & 4 /* FOLLOWING */).toBeTruthy();
+  });
+
+  test('every stored backup can be picked, a keyless one marked', async () => {
+    const doc = await render({
+      siteRestoreScope: scope,
+      recentBackups: [
+        { ...stored('2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz', '2026-10-17T02:00:00Z', []), encrypted: false },
+        { ...stored('2026-10-18T02-00-00-000Z-ngdpbase-backup.json.gz.enc', '2026-10-18T02:00:00Z', ['application']), encrypted: true }
+      ]
+    });
+    const options = [...doc.querySelectorAll('#siteRestoreBackup option')];
+    expect(options.map((o) => o.getAttribute('value'))).toEqual(['2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz', '2026-10-18T02-00-00-000Z-ngdpbase-backup.json.gz.enc']);
+    expect(text(options[0])).toMatch(/not encrypted: no sign-in credentials, no keys/);
+    expect(text(options[1])).not.toMatch(/not encrypted/);
+    expect(text((await render({ siteRestoreScope: scope, recentBackups: [] })).querySelector('#site-restore-none'))).toBe('No backup is stored on this server yet.');
+  });
+
+  test('a staged site restore is shown with its safety backup and a cancel; the databases-only restore waits for it', async () => {
+    const safety = '2026-10-18T09-00-00-000Z-ngdpbase-backup.json.gz.enc';
+    const source = '2026-10-17T02-00-00-000Z-ngdpbase-backup.json.gz';
+    const doc = await render({
+      siteRestoreScope: scope,
+      recentBackups: [stored(safety, '2026-10-18T09:00:00Z', ['application']), stored(source, '2026-10-17T02:00:00Z', ['application'])],
+      stagedSiteRestore: { version: 1, state: 'staged', stagedAt: '2026-10-18T09:00:05Z', backup: '2026-10-17T02:00:00Z', source, stagedBy: 'jim', safetyBackup: safety, parts: [] },
+      // A site restore stages the databases too, so their own record is there as well.
+      stagedRestore: { version: 1, stagedAt: '2026-10-18T09:00:05Z', backup: '2026-10-17T02:00:00Z', source, stagedBy: 'jim', databases: [{ name: 'application', live: '/d/a.db', staged: '/d/a.db.staged' }] }
+    });
+    const panel = doc.querySelector('#staged-site-restore')!;
+    expect(text(panel)).toMatch(/A whole-site restore is staged and waits for the restart/);
+    expect(text(panel)).toMatch(/Staged by\s*jim/);
+    expect(text(panel.querySelector('#site-safety-backup'))).toContain(`saved as ${safety}`);
+    expect(panel.querySelector('#cancel-staged-site-restore')?.getAttribute('action')).toBe('/admin/backup/restore/cancel');
+    expect(doc.querySelector('#site-restore-form input[name=replace]')?.getAttribute('value')).toBe('true');
+    expect(text(doc.querySelector('#site-restore-submit'))).toBe('Replace it');
+    // The databases' own record is part of the site restore: not shown as a second restore, and not offered.
+    expect(doc.querySelector('#staged-restore')).toBeNull();
+    expect(doc.querySelector('#restore-form')).toBeNull();
+    expect(text(doc.querySelector('#database-restore-blocked'))).toMatch(/whole-site restore is staged, and it includes the databases/);
+  });
+
+  test('a staged databases-only restore is replaced by a site restore only through Replace it', async () => {
+    const doc = await render({
+      siteRestoreScope: scope,
+      stagedRestore: { version: 1, stagedAt: '2026-10-18T09:00:05Z', backup: '', source: 'x.json.gz', stagedBy: 'jim', databases: [{ name: 'application', live: '/d/a.db', staged: '/d/a.db.staged' }] }
+    });
+    expect(doc.querySelector('#staged-restore')).not.toBeNull();
+    expect(doc.querySelector('#site-restore-form input[name=replace]')?.getAttribute('value')).toBe('true');
+    expect(text(doc.querySelector('#site-restore-replaces-databases'))).toMatch(/Restoring the whole site replaces it/);
+  });
+
+  test('a site restore record that cannot be read is said, not hidden', async () => {
+    const doc = await render({ siteRestoreScope: scope, stagedSiteRestoreError: 'site-restore.json is not a site restore manifest' });
+    expect(text(doc.querySelector('#staged-site-restore-unreadable'))).toMatch(/can't be read: site-restore.json is not a site restore manifest/);
+  });
+});
+

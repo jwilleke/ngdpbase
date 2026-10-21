@@ -1,0 +1,45 @@
+<%# #1155 — a manager that is configured, wanted and NOT working. Thirteen
+    managers could reach this state and only auditing reported it, so a bad
+    backup directory meant backups silently never ran while the dashboard
+    looked healthy. Deliberately DISABLED managers are excluded upstream: a
+    banner that warns about features somebody switched off is one nobody
+    reads, and the real warning goes with it. Not dismissible, for the same
+    reason as the audit banner on the dashboard.
+
+    #1946 — two sections, by the `kind` the manager declared: `outage` is
+    down, `attention` works but has something for an admin to do (save the
+    backup key, fix a value). Telling an operator backups are "silently doing
+    nothing" while they run is a false alarm. Each shows only with entries. %>
+<%# The state word ("degraded") is shown only for outages: next to a reminder it reads as broken. %>
+<% function subsystemList(entries, showState) { %>
+    <ul class="small text-muted mt-1 mb-0">
+        <% entries.forEach(function (m) { %>
+            <li>
+                <strong><%= m.manager %></strong><% if (showState) { %> (<%= m.state %>)<% } %><% if (m.reason) { %> &mdash; <%= m.reason %><% } %>
+                <% if (m.configKey) { %>
+                    <br><span>Configuration key: <code><%= m.configKey %></code></span>
+                <% } %>
+            </li>
+        <% }); %>
+    </ul>
+<% } %>
+<% if (degradedManagers && degradedManagers.length > 0) { %>
+    <div class="alert alert-warning d-flex align-items-start" role="alert" id="subsystems-down">
+        <i class="fas fa-triangle-exclamation me-2 mt-1" aria-hidden="true"></i>
+        <div>
+            <strong><%= degradedManagers.length %> subsystem<%= degradedManagers.length === 1 ? ' is' : 's are' %> not working.</strong>
+            Configured and wanted, but unavailable &mdash; the features they provide are silently doing nothing.
+            <% subsystemList(degradedManagers, true); %>
+        </div>
+    </div>
+<% } %>
+<% if (attentionManagers && attentionManagers.length > 0) { %>
+    <div class="alert alert-info d-flex align-items-start" role="status" id="subsystems-attention">
+        <i class="fas fa-circle-info me-2 mt-1" aria-hidden="true"></i>
+        <div>
+            <strong>Working, but needs your attention.</strong>
+            <%= attentionManagers.length === 1 ? 'This feature is running, but an administrator has something to do:' : 'These features are running, but each has something for an administrator to do:' %>
+            <% subsystemList(attentionManagers, false); %>
+        </div>
+    </div>
+<% } %>

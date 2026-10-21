@@ -1,6 +1,6 @@
 import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
-import { isOk, reason } from './http.js';
+import { isOk, reason, requestOptions } from './http.js';
 /**
  * csv adapter (#685 slice 4+, #911) — zero dependency (native fetch + a small
  * RFC 4180 parser). Needed for sources that only publish CSV, e.g. NASA FIRMS
@@ -132,7 +132,7 @@ export const csvAdapter: SourceAdapter = {
   name: 'csv',
 
   async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
-    const res = await guardedFetch(cfg.url, { policy });
+    const res = await guardedFetch(cfg.url, requestOptions(cfg, policy));
     if (!isOk(res)) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
