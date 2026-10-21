@@ -1,7 +1,7 @@
 ---
 name: Configuration developer guide
 description: How to add or change a configuration key — one reader, three merge layers, maps not arrays
-dateModified: 2026-10-18
+dateModified: 2026-10-21
 category: guides
 relatedModules: [ConfigurationManager]
 ---
@@ -25,18 +25,18 @@ How to add or change a configuration key. Config selects and parameterises; it n
 
 ## How to add a key
 
-1. Add the key and its shipped default to `config/app-default-config.json`.
-2. If it is env-owned, add it to `ngdpbase.config.env-keys` and `.env.example`.
-3. Read it with `ConfigurationManager.getProperty(key, shippedDefault)`.
-4. If it is a security-related setting the instance should report, add it to `ngdpbase.security.posture` (see [security-posture.md](../security-posture.md) D15/D16). That change is an audited event.
-5. Decide who may see its value, every time, and record it in `ngdpbase.config.sensitive-values` (an add-on in its own `config/default-config.json`):
-   - `secret` — it lets someone act as the instance or a user: a password, salt, signing key, client secret, API key or token.
-   - `sensitive` — it tells how the instance is run: a storage path, an outside service's address or identifier, the access policies.
-   - neither — leave it off the list; anyone who can read a page may see it. A key whose name looks like a secret (secret, password, token, credential, api-key, private-key) cannot be "neither": rename it, or declare it.
-   - a map whose entries hold a secret: declare the path, with `*` for the map key (`ngdpbase.addons.<slug>.accounts.*.account-number`), and ship the value as a `$NAME` reference, never the secret.
+- 1 Add the key and its shipped default to `config/app-default-config.json`.
+- 2 If it is env-owned, add it to `ngdpbase.config.env-keys` and `.env.example`.
+- 3 Read it with `ConfigurationManager.getProperty(key, shippedDefault)`.
+- 4 If it is a security-related setting the instance should report, add it to `ngdpbase.security.posture` (see [security-posture.md](../security-posture.md) D15/D16). That change is an audited event.
+- 5 Decide who may see its value, every time, and record it in `ngdpbase.config.sensitive-values` (an add-on in its own `config/default-config.json`):
+  - `secret` — it lets someone act as the instance or a user: a password, salt, signing key, client secret, API key or token.
+  - `sensitive` — it tells how the instance is run: a storage path, an outside service's address or identifier, the access policies.
+  - neither — leave it off the list; anyone who can read a page may see it. A key whose name looks like a secret (secret, password, token, credential, api-key, private-key) cannot be "neither": rename it, or declare it.
+  - a map whose entries hold a secret: declare the path, with `*` for the map key (`ngdpbase.addons.<slug>.accounts.*.account-number`), and ship the value as a `$NAME` reference, never the secret.
 
-   `npm run lint:sensitive` (part of `npm run lint`) fails on a secret-looking string setting that isn't declared; the other two choices are yours to make.
-6. Document it next to the module that consumes it (`docs/managers/…`), not as a second catalog.
+  `npm run lint:sensitive` (part of `npm run lint`) fails on a secret-looking string setting that isn't declared; the other two choices are yours to make.
+- 6 Document it next to the module that consumes it (`docs/managers/…`), not as a second catalog.
 
 ## How you know you are done
 
@@ -56,7 +56,6 @@ How to add or change a configuration key. Config selects and parameterises; it n
 ## Known gaps
 
 - [#1190](https://github.com/jwilleke/ngdpbase/issues/1190)
-- [#1191](https://github.com/jwilleke/ngdpbase/issues/1191)
 - [#1193](https://github.com/jwilleke/ngdpbase/issues/1193)
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028)
 - [#1889](https://github.com/jwilleke/ngdpbase/issues/1889) — secrets inside a map:

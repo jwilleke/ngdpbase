@@ -1,7 +1,7 @@
 ---
 name: Managers and providers developer guide
 description: How to add a manager or provider — one door per resource, config selects the implementation
-dateModified: 2026-10-20
+dateModified: 2026-10-21
 category: guides
 relatedModules: [BaseManager, BaseProvider, FileManager]
 ---
@@ -19,6 +19,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - A capability that can be left unconfigured must still work (Null, console, or an in-process default). Log the resolved provider at boot.
 - Authorization and audit happen at the manager door, with an `ActorContext`. See [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md).
 - A manager whose data can appear on a page bumps its cache topic after every write, through one write helper at its door (`CacheManager.bump`). See [caching-developer-guide.md](caching-developer-guide.md).
+- A manager says what state it is in through `BaseManager`, never only in the log: `markFailed` (could not start) or `markDegraded` (configured, wanted, not working) for an outage, `markNeedsAttention` when the feature works but an administrator has something to do (save the backup key, fix a mistyped value), `markDisabled` when it is deliberately off, and `markReady` / `markReadyIfDegradedBy(reason)` when it recovers. The kind is declared where the state is set, never read from the reason's wording; the admin dashboard lists outages under "subsystems not working" and the rest under "Working, but needs your attention" ([#1946](https://github.com/jwilleke/ngdpbase/issues/1946)). `preflightConfiguredPath` marks a bad path degraded for you.
 - A manager that needs the site closed puts it in maintenance mode through the one door, below. It never throws to stop the boot over something an administrator can fix, and never writes its own gate.
 - Server log: domain only; audit keeps addresses. A full email address never reaches the server log: a log line names the address's domain, through `emailDomain()`, and an error that may quote an address goes through `errorForLog()` (`src/utils/emailForLog.ts`). Audit records are not the server log and keep the full address an event carries; never pass them through these helpers (operator, 2026-10-20, [#1916](https://github.com/jwilleke/ngdpbase/issues/1916)). A failed send is logged once, by EmailManager; a caller does not log the error again.
 
@@ -60,16 +61,16 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 
 ## How to add a manager
 
-1. Scaffold from [docs/templates/Manager-Template.md](../templates/Manager-Template.md).
-2. Register it on `WikiEngine` in dependency order.
-3. Add `docs/managers/YourManager.md` with `code: src/managers/YourManager.ts` in the same commit. The index in [Developer-Documentation.md](../Developer-Documentation.md) is generated from that frontmatter.
-4. If it stores bytes, add a provider that extends the right `Base*Provider` and a Null or file default.
+- 1 Scaffold from [docs/templates/Manager-Template.md](../templates/Manager-Template.md).
+- 2 Register it on `WikiEngine` in dependency order.
+- 3 Add `docs/managers/YourManager.md` with `code: src/managers/YourManager.ts` in the same commit. The index in [Developer-Documentation.md](../Developer-Documentation.md) is generated from that frontmatter.
+- 4 If it stores bytes, add a provider that extends the right `Base*Provider` and a Null or file default.
 
 ## How to add a provider
 
-1. Scaffold from [docs/templates/Provider-Template.md](../templates/Provider-Template.md).
-2. Bind it with `ngdpbase.<capability>.provider` and `ngdpbase.<capability>.provider.<name>.*`.
-3. Load it with a dynamic `import()` inside the factory, not a top-level import.
+- 1 Scaffold from [docs/templates/Provider-Template.md](../templates/Provider-Template.md).
+- 2 Bind it with `ngdpbase.<capability>.provider` and `ngdpbase.<capability>.provider.<name>.*`.
+- 3 Load it with a dynamic `import()` inside the factory, not a top-level import.
 
 ## How you know you are done
 
@@ -90,8 +91,6 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - [#1134](https://github.com/jwilleke/ngdpbase/issues/1134)
 - [#1135](https://github.com/jwilleke/ngdpbase/issues/1135)
 - [#1109](https://github.com/jwilleke/ngdpbase/issues/1109)
-- [#1167](https://github.com/jwilleke/ngdpbase/issues/1167)
-- [#1136](https://github.com/jwilleke/ngdpbase/issues/1136)
 - [#1852](https://github.com/jwilleke/ngdpbase/issues/1852): FileManager reads only; files are still written through AttachmentManager. Its gaps are in the [storage developer guide](storage-developer-guide.md#known-gaps).
 - [#1916](https://github.com/jwilleke/ngdpbase/issues/1916): EmailManager reports every failed send ([EmailManager](../managers/EmailManager.md#when-a-send-fails)), but the count and the open notice are held in memory, so a restart starts a new notice. Second-factor enrolment shows the transport's error text to the person who asked.
 - [#1930](https://github.com/jwilleke/ngdpbase/issues/1930): contacts. A sign-up link offer is held in memory, so a restart drops it (an administrator then links by hand), and nothing is offered when several persons with no account share the address. A refusal at the door is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves affiliations naming it. `search` reads every record (no index). The JSON-LD export does not yet write `affiliation` as a schema.org `OrganizationRole`. `getByUserIdentifier` (the lazy migration, called by nothing in core) still writes a person without the door.
