@@ -36,6 +36,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import { vanishedDuringBackup } from '../utils/treeArchive.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import { parsePageFrontmatter, namesAsText } from '../utils/pageFrontmatter.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
@@ -112,6 +113,8 @@ export interface BackupData {
   statistics: {
     totalPages: number;
     totalSize: number;
+    /** Files and folders deleted while the backup read them (#1563): skipped, not missing. */
+    vanished?: number;
   };
 }
 
@@ -395,10 +398,19 @@ class FileSystemProvider extends BasePageProvider {
    * @returns {Promise<string[]>} Array of absolute file paths
    * @private
    */
-  private async walkDir(dir: string): Promise<string[]> {
+  private async walkDir(dir: string, backup = false, root = dir): Promise<string[]> {
     const out: string[] = [];
     try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch (error) {
+        // #1563: for a backup, a folder deleted since its parent was listed is
+        // skipped and counted; the root missing, or any other error, fails it.
+        if (!backup || dir === root) throw error;
+        this.skipVanished(error, dir);
+        return out;
+      }
       for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
@@ -424,12 +436,13 @@ class FileSystemProvider extends BasePageProvider {
           )) continue;
           // #1385: sealed store trees stay out of the process cache and global index.
           if (await storeDirectoryIsEncrypted(full, this.privateStoreLayout.files.storemeta)) continue;
-          out.push(...(await this.walkDir(full)));
+          out.push(...(await this.walkDir(full, backup, root)));
         } else if (entry.isFile()) {
           out.push(full);
         }
       }
     } catch (error) {
+      if (backup) throw error;
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[FileSystemProvider] Failed to walk directory: ${dir}`, { error: errorMessage });
     }
@@ -1817,8 +1830,9 @@ class FileSystemProvider extends BasePageProvider {
         }
       };
 
+      this.vanishedInBackup = 0;
       // Backup regular pages
-      const pagesFiles = await this.walkDir(this.pagesDirectory);
+      const pagesFiles = await this.walkDir(this.pagesDirectory, true);
       const pagesMdFiles = pagesFiles.filter(f => f.toLowerCase().endsWith('.md'));
 
       for (const filePath of pagesMdFiles) {
@@ -1835,12 +1849,13 @@ class FileSystemProvider extends BasePageProvider {
           backupData.statistics.totalPages++;
           backupData.statistics.totalSize += Buffer.byteLength(content, this.encoding);
         } catch (error) {
-          logger.error(`[FileSystemProvider] Failed to backup page: ${filePath}`, error);
+          this.skipVanished(error, filePath);
         }
       }
 
       // Backup required pages
-      const requiredFiles = await this.walkDir(this.requiredPagesDirectory);
+      // The pages folder is made at start, so its absence fails the backup; a site may have no required-pages folder.
+      const requiredFiles = await fs.pathExists(this.requiredPagesDirectory) ? await this.walkDir(this.requiredPagesDirectory, true) : [];
       const requiredMdFiles = requiredFiles.filter(f => f.toLowerCase().endsWith('.md'));
 
       for (const filePath of requiredMdFiles) {
@@ -1857,7 +1872,7 @@ class FileSystemProvider extends BasePageProvider {
           backupData.statistics.totalPages++;
           backupData.statistics.totalSize += Buffer.byteLength(content, this.encoding);
         } catch (error) {
-          logger.error(`[FileSystemProvider] Failed to backup required page: ${filePath}`, error);
+          this.skipVanished(error, filePath);
         }
       }
 
@@ -1866,13 +1881,29 @@ class FileSystemProvider extends BasePageProvider {
       // lost every sealed one, and nobody found out until a restore.
       await this.backupPrivateStores(backupData);
 
-      logger.info(`[FileSystemProvider] Backup complete: ${backupData.statistics.totalPages} pages, ${(backupData.statistics.totalSize / 1024).toFixed(2)} KB`);
+      backupData.statistics.vanished = this.vanishedInBackup;
+      logger.info(`[FileSystemProvider] Backup complete: ${backupData.statistics.totalPages} pages, ${(backupData.statistics.totalSize / 1024).toFixed(2)} KB${this.vanishedInBackup > 0 ? `; ${this.vanishedInBackup} deleted during the backup, skipped` : ''}`);
 
       return backupData;
     } catch (error) {
       logger.error('[FileSystemProvider] Backup failed:', error);
       throw error;
     }
+  }
+
+  /** Files and folders a running backup found deleted since they were listed (#1563); reset when a backup starts. */
+  protected vanishedInBackup = 0;
+
+  /**
+   * A backup's read of `what` failed (#1563). Deleted since it was listed —
+   * a page deleted while the site is backed up — it is skipped and counted,
+   * never a failed backup. Any other error (EACCES, EIO, …) is rethrown, so
+   * the backup is a failed one and says why.
+   */
+  protected skipVanished(error: unknown, what: string): void {
+    if (!vanishedDuringBackup(error)) throw error;
+    this.vanishedInBackup++;
+    logger.debug(`[${this.constructor.name}] ${what} was deleted during the backup; skipped`);
   }
 
   /**

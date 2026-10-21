@@ -446,6 +446,12 @@ class BackupManager extends BaseManager {
   private restoreRunning: Promise<RestoreResults | null> | null = null;
   /** The outage this manager set because backups are not working (#1563), so only that one is cleared when they work again. */
   private healthFault: string | null = null;
+  /**
+   * The end of the queue of work that reads or changes the backup directory
+   * one at a time (#1563): a backup with its pruning, a restore's safety
+   * backup and staging, and the routine health check (`exclusive`).
+   */
+  private exclusiveTail: Promise<unknown> = Promise.resolve();
 
   /**
    * Creates a new BackupManager instance
@@ -620,6 +626,26 @@ class BackupManager extends BaseManager {
    * @returns {Promise<string>} Path to created backup file
    */
   async createBackup(ctx: ActorContext, options: BackupOptions = {}): Promise<string> {
+    return this.exclusive(() => this.createBackupNow(ctx, options));
+  }
+
+  /**
+   * One at a time (#1563): `work` starts once everything queued before it
+   * has finished, whether that succeeded or failed, and is never run beside
+   * it. A second backup asked for while one runs waits for it and is then
+   * taken in its own right: its own document, its own options, its own
+   * result. So a backup's pruning never deletes files another backup, a
+   * restore or the health check is reading. In-process only: one server
+   * process owns a backup directory.
+   */
+  private exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.exclusiveTail.then(() => work());
+    this.exclusiveTail = run.catch(() => undefined);
+    return run;
+  }
+
+  /** `createBackup` itself, for a caller already holding the queue (`exclusive`): a restore's safety backup. */
+  private async createBackupNow(ctx: ActorContext, options: BackupOptions = {}): Promise<string> {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
     let pending: { filename: string; existing: Set<string> } | null = null;
@@ -778,7 +804,7 @@ class BackupManager extends BaseManager {
       } else {
         await this.clearBackupFailure();
       }
-      await this.refreshBackupHealth();
+      await this.refreshBackupHealthNow();
       recorded = true;
       if (incomplete && options.requireComplete) throw new Error(incomplete);
       if (!backupKey) {
@@ -797,7 +823,7 @@ class BackupManager extends BaseManager {
       if (pending) await this.removeCompanions(pending.filename, pending.existing);
       if (!recorded) {
         await this.recordBackupFailure(describeBackupError(error));
-        await this.refreshBackupHealth();
+        await this.refreshBackupHealthNow();
       }
       throw error;
     }
@@ -1089,6 +1115,11 @@ class BackupManager extends BaseManager {
    * `backup.health` timer, and after every backup.
    */
   async refreshBackupHealth(): Promise<BackupHealth | null> {
+    return this.exclusive(() => this.refreshBackupHealthNow());
+  }
+
+  /** `refreshBackupHealth` itself, for a caller already holding the queue: a backup that just ended. */
+  private async refreshBackupHealthNow(): Promise<BackupHealth | null> {
     let health: BackupHealth | null = null;
     try {
       // A backup directory that could not be used at start is the outage already shown.
@@ -1216,6 +1247,11 @@ class BackupManager extends BaseManager {
    * @returns {Promise<RestoreResults>} Restore results
    */
   async restoreFromFile(ctx: ActorContext, backupPath: string, options: RestoreOptions = {}): Promise<RestoreResults> {
+    // #1563: its safety backup and staging run in the queue, never beside a backup's pruning.
+    return this.exclusive(() => this.restoreFromFileNow(ctx, backupPath, options));
+  }
+
+  private async restoreFromFileNow(ctx: ActorContext, backupPath: string, options: RestoreOptions = {}): Promise<RestoreResults> {
     const startTime = Date.now();
     logger.info(`🔄 Starting restore operation from: ${backupPath}`);
 
@@ -1284,7 +1320,7 @@ class BackupManager extends BaseManager {
           throw new Error(`A restore from ${staged.source || staged.backup} is already staged; cancel it or replace it. Nothing was restored`);
         }
         logger.info('📦 Taking a backup of the live data before staging the databases...');
-        const before = await this.createBackup(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true });
+        const before = await this.createBackupNow(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true });
         logger.info(`✅ Live data backed up to ${before}`);
         await databaseManager.restore(databases!, { ctx, directory, source: path.basename(backupPath), replaceStaged: options.replaceStaged, safetyBackup: path.basename(before) });
         results.success.push('DatabaseManager');
@@ -1422,7 +1458,7 @@ class BackupManager extends BaseManager {
     }
 
     logger.info('📦 Taking a backup of the live data before staging the site restore...');
-    const before = path.basename(await this.createBackup(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true }));
+    const before = path.basename(await this.createBackupNow(ctx, { skipCleanup: true, requireComplete: true, safetyBackup: true }));
     logger.info(`✅ Live data backed up to ${before}`);
 
     discardSiteRestore(siteFile);
@@ -1637,7 +1673,9 @@ class BackupManager extends BaseManager {
     const backups = await this.listBackups();
     if (!this.provider || backups.length === 0) return [];
     const objects = await this.provider.listBackupObjects();
-    return backups.map((b) => {
+    // #1563: one pruned between the two listings is gone, not listed without its files.
+    const present = new Set(objects.map((o) => o.filename));
+    return backups.filter((b) => present.has(b.filename)).map((b) => {
       const companions = objects.filter((o) => isCompanionOf(o.filename, b.filename));
       const stem = backupStem(b.filename);
       return {

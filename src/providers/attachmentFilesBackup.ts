@@ -30,8 +30,9 @@
  */
 import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { extractTreeArchive, listTreeArchive, readHead, writeTreeArchive } from '../utils/treeArchive.js';
-import { archiveReadKey, archiveTarget, isArchiveName } from '../utils/directoryBackup.js';
+import logger from '../utils/logger.js';
+import { extractTreeArchive, listTreeArchive, readHead, vanishedDuringBackup, writeTreeArchive } from '../utils/treeArchive.js';
+import { archiveReadKey, archiveTarget, isArchiveName, vanishedNote } from '../utils/directoryBackup.js';
 import { applyPartAtStart, recordStagedPart, stagedPathFor, type PartOutcome, type StagedSwap } from '../utils/siteRestore.js';
 import { isSealedBytes } from '../utils/privateStoreCrypto.js';
 import { vaultMustBeSealed } from '../utils/privateStoreFiles.js';
@@ -81,7 +82,14 @@ function vaultStores(places: AttachmentFilePlaces): { stores: Array<{ owner: str
   if (!existsSync(root)) return { stores, unsafe };
   for (const owner of readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) {
     if (!isSafePathSegment(owner)) { unsafe.push(owner); continue; }
-    for (const store of readdirSync(path.join(root, owner), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) {
+    let owned;
+    try {
+      owned = readdirSync(path.join(root, owner), { withFileTypes: true });
+    } catch (err) {
+      if (vanishedDuringBackup(err)) continue; // #1563: deleted since the listing
+      throw err;
+    }
+    for (const store of owned.filter((e) => e.isDirectory()).map((e) => e.name)) {
       if (!isValidStoreId(store)) continue;
       stores.push({ owner, store });
     }
@@ -118,6 +126,8 @@ export async function backupAttachmentFiles(places: AttachmentFilePlaces, direct
   const vaultArchive = archiveTarget(stem, 'vault-attachments').archive;
   const vaults = await writeTreeArchive(path.join(directory, vaultArchive), places.pagesDirectory ?? directory, { entries, backupKey });
   for (const s of vaults.skipped) warnings.push(`vault attachments: ${s} is not a file or a folder, so it was left out`);
+  const vanished = [...pool.vanished, ...vaults.vanished];
+  if (vanished.length > 0) logger.info(`[AttachmentManager] Backup${vanishedNote(vanished)}`);
   return {
     data: {
       format: 1,

@@ -33,6 +33,7 @@
 
 import path from 'path';
 import fs from 'fs-extra';
+import { vanishedDuringBackup } from './treeArchive.js';
 import {
   privateUserDir,
   privateStoreRoot,
@@ -65,8 +66,10 @@ async function walkFiles(dir: string, prefix = ''): Promise<string[]> {
   let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (err) {
+    // Not there (any more): nothing to list. Any other error is a real one (#1563).
+    if (vanishedDuringBackup(err)) return [];
+    throw err;
   }
 
   const out: string[] = [];
@@ -91,9 +94,11 @@ async function readAll(root: string, relPaths: string[]): Promise<StoreFile[]> {
     try {
       const [bytes, stat] = await Promise.all([fs.readFile(abs), fs.stat(abs)]);
       files.push({ path: rel, bytes, mtime: stat.mtime });
-    } catch {
+    } catch (err) {
       // A page purged while the walk was running is not an error: the takeout
       // is a point-in-time copy, and the file is simply no longer part of it.
+      // Any other error (EACCES, EIO) is, and is not hidden (#1563).
+      if (!vanishedDuringBackup(err)) throw err;
     }
   }
   return files;

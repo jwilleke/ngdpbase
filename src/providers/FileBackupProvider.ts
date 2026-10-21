@@ -77,10 +77,18 @@ class FileBackupProvider extends BaseBackupProvider {
     if (!this.backupDirectory) return [];
     const dir = this.backupDirectory;
     const files = await fs.readdir(dir);
-    return Promise.all(
-      files.map(async (filename: string) => {
+    const objects = await Promise.all(
+      files.map(async (filename: string): Promise<BackupObjectInfo | null> => {
         const filePath = path.join(dir, filename);
-        const stats = await fs.stat(filePath);
+        let stats;
+        try {
+          stats = await fs.stat(filePath);
+        } catch (err) {
+          // #1563: a file removed between the listing and its stat (a backup
+          // pruned meanwhile) is no longer there to list; anything else is a fault.
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw err;
+        }
         return {
           filename,
           path: filePath,
@@ -90,6 +98,7 @@ class FileBackupProvider extends BaseBackupProvider {
         };
       })
     );
+    return objects.filter((o): o is BackupObjectInfo => o !== null);
   }
 
   async removeBackup(idOrPath: string): Promise<void> {

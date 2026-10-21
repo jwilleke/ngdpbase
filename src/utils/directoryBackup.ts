@@ -94,8 +94,13 @@ export async function backupDirectoryPart(
   const data: DirectoryBackupData = { format: 1, archive: target.archive, files: outcome.files, bytes: outcome.bytes, ...(target.keyFingerprint ? { keyFingerprint: target.keyFingerprint } : {}) };
   const warnings = outcome.skipped.map((s) => `${s} in ${folder} is not a file or a folder, so it was left out`);
   for (const w of warnings) logger.error(`[${manager}] ${w}`);
-  logger.info(`[${manager}] Backed up ${outcome.files} file(s), ${(outcome.bytes / 1024).toFixed(1)} KB, as ${target.archive} (#1876)`);
+  logger.info(`[${manager}] Backed up ${outcome.files} file(s), ${(outcome.bytes / 1024).toFixed(1)} KB, as ${target.archive} (#1876)${vanishedNote(outcome.vanished)}`);
   return { ...base, data, ...(warnings.length > 0 ? { warnings } : {}) };
+}
+
+/** The log's note of entries deleted while they were backed up (#1563): skipped, not a failure. */
+export function vanishedNote(vanished: string[]): string {
+  return vanished.length > 0 ? `; ${vanished.length} entr${vanished.length === 1 ? 'y' : 'ies'} deleted during the backup skipped (${vanished.slice(0, 5).join(', ')})` : '';
 }
 
 /** The archive a backup's entry names, checked: format, a bare name, and the key it needs. */
@@ -177,7 +182,7 @@ export async function backupFilePart(
   }
   const entries = existsSync(file) ? [path.basename(file)] : [];
   const outcome = await writeTreeArchive(path.join(options.directory, target.archive), path.dirname(file), { backupKey: target.backupKey, entries });
-  logger.info(`[${manager}] Backed up the ${what} (${outcome.files} file, ${(outcome.bytes / 1024).toFixed(1)} KB) as ${target.archive} (#1876)`);
+  logger.info(`[${manager}] Backed up the ${what} (${outcome.files} file, ${(outcome.bytes / 1024).toFixed(1)} KB) as ${target.archive} (#1876)${vanishedNote(outcome.vanished)}`);
   return {
     data: { format: 1, archive: target.archive, files: outcome.files, bytes: outcome.bytes, ...(target.keyFingerprint ? { keyFingerprint: target.keyFingerprint } : {}) },
     warnings: []
