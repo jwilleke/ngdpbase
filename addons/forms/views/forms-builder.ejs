@@ -107,6 +107,18 @@ const PREFILL_PATHS = [
             </div>
           </div>
 
+          <div class="col-12">
+            <%/* Same marker pattern as storeShown (#1954). */%>
+            <input type="hidden" name="notifyShown" value="1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="notify" id="notify"
+                <%= form?.notify === false ? '' : 'checked' %>>
+              <label class="form-check-label" for="notify">
+                <strong>Send notices</strong> — post a "New form submission" notice for each submission, and email the details to the address in the form's email field. Untick when the details are private (health notes, say)
+              </label>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
