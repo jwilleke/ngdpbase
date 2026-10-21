@@ -2,7 +2,7 @@
  * Tests for FormsDataManager — schema validation and buildSubmissionValidator
  */
 
-import { FieldSchema, FormDefinitionSchema, buildSubmissionValidator, parseAmount } from '../managers/FormsDataManager';
+import { FieldSchema, FormDefinitionSchema, buildSubmissionValidator, fieldErrors, parseAmount } from '../managers/FormsDataManager';
 
 // ── FieldSchema ───────────────────────────────────────────────────────────────
 
@@ -10,7 +10,7 @@ describe('FieldSchema', () => {
   const base = { name: 'myField', type: 'text', label: 'My Field' };
 
   test('accepts all supported field types', () => {
-    const types = ['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section'];
+    const types = ['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount', 'checklist'];
     for (const type of types) {
       expect(FieldSchema.safeParse({ ...base, type }).success).toBe(true);
     }
@@ -183,5 +183,123 @@ describe('parseAmount', () => {
 
   test.each([['0'], ['0.00'], ['-5'], ['12.345'], ['abc'], [''], ['1e3'], ['$'], ['1.2.3']])('%j is refused', (raw) => {
     expect(parseAmount(raw)).toBeNull();
+  });
+});
+
+// ── lines: repeating rows of sub-fields (#1913) ───────────────────────────────
+
+describe('lines (#1913)', () => {
+  const LINES = {
+    name: 'lines', type: 'lines', label: 'Lines', required: true, minRows: 1, maxRows: 3,
+    fields: [
+      { name: 'amount',   type: 'amount',   label: 'Amount',   required: true },
+      { name: 'fundId',   type: 'dropdown', label: 'Fund',     required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      { name: 'category', type: 'dropdown', label: 'Category', required: true, options: ['4100', '4200'] },
+      { name: 'memo',     type: 'text',     label: 'Note' }
+    ],
+    amountField: 'amount', totalField: 'total'
+  };
+  const form = (lines: object = LINES) => FormDefinitionSchema.parse({
+    id: 'receipt', title: 'Receipt',
+    fields: [lines, { name: 'total', type: 'amount', label: 'Total', required: true }]
+  });
+  const CHOICES = new Map([['lines.fundId', ['general', 'reserve']], ['lines.category', ['4100', '4200']]]);
+  const row = (o: object = {}) => ({ amount: '50', fundId: 'general', category: '4100', memo: '', ...o });
+  const EMPTY = { amount: '', fundId: '', category: '', memo: '' };
+
+  describe('schema', () => {
+    test('a lines field with sub-fields parses, and keeps them', () => {
+      expect(form().fields[0].fields?.map(f => f.name)).toEqual(['amount', 'fundId', 'category', 'memo']);
+    });
+
+    test('a lines field without sub-fields is refused', () => {
+      expect(FieldSchema.safeParse({ name: 'l', type: 'lines', label: 'L' }).success).toBe(false);
+      expect(FieldSchema.safeParse({ name: 'l', type: 'lines', label: 'L', fields: [] }).success).toBe(false);
+    });
+
+    test('lines inside lines is refused', () => {
+      const nested = { ...LINES, fields: [...LINES.fields, { name: 'inner', type: 'lines', label: 'Inner', fields: [{ name: 'x', type: 'text', label: 'X' }] }] };
+      expect(FieldSchema.safeParse(nested).success).toBe(false);
+      expect(FormDefinitionSchema.safeParse({ id: 'f', title: 'F', fields: [nested] }).success).toBe(false);
+    });
+
+    test.each([['section'], ['hidden'], ['checklist']])('a %s sub-field is refused: a row holds one value per sub-field', (type) => {
+      expect(FieldSchema.safeParse({ ...LINES, amountField: undefined, fields: [{ name: 'x', type, label: 'X' }] }).success).toBe(false);
+    });
+
+    test('amountField must name an amount sub-field, and minRows may not exceed maxRows', () => {
+      expect(FieldSchema.safeParse({ ...LINES, amountField: 'memo' }).success).toBe(false);
+      expect(FieldSchema.safeParse({ ...LINES, amountField: 'nope' }).success).toBe(false);
+      expect(FieldSchema.safeParse({ ...LINES, minRows: 4, maxRows: 3 }).success).toBe(false);
+    });
+  });
+
+  describe('validation', () => {
+    test('submits an array of rows, amounts in minor units', () => {
+      const r = buildSubmissionValidator(form(), CHOICES).safeParse({
+        lines: [row(), row({ amount: '$1,250.05', fundId: 'reserve', category: '4200', memo: 'dues' })], total: '1300.05'
+      });
+      expect(r.success).toBe(true);
+      expect(r.data).toEqual({
+        lines: [
+          { amount: 5000, fundId: 'general', category: '4100', memo: '' },
+          { amount: 125005, fundId: 'reserve', category: '4200', memo: 'dues' }
+        ],
+        total: 130005
+      });
+    });
+
+    test('fully empty trailing rows are dropped; an empty row in the middle is not', () => {
+      const v = buildSubmissionValidator(form(), CHOICES);
+      const r = v.safeParse({ lines: [row(), EMPTY, EMPTY], total: '50' });
+      expect(r.success && r.data.lines).toEqual([{ amount: 5000, fundId: 'general', category: '4100', memo: '' }]);
+      const middle = v.safeParse({ lines: [EMPTY, row()], total: '50' });
+      expect(middle.success).toBe(false);
+      if (!middle.success) expect(fieldErrors(middle.error)['lines[0].amount']).toMatch(/Amount/);
+    });
+
+    test('a dropdown value the row did not offer is refused, keyed lines[i].field', () => {
+      const r = buildSubmissionValidator(form(), CHOICES).safeParse({ lines: [row(), row({ fundId: 'someone-elses' })], total: '100' });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(fieldErrors(r.error)).toEqual({ 'lines[1].fundId': 'Fund: choose one of the listed options' });
+    });
+
+    test('each row gets the top-level rules: required, email, amount', () => {
+      const lines = { ...LINES, fields: [...LINES.fields, { name: 'who', type: 'email', label: 'Who' }] };
+      const r = buildSubmissionValidator(form(lines), CHOICES).safeParse({
+        lines: [row({ who: 'nope' }), row({ amount: '12.345', category: '' })], total: '1'
+      });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(Object.keys(fieldErrors(r.error)).sort()).toEqual(['lines[0].who', 'lines[1].amount', 'lines[1].category']);
+      }
+    });
+
+    test('required: no rows, or only empty ones, is refused on the field', () => {
+      const v = buildSubmissionValidator(form(), CHOICES);
+      for (const lines of [undefined, [], [EMPTY]]) {
+        const r = v.safeParse({ lines, total: '1' });
+        expect(r.success).toBe(false);
+        if (!r.success) expect(fieldErrors(r.error).lines).toBe('Lines: add at least one line');
+      }
+    });
+
+    test('minRows and maxRows', () => {
+      const v = buildSubmissionValidator(form({ ...LINES, required: false, minRows: 2, maxRows: 3 }), CHOICES);
+      const few = v.safeParse({ lines: [row()], total: '1' });
+      expect(few.success).toBe(false);
+      if (!few.success) expect(fieldErrors(few.error).lines).toBe('Lines: add at least 2 lines');
+      const many = v.safeParse({ lines: [row(), row(), row(), row()], total: '1' });
+      expect(many.success).toBe(false);
+      if (!many.success) expect(fieldErrors(many.error).lines).toBe('Lines: no more than 3 lines');
+      expect(v.safeParse({ lines: [row(), row(), row()], total: '1' }).success).toBe(true);
+    });
+
+    test('lines that are not a list are refused; keys a row does not have are dropped', () => {
+      const v = buildSubmissionValidator(form(), CHOICES);
+      expect(v.safeParse({ lines: 'x', total: '1' }).success).toBe(false);
+      const r = v.safeParse({ lines: [{ ...row(), extra: 'x' }], total: '1' });
+      expect(r.success && r.data.lines).toEqual([{ amount: 5000, fundId: 'general', category: '4100', memo: '' }]);
+    });
   });
 });

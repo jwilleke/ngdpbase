@@ -75,7 +75,7 @@ function validationManagerFor(merged: Record<string, unknown>, seen: Seen = { bl
   const notificationManager = { addNotification: (n: Record<string, unknown>) => { seen.notifications.push(n); return Promise.resolve('id'); } };
   const engine = {
     getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : name === 'NotificationManager' ? notificationManager : undefined),
-    blockConfiguration: (reason: string) => { seen.blocked.push(reason); }
+    maintenance: { enter: (reason: string) => { seen.blocked.push(reason); } }
   } as unknown as WikiEngine;
   const vm = new ValidationManager(engine);
   return vm.initialize().then(() => vm);

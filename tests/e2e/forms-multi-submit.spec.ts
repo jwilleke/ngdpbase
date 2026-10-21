@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForServerReady, deletePage, TEST_PAGE_PREFIX, createPluginPage } from './fixtures/helpers';
+import { waitForServerReady, deletePage, TEST_PAGE_PREFIX, createPluginPage, instanceOrigin } from './fixtures/helpers';
 
 /**
  * #1893 — on a page with several forms, one submit is one request.
@@ -24,7 +24,7 @@ async function csrfToken(page: Page): Promise<string> {
 async function deleteDefinitions(page: Page): Promise<void> {
   const token = await csrfToken(page);
   for (const id of FORM_IDS) {
-    const res = await page.request.post(`/addons/forms/builder/${id}/delete`, {
+    const res = await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder/${id}/delete`, {
       headers: { 'X-CSRF-Token': token },
       form: { _csrf: token },
       maxRedirects: 0
@@ -51,7 +51,7 @@ test.describe('forms: one submit, one request (#1893)', () => {
       await deleteDefinitions(page); // a leftover from a failed run
       const token = await csrfToken(page);
       for (const id of FORM_IDS) {
-        const res = await page.request.post('/addons/forms/builder', {
+        const res = await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder`, {
           headers: { 'X-CSRF-Token': token },
           form: {
             _csrf: token,

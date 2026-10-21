@@ -5,7 +5,8 @@ const PREFILL_PATHS = [
   'user.unit.address'
 ];
 %>
-<%- include('header', { title: (isNew ? 'New Form' : 'Edit Form') + ' — Builder', currentUser }) %>
+<%/* Not "Edit …": header.ejs shows its page-editor actions for a title starting "Edit ", which need a pageName (#1921). */%>
+<%- include('header', { title: 'Form Builder — ' + (isNew ? 'New Form' : 'Edit Form'), currentUser }) %>
 
 <div class="container-fluid mt-4">
   <div class="row mb-3">
@@ -94,6 +95,18 @@ const PREFILL_PATHS = [
             </div>
           </div>
 
+          <div class="col-12">
+            <%/* An unticked box sends nothing; storeShown says the box was on the page (#1921). */%>
+            <input type="hidden" name="storeShown" value="1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="store" id="store"
+                <%= form?.store === false ? '' : 'checked' %>>
+              <label class="form-check-label" for="store">
+                <strong>Store submissions</strong> — keep a copy of each submission. Untick when the handler's own record is the record (a ledger entry, say)
+              </label>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -143,7 +156,7 @@ const PREFILL_PATHS = [
 </datalist>
 
 <script nonce="<%= locals.cspNonce %>">
-var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section', 'amount'];
+var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section', 'amount', 'checklist', 'lines'];
 var fields = <%- jsonForScript(form?.fields ?? []) %>.map(function(f) { return Object.assign({}, f); });
 
 function escAttr(s) {
@@ -166,7 +179,7 @@ function renderFields() {
   container.innerHTML = fields.map(function(f, i) {
     var isFirst = i === 0;
     var isLast = i === fields.length - 1;
-    var isDropdown = f.type === 'dropdown';
+    var isDropdown = f.type === 'dropdown' || f.type === 'checklist';
     var isSection = f.type === 'section';
     var optionsText = Array.isArray(f.options) ? f.options.join('\n') : '';
 

@@ -4,6 +4,8 @@ import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { ProviderInfo } from './BasePageProvider.js';
 import BaseProvider from './BaseProvider.js';
+import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from './attachmentFilesBackup.js';
+import type { PartOutcome } from '../utils/siteRestore.js';
 
 /**
  * File information for attachment uploads
@@ -249,6 +251,19 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
    * @returns {Promise<void>}
    */
   abstract restore(backupData: Record<string, unknown>): Promise<void>;
+
+  /**
+   * Write the attachment files themselves beside the backup document (#1876),
+   * streamed, bytes as stored. A provider without it can't be backed up whole,
+   * and AttachmentManager's backup says so.
+   */
+  backupFiles?(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome>;
+
+  /** Stage the files and metadata from a backup for the next start, as part of a site restore (#1876). */
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }>;
+
+  /** What the start did with a staged restore of the files (#1876), once; null when there was none. */
+  takeRestoreAtStart?(): PartOutcome | null;
 
   /**
    * Shutdown the provider (cleanup resources)

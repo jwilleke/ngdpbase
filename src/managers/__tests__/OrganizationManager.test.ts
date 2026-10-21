@@ -23,9 +23,13 @@ describe('OrganizationManager (#617)', () => {
     getInstanceDataFolder: vi.fn(() => tmpDir)
   });
 
+  // #1930: the door takes a context and asks the PDP; these tests are about storage, so it permits.
+  const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
+  const PERMIT_ALL = { decide: vi.fn(async () => ({ permit: true, applicable: true, reason: 'test' })) };
+
   const makeEngine = (configManager: ReturnType<typeof makeConfigManager>) => ({
     getManager: vi.fn((name: string) =>
-      name === 'ConfigurationManager' ? configManager : null
+      name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null
     )
   });
 
@@ -136,20 +140,20 @@ describe('OrganizationManager (#617)', () => {
     const manager = new OrganizationManager(engine);
     await manager.initialize();
 
-    await manager.create({
+    await manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://one.test/',
       name: 'One'
     });
-    await manager.create({
+    await manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://two.test/',
       name: 'Two'
     });
 
-    const all = await manager.list();
+    const all = await manager.list(CTX);
     expect(all).toHaveLength(2);
     expect(all.map((o: any) => o['@id']).sort()).toEqual(['https://one.test/', 'https://two.test/']);
   });
@@ -192,14 +196,14 @@ describe('OrganizationManager (#617)', () => {
     const manager = new OrganizationManager(engine);
     await manager.initialize();
 
-    await manager.create({
+    await manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://one.test/',
       name: 'One'
     }, 'shared.json');
 
-    await expect(manager.create({
+    await expect(manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://two.test/',
@@ -216,14 +220,14 @@ describe('OrganizationManager (#617)', () => {
     const manager = new OrganizationManager(engine);
     await manager.initialize();
 
-    await manager.create({
+    await manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://shared-id.test/',
       name: 'First'
     }, 'first.json');
 
-    await expect(manager.create({
+    await expect(manager.create(CTX, {
       '@context': 'https://schema.org',
       '@type': 'Organization',
       '@id': 'https://shared-id.test/',
@@ -292,11 +296,11 @@ describe('OrganizationManager (#617)', () => {
     await manager.initialize();
     await manager.seedFromConfig({ orgName: 'Solo', orgUrl: 'https://solo.test', filename: 'solo.json' });
 
-    const before = (await manager.list())[0]['@id'];
+    const before = (await manager.list(CTX))[0]['@id'];
     const anchor = await manager.getInstallOrg();
 
     expect(anchor!['@id']).toBe(before);
-    expect((await manager.list())[0]['@id']).toBe(before);
+    expect((await manager.list(CTX))[0]['@id']).toBe(before);
   });
 
   test('tier 3 — nothing at all: seed one from the base URL', async () => {
@@ -313,7 +317,7 @@ describe('OrganizationManager (#617)', () => {
 
     expect(anchor).not.toBeNull();
     expect(anchor!.name).toBe('Fresh Instance');
-    expect(await manager.list()).toHaveLength(1);
+    expect(await manager.list(CTX)).toHaveLength(1);
   });
 
   test('tier 3 seeds ONCE — a second call does not add another record', async () => {
@@ -329,7 +333,7 @@ describe('OrganizationManager (#617)', () => {
     manager.invalidateInstallOrgCache?.();
     await manager.getInstallOrg();
 
-    expect(await manager.list()).toHaveLength(1);
+    expect(await manager.list(CTX)).toHaveLength(1);
   });
 
   test('several records and no key resolves to null — and seeds nothing', async () => {
@@ -349,7 +353,7 @@ describe('OrganizationManager (#617)', () => {
     const anchor = await manager.getInstallOrg();
 
     expect(anchor).toBeNull();
-    expect(await manager.list()).toHaveLength(2);
+    expect(await manager.list(CTX)).toHaveLength(2);
   });
 
   test('the config key still wins over both fallbacks', async () => {

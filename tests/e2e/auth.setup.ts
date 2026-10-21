@@ -50,7 +50,7 @@ setup('authenticate', async ({ page }) => {
 
   // Whatever the passkey step did, the session saved for every spec must act
   // as admin: the admin dashboard answers 200 only to admin-read.
-  const admin = await page.request.get('/admin', { maxRedirects: 0 });
+  const admin = await page.request.get(new URL('/admin', new URL(page.url()).origin).toString(), { maxRedirects: 0 });
   if (admin.status() !== 200) {
     throw new Error(
       `[auth.setup] signed in as '${adminUser}', but GET /admin answered ${admin.status()}, not 200: ` +
@@ -88,11 +88,21 @@ const E2E_PASSKEY_LABEL = 'e2e-virtual';
  * and redirects anyone else to /login) rather than trusting the URL.
  */
 async function assertSignedIn(page: Page, adminUser: string, step: string): Promise<void> {
-  const profile = await page.request.get('/profile', { maxRedirects: 0 });
+  // Ask the origin the browser actually landed on: an instance whose base URL
+  // is https redirects plain-http requests (308), which says nothing about
+  // whether this session is signed in.
+  const landed = new URL(page.url());
+  const profile = await page.request.get(new URL('/profile', landed.origin).toString(), { maxRedirects: 0 });
   if (profile.status() === 200) return;
 
-  const landed = new URL(page.url());
   const refusal = landed.searchParams.get('error');
+  if (!landed.pathname.startsWith('/login') && !refusal) {
+    throw new Error(
+      `[auth.setup] ${step} as '${adminUser}': landed on ${landed.pathname}, but GET ${landed.origin}/profile ` +
+      `answered ${profile.status()} (${profile.headers()['location'] ?? 'no Location'}), not 200 — the sign-in may have worked; ` +
+      'check the instance\'s base URL and redirects rather than the password.'
+    );
+  }
   const target = process.env.E2E_BASE_URL ?? `port ${process.env.PORT ?? '3000'}`;
   throw new Error(
     `[auth.setup] ${step} as '${adminUser}' did not sign in: landed on ${landed.pathname}` +

@@ -60,6 +60,9 @@ const feedsAddon = {
       (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback
     );
 
+    // #1876: a staged site restore of the record stores goes in before any is read.
+    if (configManager) feedManager.applyRestoreAtStart(configManager);
+
     // Reachable for the fetch='FeedManager.toMarqueeText(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);
 

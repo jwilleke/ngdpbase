@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-18'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -19,7 +19,7 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 - `ngdpbase.database.file` — the SQLite file, default `${FAST_STORAGE}/ngdpbase.db`.
 - `ngdpbase.database.busy-timeout-ms` — how long a statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with `SQLITE_BUSY`. Default `5000`, the driver's own default, stated ([#1710](https://github.com/jwilleke/ngdpbase/issues/1710)). Applies to the application database and every add-on database. A value that is not a whole number, 0 or more, refuses to start.
 - `NGDPBASE_DATABASE_KEY` — the SQLCipher key, from the environment or the instance `.env`, never from config. Without it the file is plain SQLite and boot logs a warning.
-- `NGDPBASE_BACKUP_KEY` — the key every database backup is encrypted under ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)), from the environment or the instance `.env`, never from config. Its own secret: the same value as `NGDPBASE_DATABASE_KEY` still backs up, but degrades the manager and notifies admins exactly as a missing key does. Without it no database is backed up: see [Backup and restore](#backup-and-restore).
+- `NGDPBASE_BACKUP_KEY` — the key every database backup is encrypted under ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)), and every other file of a backup too ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)); declared once in `src/utils/backupKey.ts`, from the environment or the instance `.env`, never from config. Its own secret: the same value as `NGDPBASE_DATABASE_KEY` still backs up, but degrades the manager and notifies admins exactly as a missing key does. Without it no database is backed up: see [Backup and restore](#backup-and-restore).
 - `ngdpbase.database.backup.worker-timeout-ms` — how long a backup's database copy, or a restore's staging, may run on its worker thread before it is stopped and reported as failed. Default `3600000` (an hour). Read at each backup; a value that is not a whole number above 0 fails that backup, naming the key.
 
 ## What boot refuses
@@ -27,7 +27,22 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 - A database file on a network filesystem (NFS, SMB, CIFS on Linux): WAL mode needs shared memory those do not provide. Unknown filesystem types and non-Linux hosts are allowed. Backups may still go to a NAS.
 - A database whose schema records a migration this build does not know — it belongs to a newer build.
 - A migration that fails; it is rolled back and named.
-- A database that fails SQLite's `quick_check`, or a wrong key.
+- A database that fails SQLite's `quick_check`, or a wrong key, or no key on an encrypted file (SQLite says "file is not a database"). An existing file is first read through a read-only connection (`SqliteDatabaseProvider`), so a damaged or unreadable file and its WAL are never written: a read-write connection that fails to read still checkpoints the WAL into the file when it closes, or deletes a WAL it can't parse. Only the `-shm` index, which SQLite rebuilds from the WAL, may be rewritten.
+- A staged restore ([below](#restore-staged)) whose files can't be put in place.
+
+### When the application database can't be opened: maintenance mode
+
+The process does not stop ([#1892](https://github.com/jwilleke/ngdpbase/issues/1892), operator, 2026-10-18). For any of the refusals above, on the application database:
+
+- `initialize()` resolves. Nothing is opened unencrypted, and nothing further is migrated or written. `isEnabled()` is false, `getUnavailableReason()` returns the reason, and the manager's status is `failed`.
+- The site is put in maintenance mode through the one door, `engine.maintenance.enter(reason)` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906)). Visitors, and `/health/readiness`, get only the site's maintenance message, `ngdpbase.features.maintenance.message` (503); `/admin`, `/login` and `/logout` stay reachable.
+- `reportAtBoot()` sends administrators an `error` notification, "Critical: the application database is not available", with the reason and the fix: set (no key) or correct (a key that doesn't open it) `NGDPBASE_DATABASE_KEY` in `<FAST_STORAGE>/.env` and restart; for a damaged file or a failed migration, restore the databases from a backup on Admin → Backup (applied at the next restart, the current file kept as `*.pre-restore`), or put a good copy of the file back with the server stopped and restart.
+- What needs it is held, not run on a substitute: `addonRefusal()` refuses every enabled add-on that declares a database (before it is imported, so the #1883 notification and site-critical rule apply), `openAddonDatabase()` throws, `backup()` throws (the backup is reported incomplete, never silently without the databases), and `BackgroundJobManager` runs no job, scheduled or by hand ([BackgroundJobManager](BackgroundJobManager.md#when-the-application-database-is-unavailable-1892)).
+- __A restore still works__ (operator D2, 2026-10-19), with `NGDPBASE_DATABASE_KEY` set: without it what it staged would be unencrypted, so it is refused, saying to set the key first. Its safety backup leaves the databases out, since they can't be read, and records that in DatabaseManager's entry: `leftOut: { databases, reason }` and a `note`, not a failure, so the safety backup still counts as complete. At the restart each live file, with its `-wal` and `-shm`, is kept as `*.pre-restore`, which covers what the safety backup could not. The restore card on Admin → Backup says so, and so does the "staged" notification.
+- What still works: sign-in, sessions, users, notifications and `/admin`. None of them use the application database. Admin → Backup and Admin → Jobs open; an ordinary backup taken there is reported incomplete, and jobs show as held.
+- `ngdpbase.database.provider` `none` is unaffected: no file is opened and nothing is held.
+
+Configuration errors in the keys themselves (an unknown provider, a malformed `busy-timeout-ms`) still stop the boot. A failure on an add-on's own database is the add-on's load failure (#1883), not this.
 
 ## Migrations
 
@@ -61,7 +76,7 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 - The file is `<owner>.db` beside `ngdpbase.database.file`, opened by `SqliteDatabaseProvider` under `NGDPBASE_DATABASE_KEY`, so everything in [What boot refuses](#what-boot-refuses) applies to it too.
 - Its migrations follow the rules in [Migrations](#migrations), recorded in the add-on's own ledger table. The table name must start with the owner's slug, dashes as underscores, then `_`. Prefix the add-on's tables the same way, so several databases can later be told apart by table name in one backup.
 - An add-on that depends on the owner declares the owner's slug and its own ledger table (`"owner": "accounting", "ledgerTable": "accounting_dues_schema_migrations"`, under `ngdpbase.addons.accounting-dues.database`), and calls `openAddonDatabase` with them. Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
-- `integrityOk()` covers every open database, and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
+- `integrityOk()` covers every open database (and is false while the application database is unavailable), and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
 
 ## Backup and restore
 
@@ -86,16 +101,18 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 - A database the backup does not contain is never touched. An add-on database that no add-on on this site declares is not staged, and admins are told. One declared `encrypt: "required"` is never staged without `NGDPBASE_DATABASE_KEY`. A file name in the document that is not a bare name in the backup directory is refused.
 - __A staged restore is never replaced silently__ (D5). A second restore before the restart is refused unless it says `replaceStaged` (`replace` from the page, "Replace it", with the same typed confirmation), and the replacement is recorded as `backup-restore-replace`. The manifest records the backup's filename (`source`), when it was taken, when it was staged, who staged it, and the safety backup of the live data taken just before (`safetyBackup`, D6), and Admin → Backup shows them; the "staged" notification names the safety backup too. The card says, before the confirmation, "Restores the databases only. Pages, users and settings are not changed." (full restore is [#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). `cancelStagedRestore(ctx)` ("Cancel staged restore") records `backup-restore-cancel` first (refuse) and removes the staged files and the manifest; the live databases are untouched.
 - __At the next start__, before any database opens, each live file and its `-wal` and `-shm` step aside as `*.pre-restore` (`*.pre-restore-wal`, `*.pre-restore-shm`, so the kept copy still opens as it was), and the staged file takes its name. Migrations then run on the restored file as on any other. If any database the manifest names is not staged, nothing is applied: the staged files are renamed `*.incomplete`, the manager is degraded and admins are told. A staged file with no manifest (staging interrupted) is set aside the same way. A manifest naming a file other than the application database or an `<owner>.db` beside it is refused.
+- __Part of a site restore__ ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): when `restoreFromFile` stages a site restore, the databases are staged the same way and recorded as one part of it (`siteRestore` in the restore options; the database manifest is discarded with it). At the next start they are applied only when the whole site restore is; otherwise the staged files and the manifest are set aside as `*.incomplete` (`setAsideStagedRestore`). A databases-only restore from Admin → Backup is refused while a site restore is staged.
 - `getStagedRestore()` returns the manifest of a restore waiting for the restart. `reportAtBoot()`, called by the engine once notifications exist, tells admins what the start did with a staged restore, and about a backup key that is missing or equal to the database key.
 
 ### Known gaps
 
+- __A restore while the application database is unavailable has no copy in its safety backup__ (#1892 D2). Undoing it means putting the `*.pre-restore` files back by hand, with the server stopped; restoring the safety backup brings back no database.
 - __Restore needs a site that starts.__ The restore is on Admin → Backup; there is no command line for a site that will not start (deferred until needed).
-- __Only the databases are restored from the page.__ The rest of a backup document (settings, users) is not restored by the button; `restoreFromFile` without a filter still restores every manager, and nothing calls it that way.
+- __Only the databases are restored from the page.__ The rest of a backup (settings, users) is not restored by the button. `restoreFromFile` without a filter stages a site restore of the databases with the attachment files, role membership, persons, organizations and public footnotes and comments (#1876), then still restores the remaining managers live; nothing calls it that way.
 - __Key rotation:__ an old backup needs the key it was made with; nothing re-encrypts old backups under a new key.
 - __Download:__ Admin → Backup downloads each backup as one streamed `.tar` (the document and its database files, `BackupManager.backupArchive`). The backup key is not in it.
 - __Only a file backup provider.__ The database files are written straight into the backup directory, which `FileBackupProvider` (the only provider) uses. A provider storing elsewhere would need them uploaded.
-- __A crash in the middle of applying__ (between the renames) leaves the databases already moved restored and the rest staged; the next start finds staged files missing, sets the rest aside as `*.incomplete` and says so.
+- __A crash in the middle of applying__ (between the renames) leaves the databases already moved restored and the rest staged; the next start finds staged files missing, sets the rest aside as `*.incomplete` and says so. A rename that fails while applying (#1892) opens no database and puts the site in maintenance mode; the files are left as they were at the failure, for the administrator to put back.
 - __A second process__ (a pod in a rolling update) that has a database open while the next start applies a restore is not detected.
 - __Changing the database key__ through a backup and a restore under a new key works by the same path, but has not been made a documented procedure.
 

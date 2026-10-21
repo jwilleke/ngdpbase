@@ -101,7 +101,8 @@ export default function reservationRoutes(
         }
       });
 
-      // 6. Email notifications (fire-and-forget — do not fail the request if email fails)
+      // 6. Email notifications (fire-and-forget — the request does not fail if email
+      // fails; EmailManager logs and reports every failure to administrators, #1916)
       const em = emailMgr();
       if (em) {
         const dateStr = `${start} – ${end}`;
@@ -123,10 +124,10 @@ export default function reservationRoutes(
         const mgrEmail = managerEmail();
 
         if (requesterEmail) {
-          em.sendTo(requesterEmail, subject, text).catch(() => { /* non-critical */ });
+          em.sendInBackground(requesterEmail, subject, text);
         }
         if (mgrEmail) {
-          em.sendTo(mgrEmail, `[Manager] ${subject}`, text).catch(() => { /* non-critical */ });
+          em.sendInBackground(mgrEmail, `[Manager] ${subject}`, text);
         }
       }
 

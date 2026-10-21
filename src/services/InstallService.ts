@@ -67,7 +67,7 @@ interface OrganizationManagerLike {
     adminEmail?: string;
     filename?: string;
   }): Promise<unknown>;
-  delete(id: string): Promise<boolean>;
+  delete(ctx: ActorContext, id: string): Promise<boolean>;
   getInstallOrg(): Promise<{ '@id': string } | null>;
 }
 
@@ -338,7 +338,7 @@ class InstallService {
         try {
           const installOrg = await orgManager.getInstallOrg();
           if (installOrg && installOrg['@id']) {
-            const removed = await orgManager.delete(installOrg['@id']);
+            const removed = await orgManager.delete(systemContext(this.engine, 'install reset: remove the install organization'), installOrg['@id']);
             if (removed) {
               resetSteps.push('Removed install organization');
             }

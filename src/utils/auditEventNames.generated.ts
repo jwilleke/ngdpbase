@@ -45,6 +45,8 @@ export const AUDIT_EVENT = {
   BACKUP_CREATE: 'backup-create',
   /** A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) */
   BACKUP_RESTORE: 'backup-restore',
+  /** A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876) */
+  BACKUP_RESTORE_APPLIED: 'backup-restore-applied',
   /** A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) */
   BACKUP_RESTORE_CANCEL: 'backup-restore-cancel',
   /** A staged database restore replaced by another before the restart applied it: which backup replaced which, and who asked; recorded first, which cannot proceed without it (#1723) */
@@ -57,6 +59,8 @@ export const AUDIT_EVENT = {
   CONFIG_CHANGE: 'config-change',
   /** Every custom configuration value discarded; recorded before the reset, which cannot proceed without it */
   CONFIG_RESET: 'config-reset',
+  /** Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values */
+  CONTACT_MANAGE: 'contact-manage',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
   FOOTNOTE_EDIT: 'footnote-edit',
   /** A background job finished successfully */
