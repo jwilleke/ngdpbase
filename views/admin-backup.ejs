@@ -120,16 +120,117 @@
     </div>
 
     <!-- ================================================================ -->
-    <!-- Restore databases                                                -->
+    <!-- Restore the whole site (#1945)                                   -->
+    <!-- ================================================================ -->
+    <% const siteScope = locals.siteRestoreScope || { restored: [], notRestored: [] }; %>
+    <% const stagedSite = locals.stagedSiteRestore || null; %>
+    <div class="card mb-4" id="site-restore-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-undo"></i> Restore the whole site</h5>
+        </div>
+        <div class="card-body">
+            <p>Puts the site back as it was in a backup stored on this server.</p>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>What it puts back</h6>
+                    <ul id="site-restore-restored">
+                        <% siteScope.restored.forEach(function(item) { %><li><%= item %></li><% }); %>
+                        <li>the site's keys and secrets (its <code>.env</code> file), but <strong>only from an encrypted backup</strong>: one taken while this site had its backup key</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6>What it does not put back</h6>
+                    <p class="small text-muted mb-1">These stay as they are on this site now:</p>
+                    <ul id="site-restore-not-restored">
+                        <% siteScope.notRestored.forEach(function(item) { %><li><%= item %></li><% }); %>
+                    </ul>
+                </div>
+            </div>
+            <ul id="site-restore-how">
+                <li>An encrypted backup can be restored only on a server that has <strong>the same backup key</strong> it was taken with. On a new server, put the key you saved in place first.</li>
+                <li>A fresh backup of the current data is taken first. Restoring that backup undoes this restore.</li>
+                <li>Everything is then prepared beside the current data. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
+                <li>At the restart everything is put in place together, or nothing is. The current data is kept beside it.</li>
+            </ul>
+
+            <% if (!backupKey.set) { %>
+            <div class="alert alert-danger" id="restore-no-key">
+                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> This site has no backup key</h6>
+                <p class="mb-0">After a restore, passwords return to what they were on the backup date. Passkeys and authenticator apps are not restored. On a new server, admins sign in with a password only, and won't have admin rights until they set up a passkey again.</p>
+            </div>
+            <% } %>
+
+            <% if (restoreRunning) { %>
+            <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
+            <% } %>
+
+            <% if (locals.stagedSiteRestoreError) { %>
+            <div class="alert alert-danger" id="staged-site-restore-unreadable">The record of a staged restore can't be read: <%= stagedSiteRestoreError %></div>
+            <% } %>
+
+            <% if (stagedSite) { %>
+            <div class="alert alert-warning" id="staged-site-restore">
+                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> <%= stagedSite.state === 'staged' ? 'A whole-site restore is staged and waits for the restart' : 'A whole-site restore was not finished being prepared' %></h6>
+                <table class="table table-sm mb-2" style="max-width:640px;">
+                    <tr><th>Backup</th><td><code><%= stagedSite.source || stagedSite.backup %></code></td></tr>
+                    <tr><th>Backup taken</th><td><%= stagedSite.backup ? new Date(stagedSite.backup).toLocaleString() : '—' %></td></tr>
+                    <tr><th>Staged</th><td><%= new Date(stagedSite.stagedAt).toLocaleString() %></td></tr>
+                    <tr><th>Staged by</th><td><%= stagedSite.stagedBy || '—' %></td></tr>
+                    <% if (stagedSite.safetyBackup) { const siteSafety = (recentBackups || []).find(function(b) { return b.filename === stagedSite.safetyBackup; }); %>
+                    <tr id="site-safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedSite.safetyBackup %></code><%= siteSafety ? ' (' + new Date(siteSafety.created).toLocaleString() + ')' : '' %>. It is in the list above; restore it to undo this restore.</td></tr>
+                    <% } %>
+                </table>
+                <p class="mb-2"><%= stagedSite.state === 'staged' ? 'Restart the site to apply it, or cancel it.' : 'It will not be applied. Cancel it to clear it away.' %> To restore a different backup instead, use <strong>Replace it</strong> below.</p>
+                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-site-restore">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-times"></i> Cancel staged restore
+                    </button>
+                </form>
+            </div>
+            <% } %>
+
+            <% if (!recentBackups || recentBackups.length === 0) { %>
+            <p class="text-muted mb-0" id="site-restore-none"><em>No backup is stored on this server yet.</em></p>
+            <% } else { %>
+            <form method="POST" action="/admin/backup/restore" id="site-restore-form" class="border rounded p-3" style="max-width:640px;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="scope" value="site">
+                <% if (stagedSite || stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
+                <% if (!stagedSite && stagedRestore) { %>
+                <p class="small" id="site-restore-replaces-databases">A databases-only restore is staged (below). Restoring the whole site replaces it.</p>
+                <% } %>
+                <div class="mb-3">
+                    <label for="siteRestoreBackup" class="form-label">Backup to restore</label>
+                    <select class="form-select" id="siteRestoreBackup" name="backup">
+                        <% recentBackups.forEach(function(b) { %>
+                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %><%= b.encrypted === false ? ' — not encrypted: no sign-in credentials, no keys' : '' %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="siteRestoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
+                    <input type="text" class="form-control restore-confirm" id="siteRestoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="site-restore-submit">
+                </div>
+                <button type="submit" class="btn btn-danger" id="site-restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
+                    <i class="fas fa-undo"></i> <%= (stagedSite || stagedRestore) ? 'Replace it' : 'Restore the whole site' %>
+                </button>
+            </form>
+            <% } %>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- Restore the databases only: the second option (#1723, #1945)    -->
     <!-- ================================================================ -->
     <% if (databasesEnabled || locals.databaseUnavailable) { %>
     <div class="card mb-4" id="restore-card">
         <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-undo"></i> Restore Databases</h5>
+            <h5 class="mb-0"><i class="fas fa-database"></i> Restore the databases only</h5>
         </div>
         <div class="card-body">
             <p class="fw-bold" id="restore-scope">Restores the databases only. Pages, users and settings are not changed.</p>
-            <p>Puts the site's databases back as they were in a backup stored on this server.</p>
+            <p>Puts the site's databases back as they were in a backup stored on this server. The whole-site restore above includes them; use this to put back the databases alone.</p>
             <ul>
                 <li>A fresh backup of the current data is taken first.</li>
                 <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
@@ -144,17 +245,9 @@
             </div>
             <% } %>
 
-            <% if (!backupKey.set) { %>
-            <div class="alert alert-danger" id="restore-no-key">
-                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> This site has no backup key</h6>
-                <p class="mb-0">After a restore, passwords return to what they were on the backup date. Passkeys and authenticator apps are not restored. On a new server, admins sign in with a password only, and won't have admin rights until they set up a passkey again.</p>
-            </div>
-            <% } %>
-
-            <% if (restoreRunning) { %>
-            <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
-            <% } %>
-
+            <% if (stagedSite) { %>
+            <p class="text-muted mb-0" id="database-restore-blocked"><em>A whole-site restore is staged, and it includes the databases. Cancel it above to restore the databases alone.</em></p>
+            <% } else { %>
             <% if (stagedRestore) { %>
             <div class="alert alert-warning" id="staged-restore">
                 <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> A restore is staged and waits for the restart</h6>
@@ -195,12 +288,13 @@
                 </div>
                 <div class="mb-3">
                     <label for="restoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
-                    <input type="text" class="form-control" id="restoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>">
+                    <input type="text" class="form-control restore-confirm" id="restoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="restore-submit">
                 </div>
                 <button type="submit" class="btn btn-danger" id="restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
                     <i class="fas fa-undo"></i> <%= stagedRestore ? 'Replace it' : 'Restore' %>
                 </button>
             </form>
+            <% } %>
             <% } %>
         </div>
     </div>
@@ -317,15 +411,14 @@
 </div>
 
 <script nonce="<%= locals.cspNonce %>">
-// #1723: the restore button waits for the site name; the server checks it again.
-(function () {
-    const input = document.getElementById('restoreConfirm');
-    const button = document.getElementById('restore-submit');
-    if (!input || !button || button.getAttribute('aria-disabled') === 'true') return;
+// #1723, #1945: each restore button waits for the site name; the server checks it again.
+document.querySelectorAll('input.restore-confirm').forEach(function (input) {
+    const button = document.getElementById(input.dataset.submit);
+    if (!button || button.getAttribute('aria-disabled') === 'true') return;
     const update = function () { button.disabled = input.value.trim() !== input.dataset.expected; };
     input.addEventListener('input', update);
     update();
-})();
+});
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');

@@ -1,6 +1,6 @@
 ---
 name: BackupManager
-description: "Writes a site backup from every manager's backup(), keeps and prunes them, and stages restores — the databases from Admin → Backup, and the staged site restore"
+description: "Writes a site backup from every manager's backup(), keeps and prunes them, and stages restores from Admin → Backup — the whole site, or the databases only"
 dateModified: '2026-10-21'
 category: managers
 code: src/managers/BackupManager.ts
@@ -52,8 +52,8 @@ BackupManager asks every registered manager for its `backup()`, writes the answe
 
 `restoreFromFile(ctx, backupPath, options)` reads the document — an encrypted one only under the backup key it was made with, refused by its fingerprint otherwise — validates it, then:
 
-- __Databases only__ (`managerFilter: ['DatabaseManager']`, what Admin → Backup does through `startRestore`): a complete backup of the live data, then `DatabaseManager` stages the databases for the next start ([DatabaseManager.md](DatabaseManager.md#backup-and-restore)).
-- __A site restore__ (no filter, or a filter naming any other manager whose `restoreIsStaged()` is true): every such manager in the backup stages its part under one site restore manifest, `ngdpbase.backup.restore-manifest`, all or nothing, after a complete backup of the live data, and the next start applies every part or none. Refused when a site or database restore is already staged (unless `replaceStaged`), or when a staged part's backup slot is an error. Details in the [guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876).
+- __Databases only__ (`managerFilter: ['DatabaseManager']`, what Admin → Backup's databases-only restore does through `startRestore`): a complete backup of the live data, then `DatabaseManager` stages the databases for the next start ([DatabaseManager.md](DatabaseManager.md#backup-and-restore)).
+- __A site restore__ (no filter, or a filter naming any other manager whose `restoreIsStaged()` is true; Admin → Backup's whole-site restore passes exactly those managers, #1945): every such manager in the backup stages its part under one site restore manifest, `ngdpbase.backup.restore-manifest`, all or nothing, after a complete backup of the live data, and the next start applies every part or none. Refused when a site or database restore is already staged (unless `replaceStaged`), or when a staged part's backup slot is an error. Details in the [guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876).
 - In a site restore the managers without a staged restore are __not__ restored: they are listed in `skipped` and named in the notification below. While a site restore is staged, a call that would restore any manager live is refused.
 - Otherwise (a `managerFilter` naming managers without a staged restore, and no site restore staged) each is restored __live__ by its own `restore()`, a failure listed in `failed`, not rolled back. Nothing calls `restoreFromFile` that way today.
 - Either restore writes BackupManager's report beside the manifest (`<manifest>.report.json`): the backup's parts that were not staged, and the job runs since the backup from `BackgroundJobManager.runsSince`, read now, before the restore replaces the job state.
@@ -62,9 +62,12 @@ Each manager's `restore(data, options)` gets `{ ctx, directory, source, replaceS
 
 Also:
 
-- `startRestore(ctx, filename, { replace })` — Admin → Backup's databases restore: records `backup-restore` / `backup-restore-replace` first (refuse), then runs in the background and notifies admins. Refused while a site restore is staged.
+- `startRestore(ctx, filename, { replace, scope })` — Admin → Backup's restores. `scope: 'databases'` (the default, #1723): the databases only, refused while a site restore is staged. `scope: 'site'` (#1945): a whole-site restore of any stored backup, `restoreFromFile` with a `managerFilter` of every manager on this site whose restore is staged, so nothing is restored live. Either records `backup-restore` / `backup-restore-replace` first (refuse), with `metadata.scope`, then runs in the background and notifies admins; a failure notifies "Restore of … was not staged". A staged restore of either kind is replaced only with `replace`.
+- `siteRestoreScope()` — what a whole-site restore on this site puts back and what it does not, as the "not restored" notification names them (`restoreLabel`, `NEVER_IN_A_BACKUP`), for the card on Admin → Backup (#1945).
+- `getStagedRestore()` — the restore waiting for the next start, `{ scope, source, stagedBy }`: the site restore when one is staged (it holds the databases' own record too), else a databases-only one, else null.
+- `cancelStagedRestore(ctx)` — cancels whichever is staged, through `cancelStagedSiteRestore` or `DatabaseManager.cancelStagedRestore` (#1945).
 - `getStagedSiteRestore()` — the staged site restore manifest, or null.
-- `cancelStagedSiteRestore(ctx)` — records `backup-restore-cancel` (refuse), then removes every staged file and the manifest. Not on Admin → Backup yet.
+- `cancelStagedSiteRestore(ctx)` — records `backup-restore-cancel` (refuse), then removes every staged file and the manifest.
 - `reportRestoreAtBoot()` — called once every manager and add-on has started (end of `WikiEngine.initializeAddons`): tells admins what the start did with a staged site restore (applied, not applied, or applied only in part), records `backup-restore-applied` into the restored audit log (the backup, who started it, the parts), and after any restore that was applied, site or databases-only, sends the critical "Critical: a restore did not bring everything back" (error level): what was put back, what was not (`NEVER_IN_A_BACKUP` plus the report's parts), and per job the runs between the backup and the restore — name, last run, result (`describeNotRestored`). Jobs are never re-run.
 
 ## Configuration

@@ -160,7 +160,11 @@ const mockBackupManager = {
   // #1876
   backupKeyInfo: vi.fn(),
   revealBackupKey: vi.fn(),
-  confirmBackupKeySaved: vi.fn()
+  confirmBackupKeySaved: vi.fn(),
+  // #1945
+  getStagedSiteRestore: vi.fn(),
+  siteRestoreScope: vi.fn(),
+  cancelStagedRestore: vi.fn()
 };
 
 const mockDatabaseManager = {
@@ -330,6 +334,9 @@ function resetMocks() {
   mockBackupManager.backupKeyInfo.mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: false });
   mockBackupManager.revealBackupKey.mockReturnValue('the-backup-key-value');
   mockBackupManager.confirmBackupKeySaved.mockResolvedValue(undefined);
+  mockBackupManager.getStagedSiteRestore.mockReturnValue(null);
+  mockBackupManager.siteRestoreScope.mockReturnValue({ restored: ['the databases'], notRestored: ['sign-in sessions'] });
+  mockBackupManager.cancelStagedRestore.mockResolvedValue({ scope: 'databases', source: 'b.json.gz' });
   mockDatabaseManager.isEnabled.mockReturnValue(true);
   mockDatabaseManager.getStagedRestore.mockReturnValue(null);
   mockDatabaseManager.cancelStagedRestore.mockResolvedValue({ source: 'b.json.gz', backup: '' });
@@ -845,6 +852,13 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(res.status).toBe(200);
     });
 
+    test('#1945: still renders when the site restore record cannot be read', async () => {
+      mockBackupManager.getStagedSiteRestore.mockImplementation(() => { throw new Error('site-restore.json is not a site restore manifest'); });
+      const res = await request(app).get('/admin/backup');
+      expect(res.status).toBe(200);
+      expect(mockBackupManager.siteRestoreScope).toHaveBeenCalled();
+    });
+
     test('returns 403 when user lacks admin-system permission', async () => {
       mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/backup');
@@ -889,12 +903,36 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase' });
       expect(res.status).toBe(302);
       expect(decodeURIComponent(res.headers.location)).toMatch(/success=Restore started.*Restart the site to apply it/);
-      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'b.json.gz', { replace: false });
+      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'b.json.gz', { replace: false, scope: 'databases' });
+    });
+
+    test('#1945: scope=site starts a whole-site restore, and the page says the site is staged', async () => {
+      const res = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase', scope: 'site' });
+      expect(decodeURIComponent(res.headers.location)).toMatch(/success=Restore started: .*then the whole site is staged.*Restart the site to apply it/);
+      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'b.json.gz', { replace: false, scope: 'site' });
+    });
+
+    test('#1945: any other scope is the databases-only restore, never a wider one', async () => {
+      await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase', scope: 'everything' });
+      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.anything(), 'b.json.gz', { replace: false, scope: 'databases' });
+    });
+
+    test('#1945: a whole-site restore also needs the site name typed', async () => {
+      const res = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: '', scope: 'site' });
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=Nothing was restored: type the site name/);
+      expect(mockBackupManager.startRestore).not.toHaveBeenCalled();
+    });
+
+    test('#1945: a whole-site restore is refused without config-manage', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase', scope: 'site' });
+      expect(res.status).toBe(403);
+      expect(mockBackupManager.startRestore).not.toHaveBeenCalled();
     });
 
     test('replace is passed only when the form says so', async () => {
       await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase', replace: 'true' });
-      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.anything(), 'b.json.gz', { replace: true });
+      expect(mockBackupManager.startRestore).toHaveBeenCalledWith(expect.anything(), 'b.json.gz', { replace: true, scope: 'databases' });
     });
 
     test('a refusal from the manager is shown, not swallowed', async () => {
@@ -914,15 +952,28 @@ describe('WikiRoutes — coverage batch 7', () => {
   describe('POST /admin/backup/restore/cancel (#1723)', () => {
     test('cancels the staged restore with the caller\'s context', async () => {
       const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
-      expect(decodeURIComponent(res.headers.location)).toMatch(/success=Staged restore from b.json.gz cancelled/);
-      expect(mockDatabaseManager.cancelStagedRestore).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }));
+      expect(decodeURIComponent(res.headers.location)).toMatch(/success=Staged restore from b.json.gz cancelled; the current databases stay as they are/);
+      expect(mockBackupManager.cancelStagedRestore).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }));
+    });
+
+    test('#1945: a staged whole-site restore is cancelled the same way; BackupManager decides which it is', async () => {
+      mockBackupManager.cancelStagedRestore.mockResolvedValue({ scope: 'site', source: 's.json.gz.enc' });
+      const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
+      expect(decodeURIComponent(res.headers.location)).toMatch(/success=Staged restore from s.json.gz.enc cancelled; the site's data stays as it is/);
+      expect(mockDatabaseManager.cancelStagedRestore).not.toHaveBeenCalled();
+    });
+
+    test('#1945: nothing staged is said, not swallowed', async () => {
+      mockBackupManager.cancelStagedRestore.mockRejectedValue(new Error('No restore is staged'));
+      const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=No restore is staged/);
     });
 
     test('refused without config-manage', async () => {
       mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
       expect(res.status).toBe(403);
-      expect(mockDatabaseManager.cancelStagedRestore).not.toHaveBeenCalled();
+      expect(mockBackupManager.cancelStagedRestore).not.toHaveBeenCalled();
     });
   });
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A backup made from __Admin → Backup__ is a partial copy of the site. It holds most of the site's data, and __only its databases can be restored from Admin → Backup__. A complete, restorable copy is still the data folders, copied while the server is stopped, plus the keys kept somewhere else.
+A backup made from __Admin → Backup__ is a partial copy of the site. It holds most of the site's data, and __Admin → Backup can restore the whole site from it__, except pages, users and settings. A complete, restorable copy is still the data folders, copied while the server is stopped, plus the keys kept somewhere else.
 
 The full, current detail — every kind of data, what restores, and every known gap — is in the [backup and restore guide](../guides/backup-restore-guide.md). This page is the short version.
 
@@ -82,26 +82,33 @@ When `ngdpbase.database.provider` is `sqlite`, every backup also copies the appl
 
 ## Restoring
 
-### The databases (Admin → Backup)
+### The whole site (Admin → Backup)
 
-__Admin → Backup → Restore Databases__: pick a backup stored on the server, type the site name, and restart when the notification says it is staged. A fresh backup of the current data is taken first, the databases are prepared beside the live files, all or nothing, and the next start puts them in place, keeping the old files as `*.pre-restore`. A staged restore is shown there and can be cancelled or replaced. __Only the databases are restored__; pages, users and settings are not changed. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
+__Admin → Backup → Restore the whole site__, on every site ([#1945](https://github.com/jwilleke/ngdpbase/issues/1945)): pick a backup stored on the server, type the site name, and restart when the notification says it is staged. It needs `config-manage` and a fresh sign-in, as the other backup actions do. The card lists what it puts back and what it does not, before you confirm.
 
-### Everything else
+- It puts back the databases, attachment files, role membership, persons, organizations, footnotes and comments of public pages, the credentials store, the audit log, file-based job state and add-on files, all together or none of them.
+- The instance `.env` (the site's keys and secrets) comes back only from an encrypted backup, and an encrypted backup needs the same backup key on this server.
+- A fresh backup of the current data is taken first; restoring it undoes the restore. Nothing changes until you restart the site, and the site never restarts by itself. The current data is kept beside the restored data as `*.pre-restore`.
+- A staged restore is shown there and can be cancelled or replaced (with the same typed confirmation); a second restore is never started over it silently.
 
-Nothing on Admin → Backup restores anything but the databases yet ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)). The attachment files, role membership, persons, organizations, footnotes and comments, the credentials store, the audit log, file-based job state and add-on files in a backup can be restored together with the databases, staged for the next start, by the site restore that #1876 is building; it has no button yet.
+Details: [the backup and restore guide](../guides/backup-restore-guide.md#restoring-the-whole-site).
+
+### The databases only (Admin → Backup)
+
+On a site that keeps databases, __Restore the databases only__ is the second option below it: the same steps, but __only the databases are restored__; everything else is not changed. It is not offered while a whole-site restore is staged. Details: [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
 
 ### Not restored
 
 After any restore is put in place, admins get a __critical__ notification ("Critical: a restore did not bring everything back") listing what it did not bring back. The list is known before a restore too:
 
 - shares and notifications (they stay as they are), sign-in sessions, the backup key and database key (the site keeps its own), TLS certificate files, the media library and its index — no backup holds them;
-- pages, user accounts and settings — they have no staged restore yet;
+- pages, user accounts and settings: they have no staged restore yet, so a whole-site restore leaves them as they are;
 - for a databases-only restore, everything but the databases;
 - anything the backup left out, such as the credentials store of a backup taken without the key.
 
 The notification also names each scheduled job that ran between the backup and the restore, with its last run time and result. Those runs are not in the restored job history, and a restore never runs a job again: a run the backup caught in progress is closed as cut off, and each schedule goes on from the next time after the restart. Decide yourself whether any of them needs running again.
 
-To bring back anything else today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
+To bring back pages, users and settings today: stop the server (`./server.sh stop`), put the copied `$FAST_STORAGE` and `$SLOW_STORAGE` folders back where they were, with the same `.env`, and start it again.
 
 ---
 

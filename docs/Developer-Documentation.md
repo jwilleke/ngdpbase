@@ -58,7 +58,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | AuditManager | ✅ [doc](managers/AuditManager.md) | Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends |
 | AuthManager | ✅ [doc](managers/AuthManager.md) | Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls |
 | BackgroundJobManager | ✅ [doc](managers/BackgroundJobManager.md) | Long-running job registry + scheduler with progress reporting and polling API |
-| BackupManager | 📘 [doc](managers/BackupManager.md) + [guide](managers/BackupManager-Complete-Guide.md) | Writes a site backup from every manager's backup(), keeps and prunes them, and stages restores — the databases from Admin → Backup, and the staged site restore |
+| BackupManager | 📘 [doc](managers/BackupManager.md) + [guide](managers/BackupManager-Complete-Guide.md) | Writes a site backup from every manager's backup(), keeps and prunes them, and stages restores from Admin → Backup — the whole site, or the databases only |
 | BaseManager | 📘 [doc](managers/BaseManager.md) + [guide](managers/BaseManager-Complete-Guide.md) | Abstract base class for all managers — engine wiring, lifecycle hooks, config accessor pattern |
 | CacheManager | 📘 [doc](managers/CacheManager.md) + [guide](managers/CacheManager-Complete-Guide.md) | Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer |
 | CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |

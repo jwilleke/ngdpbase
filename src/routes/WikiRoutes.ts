@@ -11765,6 +11765,14 @@ ${panes}
       // #1723: what a restore needs on the page — the staged one, whether one
       // is being prepared, and the name an admin types to confirm.
       const databaseManager = this.engine.getManager<{ isEnabled(): boolean; getStagedRestore(): unknown; getUnavailableReason?(): string | null }>('DatabaseManager');
+      // #1945: a staged whole-site restore, or why its record can't be read.
+      let stagedSiteRestore: unknown = null;
+      let stagedSiteRestoreError: string | null = null;
+      try {
+        stagedSiteRestore = backupManager.getStagedSiteRestore();
+      } catch (err: unknown) {
+        stagedSiteRestoreError = getErrorMessage(err);
+      }
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-backup', {
         ...commonData,
@@ -11774,6 +11782,10 @@ ${panes}
         // #1892 D2: the application database can't be opened; a restore is still offered, and says what it leaves out.
         databaseUnavailable: databaseManager?.getUnavailableReason?.() ?? null,
         stagedRestore: databaseManager?.getStagedRestore() ?? null,
+        stagedSiteRestore,
+        stagedSiteRestoreError,
+        // #1945: what a whole-site restore puts back and what it does not, in the "not restored" notification's words.
+        siteRestoreScope: backupManager.siteRestoreScope(),
         restoreRunning: backupManager.isRestoreRunning(),
         // #1876: the backup key's fingerprint and whether it is saved off the server — never the key.
         backupKey: backupManager.backupKeyInfo(),
@@ -11950,25 +11962,29 @@ ${panes}
   }
 
   /**
-   * POST /admin/backup/restore — restore a stored backup's databases (#1723 D1, D5).
-   * The admin types the site name to confirm. A fresh backup is taken and the
-   * databases are staged in the background; the restart applies them. A
-   * staged restore is replaced only when `replace` says so.
+   * POST /admin/backup/restore — restore a stored backup (#1723 D1, D5;
+   * #1945): the whole site (`scope=site`) or its databases only (the
+   * default). The admin types the site name to confirm. BackupManager
+   * decides the rest: it records the restore, takes a fresh backup and
+   * stages in the background; the restart applies it. A staged restore is
+   * replaced only when `replace` says so.
    */
   async adminBackupRestore(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const currentUser = wikiContext.userContext;
-      const backupManager = this.engine.getManager('BackupManager');
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
       if (!currentUser || !backupManager) return res.redirect('/admin/backup?error=BackupManager+not+available');
       const body = req.body as Record<string, string | undefined>;
       const expected = this.siteName();
       if (!expected || (body.confirm ?? '').trim() !== expected) {
         return res.redirect('/admin/backup?error=' + encodeURIComponent('Nothing was restored: type the site name exactly to confirm'));
       }
-      await backupManager.startRestore(currentUser, String(body.backup ?? ''), { replace: body.replace === 'true' });
-      return res.redirect('/admin/backup?success=' + encodeURIComponent('Restore started: a fresh backup is being taken, then the databases are staged. You will be notified when it is ready. Restart the site to apply it.'));
+      const scope = body.scope === 'site' ? 'site' : 'databases';
+      await backupManager.startRestore(currentUser, String(body.backup ?? ''), { replace: body.replace === 'true', scope });
+      const what = scope === 'site' ? 'the whole site is staged' : 'the databases are staged';
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Restore started: a fresh backup is being taken, then ${what}. You will be notified when it is ready. Restart the site to apply it.`));
     } catch (err: unknown) {
       logger.error('Error starting restore:', err);
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
@@ -11976,17 +11992,20 @@ ${panes}
   }
 
   /**
-   * POST /admin/backup/restore/cancel — throw away a staged restore (#1723 D5).
+   * POST /admin/backup/restore/cancel — throw away the staged restore, a
+   * site restore or a databases-only one (#1723 D5, #1945); BackupManager
+   * decides which.
    */
   async adminBackupRestoreCancel(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const currentUser = wikiContext.userContext;
-      const databaseManager = this.engine.getManager<{ cancelStagedRestore(ctx: unknown): Promise<{ source: string; backup: string }> }>('DatabaseManager');
-      if (!currentUser || !databaseManager) return res.redirect('/admin/backup?error=DatabaseManager+not+available');
-      const cancelled = await databaseManager.cancelStagedRestore(currentUser);
-      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source || cancelled.backup} cancelled; the current databases stay as they are.`));
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      if (!currentUser || !backupManager) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      const cancelled = await backupManager.cancelStagedRestore(currentUser);
+      const unchanged = cancelled.scope === 'site' ? "the site's data stays as it is" : 'the current databases stay as they are';
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source} cancelled; ${unchanged}.`));
     } catch (err: unknown) {
       logger.error('Error cancelling staged restore:', err);
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
