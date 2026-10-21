@@ -450,7 +450,8 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect(roleManager._store.get('admin')?.member).toEqual([]);
       expect(roleManager._store.get('editor')?.member).toEqual([{ '@id': 'urn:uuid:other-person' }]);
       // Person is deleted after role memberships are scrubbed
-      expect(mocks.personManager.delete).toHaveBeenCalledWith(PERSON_ID);
+      // #1930: under a system context (account lifecycle), never the caller's own.
+      expect(mocks.personManager.delete).toHaveBeenCalledWith(expect.objectContaining({ origin: 'boot', reason: expect.stringContaining('account lifecycle') }), PERSON_ID);
     });
   });
 

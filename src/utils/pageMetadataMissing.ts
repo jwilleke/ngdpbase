@@ -32,6 +32,7 @@
  * because that is where an operator correlates it with a request.
  */
 import logger from './logger.js';
+import { administratorUsernames } from './administrators.js';
 
 /** Thrown by a route that has proven a page exists but found no metadata. */
 export class PageMetadataMissingError extends Error {
@@ -64,14 +65,6 @@ interface NotificationManagerLike {
     targetUsers: string[];
   }): Promise<string>;
 }
-interface UserManagerLike {
-  getUsers(): Promise<Array<{ username: string }>>;
-}
-
-interface DecisionPointLike {
-  userHoldsPermission(username: string, action: string): Promise<boolean>;
-}
-
 /**
  * Log the damage and notify administrators, once per page.
  *
@@ -92,17 +85,12 @@ export async function reportMissingPageMetadata(
 
   try {
     const notifications = engine?.getManager('NotificationManager') as NotificationManagerLike | null | undefined;
-    const users = engine?.getManager('UserManager') as UserManagerLike | null | undefined;
-    const pdp = engine?.getManager('PolicyDecisionPoint') as DecisionPointLike | null | undefined;
-    if (!notifications || !users || !pdp) return;
+    if (!notifications || !engine?.getManager('UserManager') || !engine.getManager('PolicyDecisionPoint')) return;
 
     const title = missingMetadataTitle(pageName);
     if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
 
-    const admins: string[] = [];
-    for (const { username } of await users.getUsers()) {
-      if (await pdp.userHoldsPermission(username, 'admin-system')) admins.push(username);
-    }
+    const admins = (await administratorUsernames(engine)) ?? [];
     // No administrator to tell is not a reason to tell everybody: an empty
     // target list means ALL users in NotificationManager, which would announce
     // a damaged page to every reader. The error log above stands alone.

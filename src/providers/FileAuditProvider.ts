@@ -16,6 +16,10 @@ import { refusesOnFailure, refuseOnFailureEventTypes } from '../utils/auditRegis
 import { attributedTo, scheduleContext, systemContext } from '../context/bootActions.js';
 import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import type { ManagerBackupOptions, ManagerRestoreOptions } from '../managers/BaseManager.js';
+import { archiveReadKey, archiveTarget, isArchiveName, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import { extractTreeArchive, listTreeArchive, writeTreeArchive } from '../utils/treeArchive.js';
+import { gatePart, keptPathFor, markPart, recordStagedPart, setAsidePath, siteRestoreFile, stagedPathFor } from '../utils/siteRestore.js';
 
 export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
 export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
@@ -164,6 +168,10 @@ class FileAuditProvider extends BaseAuditProvider {
 
     // Ensure log directory exists
     await fs.ensureDir(this.config.logDirectory);
+
+    // #1876: a staged site restore puts the backed-up audit files in place
+    // before the chain head is read from them.
+    this.applyRestoreAtStart(configManager);
 
     // Set up periodic flush
     this.flushTimer = setInterval(() => {
@@ -937,6 +945,121 @@ class FileAuditProvider extends BaseAuditProvider {
 
     this.initialized = false;
     logger.info('[FileAuditProvider] Closed successfully');
+  }
+
+  /** The audit files in the log directory: the live log and its archives, oldest archive first. */
+  private async auditFileNames(): Promise<string[]> {
+    if (!this.config) return [];
+    const live = path.join(this.config.logDirectory, this.config.auditFileName);
+    return [...(await this.listArchives()), ...((await fs.pathExists(live)) ? [this.config.auditFileName] : [])];
+  }
+
+  /** Whether `name` is one of this provider's audit files (never another log in the shared folder). */
+  private isAuditFileName(name: string): boolean {
+    if (!this.config) return false;
+    return path.basename(name) === name && (name === this.config.auditFileName || name.startsWith(`${this.config.archiveFileName}.`));
+  }
+
+  /**
+   * The audit log in a backup (#1876): the live log and every archive, as
+   * they are on disk, with the hash chain they carry, as
+   * `<stem>.audit.tar` beside the document (`.tar.enc` under the backup
+   * key). The queue is flushed first, so every record accepted before the
+   * backup is in it. Only the audit files: the application logs in the same
+   * folder are not.
+   */
+  async backupFiles(options: ManagerBackupOptions): Promise<{ data: DirectoryBackupData; warnings: string[] }> {
+    if (!this.config) throw new Error('FileAuditProvider is not initialized');
+    await this.flush({ fsync: true });
+    const entries = await this.auditFileNames();
+    const target = archiveTarget(options.stem, 'audit');
+    const outcome = await writeTreeArchive(path.join(options.directory, target.archive), this.config.logDirectory, { entries, backupKey: target.backupKey });
+    logger.info(`[FileAuditProvider] Backed up ${outcome.files} audit file(s), ${(outcome.bytes / 1024).toFixed(1)} KB, as ${target.archive} (#1876)`);
+    return {
+      data: { format: 1, archive: target.archive, files: outcome.files, bytes: outcome.bytes, ...(target.keyFingerprint ? { keyFingerprint: target.keyFingerprint } : {}) },
+      warnings: outcome.skipped.map((s) => `audit: ${s} is not a file, so it was left out`)
+    };
+  }
+
+  /** The staged set: a folder beside the live log, `<audit.log>.staged`, holding the backup's audit files. */
+  private stagedAuditDir(): string {
+    return stagedPathFor(path.join(this.config!.logDirectory, this.config!.auditFileName));
+  }
+
+  /**
+   * Stage the audit files from a backup for the next start (#1876): extracted
+   * into `<audit.log>.staged/`, after checking the archive holds audit files
+   * only, and recorded in the site restore. The live log is not touched; the
+   * site keeps recording into it until the restart.
+   */
+  async stageRestore(data: DirectoryBackupData, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void> {
+    if (!this.config) throw new Error('FileAuditProvider is not initialized');
+    if (!data || data.format !== 1 || !isArchiveName(data.archive)) throw new Error('The backup names no audit archive in the backup directory; nothing was staged');
+    const backupKey = archiveReadKey('AuditManager', data);
+    const archive = path.join(options.directory, data.archive);
+    const foreign: string[] = [];
+    await listTreeArchive(archive, (e) => { if (!this.isAuditFileName(e.path)) foreign.push(e.path); }, { backupKey });
+    if (foreign.length > 0) throw new Error(`The audit archive holds files that are not audit files: ${foreign.slice(0, 5).join(', ')}; nothing was staged`);
+    const staged = this.stagedAuditDir();
+    const { files } = await extractTreeArchive(archive, staged, { backupKey });
+    recordStagedPart(options.siteRestore, { manager: 'AuditManager', swaps: [{ live: path.join(this.config.logDirectory, this.config.auditFileName), staged }] });
+    logger.warn(`[FileAuditProvider] ${files} audit file(s) staged — applied at the next start with the rest of the site restore (#1876)`);
+  }
+
+  /**
+   * Put a staged audit log in place, at start, before the chain head is read
+   * (#1876). Every audit file now in the folder (the live log and all its
+   * archives, including ones newer than the backup) moves into
+   * `<audit.log>.pre-restore/`, and the backup's files take their names. The
+   * chain then resumes from the backup's last record; the records written
+   * after the backup are kept in that folder, and verify there as before.
+   */
+  private applyRestoreAtStart(configManager: ConfigurationManager): void {
+    const config = this.config!;
+    const siteFile = siteRestoreFile(configManager);
+    const live = path.join(config.logDirectory, config.auditFileName);
+    const staged = this.stagedAuditDir();
+    const gate = gatePart(siteFile, 'AuditManager');
+    if (gate.decision === 'none') {
+      if (fs.existsSync(staged)) {
+        setAsidePath(staged);
+        logger.error(`[FileAuditProvider] A staged audit log with no site restore naming it (an interrupted staging) was set aside as ${path.basename(staged)}.incomplete (#1876)`);
+      }
+      return;
+    }
+    if (gate.decision === 'set-aside') {
+      setAsidePath(staged);
+      if (gate.part) markPart(siteFile, 'AuditManager', 'set-aside', gate.reason);
+      logger.error(`[FileAuditProvider] A staged audit log was NOT applied: ${gate.reason} (#1876)`);
+      return;
+    }
+    const swap = gate.part.swaps[0];
+    if (gate.part.swaps.length !== 1 || path.resolve(swap.live) !== path.resolve(live) || path.resolve(swap.staged) !== path.resolve(staged)) {
+      const reason = `the site restore manifest names ${swap?.live}, which is not this site's audit log`;
+      setAsidePath(staged);
+      markPart(siteFile, 'AuditManager', 'set-aside', reason);
+      logger.error(`[FileAuditProvider] A staged audit log was NOT applied: ${reason} (#1876)`);
+      return;
+    }
+    try {
+      const names = fs.readdirSync(staged);
+      const foreign = names.filter((n) => !this.isAuditFileName(n));
+      if (foreign.length > 0) throw new Error(`the staged audit log holds files that are not audit files: ${foreign.slice(0, 5).join(', ')}`);
+      const kept = keptPathFor(live);
+      fs.rmSync(kept, { recursive: true, force: true });
+      fs.mkdirSync(kept, { recursive: true, mode: 0o700 });
+      for (const name of fs.readdirSync(config.logDirectory).filter((n) => this.isAuditFileName(n))) {
+        fs.renameSync(path.join(config.logDirectory, name), path.join(kept, name));
+      }
+      for (const name of names) fs.renameSync(path.join(staged, name), path.join(config.logDirectory, name));
+      fs.rmSync(staged, { recursive: true, force: true });
+      markPart(siteFile, 'AuditManager', 'applied');
+      logger.warn(`[FileAuditProvider] Restore applied: ${names.length} audit file(s) from the backup; the audit files from before are kept in ${path.basename(kept)}/ (#1876)`);
+    } catch (err) {
+      const reason = `applying the audit log failed: ${(err as Error).message}`;
+      markPart(siteFile, 'AuditManager', 'set-aside', reason);
+      logger.error(`[FileAuditProvider] ${reason} (#1876)`);
+    }
   }
 
   /**

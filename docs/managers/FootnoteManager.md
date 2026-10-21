@@ -1,7 +1,7 @@
 ---
 name: FootnoteManager
 description: Sidecar storage + CRUD for page footnotes (migrated out of page body in #553/#557)
-dateModified: '2026-10-16'
+dateModified: '2026-10-19'
 category: managers
 code: src/managers/FootnoteManager.ts
 ---
@@ -40,6 +40,10 @@ Every call names the page as `{ name, uuid }` and carries the caller's context. 
 - `updateFootnote(page, id, patch, ctx)` — edit
 - `deleteFootnote(page, id, ctx)` — remove
 - `movePageFootnotes(uuid, fromName, toName, ctx)` — follow the page to its new place
+
+## Backup and restore
+
+Public pages' footnotes are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `backup()` writes the folder (`ngdpbase.footnotes.storagedir`) as `<stem>.footnotes.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive (`src/utils/directoryBackup.ts`). `restore()` is staged (`restoreIsStaged()`): it extracts the archive to `<folder>.staged` as part of a site restore and never writes into the folder; at the next start, before anything reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. A vault page's footnotes are in its vault, which PageManager backs up as stored. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
 
 ## See Also
 

@@ -17,6 +17,13 @@
  *   GET  /addons/forms/:formId/submissions — list submissions for a form
  *   GET  /addons/forms/:formId/submissions/:id — view a submission
  *   POST /addons/forms/:formId/submissions/:id/status — update submission status
+ *   POST /addons/forms/:formId/sync        — take the version an add-on ships (#1880)
+ *
+ * Shipping a form from another add-on (#1880):
+ *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');
+ *   await forms?.registerShippedForm('my-addon', definition);
+ * at every start. The first start saves it; later, a changed definition shows
+ * in the forms admin as an update, and a copy edited on the site is kept.
  *
  * Handler hook:
  *   const formsAddon = engine.getManager('FormsAddon');
@@ -79,6 +86,11 @@ const formsAddon = {
   dependencies: [] as string[],
 
   _handlers: new Map<string, FormHandler>(),
+
+  /** Registered with the engine, so backed up like every manager (#1876): its files are FormsDataManager's, so it has none of its own. */
+  backup(): Promise<{ managerName: string; timestamp: string; data: null; note: string }> {
+    return Promise.resolve({ managerName: 'FormsAddon', timestamp: new Date().toISOString(), data: null, note: 'The forms are backed up by FormsDataManager' });
+  },
 
   registerHandler(formId: string, handler: FormHandler): void {
     this._handlers.set(formId, handler);

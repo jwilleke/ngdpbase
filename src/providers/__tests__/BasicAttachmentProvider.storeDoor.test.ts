@@ -90,3 +90,47 @@ describe('#1629 store() and the upload door', () => {
     expect(record?.metadata).toMatchObject({ colorSpace: 'srgb' });
   });
 });
+
+describe('#1926 the uploader is recorded by username', () => {
+  let tmp: string;
+  let storageDir: string;
+  let pagesDir: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-uploader-'));
+    storageDir = path.join(tmp, 'attachments');
+    pagesDir = path.join(tmp, 'pages');
+    await fs.ensureDir(storageDir);
+    await fs.ensureDir(pagesDir);
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmp);
+  });
+
+  it('records the username as author and editor, and never the email', async () => {
+    const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
+    await provider.initialize();
+    const bytes = Buffer.from('by alice');
+    const meta = await provider.storeAttachment(bytes, { originalName: 'a.txt', mimeType: 'text/plain', size: bytes.length }, {}, { username: 'alice', email: 'alice@example.test' });
+    expect(meta.uploadedBy).toBe('alice');
+    const record = await provider.getById(String(meta.id));
+    expect(record?.author).toBe('alice');
+    const onDisk = await fs.readFile(path.join(storageDir, 'attachment-metadata.json'), 'utf8');
+    expect(JSON.parse(onDisk)).toBeDefined();
+    expect(onDisk).toMatch(/"editor":\s*\{[^}]*"name":\s*"alice"/);
+    expect(onDisk).not.toContain('alice@example.test');
+    expect(onDisk).not.toContain('Unknown');
+  });
+
+  it('refuses an upload naming no username, and writes nothing', async () => {
+    const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
+    await provider.initialize();
+    const before = await fs.readdir(storageDir);
+    const bytes = Buffer.from('nobody');
+    const info = { originalName: 'n.txt', mimeType: 'text/plain', size: bytes.length };
+    await expect(provider.storeAttachment(bytes, info, {}, { email: 'someone@example.test' })).rejects.toThrow(/username/);
+    await expect(provider.storeAttachment(bytes, info, {}, null)).rejects.toThrow(/username/);
+    expect(await fs.readdir(storageDir)).toEqual(before);
+  });
+});

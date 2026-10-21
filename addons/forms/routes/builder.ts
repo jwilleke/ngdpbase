@@ -3,7 +3,7 @@ import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
-import { FormDefinitionSchema, type FormField } from '../managers/FormsDataManager.js';
+import { FormDefinitionSchema, type FormDefinition, type FormField } from '../managers/FormsDataManager.js';
 
 export default function builderRoutes(engine: WikiEngine): Router {
   const router = engine.createRouter();
@@ -22,7 +22,17 @@ export default function builderRoutes(engine: WikiEngine): Router {
     }
   }
 
-  function assemblePayload(body: Record<string, unknown>, formId: string): Record<string, unknown> {
+  /**
+   * The "Store submissions" box (#1921). An unticked checkbox sends nothing, so
+   * the page sends `storeShown` beside it; a post without that marker (a page
+   * loaded before the box existed) keeps `current`.
+   */
+  function readStore(body: Record<string, unknown>, current: boolean): boolean {
+    if (body['storeShown'] === undefined) return current;
+    return body['store'] === 'on' || body['store'] === 'true';
+  }
+
+  function assemblePayload(body: Record<string, unknown>, formId: string, current?: FormDefinition): Record<string, unknown> {
     return {
       id: formId,
       title: typeof body['title'] === 'string' ? body['title'].trim() : '',
@@ -30,7 +40,8 @@ export default function builderRoutes(engine: WikiEngine): Router {
       handler: typeof body['handler'] === 'string' && body['handler'].trim() ? body['handler'].trim() : undefined,
       proxySubmission: body['proxySubmission'] === 'on' || body['proxySubmission'] === 'true',
       notifyRole: typeof body['notifyRole'] === 'string' && body['notifyRole'].trim() ? body['notifyRole'].trim() : 'admin',
-      confirmationUrl: typeof body['confirmationUrl'] === 'string' && body['confirmationUrl'].trim() ? body['confirmationUrl'].trim() : undefined
+      confirmationUrl: typeof body['confirmationUrl'] === 'string' && body['confirmationUrl'].trim() ? body['confirmationUrl'].trim() : undefined,
+      store: readStore(body, current?.store ?? true)
     };
   }
 
@@ -138,7 +149,8 @@ export default function builderRoutes(engine: WikiEngine): Router {
         const formId = String(req.params['formId']);
         const m = fdm();
         if (!m) { res.status(503).send('Forms addon not available'); return; }
-        if (!m.getDefinition(formId)) { res.status(404).send('Form not found'); return; }
+        const current = m.getDefinition(formId);
+        if (!current) { res.status(404).send('Form not found'); return; }
 
         const body = req.body as Record<string, unknown>;
         const fields = parseFields(body['fieldsJson']);
@@ -146,14 +158,14 @@ export default function builderRoutes(engine: WikiEngine): Router {
         if (!fields) {
           res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
-            form: { ...assemblePayload(body, formId), fields: [] },
+            form: { ...assemblePayload(body, formId, current), fields: [] },
             isNew: false,
             errors: ['Invalid field data — could not parse fields.']
           });
           return;
         }
 
-        const payload = { ...assemblePayload(body, formId), fields };
+        const payload = { ...assemblePayload(body, formId, current), fields };
         const result = FormDefinitionSchema.safeParse(payload);
         if (!result.success) {
           res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),

@@ -1,9 +1,11 @@
-import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
+import type { PartOutcome } from '../utils/siteRestore.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
-import { toPermissionSubject } from '../context/JobContext.js';
+import { ANONYMOUS_USERNAME, toPermissionSubject } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -30,7 +32,9 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
-import { formatPrivatePageName, parsePrivatePageName, privateStoreLayoutFromConfig, privateStoreRoot } from '../utils/privateStorePath.js';
+// #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
+import type { User } from '../providers/BaseAttachmentProvider.js';
+import { formatPrivatePageName, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
@@ -42,7 +46,7 @@ import { transformImage, parseSize } from '../utils/imageTransform.js';
 import { localizeNcmImages, type NcmImageDeps } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
-import type { AssetQuery, AssetRecord } from '../types/Asset.js';
+import { UNKNOWN_UPLOADER, type AssetProvider, type AssetQuery, type AssetRecord } from '../types/Asset.js';
 import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import { resolveUploadMime } from '../utils/sniffMime.js';
 import { ATTACHMENT_DATA_TOPIC } from '../cache/CacheDependencies.js';
@@ -59,7 +63,7 @@ interface MediaManagerInterface {
  * Base attachment provider interface
  */
 interface BaseAttachmentProvider {
-  initialize(): Promise<void>;
+  initialize(options?: { readOnly?: boolean }): Promise<void>;
   storeAttachment(fileBuffer: Buffer, fileInfo: FileInfo, metadata: AttachmentMetadataInput, user: User | null): Promise<AttachmentMetadata>;
   getAttachment(attachmentId: string): Promise<{ buffer: Buffer; metadata: AttachmentMetadata } | null>;
   getAttachmentMetadata(attachmentId: string): Promise<AttachmentMetadata | null>;
@@ -73,6 +77,10 @@ interface BaseAttachmentProvider {
   getThumbnail?(id: string, size: string): Promise<Buffer | null>;
   backup(): Promise<unknown>;
   restore(backupData: unknown): Promise<void>;
+  /** #1876: the files themselves beside the backup document, and their staged restore. */
+  backupFiles?(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome>;
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }>;
+  takeRestoreAtStart?(): PartOutcome | null;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
   // #1400 / #1460: files in a private store, listed in the store's own index —
@@ -152,14 +160,6 @@ export interface UploadOptions {
 // omitted at compile time.
 
 /**
- * User object interface
- */
-export interface User {
-  name: string;
-  email?: string;
-}
-
-/**
  * Mention object (WebPage reference)
  */
 export interface Mention {
@@ -209,6 +209,8 @@ export interface AttachmentMetadataInput {
 export interface AttachmentBackupData extends BackupData {
   providerClass: string | null;
   providerBackup?: unknown;
+  /** The files themselves, as archives beside the document (#1876). */
+  files?: AttachmentFilesBackupData;
   data?: null;
 }
 
@@ -330,7 +332,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       type AttachmentProviderConstructor = new (engine: WikiEngine) => BaseAttachmentProvider;
       const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: AttachmentProviderConstructor };
       this.attachmentProvider = new mod.default(this.engine);
-      await this.attachmentProvider.initialize();
+      // #1852: `{ readOnly: true }` opens the provider for an operator report
+      // that must change nothing on disk (the files dry run).
+      await this.attachmentProvider.initialize(config.readOnly === true ? { readOnly: true } : {});
+      // #1876: a staged restore of the files that was set aside is shown, not just logged.
+      const restored = this.attachmentProvider.takeRestoreAtStart?.();
+      if (restored?.refused) this.markDegraded(`A staged restore of the attachment files was not applied: ${restored.refused}`);
 
       logger.info(`📎 AttachmentManager initialized with ${this.providerClass}`);
       logger.info(`📎 Max attachment size: ${this.formatSize(this.maxSize)}`);
@@ -632,13 +639,6 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // The allow-list check and the served Content-Type both use this.
     fileInfo = { ...fileInfo, mimeType: resolveUploadMime(fileBuffer, fileInfo.mimeType) };
 
-    // The uploader, from the context. A request subject built from a session
-    // carries the account's fields; a JobContext carries a name only.
-    const user = {
-      name: ctx.username,
-      email: (ctx as { email?: string }).email || undefined
-    };
-
     // Destination (#1398): a new upload onto a private page is always private
     // and belongs to that page's author — the author owns the page and every
     // attachment uploaded onto it, whoever uploads. With no private page,
@@ -680,6 +680,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       if (!(await this.mayInVault(ctx, 'asset-upload', pageCreator, pageStore, 'upload'))) {
         throw new Error('Permission denied: You do not have permission to upload attachments');
       }
+      const author = AttachmentManager.uploaderOf(ctx);
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(
@@ -716,7 +717,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             originalName: fileInfo.originalName,
             mimeType: fileInfo.mimeType,
             description: options.description || '',
-            author: user.name,
+            author,
             ...(pageName ? { pageName } : {})
           }
         ));
@@ -731,6 +732,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
       }
     }
+
+    // #1926: the uploader is recorded by username, never an email.
+    const uploader = { username: AttachmentManager.uploaderOf(ctx) };
 
     // Create metadata (include privacy flags for provider). Destination is the
     // page store (#1386); ciphertext of those bytes is later.
@@ -747,7 +751,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     };
 
     // Store attachment via provider
-    const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user));
+    const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, uploader));
 
     logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}, store: ${pageStore ?? ''}]` : ''}`);
 
@@ -762,6 +766,23 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }, options.wikiContext);
 
     return attachmentMetadata;
+  }
+
+  /**
+   * The username an upload is recorded under (#1926): the person the context
+   * names. Asked after policy has allowed the upload and before anything is
+   * written; it decides nothing about authority, only whether there is
+   * someone to record. No one uploads anonymously (operator, 2026-10-20, on
+   * #1852), so the anonymous subject — a share visitor included — and a job
+   * with no person behind it are refused. A refusal reads 'Permission denied'
+   * so the route answers it as one (401 for an anonymous caller).
+   */
+  private static uploaderOf(ctx: ActorContext): string {
+    const username = typeof ctx.username === 'string' ? ctx.username.trim() : '';
+    if (!username || username === ANONYMOUS_USERNAME) {
+      throw new Error('Permission denied: you must be signed in to upload a file');
+    }
+    return username;
   }
 
   /** A file is added to a private page only by someone who may edit it: the page's own decision (#1398). */
@@ -972,7 +993,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       dateCreated: entry.dateCreated,
       dateModified: entry.dateModified,
       uploadedAt: entry.dateCreated,
-      uploadedBy: entry.author ?? 'Unknown',
+      uploadedBy: entry.author ?? UNKNOWN_UPLOADER,
       pageUuid: entry.mentions[0] ?? '',
       mentions: entry.mentions.map((name) => ({ '@type': 'WebPage', name, url: `/view/${encodeURIComponent(name)}` })),
       isPrivate: true,
@@ -1201,11 +1222,77 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * is findable exactly as a public one is.
    */
   async searchPrivateStoreAttachments(query: AssetQuery, ctx: ActorContext): Promise<AssetRecord[]> {
+    return (await this.readableVaultAssetRecords(ctx, query)).flatMap((v) => v.files);
+  }
+
+  /**
+   * {@link searchPrivateStoreAttachments}, kept apart by vault (#1852): the
+   * files layer needs to say which vault each file is in. The same stores,
+   * the same container rule, the same matching.
+   */
+  async readableVaultAssetRecords(
+    ctx: ActorContext,
+    query: AssetQuery = {}
+  ): Promise<Array<{ owner: string; vault: string; files: AssetRecord[] }>> {
     if (!this.attachmentProvider) return [];
-    const out: AssetRecord[] = [];
+    const out: Array<{ owner: string; vault: string; files: AssetRecord[] }> = [];
     for (const location of await this.ownPrivateStores(ctx)) {
       if (!this.mayReach(ctx, location.owner, `store-files:${location.store}`, 'view')) continue;
-      out.push(...await this.attachmentProvider.searchFilesInStore(location, query));
+      out.push({ owner: location.owner, vault: location.store, files: await this.attachmentProvider.searchFilesInStore(location, query) });
+    }
+    return out;
+  }
+
+  /**
+   * The shared pool as asset records (#1852), every one of them: the
+   * provider's own mapping, so the files layer and asset search show a
+   * public file the same way. Whether the requester may read the pool is the
+   * caller's question (`asset-read`).
+   */
+  async sharedPoolAssetRecords(): Promise<AssetRecord[]> {
+    const provider = this.attachmentProvider as unknown as Partial<AssetProvider> | null;
+    if (!provider || typeof provider.search !== 'function') return [];
+    return (await provider.search({ pageSize: Number.MAX_SAFE_INTEGER })).results;
+  }
+
+  /**
+   * Every vault's files, for an operator inventory with no viewer (#1852,
+   * the files migration dry run), the way {@link findVaultPagesUsingPoolFiles}
+   * walks them: an unsealed vault's index entries; for any other vault
+   * (sealed, or not yet opened) only the files on disk and their size, since
+   * its index can't be read without its owner's key. Reads only. The entries
+   * are for the files layer to count; they are never shown.
+   */
+  async vaultFileInventory(): Promise<Array<{
+    owner: string;
+    vault: string;
+    /** Whether its index could be read: an unsealed vault. */
+    readable: boolean;
+    entries: StoreFileEntry[] | null;
+    filesOnDisk: number;
+    bytesOnDisk: number;
+  }>> {
+    const provider = this.attachmentProvider;
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!provider || !configManager || !pagesDirectory) return [];
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const out: Array<{ owner: string; vault: string; readable: boolean; entries: StoreFileEntry[] | null; filesOnDisk: number; bytesOnDisk: number }> = [];
+    for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+      for (const vault of await privateStoreIdsOf(pagesDirectory, owner, layout)) {
+        const dir = privateStoreAttachmentsDir(pagesDirectory, owner, vault, layout);
+        let filesOnDisk = 0;
+        let bytesOnDisk = 0;
+        for (const d of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+          if (!d.isFile()) continue;
+          filesOnDisk++;
+          bytesOnDisk += (await fs.stat(path.join(dir, d.name))).size;
+        }
+        const plain = (await readVaultSealState(pagesDirectory, owner, vault, layout).catch(() => null))?.state === 'plain';
+        const entries = plain ? await provider.listFilesInStore({ owner, store: vault, io: PLAIN_FILE_IO }).catch(() => null) : null;
+        if ((entries?.length ?? 0) === 0 && filesOnDisk === 0) continue;
+        out.push({ owner, vault, readable: entries !== null, entries, filesOnDisk, bytesOnDisk });
+      }
     }
     return out;
   }
@@ -2735,7 +2822,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @returns {Promise<AttachmentBackupData>}
    */
-  async backup(): Promise<AttachmentBackupData> {
+  async backup(options?: ManagerBackupOptions): Promise<AttachmentBackupData> {
     if (!this.attachmentProvider) {
       return {
         managerName: 'AttachmentManager',
@@ -2748,11 +2835,24 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     const providerBackup = await this.attachmentProvider.backup();
 
+    // #1876: the files themselves, beside the document, never in it.
+    if (!options?.directory || !options.stem) {
+      throw new Error('AttachmentManager writes the attachment files beside the backup document, so it is backed up through BackupManager (#1876)');
+    }
+    if (!this.attachmentProvider.backupFiles) {
+      throw new Error(`${this.providerClass} cannot write its files into a backup, so the attachment files are not backed up (#1876)`);
+    }
+    const { data: files, warnings } = await this.attachmentProvider.backupFiles(options.directory, options.stem);
+    for (const w of warnings) logger.error(`📎 [AttachmentManager] ${w}`);
+    logger.info(`📎 Backed up ${files.pool.files} shared file(s) and ${files.vaults.files} vault file(s) (${files.vaults.stores.length} vault(s)) beside the document (#1876)`);
+
     return {
       managerName: 'AttachmentManager',
       timestamp: new Date().toISOString(),
       providerClass: this.providerClass,
-      providerBackup: providerBackup
+      providerBackup: providerBackup,
+      files,
+      ...(warnings.length > 0 ? { warnings } : {})
     };
   }
 
@@ -2763,7 +2863,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {AttachmentBackupData} backupData - Backup data from backup() method
    * @returns {Promise<void>}
    */
-  async restore(backupData: AttachmentBackupData): Promise<void> {
+  async restore(backupData: AttachmentBackupData, options?: ManagerRestoreOptions): Promise<void> {
     if (!backupData) {
       throw new Error('AttachmentManager: No backup data provided for restore');
     }
@@ -2772,14 +2872,36 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('AttachmentManager: Provider not initialized, cannot restore');
     }
 
+    // #1876: staged for the next start with the rest of the site, never written live.
+    if (!options?.siteRestore || !options.directory) {
+      throw new Error('AttachmentManager\'s restore is staged with the rest of the site, so it is restored through BackupManager (#1876)');
+    }
     if (backupData.providerClass !== this.providerClass) {
-      logger.warn(`📎 Provider mismatch: backup has ${backupData.providerClass}, current is ${this.providerClass}`);
+      throw new Error(`The backup's attachments were kept by ${backupData.providerClass}, and this site uses ${this.providerClass}; nothing was staged (#1876)`);
     }
+    if (!backupData.providerBackup || !backupData.files) {
+      throw new Error('The backup holds no attachment files (it was taken before they were backed up, #1876); nothing was staged');
+    }
+    if (!this.attachmentProvider.stageFilesRestore) {
+      throw new Error(`${this.providerClass} cannot stage a restore of its files; nothing was staged (#1876)`);
+    }
+    const { skippedVaults } = await this.attachmentProvider.stageFilesRestore(backupData.providerBackup as Record<string, unknown>, backupData.files, options.directory, options.siteRestore);
+    logger.warn('📎 Attachment files and metadata staged — applied at the next start with the rest of the site restore (#1876)');
+    if (skippedVaults.length > 0) {
+      const message = `The backup holds files of vaults this site no longer has (${skippedVaults.join(', ')}), so they were not staged. Their pages are not on this site either.`;
+      logger.error(`📎 [AttachmentManager] ${message}`);
+      try {
+        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
+          ?.addNotification({ type: 'system', level: 'error', title: 'Some vault files in the backup were not restored', message });
+      } catch (err) {
+        logger.error('📎 [AttachmentManager] The notification could not be sent:', err);
+      }
+    }
+  }
 
-    if (backupData.providerBackup) {
-      await this.writeAttachments(this.attachmentProvider.restore(backupData.providerBackup));
-      logger.info('📎 AttachmentManager restored from backup');
-    }
+  /** Its restore is staged for the next start with the rest of a site restore (#1876). */
+  override restoreIsStaged(): boolean {
+    return true;
   }
 
   /**
