@@ -1153,8 +1153,7 @@ you claim the name first with an empty placeholder:
   outside this repository, write a \`package.json\` holding only
   \`{ "name": "${packageName(o)}", "version": "0.0.0" }\` and a \`README.md\`
   saying "placeholder, not installable". Then run \`npm login\`,
-  \`npm publish --access public\` and
-  \`npm deprecate ${packageName(o)}@0.0.0 "placeholder, do not install"\`.
+  \`npm publish --access public\`. It is not deprecated.
   No site installs it: it has no provenance, so the installer refuses it, and
   a range such as \`^${SCAFFOLD_VERSION}\` excludes \`0.0.0\` anyway.
 - 2 Add the trusted publisher on npmjs.com, in the package's settings, or with

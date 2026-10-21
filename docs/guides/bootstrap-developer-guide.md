@@ -9,8 +9,8 @@ How an ngdpbase instance comes up: how environment variables are found, which us
 - Nothing is written under the application folder at runtime (`/app` in the image). Only `FAST_STORAGE` and `SLOW_STORAGE` are written ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687), [#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
 - Nothing writes a `.env` except the boot backfills: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` when they are absent, a staged restore of the `.env` itself, and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS`.
 - `NGDPBASE_SYSTEM_USER` is required on every boot. `NGDPBASE_ADMIN_PASSWORD` is required for a headless install that would otherwise create the admin on the shipped password, and whenever `ngdpbase.user.security.defaultpassword` is the bare ref `$NGDPBASE_ADMIN_PASSWORD`. An interactive fresh install may boot on the shipped `admin123` and warn.
-- A required-setting refusal happens before anything is written except the boot backfills ([#1953](https://github.com/jwilleke/ngdpbase/issues/1953)): `PUID`/`PGID` in `bootstrap-env.ts`, `NGDPBASE_SYSTEM_USER` in `WikiEngine.initialize()` right after configuration loads, the headless admin password in `createDefaultAdmin()` before the account is written. A new refusal goes before the first write too, never after `engine.initialize()`.
-- Every required-setting refusal ends with `REQUIRED_SETTINGS_HELP` (`src/utils/requiredSettings.ts`), which points to SETUP.md's [Required settings](../../SETUP.md#required-settings). That section lists each required setting with one line of why; `.env.example` stays the one list of every variable. A new required setting adds its line there and uses the constant.
+- A required-setting refusal happens before the admin account is written ([#1953](https://github.com/jwilleke/ngdpbase/issues/1953)): `PUID`/`PGID` in `bootstrap-env.ts`, `NGDPBASE_SYSTEM_USER` in `WikiEngine.initialize()` right after configuration loads, and the headless admin password in `UserManager.initialize()` (`createDefaultAdmin()`), after the managers before it have started. A new refusal goes before the first write too, never after `engine.initialize()`.
+- Every required-setting refusal ends with `REQUIRED_SETTINGS_HELP` (`src/utils/requiredSettings.ts`), which points to SETUP.md's [Required settings](../../SETUP.md#required-settings), except one (Known gaps): `ngdpbase.user.security.defaultpassword` set to the bare `$NGDPBASE_ADMIN_PASSWORD` with the variable unset. That section lists each required setting with one line of why; `.env.example` stays the one list of every variable. A new required setting adds its line there and uses the constant.
 - Configuration merge and `${VAR}` resolution live in `ConfigurationManager`, not in the env loader.
 - Identity of the system principal is the env name; authority is `ngdpbase.system.roles`, resolved live.
 
@@ -18,17 +18,17 @@ How an ngdpbase instance comes up: how environment variables are found, which us
 
 Three layers, in the order they run:
 
-1. __Environment__ — `src/bootstrap-env.ts` loads `.env` files into `process.env` before anything else evaluates.
-2. __Configuration__ — `ConfigurationManager` merges shipped defaults, each enabled addon's `config/default-config.json`, and instance overrides, then resolves `$VAR` references against that environment at every lookup.
-3. __Install__ — a `.install-complete` marker gates the setup wizard; `HEADLESS_INSTALL=true` skips it.
+- 1 __Environment__ — `src/bootstrap-env.ts` loads `.env` files into `process.env` before anything else evaluates.
+- 2 __Configuration__ — `ConfigurationManager` merges shipped defaults, each enabled addon's `config/default-config.json`, and instance overrides, then resolves `$VAR` references against that environment at every lookup.
+- 3 __Install__ — a `.install-complete` marker gates the setup wizard; `HEADLESS_INSTALL=true` skips it.
 
 Nothing in the codebase __writes__ a `.env` except the boot backfills below: `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` when absent ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), [#1524](https://github.com/jwilleke/ngdpbase/issues/1524), [#1876](https://github.com/jwilleke/ngdpbase/issues/1876)), a staged site restore putting back the backup's `.env` (#1876), and, only when `oidc-auth-server.enabled` is true, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574), `OidcManager`). Everything else you create by hand from `.env.example`.
 
-`NGDPBASE_SYSTEM_USER` is __required__ on every boot and is never generated: the name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631), below). An instance without it refuses to start. `NGDPBASE_ADMIN_PASSWORD` is never generated either. It is read only on the boot that finds an empty user store. An interactive install may use the shipped `admin123` and then warn; a headless install refuses that shipped password.
+`NGDPBASE_SYSTEM_USER` is __required__ on every boot and is never generated: the name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631), below). An instance without it refuses to start. `NGDPBASE_ADMIN_PASSWORD` is never generated either. It is read only on a boot that creates the bootstrap `admin` account, which happens when the user store has no `admin` (an empty store, or one whose `admin` was removed). An interactive install may use the shipped `admin123` and then warn; a headless install refuses that shipped password.
 
 ### What `bootstrap-env.ts` is, and is not
 
-It is the __environment__ bootstrap: layer 1 only. Its job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates, and then to guarantee one variable — `NGDPBASE_SESSION_SECRET` — is set, generating it if nothing supplied it. It is the single mechanism for both, and the first thing that runs in any ngdpbase process.
+It is the __environment__ bootstrap: layer 1 only. Its job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates, then to become the run-as user (`PUID`/`PGID`, below), apply a staged restore of the instance `.env`, and guarantee `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` are set, generating each one nothing supplied. It is the single mechanism for all of these, and the first thing that runs in any ngdpbase process.
 
 It is __not__ the whole bootstrap, and importing it does not make a script behave like the app:
 
@@ -87,9 +87,9 @@ When launched via `server.sh`, both files are already in the ambient environment
 
 The rule now: __`NGDPBASE_SESSION_SECRET` MUST be defined in `.env`__, and `bootstrap-env.ts` makes that true rather than waiting for a human. After the two `.env` files load, `ensureSessionSecret()` (`src/utils/sessionSecret.ts`) runs:
 
-1. Set and not a placeholder — used as-is, nothing written. A Kubernetes deployment injecting it from a Secret never touches the volume.
-2. Blank in the environment but present in `<FAST_STORAGE>/.env` — that line is used. This covers a launcher that passed the variable empty (compose `${VAR:-}`, `docker run -e VAR=`), which `dotenv` then refuses to override; without this step every such boot would generate again and sign everyone out.
-3. Otherwise a 32-byte random value is generated, appended as one line to `<FAST_STORAGE>/.env` (the file is created `0600` if new), and set in `process.env`. `app.ts` logs one `warn` line on that boot naming the file. Silent thereafter.
+- 1 Set and not a placeholder — used as-is, nothing written. A Kubernetes deployment injecting it from a Secret never touches the volume.
+- 2 Blank in the environment but present in `<FAST_STORAGE>/.env` — that line is used. This covers a launcher that passed the variable empty (compose `${VAR:-}`, `docker run -e VAR=`), which `dotenv` then refuses to override; without this step every such boot would generate again and sign everyone out.
+- 3 Otherwise a 32-byte random value is generated, appended as one line to `<FAST_STORAGE>/.env` (the file is created `0600` if new), and set in `process.env`. `app.ts` logs one `warn` line on that boot naming the file. Silent thereafter.
 
 Two cases refuse to start, before the logger exists, with the reason on stderr: a __placeholder__ value (the shipped literal, `change-me-in-production`, and the example values older docs carried) — rewriting a line the operator wrote would be more invasive than telling them — and a __failed append__ (read-only volume, permissions), because the rule cannot be made true.
 
@@ -97,7 +97,7 @@ Two cases refuse to start, before the logger exists, with the reason on stderr: 
 
 The repo-root `.env` is never written. It is shared by every instance launched from the checkout, and the per-instance file is the documented home for machine-specific secrets.
 
-The same helper (`ensureInstanceEnvSecret` in `src/utils/instanceEnvSecret.ts`) backfills `NGDPBASE_CREDENTIALS_KEY` on every boot when it is absent ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)): it signs the credentials store and encrypts TOTP seeds, and it has no config key. When `oidc-auth-server.enabled` is true, `OidcManager.ensureKeys` backfills `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` the same way ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574)). A placeholder or a failed append refuses boot, as for the session secret.
+The same helper (`ensureInstanceEnvSecret` in `src/utils/instanceEnvSecret.ts`) backfills `NGDPBASE_CREDENTIALS_KEY` on every boot when it is absent ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)): it signs the credentials store and encrypts TOTP seeds, and it has no config key. When `oidc-auth-server.enabled` is true, `OidcManager.ensureKeys` backfills `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS` the same way ([#1574](https://github.com/jwilleke/ngdpbase/issues/1574)). A failed append of the credentials key refuses boot, as for the session secret; it has no placeholder list, so any non-blank value is used. A failed append of the OpenID Connect keys does not stop the boot: the provider is not started and `OidcManager` is marked degraded.
 
 `NGDPBASE_BACKUP_KEY` is backfilled the same way ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876), "one thing to save"): every site has one, and every backup is encrypted under it. The generated line's comment says to save a copy off the server; Admin → Backup shows its fingerprint, and a dashboard banner stays until an admin confirms it is saved (`ngdpbase.backup.key-saved-fingerprint`). __On a new server, put the saved key in the `.env` before the first start__: otherwise the site makes its own, and that line must be replaced with the saved one (and the server restarted) before a backup can be restored.
 
@@ -107,7 +107,7 @@ Before the backfills, a staged site restore of the `.env` is applied (`applyInst
 
 `bootstrap-env.ts` is the __single__ mechanism, and every entry point that touches instance data imports it: `src/app.ts`, `mcp-server.ts`, and every script under `scripts/` that reads pages, attachments, users, or config.
 
-You can check that claim rather than trust it — this finds any data-touching script missing the import, and should print nothing:
+You can check that claim rather than trust it — this finds any data-touching script missing the import, and should print only `scripts/build-types-package.ts`, a false match on `WikiEngine` in the add-on template text it generates:
 
 ```bash
 for f in scripts/*.ts; do
@@ -122,7 +122,7 @@ That was not always true, and the ways it failed are worth knowing:
 - Eight npm scripts used `tsx --env-file-if-exists=.env`, which reads only the root file and silently ignores `<FAST_STORAGE>/.env`.
 - `app.ts` carried a second hand-rolled parser that duplicated `bootstrap-env` and could never fire.
 
-All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/ngdpbase/issues/1088)). The repo-only tools — `check-csrf-fetch`, `check-docs-coverage`, `generate-docs-index`, `version`, `create-addon` — deliberately load nothing; they read the tree they are run in. Loading `bootstrap-env` would make them refuse without `PUID` (the run-as check) and backfill instance secrets, and neither belongs in a tool that touches no instance ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)).
+All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/ngdpbase/issues/1088)). The repo-only tools — `check-csrf-fetch`, `check-docs-coverage`, `generate-docs-index`, `version`, `create-addon`, `build-types-package` — deliberately load nothing; they read the tree they are run in. Loading `bootstrap-env` would make them refuse without `PUID` (the run-as check) and backfill instance secrets, and neither belongs in a tool that touches no instance ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)).
 
 __If you add an entry point that reads instance data, import `bootstrap-env` first.__ Without it the process silently operates on `./data`.
 
@@ -132,10 +132,10 @@ __Every entry point that starts a `WikiEngine` needs `NGDPBASE_SYSTEM_USER`__ ([
 
 ### Merge order
 
-1. `config/app-default-config.json` — shipped defaults, read-only, in the image
-2. Each enabled addon's `config/default-config.json` — folded in when `ngdpbase.addons.<slug>.enabled` is true (`src/utils/addonConfigLayer.ts`)
-3. `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>` — instance overrides; the filename defaults to `app-custom-config.json` and is overridable via `INSTANCE_CONFIG_FILE` (`ConfigurationManager`'s constructor)
-4. Environment-owned keys, checked before the merged config on every `getProperty` call
+- 1 `config/app-default-config.json` — shipped defaults, read-only, in the image
+- 2 Each enabled addon's `config/default-config.json` — folded in when `ngdpbase.addons.<slug>.enabled` is true (`src/utils/addonConfigLayer.ts`)
+- 3 `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>` — instance overrides; the filename defaults to `app-custom-config.json` and is overridable via `INSTANCE_CONFIG_FILE` (`ConfigurationManager`'s constructor)
+- 4 Environment-owned keys, checked before the merged config on every `getProperty` call
 
 ### Environment-owned keys
 
@@ -155,7 +155,7 @@ The governing rule is __a key is owned by exactly one layer, never both__. These
 
 - They are __always read-only__ on `/admin/configuration`, whether or not the variable is currently set — shown with an `Environment` badge naming the variable. A write is refused with a `409`.
 - The value shipped in `app-default-config.json` for such a key is a __boot fallback__, not a setting. It exists so a fresh install comes up. For `ngdpbase.session.secret` the shipped value is never used at all: the guarantee above sets the variable before configuration is read.
-- To change one: set the variable in `.env` and restart. Nothing here writes `.env`, by design — except the boot backfills (session secret, credentials key, and the OpenID Connect keys when that provider is enabled), each one line, once, and only when that variable is absent.
+- To change one: set the variable in `.env` and restart. Nothing here writes `.env`, by design — except the boot backfills (session secret, credentials key, backup key, and the OpenID Connect keys when that provider is enabled), each one line, once, and only when that variable is absent.
 
 `ngdpbase.application.base-url` is the one asymmetry: it may equally be set in `app-custom-config.json` — the install wizard writes it there — so its UI copy names both routes. It is listed because `docker-compose-traefik.yml` composes it at deploy time and `InstallService` names the variable as the alternative for headless installs, so the environment must remain a valid source.
 
@@ -202,7 +202,7 @@ The brace form is legacy behaviour preserved for __path templates__, where an un
 
 `PORT` → `NGDPBASE_PORT` → `ngdpbase.server.port` → `3000`
 
-`PORT` wins because containers set it. The config key is consulted by reading the two config files directly — no `${VAR}` resolution and no override handling, since duplicating those would be a second config implementation rather than a bridge.
+`PORT` wins because containers set it. The config key is consulted through the manager's own file read and merge (`loadMergedConfigSync()` in `src/utils/addonConfigLayer.ts`: shipped defaults, enabled add-ons' defaults, the instance file) — but no `${VAR}` resolution and no env-key override handling, since duplicating those would be a second config implementation rather than a bridge.
 
 A value that is not a valid port is skipped rather than fatal, and resolution continues to the next source: refusing to boot over a typo would be worse than ignoring it, and a bad `PORT` must not discard a good configured value.
 
@@ -210,15 +210,15 @@ Until `a47f6932` ([#1090](https://github.com/jwilleke/ngdpbase/issues/1090)) `ap
 
 ## Layer 3 — install
 
-Installation state is a `.install-complete` marker file in `FAST_STORAGE` (`InstallService.isInstallComplete()`). Its absence means the setup wizard at `/install` is required.
+Installation state is a `.install-complete` marker file in `FAST_STORAGE` (`InstallService.isInstallComplete()`). Its absence means the setup wizard at `/install` is required, except that a site set up before the marker existed (base URL configured, and a custom config or a page it did not ship with) is given one at start-up (`InstallService.markExistingSiteInstalled()`, [#1410](https://github.com/jwilleke/ngdpbase/issues/1410)).
 
 ### Interactive
 
-A fresh instance with no marker serves the wizard. `WikiEngine` creates the bootstrap `admin` account on the boot that finds an empty user store.
+A fresh instance with no marker serves the wizard. `UserManager.initialize()` creates the bootstrap `admin` account on a boot that finds no `admin` in the user store.
 
 ### Headless
 
-`HEADLESS_INSTALL=true` skips the wizard entirely (`app.ts`, and `InstallService.processHeadlessInstallation()`): copies required pages into the pages directory, writes the marker, done. The operator supplies `<FAST_STORAGE>/config/app-custom-config.json` beforehand — via volume mount or ConfigMap — or relies on the env-var overrides above. __No template config is seeded__; there is no `*.example` file to copy.
+`HEADLESS_INSTALL=true` skips the wizard entirely (`app.ts`, and `InstallService.processHeadlessInstallation()`): on the first request that finds no marker, it writes the marker, done. Required pages are not copied there: `PageManager` seeds them at the end of engine start-up, headless or not ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405), [#1406](https://github.com/jwilleke/ngdpbase/issues/1406)). The operator supplies `<FAST_STORAGE>/config/app-custom-config.json` beforehand — via volume mount or ConfigMap — or relies on the env-var overrides above. __No template config is seeded__; there is no `*.example` file to copy.
 
 ### Fresh-clone helper
 
@@ -230,13 +230,13 @@ Installs dependencies, builds, copies the supplied config into `<FAST_STORAGE>/c
 
 ### The bootstrap admin password
 
-`ngdpbase.user.security.defaultpassword` ships as the literal `"admin123"`. It is applied __only__ on the boot that finds an empty user store, and is read inside `createDefaultAdmin()` rather than at startup — so an instance that already has an admin never resolves it. That indirection is deliberate: if the key were read on every boot, an install whose operator points it at an env-ref would refuse to start once the variable was removed, even though the value would never be used.
+`ngdpbase.user.security.defaultpassword` ships as the literal `"admin123"`. It is applied __only__ on a boot that creates the bootstrap `admin` account (no `admin` in the user store), and is read inside `createDefaultAdmin()` rather than at startup — so an instance that already has an admin never resolves it. That indirection is deliberate: if the key were read on every boot, an install whose operator points it at an env-ref would refuse to start once the variable was removed, even though the value would never be used.
 
 To supply it from the environment instead, set the key to `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json` and put the value in `.env`. Because that is a bare ref, an unset variable then stops the boot rather than quietly falling back.
 
 `isAdminUsingDefaultPassword()` drives a startup warning banner that persists until the password is changed.
 
-The refusal is real and enforced in `assertHeadlessBootstrapPassword()` (`src/utils/headlessAdminPassword.ts`), called from `UserManager.createDefaultAdmin()` — which runs only on the boot that finds an empty user store, so an existing deployment is unaffected by a restart. It refuses when the resolved password is absent or still the shipped one, catching both "variable unset" and "operator never changed the config".
+The refusal is real and enforced in `assertHeadlessBootstrapPassword()` (`src/utils/headlessAdminPassword.ts`), called from `UserManager.createDefaultAdmin()` — which runs only on a boot that finds no `admin` account, so an existing deployment is unaffected by a restart. It refuses when the resolved password is absent or still the shipped one, catching both "variable unset" and "operator never changed the config".
 
 Until `#1087` this was documentation without implementation: the comment claimed a headless install refused, while the key shipped as the literal `admin123` and a hardcoded fallback matched it — so an unattended deploy came up on a credential published in this repository, failing open where the docs said it failed closed.
 
@@ -313,7 +313,7 @@ A database with no key that has never been encrypted still opens unencrypted, wi
 
 ### When the site starts in maintenance mode
 
-Something an administrator can fix never stops the process: the site boots into maintenance mode instead, through the one door every manager uses, `engine.maintenance` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); the API is in [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)). The boot paths that use it: a missing or wrong database key (above), a broken audit provider with `ngdpbase.audit.on-failure` `refuse-boot`, a site-critical add-on that did not load, an unusable TLS certificate or key, and an outbound range that does not parse. The admin switch, left on before a restart, is entered again at boot.
+Something an administrator can fix never stops the process: the site boots into maintenance mode instead, through the one door every manager uses, `engine.maintenance` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906); the API is in [the managers guide](managers-developer-guide.md#maintenance-mode-has-one-owner)). The boot paths that use it: a missing or wrong database key (above), a broken audit provider with `ngdpbase.audit.on-failure` `refuse-boot`, an `ngdpbase.audit.events` entry with no valid `on-failure`, a malformed name, or an event nothing emits, a site-critical add-on that did not load, an unusable TLS certificate or key, and an outbound range that does not parse. The admin switch, left on before a restart, is entered again at boot.
 
 - Visitors get the maintenance page and a 503 with the site's maintenance message (`ngdpbase.features.maintenance.message`, any text) and estimate (`…estimated-duration`), never the reason. `/health/readiness` gives the same message only.
 - The page's title and heading name the site from `ngdpbase.application-name`.
@@ -326,8 +326,8 @@ Three files can carry an environment variable, and they are not interchangeable.
 | Kind of value | `.env.example` | `docker/Dockerfile` `ENV` | The deployment's environment |
 |---|---|---|---|
 | Same for every container and not secret — `HEADLESS_INSTALL`, `NGDPBASE_SYSTEM_USER` | yes | __yes__ | only to override |
-| Differs per instance — `NGDPBASE_BASE_URL`, `NGDPBASE_HOSTNAME`, `FAST_STORAGE`, `PORT` | yes | no | yes: `docker/k8s/configmap-env.yaml` |
-| Secret — `NGDPBASE_SESSION_SECRET`, `NGDPBASE_ADMIN_PASSWORD`, an SMTP password | yes, as a commented placeholder | __never__ — the image is public on GHCR | yes: `docker/k8s/secrets.yaml` |
+| Differs per instance — `NGDPBASE_BASE_URL`, `NGDPBASE_HOSTNAME`, `FAST_STORAGE`, `PORT` | yes | no | yes: `docker/k8s/configmap-env.yaml` (from the shipped `.example`) |
+| Secret — `NGDPBASE_SESSION_SECRET`, `NGDPBASE_ADMIN_PASSWORD`, an SMTP password | yes, as a commented placeholder | __never__ — the image is public on GHCR | yes: `docker/k8s/secrets.yaml` (from the shipped `.example`) |
 
 "The deployment's environment" is whatever the launcher hands the container. The shapes this repo ships and documents: `docker/docker-compose.yml`'s `environment:` block for compose, and for Kubernetes the two flat bags in `docker/k8s/` — `configmap-env.yaml` for non-secrets and `secrets.yaml` for secrets, both injected with `envFrom:` — per [`docker/HEADLESS-DEPLOYMENT-NOTES.md` §10](../../docker/HEADLESS-DEPLOYMENT-NOTES.md). Each is a flat key=value bag, the same shape as `.env`, so a new per-instance variable is one line in the ConfigMap or Secret and a roll of the deployment. An inline `env:` entry on the Deployment is the per-pod override, not the home.
 
@@ -373,7 +373,7 @@ The image tests both ways in CI: as `977:988` with the versioning page provider 
 
 ## Container deployments
 
-`docker/docker-compose.yml` passes `NODE_ENV`, `PUID`, `PGID`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` read-only. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists. The same holds for the session secret: a container started without `NGDPBASE_SESSION_SECRET` generates one into the volume's `.env`, so it survives restarts as long as the volume does. On an ephemeral volume it is regenerated each start and every user is signed out — the symptom in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 — never an insecure one.
+`docker/docker-compose.yml` passes `NODE_ENV`, `PUID`, `PGID`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` at `/app/required-pages`. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists. The same holds for the session secret: a container started without `NGDPBASE_SESSION_SECRET` generates one into the volume's `.env`, so it survives restarts as long as the volume does. On an ephemeral volume it is regenerated each start and every user is signed out — the symptom in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 — never an insecure one.
 
 ## The installation documents
 
@@ -405,6 +405,7 @@ Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [doc
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645)
 - [#1906](https://github.com/jwilleke/ngdpbase/issues/1906) — while the engine is still starting, the maintenance page reads the site name from the configuration files and the environment, so a name written as a `$VAR` reference is not shown until the engine is up.
 - [#1953](https://github.com/jwilleke/ngdpbase/issues/1953) — the required-setting refusals still come one per start, in boot order (`PUID`/`PGID`, then `NGDPBASE_SYSTEM_USER`, then the headless admin password), not as one list; SETUP.md's Required settings section is where an operator sees them all. The headless password can't join an earlier check because it applies only when the `admin` account is about to be created, which only the user store knows.
+- [#1953](https://github.com/jwilleke/ngdpbase/issues/1953) — a headless install whose `ngdpbase.user.security.defaultpassword` is the bare `$NGDPBASE_ADMIN_PASSWORD`, with the variable unset, refuses with `ConfigurationManager.readEnvRef`'s generic "Config secret … unset" message, not with `REQUIRED_SETTINGS_HELP`: `createDefaultAdmin()` reads the password (`getBootstrapPassword()`) before `assertHeadlessBootstrapPassword` runs.
 - [#1953](https://github.com/jwilleke/ngdpbase/issues/1953) — the bootstrap admin's person record is still written after the account, and a failure there is logged, not thrown (`syncPersonOnCreate`), so a person store that fails for another reason still leaves an `admin` with no person and no roles; a later boot does not repair it.
 - [#1892](https://github.com/jwilleke/ngdpbase/issues/1892) — a database key that is missing from a new `.env` is not caught at first boot: with no database file yet, the site creates a new unencrypted one. Only an existing encrypted file shows the key is missing.
 

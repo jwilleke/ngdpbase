@@ -1,7 +1,7 @@
 ---
 name: Testing developer guide
 description: Non-negotiable rules for tests in this repo — teardown, proving a test can fail, reproducing the way the suite runs
-dateModified: 2026-10-19
+dateModified: 2026-10-21
 category: guides
 ---
 
@@ -20,9 +20,9 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 
 ## How to add a test
 
-1. Co-locate under `__tests__/` next to the module.
-2. Mock file I/O. Do not point at the live `FAST_STORAGE` tree.
-3. For a security or audit door, sabotage once (skip the registration, rebuild the subject, catch-and-continue a `refuse` event) and watch the test go red.
+- 1 Co-locate under `__tests__/` next to the module.
+- 2 Mock file I/O. Do not point at the live `FAST_STORAGE` tree.
+- 3 For a security or audit door, sabotage once (skip the registration, rebuild the subject, catch-and-continue a `refuse` event) and watch the test go red.
 
 ## Pages a test creates are marked `test-artifact`
 
@@ -51,6 +51,7 @@ Run E2E against an instance you start for the run, never against one an operator
 - Seed the folder: `FAST_STORAGE=<dir> SLOW_STORAGE=<dir> PUID=$(id -u) PGID=$(id -g) npx tsx scripts/seed-e2e-test-data.ts`.
 - Start it with `node dist/src/app.js`, the way CI does, and stop it by its own PID. `./server.sh` is for long-running pm2-managed instances; from a worktree it can reach another instance by pm2 name or by path — the reasons are in the [bootstrap guide](bootstrap-developer-guide.md#multiple-instances-on-one-machine). Set `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, `NGDPBASE_BASE_URL=http://localhost:<port>`, `NGDPBASE_SYSTEM_USER`, `PUID` and `PGID`.
 - The forms specs skip unless `ngdpbase.addons.forms.enabled` is true in the folder's `config/app-custom-config.json`. `forms-shipped.spec.ts` also needs the fixture add-on in `tests/e2e/fixtures/addons/shipped-forms-e2e`; its header names the keys that load it.
+- Some specs run only when asked, because they need the instance set up for them: `admin-backup.spec.ts` stages and cancels restores only with `E2E_RESTORE=1`, and `page-notes-off.spec.ts` checks a system-category only when `E2E_NOTES_OFF_CATEGORY` names one with `comments` and `footnotes` false in the folder's config.
 - Run `PORT=<port> npm run test:e2e`, then stop the server and remove the folder.
 
 The admin password has one source:
@@ -75,6 +76,5 @@ The admin password has one source:
 
 ## Known gaps
 
-- [#1093](https://github.com/jwilleke/ngdpbase/issues/1093)
 - [#1092](https://github.com/jwilleke/ngdpbase/issues/1092)
 - [#1895](https://github.com/jwilleke/ngdpbase/issues/1895): `playwright.config.ts` reads only the checkout's `.env`, not `<FAST_STORAGE>/.env`. A password kept only in the instance's own `.env` must be exported for the run.

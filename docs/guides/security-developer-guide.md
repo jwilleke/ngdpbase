@@ -77,11 +77,11 @@ An addon's `config/default-config.json` is a layer of the configuration merge, b
 
 ## Checklist for a new route or manager method
 
-1. The handler asks `hasPermission` or `canAccess` for the permission the action *is*. If no permission means that, add one to the catalog; do not borrow a role name.
-2. The context is forwarded, not rebuilt. Addon API routes use `ApiContext.from(req, engine)`.
-3. The refusal answers 401 or 403 by `isAuthenticated`, after policy.
-4. The action's audit event exists, is declared on its permission entry's `audit` block in `ngdpbase.permissions.definitions` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)), and is emitted at the manager door — see [audit-developer-guide.md](audit-developer-guide.md).
-5. Tests: refused by policy, allowed by policy with the subject's role name saying otherwise, and the audit record written. Sabotage each once.
+- 1 The handler asks `hasPermission` or `canAccess` for the permission the action *is*. If no permission means that, add one to the catalog; do not borrow a role name.
+- 2 The context is forwarded, not rebuilt. Addon API routes use `ApiContext.from(req, engine)`.
+- 3 The refusal answers 401 or 403 by `isAuthenticated`, after policy.
+- 4 The action's audit event exists, is declared on its permission entry's `audit` block in `ngdpbase.permissions.definitions` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)), and is emitted at the manager door — see [audit-developer-guide.md](audit-developer-guide.md).
+- 5 Tests: refused by policy, allowed by policy with the subject's role name saying otherwise, and the audit record written. Sabotage each once.
 
 ## How you know you are done
 
@@ -107,6 +107,4 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 
 - [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — proxy access is complete (slices 1–7), reachable while `ngdpbase.auth.proxy-access.enabled` is on. The private-store risk (a proxy's username matching the owner's) is closed, and the audit queries take the subject. Left: the "Jim acted for you" entries wait for the sign-in history page ([#1766](https://github.com/jwilleke/ngdpbase/issues/1766)); after a proxy approves a device, the browser's provider session stays signed in as the person represented, so the proxy's own app sign-in is refused (fails closed) until that session ends.
 - [#1937](https://github.com/jwilleke/ngdpbase/issues/1937) — what a closed account's sessions still cannot be checked against (old sessions with no sign-in time, stores that cannot list by id) is in the authentication guide's Known gaps.
-- [#1174](https://github.com/jwilleke/ngdpbase/issues/1174)
-- [#1216](https://github.com/jwilleke/ngdpbase/issues/1216)
 - [#1962](https://github.com/jwilleke/ngdpbase/issues/1962) — page surfaces not yet through the page-list door: the keyword and category catalogs on the `/search` page and in the editor (`SearchManager.getAllUserKeywords` / `getAllSystemKeywords` / `getAllCategories`) name keywords of pages the reader cannot open; the journal marquee's public-entry count (`JournalDataManager.publicCount`) counts them; a keyword share album's pages are chosen by `searchByUserKeywords` and its own exclusion list (`ShareManager.isPageExcluded`: private, audience, access), a second copy of part of the rule that does not see a policy such as a system-category deny. `SearchManager.getSuggestions` and `WikiRoutes.searchSuggestions` filter nothing but are not routed.
