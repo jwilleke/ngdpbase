@@ -628,25 +628,7 @@ describe('UserManager', () => {
       await userManager.deleteSession('session-abc');
       expect(userManager.provider.deleteSession).toHaveBeenCalledWith('session-abc');
     });
-
-    test('deleteUserSessions() throws when no provider', async () => {
-      const mgr = new UserManager(mockEngine);
-      await expect(mgr.deleteUserSessions('bob')).rejects.toThrow('Provider not initialized');
-    });
-
-    test('deleteUserSessions() deletes matching sessions', async () => {
-      const sessions = new Map([
-        ['s1', { username: 'bob', expiresAt: '2099-01-01' }],
-        ['s2', { username: 'alice', expiresAt: '2099-01-01' }],
-        ['s3', { username: 'bob', expiresAt: '2099-01-01' }]
-      ]);
-      userManager.provider.getAllSessions = vi.fn().mockResolvedValue(sessions);
-      userManager.provider.deleteSession = vi.fn().mockResolvedValue(undefined);
-      await userManager.deleteUserSessions('bob');
-      expect(userManager.provider.deleteSession).toHaveBeenCalledWith('s1');
-      expect(userManager.provider.deleteSession).toHaveBeenCalledWith('s3');
-      expect(userManager.provider.deleteSession).not.toHaveBeenCalledWith('s2');
-    });
+    // deleteUserSessions ends sessions in the live store (#1937): UserManager.closedAccountSessions.test.ts.
   });
 
   describe('backup() and restore()', () => {

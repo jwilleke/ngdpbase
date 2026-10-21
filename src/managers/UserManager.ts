@@ -18,6 +18,9 @@ import type OrganizationManager from './OrganizationManager.js';
 import type RoleManager from './RoleManager.js';
 import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
+import type SessionStatsManager from './SessionStatsManager.js';
+import { endSession, type SessionEndReason } from '../utils/sessionEnd.js';
+import { checkSessionAccount } from '../utils/sessionAccount.js';
 import type ValidationManager from './ValidationManager.js';
 import type { PersonUpdate } from '../types/Person.js';
 import type { JobContext } from '../context/JobContext.js';
@@ -1469,18 +1472,46 @@ class UserManager extends BaseManager {
     await this.provider.deleteSession(sessionId);
   }
 
-  async deleteUserSessions(username: string): Promise<void> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
+  /**
+   * End every signed-in session of `username` in the live session store
+   * (#1937): the account was deleted or turned off (`AuthManager.closeAccess`).
+   * Each goes through `endSession` (its keys dropped, `authentication-logout`
+   * recorded with the reason) and is removed from the store. Returns how many.
+   * The provider's own session list was cleared here before; nothing writes it,
+   * and the store express-session reads was never touched.
+   */
+  async deleteUserSessions(username: string, reason: 'account-deleted' | 'account-disabled', from: { ipAddress?: string } = {}): Promise<number> {
+    return this.endStoredSessions(session => Promise.resolve(session.username === username ? reason : null), from);
+  }
 
-    const allSessions = await this.provider.getAllSessions();
+  /**
+   * End every signed-in session in the store that no longer belongs to its
+   * account (#1937): the account is gone, turned off, another account of the
+   * same name, or its password changed since (`checkSessionAccount`, the
+   * per-request rule). Run once at startup, so sessions left from before the
+   * fix, or from a close the store missed, do not wait for their next request.
+   */
+  async endStaleSessions(): Promise<number> {
+    return this.endStoredSessions(async session => checkSessionAccount(session, await this.getUser(session.username)).end, {});
+  }
 
-    for (const [sessionId, session] of allSessions.entries()) {
-      if (session.username === username) {
-        await this.provider.deleteSession(sessionId);
-      }
+  /** End and remove each signed-in session `which` names a reason for; none without a session store. */
+  private async endStoredSessions(
+    which: (session: Record<string, unknown> & { username: string }) => Promise<SessionEndReason | null>,
+    from: { ipAddress?: string }
+  ): Promise<number> {
+    const store = this.engine.getManager<SessionStatsManager>('SessionStatsManager');
+    if (!store?.hasStore()) return 0;
+    let ended = 0;
+    for (const { sid, session } of await store.sessions()) {
+      if (typeof session.username !== 'string' || session.username === '') continue;
+      const reason = await which(session as Record<string, unknown> & { username: string });
+      if (!reason) continue;
+      endSession(this.engine, session, reason, from);
+      await store.destroy(sid);
+      ended++;
     }
+    return ended;
   }
 
   async backup(): Promise<BackupData> {

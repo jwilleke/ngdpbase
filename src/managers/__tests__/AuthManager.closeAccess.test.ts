@@ -36,7 +36,7 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
       UserManager: {
         getUser: () => Promise.resolve({ password: undefined }),
         hasPassword: () => Promise.resolve(true),
-        deleteUserSessions: (u: string) => { calls.push(`sessions:${u}`); return Promise.resolve(); }
+        deleteUserSessions: (u: string, reason: string) => { calls.push(`sessions:${u}:${reason}`); return Promise.resolve(); }
       },
       AgentTokenManager: {
         listForOwner: (o: string) => [{ id: `tok-${o}`, revokedAt: null }, { id: 'tok-old', revokedAt: '2026-01-01' }],
@@ -76,7 +76,7 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
     const am = await started();
     await am.addCredential(subject('admin'), 'ann', PASSKEY);
     await am.closeAccess('ann', 'disable', subject('admin'));
-    expect(calls).toEqual(['sessions:ann']);
+    expect(calls).toEqual(['sessions:ann:account-disabled']);
     expect(await am.listCredentials(subject('admin'), 'ann')).toHaveLength(1);
   });
 
@@ -84,7 +84,7 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
     const am = await started();
     await am.addCredential(subject('admin'), 'ann', PASSKEY);
     await am.closeAccess('ann', 'delete', subject('admin'));
-    expect(calls).toEqual(['sessions:ann', 'token:tok-ann:admin', 'grant:ann:grant-ann', 'share:share-ann:admin']);
+    expect(calls).toEqual(['sessions:ann:account-deleted', 'token:tok-ann:admin', 'grant:ann:grant-ann', 'share:share-ann:admin']);
     expect(await am.listCredentials(subject('admin'), 'ann')).toEqual([]);
   });
 
@@ -105,6 +105,6 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
     const tokens = managers.engine.getManager('AgentTokenManager') as { listForOwner: () => never };
     tokens.listForOwner = () => { throw new Error('token store down'); };
     await am.closeAccess('ann', 'delete', subject('admin'));
-    expect(calls).toEqual(['sessions:ann', 'grant:ann:grant-ann', 'share:share-ann:admin']);
+    expect(calls).toEqual(['sessions:ann:account-deleted', 'grant:ann:grant-ann', 'share:share-ann:admin']);
   });
 });

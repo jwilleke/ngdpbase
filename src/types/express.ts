@@ -31,6 +31,8 @@ declare module 'express-session' {
     privateStoreHandle?: string;
     /** The account's password-change generation when this session signed in (#1482). */
     sessionGeneration?: number;
+    /** The `createdAt` of the account this session signed in to (#1937): a later account of the same name is not it. */
+    accountCreatedAt?: string;
     /** How this session signed in: provider, factors with their times, amr / aal / acr (#1523). */
     signIn?: SignInRecord;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */

@@ -94,6 +94,7 @@ import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { accountBindingOf } from '../utils/sessionAccount.js';
 import { DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from '../utils/sessionLimits.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
@@ -1511,7 +1512,9 @@ class AuthManager extends BaseManager {
    * Disable and delete both come through here, from UserManager, so nothing
    * an account holds is left reachable by one path and not the other.
    *
-   * - Both: every session of the account ends.
+   * - Both: every session of the account ends, destroyed in the live session
+   *   store (#1937); a session the store could not reach is still refused on
+   *   its next request (`checkSessionAccount`).
    * - Disable: its agent tokens, app grants and shares are suspended by the
    *   live owner-is-active checks that refuse them, and its credentials stay,
    *   so turning the account back on restores them.
@@ -1533,7 +1536,9 @@ class AuthManager extends BaseManager {
     const step = async (what: string, run: () => Promise<unknown>): Promise<void> => {
       try { await run(); } catch (err) { logger.error(`[AuthManager] closeAccess(${username}, ${mode}): ${what} failed:`, err); }
     };
-    await step('sessions', async () => this.engine.getManager<{ deleteUserSessions(u: string): Promise<void> }>('UserManager')?.deleteUserSessions(username));
+    // #1937: in the live session store, each ended through endSession with its reason.
+    const reason = mode === 'delete' ? 'account-deleted' : 'account-disabled';
+    await step('sessions', async () => this.engine.getManager<UserManager>('UserManager')?.deleteUserSessions(username, reason, { ipAddress: ctx.ipAddress }));
     if (mode !== 'delete') return;
 
     const by = ctx.username ?? 'system';
@@ -2596,12 +2601,15 @@ class AuthManager extends BaseManager {
   /**
    * Stamp the session with the account's password-change generation (#1482):
    * at every sign-in, and on the session that changed the password, so that
-   * one stays signed in while every other session of the account ends.
+   * one stays signed in while every other session of the account ends. Also
+   * binds the session to the account itself (`accountCreatedAt`, #1937).
    */
   async stampSessionGeneration(req: Request, username: string): Promise<void> {
     if (!req.session) return;
-    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number } | null | undefined;
+    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number; createdAt?: string } | null | undefined;
     req.session.sessionGeneration = sessionGenerationOf(account);
+    // #1937: and to this account, so a later account of the same name never inherits the session.
+    req.session.accountCreatedAt = accountBindingOf(account);
   }
 
   /**
