@@ -169,7 +169,10 @@ export async function renderFootnoteListHtml(
   const isAuthenticated = userContext?.isAuthenticated === true;
   // #1198: the affordances mirror the routes' own gates — page-edit to edit,
   // admin-system to delete anyone's — asked of policy, not read off a role.
-  const isEditor = await subjectMayDo(engine, userContext as never, 'page-edit');
+  // #1951: footnotes turned off for the page stay readable here, without
+  // controls — the manager refuses every change to them.
+  const writable = await footnoteManager.isAllowedOn(page, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext);
+  const isEditor = writable && await subjectMayDo(engine, userContext as never, 'page-edit');
   const isAdmin = await subjectMayDo(engine, userContext as never, 'admin-system');
 
   const footnotes: PageFootnote[] = await footnoteManager.getFootnotes(page, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext);
@@ -180,7 +183,7 @@ export async function renderFootnoteListHtml(
 
   const rows: string[] = ['<ol class="footnote-list">'];
   for (const fn of footnotes) {
-    const canDelete = isAdmin || (isAuthenticated && fn.createdBy === userContext?.username);
+    const canDelete = writable && (isAdmin || (isAuthenticated && fn.createdBy === userContext?.username));
     rows.push(renderFootnoteRow(f, fn, isEditor, canDelete, pageUuid));
   }
   rows.push('</ol>');
@@ -325,7 +328,8 @@ const FootnotesPlugin: SimplePlugin = {
       parts.push(listHtml);
       parts.push('</div>');
 
-      if (isEditor) {
+      // #1951: no add form where footnotes are turned off for the page.
+      if (isEditor && await footnoteManager.isAllowedOn(page, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext, context.pageMetadata as Record<string, unknown> | undefined)) {
         parts.push(`
 <form id="footnote-add-form" class="footnote-add-form mt-3">
   <div class="row g-2 align-items-end">

@@ -19,7 +19,7 @@ A system-category is not a subject. Subjects are `system-keywords` (the top-leve
 Decided, not yet built. It replaces `ngdpbase.system-category` and its comment in `config/app-default-config.json`:
 
 ```json
-"_comment_system_category": "What kind of page this is, and where its pages live (#1477, docs/system-category.md). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last segment is the vault id; no privatestore means its pages can never be private. defaultPrivate: whether a new entry starts private: true (always), false (never), or choice (each person's preference, private until they set it). encrypt: whether the vault's pages are sealed; true means always private. Who may make an entry public, and who may change these settings, is policy (docs/access-policies.md), not a field here. Exactly one entry has default: true. Add-ons declare their own system-categories in their own config/default-config.json; core reads them live from the installed add-ons' files and never persists them here.",
+"_comment_system_category": "What kind of page this is, and where its pages live (#1477, docs/system-category.md). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last segment is the vault id; no privatestore means its pages can never be private. defaultPrivate: whether a new entry starts private: true (always), false (never), or choice (each person's preference, private until they set it). encrypt: whether the vault's pages are sealed; true means always private. comments, footnotes: false turns off the Comments or Footnotes tab for its pages and refuses new ones; a page's own comments: or footnotes: frontmatter wins, and unset is on (#1951). Who may make an entry public, and who may change these settings, is policy (docs/access-policies.md), not a field here. Exactly one entry has default: true. Add-ons declare their own system-categories in their own config/default-config.json; core reads them live from the installed add-ons' files and never persists them here.",
 "ngdpbase.system-category": {
   "general": {
     "label": "general",
@@ -126,6 +126,8 @@ Each field of a system-category entry, what it represents, and what its absence 
 | `defaultPrivate` | Whether a new page of this system-category starts private (operator, 2026-09-28). `true`: always private; `false`: always public; with either, no preference is offered to users. `choice`: each person sets it in their preferences (one preference per system-category), and a person who has not set it starts private. Either way the editor's Private box moves a single page, where policy allows. Replaces `ngdpbase.addons.journal.defaultPrivate` and the journal's own `journal.defaultPrivate` preference | `true` / `false` / `choice` | `false` | Core, or the add-on; changing it is policy |
 | `encrypt` | Whether pages in this system-category's vault are sealed with the page owner's key. Present only with a `privatestore`. Replaces `ngdpbase.stores.{kind}.encrypt` | `true` / `false`. `true` means always private | `false` | The entry's `owner` |
 | `owner` | Who decides about this system-category's vault (operator, 2026-09-29): its `encrypt` and `defaultPrivate` are the owner's declaration, and they stand. A health-record add-on that declares its vault `encrypt: true` keeps it sealed; an admin cannot turn that off. Replaces `ngdpbase.stores.{kind}.owner` | `admin` for the site's own entries, or the declaring add-on's `ngdpbase.slug` (#927) | `admin` | Core, or the add-on |
+| `comments` | Whether pages of this system-category offer core's Comments (#1951). `false`: no Comments tab, no comment list, and the server refuses posting or deleting a comment. A page's own `comments:` frontmatter wins over it, either way. See [`comments`, `footnotes`](#comments-footnotes) | `true` / `false` | On | Core, or the add-on |
+| `footnotes` | Whether pages of this system-category offer core's Footnotes (#1951). `false`: no Footnotes tab, and the server refuses adding, editing or deleting a footnote. A page's own `footnotes:` frontmatter wins over it, either way | `true` / `false` | On | Core, or the add-on |
 | `shareMaxDays` | The longest a new share link to this system-category's vault may last, in days (#1388, operator 2026-09-30). The vault's owner picks any lifetime up to it and can extend a live link by up to 24 hours at a time, past it. The only say the system-category's `owner` has in sharing | Positive number. Present only with a `privatestore` | `15` | The entry's `owner` |
 
 `general` carries what `ngdpbase.stores.default.*` holds today. The build warns at startup when more than one entry has `default: true`.
@@ -238,6 +240,25 @@ Read since #1504: `defaultstore` is where public pages live, and `privatestore` 
 ### `defaultPrivate`, `encrypt`, `owner`, `shareMaxDays`
 
 Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` are compared as booleans: the string `"true"` is not `true` (pages start public, the vault is not sealed), so a wrong type is never silent (#1559). In an add-on's entry the entry is refused with a warning (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)). In the site's own entries the site warns and never forces (operator, 2026-10-16): it keeps running, the value is still read as false, and startup logs an error. Admins also get the dashboard's non-dismissible "subsystem not working" banner (ValidationManager degraded, configuration key `ngdpbase.system-category`) and a system notification. Both name the entry, the field and the bad value, and say what it is read as (for example `encrypt: "true"` is read as false, so the vault is not sealed). `owner` absent means `admin`, except on an add-on's entry, which is always its add-on's.
+
+### `comments`, `footnotes`
+
+Built (#1951). Whether a page offers core's Comments and Footnotes, decided per page by one rule (`pageNotesOn` in `src/utils/pageNotes.ts`), asked through each kind's manager (`CommentManager.isAllowedOn`, `FootnoteManager.isAllowedOn`):
+
+- 1 The page's own frontmatter, `comments: false` / `footnotes: false` (or `true`), wins.
+- 2 Otherwise the page's system-category entry's field of the same name; a page that names none follows the default system-category.
+- 3 Otherwise on, as before.
+
+Only a boolean counts. In a site entry any other value is read as on, with the startup error, banner and notification of [the other fields](#defaultprivate-encrypt-owner-sharemaxdays); an add-on entry with one is refused. They are not owner-decided: the site can change an add-on's value like `enabled`. An add-on whose privacy depends on them also sets the flag on its pages, which wins.
+
+When a kind is off for a page:
+
+- The view leaves out the tab of `Template:PageTabs` that shows it (a tab whose content calls `CommentsPlugin` / `FootnotesPlugin`, or the short `Comments` / `Footnotes`). The template is shared; each page is asked about itself, so one page's flag never reaches another.
+- Every write is refused by the manager with "Comments are turned off for this page." or "Footnotes are turned off for this page.", which the routes answer with 403: posting and deleting a comment; adding, editing and deleting a footnote; and the conversion funnel (ingest, import, Convert to NCM), which then leaves `[^id]:` definitions in the body instead of moving them to the footnote list. There is no comment edit.
+- __Comments are kept, and hidden.__ Nothing is deleted. `[{CommentsPlugin}]` renders nothing and `GET /api/comments/:uuid/html` answers 404. Turning comments back on shows them again.
+- __Footnotes are kept, and stay readable where the page's own content lists them.__ `[{FootnotesPlugin}]` written in the page's body still renders the page's footnotes, without the add form or the edit and delete buttons, and `GET /api/footnotes/:uuid` still answers. `[^1]` references in the body are untouched. Only the shared tab, and changes, are off.
+
+The phr add-on's seed page is the case it was built for: its plugin output is private to each viewer, so a shared comment on it would publish a patient's note to everyone who can see the page.
 
 ## Related settings that are not per system-category
 

@@ -123,6 +123,65 @@ export async function pageNotesPlace(
 }
 
 /**
+ * Whether `kind` is on for a page (#1951, docs/system-category.md): THE rule,
+ * said once. The page's own frontmatter (`comments:` / `footnotes:`) wins;
+ * without it, its system-category entry's field of the same name decides;
+ * unset is on. Only a boolean counts, and only `false` turns it off.
+ *
+ * Pure. {@link pageNotesAllowed} gathers the page's metadata and entry for it.
+ */
+export function pageNotesOn(
+  kind: PageNotesKind,
+  pageMetadata: Record<string, unknown> | null | undefined,
+  categoryEntry: Record<string, unknown> | null | undefined
+): boolean {
+  const own = pageMetadata?.[kind];
+  if (typeof own === 'boolean') return own;
+  return categoryEntry?.[kind] !== false;
+}
+
+interface PageMetadataReader {
+  getPageMetadata(identifier: string, ctx: ActorContext): Promise<Record<string, unknown> | null>;
+}
+
+interface CategoryReader {
+  getCategoryConfig(label: string): Record<string, unknown> | null;
+  getDefaultSystemCategory(): string;
+}
+
+/**
+ * {@link pageNotesOn} for `page`, as `ctx` reads it (#1951): its metadata
+ * (`metadata` when the caller already holds it, else the stored page's) and
+ * its system-category entry, the default system-category's when the page
+ * names none. A page not stored yet has no metadata, so its system-category
+ * decides. The managers' `isAllowedOn` doors are this; nothing else calls it.
+ */
+export async function pageNotesAllowed(
+  engine: EngineLike,
+  kind: PageNotesKind,
+  page: PageRef,
+  ctx: ActorContext,
+  metadata?: Record<string, unknown> | null
+): Promise<boolean> {
+  const meta = metadata ?? await engine.getManager<PageMetadataReader>('PageManager')?.getPageMetadata?.(page.name, ctx) ?? null;
+  const categories = engine.getManager<CategoryReader>('ValidationManager');
+  const declared = meta?.['system-category'];
+  const label = typeof declared === 'string' && declared ? declared : categories?.getDefaultSystemCategory?.();
+  const entry = label ? categories?.getCategoryConfig?.(label) ?? null : null;
+  return pageNotesOn(kind, meta, entry);
+}
+
+/** A footnote or comment write refused because that kind is turned off for the page (#1951). Routes answer it with 403. */
+export class PageNotesTurnedOffError extends Error {
+  readonly kind: PageNotesKind;
+  constructor(kind: PageNotesKind) {
+    super(kind === 'comments' ? 'Comments are turned off for this page.' : 'Footnotes are turned off for this page.');
+    this.name = 'PageNotesTurnedOffError';
+    this.kind = kind;
+  }
+}
+
+/**
  * Move a page's notes when the page changes place — into a vault, out of one,
  * or between two — through both sides' I/O, as its history moves: sealed going
  * into a sealed vault, opened coming out, never copied in the clear into a
