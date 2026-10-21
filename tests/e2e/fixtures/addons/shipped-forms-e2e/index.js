@@ -10,9 +10,19 @@
  *   e2e-1973-provided  written at first start
  *   e2e-1973-legacy    first saved as a copy with no providedBy, as a site
  *                      from before #1973 holds it; registering it replaces it
+ *
+ * And it leaves one form no add-on provides any more:
+ *   e2e-1973-orphan    written as an add-on that is not on this site left it
+ *                      (providedBy names it); admins may delete it
  */
 
+import { promises as fsp } from 'fs';
+import path from 'path';
+
 const ADDON = 'shipped-forms-e2e';
+const ORPHAN = 'e2e-1973-orphan';
+/** An add-on this site does not have. */
+const GONE = 'shipped-forms-e2e-removed';
 
 /** What an earlier release left on the site, with no providedBy. */
 function previous(id) {
@@ -50,6 +60,12 @@ export default {
     if (!forms.getDefinition('e2e-1973-legacy')) await forms.saveDefinition(previous('e2e-1973-legacy'), ctx);
     await forms.registerShippedForm(ADDON, current('e2e-1973-provided'), ctx);
     await forms.registerShippedForm(ADDON, current('e2e-1973-legacy'), ctx);
+    // A form a removed add-on left: its file, as that add-on wrote it, read in.
+    if (!forms.getDefinition(ORPHAN)) {
+      const file = path.join(forms.dataPath, 'definitions', `${ORPHAN}.json`);
+      await fsp.writeFile(file, JSON.stringify({ ...previous(ORPHAN), providedBy: { addon: GONE, version: '0.9.0' } }, null, 2), 'utf8');
+      await forms.reloadDefinition(ORPHAN);
+    }
   },
 
   async status() {

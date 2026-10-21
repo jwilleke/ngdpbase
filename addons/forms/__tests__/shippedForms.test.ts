@@ -35,11 +35,16 @@ interface Sent { type: string; level: string; title: string; message: string; ta
 let dir: string;
 let sent: Sent[];
 let versions: Record<string, string>;
+/** Core's add-on registry this boot: whether the load pass is over, and which add-ons loaded. */
+let loadDone: boolean;
+let loaded: Set<string>;
 
 beforeEach(async () => {
   dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1973-'));
   sent = [];
   versions = { accounting: '1.0.0', phr: '1.0.0' };
+  loadDone = false;
+  loaded = new Set(['accounting', 'phr']);
 });
 
 afterEach(async () => {
@@ -50,7 +55,11 @@ afterEach(async () => {
 /** An engine with the managers asked: the add-on's version, who holds admin-system, where to send. */
 function engine(): { getManager: (name: string) => unknown } {
   const managers: Record<string, unknown> = {
-    AddonsManager: { getAddonVersion: (slug: string) => versions[slug] },
+    AddonsManager: {
+      getAddonVersion: (slug: string) => versions[slug],
+      addonsLoaded: () => loadDone,
+      isLoaded: (slug: string) => loaded.has(slug)
+    },
     NotificationManager: { createNotification: async (n: Sent) => { sent.push(n); return `n${sent.length}`; } },
     UserManager: { getUsers: async () => [{ username: 'admin' }, { username: 'reader' }] },
     PolicyDecisionPoint: { userHoldsPermission: async (u: string, p: string) => p === 'admin-system' && u === 'admin' }
@@ -235,5 +244,80 @@ describe('a form an add-on provides is read-only on the site (#1973)', () => {
     await again.saveDefinition({ ...site, title: 'Ours, edited' }, ADMIN);
     expect((await stored('site-made')).title).toBe('Ours, edited');
     expect(await again.deleteDefinition('site-made', ADMIN)).toBe(true);
+  });
+});
+
+describe('a form its add-on no longer provides may be deleted (#1973)', () => {
+  const OTHER = { id: 'other-entry', title: 'Other', fields: [{ name: 'a', type: 'text' as const, label: 'A' }] };
+
+  test('its add-on is not loaded this boot: orphaned once loading is over, and deleted; submissions are kept', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    const m = await boot();
+    await m.saveSubmission({ formId: 'record-entry', submittedAt: new Date().toISOString(), submittedBy: 'u', data: {}, status: 'pending' });
+    loaded.delete('accounting');
+    loadDone = true;
+
+    expect(m.orphanedFrom('record-entry')).toBe('accounting');
+    await expect(m.saveDefinition({ ...m.getDefinition('record-entry')!, providedBy: undefined, title: 'Ours' }, ADMIN)).rejects.toThrow(ProvidedFormError);
+    expect(await m.deleteDefinition('record-entry', ADMIN)).toBe(true);
+    expect(m.getDefinition('record-entry')).toBeUndefined();
+    await expect(fsp.access(file('record-entry'))).rejects.toThrow();
+    expect(await m.getSubmissionCount('record-entry')).toBe(1);
+  });
+
+  test('its add-on loaded but no longer registers it: orphaned; the forms it still registers are not', async () => {
+    const first = await boot();
+    await first.registerShippedForm('accounting', V1, BOOT);
+    await first.registerShippedForm('accounting', OTHER, BOOT);
+    versions.accounting = '1.1.0';
+    const m = await boot();
+    await m.registerShippedForm('accounting', OTHER, BOOT);
+    loadDone = true;
+
+    expect(m.orphanedFrom('record-entry')).toBe('accounting');
+    expect(m.orphanedFrom('other-entry')).toBeUndefined();
+    await expect(m.deleteDefinition('other-entry', ADMIN)).rejects.toThrow(ProvidedFormError);
+    expect(await m.deleteDefinition('record-entry', ADMIN)).toBe(true);
+  });
+
+  test('a form its add-on still provides is refused after loading, as before', async () => {
+    const m = await boot();
+    await m.registerShippedForm('accounting', V1, BOOT);
+    loadDone = true;
+    expect(m.orphanedFrom('record-entry')).toBeUndefined();
+    await expect(m.deleteDefinition('record-entry', ADMIN)).rejects.toThrow(/provided by accounting 1\.0\.0/);
+    expect(m.getDefinition('record-entry')).toBeDefined();
+  });
+
+  test('nothing is orphaned before loading is over, even a form no add-on has registered yet', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    const m = await boot();
+    loaded.delete('accounting');
+    expect(m.orphanedFrom('record-entry')).toBeUndefined();
+    await expect(m.deleteDefinition('record-entry', ADMIN)).rejects.toThrow(ProvidedFormError);
+    expect(await stored('record-entry')).toMatchObject({ providedBy: { addon: 'accounting' } });
+  });
+
+  test('an add-on that ships the form again after it was deleted gets it written again', async () => {
+    await (await boot()).registerShippedForm('accounting', V1, BOOT);
+    const m = await boot();
+    loaded.delete('accounting');
+    loadDone = true;
+    expect(await m.deleteDefinition('record-entry', ADMIN)).toBe(true);
+
+    loaded.add('accounting');
+    loadDone = false;
+    const next = await boot();
+    expect(await next.registerShippedForm('accounting', V1, BOOT)).toBe('saved');
+    loadDone = true;
+    expect(next.orphanedFrom('record-entry')).toBeUndefined();
+    expect((await stored('record-entry')).providedBy).toEqual({ addon: 'accounting', version: '1.0.0' });
+  });
+
+  test('a site-built form is never orphaned', async () => {
+    const m = await boot();
+    loadDone = true;
+    await m.saveDefinition({ id: 'site-made', title: 'Ours', proxySubmission: false, notifyRole: 'admin', store: true, notify: true, fields: [{ name: 'a', type: 'text', label: 'A', required: false }] }, ADMIN);
+    expect(m.orphanedFrom('site-made')).toBeUndefined();
   });
 });

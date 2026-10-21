@@ -64,3 +64,49 @@ describe('AddonsManager.getAddonVersion (#1973)', () => {
     expect(manager.getAddonVersion('nobody')).toBeUndefined();
   });
 });
+
+describe('AddonsManager.addonsLoaded (#1973)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'addons-loaded-'));
+    vi.resetModules();
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmpDir).catch(() => {});
+  });
+
+  test('false while add-ons register, true once the load pass is over', async () => {
+    const dir = path.join(tmpDir, 'probe');
+    await fs.ensureDir(dir);
+    await fs.writeJson(path.join(dir, 'package.json'), { name: 'probe', version: '1.0.0' });
+    // The add-on records what core says while its own register() runs.
+    await fs.writeFile(path.join(dir, 'index.js'),
+      'export default { name: "probe", version: "1.0.0", async register(engine) { globalThis.__probe1973 = engine.getManager("AddonsManager").addonsLoaded(); } };\n');
+    const { default: AddonsManager } = await import('../AddonsManager');
+    const cm = {
+      getProperty: vi.fn((key: string, def: unknown) => {
+        if (key === 'ngdpbase.managers.addons-manager.enabled') return true;
+        if (key === 'ngdpbase.managers.addons-manager.addons-path') return tmpDir;
+        if (key === 'ngdpbase.page.provider.filesystem.storagedir') return path.join(tmpDir, 'pages');
+        if (key === 'ngdpbase.addons') return {};
+        if (key === 'ngdpbase.addons.probe.enabled') return true;
+        return def;
+      }),
+      setProperty: vi.fn(async () => {}),
+      getAllProperties: vi.fn(() => ({})),
+      getResolvedDataPath: vi.fn(() => path.join(tmpDir, 'pages')),
+      getCustomProperty: vi.fn(() => null),
+      setRuntimeProperty: vi.fn()
+    };
+    let manager: any = null;
+    manager = new AddonsManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? cm : n === 'AddonsManager' ? manager : null) } as any);
+    expect(manager.addonsLoaded()).toBe(false);
+    await manager.initialize();
+    expect(manager.isLoaded('probe')).toBe(true);
+    expect((globalThis as Record<string, unknown>)['__probe1973']).toBe(false);
+    expect(manager.addonsLoaded()).toBe(true);
+    delete (globalThis as Record<string, unknown>)['__probe1973'];
+  });
+});

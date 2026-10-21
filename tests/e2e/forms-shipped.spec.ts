@@ -5,20 +5,23 @@ import { waitForServerReady, instanceOrigin } from './fixtures/helpers';
  * #1973 — a form an add-on provides: stored with the add-on and its version,
  * a copy from before #1973 (no providedBy) replaced at start, shown on the
  * forms admin as "Provided by <addon> <version>" with no Edit or Delete, and
- * refused by the form builder on the server.
+ * refused by the form builder on the server. A form whose add-on is not on
+ * the site any more says "No longer provided by <addon>" and may be deleted.
  *
  * Needs the forms add-on and the fixture add-on in
  * tests/e2e/fixtures/addons/shipped-forms-e2e on the instance under test:
  *   "ngdpbase.addons.forms.enabled": true,
  *   "ngdpbase.addons.shipped-forms-e2e.enabled": true,
  *   "ngdpbase.managers.addons-manager.addons-path": ["./addons", "<checkout>/tests/e2e/fixtures/addons"]
- * Skips when either is missing. It changes nothing: the fixture's forms are
- * the fixture's, and every write it tries is refused.
+ * Skips when either is missing. The one change it makes is deleting the
+ * fixture's orphaned form, which the fixture writes again at the next start.
  */
 
 const IDS = ['e2e-1973-provided', 'e2e-1973-legacy'];
 const ADDON = 'shipped-forms-e2e';
 const VERSION = '1.0.0'; // the fixture's package.json version
+const ORPHAN = 'e2e-1973-orphan';
+const GONE = 'shipped-forms-e2e-removed'; // an add-on this site does not have
 
 async function csrfToken(page: Page): Promise<string> {
   const html = await (await page.request.get('/login')).text();
@@ -99,5 +102,22 @@ test.describe('forms: definitions an add-on provides (#1973)', () => {
     expect(del.status(), 'builder delete').toBe(403);
 
     expect(await schema(page, id)).toEqual(before);
+  });
+
+  test('a form its add-on no longer provides says so, cannot be edited, and can be deleted', async ({ page }) => {
+    test.skip(!enabled, 'forms add-on or the shipped-forms fixture is not enabled on this instance');
+    test.skip((await page.request.get(`/api/forms/schema/${ORPHAN}`)).status() !== 200, 'the orphaned form was deleted earlier this boot');
+    await page.goto('/addons/forms');
+    const c = card(page, ORPHAN);
+    await expect(c.getByTestId('no-longer-provided')).toHaveText(`No longer provided by ${GONE} (last written by version 0.9.0). It can be deleted, not edited.`);
+    await expect(c.getByRole('link', { name: 'Edit' })).toHaveCount(0);
+    await expect(c.getByRole('button', { name: 'Delete' })).toBeVisible();
+    // A form its add-on still provides keeps no Delete.
+    await expect(card(page, IDS[0]).getByRole('button', { name: 'Delete' })).toHaveCount(0);
+
+    expect((await page.request.get(`/addons/forms/builder/${ORPHAN}`)).status(), 'builder open').toBe(403);
+    const del = await post(page, `/addons/forms/builder/${ORPHAN}/delete`, {});
+    expect(del.status(), 'builder delete').toBe(302);
+    expect((await page.request.get(`/api/forms/schema/${ORPHAN}`)).status()).toBe(404);
   });
 });

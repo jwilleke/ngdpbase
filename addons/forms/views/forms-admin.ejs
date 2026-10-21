@@ -53,7 +53,12 @@
                   <span class="badge bg-warning text-dark">proxy</span>
                 <% } %>
               </div>
-              <% if (form.providedBy) { %>
+              <% if (form.providedBy && form.orphanedFrom) { %>
+                <%# #1973: its add-on did not load, or no longer ships it; it may be deleted, not edited. %>
+                <p class="small text-warning-emphasis mt-2 mb-0" data-testid="no-longer-provided">
+                  <i class="fas fa-puzzle-piece me-1"></i>No longer provided by <a href="/admin/addons"><%= form.orphanedFrom %></a> (last written by version <%= form.providedBy.version %>). It can be deleted, not edited.
+                </p>
+              <% } else if (form.providedBy) { %>
                 <%# #1973: an add-on's form is read-only here; the add-on itself is described on Admin -> Add-ons. %>
                 <p class="small text-muted mt-2 mb-0" data-testid="provided-by">
                   <i class="fas fa-puzzle-piece me-1"></i>Provided by <a href="/admin/addons"><%= form.providedBy.addon %></a> <%= form.providedBy.version %>; it updates this form.
@@ -68,6 +73,8 @@
               <a href="/addons/forms/builder/<%= encodeURIComponent(form.id) %>" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-edit me-1"></i>Edit
               </a>
+              <% } %>
+              <% if (!form.providedBy || form.orphanedFrom) { %>
               <form method="POST" action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete" style="display:inline"
                 data-confirm="Delete form &quot;<%= form.id %>&quot;?&#10;&#10;Deletion is blocked if submissions exist.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">

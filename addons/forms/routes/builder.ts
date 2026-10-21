@@ -218,15 +218,20 @@ export default function builderRoutes(engine: WikiEngine): Router {
 
         const form = m.getDefinition(formId);
         if (!form) { res.status(404).send('Form not found'); return; }
-        if (refuseProvided(form, res)) return;
+        // #1973: a form its add-on no longer provides may be deleted; one it still provides may not.
+        const orphaned = form.providedBy !== undefined && m.orphanedFrom(formId) !== undefined;
+        if (!orphaned && refuseProvided(form, res)) return;
 
         const count = await m.getSubmissionCount(formId);
         if (count > 0) {
+          const why = `Cannot delete — ${count} submission${count !== 1 ? 's' : ''} exist. Clear all submissions first.`;
+          // An add-on's form has no builder page to show the reason on.
+          if (orphaned) { res.status(409).send(why); return; }
           res.status(409).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form,
             isNew: false,
-            errors: [`Cannot delete — ${count} submission${count !== 1 ? 's' : ''} exist. Clear all submissions first.`]
+            errors: [why]
           });
           return;
         }
