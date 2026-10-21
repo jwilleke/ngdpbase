@@ -337,7 +337,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       await this.attachmentProvider.initialize(config.readOnly === true ? { readOnly: true } : {});
       // #1876: a staged restore of the files that was set aside is shown, not just logged.
       const restored = this.attachmentProvider.takeRestoreAtStart?.();
-      if (restored?.refused) this.markDegraded(`A staged restore of the attachment files was not applied: ${restored.refused}`);
+      if (restored?.refused) this.markNeedsAttention(`A staged restore of the attachment files was not applied: ${restored.refused}`);
 
       logger.info(`📎 AttachmentManager initialized with ${this.providerClass}`);
       logger.info(`📎 Max attachment size: ${this.formatSize(this.maxSize)}`);
@@ -1934,7 +1934,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       'They were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1842)';
     logger.error(`📎 ${reason}`);
     this.poolFileReason = reason;
-    if (this.markDegraded(reason) && opts.notify) {
+    if (this.markNeedsAttention(reason) && opts.notify) {
       try {
         await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
           ?.addNotification({ type: 'system', level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });

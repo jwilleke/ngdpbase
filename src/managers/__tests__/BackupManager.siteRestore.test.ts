@@ -45,6 +45,8 @@ describe('a site restore stages every part together (#1876)', () => {
   let fast: string;
   let slow: string;
   let notifications: Array<{ level: string; title: string; message: string }>;
+  let audits: Array<Record<string, unknown>>;
+  let auditDown: boolean;
   const saved = { db: process.env[DATABASE_KEY_ENV], backup: process.env[BACKUP_KEY_ENV] };
 
   const paths = () => ({
@@ -98,7 +100,10 @@ describe('a site restore stages every part together (#1876)', () => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
       NotificationManager: { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
-      AuditManager: { logAuditEvent: async () => undefined, flushAuditQueue: async () => undefined }
+      AuditManager: {
+        logAuditEvent: async (e: Record<string, unknown>) => { if (auditDown) throw new Error('audit sink down'); audits.push(e); return 'id'; },
+        flushAuditQueue: async () => undefined
+      }
     };
     const engine = {
       getManager: (n: string) => managers[n] ?? null,
@@ -188,6 +193,8 @@ describe('a site restore stages every part together (#1876)', () => {
     fs.mkdirSync(fast);
     fs.mkdirSync(slow);
     notifications = [];
+    audits = [];
+    auditDown = false;
     process.env[DATABASE_KEY_ENV] = 'database-key-not-a-secret';
     process.env[BACKUP_KEY_ENV] = 'backup-key-not-a-secret';
     seed();
@@ -339,6 +346,112 @@ describe('a site restore stages every part together (#1876)', () => {
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/must be sealed.*never puts plaintext into a sealed vault/);
     expect(leftovers(/\.staged$/)).toEqual([]);
     expect(fs.existsSync(p.siteRestore)).toBe(false);
+    await stop(site);
+  });
+
+  // ── #1945: the whole-site restore from Admin → Backup ──────────────────────
+
+  /** A manager with a live restore and data in every backup, as PageManager is: what a site restore must never write. */
+  function liveManager(): { backup: () => Promise<unknown>; restore: ReturnType<typeof vi.fn> } {
+    return { backup: async () => ({ managerName: 'PageManager', timestamp: new Date().toISOString(), data: { pages: ['a'] } }), restore: vi.fn() };
+  }
+
+  test('startRestore scope site: recorded first, then staged in the background, all of it, and admins are told', async () => {
+    const site = await start();
+    const p = paths();
+    const pages = liveManager();
+    site.managers.PageManager = pages;
+    site.database.getHandle<Db>().exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)');
+    const file = await site.backup.createBackup(CTX, { filename: '2026-10-19T00-00-00-000Z-ngdpbase-backup.json.gz' });
+    change(site);
+    audits = [];
+    const { done } = await site.backup.startRestore(CTX, path.basename(file), { scope: 'site' });
+    // Recorded before the staging, naming the scope.
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ eventType: 'backup-restore', action: 'backup-restore', resource: path.basename(file), metadata: expect.objectContaining({ scope: 'site', databases: ['application'] }) });
+    expect(site.backup.isRestoreRunning()).toBe(true);
+    const results = await done;
+    expect(site.backup.isRestoreRunning()).toBe(false);
+    expect(results?.success).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_MANAGERS]));
+    expect(JSON.parse(fs.readFileSync(p.siteRestore, 'utf8'))).toMatchObject({ state: 'staged', source: path.basename(file), stagedBy: 'admin' });
+    expect(notifications.map((n) => n.title)).toContain('A site restore is staged');
+    // Nothing is restored live from the page: a manager without a staged restore is left out, and named afterwards.
+    expect(pages.restore).not.toHaveBeenCalled();
+    expect(JSON.parse(fs.readFileSync(`${p.siteRestore}.report.json`, 'utf8')).notRestored).toContain('PageManager');
+    expect(JSON.parse(fs.readFileSync(path.join(p.roles, 'editor.json'), 'utf8')).member).toEqual([]);
+    expect(site.backup.getStagedRestore()).toEqual({ scope: 'site', source: path.basename(file), stagedBy: 'admin' });
+    await stop(site);
+  });
+
+  test('startRestore scope site: a staged restore of either kind is never replaced silently; replace and cancel are recorded', async () => {
+    const { site, file } = await backedUp();
+    const name = path.basename(file);
+    // A databases-only restore staged first.
+    await (await site.backup.startRestore(CTX, name)).done;
+    expect(site.backup.getStagedRestore()).toMatchObject({ scope: 'databases' });
+    await expect(site.backup.startRestore(CTX, name, { scope: 'site' })).rejects.toThrow(/already staged; cancel it or replace it/);
+    // Replaced by a site restore only when asked.
+    audits = [];
+    await (await site.backup.startRestore(CTX, name, { scope: 'site', replace: true })).done;
+    expect(audits[0]).toMatchObject({ eventType: 'backup-restore-replace', metadata: expect.objectContaining({ scope: 'site', replaces: name }) });
+    expect(site.backup.getStagedRestore()).toMatchObject({ scope: 'site' });
+    await expect(site.backup.startRestore(CTX, name, { scope: 'site' })).rejects.toThrow(/already staged; cancel it or replace it/);
+    await expect(site.backup.startRestore(CTX, name)).rejects.toThrow(/site restore .* is staged/);
+    // One cancel for whichever is staged.
+    audits = [];
+    expect(await site.backup.cancelStagedRestore(CTX)).toEqual({ scope: 'site', source: name });
+    expect(audits[0]).toMatchObject({ eventType: 'backup-restore-cancel' });
+    expect(site.backup.getStagedRestore()).toBeNull();
+    expect(leftovers(/\.staged$/)).toEqual([]);
+    await expect(site.backup.cancelStagedRestore(CTX)).rejects.toThrow(/No restore is staged/);
+    await expect(site.backup.startRestore(CTX, name, { scope: 'site', replace: true })).rejects.toThrow(/no staged restore to replace/);
+    await stop(site);
+  });
+
+  test('startRestore scope site: cancelStagedRestore cancels a databases-only restore too', async () => {
+    const { site, file } = await backedUp();
+    await (await site.backup.startRestore(CTX, path.basename(file))).done;
+    expect(await site.backup.cancelStagedRestore(CTX)).toEqual({ scope: 'databases', source: path.basename(file) });
+    expect(site.database.getStagedRestore()).toBeNull();
+    await stop(site);
+  });
+
+  test('startRestore scope site: refused when it cannot be recorded, and for a backup not in the backup folder', async () => {
+    const { site, file } = await backedUp();
+    auditDown = true;
+    await expect(site.backup.startRestore(CTX, path.basename(file), { scope: 'site' })).rejects.toThrow(/audit sink down/);
+    expect(site.backup.isRestoreRunning()).toBe(false);
+    expect(fs.existsSync(paths().siteRestore)).toBe(false);
+    auditDown = false;
+    await expect(site.backup.startRestore(CTX, '../../etc/passwd', { scope: 'site' })).rejects.toThrow(/No backup named/);
+    await expect(site.backup.startRestore(CTX, path.basename(file), { scope: 'everything' as 'site' })).rejects.toThrow(/Unknown restore scope/);
+    await stop(site);
+  });
+
+  test('startRestore scope site: a restore that cannot be staged changes nothing, and admins are told why', async () => {
+    const { site, file } = await backedUp();
+    fs.rmSync(path.join(paths().backups, '2026-10-19T00-00-00-000Z-ngdpbase-backup.comments.tar.enc'));
+    const results = await (await site.backup.startRestore(CTX, path.basename(file), { scope: 'site' })).done;
+    expect(results).toBeNull();
+    const failed = notifications.find((n) => n.title === `Restore of ${path.basename(file)} was not staged`);
+    expect(failed?.level).toBe('error');
+    expect(failed?.message).toMatch(/comments\.tar\.enc is missing.*The site's data stays as it is\./);
+    expect(site.backup.getStagedRestore()).toBeNull();
+    expect(leftovers(/\.staged$/)).toEqual([]);
+    await stop(site);
+  });
+
+  test('siteRestoreScope names what a site restore puts back and what it does not, in the notification\'s words', async () => {
+    const site = await start();
+    site.managers.PageManager = liveManager();
+    site.managers.UserManager = { backup: async () => ({}) };
+    const { restored, notRestored } = site.backup.siteRestoreScope();
+    expect(restored).toEqual(expect.arrayContaining(['the databases', 'attachment files', 'role membership', 'persons', 'organizations', 'footnotes on public pages', 'comments on public pages']));
+    expect(restored).not.toContain('pages (with their history, trash and private stores)');
+    expect(notRestored).toEqual(expect.arrayContaining(['pages (with their history, trash and private stores)', 'user accounts', 'settings', 'sign-in sessions', 'TLS certificate files']));
+    expect(notRestored).not.toContain('attachment files');
+    // A manager this site does not have is not named.
+    expect(notRestored).not.toContain('agent tokens');
     await stop(site);
   });
 

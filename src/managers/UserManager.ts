@@ -466,7 +466,7 @@ class UserManager extends BaseManager {
     // #1916: the log names each address's domain only; the notice names the address.
     const logDetail = shared.map(([email, names]) => `an address at ${emailDomain(email)}: ${names.join(', ')}`).join('; ');
     logger.error(`👤 ${reason}. ${logDetail}`);
-    if (this.markDegraded(reason)) {
+    if (this.markNeedsAttention(reason)) {
       try {
         await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
           type: 'system', level: 'error', title: 'Accounts share an email address', message: `${reason}. ${detail}`

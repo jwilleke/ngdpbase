@@ -36,7 +36,7 @@ export default class CommentManager extends BaseManager {
   private enabled: boolean = true;
   /** Vault pages whose comments are still in the public folder (#1839), and the repair's re-check (#1842). */
   private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
-    markDegraded: (reason) => this.markDegraded(reason),
+    markNeedsAttention: (reason) => this.markNeedsAttention(reason),
     markReadyIfDegradedBy: (reason) => this.markReadyIfDegradedBy(reason)
   });
 
@@ -54,7 +54,7 @@ export default class CommentManager extends BaseManager {
       );
       // #1876: a staged site restore goes in before anything is read.
       const restored = applyDirectoryPartAtStart('CommentManager', this.commentsDir, configManager);
-      if (restored?.refused) this.markDegraded(`A staged restore of the public pages' comments was not applied: ${restored.refused}`);
+      if (restored?.refused) this.markNeedsAttention(`A staged restore of the public pages' comments was not applied: ${restored.refused}`);
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(

@@ -217,6 +217,8 @@
   "ngdpbase.search.provider": "lunrsearchprovider",
   "_comment_search_shared": "Shared search settings (all providers)",
   "ngdpbase.search.maxresults": 50,
+  "_comment_search_access_filter": "#1962: every page hit is decided by the page access check before the result limit. A search asks the index again for twice as many hits while hidden pages leave the result short; this bounds how many hits one search may decide",
+  "ngdpbase.search.access-filter.max-candidates": 5000,
   "ngdpbase.search.autocomplete.enabled": true,
   "ngdpbase.search.autocomplete.minlength": 2,
   "ngdpbase.search.suggestions.enabled": true,

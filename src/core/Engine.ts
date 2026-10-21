@@ -223,7 +223,8 @@ class Engine {
       // the report warn about features somebody switched off, and a report like
       // that is one nobody reads.
       if (status && (status.state === 'degraded' || status.state === 'failed')) {
-        out.push({ manager: name, ...status });
+        // #1946: down unless the manager declared it needs attention; a failed one is always down.
+        out.push({ manager: name, ...status, kind: status.state === 'degraded' && status.kind === 'attention' ? 'attention' : 'outage' });
       }
     }
     return out;
