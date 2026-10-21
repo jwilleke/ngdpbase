@@ -89,6 +89,8 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           submittedAt: new Date().toISOString(),
           submittedBy,
           onBehalfOf,
+          // The add-on version the form came from (#1973); a site-built form has none.
+          ...(form.providedBy ? { formVersion: form.providedBy.version } : {}),
           data: validationResult.data,
           status: 'pending'
         };

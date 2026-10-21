@@ -17,13 +17,13 @@
  *   GET  /addons/forms/:formId/submissions — list submissions for a form
  *   GET  /addons/forms/:formId/submissions/:id — view a submission
  *   POST /addons/forms/:formId/submissions/:id/status — update submission status
- *   POST /addons/forms/:formId/sync        — take the version an add-on ships (#1880)
  *
- * Shipping a form from another add-on (#1880):
+ * Shipping a form from another add-on (#1973):
  *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');
- *   await forms?.registerShippedForm('my-addon', definition);
- * at every start. The first start saves it; later, a changed definition shows
- * in the forms admin as an update, and a copy edited on the site is kept.
+ *   await forms?.registerShippedForm('my-addon', definition, systemContext(engine, 'my-addon: register its forms'));
+ * at every start. The site's copy is replaced whenever the installed add-on's
+ * package.json version is newer than the one that wrote it, and is read-only
+ * on the site.
  *
  * Handler hook:
  *   const formsAddon = engine.getManager('FormsAddon');

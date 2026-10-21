@@ -3,8 +3,9 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { evaluateSeededAddonPage, pageSourceHash } from '../../../dist/src/utils/addonPageSync.js';
-import type { SeededAddonPageStatus } from '../../../dist/src/utils/addonPageSync.js';
+import { isAtLeast } from '../../../dist/src/utils/version.js';
+import { actorOf, type ActorContext } from '../../../dist/src/context/ActorContext.js';
+import { systemContext } from '../../../dist/src/context/bootActions.js';
 import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
 import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
 import { administratorUsernames } from '../../../dist/src/utils/administrators.js';
@@ -69,9 +70,9 @@ export const FormDefinitionSchema = z.object({
   // false: no "New form submission" notice and no email of the details (#1954)
   notify:          z.boolean().default(true),
   fields:          z.array(FieldSchema).min(1),
-  // A form an add-on ships (#1880): who shipped it, and the hash of the shipped
-  // definition this copy was saved or synced from. Not part of the hash itself.
-  shipped:         z.object({ addon: z.string(), sourceHash: z.string() }).optional()
+  // A form an add-on provides (#1973): the add-on, and its version that wrote
+  // this copy. Set only by registerShippedForm; such a form is read-only here.
+  providedBy:      z.object({ addon: z.string(), version: z.string() }).optional()
 });
 
 export type FormField      = z.infer<typeof FieldSchema>;
@@ -89,88 +90,50 @@ export const SubmissionSchema = z.object({
     address: z.string().optional()
   }).optional(),
   data:          z.record(z.string(), z.unknown()),
+  // The providedBy version of the form it was submitted on (#1973); none for a site-built form
+  formVersion:   z.string().optional(),
   status:        z.enum(['pending', 'processed', 'rejected']).default('pending'),
   handlerResult: z.unknown().optional(),
   notes:         z.string().optional()
 });
 
 /**
- * Where a shipped form's copy on this site stands against what its add-on
- * ships now (#1880). The same rule as shipped pages (#931, #1395), so
- * `status` is that rule's answer: `current`, `outdated` (unedited since it was
- * saved or synced, or unstamped), or `locally-modified` (edited on this site).
+ * What `registerShippedForm` did with an add-on's form (#1973):
+ *  - `saved`: there was no copy on this site, so it was written.
+ *  - `replaced`: the installed add-on is newer than the version that wrote the
+ *    copy, or the copy names no version (saved before #1973); it was rewritten.
+ *  - `unchanged`: this same version wrote the copy; nothing was written.
+ *  - `refused`: the installed add-on is older than the version that wrote the
+ *    copy, or another add-on provides the form; the copy is kept.
  */
-export interface ShippedFormState {
-  addon: string;
-  status: SeededAddonPageStatus;
-  /** False for a copy saved before #1880, which carries no stamp. */
-  stamped: boolean;
-  /**
-   * The add-on ships something other than what this copy was saved or synced
-   * from, so for an edited copy an update is waiting. True when unstamped.
-   */
-  shippedChanged: boolean;
-  /**
-   * The add-on ships a change this copy has not taken: it is outdated, or it
-   * was edited here and the add-on has shipped something new since (#1918).
-   */
-  behind: boolean;
-  /** The add-on marked what it ships now as needed to operate (#1918). */
-  required: boolean;
-}
-
-/** Options for `registerShippedForm` (#1918). */
-export interface ShippedFormOptions {
-  /**
-   * What ships now is needed for the add-on to work. A site copy behind it
-   * raises a critical notice to administrators instead of an "update
-   * available" one, and the forms admin flags it.
-   */
-  required?: boolean;
-}
-
-/** The notice `registerShippedForm` raises for a copy that is behind (#1918). */
-export interface ShippedFormNotice {
-  title: string;
-  message: string;
-  level: 'info' | 'error';
-}
+export type ShippedFormResult = 'saved' | 'replaced' | 'unchanged' | 'refused';
 
 /**
- * What administrators are told when a shipped form's copy is behind what its
- * add-on ships (#1918): which add-on, which form, and the fix on the forms
- * admin. Critical ("Critical:" title, error level, as an add-on that did not
- * load is, #1883) when the add-on marked the change required; otherwise an
- * "update available" info notice. An edited copy says Sync will not replace
- * it without Force Sync.
+ * A form an add-on provides cannot be saved, renamed or deleted on the site
+ * (#1973): its add-on updates it.
  */
-export function shippedFormNotice(addon: string, form: { id: string; title: string }, state: Pick<ShippedFormState, 'status' | 'required'>): ShippedFormNotice {
-  const name = `"${form.title}" (${form.id})`;
-  const need = state.required ? `${addon} needs this update to work. ` : '';
-  const fix = state.status === 'locally-modified'
-    ? 'It was edited on this site, so Sync does not replace it: open Forms (/addons/forms) and choose Force Sync to take the shipped version. Your edits to it are lost.'
-    : 'Open Forms (/addons/forms) and choose Sync to take it.';
-  return {
-    title: state.required
-      ? `Critical: form ${name} from ${addon} needs syncing`
-      : `Form update available: ${name} from ${addon}`,
-    message: `${need}${addon} ships a new version of the form ${name}. ${fix}`,
-    level: state.required ? 'error' : 'info'
-  };
+export class ProvidedFormError extends Error {
+  readonly formId: string;
+  constructor(form: { id: string; title?: string; providedBy?: { addon: string; version: string } }) {
+    const by = form.providedBy ? `${form.providedBy.addon} ${form.providedBy.version}` : 'an add-on';
+    super(`The form "${form.title ?? form.id}" (${form.id}) is provided by ${by}, which updates it, so it cannot be changed here.`);
+    this.name = 'ProvidedFormError';
+    this.formId = form.id;
+  }
 }
 
-/** What `syncShippedForm` did: `edited` means it refused to overwrite site edits. */
-export type ShippedFormSyncResult = 'synced' | 'edited' | 'not-shipped';
+/** A request subject or a job context: both name who acts. */
+function isActorContext(ctx: unknown): ctx is ActorContext {
+  return typeof ctx === 'object' && ctx !== null && typeof (ctx as { username?: unknown }).username === 'string';
+}
 
-/**
- * The text a definition's hash is taken over: the parsed definition (defaults
- * applied, keys in schema order) without its `shipped` stamp, so a copy saved
- * by the builder and the add-on's own object compare equal when they say the
- * same thing.
- */
-function definitionContent(form: FormDefinition): string {
-  const { shipped: _stamp, ...body } = FormDefinitionSchema.parse(form);
-  return JSON.stringify(body);
+/** Whether a version is x.y.z, the form core's version checks read (`isAtLeast`). */
+function isVersion(value: string): boolean {
+  try {
+    return isAtLeast(value, value);
+  } catch {
+    return false;
+  }
 }
 
 export type FormSubmission   = z.infer<typeof SubmissionSchema>;
@@ -320,8 +283,6 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
 export default class FormsDataManager {
   private dataPath: string;
   private definitions: Map<string, FormDefinition> = new Map();
-  /** Forms add-ons registered this boot, by id (#1880). */
-  private shippedForms: Map<string, { addon: string; definition: FormDefinition; required: boolean }> = new Map();
   private engine: { getManager: (name: string) => unknown } | null;
 
   constructor(engine: unknown, dataPath: string) {
@@ -445,81 +406,95 @@ export default class FormsDataManager {
   }
 
   /**
-   * Write a definition. A copy of a shipped form keeps its `shipped` stamp
-   * when the definition saved carries none (a form-builder save), so the edit
-   * shows as an edit (#1880).
+   * Write a definition built on this site: the form builder's door. A form an
+   * add-on provides is refused (#1973), whether the save would change, rename
+   * or overwrite it, and a definition cannot claim `providedBy` this way.
+   *
+   * @param form - The definition to write
+   * @param ctx - Who is saving it
+   * @throws {ProvidedFormError} When the stored form, or the definition, is an add-on's
    */
-  async saveDefinition(form: FormDefinition): Promise<void> {
-    const shipped = form.shipped ?? this.definitions.get(form.id)?.shipped;
-    const stored: FormDefinition = shipped ? { ...form, shipped } : form;
-    const filePath = path.join(this.dataPath, 'definitions', `${form.id}.json`);
-    const tmp = `${filePath}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(stored, null, 2), 'utf8');
-    await fsp.rename(tmp, filePath);
-    this.definitions.set(form.id, stored);
+  async saveDefinition(form: FormDefinition, ctx: ActorContext): Promise<void> {
+    const live = this.definitions.get(form.id);
+    if (live?.providedBy) throw new ProvidedFormError(live);
+    if (form.providedBy) throw new ProvidedFormError(form);
+    await this.writeDefinition(form);
+    console.info(`[FormsDataManager] form '${form.id}' saved by ${actorOf(ctx).user}`);
   }
 
   /**
-   * Register a form an add-on ships (#1880). Call it from the add-on's
-   * `register()` at every start, with the definition as the add-on ships it now.
+   * Register a form an add-on provides (#1973). Call it from the add-on's
+   * `register()` at every start, with the definition as this release ships it.
+   * The stored copy carries `providedBy: { addon, version }`, `version` being
+   * the installed add-on's package.json version, and the add-on's form wins:
    *
-   * - No copy on this site: it is saved, stamped with the hash of what was saved.
-   * - A copy with no stamp (saved before #1880) that says the same as the
-   *   definition: stamped, as shipped pages are (#1408).
-   * - Anything else is left as it is. The forms admin shows an outdated copy
-   *   with Sync, and an edited copy as edited; nothing here overwrites it.
+   * - No copy on this site: it is written.
+   * - The installed add-on is newer than `providedBy.version`, or the copy has
+   *   no `providedBy` (saved before #1973): it is replaced. Nothing compares
+   *   the copy for edits; a form an add-on provides is read-only on the site.
+   * - The same version: nothing is written.
+   * - The installed add-on is older: the copy is kept, with an error in the
+   *   log and a notice to administrators naming the form and both versions.
    *
-   * A copy left behind what ships raises an administrator notice, once per
-   * form and shipped version (#1918): critical with `required`, otherwise
-   * "update available".
+   * Throws when the definition does not parse, or the add-on's version is
+   * unknown or not x.y.z, so an add-on author sees it at the first start.
    *
-   * Throws when the definition does not parse, so an add-on author sees it at
-   * the first start.
-   *
-   * @param addon - The add-on's name, shown in the forms admin
+   * @param addon - The add-on's slug
    * @param definition - The definition the add-on ships; keys with a default
    *   (`store`, `notify`, ...) may be left out
-   * @param options - `required`: what ships now is needed for the add-on to work
-   * @returns Where the site's copy stands after registering
+   * @param ctx - Who is registering it: the add-on's boot context, `systemContext(engine, reason)`
+   * @returns What was done with the site's copy
    */
-  async registerShippedForm(addon: string, definition: z.input<typeof FormDefinitionSchema>, options: ShippedFormOptions = {}): Promise<ShippedFormState> {
-    const { shipped: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
-    this.shippedForms.set(parsed.id, { addon, definition: parsed, required: options.required === true });
+  async registerShippedForm(addon: string, definition: z.input<typeof FormDefinitionSchema>, ctx: ActorContext): Promise<ShippedFormResult> {
+    if (!isActorContext(ctx)) {
+      // An add-on built before #1973 passes no context, or the old options object.
+      console.warn(`[FormsDataManager] ${addon} registered a form without a context; pass systemContext(engine, reason) as the third argument`);
+      ctx = systemContext(this.engine, `${addon}: register a form it provides`);
+    }
+    const { providedBy: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
+    const version = this.addonVersion(addon);
+    const stored: FormDefinition = { ...parsed, providedBy: { addon, version } };
+    const who = actorOf(ctx).user;
 
     const live = this.definitions.get(parsed.id);
-    if (!live) {
-      await this.writeShipped(addon, parsed);
-    } else if (!live.shipped && definitionContent(live) === definitionContent(parsed)) {
-      await this.saveDefinition({ ...live, shipped: { addon, sourceHash: pageSourceHash(definitionContent(parsed)) } });
+    if (live?.providedBy && live.providedBy.addon !== addon) {
+      console.error(`[FormsDataManager] form '${parsed.id}' not registered for ${addon}: ${live.providedBy.addon} provides it`);
+      return 'refused';
     }
+    const was = live?.providedBy?.version;
+    // A stored version that is not x.y.z cannot be compared; the add-on's form wins.
+    if (live && was !== undefined && isVersion(was) && isAtLeast(was, version)) {
+      if (isAtLeast(version, was)) return 'unchanged';
+      await this.noticeOlder(addon, live, was, version);
+      return 'refused';
+    }
+    await this.writeDefinition(stored);
+    const how = !live ? 'saved' : was === undefined ? 'replaced (the copy named no version)' : `replaced (was ${was})`;
+    console.info(`[FormsDataManager] form '${parsed.id}' from ${addon} ${version} ${how}, by ${who}`);
+    return live ? 'replaced' : 'saved';
+  }
 
-    const state = this.shippedFormState(parsed.id)!;
-    if (state.behind) await this.noticeBehind(addon, parsed, state);
-    return state;
+  /** The installed add-on's version, from core's add-on registry; throws when it is unknown or not x.y.z. */
+  private addonVersion(addon: string): string {
+    const addons = this.engine?.getManager('AddonsManager') as { getAddonVersion?(slug: string): string | undefined } | null | undefined;
+    const version = addons?.getAddonVersion?.(addon);
+    if (!version) throw new Error(`registerShippedForm: no installed add-on '${addon}', so its version is unknown`);
+    if (!isVersion(version)) throw new Error(`registerShippedForm: ${addon}'s version '${version}' is not x.y.z`);
+    return version;
   }
 
   /**
-   * Tell administrators a shipped form's copy is behind (#1918), once per form
-   * and shipped version: the version told about is kept in
-   * `shipped-notices.json` beside the definitions, so a restart, or the
-   * notice being dismissed or cleared, does not raise it again; the next
-   * shipped change does. Never throws: a notice that cannot be sent is
-   * logged, and tried again at the next start.
+   * An add-on older than the one that wrote a form's copy (#1973): the copy is
+   * kept, an error is logged, and administrators (whoever holds `admin-system`)
+   * are told, at each start until the add-on is upgraded. Never throws: a
+   * notice that cannot be sent is logged.
    */
-  private async noticeBehind(addon: string, definition: FormDefinition, state: ShippedFormState): Promise<void> {
-    const notice = shippedFormNotice(addon, definition, state);
-    const log = state.required ? console.error : console.info;
-    log(`[FormsDataManager] ${notice.title}: ${notice.message}`);
-
-    const sourceHash = pageSourceHash(definitionContent(definition));
-    const file = path.join(this.dataPath, 'shipped-notices.json');
+  private async noticeOlder(addon: string, live: FormDefinition, stored: string, installed: string): Promise<void> {
+    const name = `"${live.title}" (${live.id})`;
+    const title = `Form ${name} not updated: ${addon} ${installed} is older than ${stored}`;
+    const message = `The form ${name} on this site was written by ${addon} ${stored}. The installed ${addon} is ${installed}, an older version, so the form is kept as ${stored} wrote it. Install ${addon} ${stored} or later to update it.`;
+    console.error(`[FormsDataManager] ${title}. ${message}`);
     try {
-      let told: Record<string, string> = {};
-      try {
-        told = JSON.parse(await fsp.readFile(file, 'utf8')) as Record<string, string>;
-      } catch { /* none told yet */ }
-      if (told[definition.id] === sourceHash) return;
-
       const notifications = this.engine?.getManager('NotificationManager') as {
         createNotification(n: { type: string; level: string; title: string; message: string; targetUsers: string[] }): Promise<unknown>;
       } | null | undefined;
@@ -527,65 +502,40 @@ export default class FormsDataManager {
       // An empty target list means every user, so nobody to tell is log-only.
       const admins = (await administratorUsernames(this.engine)) ?? [];
       if (admins.length === 0) {
-        console.error(`[FormsDataManager] no user holds admin-system; '${definition.id}' reported in the log only`);
+        console.error(`[FormsDataManager] no user holds admin-system; '${live.id}' reported in the log only`);
         return;
       }
-      await notifications.createNotification({ type: 'system', level: notice.level, title: notice.title, message: notice.message, targetUsers: admins });
-
-      told[definition.id] = sourceHash;
-      const tmp = `${file}.tmp`;
-      await fsp.writeFile(tmp, JSON.stringify(told, null, 2), 'utf8');
-      await fsp.rename(tmp, file);
+      await notifications.createNotification({ type: 'system', level: 'warning', title, message, targetUsers: admins });
     } catch (err) {
-      console.error(`[FormsDataManager] could not notify administrators about form '${definition.id}':`, (err as Error).message);
+      console.error(`[FormsDataManager] could not notify administrators about form '${live.id}':`, (err as Error).message);
     }
   }
 
+  private async writeDefinition(form: FormDefinition): Promise<void> {
+    const filePath = path.join(this.dataPath, 'definitions', `${form.id}.json`);
+    const tmp = `${filePath}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(form, null, 2), 'utf8');
+    await fsp.rename(tmp, filePath);
+    this.definitions.set(form.id, form);
+  }
+
   /**
-   * Where a shipped form's copy stands, or undefined for a form no add-on
-   * registered this boot, or one with no copy on this site.
+   * Delete a definition built on this site. A form an add-on provides is
+   * refused (#1973).
+   *
+   * @param formId - The form to delete
+   * @param ctx - Who is deleting it
+   * @returns False when there is no such form
+   * @throws {ProvidedFormError} When an add-on provides the form
    */
-  shippedFormState(formId: string): ShippedFormState | undefined {
-    const shipped = this.shippedForms.get(formId);
+  async deleteDefinition(formId: string, ctx: ActorContext): Promise<boolean> {
     const live = this.definitions.get(formId);
-    if (!shipped || !live) return undefined;
-    const storedHash = live.shipped?.sourceHash;
-    const sourceContent = definitionContent(shipped.definition);
-    const stamped = typeof storedHash === 'string' && storedHash.length > 0;
-    const status = evaluateSeededAddonPage({ sourceContent, liveContent: definitionContent(live), storedHash });
-    const shippedChanged = !stamped || storedHash !== pageSourceHash(sourceContent);
-    return {
-      addon: shipped.addon,
-      status,
-      stamped,
-      shippedChanged,
-      behind: status !== 'current' && shippedChanged,
-      required: shipped.required
-    };
-  }
-
-  /**
-   * Replace the site's copy of a shipped form with what the add-on ships now.
-   * A copy edited on this site is replaced only with `overwriteEdited`, which
-   * the forms admin sends after the admin confirms.
-   */
-  async syncShippedForm(formId: string, options: { overwriteEdited?: boolean } = {}): Promise<ShippedFormSyncResult> {
-    const shipped = this.shippedForms.get(formId);
-    if (!shipped) return 'not-shipped';
-    if (this.shippedFormState(formId)?.status === 'locally-modified' && !options.overwriteEdited) return 'edited';
-    await this.writeShipped(shipped.addon, shipped.definition);
-    return 'synced';
-  }
-
-  private async writeShipped(addon: string, definition: FormDefinition): Promise<void> {
-    await this.saveDefinition({ ...definition, shipped: { addon, sourceHash: pageSourceHash(definitionContent(definition)) } });
-  }
-
-  async deleteDefinition(formId: string): Promise<boolean> {
+    if (live?.providedBy) throw new ProvidedFormError(live);
     const filePath = path.join(this.dataPath, 'definitions', `${formId}.json`);
     try {
       await fsp.unlink(filePath);
       this.definitions.delete(formId);
+      console.info(`[FormsDataManager] form '${formId}' deleted by ${actorOf(ctx).user}`);
       return true;
     } catch {
       return false;

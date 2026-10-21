@@ -721,3 +721,31 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
     expect(titles('alice')).toEqual([]);
   });
 });
+
+describe('POST /api/forms/submit/:formId — formVersion (#1973)', () => {
+  function submitTo(form: Record<string, unknown>) {
+    const saved: Array<Record<string, unknown>> = [];
+    const handled: Array<Record<string, unknown>> = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => form, saveSubmission: async (s: Record<string, unknown>) => { saved.push(s); return s; } }
+    });
+    const app = express();
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, { callHandler: async (_id: string, s: unknown) => { handled.push(s as Record<string, unknown>); return { ok: true }; } }));
+    return { app, saved, handled };
+  }
+
+  test('a submission to a form an add-on provides records the add-on version', async () => {
+    const { app, saved, handled } = submitTo({ ...testForm, providedBy: { addon: 'phr', version: '1.2.0' } });
+    const res = await request(app).post('/api/forms/submit/test-form').send({ name: 'Alice' });
+    expect(res.status).toBe(201);
+    expect(saved[0]?.['formVersion']).toBe('1.2.0');
+    expect(handled[0]?.['formVersion']).toBe('1.2.0');
+  });
+
+  test('a submission to a site-built form has none', async () => {
+    const { app, saved } = submitTo(testForm);
+    await request(app).post('/api/forms/submit/test-form').send({ name: 'Alice' });
+    expect(saved[0]).not.toHaveProperty('formVersion');
+  });
+});

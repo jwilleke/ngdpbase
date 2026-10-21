@@ -319,6 +319,9 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
+  /** The `version` in the add-on's package.json, when it has one (#1973) */
+  packageVersion?: string;
+
   /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration or site-critical value was refused (#1559, #1860, #1883), its required-encryption database has no key (#1860), or it could not be imported or has no register() (#1883); null otherwise. */
   incompatible: string | null;
 
@@ -836,7 +839,8 @@ class AddonsManager extends BaseManager {
         loaded: false,
         error: null,
         manifest,
-        incompatible: null
+        incompatible: null,
+        ...(packageVersion ? { packageVersion } : {})
       });
       this.warnOldProfileHook(canonicalId, addonModule);
 
@@ -981,6 +985,19 @@ class AddonsManager extends BaseManager {
       return { ok: true };
     }
     return { ok: false, blockedBy: blockers };
+  }
+
+  /**
+   * The installed version of an add-on (#1973): the `version` in its
+   * package.json, or its module's `version` when the package.json has none.
+   * Undefined for an add-on that was not discovered.
+   *
+   * @param slug - The add-on's slug
+   */
+  getAddonVersion(slug: string): string | undefined {
+    const addon = this.addons.get(slug);
+    if (!addon) return undefined;
+    return addon.packageVersion ?? (addon.module.version || undefined);
   }
 
   /**

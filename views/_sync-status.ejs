@@ -1,14 +1,13 @@
 <%#
   The status of a shipped item's copy on this site (#1918): the words and
   badges of Admin -> Required Pages, shared by every admin screen that syncs
-  shipped content (required pages, add-on pages, shipped forms). The words come
+  shipped content (required pages, add-on pages). The words come
   from syncRowState (src/utils/addonPageSync.ts).
 
   locals: syncItem, one object (an include also sees its parent's data, so a
   loose name could be picked up from the screen by accident), with:
     status        'new' | 'modified' | 'current'
     userModified  edited on this site: Sync does not replace it, Force Sync does
-    required      optional: the change waiting is one its add-on needs to work
 %>
 <% if (syncItem.status === 'new') { %>
 <span class="badge bg-primary" data-sync-status="new">New</span>
@@ -27,10 +26,4 @@
 </span>
 <% } %>
 <span class="badge bg-success" data-sync-status="current">Current</span>
-<% } %>
-<% if (syncItem.required) { %>
-<br><span class="badge bg-danger mt-1" data-sync-status="required"
-      title="Its add-on needs this update to work. Sync it<%= syncItem.userModified ? ' (Force Sync: it was edited on this site)' : '' %>.">
-    <i class="fas fa-exclamation-triangle me-1"></i>Required
-</span>
 <% } %>

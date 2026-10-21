@@ -2,7 +2,6 @@
 import type { Router, Request, Response } from 'express';
 import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
-import { syncRowState } from '../../../dist/src/utils/addonPageSync.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { SubmissionStatus } from '../managers/FormsDataManager.js';
 
@@ -26,60 +25,15 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         const formsWithCounts = await Promise.all(
           definitions.map(async (form) => ({
             ...form,
-            submissionCount: await m!.getSubmissionCount(form.id),
-            shippedState: m!.shippedFormState(form.id)
+            submissionCount: await m!.getSubmissionCount(form.id)
           }))
         );
-
-        // #1918: shipped forms read as Admin → Required Pages reads shipped
-        // pages: its status words and Sync / Force Sync, from core's rule.
-        const shippedForms = formsWithCounts.flatMap((form) => {
-          const state = form.shippedState;
-          if (!state) return [];
-          return [{
-            id: form.id,
-            title: form.title,
-            addon: state.addon,
-            stamped: state.stamped,
-            ...syncRowState(state.status),
-            required: state.required && state.behind
-          }];
-        });
-        const shippedCounts = {
-          modified: shippedForms.filter(f => f.status === 'modified').length,
-          current: shippedForms.filter(f => f.status === 'current').length,
-          required: shippedForms.filter(f => f.required).length
-        };
 
         res.render('forms-admin', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           forms: formsWithCounts,
-          shippedForms,
-          shippedCounts,
           query: req.query
         });
-      } catch (err) {
-        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
-        res.status(500).send(String(err));
-      }
-    })();
-  });
-
-  // ── POST /addons/forms/:formId/sync ───────────────────────────────────────
-  // A shipped form's copy takes what its add-on ships now (#1880). A copy
-  // edited on this site is replaced only when the admin confirmed `overwrite`.
-  router.post('/:formId/sync', async (req: Request, res: Response) => {
-    void (async () => {
-      try {
-        const ctx = ApiContext.from(req, engine);
-        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
-
-        const m = fdm();
-        if (!m) { res.status(503).send('Forms addon not available'); return; }
-        const body = req.body as Record<string, unknown>;
-        const result = await m.syncShippedForm(String(req.params['formId']), { overwriteEdited: body['overwrite'] === '1' });
-        if (result === 'not-shipped') { res.status(404).send('No add-on ships this form'); return; }
-        res.redirect(`/addons/forms?flash=${result === 'synced' ? 'synced' : 'sync-edited'}`);
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
