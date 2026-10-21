@@ -203,3 +203,64 @@ describe('VersioningFileProvider - backup carries the trash (#1409)', () => {
     await expect(provider.restore(backup)).resolves.toBeUndefined();
   });
 });
+
+describe('VersioningFileProvider - a page deleted during a backup (#1563)', () => {
+  let testDir: string;
+  let provider: VersioningFileProvider;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `versioning-backup-vanish-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.ensureDir(testDir);
+    provider = makeProvider(testDir);
+    await provider.initialize();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    // Only ever removes this test's own temp directory under os.tmpdir().
+    if (await fs.pathExists(testDir)) {
+      await fs.remove(testDir);
+    }
+  });
+
+  const uuidOf = async (title: string): Promise<string> => (await provider.getPage(title))!.metadata.uuid as string;
+
+  test('its version folder removed after the versions folder was listed is skipped and counted: the backup is whole', async () => {
+    await provider.savePage('Kept', 'body', { author: 'jim' });
+    await provider.savePage('Gone', 'body', { author: 'jim' });
+    const kept = await uuidOf('Kept');
+    const gone = await uuidOf('Gone');
+    const versionsDir = path.join(testDir, 'pages', 'versions');
+    const realReaddir = fs.readdir.bind(fs) as (d: string, o?: unknown) => Promise<unknown>;
+    vi.spyOn(fs, 'readdir').mockImplementation((async (d: string, o?: unknown) => {
+      const listed = await realReaddir(d, o);
+      // The page is deleted the moment after the backup listed the versions folder (jimstest's scandir ENOENT).
+      if (d === versionsDir && await fs.pathExists(path.join(versionsDir, gone))) await fs.remove(path.join(versionsDir, gone));
+      return listed;
+    }));
+
+    const backup = await provider.backup();
+
+    const paths = backup.versions!.map((f) => f.relativePath);
+    expect(paths.some((p) => p.startsWith(kept))).toBe(true);
+    expect(paths.some((p) => p.startsWith(gone))).toBe(false);
+    expect(backup.statistics.vanished).toBe(1);
+  });
+
+  test('a version folder that can not be read (EACCES) still fails the backup', async () => {
+    await provider.savePage('Locked', 'body', { author: 'jim' });
+    const locked = path.join(testDir, 'pages', 'versions', await uuidOf('Locked'));
+    await fs.chmod(locked, 0o000);
+    try {
+      await expect(provider.backup()).rejects.toMatchObject({ code: 'EACCES' });
+    } finally {
+      await fs.chmod(locked, 0o700);
+    }
+  });
+
+  test('a missing pages folder still fails the backup: it is not an empty site', async () => {
+    await provider.savePage('Any', 'body', { author: 'jim' });
+    await fs.remove(path.join(testDir, 'pages'));
+    await expect(provider.backup()).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});

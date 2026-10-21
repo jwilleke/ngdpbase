@@ -3483,7 +3483,8 @@ class VersioningFileProvider extends FileSystemProvider {
     backupData.versions = await this.readVersionFiles(this.pagesVersionsDir);
     backupData.requiredPagesVersions = await this.readVersionFiles(this.requiredPagesVersionsDir);
     backupData.trash = await this.readTrash();
-    logger.info(`[VersioningFileProvider] Backup includes ${backupData.versions.length + backupData.requiredPagesVersions.length} version files and ${backupData.trash.length} trashed page(s)`);
+    backupData.statistics.vanished = this.vanishedInBackup;
+    logger.info(`[VersioningFileProvider] Backup includes ${backupData.versions.length + backupData.requiredPagesVersions.length} version files and ${backupData.trash.length} trashed page(s)${this.vanishedInBackup > 0 ? `; ${this.vanishedInBackup} file(s) or folder(s) deleted during the backup, skipped` : ''}`);
     return backupData;
   }
 
@@ -3509,7 +3510,7 @@ class VersioningFileProvider extends FileSystemProvider {
           content: await fs.readFile(file, 'utf8')
         });
       } catch (error) {
-        logger.error(`[VersioningFileProvider] Failed to back up trashed page ${uuid}`, error);
+        this.skipVanished(error, file);
       }
     }
     return out;
@@ -3563,19 +3564,41 @@ class VersioningFileProvider extends FileSystemProvider {
     logger.info(`[VersioningFileProvider] Restored ${written} version files and ${trashed} trashed page(s)`);
   }
 
+  /**
+   * Every version file under `dir`, for a backup. Walked folder by folder,
+   * not with one recursive `readdir`, which fails whole when any page's
+   * folder goes away mid-walk (#1563): a page deleted while the site is
+   * backed up has its folder or files skipped and counted (`skipVanished`).
+   * Any other error fails the backup.
+   */
   private async readVersionFiles(dir: string | null): Promise<VersionBackupFile[]> {
     if (!dir || !(await fs.pathExists(dir))) return [];
     const files: VersionBackupFile[] = [];
-    for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile() || entry.name.startsWith('.')) continue;
-      const full = path.join(entry.parentPath, entry.name);
+    const walk = async (current: string): Promise<void> => {
+      let entries: fs.Dirent[];
       try {
-        const content = await fs.readFile(full, 'utf8');
-        files.push({ relativePath: path.relative(dir, full), content, size: Buffer.byteLength(content, 'utf8') });
+        entries = await fs.readdir(current, { withFileTypes: true });
       } catch (error) {
-        logger.error(`[VersioningFileProvider] Failed to back up version file: ${full}`, error);
+        if (current === dir) throw error;
+        this.skipVanished(error, current);
+        return;
       }
-    }
+      for (const entry of entries) {
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+          continue;
+        }
+        if (!entry.isFile() || entry.name.startsWith('.')) continue;
+        try {
+          const content = await fs.readFile(full, 'utf8');
+          files.push({ relativePath: path.relative(dir, full), content, size: Buffer.byteLength(content, 'utf8') });
+        } catch (error) {
+          this.skipVanished(error, full);
+        }
+      }
+    };
+    await walk(dir);
     return files;
   }
 

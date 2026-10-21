@@ -39,6 +39,33 @@ describe('FileBackupProvider (#170)', () => {
     expect((await fs.stat(tmpDir)).mode & 0o777).toBe(0o700);
   });
 
+  test('#1563: a file removed between the listing and its stat (pruned meanwhile) is left out, not an error', async () => {
+    await provider.writeBackup('kept.json.gz', Buffer.from('a'));
+    await provider.writeBackup('pruned.json.gz', Buffer.from('b'));
+    const realReaddir = fs.readdir.bind(fs) as (d: string) => Promise<string[]>;
+    const spy = vi.spyOn(fs, 'readdir').mockImplementationOnce((async (d: string) => {
+      const names = await realReaddir(d);
+      // Another backup's pruning removes this one after the folder was read, before it is stat'ed.
+      await fs.remove(path.join(tmpDir, 'pruned.json.gz'));
+      return names;
+    }));
+    try {
+      expect((await provider.listBackupObjects()).map((o) => o.filename)).toEqual(['kept.json.gz']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('#1563: any other stat error still fails the listing', async () => {
+    await provider.writeBackup('a.json.gz', Buffer.from('a'));
+    const spy = vi.spyOn(fs, 'stat').mockRejectedValueOnce(Object.assign(new Error('EIO: i/o error, stat'), { code: 'EIO' }));
+    try {
+      await expect(provider.listBackupObjects()).rejects.toMatchObject({ code: 'EIO' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('is a BaseBackupProvider and reports identity', () => {
     expect(provider).toBeInstanceOf(BaseBackupProvider);
     expect(provider.getProviderInfo().name).toBe('FileBackupProvider');

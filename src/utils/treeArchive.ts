@@ -40,23 +40,55 @@ export interface TreeArchiveOutcome {
   bytes: number;
   /** Entries left out because they are not a file or a folder (a symbolic link), relative to the root. */
   skipped: string[];
+  /** Entries that were there when the folder was listed and were deleted before they were read (#1563), relative to the root. */
+  vanished: string[];
+}
+
+/**
+ * Whether a backup's read failed because the entry it was reading was
+ * deleted meanwhile (#1563): a page, a version folder or a file removed
+ * while the backup walked past it. That entry is skipped and counted, never
+ * a failed backup — the site keeps running while it is backed up (#1213).
+ * Every other error (EACCES, EIO, …) is a real failure and still fails.
+ */
+export function vanishedDuringBackup(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 }
 
 /** Two 512-byte zero blocks: a tar with no entries. */
 const EMPTY_TAR = Buffer.alloc(1024);
 
+type TreeArchiveOptions = { entries?: string[]; exclude?: (relative: string) => boolean; backupKey?: string };
+
 /**
  * Write `entries` (paths relative to `root`; default: everything in it) into
  * `target`, streamed. `exclude` leaves out a path relative to `root`, in
  * posix form. A missing `root` writes an empty archive. Never overwrites.
+ *
+ * An entry deleted while the archive is written (#1563) — the tar stream
+ * stops at the first file it can no longer find — is not a failure: the
+ * archive is written again from a fresh listing, without it, and the entry
+ * is named in `vanished`. It is written again only while each attempt finds
+ * another entry gone, so it ends once the deleting stops; the same entry
+ * missing twice, or one still there, is a real failure.
  */
-export async function writeTreeArchive(
-  target: string,
-  root: string,
-  options: { entries?: string[]; exclude?: (relative: string) => boolean; backupKey?: string } = {}
-): Promise<TreeArchiveOutcome> {
+export async function writeTreeArchive(target: string, root: string, options: TreeArchiveOptions = {}): Promise<TreeArchiveOutcome> {
   if (existsSync(target)) throw new Error(`${path.basename(target)} already exists; a backup never overwrites one`);
-  const outcome: TreeArchiveOutcome = { files: 0, bytes: 0, skipped: [] };
+  const vanished = new Set<string>();
+  for (;;) {
+    try {
+      const outcome = await writeTreeArchiveOnce(target, root, options);
+      return { ...outcome, vanished: [...vanished].map((p) => toPosix(path.relative(root, p))).sort() };
+    } catch (err) {
+      const gone = (err as NodeJS.ErrnoException).path;
+      if (!vanishedDuringBackup(err) || !gone || vanished.has(gone) || existsSync(gone)) throw err;
+      vanished.add(gone);
+    }
+  }
+}
+
+async function writeTreeArchiveOnce(target: string, root: string, options: TreeArchiveOptions): Promise<Omit<TreeArchiveOutcome, 'vanished'>> {
+  const outcome: Omit<TreeArchiveOutcome, 'vanished'> = { files: 0, bytes: 0, skipped: [] };
   const entries = (options.entries ?? (existsSync(root) ? readdirSync(root) : []))
     .filter((e) => existsSync(path.join(root, e)))
     .filter((e) => !options.exclude?.(toPosix(e)))

@@ -27,7 +27,7 @@ describe('writeTreeArchive / extractTreeArchive (#1876)', () => {
     fs.writeFileSync(path.join(src, 'a', 'b', 'x.bin'), bytes);
     fs.writeFileSync(path.join(src, 'top.json'), '{}');
     const archive = path.join(dir, 'out.tar');
-    expect(await writeTreeArchive(archive, src)).toEqual({ files: 2, bytes: bytes.length + 2, skipped: [] });
+    expect(await writeTreeArchive(archive, src)).toEqual({ files: 2, bytes: bytes.length + 2, skipped: [], vanished: [] });
     expect(fs.statSync(archive).mode & 0o077).toBe(0);
     const dest = path.join(dir, 'dest');
     expect(await extractTreeArchive(archive, dest)).toEqual({ files: 2, bytes: bytes.length + 2 });
@@ -36,7 +36,7 @@ describe('writeTreeArchive / extractTreeArchive (#1876)', () => {
 
   test('a folder that is not there is an empty archive, which extracts to an empty folder', async () => {
     const archive = path.join(dir, 'empty.tar');
-    expect(await writeTreeArchive(archive, path.join(dir, 'missing'))).toEqual({ files: 0, bytes: 0, skipped: [] });
+    expect(await writeTreeArchive(archive, path.join(dir, 'missing'))).toEqual({ files: 0, bytes: 0, skipped: [], vanished: [] });
     const dest = path.join(dir, 'dest');
     await extractTreeArchive(archive, dest);
     expect(fs.readdirSync(dest)).toEqual([]);
@@ -50,6 +50,46 @@ describe('writeTreeArchive / extractTreeArchive (#1876)', () => {
     const outcome = await writeTreeArchive(path.join(dir, 'out.tar'), src);
     expect(outcome.skipped).toEqual(['link']);
     expect(outcome.files).toBe(1);
+  });
+
+  test('#1563: a folder deleted while the archive is written is skipped and named, not a failure', async () => {
+    const src = path.join(dir, 'src');
+    fs.mkdirSync(path.join(src, 'gone'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'kept.txt'), 'kept');
+    fs.writeFileSync(path.join(src, 'gone', 'page.md'), 'deleted mid-backup');
+    let deleted = false;
+    // The tar walk calls `exclude` on each entry once it has been listed and stat'ed: the
+    // first one it reaches deletes the folder, as a page delete would while the site is backed up.
+    const exclude = (rel: string): boolean => {
+      if (!deleted && rel === 'kept.txt' && fs.existsSync(path.join(src, 'gone'))) {
+        fs.rmSync(path.join(src, 'gone'), { recursive: true });
+        deleted = true;
+      }
+      return false;
+    };
+    const archive = path.join(dir, 'out.tar');
+    const outcome = await writeTreeArchive(archive, src, { exclude });
+    expect(deleted).toBe(true);
+    expect(outcome).toMatchObject({ files: 1, skipped: [] });
+    expect(outcome.vanished.length).toBe(1);
+    expect(outcome.vanished[0]).toMatch(/^gone/);
+    const dest = path.join(dir, 'dest');
+    await extractTreeArchive(archive, dest);
+    expect(fs.readdirSync(dest)).toEqual(['kept.txt']);
+  });
+
+  test('#1563: a file that can not be read (EACCES) still fails the archive, and leaves nothing behind', async () => {
+    const src = path.join(dir, 'src');
+    fs.mkdirSync(path.join(src, 'locked'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'locked', 'page.md'), 'x');
+    fs.chmodSync(path.join(src, 'locked'), 0o000);
+    const archive = path.join(dir, 'out.tar');
+    try {
+      await expect(writeTreeArchive(archive, src)).rejects.toMatchObject({ code: 'EACCES' });
+      expect(fs.existsSync(archive)).toBe(false);
+    } finally {
+      fs.chmodSync(path.join(src, 'locked'), 0o700);
+    }
   });
 
   test('a backup never overwrites an archive', async () => {
