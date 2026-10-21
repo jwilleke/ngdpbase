@@ -201,6 +201,9 @@ if (typeof process.getuid === 'function') {
   process.env.PUID ??= String(process.getuid());
   process.env.PGID ??= String(process.getgid());
 }
+// #631/#1953: an engine refuses to initialise without a system principal, as
+// the Docker image's baked value names one. A test of the refusal unsets it.
+process.env.NGDPBASE_SYSTEM_USER ??= 'system';
 
 // #1200: the audit event registry is `ngdpbase.audit.events` in configuration,
 // bound by AuditManager.initialize at boot. Tests have no boot, so bind the

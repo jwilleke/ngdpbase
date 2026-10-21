@@ -14,7 +14,7 @@ import PluginManager from './managers/PluginManager.js';
 import RenderingManager from './managers/RenderingManager.js';
 import SearchManager from './managers/SearchManager.js';
 import UserManager from './managers/UserManager.js';
-import PolicyInformationPoint from './security/PolicyInformationPoint.js';
+import PolicyInformationPoint, { systemPrincipalFromConfig } from './security/PolicyInformationPoint.js';
 import SchemaManager from './managers/SchemaManager.js';
 import VariableManager from './managers/VariableManager.js';
 import ValidationManager from './managers/ValidationManager.js';
@@ -130,6 +130,12 @@ class WikiEngine extends Engine {
     const configManager = new ConfigurationManager(this);
     this.registerManager('ConfigurationManager', configManager);
     await configManager.initialize(config);
+
+    // #1953: the boot refuses without a system principal (#631). Asked here,
+    // before any manager writes, so a refused first boot leaves nothing half
+    // made. It used to be asked in app.ts after initialize(), by which time the
+    // bootstrap admin had been written without its person record.
+    systemPrincipalFromConfig(configManager);
 
     // Reconfigure logger with settings from ConfigurationManager
     // Logger starts with defaults, then reconfigures here after config is available.
