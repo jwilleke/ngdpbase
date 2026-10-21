@@ -10,6 +10,7 @@ import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { readDoor } from './__fixtures__/pageReadDoor';
 import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
+import { PageNotesTurnedOffError } from '../../utils/pageNotes';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -825,6 +826,43 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(res.status).toBe(200);
       expect(mockPageManager.getPage).toHaveBeenCalledWith(VAULT_PAGE, expect.anything());
       expect(mockFootnoteManager.addFootnote).toHaveBeenCalledWith({ name: VAULT_PAGE, uuid: 'uuid-1' }, expect.anything(), expect.anything());
+    });
+  });
+
+  // #1951: footnotes turned off for the page — the manager refuses, the route says so.
+  describe('footnote writes on a page whose footnotes are off (#1951)', () => {
+    beforeEach(() => {
+      notesPageIs('uuid-1');
+      mockFootnoteManager.getFootnotes.mockResolvedValue([{ id: 'fn1', display: 'Note', url: 'http://example.com', createdBy: 'adminuser' }]);
+    });
+
+    test('POST is refused with 403 and the reason', async () => {
+      mockFootnoteManager.addFootnote.mockRejectedValueOnce(new PageNotesTurnedOffError('footnotes'));
+      const res = await request(app)
+        .post('/api/footnotes/uuid-1')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Note 1', url: 'http://example.com' });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ success: false, error: 'Footnotes are turned off for this page.' });
+    });
+
+    test('PUT is refused with 403', async () => {
+      mockFootnoteManager.updateFootnote.mockRejectedValueOnce(new PageNotesTurnedOffError('footnotes'));
+      const res = await request(app)
+        .put('/api/footnotes/uuid-1/fn1')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Updated', url: 'http://example.com' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Footnotes are turned off for this page.');
+    });
+
+    test('DELETE is refused with 403', async () => {
+      mockFootnoteManager.deleteFootnote.mockRejectedValueOnce(new PageNotesTurnedOffError('footnotes'));
+      const res = await request(app)
+        .delete('/api/footnotes/uuid-1/fn1')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Footnotes are turned off for this page.');
     });
   });
 

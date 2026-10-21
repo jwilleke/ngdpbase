@@ -274,4 +274,4 @@ Similar to [Page History](pagehistory.html)
 
 Clicking on a "Changes" opens a tab "Version management" showing "Difference between version "##" and "##"
 
-<http://192.168.68.127:8080/Diff.jsp?page=Arteriolosclerosis&r1=3&r2=2>
+<http://legacy.example.com:8080/Diff.jsp?page=Arteriolosclerosis&r1=3&r2=2>

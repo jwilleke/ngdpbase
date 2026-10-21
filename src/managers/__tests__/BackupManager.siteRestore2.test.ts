@@ -258,7 +258,7 @@ describe('slice 2 of the site restore (#1876)', () => {
   test('without the backup key: a persistent banner and ONE notification across backups and restarts; with the key the banner goes', async () => {
     delete process.env[BACKUP_KEY_ENV];
     const site = await start();
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
     await site.backup.createBackup(CTX, { filename: '2026-01-01T00-00-00-000Z-ngdpbase-backup.json.gz' });
     await site.backup.createBackup(CTX, { filename: '2026-01-02T00-00-00-000Z-ngdpbase-backup.json.gz' });
     await stop(site);
@@ -305,7 +305,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     const site = await start();
     const info = site.backup.backupKeyInfo();
     expect(info).toEqual({ set: true, fingerprint: backupKeyFingerprint(KEY), saved: false });
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
     expect(site.backup.getManagerStatus().reason).not.toContain(KEY);
     await expect(site.backup.confirmBackupKeySaved(CTX, 'not-the-fingerprint')).rejects.toThrow(/not the fingerprint of the current backup key/);
     await site.backup.confirmBackupKeySaved(CTX, info.fingerprint);

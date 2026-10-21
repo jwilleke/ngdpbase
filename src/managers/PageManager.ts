@@ -611,7 +611,8 @@ class PageManager extends BaseManager implements CatalogSource {
       }
       const reason = reasons.join('. ');
       logger.error(`📄 ${reason}`);
-      if (this.markDegraded(reason)) {
+      // Closed vaults are down; open ones holding plaintext work and need an admin (#1946).
+      if (found.length > 0 ? this.markDegraded(reason) : this.markNeedsAttention(reason)) {
         try {
           await this.engine.getManager<NotificationManager>('NotificationManager')?.addNotification({
             type: 'system', level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`

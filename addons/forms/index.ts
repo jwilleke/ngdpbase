@@ -36,7 +36,8 @@
  *
  * The handler runs before the submission is stored; a refused submission leaves
  * nothing behind. A form with "store": false keeps no submission file at all —
- * the handler's own record is the record.
+ * the handler's own record is the record. A form with "notify": false sends no
+ * "New form submission" notification and no email of the details (#1954).
  *
  * Who may submit: `form-submit`, asked through ApiContext.requirePermission like
  * every add-on route (#1749), so refusals, step-up and audit come from core. A

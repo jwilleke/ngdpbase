@@ -787,7 +787,7 @@ describe('search() path access control', () => {
 
 describe('#1186 — sist2-url states', () => {
   const LAN_ALLOWED = (key: string, fallback?: unknown): unknown =>
-    key === 'ngdpbase.security.egress.allowed-ranges' ? ['192.168.68.0/24'] : fallback;
+    key === 'ngdpbase.security.egress.allowed-ranges' ? ['192.168.0.0/24'] : fallback;
 
   test('not configured: search-only capabilities, no thumbnail request, healthy with the reason', async () => {
     const provider = new Sist2AssetProvider(makeClient(), 'sist2', null, [], NO_EGRESS_CONFIG);
@@ -827,24 +827,24 @@ describe('#1186 — sist2-url states', () => {
   });
 
   test('a LAN address under the shipped empty allowed-ranges is refused, and the message says where to open it', async () => {
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], NO_EGRESS_CONFIG);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.0.10:4090', [], NO_EGRESS_CONFIG);
     const health = await provider.healthCheckDetailed();
     expect(health.healthy).toBe(false);
-    expect(health.message).toContain('192.168.68.71');
+    expect(health.message).toContain('192.168.0.10');
     expect(health.message).toContain('ngdpbase.security.egress.allowed-ranges');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   test('the same LAN address with its prefix allowed is probed and reports healthy', async () => {
     respondWith(200);
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], LAN_ALLOWED);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.0.10:4090', [], LAN_ALLOWED);
     await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: true });
-    expect(mockFetch).toHaveBeenCalledWith('http://192.168.68.71:4090/i', expect.objectContaining({ policy: expect.anything() }));
+    expect(mockFetch).toHaveBeenCalledWith('http://192.168.0.10:4090/i', expect.objectContaining({ policy: expect.anything() }));
   });
 
   test('an allowed address that does not answer is still "unreachable" — the third state', async () => {
     mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], LAN_ALLOWED);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.0.10:4090', [], LAN_ALLOWED);
     const health = await provider.healthCheckDetailed();
     expect(health.healthy).toBe(false);
     expect(health.message).toContain('unreachable');

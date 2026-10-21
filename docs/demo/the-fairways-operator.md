@@ -2,7 +2,7 @@
 
 - Audience: Operator / Admin of a deployed The Fairways site (HOA-style community site)
 - Duration: 25–35 minutes
-- Server needed: The Fairways instance (the demo URL example below assumes `http://jminim4:2121/`; substitute the production URL)
+- Server needed: The Fairways instance (the demo URL example below assumes `http://fairways.localhost:2121/`; substitute the production URL)
 
 This guide walks an operator through everything they need to run The Fairways day-to-day: managing members, posting content, controlling who sees what, reviewing contact submissions, and the operational tasks (backups, logs, restarts) that keep the site healthy. It is the operator counterpart to the [technical demo guide](./technical.md) — that one is for developers; this one is for the person who will actually run the site.
 
@@ -10,12 +10,12 @@ This guide walks an operator through everything they need to run The Fairways da
 
 ## Before You Start
 
-1. Site is reachable: `curl -s -o /dev/null -w "%{http_code}\n" http://jminim4:2121//` returns `200` or `302`. If not, ask the host to start it (`./server.sh start` from the install directory).
+1. Site is reachable: `curl -s -o /dev/null -w "%{http_code}\n" http://fairways.localhost:2121//` returns `200` or `302`. If not, ask the host to start it (`./server.sh start` from the install directory).
 2. You have an admin account: username + password handed off by the installer. The account must have the `admin` role. If you only have a regular member login, stop and ask for the admin credentials before continuing.
 3. Email may or may not be wired up. Look at the bottom of any page footer: if you see a Contact link, mail-bearing features are live. If not, contact-form submissions still get saved to disk but no email goes out — that's expected pre-mail-setup.
 4. Open two browser windows side-by-side. Window A: signed in as admin. Window B: signed in as a regular member (or signed out entirely). This is the single most useful demo setup — it lets you show audience-targeted content from both sides at the same time.
 
-%%informationAbout the URLs in this guide: every example URL uses `http://jminim4:2121/`. In a real deployment substitute your actual hostname and port. The path portion (`/admin/...`, `/view/...`) is identical regardless of host.
+%%informationAbout the URLs in this guide: every example URL uses `http://fairways.localhost:2121/`. In a real deployment substitute your actual hostname and port. The path portion (`/admin/...`, `/view/...`) is identical regardless of host.
 
 ---
 
@@ -287,7 +287,7 @@ Goal: What you do when something goes wrong, or once a quarter to stay healthy.
 ### Health check
 
 ```bash
-curl -s http://jminim4:2121//api/health | jq .
+curl -s http://fairways.localhost:2121//api/health | jq .
 ```
 
 Returns status JSON. Should always be `{"status":"healthy", ...}`. If it's not, jump to Logs.

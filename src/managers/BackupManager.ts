@@ -754,20 +754,20 @@ class BackupManager extends BaseManager {
       if (this.backupKeyInfo().saved) {
         if (status.state === 'degraded' && status.reason?.startsWith('Save the backup key off this server')) this.markReady();
       } else if (status.state !== 'degraded' || status.reason?.startsWith('Save the backup key off this server')) {
-        this.markDegraded(notSaved, BACKUP_KEY_SAVED_KEY);
+        this.markNeedsAttention(notSaved, BACKUP_KEY_SAVED_KEY);
       }
       return;
     }
     // A degraded backup directory (preflight) is the worse fault, and keeps the banner.
     const status = this.getManagerStatus();
-    if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING) this.markDegraded(BACKUP_KEY_MISSING, BACKUP_KEY_ENV);
+    if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING) this.markNeedsAttention(BACKUP_KEY_MISSING, BACKUP_KEY_ENV);
     try {
       const notifications = this.engine.getManager<{ getAllNotifications?(includeExpired?: boolean): Array<{ title: string }> }>('NotificationManager');
       if (notifications?.getAllNotifications?.(true).some((n) => n.title === BACKUP_KEY_MISSING_TITLE)) return;
     } catch (err) {
       logger.warn('[BackupManager] Could not check for an earlier backup-key notice:', err);
     }
-    await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard shows Backup as degraded; this is the only notification about it.`);
+    await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard lists Backup under "Working, but needs your attention"; this is the only notification about it.`);
   }
 
   /** The backup key as Admin → Backup shows it: set or not, its fingerprint, and whether an admin confirmed it is saved. Never the key. */

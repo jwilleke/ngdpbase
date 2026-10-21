@@ -160,7 +160,7 @@ curl -s -b "$J" -c "$J" -o /dev/null -w "%{http_code}\n" \
 `jimstest`, serving on port 3000 with a wildcard certificate it already had:
 
 ```json
-"ngdpbase.application.base-url": "https://jminim4.example.com:3000",
+"ngdpbase.application.base-url": "https://ngdpbase.example.com:3000",
 "ngdpbase.session.secure": true,
 "ngdpbase.server.tls.cert-file": "/Users/jim/certs/example.com.crt",
 "ngdpbase.server.tls.key-file": "/Users/jim/certs/example.com.key"
