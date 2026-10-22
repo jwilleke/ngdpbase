@@ -22,6 +22,7 @@ import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
+import type { BackupFolder } from './BaseManager.js';
 import {
   ADDONS_INSTALL_KEY,
   installedAddonsDir,
@@ -147,6 +148,15 @@ export interface AddonModule {
     config: Record<string, unknown>,
     host?: AddonHost
   ): Promise<void> | void;
+
+  /**
+   * Folders it keeps data in besides its `dataPath` (#1985), given its
+   * configuration. Its `dataPath` is backed up and restored without being
+   * declared; an add-on declares only further folders, and writes no backup
+   * code. BackupManager archives each one, stages it in a site restore, and
+   * puts it in place before `register()` runs at the next start.
+   */
+  backupFolders?(config: Record<string, unknown>): BackupFolder[];
 
   /**
    * Optional health check returning add-on status details.
@@ -373,6 +383,8 @@ interface AddonEntry {
   /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration or site-critical value was refused (#1559, #1860, #1883), its required-encryption database has no key (#1860), or it could not be imported or has no register() (#1883); null otherwise. */
   incompatible: string | null;
 
+  /** Its `dataPath` and the folders it declares, as read when it was loaded (#1985): what BackupManager backs up for it. */
+  backupFolders?: { dataPath: string | null; folders: BackupFolder[] };
 }
 
 /**
@@ -1059,6 +1071,43 @@ class AddonsManager extends BaseManager {
    */
   addonsLoaded(): boolean {
     return this.loadPassDone;
+  }
+
+  /**
+   * An add-on's folders (#1985): its `dataPath` — `ngdpbase.addons.<slug>.dataPath`,
+   * or `<FAST_STORAGE>/<slug>` when that is not set, as the bundled add-ons
+   * read it — under the part name of its slug, then any further folders its
+   * module declares. A `dataPath` that is the instance data folder, or holds
+   * it, is never one: a restore would swap the whole site's data.
+   */
+  private addonFolders(slug: string, module: AddonModule, config: Record<string, unknown>): { dataPath: string | null; folders: BackupFolder[] } {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const raw = typeof config.dataPath === 'string' && config.dataPath !== '' ? config.dataPath : configManager?.resolveDataPath?.(slug) ?? null;
+    let dataPath = raw ? path.resolve(raw) : null;
+    const instance = configManager?.getInstanceDataFolder?.();
+    if (dataPath && instance) {
+      const rel = path.relative(dataPath, path.resolve(instance));
+      if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+        logger.error(`[AddonsManager] ${slug}'s dataPath ${dataPath} is the instance data folder or holds it, so it is not backed up as the add-on's folder (#1985). Give the add-on a folder of its own (ngdpbase.addons.${slug}.dataPath).`);
+        dataPath = null;
+      }
+    }
+    let declared: BackupFolder[] = [];
+    if (typeof module.backupFolders === 'function') {
+      try {
+        declared = module.backupFolders(config);
+      } catch (err) {
+        logger.error(`[AddonsManager] ${slug}'s backupFolders() failed, so only its dataPath is backed up: ${(err as Error).message}`);
+      }
+    }
+    return { dataPath, folders: [...(dataPath ? [{ part: slug, folder: dataPath }] : []), ...declared] };
+  }
+
+  /** Each loaded add-on's `dataPath` and declared folders (#1985), in load order: what BackupManager backs up for it. */
+  addonBackupFolders(): Array<{ slug: string; dataPath: string | null; folders: BackupFolder[] }> {
+    return [...this.addons]
+      .filter(([, addon]) => addon.loaded && addon.backupFolders)
+      .map(([slug, addon]) => ({ slug, ...addon.backupFolders! }));
   }
 
   /**
@@ -1791,6 +1840,12 @@ class AddonsManager extends BaseManager {
 
       // Get add-on specific configuration
       const addonConfig = this.getAddonConfig(addonName);
+
+      // #1985: its dataPath and declared folders are BackupManager's to back
+      // up; a staged restore of them goes in now, before register() reads them.
+      addon.backupFolders = this.addonFolders(addonName, addon.module, addonConfig);
+      this.engine.getManager<{ applyAddonPartsAtStart?(slug: string, folders: BackupFolder[]): unknown }>('BackupManager')
+        ?.applyAddonPartsAtStart?.(addonName, addon.backupFolders.folders);
 
       // #1813: the host is built per add-on: its logger tagged with the slug,
       // its audit helpers limited to the events this add-on declares.

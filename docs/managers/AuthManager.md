@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-10-19'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -89,7 +89,7 @@ AuthManager is the only door to an account's credentials beyond its password: pa
 
 ## Backup and restore
 
-The credentials store is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)), as its own file beside the backup document, `<stem>.credentials.tar.enc`, __only ever encrypted__ under `NGDPBASE_BACKUP_KEY` (`backupFilePart` with `requireKey`). Without the backup key it is left out: `backup()` returns `credentials: null` and a warning that BackupManager recognises as left out for want of the key: its banner and one-time notice say so, not a notice per backup. `restore()` stages it as `credentials.json.staged` with the rest of a site restore (`restoreIsStaged()` is true); `initialize()` puts it in place before the store is opened, keeping the live file as `credentials.json.pre-restore`. A backup that left it out stages nothing, and the store on the site stays. The rows are still signed with `NGDPBASE_CREDENTIALS_KEY`, which is not in the backup: restored onto a site with another credentials key they are held in quarantine (above). See the [backup and restore guide](../guides/backup-restore-guide.md).
+The credentials store is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)), as its own file beside the backup document, `<stem>.credentials.tar.enc`, __only ever encrypted__ under `NGDPBASE_BACKUP_KEY`: AuthManager declares the file in `backupFolders()` with `requireKey`, and BackupManager writes it ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). Without the backup key it is left out: the entry's `credentials` is null, beside the provider list `backup()` returns, with a warning that BackupManager recognises as left out for want of the key: its banner and one-time notice say so, not a notice per backup. A site restore stages it as `credentials.json.staged` (BackupManager, from the declaration); `BaseManager.initialize()` puts it in place at the next start, before the store is opened, keeping the live file as `credentials.json.pre-restore`. A backup that left it out stages nothing, and the store on the site stays. The rows are still signed with `NGDPBASE_CREDENTIALS_KEY`, which is not in the backup: restored onto a site with another credentials key they are held in quarantine (above). See the [backup and restore guide](../guides/backup-restore-guide.md).
 
 ## My tokens and devices (#1764)
 

@@ -16,8 +16,7 @@ import { refusesOnFailure, refuseOnFailureEventTypes } from '../utils/auditRegis
 import { attributedTo, scheduleContext, systemContext } from '../context/bootActions.js';
 import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import type { ManagerBackupOptions, ManagerRestoreOptions } from '../managers/BaseManager.js';
-import { archiveReadKey, archiveTarget, isArchiveName, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import type { BackupPartRecord, ManagerBackupOptions, ManagerRestoreOptions } from '../managers/BaseManager.js';
 import { extractTreeArchive, listTreeArchive, writeTreeArchive } from '../utils/treeArchive.js';
 import { gatePart, keptPathFor, markPart, recordStagedPart, setAsidePath, siteRestoreFile, stagedPathFor } from '../utils/siteRestore.js';
 
@@ -968,12 +967,14 @@ class FileAuditProvider extends BaseAuditProvider {
    * backup is in it. Only the audit files: the application logs in the same
    * folder are not.
    */
-  async backupFiles(options: ManagerBackupOptions): Promise<{ data: DirectoryBackupData; warnings: string[] }> {
+  async backupFiles(options: ManagerBackupOptions): Promise<{ data: BackupPartRecord; warnings: string[] }> {
     if (!this.config) throw new Error('FileAuditProvider is not initialized');
+    // #1985: BackupManager names the archive and says the key.
+    if (!options.archive) throw new Error('AuditManager writes its files beside the backup document, so it is backed up through BackupManager (#1876)');
     await this.flush({ fsync: true });
     const entries = await this.auditFileNames();
-    const target = archiveTarget(options.stem, 'audit');
-    const outcome = await writeTreeArchive(path.join(options.directory, target.archive), this.config.logDirectory, { entries, backupKey: target.backupKey });
+    const target = options.archive('audit');
+    const outcome = await writeTreeArchive(target.path, this.config.logDirectory, { entries, backupKey: target.backupKey });
     logger.info(`[FileAuditProvider] Backed up ${outcome.files} audit file(s), ${(outcome.bytes / 1024).toFixed(1)} KB, as ${target.archive} (#1876)`);
     return {
       data: { format: 1, archive: target.archive, files: outcome.files, bytes: outcome.bytes, ...(target.keyFingerprint ? { keyFingerprint: target.keyFingerprint } : {}) },
@@ -992,11 +993,11 @@ class FileAuditProvider extends BaseAuditProvider {
    * only, and recorded in the site restore. The live log is not touched; the
    * site keeps recording into it until the restart.
    */
-  async stageRestore(data: DirectoryBackupData, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void> {
+  async stageRestore(data: BackupPartRecord, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void> {
     if (!this.config) throw new Error('FileAuditProvider is not initialized');
-    if (!data || data.format !== 1 || !isArchiveName(data.archive)) throw new Error('The backup names no audit archive in the backup directory; nothing was staged');
-    const backupKey = archiveReadKey('AuditManager', data);
-    const archive = path.join(options.directory, data.archive);
+    if (!data || data.format !== 1 || !options.readArchive) throw new Error('The backup names no audit archive in the backup directory; nothing was staged');
+    // #1985: BackupManager checks the name and the key.
+    const { path: archive, backupKey } = options.readArchive('AuditManager', data.archive, data.keyFingerprint);
     const foreign: string[] = [];
     await listTreeArchive(archive, (e) => { if (!this.isAuditFileName(e.path)) foreign.push(e.path); }, { backupKey });
     if (foreign.length > 0) throw new Error(`The audit archive holds files that are not audit files: ${foreign.slice(0, 5).join(', ')}; nothing was staged`);

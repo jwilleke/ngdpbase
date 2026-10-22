@@ -495,10 +495,13 @@ module.exports = {
 
 ```javascript
 async register(engine, config) {
-  const dataPath = config.dataPath || './data/my-addon';
+  // The add-on's folder: what core backs up and restores for it (#1985).
+  const dataPath = config.dataPath || engine.getManager('ConfigurationManager').resolveDataPath('my-addon');
   const apiKey = config.apiKey; // set only when $MY_ADDON_API_KEY was set
 }
 ```
+
+`dataPath` is `ngdpbase.addons.<slug>.dataPath`, or `<FAST_STORAGE>/<slug>` when it is not set (`resolveDataPath(slug)`). That folder is backed up and restored for you ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985); [Backup](#backup-your-datapath-is-backed-up-for-you)), so keep your files there, not in a path of your own such as `./data/my-addon` relative to the working directory.
 
 ### The `host` parameter
 
@@ -1264,13 +1267,21 @@ Register it in `register()` so plugins and routes can retrieve it:
 ```javascript
 async register(engine, config) {
   const MyDataManager = require('./managers/MyDataManager');
-  const mgr = new MyDataManager(config.dataPath || './data/my-addon');
+  const mgr = new MyDataManager(config.dataPath || engine.getManager('ConfigurationManager').resolveDataPath('my-addon'));
   await mgr.load();
   engine.registerManager('MyDataManager', mgr);
 }
 ```
 
-A manager's backup is not code you write ([#1943](https://github.com/jwilleke/ngdpbase/issues/1943)). An add-on's data is backed up through its declared add-on databases (`DatabaseManager` copies every declared one) and its add-on files. So an add-on manager does not implement `backup()`/`restore()`, and must not add no-op ones: the site backup skips a registered manager that has none, and never counts it as missing. The one exception is a manager that keeps files under the add-on's `dataPath` (the bundled forms, calendar and feeds managers): its `backup()`/`restore()` call `backupDirectoryPart` / `stageDirectoryPart`, as the [backup and restore guide](backup-restore-guide.md#rules-for-developers-and-add-on-authors) says.
+### Backup: your dataPath is backed up for you
+
+A manager's backup is not code you write ([#1943](https://github.com/jwilleke/ngdpbase/issues/1943), [#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). An add-on's data is backed up through its declared add-on databases (`DatabaseManager` copies every declared one) and its `dataPath`:
+
+- BackupManager writes your `dataPath` beside every backup as `<stem>.<slug>.tar` (`.tar.enc` under the backup key) when the folder exists, stages it in a whole-site restore, and puts it back at the next start __before your `register()` runs__, so everything you read there at start is the restored copy. You write no `backup()`, `restore()` or staging code, and import nothing for it.
+- A folder you keep somewhere else is declared on the add-on module, `backupFolders(config)`, returning `[{ part, folder }]`; it is backed up and restored the same way. Give each a part name of its own (`<slug>-<what>`): it is the archive's name.
+- A database is declared, not copied ([storage guide](storage-developer-guide.md#declaring-a-database)).
+
+So an add-on manager does not implement `backup()`/`restore()`, and must not add no-op ones: the site backup skips a registered manager that has none, and never counts it as missing. The forms, calendar and feeds add-ons work this way. The rules are in the [backup and restore guide](backup-restore-guide.md#rules-for-developers-and-add-on-authors).
 
 ---
 

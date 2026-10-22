@@ -1,7 +1,7 @@
 ---
 name: BaseManager
 description: "Abstract base class for all managers — engine wiring, lifecycle hooks, config accessor pattern"
-dateModified: '2026-05-14'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/BaseManager.ts
 ---
@@ -56,9 +56,28 @@ class MyManager extends BaseManager {
 | `isInitialized()` | Check initialization state |
 | `getEngine()` | Get WikiEngine reference |
 | `shutdown()` | Clean shutdown |
-| `backup()` | Backup manager data |
+| `backupFolders()` | The folders and files this manager keeps its data in; BackupManager backs them up, stages and applies them. Default none (below) |
+| `backup()` | Backup manager data kept in the document (JSON) |
 | `restore(backupData)` | Restore from backup |
+| `restoreIsStaged()` | Whether a restore is staged for the next start; true by default for a manager that declares folders |
 | `toMarqueeText(options)` | Return plain-text summary for [MarqueePlugin](../plugins/MarqueePlugin.md). Default returns `''`. Override in subclasses. |
+
+## Declaring your data folders
+
+A manager whose data is a folder of files, or one file, declares it and writes no backup code ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)):
+
+```ts
+override backupFolders(): BackupFolder[] {
+  return [{ part: 'roles', folder: this.storageDir ?? this.configuredStorageDir() }];
+}
+```
+
+- `part` names the archive, `<stem>.<part>.tar` (`.tar.enc` under the backup key). Never rename it: old backups are matched by it.
+- `folder` is resolved from the configuration, so it can be answered before the subclass's own `initialize()` has run; null when the site has none configured.
+- `exclude(relative)` leaves out paths (job state's slot locks); `optional: true` lets a backup without the part stage nothing for it instead of refusing the restore.
+- One file instead of a folder: `{ part, file, what, whenAbsent, requireKey?, optional? }`. `requireKey` backs it up only encrypted under the backup key, and leaves it out with a warning otherwise (the credentials store).
+
+BackupManager archives each declared part beside the backup document, stages it in a site restore, and puts the staged copy in place at the next start. That last step is in `BaseManager.initialize()`, before it returns, so __call `super.initialize()` first, before you read the folder__. The outcome is `stagedRestoreAtStart()` (what was applied, and when the backup was taken); a part not applied marks the manager as needing attention. A manager may still keep data in the document through `backup()`: each declared part's record then goes beside it, as `data[<part>]` (the credentials store beside AuthManager's provider list); with no data of its own and one part, the record is the entry's `data`. A manager stages either through declarations or through its own `restore()` with `restoreIsStaged()`, not both. The rules are in the [backup and restore guide](../guides/backup-restore-guide.md#rules-for-developers-and-add-on-authors).
 
 ## Properties
 
