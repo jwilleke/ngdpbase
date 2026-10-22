@@ -3,14 +3,14 @@
  *
  * Persists normalized records under `<dataPath>/<sourceId>/records.json` on
  * FAST_STORAGE (operational data — never a page, never SLOW_STORAGE; design
- * §4.3). Change-detection reuses the engine's `DeltaStorage.calculateHash`
- * (sha256) over the *content* of each record (sourceRecordId + properties) —
- * NOT `fetchedAt` — so an unchanged upstream record produces no upsert (D6).
+ * §4.3). Change-detection is a sha256 (hex) over the *content* of each
+ * record (sourceRecordId + properties) — NOT `fetchedAt` — so an unchanged
+ * upstream record produces no upsert (D6).
  */
 
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import DeltaStorage from '../../../dist/src/utils/DeltaStorage.js';
+import { createHash } from 'node:crypto';
 import type { NormalizedRecord } from './adapters/types.js';
 
 interface StoredEntry {
@@ -42,7 +42,8 @@ function stableStringify(value: unknown): string {
 
 /** Content hash of a record — excludes the volatile fetchedAt (D6). */
 function recordHash(rec: NormalizedRecord): string {
-  return DeltaStorage.calculateHash(stableStringify({ sourceRecordId: rec.sourceRecordId, properties: rec.properties }));
+  // The same sha256 hex DeltaStorage.calculateHash gives, so stored hashes still match (#1813).
+  return createHash('sha256').update(stableStringify({ sourceRecordId: rec.sourceRecordId, properties: rec.properties }), 'utf8').digest('hex');
 }
 
 export class RecordStore {

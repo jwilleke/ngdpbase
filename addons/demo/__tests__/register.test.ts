@@ -12,6 +12,10 @@
  */
 
 import demoAddon, { ADMIN_DEFAULTS } from '../index';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the add-on, bound to this test's engine (#1813). */
+const hostFor = (engine: unknown) => buildAddonHost('demo', {}, undefined, engine as never);
 
 /**
  * Stand-ins for operator-supplied config. Deliberately not credential-shaped:
@@ -56,19 +60,19 @@ describe('demo addon register() (#1029)', () => {
     // The regression guard. Runtime role injection looks like it works —
     // policy evaluation honours it — while the role is invisible in the UI.
     const { engine, configManager } = makeEngine();
-    await demoAddon.register(engine, {});
+    await demoAddon.register(engine, {}, hostFor(engine));
 
     expect(configManager.setRuntimeProperty).not.toHaveBeenCalled();
   });
 
   test('resolves without an engine of any kind', async () => {
     const engine = { getManager: vi.fn(() => null) };
-    await expect(demoAddon.register(engine as never, {})).resolves.toBeUndefined();
+    await expect(demoAddon.register(engine as never, {}, hostFor(engine))).resolves.toBeUndefined();
   });
 
   test('registers [{DemoLogin}] so the Welcome page can show live credentials', async () => {
     const { engine, pluginManager } = makeEngine();
-    await demoAddon.register(engine, {});
+    await demoAddon.register(engine, {}, hostFor(engine));
 
     expect(pluginManager.registerPlugin).toHaveBeenCalledWith('DemoLogin', expect.anything());
   });
@@ -80,7 +84,7 @@ describe('demo addon shared admin account (#1029)', () => {
 
   test('seeds admindemo with demo-admin and a locked profile', async () => {
     const { engine, userManager } = makeEngine();
-    await demoAddon.register(engine, SUPPLIED);
+    await demoAddon.register(engine, SUPPLIED, hostFor(engine));
 
     expect(userManager.createUser).toHaveBeenCalledTimes(1);
     const created = userManager.createUser.mock.calls[0][0];
@@ -99,7 +103,7 @@ describe('demo addon shared admin account (#1029)', () => {
     // (nobody can take it over). Shipping a value is what keeps enabling the
     // addon the whole setup, with no per-deployment manual step.
     const { engine, userManager } = makeEngine();
-    await demoAddon.register(engine, {});
+    await demoAddon.register(engine, {}, hostFor(engine));
 
     expect(userManager.createUser).toHaveBeenCalledTimes(1);
     expect(userManager.createUser.mock.calls[0][0]).toMatchObject({
@@ -118,21 +122,21 @@ describe('demo addon shared admin account (#1029)', () => {
     const { engine, userManager } = makeEngine();
     await demoAddon.register(engine, {
       'admin-account': { password: '${NGDPBASE_DEMO_ADMIN_PASSWORD}' }
-    });
+    }, hostFor(engine));
 
     expect(userManager.createUser).not.toHaveBeenCalled();
   });
 
   test('a missing password does not stop the addon loading — pages still ship', async () => {
     const { engine } = makeEngine();
-    await expect(demoAddon.register(engine, {})).resolves.toBeUndefined();
+    await expect(demoAddon.register(engine, {}, hostFor(engine))).resolves.toBeUndefined();
   });
 
   test('leaves an existing account alone, so a rotated password survives restart', async () => {
     const { engine, userManager } = makeEngine({
       existingUser: { username: 'admindemo', profileLocked: true }
     });
-    await demoAddon.register(engine, SUPPLIED);
+    await demoAddon.register(engine, SUPPLIED, hostFor(engine));
 
     expect(userManager.createUser).not.toHaveBeenCalled();
     expect(userManager.updateUser).not.toHaveBeenCalled();
@@ -149,7 +153,7 @@ describe('demo addon shared admin account (#1029)', () => {
     const { engine, userManager } = makeEngine({
       existingUser: { username: 'admindemo' }
     });
-    await demoAddon.register(engine, SUPPLIED);
+    await demoAddon.register(engine, SUPPLIED, hostFor(engine));
 
     expect(userManager.updateUser).toHaveBeenCalledWith('admindemo', { profileLocked: true }, expect.objectContaining({ origin: 'boot' }));
     expect(userManager.createUser).not.toHaveBeenCalled();
@@ -161,7 +165,7 @@ describe('demo addon shared admin account (#1029)', () => {
     const { engine, userManager } = makeEngine({
       existingUser: { username: 'admindemo', password: 'operator-rotated' }
     });
-    await demoAddon.register(engine, SUPPLIED);
+    await demoAddon.register(engine, SUPPLIED, hostFor(engine));
 
     const updates = userManager.updateUser.mock.calls[0][1];
     expect(Object.keys(updates)).toEqual(['profileLocked']);
@@ -176,14 +180,14 @@ describe('demo addon shared admin account (#1029)', () => {
         email: CONFIGURED.email,
         'display-name': CONFIGURED.displayName
       }
-    });
+    }, hostFor(engine));
 
     expect(userManager.createUser.mock.calls[0][0]).toMatchObject(CONFIGURED);
   });
 
   test('skips seeding when admin-account.enabled is false', async () => {
     const { engine, userManager } = makeEngine();
-    await demoAddon.register(engine, { 'admin-account': { enabled: false } });
+    await demoAddon.register(engine, { 'admin-account': { enabled: false } }, hostFor(engine));
 
     expect(userManager.createUser).not.toHaveBeenCalled();
   });
@@ -194,7 +198,7 @@ describe('demo addon shared admin account (#1029)', () => {
 
     // Must supply a password, or seeding short-circuits before createUser and
     // the rejection never fires — the test would pass without proving anything.
-    await expect(demoAddon.register(engine, SUPPLIED)).resolves.toBeUndefined();
+    await expect(demoAddon.register(engine, SUPPLIED, hostFor(engine))).resolves.toBeUndefined();
     expect(userManager.createUser).toHaveBeenCalled();
   });
 

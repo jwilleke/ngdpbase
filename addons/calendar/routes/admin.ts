@@ -1,6 +1,6 @@
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
@@ -14,8 +14,10 @@ import type { CalendarConfig } from '../managers/CalendarConfig.js';
  */
 export default function adminRoutes(
   engine: WikiEngine,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  host: AddonHost
 ): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {

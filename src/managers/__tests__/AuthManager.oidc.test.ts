@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as crypto from 'node:crypto';
 import AuthManager from '../AuthManager';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 import { guardedFetch } from '../../http/guardedFetch.js';
 import { fakeIssuer, flowFrom, type FakeIssuer } from '../../providers/__tests__/__fixtures__/fakeOidcIssuer';
@@ -51,6 +52,8 @@ describe('AuthManager outside sign-in (#1743)', () => {
   let stale: boolean;
   /** #1633: each role's required-aal, all set by the operator (so never lowered); none unless a test sets them. */
   let roleLevels: Record<string, number> | null;
+  /** #1532: mail for the email-link second factor; null (no mail) unless a test turns it on. Console-like: nothing is sent. */
+  let mailbox: Array<{ to: string; text: string }> | null;
   const saved = { key: process.env[CREDENTIALS_KEY_ENV], secret: process.env[SECRET_ENV] };
 
   const started = async (): Promise<AuthManager> => {
@@ -61,7 +64,8 @@ describe('AuthManager outside sign-in (#1743)', () => {
         getCustomProperty: () => undefined,
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.auth.credentials.file' ? file : d),
         isBaseUrlExplicit: () => true,
-        getBaseURL: () => 'https://wiki.example.com'
+        getBaseURL: () => 'https://wiki.example.com',
+        getApplicationName: () => 'Example Site'
       },
       PolicyDecisionPoint: {
         permits: (_s: unknown, action: string) => Promise.resolve(!stale && action === 'account-security'),
@@ -88,7 +92,9 @@ describe('AuthManager outside sign-in (#1743)', () => {
           return Promise.resolve(true);
         }
       },
+      ...(mailbox ? { EmailManager: { send: (m: { to: string; text: string }) => { mailbox.push(m); return Promise.resolve(); }, getProviderName: () => 'test' } } : {}),
       ...(roleLevels ? { RoleManager: { roleRequiredAal: () => roleLevels, operatorRequiredAal: () => roleLevels } } : {}),
+      PluginManager: TEST_PLUGIN_MANAGER,
       AuditManager: {
         logAuditEvent: (event: Record<string, unknown>) => { auditEvents.push(event); return Promise.resolve('evt'); },
         logAuthentication: (ctx: Record<string, unknown>, result: string, reason: string) => { authAudit.push({ ctx, result, reason }); return Promise.resolve('a'); }
@@ -140,6 +146,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
     authAudit = [];
     stale = false;
     roleLevels = null;
+    mailbox = null;
   });
 
   afterEach(() => {
@@ -823,6 +830,61 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(done.outcome).toBe('created');
       expect((req.session.signIn as { aal: number }).aal).toBe(2);
       expect(authAudit.filter(a => a.result === 'success').at(-1)?.ctx.reported).toEqual({ amr: ['pwd', 'mfa'], trusted: true });
+    });
+  });
+  describe('#1532: an outside sign-in at AAL1 takes the second step, as a password does', () => {
+    /** Ann's identity connected and her email enrolled as a second factor, the real way (the link from the mailbox). */
+    const enrolledAnn = async (): Promise<AuthManager> => {
+      mailbox = [];
+      const am = await started();
+      expect(await am.connectIdentity(subject('ann'), 'ann', 'oidc:idp',
+        await callback(am, () => am.startConnect(subject('ann'), 'ann', 'oidc:idp', { deviceState: BROWSER })))).toBe('connected');
+      expect(await am.startEmailFactorEnrolment(subject('ann'), 'ann')).toBe('sent');
+      const token = /confirm\?t=([\w-]+)/.exec(mailbox.at(-1).text)[1];
+      expect(await am.confirmEmailFactorEnrolment(subject('ann'), token)).toBe(true);
+      return am;
+    };
+
+    test('untrusted (AAL1): no session, a pending sign-in for this browser, which completes with both factors after approval', async () => {
+      const am = await enrolledAnn();
+      const req = fakeReq();
+      const done = await am.finishOutsideSignIn(req, 'oidc:idp', await callback(am, () => am.startFlow('oidc:idp', { deviceState: BROWSER }), { amr: ['pwd', 'mfa'] }));
+      expect(done).toEqual({ outcome: 'second-step', handle: expect.any(String), binding: expect.any(String), next: '/' });
+      if (done.outcome !== 'second-step') return;
+      // Sabotage check: dropping the needsSecondStep branch in finishOutsideSignIn signs ann in here and turns this red.
+      expect(req.session.username).toBeUndefined();
+      expect(req.session.signIn).toBeUndefined();
+      const pending = am.pendingSignIn(done.handle, done.binding);
+      expect(pending).toMatchObject({ username: 'ann', requestIp: '203.0.113.9' });
+
+      expect(await am.sendEmailApproval(done.handle, done.binding)).toBe('sent');
+      expect(mailbox.at(-1).text).toMatch(/ from IP address 203\.0\.113\.9\.$/m);
+      const link = /approve\?t=([\w-]+)/.exec(mailbox.at(-1).text)[1];
+      expect(await am.approveByToken(link)).toBe('ann');
+      const finished = am.completeTwoStep(done.handle, done.binding)!;
+      expect(finished.result.factors?.map((f) => f.provider)).toEqual(['oidc:idp', 'email-link']);
+      expect(auditEvents.map((e) => e.eventType)).toEqual(expect.arrayContaining(['signinapproval-request', 'signinapproval-approve']));
+    });
+
+    test('trusted and reporting mfa (AAL2): signed in at once, no second step', async () => {
+      config['ngdpbase.auth.oidc.providers'] = { idp: provider({ 'trust-mfa': true }) };
+      const am = await enrolledAnn();
+      const req = fakeReq();
+      const done = await am.finishOutsideSignIn(req, 'oidc:idp', await callback(am, () => am.startFlow('oidc:idp', { deviceState: BROWSER }), { amr: ['pwd', 'mfa'] }));
+      expect(done.outcome).toBe('signed-in');
+      expect(req.session.username).toBe('ann');
+      expect((req.session.signIn as { aal: number }).aal).toBe(2);
+    });
+
+    test('no second factor enrolled: signed in at once, as before', async () => {
+      mailbox = [];
+      const am = await started();
+      expect(await am.connectIdentity(subject('ann'), 'ann', 'oidc:idp',
+        await callback(am, () => am.startConnect(subject('ann'), 'ann', 'oidc:idp', { deviceState: BROWSER })))).toBe('connected');
+      const req = fakeReq();
+      const done = await am.finishOutsideSignIn(req, 'oidc:idp', await callback(am, () => am.startFlow('oidc:idp', { deviceState: BROWSER })));
+      expect(done.outcome).toBe('signed-in');
+      expect(req.session.username).toBe('ann');
     });
   });
 });

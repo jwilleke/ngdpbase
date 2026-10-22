@@ -56,7 +56,7 @@
  *   `\[\{([^}]+)\}\]`), so a brace placeholder truncates the token).
  */
 
-import logger from '../../../dist/src/utils/logger.js';
+import type { FeedLog } from './config.js';
 import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/plugins/types.js';
 import type { NormalizedRecord } from './adapters/types.js';
 import { recordName } from './normalize.js';
@@ -211,103 +211,108 @@ function defaultColumns(records: NormalizedRecord[]): string[] {
   return seen;
 }
 
-const DataFeedPlugin: SimplePlugin = {
-  name: 'DataFeed',
-  description: 'Render a feed source\'s records as a table or list (#685)',
+/**
+ * The [DataFeed] plugin, reporting to `logger`: the host's (#1813), handed in
+ * by register() when it registers the plugin.
+ */
+export function createDataFeedPlugin(logger: FeedLog): SimplePlugin {
+  return {
+    name: 'DataFeed',
+    description: 'Render a feed source\'s records as a table or list (#685)',
 
-  async execute(context: PluginContext, params: PluginParams): Promise<string> {
-    const { escapeHtml, parseMaxParam, parseSortParam, applyMax, formatAsTable } = context.formatters;
-    // #963: page-supplied copy for the legitimate "there is nothing to show"
-    // state. Deliberately NOT applied to the two failure branches below — a
-    // page that rendered "No tsunami messages are currently active" when the
-    // feeds addon is actually switched off would be worse than the raw
-    // diagnostic, because it reads as a confirmed all-clear.
-    const emptyOverride = typeof params.empty === 'string' && params.empty.trim()
-      ? params.empty.trim()
-      : null;
+    async execute(context: PluginContext, params: PluginParams): Promise<string> {
+      const { escapeHtml, parseMaxParam, parseSortParam, applyMax, formatAsTable } = context.formatters;
+      // #963: page-supplied copy for the legitimate "there is nothing to show"
+      // state. Deliberately NOT applied to the two failure branches below — a
+      // page that rendered "No tsunami messages are currently active" when the
+      // feeds addon is actually switched off would be worse than the raw
+      // diagnostic, because it reads as a confirmed all-clear.
+      const emptyOverride = typeof params.empty === 'string' && params.empty.trim()
+        ? params.empty.trim()
+        : null;
 
-    const source = String(params.source ?? '').trim();
-    if (!source) return muted(context.formatters, 'DataFeed: a source parameter is required.');
+      const source = String(params.source ?? '').trim();
+      if (!source) return muted(context.formatters, 'DataFeed: a source parameter is required.');
 
-    const fm = context.engine?.getManager?.('FeedManager') as FeedRecordSource | undefined;
-    if (!fm?.getRecords) return muted(context.formatters, 'DataFeed: the feeds addon is not enabled on this site.');
+      const fm = context.engine?.getManager?.('FeedManager') as FeedRecordSource | undefined;
+      if (!fm?.getRecords) return muted(context.formatters, 'DataFeed: the feeds addon is not enabled on this site.');
 
-    let records = await fm.getRecords(source);
+      let records = await fm.getRecords(source);
 
-    const exclude = parseExcludeParam(params.exclude);
-    if (exclude) {
-      records = records.filter(r => !exclude.pattern.test(cellString(r.properties[exclude.column])));
-    }
-
-    // A feed with zero current records is an expected state, not an error — an
-    // alerts feed is empty precisely when nothing is wrong. The rendered copy
-    // says so plainly and carries no internal source id (#963).
-    if (records.length === 0) {
-      return muted(context.formatters, emptyOverride ?? 'No records are currently available for this feed.');
-    }
-
-    const columns = typeof params.columns === 'string' && params.columns.trim()
-      ? params.columns.split(',').map(c => c.trim()).filter(Boolean)
-      : defaultColumns(records);
-
-    // Sort by a property key (falls back to first column).
-    if (columns.length > 0) {
-      const { key, order } = parseSortParam(params.sort as string | undefined, columns, columns[0], 'desc');
-      records = [...records].sort((a, b) => {
-        const c = compareValues(a.properties[key], b.properties[key]);
-        return order === 'desc' ? -c : c;
-      });
-    }
-
-    const format = String(params.format ?? '').toLowerCase();
-    records = applyMax(records, parseMaxParam(params.max as string | number | undefined, format === 'map' ? DEFAULT_MAP_MAX : DEFAULT_MAX));
-
-    if (format === 'list') {
-      const items = records.map(r => `<li>${escapeHtml(recordName(r, source))}</li>`).join('\n');
-      return `<ul class="feed-list">\n${items}\n</ul>`;
-    }
-
-    if (format === 'map') {
-      const latCol = typeof params.lat === 'string' && params.lat.trim() ? params.lat.trim() : 'latitude';
-      const lonCol = typeof params.lon === 'string' && params.lon.trim() ? params.lon.trim() : 'longitude';
-      const sizeByCol = typeof params.sizeBy === 'string' && params.sizeBy.trim() ? params.sizeBy.trim() : undefined;
-
-      // Filter to mappable records first — the radius scaler must compute its
-      // min/max only over records that will actually be plotted, otherwise a
-      // record dropped for bad coordinates can still skew the scale of the
-      // ones that are shown.
-      const mappable = records.filter(r =>
-        Number.isFinite(Number(r.properties[latCol])) && Number.isFinite(Number(r.properties[lonCol]))
-      );
-      const radiusOf = buildRadiusScaler(mappable, sizeByCol);
-
-      type MapPoint = { lat: number; lon: number; radius: number; popup: string };
-      const points: MapPoint[] = mappable.map(r => {
-        const popup = columns
-          .map(c => `<strong>${escapeHtml(c)}:</strong> ${escapeHtml(cellString(r.properties[c]))}`)
-          .join('<br>');
-        return { lat: Number(r.properties[latCol]), lon: Number(r.properties[lonCol]), radius: radiusOf(r), popup };
-      });
-
-      if (points.length === 0) {
-        // Two different causes land here: genuinely no records carry
-        // coordinates, or lat/lon name columns that do not exist. A visitor can
-        // act on neither, so the page gets plain copy and the actionable
-        // detail goes to the server log for whoever maintains the page (#963).
-        logger.warn(
-          `[DataFeed] no mappable records for feed '${source}' — ` +
-          `${records.length} record(s) had no finite value in both '${latCol}' and '${lonCol}'`
-        );
-        return muted(context.formatters, emptyOverride ?? 'No mappable records are currently available for this feed.');
+      const exclude = parseExcludeParam(params.exclude);
+      if (exclude) {
+        records = records.filter(r => !exclude.pattern.test(cellString(r.properties[exclude.column])));
       }
 
-      const mapId = 'datafeed-map-' + Math.random().toString(36).slice(2, 8);
-      const height = Number(params.height) || 450;
-      const centerLat = Number(params.lat0) || 20;
-      const centerLon = Number(params.lon0) || 0;
-      const zoom = Number(params.zoom) || 2;
+      // A feed with zero current records is an expected state, not an error — an
+      // alerts feed is empty precisely when nothing is wrong. The rendered copy
+      // says so plainly and carries no internal source id (#963).
+      if (records.length === 0) {
+        return muted(context.formatters, emptyOverride ?? 'No records are currently available for this feed.');
+      }
 
-      return `
+      const columns = typeof params.columns === 'string' && params.columns.trim()
+        ? params.columns.split(',').map(c => c.trim()).filter(Boolean)
+        : defaultColumns(records);
+
+      // Sort by a property key (falls back to first column).
+      if (columns.length > 0) {
+        const { key, order } = parseSortParam(params.sort as string | undefined, columns, columns[0], 'desc');
+        records = [...records].sort((a, b) => {
+          const c = compareValues(a.properties[key], b.properties[key]);
+          return order === 'desc' ? -c : c;
+        });
+      }
+
+      const format = String(params.format ?? '').toLowerCase();
+      records = applyMax(records, parseMaxParam(params.max as string | number | undefined, format === 'map' ? DEFAULT_MAP_MAX : DEFAULT_MAX));
+
+      if (format === 'list') {
+        const items = records.map(r => `<li>${escapeHtml(recordName(r, source))}</li>`).join('\n');
+        return `<ul class="feed-list">\n${items}\n</ul>`;
+      }
+
+      if (format === 'map') {
+        const latCol = typeof params.lat === 'string' && params.lat.trim() ? params.lat.trim() : 'latitude';
+        const lonCol = typeof params.lon === 'string' && params.lon.trim() ? params.lon.trim() : 'longitude';
+        const sizeByCol = typeof params.sizeBy === 'string' && params.sizeBy.trim() ? params.sizeBy.trim() : undefined;
+
+        // Filter to mappable records first — the radius scaler must compute its
+        // min/max only over records that will actually be plotted, otherwise a
+        // record dropped for bad coordinates can still skew the scale of the
+        // ones that are shown.
+        const mappable = records.filter(r =>
+          Number.isFinite(Number(r.properties[latCol])) && Number.isFinite(Number(r.properties[lonCol]))
+        );
+        const radiusOf = buildRadiusScaler(mappable, sizeByCol);
+
+        type MapPoint = { lat: number; lon: number; radius: number; popup: string };
+        const points: MapPoint[] = mappable.map(r => {
+          const popup = columns
+            .map(c => `<strong>${escapeHtml(c)}:</strong> ${escapeHtml(cellString(r.properties[c]))}`)
+            .join('<br>');
+          return { lat: Number(r.properties[latCol]), lon: Number(r.properties[lonCol]), radius: radiusOf(r), popup };
+        });
+
+        if (points.length === 0) {
+          // Two different causes land here: genuinely no records carry
+          // coordinates, or lat/lon name columns that do not exist. A visitor can
+          // act on neither, so the page gets plain copy and the actionable
+          // detail goes to the server log for whoever maintains the page (#963).
+          logger.warn(
+            `[DataFeed] no mappable records for feed '${source}' — ` +
+            `${records.length} record(s) had no finite value in both '${latCol}' and '${lonCol}'`
+          );
+          return muted(context.formatters, emptyOverride ?? 'No mappable records are currently available for this feed.');
+        }
+
+        const mapId = 'datafeed-map-' + Math.random().toString(36).slice(2, 8);
+        const height = Number(params.height) || 450;
+        const centerLat = Number(params.lat0) || 20;
+        const centerLon = Number(params.lon0) || 0;
+        const zoom = Number(params.zoom) || 2;
+
+        return `
 <div class="datafeed-map">
   <div id="${mapId}" style="height:${height}px;width:100%;"></div>
 </div>
@@ -337,27 +342,26 @@ const DataFeedPlugin: SimplePlugin = {
   }
 })();
 </script>`.trim();
+      }
+
+      const badgeCols = typeof params.badge === 'string'
+        ? params.badge.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      const linkTemplates = parseLinkParam(params.link);
+
+      const rows = records.map(r => columns.map(c => {
+        const text = escapeHtml(cellString(r.properties[c]));
+        let cell = text;
+        if (text && badgeCols.includes(c)) {
+          cell = `<span class="feed-badge feed-badge--${valueSlug(cellString(r.properties[c]))}">${text}</span>`;
+        }
+        if (text && linkTemplates[c]) {
+          const url = resolveLinkTemplate(linkTemplates[c], r.properties);
+          if (url) cell = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${cell}</a>`;
+        }
+        return cell;
+      }));
+      return formatAsTable(columns, rows, { sortable: true });
     }
-
-    const badgeCols = typeof params.badge === 'string'
-      ? params.badge.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
-    const linkTemplates = parseLinkParam(params.link);
-
-    const rows = records.map(r => columns.map(c => {
-      const text = escapeHtml(cellString(r.properties[c]));
-      let cell = text;
-      if (text && badgeCols.includes(c)) {
-        cell = `<span class="feed-badge feed-badge--${valueSlug(cellString(r.properties[c]))}">${text}</span>`;
-      }
-      if (text && linkTemplates[c]) {
-        const url = resolveLinkTemplate(linkTemplates[c], r.properties);
-        if (url) cell = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${cell}</a>`;
-      }
-      return cell;
-    }));
-    return formatAsTable(columns, rows, { sortable: true });
-  }
-};
-
-export default DataFeedPlugin;
+  };
+}

@@ -16,7 +16,6 @@
 import type { PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/managers/PluginManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type { UserContext } from '../../../dist/src/context/WikiContext.js';
-import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -77,7 +76,10 @@ function getOnThisDay(entries: JournalEntry[]): JournalEntry[] {
 
 // ── Renderers ────────────────────────────────────────────────────────────────
 
-function renderTimeline(f: PluginFormatters, entries: JournalEntry[], limit: number): string {
+/** A page's link, from PageManager (#1813). */
+type PageLink = (pageName: string) => string;
+
+function renderTimeline(f: PluginFormatters, entries: JournalEntry[], limit: number, pageUrl: PageLink): string {
   const { escapeHtml: escHtml } = f;
   if (entries.length === 0) {
     return `<div class="journal-empty">
@@ -111,7 +113,7 @@ function renderStreak(streak: number, total: number): string {
   </div>`;
 }
 
-function renderOnThisDay(f: PluginFormatters, entries: JournalEntry[]): string {
+function renderOnThisDay(f: PluginFormatters, entries: JournalEntry[], pageUrl: PageLink): string {
   const { escapeHtml: escHtml } = f;
   if (entries.length === 0) {
     return '<div class="journal-on-this-day journal-empty"><em>No entries from this date in previous years.</em></div>';
@@ -163,13 +165,14 @@ const JournalPlugin = {
         content:     await pm.readPage(e.name, userContext).then(r => r.ok ? r.value.content : undefined)
       })));
 
+      const pageUrl: PageLink = (name) => pm.pageUrl(name);
       if (view === 'streak') {
         return renderStreak(computeStreak(entries), entries.length);
       }
       if (view === 'on-this-day') {
-        return renderOnThisDay(context.formatters, getOnThisDay(entries));
+        return renderOnThisDay(context.formatters, getOnThisDay(entries), pageUrl);
       }
-      return renderTimeline(context.formatters, entries, limit);
+      return renderTimeline(context.formatters, entries, limit, pageUrl);
 
     } catch (err) {
       return `<p class="plugin-error journal-error">Journal error: ${escHtml(String((err as Error).message ?? err))}</p>`;

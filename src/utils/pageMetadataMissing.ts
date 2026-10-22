@@ -32,7 +32,7 @@
  * because that is where an operator correlates it with a request.
  */
 import logger from './logger.js';
-import { administratorUsernames } from './administrators.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 /** Thrown by a route that has proven a page exists but found no metadata. */
 export class PageMetadataMissingError extends Error {
@@ -90,7 +90,8 @@ export async function reportMissingPageMetadata(
     const title = missingMetadataTitle(pageName);
     if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
 
-    const admins = (await administratorUsernames(engine)) ?? [];
+    const pdp = engine.getManager('PolicyDecisionPoint') as Pick<PolicyDecisionPoint, 'usersHolding'>;
+    const admins = (await pdp.usersHolding('admin-system')) ?? [];
     // No administrator to tell is not a reason to tell everybody: an empty
     // target list means ALL users in NotificationManager, which would announce
     // a damaged page to every reader. The error log above stands alone.

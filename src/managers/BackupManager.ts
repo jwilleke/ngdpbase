@@ -1616,6 +1616,16 @@ class BackupManager extends BaseManager {
             results.skipped.push(managerName);
             continue;
           }
+          // #1943, #1813: an add-on manager (engine.registerManager) has no
+          // restore(), as it has no backup(); its data comes back through its
+          // declared databases and add-on files. An older backup may still name
+          // it (calendar and journal managers once extended BaseManager, whose
+          // backup() wrote an empty entry), so it is skipped, not failed.
+          if (typeof manager.restore !== 'function') {
+            logger.debug(`${managerName} has no restore(); skipped`);
+            results.skipped.push(managerName);
+            continue;
+          }
 
           const managerBackupData = backupData.managers[managerName] as BaseBackupData | { error?: string };
 

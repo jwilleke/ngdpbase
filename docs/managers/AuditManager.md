@@ -550,6 +550,14 @@ audited.
 | `reauth-prompt` | Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one | continue | yes |
 | `reauth-success` | Step-up: the person re-authenticated, with the factor used | continue | yes |
 | `reauth-failure` | Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) | continue | yes |
+| `signinapproval-request` | Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) | continue | yes |
+| `signinapproval-open` | Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) | continue | yes |
+| `signinapproval-approve` | Sign-in approval: the person pressed Approve (#1532) | continue | yes |
+| `signinapproval-deny` | Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) | continue | yes |
+| `signinapproval-expire` | Sign-in approval: a waiting sign-in expired before it was completed (#1532) | continue | yes |
+| `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
+| `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
+| `signinapproval-throttle` | Sign-in approval: another approval message was asked for too soon and not sent (#1532) | continue | yes |
 <!-- AUTO:audit-events END -->
 
 #### Retired names

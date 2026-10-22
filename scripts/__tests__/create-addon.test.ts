@@ -154,8 +154,8 @@ describe('#1244 — the generated addon has the guarded defaults, and passes eve
     const routeCode = route.split('\n').filter((l) => !/^\s*(\/\*|\*|\/\/)/.test(l)).join('\n');
     expect(routeCode).not.toMatch(/isAuthenticated|hasRole|roles\s*:/);
     expect(view).toContain('(window.csrfFetch || fetch)');
-    expect(index).toContain('guardedFetch(');
-    expect(index).toContain('resolveEgressPolicy(');
+    expect(index).toContain('host.guardedFetch(');
+    expect(index).toContain('host.resolveEgressPolicy(');
     expect(manager).toContain('fetchJson');
     expect(manager).not.toMatch(/\bfetch\(/);
     expect(config['ngdpbase.permissions.definitions']['volcano-watch-manage']).toBeDefined();
@@ -188,6 +188,9 @@ describe('#1244 — the generated addon has the guarded defaults, and passes eve
     expect(csrf.findViolations(repo)).toEqual([]);
     expect(http.run(repo)).toEqual([]);
     expect(subject.run(repo)).toEqual([]);
+    // #1813: and no value import of core's dist/; the generated addon takes core's values from host.
+    const boundary = await import('../check-addon-boundary');
+    expect(boundary.scan(repo).findings.filter((f) => f.file.startsWith('addons')).map((f) => `${f.file}:${f.line}`)).toEqual([]);
     // And the view IS in the csrf guard's scope — a tokenless POST there would be reported.
     expect(csrf.collectFiles(repo)).toContain(path.join('addons', 'volcano-watch', 'views', 'volcano-watch-status.ejs'));
   });
