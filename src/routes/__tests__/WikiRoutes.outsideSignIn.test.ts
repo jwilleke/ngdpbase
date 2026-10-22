@@ -136,6 +136,18 @@ describe('outside sign-in routes (#1743)', () => {
     expect(decodeURIComponent(String(taken.redirect.mock.calls[0][0]))).toBe('/login?error=That email address is already used by another account. Please use another.');
   });
 
+  test('#1532 callback: a sign-in held for the second step binds this browser and goes to the second-factor page, not signed in', async () => {
+    const { r, authManager } = routes();
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'second-step', handle: 'h1', binding: 'bind-1', next: '/after' });
+    const out = res();
+    const q = req({ method: 'GET', query: { code: 'c1', state: 's1' } });
+    await r.finishOutsideFlow(q, out);
+    expect(out.cookie).toHaveBeenCalledWith('ngdp_two_step', 'bind-1', expect.objectContaining({ httpOnly: true, path: '/login' }));
+    expect(q.session.pendingSignIn).toBe('h1');
+    expect(q.session.pendingRedirect).toBe('/after');
+    expect(out.redirect).toHaveBeenCalledWith('/login/second-factor');
+  });
+
   test('callback: a refused sign-in is told neutrally, without saying whether an account exists', async () => {
     const { r, authManager } = routes();
     authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'refused' });

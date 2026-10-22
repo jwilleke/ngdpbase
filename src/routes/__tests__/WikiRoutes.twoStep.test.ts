@@ -38,7 +38,8 @@ describe('two-step sign-in routes (#1523)', () => {
     const beginTwoStep = vi.fn(() => 'h1');
     const { r } = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
-      secondFactorsFor: vi.fn(() => [{ id: 'email-link', label: 'Email link', target: 'm***@example.com' }]),
+      needsSecondStep: vi.fn(() => true),
+      approximateLocation: vi.fn().mockResolvedValue('Columbus, United States'),
       beginTwoStep
     });
     const s = session();
@@ -50,21 +51,22 @@ describe('two-step sign-in routes (#1523)', () => {
     expect(s.pendingRedirect).toBe('/view/Home');
     expect(out.cookie).toHaveBeenCalledWith('ngdp_two_step', expect.any(String), expect.objectContaining({ httpOnly: true, path: '/login' }));
     const binding = (out.cookie.mock.calls[0] as unknown[])[1];
-    expect(beginTwoStep).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), expect.objectContaining({ binding }));
+    // #1532: the request's IP and roughly where, for the approval message.
+    expect(beginTwoStep).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), expect.objectContaining({ binding, ip: '1.2.3.4', location: 'Columbus, United States' }));
     expect(out.redirect).toHaveBeenCalledWith('/login/second-factor');
   });
 
   test('typed "MOLLY": every step after the check uses the stored name AuthManager returned (#1882)', async () => {
-    const secondFactorsFor = vi.fn(() => [{ id: 'email-link', label: 'Email link', target: 'm***@example.com' }]);
+    const needsSecondStep = vi.fn(() => true);
     const unlockVaults = vi.fn().mockResolvedValue('psh');
     const beginTwoStep = vi.fn(() => Promise.resolve('h1'));
     const { r } = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
-      secondFactorsFor, unlockVaults, beginTwoStep
+      needsSecondStep, unlockVaults, beginTwoStep, approximateLocation: vi.fn().mockResolvedValue(null)
     });
     const s = session();
     await r.processLogin(req(s, { body: { username: 'MOLLY', password: 'x', redirect: '/' } }), res());
-    expect(secondFactorsFor).toHaveBeenCalledWith('molly');
+    expect(needsSecondStep).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }));
     expect(unlockVaults).toHaveBeenCalledWith('molly', 'x');
     expect(beginTwoStep).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), expect.objectContaining({ privateStoreHandle: 'psh' }));
     expect(s.pendingSignIn).toBe('h1');
@@ -72,7 +74,7 @@ describe('two-step sign-in routes (#1523)', () => {
     const completeSignIn = vi.fn().mockResolvedValue({});
     const one = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
-      secondFactorsFor: vi.fn(() => []), completeSignIn
+      needsSecondStep: vi.fn(() => false), completeSignIn
     });
     await one.r.processLogin(req(session(), { body: { username: 'MOLLY', password: 'x', redirect: '/' } }), res());
     expect(completeSignIn).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ username: 'molly' }), expect.anything());
@@ -81,7 +83,7 @@ describe('two-step sign-in routes (#1523)', () => {
   test('no second factor enrolled: the sign-in is one step, as before', async () => {
     const { r } = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
-      secondFactorsFor: vi.fn(() => []),
+      needsSecondStep: vi.fn(() => false),
       // #1758: completeSignIn owns the session work (AuthManager.completeSignIn.test.ts).
       completeSignIn: vi.fn(async (q: { session: Record<string, unknown> }, result: { username: string }) => {
         q.session.username = result.username;
@@ -131,19 +133,37 @@ describe('two-step sign-in routes (#1523)', () => {
   });
 
   test('"this wasn\'t me" is recorded as a failed sign-in', async () => {
-    const { r, authLog } = routes({ denyByToken: vi.fn(() => 'molly') });
+    const denyByToken = vi.fn(() => Promise.resolve('molly'));
+    const { r, authLog } = routes({ denyByToken });
     const out = res();
     await r.approveDecision(req(session(), { body: { t: 'tok', decision: 'deny' } }), out);
     expect(out.render).toHaveBeenCalledWith('login-approve', expect.objectContaining({ outcome: 'refused' }));
     expect(authLog.some((a) => a[1] === 'failure')).toBe(true);
+    // #1532: who pressed it goes to AuthManager, which records the step.
+    expect(denyByToken).toHaveBeenCalledWith('tok', { ip: '1.2.3.4', userAgent: 'Chrome' });
+  });
+
+  test('#1532: cancelling the waiting sign-in is handed to AuthManager as abandoned, with who cancelled', async () => {
+    const abandonTwoStep = vi.fn().mockResolvedValue(undefined);
+    const { r } = routes({ pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1', username: 'molly' })), abandonTwoStep });
+    const s = session();
+    s.pendingSignIn = 'h1';
+    const out = res();
+    await r.secondFactorCancel(req(s, { cookies: { ngdp_two_step: 'b1' } }), out);
+    expect(abandonTwoStep).toHaveBeenCalledWith('h1', 'b1', { ip: '1.2.3.4', userAgent: 'Chrome' });
+    expect(s.pendingSignIn).toBeUndefined();
+    expect(out.redirect).toHaveBeenCalledWith('/login');
   });
 
   test('opening the link changes nothing: the page only shows the details', async () => {
     const approveByToken = vi.fn();
-    const { r } = routes({ approvalDetails: vi.fn(() => ({ username: 'molly', requestedAt: 0 })), approveByToken });
+    const approvalDetails = vi.fn(() => Promise.resolve({ username: 'molly', requestedAt: 0 }));
+    const { r } = routes({ approvalDetails, approveByToken });
     const out = res();
     await r.approvePage(req(session(), { query: { t: 'tok' } }), out);
     expect(approveByToken).not.toHaveBeenCalled();
+    // #1532: the opening is recorded with who opened it.
+    expect(approvalDetails).toHaveBeenCalledWith('tok', { ip: '1.2.3.4', userAgent: 'Chrome' });
     expect(out.render).toHaveBeenCalledWith('login-approve', expect.objectContaining({ token: 'tok', details: expect.objectContaining({ username: 'molly' }) }));
   });
 });

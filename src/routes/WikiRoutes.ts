@@ -6806,6 +6806,19 @@ ${panes}
     return this.authManagerFor2Step().pendingSignIn(req.session?.pendingSignIn, binding);
   }
 
+  /**
+   * Send the browser to the second step (#1523, #1532): bind it with the
+   * HTTP-only cookie, keep the pending sign-in's handle and where it was
+   * going in the session. Not yet a sign-in (#1758): that is recorded when
+   * the second factor completes it.
+   */
+  private holdForSecondStep(req: Request, res: Response, handle: string, binding: string, redirect: string): void {
+    res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
+    req.session.pendingSignIn = handle;
+    req.session.pendingRedirect = redirect;
+    req.session.save(() => res.redirect('/login/second-factor'));
+  }
+
   private expiredSignIn(res: Response): void {
     res.redirect('/login?error=' + encodeURIComponent('That sign-in expired. Sign in again.'));
   }
@@ -6856,7 +6869,8 @@ ${panes}
     if (!done) { res.redirect('/login/second-factor'); return; }
     const redirect = safeRedirect(req.session.pendingRedirect);
     // #1758: the one completion step; the stores were unlocked at the password.
-    const completed = await authManager.completeSignIn(req, done.result, { method: 'password and email link', privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
+    // #1532: the first step was a password here or an outside provider at AAL1.
+    const completed = await authManager.completeSignIn(req, done.result, { method: `${done.result.provider ?? 'password'} and email link`, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
     logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     req.session.save((err) => {
@@ -6866,9 +6880,9 @@ ${panes}
   }
 
   /** POST /login/second-factor/cancel — abandon the waiting sign-in. */
-  secondFactorCancel(req: Request, res: Response): void {
+  async secondFactorCancel(req: Request, res: Response): Promise<void> {
     const pending = this.pendingFor(req);
-    if (pending) this.authManagerFor2Step().dropPending(pending.handle);
+    if (pending) await this.authManagerFor2Step().abandonTwoStep(pending.handle, pending.binding, { ip: req.ip, userAgent: req.get('user-agent') });
     delete req.session.pendingSignIn;
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     res.redirect('/login');
@@ -6880,24 +6894,25 @@ ${panes}
    */
   async approvePage(req: Request, res: Response): Promise<void> {
     const token = typeof req.query.t === 'string' ? req.query.t : '';
-    const details = token ? this.authManagerFor2Step().approvalDetails(token) : null;
+    const details = token ? await this.authManagerFor2Step().approvalDetails(token, { ip: req.ip, userAgent: req.get('user-agent') }) : null;
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.render('login-approve', { ...commonData, title: 'Approve a sign-in', token, details, outcome: '' });
   }
 
-  /** POST /login/approve — Approve, or "This wasn't me". */
+  /** POST /login/approve — Approve, or Deny. */
   async approveDecision(req: Request, res: Response): Promise<void> {
     const body = req.body as { t?: unknown; decision?: unknown };
     const token = typeof body.t === 'string' ? body.t : '';
     const authManager = this.authManagerFor2Step();
     let outcome: 'approved' | 'refused' | 'expired';
+    const presser = { ip: req.ip, userAgent: req.get('user-agent') };
     if (body.decision === 'approve') {
-      const who = authManager.approveByToken(token);
+      const who = await authManager.approveByToken(token, presser);
       outcome = who ? 'approved' : 'expired';
       if (who) await this.auditAuthentication(req, who, 'success', 'second factor approved by email link');
     } else {
-      const who = authManager.denyByToken(token);
+      const who = await authManager.denyByToken(token, presser);
       outcome = who ? 'refused' : 'expired';
       if (who) {
         // A failed factor is a failed sign-in (#1523): counted, and recorded as one.
@@ -7023,19 +7038,16 @@ ${panes}
       // with the pending sign-in until the second factor completes it.
       // #1882: the stored username AuthManager returned, never the typed one.
       const signedInAs = result.username;
-      if (authManager?.secondFactorsFor?.(signedInAs).length) {
+      if (authManager?.needsSecondStep?.(result)) {
         const binding = randomBytes(24).toString('base64url');
         const handle = await authManager.beginTwoStep(result, {
           binding,
           ip: req.ip,
           userAgent: req.get('user-agent'),
+          location: await authManager.approximateLocation(req),
           privateStoreHandle: typeof password === 'string' && password ? await authManager.unlockVaults(signedInAs, password) : undefined
         });
-        // #1758: not yet a sign-in — it is recorded when the second factor completes it.
-        res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
-        req.session.pendingSignIn = handle;
-        req.session.pendingRedirect = redirect;
-        req.session.save(() => res.redirect('/login/second-factor'));
+        this.holdForSecondStep(req, res, handle, binding, redirect);
         return;
       }
 
@@ -7586,6 +7598,8 @@ ${panes}
         logger.warn('🔁 Outside sign-in state already used by a concurrent request — refusing a duplicate session');
         return res.redirect('/login?error=' + encodeURIComponent('Sign-in link already used'));
       }
+      // #1532: an outside sign-in at AAL1 takes the second step, as a password does.
+      if (done.outcome === 'second-step') return this.holdForSecondStep(req, res, done.handle, done.binding, done.next);
       const target = done.outcome === 'connect-first'
         ? '/login' + (done.error ? '?error=' + encodeURIComponent(done.error) : '')
         : done.next;
@@ -16230,7 +16244,7 @@ ${panes}
     app.post('/login/second-factor/email', (req: Request, res: Response) => { void this.secondFactorSendEmail(req, res); });
     app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
     app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
-    app.post('/login/second-factor/cancel', (req: Request, res: Response) => this.secondFactorCancel(req, res));
+    app.post('/login/second-factor/cancel', (req: Request, res: Response) => { void this.secondFactorCancel(req, res); });
     app.get('/login/approve', (req: Request, res: Response) => { void this.approvePage(req, res); });
     app.post('/login/approve', (req: Request, res: Response) => { void this.approveDecision(req, res); });
     app.post('/profile/second-factor/email', (req: Request, res: Response) => { void this.enrolEmailSecondFactor(req, res); });

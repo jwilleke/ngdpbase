@@ -149,6 +149,22 @@ export const AUDIT_EVENT = {
   SHARE_EXTEND: 'share-extend',
   /** Share link revoked; pairs with token-revoke */
   SHARE_REVOKE: 'share-revoke',
+  /** Sign-in approval: the browser that was waiting gave up the sign-in (#1532) */
+  SIGNINAPPROVAL_ABANDON: 'signinapproval-abandon',
+  /** Sign-in approval: the person pressed Approve (#1532) */
+  SIGNINAPPROVAL_APPROVE: 'signinapproval-approve',
+  /** Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) */
+  SIGNINAPPROVAL_DENY: 'signinapproval-deny',
+  /** Sign-in approval: a waiting sign-in expired before it was completed (#1532) */
+  SIGNINAPPROVAL_EXPIRE: 'signinapproval-expire',
+  /** Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) */
+  SIGNINAPPROVAL_OPEN: 'signinapproval-open',
+  /** Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) */
+  SIGNINAPPROVAL_REQUEST: 'signinapproval-request',
+  /** Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) */
+  SIGNINAPPROVAL_SENDFAIL: 'signinapproval-sendfail',
+  /** Sign-in approval: another approval message was asked for too soon and not sent (#1532) */
+  SIGNINAPPROVAL_THROTTLE: 'signinapproval-throttle',
   /** A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record */
   STORE_CREATE: 'store-create',
   /** A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped */
