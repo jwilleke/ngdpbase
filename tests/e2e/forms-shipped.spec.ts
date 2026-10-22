@@ -13,8 +13,9 @@ import { waitForServerReady, instanceOrigin } from './fixtures/helpers';
  *   "ngdpbase.addons.forms.enabled": true,
  *   "ngdpbase.addons.shipped-forms-e2e.enabled": true,
  *   "ngdpbase.managers.addons-manager.addons-path": ["./addons", "<checkout>/tests/e2e/fixtures/addons"]
- * Skips when either is missing. The one change it makes is deleting the
- * fixture's orphaned form, which the fixture writes again at the next start.
+ * Skips when either is missing. The changes it makes: a submission to the
+ * provided form, then cleared; a submission to the orphaned form, cleared,
+ * then the form deleted, which the fixture writes again at the next start.
  */
 
 const IDS = ['e2e-1973-provided', 'e2e-1973-legacy'];
@@ -43,6 +44,16 @@ async function schema(page: Page, id: string): Promise<{ title: string; notify: 
   const res = await page.request.get(`/api/forms/schema/${id}`);
   expect(res.status(), `schema ${id}`).toBe(200);
   return res.json();
+}
+
+/** One submission to a form, through the forms API. */
+async function submit(page: Page, id: string): Promise<void> {
+  const token = await csrfToken(page);
+  const res = await page.request.post(`${await instanceOrigin(page)}/api/forms/submit/${id}`, {
+    headers: { 'X-CSRF-Token': token },
+    data: { check: 'e2e-1973' }
+  });
+  expect(res.status(), `submit ${id}`).toBe(201);
 }
 
 /** The form's card on the forms admin. */
@@ -104,6 +115,21 @@ test.describe('forms: definitions an add-on provides (#1973)', () => {
     expect(await schema(page, id)).toEqual(before);
   });
 
+  test('a form its add-on still provides can have its submissions cleared, and stays provided (#1973)', async ({ page }) => {
+    test.skip(!enabled, 'forms add-on or the shipped-forms fixture is not enabled on this instance');
+    const id = IDS[0];
+    await submit(page, id);
+    await page.goto('/addons/forms');
+    await expect(card(page, id).getByTestId('clear-submissions')).toHaveCount(1);
+    const clear = await post(page, `/addons/forms/${id}/submissions/clear`, { confirm: id });
+    expect(clear.status()).toBe(302);
+    expect(clear.headers()['location']).toMatch(new RegExp(`^/addons/forms\\?flash=cleared&form=${id}&count=[1-9]`));
+    await page.goto('/addons/forms');
+    await expect(card(page, id)).toContainText('0 submissions');
+    expect((await schema(page, id)).providedBy).toEqual({ addon: ADDON, version: VERSION });
+    expect((await post(page, `/addons/forms/builder/${id}/delete`, {})).status(), 'still provided: no delete').toBe(403);
+  });
+
   test('a form its add-on no longer provides says so, cannot be edited, and can be deleted', async ({ page }) => {
     test.skip(!enabled, 'forms add-on or the shipped-forms fixture is not enabled on this instance');
     test.skip((await page.request.get(`/api/forms/schema/${ORPHAN}`)).status() !== 200, 'the orphaned form was deleted earlier this boot');
@@ -116,6 +142,11 @@ test.describe('forms: definitions an add-on provides (#1973)', () => {
     await expect(card(page, IDS[0]).getByRole('button', { name: 'Delete' })).toHaveCount(0);
 
     expect((await page.request.get(`/addons/forms/builder/${ORPHAN}`)).status(), 'builder open').toBe(403);
+    // With a submission it is kept until the submissions are cleared (#1973).
+    await submit(page, ORPHAN);
+    expect((await post(page, `/addons/forms/builder/${ORPHAN}/delete`, {})).status(), 'delete with a submission').toBe(409);
+    const clear = await post(page, `/addons/forms/${ORPHAN}/submissions/clear`, { confirm: ORPHAN });
+    expect(clear.headers()['location']).toBe(`/addons/forms?flash=cleared&form=${ORPHAN}&count=1`);
     const del = await post(page, `/addons/forms/builder/${ORPHAN}/delete`, {});
     expect(del.status(), 'builder delete').toBe(302);
     expect((await page.request.get(`/api/forms/schema/${ORPHAN}`)).status()).toBe(404);

@@ -23,6 +23,11 @@
         <a href="?status=rejected" class="btn btn-sm btn-<%= filterStatus === 'rejected' ? 'danger' : 'outline-secondary' %>">Rejected</a>
       </div>
     </div>
+    <div class="col-auto">
+      <a href="/addons/forms/<%= encodeURIComponent(form.id) %>/export.csv" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-download me-1"></i>Download all as CSV
+      </a>
+    </div>
   </div>
 
   <% if (submissions.length === 0) { %>
