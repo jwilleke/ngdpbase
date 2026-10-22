@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import ValidationManager, { categorySource } from '../ValidationManager';
+import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 const SHIPPED_CONFIG = path.join(process.cwd(), 'config', 'app-default-config.json');
@@ -50,6 +51,37 @@ describe('ValidationManager.getCategorySource (#1503)', () => {
 
   test('an unknown category is a site category', () => {
     expect(vm.getCategorySource('nope')).toBe('site');
+  });
+});
+
+describe('loadSystemCategories warns only on a present, unknown source (#1988)', () => {
+  const sourceWarnings = (categories: Record<string, unknown>): string[] => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      managerWith(categories);
+      return warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('source'));
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  test('a missing source is silent and reads as site', () => {
+    expect(sourceWarnings({ phr: { label: 'phr', default: true } })).toEqual([]);
+    expect(managerWith({ phr: { label: 'phr', default: true } }).getCategorySource('phr')).toBe('site');
+  });
+
+  test('an unknown source warns and reads as site', () => {
+    expect(sourceWarnings({ old: { label: 'old', source: 'required', default: true } })).toEqual([
+      "System category 'old' has an unknown source 'required' (site | shipped | repo); treating it as 'site'"
+    ]);
+  });
+
+  test('a valid source is silent', () => {
+    expect(sourceWarnings({
+      general: { label: 'general', source: 'site', default: true },
+      system: { label: 'system', source: 'shipped' },
+      developer: { label: 'developer', source: 'repo' }
+    })).toEqual([]);
   });
 });
 
