@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import FormsDataManager from '../managers/FormsDataManager';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { FormDefinition } from '../managers/FormsDataManager';
 
 /** The admin saving in the form builder: the request subject the route forwards (P1). */
@@ -39,7 +40,7 @@ describe('FormsDataManager.saveDefinition', () => {
 
   beforeEach(async () => {
     dir = makeTmpDir();
-    mgr = new FormsDataManager(null, dir);
+    mgr = new FormsDataManager(null, dir, buildAddonHost('forms', {}));
     await mgr.initialize();
   });
 
@@ -89,7 +90,7 @@ describe('FormsDataManager.deleteDefinition', () => {
 
   beforeEach(async () => {
     dir = makeTmpDir();
-    mgr = new FormsDataManager(null, dir);
+    mgr = new FormsDataManager(null, dir, buildAddonHost('forms', {}));
     await mgr.initialize();
     await mgr.saveDefinition(validForm, ADMIN);
   });
@@ -127,7 +128,7 @@ describe('FormsDataManager.reloadDefinition', () => {
 
   beforeEach(async () => {
     dir = makeTmpDir();
-    mgr = new FormsDataManager(null, dir);
+    mgr = new FormsDataManager(null, dir, buildAddonHost('forms', {}));
     await mgr.initialize();
     await mgr.saveDefinition(validForm, ADMIN);
   });
@@ -171,7 +172,7 @@ describe('FormsDataManager.getSubmissionCount gates delete', () => {
 
   beforeEach(async () => {
     dir = makeTmpDir();
-    mgr = new FormsDataManager(null, dir);
+    mgr = new FormsDataManager(null, dir, buildAddonHost('forms', {}));
     await mgr.initialize();
     await mgr.saveDefinition(validForm, ADMIN);
   });
