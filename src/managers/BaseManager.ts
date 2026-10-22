@@ -154,7 +154,32 @@ export interface BackupArchiveTarget {
   keyFingerprint?: string;
 }
 
-/** What a staged restore of a manager's declared parts did at this start (#1985). */
+/** One live path and the staged copy that replaces it at the next start (#1876). */
+export interface StagedSwap {
+  live: string;
+  staged: string;
+}
+
+/**
+ * A whole-site restore being staged (#1876), handed to a manager's
+ * `restore()` by BackupManager, which keeps the record that binds the parts
+ * together (#1986). A manager whose restore is staged
+ * (`restoreIsStaged()`) stages its files beside its live ones and records
+ * its part here; nothing else writes that record.
+ */
+export interface SiteRestoreStaging {
+  /** Where the staged copy of a live path goes: beside it, `<live>.staged`. The next start applies nothing named otherwise. */
+  stagedPathFor(live: string): string;
+  /**
+   * Record this manager's part: the pairs the next start swaps in, all
+   * together with every other part or not at all. `discard` names further
+   * files to remove if the restore is thrown away (DatabaseManager's own
+   * manifest).
+   */
+  record(swaps: StagedSwap[], options?: { discard?: string[] }): void;
+}
+
+/** What a staged restore of a manager's part did at this start (#1985, #1986). */
 export interface StagedRestoreAtStart {
   /** Each live path now restored, with where its previous content was kept. */
   applied: Array<{ live: string; kept: string }>;
@@ -179,12 +204,13 @@ export interface ManagerRestoreOptions {
   /** The backup of the live data BackupManager took just before this restore (#1723, D6), by filename. */
   safetyBackup?: string;
   /**
-   * The site restore manifest this restore is staged under (#1876). A
-   * manager whose restore is staged (`restoreIsStaged()`) stages its files
-   * beside its live ones and records its part there; the next start applies
-   * every part or none (`src/utils/siteRestore.ts`).
+   * Present when this restore is staged as part of a whole-site restore
+   * (#1876): a manager whose restore is staged (`restoreIsStaged()`) stages
+   * its files beside its live ones and records its part through it; the
+   * next start applies every part or none. BackupManager keeps the record
+   * (#1986).
    */
-  siteRestore?: string;
+  siteRestore?: SiteRestoreStaging;
   /**
    * An archive the backup names, checked by BackupManager (#1985): a bare
    * file name in the backup directory, read under the key its fingerprint

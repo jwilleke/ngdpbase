@@ -229,3 +229,63 @@ describe('a v5.25.0 backup and the declared folders (#1985)', () => {
     await stop(restarted);
   });
 });
+
+/** v5.25.0's own site restore record code (`__fixtures__/backup-v5.25.0/siteRestore.v5.25.0.mjs`), for the record's compatibility (#1986). */
+interface V5250SiteRestore {
+  readSiteRestore(file: string): { state: string; parts: Array<{ manager: string; swaps: Array<{ live: string; staged: string }>; status?: string }> } | null;
+  beginSiteRestore(file: string, meta: Record<string, string>): void;
+  recordStagedPart(file: string, part: { manager: string; swaps: Array<{ live: string; staged: string }> }): void;
+  commitSiteRestore(file: string): unknown;
+  applyPartAtStart(file: string, manager: string, options: { allowed: (swap: { live: string }) => boolean }): { applied: unknown[]; refused?: string } | null;
+  finishSiteRestoreAtBoot(file: string): { parts: Array<{ manager: string; status?: string }> } | null;
+}
+const v5250 = async (): Promise<V5250SiteRestore> => await import(path.join(FIXTURE, 'siteRestore.v5.25.0.mjs')) as V5250SiteRestore;
+
+describe('the site restore record and v5.25.0 (#1986)', () => {
+  const fixtureDocument = (): string => fs.readdirSync(FIXTURE).find((f) => f.endsWith('-ngdpbase-backup.json.gz.enc'));
+
+  test('the record the current code stages — every part recorded through BackupManager — is read and applied by v5.25.0\'s code', async () => {
+    const p = paths();
+    const site = await start();
+    await site.backup.restoreFromFile(CTX, path.join(p.backups, fixtureDocument()));
+    await stop(site);
+
+    const old = await v5250();
+    const record = old.readSiteRestore(p.siteRestore);
+    expect(record?.state).toBe('staged');
+    const managers = record.parts.map((part) => part.manager);
+    expect(managers).toEqual(expect.arrayContaining([...CORE, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']));
+    for (const manager of managers) {
+      expect(old.applyPartAtStart(p.siteRestore, manager, { allowed: () => true })).toMatchObject({ applied: expect.any(Array) });
+    }
+    const finished = old.finishSiteRestoreAtBoot(p.siteRestore);
+    expect(finished?.parts.every((part) => part.status === 'applied')).toBe(true);
+    expect(read(p.roles, 'editor.json')).toContain('alice#person');
+    expect(read(p.pool, `${'b'.repeat(64)}.txt`)).toBe('pool file v5.25.0');
+  });
+
+  test('a record v5.25.0\'s code staged is applied by the current code at start: the .env, a declared folder and the attachment files', async () => {
+    const p = paths();
+    const old = await v5250();
+    const swap = (live: string): { live: string; staged: string } => ({ live, staged: `${live}.staged` });
+    fs.mkdirSync(`${p.roles}.staged`);
+    fs.writeFileSync(path.join(`${p.roles}.staged`, 'staged.json'), JSON.stringify({ '@type': 'OrganizationRole', '@id': 'https://acme.example/roles/staged#role', namedPosition: 'staged', member: [] }));
+    fs.writeFileSync(`${path.join(p.fast, '.env')}.staged`, 'SOME_SETTING=staged-by-v5.25.0\n');
+    fs.mkdirSync(`${p.pool}.staged`);
+    fs.writeFileSync(path.join(`${p.pool}.staged`, 'staged.txt'), 'staged by v5.25.0');
+    old.beginSiteRestore(p.siteRestore, { stagedAt: '2026-10-22T00:00:00Z', backup: '2026-10-21T00:00:00Z', source: 'old.json.gz.enc', stagedBy: 'admin' });
+    old.recordStagedPart(p.siteRestore, { manager: 'RoleManager', swaps: [swap(p.roles)] });
+    old.recordStagedPart(p.siteRestore, { manager: 'BackupManager', swaps: [swap(path.join(p.fast, '.env'))] });
+    old.recordStagedPart(p.siteRestore, { manager: 'AttachmentManager', swaps: [swap(p.pool)] });
+    old.commitSiteRestore(p.siteRestore);
+
+    const site = await start();
+    expect(notifications.map((n) => n.title)).toContain('A site restore was applied');
+    expect(fs.readdirSync(p.roles)).toEqual(['staged.json']);
+    expect(read(p.fast, '.env')).toContain('SOME_SETTING=staged-by-v5.25.0');
+    expect(read(p.fast, '.env')).toContain(`NGDPBASE_BACKUP_KEY=${KEY}`);
+    expect(read(p.pool, 'staged.txt')).toBe('staged by v5.25.0');
+    expect(JSON.parse(read(`${p.siteRestore}.last`)).parts.map((part: { status: string }) => part.status)).toEqual(['applied', 'applied', 'applied']);
+    await stop(site);
+  });
+});
