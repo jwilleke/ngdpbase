@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { APIRequestContext, Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { TEST_PAGE_PREFIX, deletePage, markTestArtifact } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, markTestArtifact, signInWithPassword } from './fixtures/helpers';
 
 /**
  * #1962 — search shows a page only to someone who may open it.
@@ -34,12 +34,7 @@ async function csrfFrom(request: APIRequestContext): Promise<string> {
 async function signIn(browser: Browser, username: string, password: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
-  await page.goto('/admin/login');
-  const form = page.locator('form:has(input[type="password"])');
-  await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
-  await form.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+  await signInWithPassword(page, username, password); // #1603: accepts the terms when asked
   return { context, page };
 }
 

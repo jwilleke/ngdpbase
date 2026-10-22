@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { instanceOrigin } from './fixtures/helpers';
+import { instanceOrigin, signInWithPassword } from './fixtures/helpers';
 
 /**
  * #1930 — contacts on the admin pages: add a person with no account, find
@@ -106,12 +106,7 @@ test.describe('Contacts (#1930)', () => {
     const demo = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const demoPage = await demo.newPage();
     try {
-      await demoPage.goto('/admin/login');
-      const form = demoPage.locator('form:has(input[type="password"])');
-      await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
-      await form.locator('input[type="password"]').fill(password);
-      await demoPage.getByRole('button', { name: /login/i }).click();
-      await demoPage.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+      await signInWithPassword(demoPage, username, password); // #1603: accepts the terms when asked
 
       // contact-read: the list and search work.
       await demoPage.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);

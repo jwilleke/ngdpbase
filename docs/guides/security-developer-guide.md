@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-21
+dateModified: 2026-10-22
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -54,7 +54,18 @@ A manager method that decides access, writes an audit record, or acts on someone
 
 ## A closed account holds nothing
 
-An account deleted or turned off loses every way in at once, through `AuthManager.closeAccess` ([#1765](https://github.com/jwilleke/ngdpbase/issues/1765)): its sessions in the live session store, and, on delete, its tokens, app grants, shares, proxy grants and credentials. A session is also held to its account on every request, so one the close missed, or one whose username a new account took, is refused ([#1937](https://github.com/jwilleke/ngdpbase/issues/1937)). The rules are in [authentication-developer-guide.md](authentication-developer-guide.md#standing-rules). A new kind of access an account can hold is closed there, and anything that names an account only by its username must not outlive it: a new account can take the name.
+An account deleted or turned off loses every way in at once, through `AuthManager.closeAccess` ([#1765](https://github.com/jwilleke/ngdpbase/issues/1765)): its sessions in the live session store, and, on delete, its tokens, app grants, shares, proxy grants, credentials and consent records ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). A session is also held to its account on every request, so one the close missed, or one whose username a new account took, is refused ([#1937](https://github.com/jwilleke/ngdpbase/issues/1937)). The rules are in [authentication-developer-guide.md](authentication-developer-guide.md#standing-rules). A new kind of access an account can hold is closed there, and anything that names an account only by its username must not outlive it: a new account can take the name.
+
+## Consent
+
+What a person accepted (the site's terms, an add-on's documents) is `ConsentManager`'s ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603); [ConsentManager.md](../managers/ConsentManager.md)). The rules that bind code:
+
+- Record an acceptance only through `consentManager.accept(ctx, scope, seen, how)`, with the request's own context. It refuses a token, a share link and a proxy (a proxy cannot accept for the person represented), asks for `profile-manage`, and has no parameter naming another person: nobody accepts on someone's behalf, an administrator included.
+- `seen` is what the person was shown, each document with its version. Never fill it from the current documents on the server: a version that changed while they read must be refused, not recorded.
+- `consent-grant` is on-failure refuse and is recorded before the record is stored. No record means no acceptance; never treat a failed acceptance as given.
+- The terms prompt is part of sign-in completion (`AuthManager.completeSignIn`), and the consent gate holds the session to it. A new way to sign in that does not end in `completeSignIn` skips the prompt.
+- A delegated credential (agent token, approved app, proxy) is never held by a terms change; only an interactive sign-in asks.
+- Per-use consents stay with their owners (`OidcManager` for approved apps, `ShareManager` for share links). Read them from there; never copy them into consent records.
 
 ## Permissions and policies are configuration
 

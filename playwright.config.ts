@@ -121,7 +121,7 @@ export default defineConfig({
     // Chromium tests (main browser) - excludes files owned by dedicated viewport projects
     {
       name: 'chromium',
-      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)|plugin-pagination\.spec\.(js|ts)/,
+      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)|plugin-pagination\.spec\.(js|ts)|consent\.spec\.(js|ts)/,
       use: {
         browserName: 'chromium',
         // Use setup project for authenticated tests
@@ -209,6 +209,19 @@ export default defineConfig({
         storageState: './tests/e2e/.auth/user.json'
       },
       dependencies: ['setup-fresh-maintenance']
+    },
+
+    // #1603: the terms prompt. Last, on its own: with E2E_CONSENT_BUMP=1 it
+    // raises the terms version, which asks every account again at its next
+    // sign-in — a spec signing in fresh in parallel would meet the prompt.
+    {
+      name: 'chromium-consent',
+      testMatch: /consent\.spec\.(js|ts)/,
+      use: {
+        browserName: 'chromium',
+        storageState: './tests/e2e/.auth/user.json'
+      },
+      dependencies: ['chromium-maintenance']
     }
   ],
 

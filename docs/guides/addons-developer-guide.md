@@ -579,6 +579,27 @@ async saveProfileSection(ctx, body) {
 }
 ```
 
+### Terms an add-on asks people to accept
+
+A per-person add-on can have its own terms, such as a health record's terms of service and privacy policy ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Core asks each person to accept them before the add-on turns on for them, records the acceptance, and asks again when a document's version changes. The add-on writes no consent code of its own; [ConsentManager](../managers/ConsentManager.md) does it.
+
+- __Ship each document as a page__ in your `pages/` folder ([Seed Wiki Pages](#seed-wiki-pages)), with the slug `<slug>-<name>` (for example `phr-terms-of-service`) and front matter `version: 1` and `effective: 'YYYY-MM-DD'`. Raise `version` when people must accept again; an ordinary edit leaves it alone.
+- __Register them from `register()`__, through the engine:
+
+  ```typescript
+  async register(engine, config, host) {
+    engine.getManager<ConsentManager>('ConsentManager')?.registerAddonDocuments('phr', {
+      documents: ['phr-terms-of-service', 'phr-privacy-policy'],
+      paths: ['/phr']   // optional: where a person uses the add-on in the browser
+    });
+  }
+  ```
+
+  The type is `ConsentManager` from `@jwilleke/ngdpbase-types`. Registering is refused (it throws) unless the add-on is per-person and every id starts `<slug>-`.
+- __Turning it on asks first.__ While any document is not accepted at its current version, `host.setEnabledForPerson(ctx, true)` refuses with `ConsentRequiredError` (its `scope` is your slug, its `documents` what is still to accept) and the switch stays off. Let that error propagate from `saveProfileSection`: core shows the documents with an "I accept" box on your profile card, records the acceptance before your save runs, and tells the person when the switch was refused. Turning it off, or saving it on when it is already on, asks nothing.
+- __A changed version__ is asked when the person next uses the add-on: under a registered `path`, a person who has it on is sent to accept before going on. Without `paths` they are asked only when they next turn it on. Requests with an agent or app token, and someone acting for the person under a proxy grant, are never held.
+- Only the person accepts, signed in themselves. A missing page, or one with no `version:`, is not asked for and shows on the admin dashboard as needing attention.
+
 ---
 
 ## 4. Using the Engine

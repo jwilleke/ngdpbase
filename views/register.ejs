@@ -48,7 +48,23 @@
                             <label for="confirmPassword">Confirm Password:</label>
                             <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
                         </div>
-                        
+
+                        <%# #1603: the site's terms, at the versions shown here; the form says which it showed. %>
+                        <% const terms = typeof consentDocuments !== 'undefined' ? consentDocuments : []; %>
+                        <% if (terms.length > 0) { %>
+                        <% terms.forEach(function (d) { %>
+                        <input type="hidden" name="document" value="<%= d.id %>">
+                        <input type="hidden" name="version" value="<%= d.version %>">
+                        <% }) %>
+                        <div class="form-check mb-3" data-consent-terms>
+                            <input class="form-check-input" type="checkbox" id="acceptTerms" name="acceptTerms" required>
+                            <label class="form-check-label" for="acceptTerms">
+                                I have read and accept the
+                                <% terms.forEach(function (d, i) { %><%= i > 0 ? (i === terms.length - 1 ? ' and ' : ', ') : '' %><a href="/view/<%= encodeURIComponent(d.id) %>" target="_blank" rel="noopener"><%= d.title %></a><% }) %>
+                            </label>
+                        </div>
+                        <% } %>
+
                         <button type="submit" class="btn btn-primary w-100">Register</button>
                     </form>
                     
