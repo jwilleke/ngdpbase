@@ -16,6 +16,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import type { BackupArchiveTarget, ManagerRestoreOptions } from '../managers/BaseManager.js';
 import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
 import { siteRestoreFile, type PartOutcome } from '../utils/siteRestore.js';
 import {
@@ -1711,8 +1712,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /** The files themselves, beside the backup document (#1876): the shared pool and every vault's, as stored. */
-  async backupFiles(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome> {
-    return backupAttachmentFiles(this.filePlaces(), directory, stem);
+  async backupFiles(archive: (part: string) => BackupArchiveTarget): Promise<AttachmentFilesBackupOutcome> {
+    return backupAttachmentFiles(this.filePlaces(), archive);
   }
 
   /**
@@ -1720,7 +1721,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
    * (#1876). The metadata is the document's; the live files and metadata are
    * not touched.
    */
-  async stageFilesRestore(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }> {
+  async stageFilesRestore(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: string): Promise<{ skippedVaults: string[] }> {
     const entries = (providerBackup as Partial<BackupData>)?.attachments;
     if (!Array.isArray(entries)) throw new Error('Invalid backup data for BasicAttachmentProvider: no attachment metadata; nothing was staged');
     const json: MetadataFile = {
@@ -1730,7 +1731,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'description': 'Metadata for all attachments in the wiki',
       'attachments': entries.map(([, metadata]) => metadata)
     };
-    return stageAttachmentFiles(this.filePlaces(), directory, files, JSON.stringify(json, null, 2), siteRestore);
+    return stageAttachmentFiles(this.filePlaces(), readArchive, files, JSON.stringify(json, null, 2), siteRestore);
   }
 
   takeRestoreAtStart(): PartOutcome | null {

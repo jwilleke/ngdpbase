@@ -1,7 +1,7 @@
 ---
 name: Managers and providers developer guide
 description: How to add a manager or provider — one door per resource, config selects the implementation
-dateModified: 2026-10-21
+dateModified: 2026-10-22
 category: guides
 relatedModules: [BaseManager, BaseProvider, FileManager]
 ---
@@ -20,6 +20,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - Authorization and audit happen at the manager door, with an `ActorContext`. See [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md).
 - A manager whose data can appear on a page bumps its cache topic after every write, through one write helper at its door (`CacheManager.bump`). See [caching-developer-guide.md](caching-developer-guide.md).
 - A manager says what state it is in through `BaseManager`, never only in the log: `markFailed` (could not start) or `markDegraded` (configured, wanted, not working) for an outage, `markNeedsAttention` when the feature works but an administrator has something to do (save the backup key, fix a mistyped value), `markDisabled` when it is deliberately off, and `markReady` / `markReadyIfDegradedBy(reason)` when it recovers. The kind is declared where the state is set, never read from the reason's wording; the admin dashboard lists outages under "subsystems not working" and the rest under "Working, but needs your attention" ([#1946](https://github.com/jwilleke/ngdpbase/issues/1946)). `preflightConfiguredPath` marks a bad path degraded for you.
+- A manager whose data is a folder of files, or one file, declares it (`backupFolders()`) and writes no backup code: BackupManager backs it up, stages it in a site restore and puts it in place at the next start, in `BaseManager.initialize()`, so call `super.initialize()` before you read it ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985); [BaseManager](../managers/BaseManager.md#declaring-your-data-folders), [backup and restore guide](backup-restore-guide.md#rules-for-developers-and-add-on-authors)). Nothing but BackupManager imports `src/utils/directoryBackup.ts` (`npm run lint:backup`).
 - A manager that needs the site closed puts it in maintenance mode through the one door, below. It never throws to stop the boot over something an administrator can fix, and never writes its own gate.
 - Server log: domain only; audit keeps addresses. A full email address never reaches the server log: a log line names the address's domain, through `emailDomain()`, and an error that may quote an address goes through `errorForLog()` (`src/utils/emailForLog.ts`). Audit records are not the server log and keep the full address an event carries; never pass them through these helpers (operator, 2026-10-20, [#1916](https://github.com/jwilleke/ngdpbase/issues/1916)). A failed send is logged once, by EmailManager; a caller does not log the error again.
 
@@ -76,6 +77,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 
 - `npm test` covers the new door (authorize, audit, inert default).
 - `docs/managers/YourManager.md` (or `docs/providers/…`) exists with a `code:` field.
+- Its data folders are declared in `backupFolders()`, and the [backup and restore guide](backup-restore-guide.md)'s inventory row says so.
 
 ## See also
 

@@ -1,6 +1,5 @@
 import crypto from 'crypto';
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
+import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -113,14 +112,8 @@ class PersonManager extends BaseManager {
       throw new Error('PersonManager requires ConfigurationManager');
     }
 
-    const storageDir = configManager.getResolvedDataPath(
-      'ngdpbase.application.persons.storagedir',
-      './data/persons'
-    );
+    const storageDir = this.configuredStorageDir(configManager)!;
     this.storageDir = storageDir;
-    // #1876: a staged site restore goes in before the records are read.
-    const restored = applyDirectoryPartAtStart('PersonManager', storageDir, configManager);
-    if (restored?.refused) this.markNeedsAttention(`A staged restore of person records was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.persons.storagedir',
       storageDir
@@ -148,19 +141,17 @@ class PersonManager extends BaseManager {
     logger.info(`👤 PersonManager initialized (${(await this.provider.list()).length} persons)`);
   }
 
-  /** Person records are in the backup (#1876), as `<stem>.persons.tar` beside the document. */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('PersonManager', 'persons', this.storageDir, options);
+  /** `ngdpbase.application.persons.storagedir`, resolved: where the records are. */
+  private configuredStorageDir(configManager: ConfigurationManager | null | undefined = this.engine.getManager<ConfigurationManager>('ConfigurationManager')): string | null {
+    return configManager?.getResolvedDataPath('ngdpbase.application.persons.storagedir', './data/persons') ?? null;
   }
 
-  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    await stageDirectoryPart('PersonManager', this.storageDir, backupData, options);
-  }
-
-  override restoreIsStaged(): boolean {
-    return true;
+  /**
+   * Person records are in the backup (#1876), as `<stem>.persons.tar` beside the document. BackupManager backs it up, stages it in a site restore and puts it
+   * in place at the next start, before the records are read (#1985).
+   */
+  override backupFolders(): BackupFolder[] {
+    return [{ part: 'persons', folder: this.storageDir ?? this.configuredStorageDir() }];
   }
 
   getProvider(): PersonProvider | null {

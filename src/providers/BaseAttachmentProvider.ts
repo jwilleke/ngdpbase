@@ -6,6 +6,7 @@ import { ProviderInfo } from './BasePageProvider.js';
 import BaseProvider from './BaseProvider.js';
 import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from './attachmentFilesBackup.js';
 import type { PartOutcome } from '../utils/siteRestore.js';
+import type { BackupArchiveTarget, ManagerRestoreOptions } from '../managers/BaseManager.js';
 
 /**
  * File information for attachment uploads
@@ -257,10 +258,10 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
    * streamed, bytes as stored. A provider without it can't be backed up whole,
    * and AttachmentManager's backup says so.
    */
-  backupFiles?(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome>;
+  backupFiles?(archive: (part: string) => BackupArchiveTarget): Promise<AttachmentFilesBackupOutcome>;
 
   /** Stage the files and metadata from a backup for the next start, as part of a site restore (#1876). */
-  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }>;
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: string): Promise<{ skippedVaults: string[] }>;
 
   /** What the start did with a staged restore of the files (#1876), once; null when there was none. */
   takeRestoreAtStart?(): PartOutcome | null;

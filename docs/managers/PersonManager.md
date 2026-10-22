@@ -1,7 +1,7 @@
 ---
 name: PersonManager
 description: Canonical Person records (#617) — decoupled from User authentication identity, shared across addons
-dateModified: '2026-10-20'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/PersonManager.ts
 ---
@@ -31,7 +31,7 @@ Per-request hot paths cache by-identifier and by-key lookups (#620):
 
 ## Backup and restore
 
-Person records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `backup()` writes the folder (`ngdpbase.application.persons.storagedir`) as `<stem>.persons.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive (`src/utils/directoryBackup.ts`). `restore()` is staged (`restoreIsStaged()`): it extracts the archive to `<folder>.staged` as part of a site restore and never writes into the folder; at the next start, before anything reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
+Person records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): the manager declares its folder (`ngdpbase.application.persons.storagedir`) in `backupFolders()` and writes no backup code ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). BackupManager writes it as `<stem>.persons.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive. A site restore stages it (`restoreIsStaged()` is true for a manager that declares folders): BackupManager extracts the archive to `<folder>.staged` and never writes into the folder; at the next start, in `BaseManager.initialize()` before the manager reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
 
 ## See Also
 

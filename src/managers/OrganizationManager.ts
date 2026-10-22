@@ -1,7 +1,6 @@
 import path from 'path';
 import { promises as fs } from 'fs';
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
+import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -82,14 +81,8 @@ class OrganizationManager extends BaseManager {
       throw new Error('OrganizationManager requires ConfigurationManager');
     }
 
-    const storageDir = configManager.getResolvedDataPath(
-      'ngdpbase.application.organization.storagedir',
-      './data/organizations'
-    );
+    const storageDir = this.configuredStorageDir(configManager)!;
     this.storageDir = storageDir;
-    // #1876: a staged site restore goes in before the records are read.
-    const restored = applyDirectoryPartAtStart('OrganizationManager', storageDir, configManager);
-    if (restored?.refused) this.markNeedsAttention(`A staged restore of organization records was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.organization.storagedir',
       storageDir
@@ -152,19 +145,17 @@ class OrganizationManager extends BaseManager {
   }
 
   /** Provider accessor, mainly for tests. */
-  /** Organization records are in the backup (#1876), as `<stem>.organizations.tar` beside the document. */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('OrganizationManager', 'organizations', this.storageDir, options);
+  /** `ngdpbase.application.organization.storagedir`, resolved: where the records are. */
+  private configuredStorageDir(configManager: ConfigurationManager | null | undefined = this.engine.getManager<ConfigurationManager>('ConfigurationManager')): string | null {
+    return configManager?.getResolvedDataPath('ngdpbase.application.organization.storagedir', './data/organizations') ?? null;
   }
 
-  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    await stageDirectoryPart('OrganizationManager', this.storageDir, backupData, options);
-  }
-
-  override restoreIsStaged(): boolean {
-    return true;
+  /**
+   * Organization records are in the backup (#1876), as `<stem>.organizations.tar` beside the document. BackupManager backs it up, stages it in a site restore and puts it
+   * in place at the next start, before the records are read (#1985).
+   */
+  override backupFolders(): BackupFolder[] {
+    return [{ part: 'organizations', folder: this.storageDir ?? this.configuredStorageDir() }];
   }
 
   getProvider(): OrganizationProvider | null {

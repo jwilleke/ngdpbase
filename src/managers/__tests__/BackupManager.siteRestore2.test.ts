@@ -79,6 +79,8 @@ describe('slice 2 of the site restore (#1876)', () => {
         getAllNotifications: () => notifications
       },
       AuditManager: { logAuditEvent: async (e: Record<string, unknown>) => { audits.push(e); return 'evt'; }, flushAuditQueue: async () => undefined },
+      // #1985: the forms add-on is loaded, and its dataPath is its folder; the add-on writes no backup code.
+      AddonsManager: { addonBackupFolders: () => [{ slug: 'forms', dataPath: p.forms, folders: [{ part: 'forms', folder: p.forms }] }] },
       // Restores live only: never while a site restore is staged.
       UserManager: {
         backup: async () => {
@@ -92,7 +94,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     };
     const engine = {
       getManager: (n: string) => managers[n] ?? null,
-      getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager'].includes(n))
+      getRegisteredManagers: () => Object.keys(managers).filter((n) => !['ConfigurationManager', 'NotificationManager', 'AuditManager', 'AddonsManager'].includes(n))
     };
     const jobs = new BackgroundJobManager(engine);
     managers.BackgroundJobManager = jobs;
@@ -101,12 +103,14 @@ describe('slice 2 of the site restore (#1876)', () => {
     const auth = new AuthManager(engine);
     managers.AuthManager = auth;
     await auth.initialize();
-    const forms = new FormsDataManager(engine, p.forms);
-    managers.FormsDataManager = forms;
-    await forms.initialize();
     const backup = new BackupManager(engine);
     managers.BackupManager = backup;
     await backup.initialize();
+    // The add-ons load last; AddonsManager puts each one's staged folders in place before its register() (#1985).
+    backup.applyAddonPartsAtStart('forms', [{ part: 'forms', folder: p.forms }]);
+    const forms = new FormsDataManager(engine, p.forms);
+    managers.FormsDataManager = forms;
+    await forms.initialize();
     await backup.reportRestoreAtBoot();
     return { backup, jobs, managers };
   }

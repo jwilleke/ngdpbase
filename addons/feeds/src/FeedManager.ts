@@ -13,8 +13,6 @@ import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/e
  */
 
 import logger from '../../../dist/src/utils/logger.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
 import { FeedCatalogSource } from './FeedCatalogSource.js';
 import { RecordStore } from './RecordStore.js';
 import { shapeRecords } from './dedupe.js';
@@ -57,7 +55,7 @@ export class FeedManager {
    */
   constructor(
     sourceConfigs: FeedSourceConfig[],
-    private readonly baseDir: string,
+    baseDir: string,
     private readonly readConfig: ConfigReader,
     private readonly resolveAdapter: AdapterResolver = getAdapter
   ) {
@@ -65,28 +63,6 @@ export class FeedManager {
       const store = new RecordStore(baseDir, config.sourceId);
       this.feeds.set(config.sourceId, { config, store, source: new FeedCatalogSource(config, store) });
     }
-  }
-
-  /**
-   * Put a staged site restore of the record stores in place (#1876). Called
-   * once at start, right after construction, before any store is read.
-   */
-  applyRestoreAtStart(configManager: { getResolvedDataPath(key: string, def: string): string }): void {
-    applyDirectoryPartAtStart('FeedManager', this.baseDir, configManager);
-  }
-
-  /** The record stores under `dataPath` as `<stem>.feeds.tar` beside the backup document (`.tar.enc` under the backup key). */
-  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('FeedManager', 'feeds', this.baseDir, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore; the live stores are untouched until then. */
-  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await stageDirectoryPart('FeedManager', this.baseDir, backupData, options);
-  }
-
-  restoreIsStaged(): boolean {
-    return true;
   }
 
   /** Register every configured feed as a CatalogSource. Returns the count. */
