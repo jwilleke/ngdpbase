@@ -2,7 +2,8 @@
 import type { Router, Request, Response } from 'express';
 import { generateIcsCalendar } from 'ts-ics';
 import type { IcsEvent } from 'ts-ics';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { ApiContext } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
 
 /**
@@ -35,7 +36,8 @@ import type { CalendarEvent } from '../managers/CalendarDataManager.js';
  *   DELETE /api/calendar/events/:id               — delete event (admin/clubhouse-manager)
  *   GET    /api/calendar/:calendarId/feed.ics     — RFC 5545 .ics feed
  */
-export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
+export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {
