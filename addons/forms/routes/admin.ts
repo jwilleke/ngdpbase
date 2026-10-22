@@ -25,7 +25,9 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         const formsWithCounts = await Promise.all(
           definitions.map(async (form) => ({
             ...form,
-            submissionCount: await m!.getSubmissionCount(form.id)
+            submissionCount: await m!.getSubmissionCount(form.id),
+            // #1973: the add-on that no longer provides it, when it is an add-on's form
+            orphanedFrom: m!.orphanedFrom(form.id)
           }))
         );
 

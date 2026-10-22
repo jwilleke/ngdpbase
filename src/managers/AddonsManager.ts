@@ -447,6 +447,9 @@ class AddonsManager extends BaseManager {
   /** #1883: the enabled add-ons that did not load this start, with why — each reported once. */
   private readonly loadFailures = new Map<string, string>();
 
+  /** #1973: every enabled add-on has had its turn to load this boot (see {@link addonsLoaded}). */
+  private loadPassDone = false;
+
   constructor(engine: WikiEngine) {
     super(engine);
     this.addons = new Map();
@@ -516,6 +519,7 @@ class AddonsManager extends BaseManager {
     // Discover and load add-ons
     await this.discoverAddons();
     await this.loadAddons();
+    this.loadPassDone = true;
     this.reportUndiscoveredAddons(configManager);
     this.notifySystemCategoryProblems(configManager);
 
@@ -1046,6 +1050,15 @@ class AddonsManager extends BaseManager {
     const addon = this.addons.get(slug);
     if (!addon) return undefined;
     return addon.packageVersion ?? (addon.module.version || undefined);
+  }
+
+  /**
+   * Whether this boot's load pass is over (#1973): every enabled add-on has
+   * had its `register()` called, loaded or not. Until then, what an add-on has
+   * not registered yet says nothing about whether it still provides it.
+   */
+  addonsLoaded(): boolean {
+    return this.loadPassDone;
   }
 
   /**

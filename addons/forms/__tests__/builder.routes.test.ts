@@ -228,8 +228,16 @@ describe('builder routes refuse a form an add-on provides (#1973)', () => {
   beforeEach(async () => { dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-1973-builder-')); });
   afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
 
+  /** Core's add-on registry: whether the load pass is over, and whether phr loaded. */
+  const state = { done: false, phrLoaded: true };
+  beforeEach(() => { state.done = false; state.phrLoaded = true; });
+
   async function setUp() {
-    const addons = { getAddonVersion: (slug: string) => (slug === 'phr' ? '1.2.0' : undefined) };
+    const addons = {
+      getAddonVersion: (slug: string) => (slug === 'phr' ? '1.2.0' : undefined),
+      addonsLoaded: () => state.done,
+      isLoaded: (slug: string) => slug === 'phr' && state.phrLoaded
+    };
     const m = new FormsDataManager({ getManager: (name: string) => (name === 'AddonsManager' ? addons : undefined) }, dir);
     await m.initialize();
     await m.registerShippedForm('phr', {
@@ -278,5 +286,30 @@ describe('builder routes refuse a form an add-on provides (#1973)', () => {
     expect(m.getDefinition('ours')?.providedBy).toBeUndefined();
     expect((await request(app).post('/forms/builder/ours/delete').type('form').send({})).status).toBe(302);
     expect(m.getDefinition('ours')).toBeUndefined();
+  });
+
+  test('after load, a still-provided form is still refused (403); a form its add-on no longer provides deletes (302), not edits (403)', async () => {
+    const { app, m, file } = await setUp();
+    state.done = true;
+    expect((await request(app).post('/forms/builder/phr-note/delete').type('form').send({})).status).toBe(403);
+
+    state.phrLoaded = false;
+    expect((await request(app).get('/forms/builder/phr-note')).status).toBe(403);
+    const del = await request(app).post('/forms/builder/phr-note/delete').type('form').send({});
+    expect(del.status).toBe(302);
+    expect(del.headers['location']).toBe('/addons/forms?flash=deleted');
+    expect(m.getDefinition('phr-note')).toBeUndefined();
+    await expect(fsp.access(file)).rejects.toThrow();
+  });
+
+  test('a form its add-on no longer provides, with submissions, is kept and the reason sent as text (409)', async () => {
+    const { app, m, file, before } = await setUp();
+    state.done = true;
+    state.phrLoaded = false;
+    await m.saveSubmission({ formId: 'phr-note', submittedAt: new Date().toISOString(), submittedBy: 'u', data: {}, status: 'pending' });
+    const del = await request(app).post('/forms/builder/phr-note/delete').type('form').send({});
+    expect(del.status).toBe(409);
+    expect(del.text).toContain('1 submission exist');
+    expect(await fsp.readFile(file, 'utf8')).toBe(before);
   });
 });

@@ -955,8 +955,14 @@ Your form wins. Each start compares your installed version with the one recorded
 
 A form you provide is read-only on the site:
 
-- The forms admin (`/addons/forms`) shows "Provided by `<addon>` `<version>`; it updates this form", linked to Admin → Add-ons, with no Edit or Delete.
+- The forms admin (`/addons/forms`) shows "Provided by `<addon>` `<version>`; it updates this form", linked to Admin → Add-ons, with no Edit or Delete. A form you no longer ship is the exception: see below.
 - The form builder refuses it on the server, not only by hiding the buttons: opening it, saving it and deleting it answer 403, and a new form cannot take its id (409). `FormsDataManager.saveDefinition` and `deleteDefinition`, the builder's door, refuse it too (`ProvidedFormError`), and a definition cannot set `providedBy` through them. An administrator who wants something different builds their own form under another id.
+
+A form you stop shipping can be deleted by an administrator, and nothing else. It is orphaned when your add-on did not load this boot (removed, turned off, or failed to load), or loaded but did not call `registerShippedForm` for that id. `FormsDataManager` records the ids each add-on registers during the boot, and decides only once core's load pass is over (`AddonsManager.addonsLoaded()`, true after every enabled add-on's `register()` has run); before that, nothing is orphaned. `FormsDataManager.orphanedFrom(formId)` returns the add-on's slug for an orphaned form, otherwise undefined.
+
+- The forms admin shows it as "No longer provided by `<addon>`", with Delete and still no Edit.
+- `deleteDefinition` and the builder's delete route allow it; a form your add-on still provides is refused as above (403). As for any form, a delete with submissions is refused (409), and a delete never removes submissions.
+- If your add-on ships the form again, its next start writes it again, as a first install.
 
 Each submission records `formVersion`: the `providedBy` version of the form it was submitted on. Your handler receives it on the submission, and the stored submission keeps it. A site-built form's submissions have none.
 

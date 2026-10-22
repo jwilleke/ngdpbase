@@ -284,6 +284,8 @@ export default class FormsDataManager {
   private dataPath: string;
   private definitions: Map<string, FormDefinition> = new Map();
   private engine: { getManager: (name: string) => unknown } | null;
+  /** The form ids each add-on registered this boot (#1973): what it still provides. */
+  private registeredThisBoot: Map<string, Set<string>> = new Map();
 
   constructor(engine: unknown, dataPath: string) {
     this.engine = (engine ?? null) as { getManager: (name: string) => unknown } | null;
@@ -453,6 +455,9 @@ export default class FormsDataManager {
     }
     const { providedBy: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
     const version = this.addonVersion(addon);
+    const ids = this.registeredThisBoot.get(addon) ?? new Set<string>();
+    ids.add(parsed.id);
+    this.registeredThisBoot.set(addon, ids);
     const stored: FormDefinition = { ...parsed, providedBy: { addon, version } };
     const who = actorOf(ctx).user;
 
@@ -472,6 +477,28 @@ export default class FormsDataManager {
     const how = !live ? 'saved' : was === undefined ? 'replaced (the copy named no version)' : `replaced (was ${was})`;
     console.info(`[FormsDataManager] form '${parsed.id}' from ${addon} ${version} ${how}, by ${who}`);
     return live ? 'replaced' : 'saved';
+  }
+
+  /**
+   * The add-on that no longer provides a form, or undefined (#1973). A form
+   * an add-on provided is orphaned when that add-on did not load this boot,
+   * or loaded without registering the form. Nothing is orphaned until core
+   * says every add-on has had its turn to load (`AddonsManager.addonsLoaded`):
+   * before that, a form not registered yet may still be.
+   *
+   * @param formId - The form
+   * @returns The add-on named in its `providedBy`, when it no longer provides it
+   */
+  orphanedFrom(formId: string): string | undefined {
+    const addon = this.definitions.get(formId)?.providedBy?.addon;
+    if (!addon) return undefined;
+    const addons = this.engine?.getManager('AddonsManager') as {
+      addonsLoaded?(): boolean;
+      isLoaded?(slug: string): boolean;
+    } | null | undefined;
+    if (!addons?.addonsLoaded?.()) return undefined;
+    if (addons.isLoaded?.(addon) && this.registeredThisBoot.get(addon)?.has(formId)) return undefined;
+    return addon;
   }
 
   /** The installed add-on's version, from core's add-on registry; throws when it is unknown or not x.y.z. */
@@ -520,17 +547,18 @@ export default class FormsDataManager {
   }
 
   /**
-   * Delete a definition built on this site. A form an add-on provides is
-   * refused (#1973).
+   * Delete a definition. A form an add-on still provides is refused (#1973);
+   * one it no longer provides (see {@link orphanedFrom}) may be deleted, and
+   * is written again if the add-on ships it again. Submissions are not touched.
    *
    * @param formId - The form to delete
    * @param ctx - Who is deleting it
    * @returns False when there is no such form
-   * @throws {ProvidedFormError} When an add-on provides the form
+   * @throws {ProvidedFormError} When an add-on still provides the form
    */
   async deleteDefinition(formId: string, ctx: ActorContext): Promise<boolean> {
     const live = this.definitions.get(formId);
-    if (live?.providedBy) throw new ProvidedFormError(live);
+    if (live?.providedBy && !this.orphanedFrom(formId)) throw new ProvidedFormError(live);
     const filePath = path.join(this.dataPath, 'definitions', `${formId}.json`);
     try {
       await fsp.unlink(filePath);

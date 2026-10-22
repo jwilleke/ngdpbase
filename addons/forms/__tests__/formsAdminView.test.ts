@@ -45,3 +45,19 @@ test('a provided form says who provides it and offers no Edit or Delete; a site 
 
   expect(doc.querySelector('[data-action="sync"], [data-action="force-sync"], #shippedForms')).toBeNull();
 });
+
+test('a form its add-on no longer provides says so and offers Delete, still no Edit', async () => {
+  const html = await ejs.renderFile(VIEW, {
+    currentUser: null, query: {}, csrfToken: 'tok', locals: {},
+    forms: [
+      { id: 'phr-note', title: 'Health note', fields, submissionCount: 0, providedBy: { addon: 'phr', version: '1.2.0' }, orphanedFrom: 'phr' }
+    ]
+  }, { views: [CORE_VIEWS], includer });
+  const card = new JSDOM(html).window.document.querySelector('.card')!;
+
+  expect(card.querySelector('[data-testid="no-longer-provided"]')?.textContent?.replace(/\s+/g, ' ').trim())
+    .toBe('No longer provided by phr (last written by version 1.2.0). It can be deleted, not edited.');
+  expect(card.querySelector('[data-testid="provided-by"]')).toBeNull();
+  expect(card.querySelector('a[href^="/addons/forms/builder/"]')).toBeNull();
+  expect(card.querySelector('form[action="/addons/forms/builder/phr-note/delete"]')).not.toBeNull();
+});
