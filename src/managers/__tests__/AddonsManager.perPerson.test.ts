@@ -214,6 +214,50 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
     });
   });
 
+  // #1603: an add-on's documents are accepted before its switch turns on.
+  // Sabotaged once (the pending check skipped): the first test went red.
+  describe('the consent gate on the switch (#1603)', () => {
+    const consentFor = (pending: Record<string, string[]>) => ({
+      pendingFor: vi.fn(async (_u: string, slug: string) => (pending[slug] ?? []).map((id) => ({ id })))
+    });
+
+    test('turning it on with documents still to accept is refused with ConsentRequiredError, and nothing is written', async () => {
+      const ConsentManager = consentFor({ 'dormant-off': ['dormant-off-terms'] });
+      await load({ ConsentManager });
+      const refused = await hosts['dormant-off'].setEnabledForPerson(ALICE, true).catch((e: unknown) => e);
+      expect((refused as Error).name).toBe('ConsentRequiredError');
+      expect(refused).toMatchObject({ scope: 'dormant-off', documents: ['dormant-off-terms'] });
+      expect(ConsentManager.pendingFor).toHaveBeenCalledWith('alice', 'dormant-off');
+      expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    test('once accepted (nothing pending) it turns on', async () => {
+      await load({ ConsentManager: consentFor({}) });
+      await hosts['dormant-off'].setEnabledForPerson(ALICE, true);
+      expect(updateUser.mock.calls[0][1].preferences['dormant-off.enabled']).toBe(true);
+    });
+
+    test('turning it off, or saving it on when it is already on, asks nothing', async () => {
+      const ConsentManager = consentFor({ phr: ['phr-terms'] });
+      await load({ ConsentManager });
+      await hosts.phr.setEnabledForPerson(ALICE, true);
+      await hosts.phr.setEnabledForPerson(ALICE, false);
+      expect(ConsentManager.pendingFor).not.toHaveBeenCalled();
+      expect(updateUser).toHaveBeenCalledTimes(2);
+    });
+
+    test('saveProfileSections returns the add-ons refused for consent, so the route can say so', async () => {
+      const dir = path.join(tmpDir, 'dormant-off');
+      await fs.writeFile(path.join(dir, 'index.js'),
+        'module.exports = { name: \'dormant-off\', version: \'1.0.0\', register: function (e, c, host) { this.host = host; },' +
+        ' saveProfileSection: function (ctx, body) { return this.host.setEnabledForPerson(ctx, body[\'dormant-off.enabled\'] === \'on\'); } };\n');
+      const manager = await load({ ConsentManager: consentFor({ 'dormant-off': ['dormant-off-terms'] }) });
+      const saved = await manager.saveProfileSections(ALICE, { 'dormant-off.enabled': 'on' });
+      expect(saved.consentRequired.map((e: { scope: string }) => e.scope)).toEqual(['dormant-off']);
+      expect(updateUser).not.toHaveBeenCalled();
+    });
+  });
+
   describe('PolicyInformationPoint.subjectEnabledAddons (#1964 reads it)', () => {
     test('supplies AddonsManager\'s answer, and none without it', async () => {
       const manager = await load();

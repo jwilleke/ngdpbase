@@ -26,6 +26,7 @@ describe('two-step sign-in (#1523)', () => {
   let mailFails: boolean;
   let audit: Array<Record<string, unknown>>;
   let config: Record<string, unknown>;
+  let consent: { pendingFor: ReturnType<typeof vi.fn> } | null;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
 
   const started = async () => {
@@ -45,7 +46,8 @@ describe('two-step sign-in (#1523)', () => {
       },
       EmailManager: mailOn ? { send: (m: { to: string; subject: string; text: string }) => { if (mailFails) return Promise.reject(new Error('smtp down')); sent.push(m); return Promise.resolve(); }, getProviderName: () => 'test' } : null,
       PluginManager: TEST_PLUGIN_MANAGER,
-      AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('evt'); } }
+      AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('evt'); } },
+      ConsentManager: consent
     };
     const manager = new AuthManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -72,6 +74,7 @@ describe('two-step sign-in (#1523)', () => {
     mailFails = false;
     audit = [];
     config = {};
+    consent = null;
   });
 
   afterEach(() => {
@@ -322,5 +325,31 @@ describe('two-step sign-in (#1523)', () => {
         vi.useRealTimers();
       }
     });
+  });
+  /**
+   * #1532 with #1603: a sign-in that takes the approval step is approved
+   * first; the terms are asked only when it completes (completeSignIn), never
+   * while it waits. Sabotage: asking in beginTwoStep would call pendingFor
+   * before the approval and turn this red.
+   */
+  test('the approval step comes first, then the terms prompt at completion', async () => {
+    consent = { pendingFor: vi.fn(async () => [{ id: 'terms-of-service', version: '1' }]) };
+    const am = await enrolled();
+    expect(am.needsSecondStep(FIRST)).toBe(true);
+    const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
+    expect(await am.sendEmailApproval(handle, 'b')).toBe('sent');
+    expect(await am.approveByToken(linkToken())).toBe('molly');
+    expect(consent.pendingFor).not.toHaveBeenCalled();
+
+    const done = am.completeTwoStep(handle, 'b');
+    const session: Record<string, unknown> = {
+      regenerate: (cb: (err?: unknown) => void) => cb(),
+      save: (cb: (err?: unknown) => void) => cb()
+    };
+    const req = { session, ip: '1.2.3.4', get: () => undefined } as never;
+    const completed = await am.completeSignIn(req, done!.result, { method: 'password and email link', returnTo: '/view/Main' });
+    expect(consent.pendingFor).toHaveBeenCalledWith('molly');
+    expect(completed.next).toBe(`/consent?returnTo=${encodeURIComponent('/view/Main')}`);
+    expect(session).toMatchObject({ username: 'molly', isAuthenticated: true, consentPending: true });
   });
 });

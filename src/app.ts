@@ -1205,6 +1205,13 @@ void (async (): Promise<void> => {
   const { csrfMiddleware } = await import('./middleware/csrf.js');
   app.use(csrfMiddleware);
 
+  // 6b'. The consent gate (#1603): a session asked at sign-in to accept the
+  //      terms goes nowhere else until it does, and an add-on's registered
+  //      paths ask for its documents first. Before the add-ons, so their routes
+  //      are behind it.
+  const { consentGate } = await import('./middleware/consentGate.js');
+  app.use(consentGate(engine));
+
   // 6c. Initialize addons NOW — after session + userContext + CSRF middleware
   //     — so addon route handlers can read req.session and req.userContext
   //     normally and inherit CSRF protection on their own POST routes.
@@ -1213,6 +1220,9 @@ void (async (): Promise<void> => {
   const reasonsBeforeAddons = new Set(engine.maintenance.reasons());
   await engine.initializeAddons();
   const addonBlocks = engine.maintenance.reasons().filter((r) => !reasonsBeforeAddons.has(r));
+  // #1603: every document people are asked to accept, core's and the add-ons' just
+  // registered, read once, so a missing one shows on the dashboard from start-up.
+  await (engine.getManager('ConsentManager') as { checkDocuments?(): Promise<void> } | null)?.checkDocuments?.();
   if (addonBlocks.length > 0) {
     logger.error(`🚨 ${describeBlocked(addonBlocks)}`);
     logger.error('[startup] The instance is NOT serving content. Sign in at /admin for the notification that says how to fix it, then restart.');

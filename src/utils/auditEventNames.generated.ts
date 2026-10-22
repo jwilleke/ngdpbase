@@ -59,6 +59,10 @@ export const AUDIT_EVENT = {
   CONFIG_CHANGE: 'config-change',
   /** Every custom configuration value discarded; recorded before the reset, which cannot proceed without it */
   CONFIG_RESET: 'config-reset',
+  /** A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable */
+  CONSENT_GRANT: 'consent-grant',
+  /** A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed */
+  CONSENT_WITHDRAW: 'consent-withdraw',
   /** Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values */
   CONTACT_MANAGE: 'contact-manage',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */

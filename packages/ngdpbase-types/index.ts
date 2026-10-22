@@ -43,6 +43,18 @@ export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDe
 export type { default as PageManager } from '../../src/managers/PageManager.js';
 export type { PageAction } from '../../src/utils/pageUrl.js';
 
+// Consent (#1603): an add-on registers its documents with ConsentManager at load.
+export type { default as ConsentManager, ConsentScopeStatus } from '../../src/managers/ConsentManager.js';
+export type {
+  AddonConsentRegistration,
+  ConsentDocument,
+  ConsentRecord,
+  ConsentRequiredError,
+  ConsentScope,
+  ConsentSeen,
+  ConsentStatus
+} from '../../src/types/Consent.js';
+
 // Contacts (#1930): the person and organization doors, their records, and their refusal.
 export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';
 export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';

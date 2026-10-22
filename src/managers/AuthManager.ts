@@ -30,6 +30,7 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/396}
  */
 
+import { CONSENT_PATH } from '../types/Consent.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData, BackupFolder } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -1186,8 +1187,9 @@ class AuthManager extends BaseManager {
       return { outcome: 'refused' };
     }
     const reported = reportedValues(identity.reported, this.trustsOutsideMfa(provider));
-    await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId, reported), reported }, { method: providerId });
-    return { outcome: 'created', next: safeRedirect(redirect) };
+    const done = await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId, reported), reported }, { method: providerId, returnTo: redirect });
+    // #1603: an account made from an outside sign-in is asked to accept the terms at once.
+    return { outcome: 'created', next: done.next ?? safeRedirect(redirect) };
   }
 
   /**
@@ -1626,6 +1628,8 @@ class AuthManager extends BaseManager {
         if (grant && (grant.owner === username || grant.proxy === username)) await this.endProxyGrant(ctx, grant, 'account-deleted');
       }
     });
+    // #1603: what the account accepted goes with it; the audit log keeps consent-withdraw.
+    await step('consent records', async () => this.engine.getManager<{ removeAccount(u: string, c: PermissionSubject): Promise<void> }>('ConsentManager')?.removeAccount(username, ctx));
     await step('credentials', async () => {
       if (!this.credentials) return;
       for (const row of this.credentials.list(username)) {
@@ -2641,17 +2645,40 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
     }
+    let next: string | undefined;
     if (pending && pending.expiresAt > Date.now()) {
       req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
-      return { next: '/login/connect/confirm' };
+      next = '/login/connect/confirm';
+    } else if (this.proxyAccessEnabled() && this.credentials && this.liveGrantsOn(this.credentials, { asProxy: username }).length > 0) {
+      // #1762 slice 4: a person someone has let act for them is asked whom to act
+      // for, then sent on to where they were going. Acting as themselves is the
+      // default: a sign-in never starts acting for anyone unasked.
+      next = `${ACTING_FOR_PATH}?returnTo=${encodeURIComponent(safeRedirect(how.returnTo))}`;
     }
-    // #1762 slice 4: a person someone has let act for them is asked whom to act
-    // for, then sent on to where they were going. Acting as themselves is the
-    // default: a sign-in never starts acting for anyone unasked.
-    if (this.proxyAccessEnabled() && this.credentials && this.liveGrantsOn(this.credentials, { asProxy: username }).length > 0) {
-      return { next: `${ACTING_FOR_PATH}?returnTo=${encodeURIComponent(safeRedirect(how.returnTo))}` };
+    // #1603: terms they have not accepted at their current version come first,
+    // then on to wherever they were going. The session is held to the prompt
+    // (consentPending, the consent gate) until they accept or sign out.
+    if (await this.termsPendingFor(username)) {
+      req.session.consentPending = true;
+      return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}` };
     }
-    return {};
+    return next ? { next } : {};
+  }
+
+  /**
+   * Whether `username` has core documents to accept (#1603), asked of
+   * ConsentManager. A store that cannot be read asks nothing, loudly: a
+   * broken consent folder must not lock everyone out.
+   */
+  private async termsPendingFor(username: string): Promise<boolean> {
+    const consent = this.engine.getManager<{ pendingFor(u: string): Promise<unknown[]> }>('ConsentManager');
+    if (!consent) return false;
+    try {
+      return (await consent.pendingFor(username)).length > 0;
+    } catch (err) {
+      logger.error(`[AuthManager] could not tell whether ${username} has terms to accept, so they are not asked this time (#1603):`, err);
+      return false;
+    }
   }
 
   /**

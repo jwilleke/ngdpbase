@@ -499,6 +499,8 @@ audited.
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
+| `consent-grant` | A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
+| `consent-withdraw` | A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
 | `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
