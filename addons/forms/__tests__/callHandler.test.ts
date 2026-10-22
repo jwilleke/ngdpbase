@@ -5,10 +5,13 @@
  * step-up, the way to re-authenticate (#1745).
  */
 import { ApiError } from '../../../dist/src/context/ApiContext.js';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 import formsAddon from '../index';
 
 describe('formsAddon.callHandler', () => {
-  afterEach(() => formsAddon._handlers.clear());
+  // The host core handed the add-on at register (#1813): its ApiError is the one let through.
+  beforeEach(() => { formsAddon._host = buildAddonHost('forms', {}); });
+  afterEach(() => { formsAddon._handlers.clear(); formsAddon._host = null; });
 
   test('an ApiError from the handler is passed through unchanged', async () => {
     const refusal = new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fview%2FBooks');

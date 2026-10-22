@@ -311,8 +311,48 @@ async function instanceOrigin(page: import('@playwright/test').Page): Promise<st
   return new URL(res.url()).origin;
 }
 
+/**
+ * #1603: a sign-in by an account that has not accepted the site's terms at
+ * their current version lands on the consent prompt (`/consent`) and goes
+ * nowhere else until it accepts. Accept there and continue to where the
+ * sign-in was going. Returns whether it was asked.
+ */
+async function acceptTermsIfAsked(page: import('@playwright/test').Page): Promise<boolean> {
+  if (new URL(page.url()).pathname !== '/consent') return false;
+  await page.locator('#consent-accept').check();
+  await Promise.all([
+    page.waitForURL((url) => url.pathname !== '/consent', { timeout: 15000 }),
+    page.getByRole('button', { name: 'Accept and continue' }).click()
+  ]);
+  await page.waitForLoadState('domcontentloaded');
+  return true;
+}
+
+/**
+ * Sign `page` in with a password at `/admin/login` (always the password form,
+ * whatever else the instance offers), accepting the site's terms when asked
+ * (#1603) unless `acceptTerms: false` (a spec about the prompt itself). The
+ * one sign-in step for specs that sign in an account of their own.
+ */
+async function signInWithPassword(
+  page: import('@playwright/test').Page,
+  username: string,
+  password: string,
+  opts: { acceptTerms?: boolean } = {}
+): Promise<void> {
+  await page.goto('/admin/login');
+  const form = page.locator('form:has(input[type="password"])');
+  await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
+  await form.locator('input[type="password"]').fill(password);
+  await page.getByRole('button', { name: /login/i }).click();
+  await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+  if (opts.acceptTerms !== false) await acceptTermsIfAsked(page);
+}
+
 export {
   TEST_PAGE_PREFIX,
+  acceptTermsIfAsked,
+  signInWithPassword,
   instanceOrigin,
   createPluginPage,
   waitForServerReady,

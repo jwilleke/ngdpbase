@@ -32,7 +32,7 @@ import type { MailMessage, MailProvider } from '../mail/MailProvider.js';
 import { ConsoleMailProvider } from '../mail/MailProvider.js';
 import { NodemailerMailProvider } from '../mail/NodemailerMailProvider.js';
 import logger from '../utils/logger.js';
-import { administratorUsernames } from '../utils/administrators.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /** The degraded reason while sends fail; cleared by the next success. */
@@ -238,7 +238,8 @@ class EmailManager extends BaseManager implements MailProvider {
   private async createNotice(notice: FailureNotice, domain: string, error: string): Promise<string | null> {
     const notifications = this.notifications();
     if (!notifications) return null;
-    const admins = await administratorUsernames(this.engine);
+    // Whoever holds admin-system, asked of the PDP (#1813), never a role name.
+    const admins = await this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')?.usersHolding('admin-system') ?? null;
     // Nobody to tell is not a reason to tell everybody (an empty target list
     // means ALL users). The error log stands alone.
     if (!admins || admins.length === 0) {

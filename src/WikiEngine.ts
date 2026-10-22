@@ -45,6 +45,7 @@ import CommentManager from './managers/CommentManager.js';
 import FootnoteManager from './managers/FootnoteManager.js';
 import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
+import ConsentManager from './managers/ConsentManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import PersonManager from './managers/PersonManager.js';
 import RoleManager from './managers/RoleManager.js';
@@ -411,6 +412,11 @@ class WikiEngine extends Engine {
     const shareManager = new ShareManager(this);
     this.registerManager('ShareManager', shareManager);
     await shareManager.initialize();
+
+    // #1603: what each person has accepted (the site's terms, add-ons' documents), and asking them.
+    const consentManager = new ConsentManager(this);
+    this.registerManager('ConsentManager', consentManager);
+    await consentManager.initialize();
 
     // Add BackupManager to the initialization sequence (must be last)
     const backupManager = new BackupManager(this);

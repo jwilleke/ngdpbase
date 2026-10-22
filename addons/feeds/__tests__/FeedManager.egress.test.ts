@@ -22,6 +22,10 @@ import { FeedManager } from '../src/FeedManager';
 import type { FeedSourceConfig } from '../src/types';
 import { ALLOWED_RANGES_KEY } from '../../../dist/src/http/egressPolicy.js';
 import { REFUSAL } from '../../../dist/src/http/ssrf.js';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the feeds add-on (#1813). */
+const HOST = buildAddonHost('feeds', {});
 
 const witness = vi.hoisted(() => ({ requests: [] as string[] }));
 
@@ -60,26 +64,26 @@ beforeEach(() => {
 
 describe('#1187 — ingest through the real guardedFetch', () => {
   test('a link-local feed URL is refused before any socket', async () => {
-    const fm = new FeedManager([source('meta', 'http://169.254.169.254/latest/meta-data')], TMP, readerWith(() => []));
+    const fm = new FeedManager(HOST, [source('meta', 'http://169.254.169.254/latest/meta-data')], TMP, readerWith(() => []));
     await expect(fm.ingest('meta')).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
   test('an RFC1918 feed URL is refused under the shipped policy', async () => {
-    const fm = new FeedManager([source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => []));
+    const fm = new FeedManager(HOST, [source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => []));
     await expect(fm.ingest('lan')).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
   test('a .local name is refused before resolution', async () => {
-    const fm = new FeedManager([source('mdns', 'http://sensor.local/feed.geojson')], TMP, readerWith(() => []));
+    const fm = new FeedManager(HOST, [source('mdns', 'http://sensor.local/feed.geojson')], TMP, readerWith(() => []));
     await expect(fm.ingest('mdns')).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
   test('the same RFC1918 feed is fetched once its prefix is allowed — and the policy is read per ingest', async () => {
     let allowed: string[] = [];
-    const fm = new FeedManager([source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => allowed));
+    const fm = new FeedManager(HOST, [source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => allowed));
 
     await expect(fm.ingest('lan')).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
@@ -96,7 +100,7 @@ describe('#1187 — ingest through the real guardedFetch', () => {
   });
 
   test('a public feed URL reaches the request step', async () => {
-    const fm = new FeedManager([source('pub', 'https://feeds.example/q.geojson')], TMP, readerWith(() => []));
+    const fm = new FeedManager(HOST, [source('pub', 'https://feeds.example/q.geojson')], TMP, readerWith(() => []));
     await expect(fm.ingest('pub')).rejects.toThrow('socket witness');
     expect(witness.requests).toEqual(['https://feeds.example/q.geojson']);
   });

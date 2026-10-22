@@ -14,8 +14,12 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import FormsDataManager from '../managers/FormsDataManager';
 import type { FormDefinition } from '../managers/FormsDataManager';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 
-vi.mock('../../../dist/src/context/ApiContext', () => ({
+/** The host core hands the forms add-on (#1813), with a stand-in ApiContext: an admin, every permission held. */
+const host = {
+  ...buildAddonHost('forms', {}),
   ApiContext: {
     from: () => ({
       // The request's subject the route forwards to the manager (P1).
@@ -23,9 +27,8 @@ vi.mock('../../../dist/src/context/ApiContext', () => ({
       requireAuthenticated: () => undefined,
       requirePermission: async () => undefined
     })
-  },
-  ApiError: class ApiError extends Error { status = 403; }
-}), { virtual: true });
+  }
+} as unknown as AddonHost;
 
 function makeApp(existing: string[] | Record<string, FormDefinition> = []) {
   const saved: unknown[] = [];
@@ -49,7 +52,7 @@ function makeApp(existing: string[] | Record<string, FormDefinition> = []) {
     res.render = ((view: string, locals?: object) => { res.json({ view, ...locals }); });
     next();
   });
-  app.use('/forms/builder', builderRoutes(engine as never));
+  app.use('/forms/builder', builderRoutes(engine as never, host));
   return { app, saved };
 }
 
@@ -238,7 +241,7 @@ describe('builder routes refuse a form an add-on provides (#1973)', () => {
       addonsLoaded: () => state.done,
       isLoaded: (slug: string) => slug === 'phr' && state.phrLoaded
     };
-    const m = new FormsDataManager({ getManager: (name: string) => (name === 'AddonsManager' ? addons : undefined) }, dir);
+    const m = new FormsDataManager({ getManager: (name: string) => (name === 'AddonsManager' ? addons : undefined) }, dir, buildAddonHost('forms', {}));
     await m.initialize();
     await m.registerShippedForm('phr', {
       id: 'phr-note', title: 'Health note', store: false, notify: false,
@@ -251,7 +254,7 @@ describe('builder routes refuse a form an add-on provides (#1973)', () => {
       next();
     });
     const engine = { getManager: () => m, createRouter: () => express.Router() };
-    app.use('/forms/builder', builderRoutes(engine as never));
+    app.use('/forms/builder', builderRoutes(engine as never, host));
     const file = path.join(dir, 'definitions', 'phr-note.json');
     return { m, app, file, before: await fsp.readFile(file, 'utf8') };
   }

@@ -56,6 +56,7 @@ import {
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
+import { ConsentRequiredError } from '../types/Consent.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
 
 /**
@@ -2100,9 +2101,14 @@ class AddonsManager extends BaseManager {
    *
    * Errors are caught per-addon and logged so one bad addon cannot block
    * other addons' saves or the core-preferences save.
+   *
+   * #1603: an add-on whose switch was refused because its documents are not
+   * accepted yet (`ConsentRequiredError`) is returned, so the route can tell
+   * the person what to accept instead of the save failing silently.
    */
-  async saveProfileSections(ctx: ActorContext, body: Record<string, unknown>): Promise<void> {
+  async saveProfileSections(ctx: ActorContext, body: Record<string, unknown>): Promise<{ consentRequired: ConsentRequiredError[] }> {
     const flatBody = flattenDottedKeys(body);
+    const consentRequired: ConsentRequiredError[] = [];
 
     for (const [name, addon] of this.addons) {
       if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
@@ -2111,11 +2117,16 @@ class AddonsManager extends BaseManager {
         // #1234: the caller's context, forwarded — the addon writes on its behalf.
         await addon.module.saveProfileSection(ctx, flatBody);
       } catch (err) {
+        if (err instanceof ConsentRequiredError) {
+          consentRequired.push(err);
+          continue;
+        }
         logger.warn(
           `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
         );
       }
     }
+    return { consentRequired };
   }
 
   /**
@@ -2145,6 +2156,15 @@ class AddonsManager extends BaseManager {
       });
     }
     return listing;
+  }
+
+  /**
+   * Whether `slug` is an add-on whose manifest says `perPerson: true` (#1963),
+   * loaded or still loading. ConsentManager asks it when an add-on registers
+   * documents: they guard the per-person switch, so only such an add-on has any.
+   */
+  isPerPerson(slug: string): boolean {
+    return this.addons.get(slug)?.manifest?.perPerson === true;
   }
 
   /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
@@ -2198,6 +2218,16 @@ class AddonsManager extends BaseManager {
         }>('UserManager');
     const user = await userManager?.getUser(ctx.username);
     if (!userManager || !user) throw new Error(`No account '${ctx.username}' to set the ${slug} switch on`);
+    // #1603: turning it on needs its documents accepted first, at their
+    // current versions. ConsentManager asks the person and records it; until
+    // then the switch stays off. Turning it off, or saving it on when it is
+    // already on, asks nothing: a changed version is asked when they next use it.
+    const preferences0 = (user.preferences ?? {}) as Record<string, unknown>;
+    if (on && preferences0[personSwitchKey(slug)] !== true) {
+      const pending = await this.engine.getManager<{ pendingFor(u: string, s: string): Promise<Array<{ id: string }>> }>('ConsentManager')
+        ?.pendingFor(ctx.username, slug) ?? [];
+      if (pending.length > 0) throw new ConsentRequiredError(slug, pending.map((d) => d.id));
+    }
     const preferences = { ...(user.preferences ?? {}), [personSwitchKey(slug)]: on };
     await userManager.updateUser(ctx.username, { preferences }, ctx);
   }

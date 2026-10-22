@@ -9,6 +9,10 @@ import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
  */
 
 import type { FeedSourceConfig } from '../types.js';
+import type { AddonHost } from '../../../../dist/src/utils/addonHost.js';
+
+/** Core's guarded fetch, as the host hands it to the add-on (#1813). */
+export type GuardedFetch = AddonHost['guardedFetch'];
 
 /** One raw item straight off the wire (a GeoJSON feature, an RSS item, …). */
 export type RawRecord = Record<string, unknown>;
@@ -43,8 +47,11 @@ export interface SourceAdapter {
    * The policy is resolved per ingest by `FeedManager`, not captured at
    * construction, so an operator who tightens `ngdpbase.security.egress.*`
    * does not have to restart before it applies.
+   *
+   * `guardedFetch` is the host's (#1813), handed on by `FeedManager`: the only
+   * way an adapter reaches the network. Positional and required, like `policy`.
    */
-  fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]>;
+  fetch(cfg: FeedSourceConfig, policy: EgressPolicy, guardedFetch: GuardedFetch): Promise<RawRecord[]>;
   /** Normalize one raw item. Returns null to skip (e.g. no resolvable id). */
   parse(raw: RawRecord, cfg: FeedSourceConfig): NormalizedRecord | null;
 }

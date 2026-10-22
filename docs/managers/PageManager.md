@@ -1,7 +1,7 @@
 ---
 name: PageManager
 description: Page CRUD and storage facade over the PageProvider registry
-dateModified: 2026-10-06
+dateModified: 2026-10-22
 category: managers
 code: src/managers/PageManager.ts
 relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
@@ -75,6 +75,8 @@ await pageManager.deletePage('My Page');
 | `getAllPages()` | `Promise<string[]>` | Every title — the raw index, for callers with no reader (indexing, link graphs, jobs, `admin-system` surfaces). Never rendered to a request ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
 | `listPagesFor(subject, action?)` | `Promise<string[]>` | The titles `subject` may `action` on (default `view`) — the door for anything listed to a reader; the evaluator's `filterAccessiblePages` over the in-memory index. Lists nothing without an PolicyInformationPoint |
 | `filterPagesFor(subject, names, action?)` | `Promise<string[]>` | The same door for a list found elsewhere — search hits ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)): which of `names` `subject` may `action` on, each resolved as `/view` resolves it, decided in one batch by `filterAccessiblePages`. Order kept; a name with no page is dropped; keeps nothing without an PolicyInformationPoint |
+| `pageUrl(pageName, action?)` | `string` | The URL for `action` (default `view`) on a page: `/view/<name>`, or `/vaults/<owner>/<vault>/<title>` for a vault page with the action below it. Reads nothing; add-ons ask this instead of building links ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)) |
+| `privatePageName(owner, title, vault?)` | `string` | The name of `title` in `owner`'s vault `vault`, or in their default vault (the system-category entry marked default, read live) when none is given: `vaults/<owner>/<vault>/<title>`. Names a page; says nothing about whether it exists or who may open it ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)) |
 | `refreshPageList()` | `Promise<void>` | Rescan storage |
 
 ## Page Object Structure

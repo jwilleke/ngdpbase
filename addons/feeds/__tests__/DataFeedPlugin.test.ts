@@ -4,11 +4,13 @@
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import DataFeedPluginModule from '../src/DataFeedPlugin';
+import { createDataFeedPlugin } from '../src/DataFeedPlugin';
+import logger from '../../../dist/src/utils/logger.js';
 import { asExecuted } from '../../../dist/src/test-support/plugins.js';
 import type { NormalizedRecord } from '../src/adapters/types';
 
-const DataFeedPlugin = asExecuted(DataFeedPluginModule);
+// #1813: the plugin reports through the logger register() hands it.
+const DataFeedPlugin = asExecuted(createDataFeedPlugin(logger));
 
 const recs: NormalizedRecord[] = [
   { sourceRecordId: 'a', fetchedAt: 'x', properties: { place: 'Ridgecrest', magnitude: 5.2 } },

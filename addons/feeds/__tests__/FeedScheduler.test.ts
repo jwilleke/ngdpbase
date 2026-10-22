@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FeedScheduler } from '../src/FeedScheduler';
 import type { FeedSourceConfig } from '../src/types';
+import logger from '../../../dist/src/utils/logger.js';
 
 const MIN = 60_000;
 const cfg = (over: Partial<FeedSourceConfig> = {}): FeedSourceConfig => ({
@@ -24,7 +25,7 @@ describe('FeedScheduler (#685)', () => {
   it('ingests immediately (never attempted), then waits the interval', async () => {
     const c = clock();
     const ingest = vi.fn(async () => ok);
-    const s = new FeedScheduler([cfg()], ingest, { now: c.now });
+    const s = new FeedScheduler([cfg()], ingest, logger, { now: c.now });
 
     await s.tick();                 // t=0 → never attempted → due
     expect(ingest).toHaveBeenCalledTimes(1);
@@ -39,7 +40,7 @@ describe('FeedScheduler (#685)', () => {
   it('backs off after a failure (effective interval doubles)', async () => {
     const c = clock();
     const ingest = vi.fn(async () => { throw new Error('boom'); });
-    const s = new FeedScheduler([cfg()], ingest, { now: c.now });
+    const s = new FeedScheduler([cfg()], ingest, logger, { now: c.now });
 
     await s.tick();                  // t=0 fail → failures=1 → next interval = 120m
     expect(ingest).toHaveBeenCalledTimes(1);
@@ -56,7 +57,7 @@ describe('FeedScheduler (#685)', () => {
     const ingest = vi.fn()
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValue(ok);
-    const s = new FeedScheduler([cfg()], ingest, { now: c.now });
+    const s = new FeedScheduler([cfg()], ingest, logger, { now: c.now });
 
     await s.tick();                   // fail → failures=1
     c.set(120 * MIN); await s.tick();  // due → success → failures reset
@@ -69,7 +70,7 @@ describe('FeedScheduler (#685)', () => {
     const c = clock();
     const ingest = vi.fn(async () => { throw new Error('down'); });
     const notify = vi.fn();
-    const s = new FeedScheduler([cfg()], ingest, { now: c.now, notify });
+    const s = new FeedScheduler([cfg()], ingest, logger, { now: c.now, notify });
 
     // Huge gaps → always due; accrue failures. Stale (never-succeeded) fires at failures>=3.
     await s.tick();                 // f=1
@@ -84,7 +85,7 @@ describe('FeedScheduler (#685)', () => {
 
   it('does not run when no sources are configured', async () => {
     const ingest = vi.fn(async () => ok);
-    const s = new FeedScheduler([], ingest, {});
+    const s = new FeedScheduler([], ingest, logger, {});
     s.start(); // no-op
     await s.tick();
     expect(ingest).not.toHaveBeenCalled();
@@ -96,7 +97,7 @@ describe('FeedScheduler (#685)', () => {
     const day1at10 = new Date(2026, 5, 2, 10, 0, 0).getTime();
     const c = clock(day1at10);
     const ingest = vi.fn(async () => ok);
-    const s = new FeedScheduler([cfg({ intervalMinutes: undefined, dailyAt: '09:00' })], ingest, { now: c.now });
+    const s = new FeedScheduler([cfg({ intervalMinutes: undefined, dailyAt: '09:00' })], ingest, logger, { now: c.now });
 
     await s.tick();                                   // 10:00 > 09:00, not run today → due
     expect(ingest).toHaveBeenCalledTimes(1);
@@ -121,7 +122,7 @@ describe('FeedScheduler — one slow source holds no other (#1955)', () => {
   it('ingests the other due sources while one hangs', async () => {
     const slow = hanging();
     const ingest = vi.fn((id: string) => (id === 'slow' ? slow.done : Promise.resolve(ok)));
-    const s = new FeedScheduler([cfg({ sourceId: 'slow' }), cfg({ sourceId: 'a' }), cfg({ sourceId: 'b' })], ingest, { now: clock().now });
+    const s = new FeedScheduler([cfg({ sourceId: 'slow' }), cfg({ sourceId: 'a' }), cfg({ sourceId: 'b' })], ingest, logger, { now: clock().now });
 
     const pass = s.tick();
     await flush();
@@ -135,7 +136,7 @@ describe('FeedScheduler — one slow source holds no other (#1955)', () => {
     const c = clock();
     const slow = hanging();
     const ingest = vi.fn(() => slow.done);
-    const s = new FeedScheduler([cfg({ sourceId: 'slow' })], ingest, { now: c.now });
+    const s = new FeedScheduler([cfg({ sourceId: 'slow' })], ingest, logger, { now: c.now });
 
     const pass = s.tick();
     c.set(1e9);
@@ -154,7 +155,7 @@ describe('FeedScheduler — one slow source holds no other (#1955)', () => {
       return g.done;
     });
     const ids = ['a', 'b', 'c', 'd'];
-    const s = new FeedScheduler(ids.map(sourceId => cfg({ sourceId })), ingest, { now: clock().now, maxConcurrent: 2 });
+    const s = new FeedScheduler(ids.map(sourceId => cfg({ sourceId })), ingest, logger, { now: clock().now, maxConcurrent: 2 });
 
     const pass = s.tick();
     await flush();

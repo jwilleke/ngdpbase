@@ -51,8 +51,7 @@ import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type UserManager from '../../dist/src/managers/UserManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
-import logger from '../../dist/src/utils/logger.js';
-import { systemContext } from '../../dist/src/context/bootActions.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import DemoLoginPlugin from './plugins/DemoLoginPlugin.js';
 
 /**
@@ -99,8 +98,10 @@ function readString(
  */
 async function seedAdminAccount(
   engine: WikiEngine,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  host: AddonHost
 ): Promise<void> {
+  const { logger, systemContext } = host;
   const account = config['admin-account'] as Record<string, unknown> | undefined;
   if (account?.enabled === false) {
     logger.info('[demo addon] admin-account.enabled is false — not seeding the shared account');
@@ -130,7 +131,7 @@ async function seedAdminAccount(
     // Only the flag is touched. Password, email, display name and roles are
     // whatever the operator last set them to.
     if (!existing.profileLocked) {
-      await userManager.updateUser(username, { profileLocked: true }, systemContext(engine, 'demo addon: lock the shared demo account profile'));
+      await userManager.updateUser(username, { profileLocked: true }, systemContext('demo addon: lock the shared demo account profile'));
       logger.warn(
         `[demo addon] Shared admin account "${username}" predated profileLocked and was ` +
         'unprotected — a visitor could have taken it over by changing its email. Locked it now.'
@@ -164,7 +165,7 @@ async function seedAdminAccount(
     displayName: readString(account, 'display-name', ADMIN_DEFAULTS.displayName),
     roles: ['demo-admin'],
     profileLocked: true
-  }, systemContext(engine, 'demo addon: seed the shared demo admin account'));
+  }, systemContext('demo addon: seed the shared demo admin account'));
 
   logger.info(
     `[demo addon] Seeded shared admin account "${username}" (demo-admin, profile locked). ` +
@@ -179,7 +180,8 @@ const demoAddon = {
   author: 'Jim Willeke',
   dependencies: [] as string[],
 
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
+    const { logger } = host;
     // The `demo-admin` role and its access policy live in
     // config/app-default-config.json. Roles are defined only in configuration
     // (`ngdpbase.roles.definitions`), which UserManager reads live (#1431);
@@ -205,7 +207,7 @@ const demoAddon = {
     // store would otherwise turn "the demo login is missing" into "nothing
     // boots at all", and the pages are still worth serving without it.
     try {
-      await seedAdminAccount(engine, config);
+      await seedAdminAccount(engine, config, host);
     } catch (error) {
       logger.error(
         '[demo addon] Failed to seed the shared admin account: ' +
