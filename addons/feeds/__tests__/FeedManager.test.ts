@@ -26,6 +26,10 @@ import type { FeedSourceConfig } from '../src/types';
 vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../dist/src/http/ssrf.js';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the feeds add-on (#1813). */
+const HOST = buildAddonHost('feeds', {});
 
 const MarqueePlugin = asExecuted(MarqueePluginModule);
 
@@ -69,32 +73,32 @@ const NO_EGRESS_CONFIG = (_key: string, fallback?: unknown): unknown => fallback
 
 describe('parseSourceConfigs (#685)', () => {
   it('parses a valid source and stamps the key as sourceId', () => {
-    const out = parseSourceConfigs({ 'usgs-quakes': { adapter: 'geojson', url: 'u', type: 'Event', intervalMinutes: 60 } });
+    const out = parseSourceConfigs({ 'usgs-quakes': { adapter: 'geojson', url: 'u', type: 'Event', intervalMinutes: 60 } }, HOST.logger);
     expect(out[0]).toMatchObject({ sourceId: 'usgs-quakes', adapter: 'geojson', url: 'u', type: 'Event', intervalMinutes: 60 });
   });
   it('keeps only string-valued map entries', () => {
-    const out = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', map: { a: 'x.y', bad: 1 } } });
+    const out = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', map: { a: 'x.y', bad: 1 } } }, HOST.logger);
     expect(out[0].map).toEqual({ a: 'x.y' });
   });
   it('skips entries missing required adapter/url/type', () => {
-    const out = parseSourceConfigs({ good: { adapter: 'geojson', url: 'u', type: 'Event' }, bad: { adapter: 'geojson' } });
+    const out = parseSourceConfigs({ good: { adapter: 'geojson', url: 'u', type: 'Event' }, bad: { adapter: 'geojson' } }, HOST.logger);
     expect(out.map(s => s.sourceId)).toEqual(['good']);
   });
   it('returns [] for absent / non-object input', () => {
-    expect(parseSourceConfigs(undefined)).toEqual([]);
-    expect(parseSourceConfigs([])).toEqual([]);
+    expect(parseSourceConfigs(undefined, HOST.logger)).toEqual([]);
+    expect(parseSourceConfigs([], HOST.logger)).toEqual([]);
   });
   it('defaults schemaType to Article when absent', () => {
-    expect(parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event' } })[0].schemaType).toBe('Article');
+    expect(parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event' } }, HOST.logger)[0].schemaType).toBe('Article');
   });
   it('accepts an explicit supported schemaType', () => {
-    expect(parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', schemaType: 'Article' } })[0].schemaType).toBe('Article');
+    expect(parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', schemaType: 'Article' } }, HOST.logger)[0].schemaType).toBe('Article');
   });
   it('skips a source whose schemaType is not yet implemented', () => {
     const out = parseSourceConfigs({
       ok: { adapter: 'geojson', url: 'u', type: 'Event' },
       img: { adapter: 'geojson', url: 'u', type: 'Image', schemaType: 'ImageObject' }
-    });
+    }, HOST.logger);
     expect(out.map(s => s.sourceId)).toEqual(['ok']); // ImageObject not implemented yet → skipped
   });
 });
@@ -140,13 +144,13 @@ describe('geojsonAdapter.parse (#685)', () => {
     const policy = stubFetch(JSON.stringify({
       type: 'FeatureCollection', features: [feature('a', 1, 'x', 1)]
     }));
-    const raw = await geojsonAdapter.fetch(quakeCfg, policy);
+    const raw = await geojsonAdapter.fetch(quakeCfg, policy, guardedFetch);
     expect(raw).toHaveLength(1);
   });
 
   it('fetch() throws on non-ok HTTP', async () => {
     const policy = stubFetch('{}', false, 503);
-    await expect(geojsonAdapter.fetch(quakeCfg, policy)).rejects.toThrow(/503/);
+    await expect(geojsonAdapter.fetch(quakeCfg, policy, guardedFetch)).rejects.toThrow(/503/);
   });
 });
 
@@ -202,7 +206,7 @@ describe('recordToArticle (#685)', () => {
 
 describe('FeedManager (#685)', () => {
   it('builds one source per config and registers each with the catalog', () => {
-    const fm = new FeedManager(parseSourceConfigs({ a: { adapter: 'geojson', url: 'u', type: 'Event' } }), TMP, NO_EGRESS_CONFIG);
+    const fm = new FeedManager(HOST, parseSourceConfigs({ a: { adapter: 'geojson', url: 'u', type: 'Event' } }, HOST.logger), TMP, NO_EGRESS_CONFIG);
     const registered: string[] = [];
     expect(fm.registerSources({ registerSource: (s: FeedCatalogSource) => registered.push(s.sourceId) })).toBe(1);
     expect(registered).toEqual(['a']);
@@ -215,6 +219,7 @@ describe('FeedManager (#685)', () => {
       parse: (raw, cfg) => geojsonAdapter.parse(raw, cfg)
     };
     const fm = new FeedManager(
+      HOST,
       [{ ...quakeCfg, sourceId: 'q1' }],
       TMP,
       NO_EGRESS_CONFIG,
@@ -233,12 +238,12 @@ describe('FeedManager (#685)', () => {
   });
 
   it('ingest() throws on unknown source', async () => {
-    const fm = new FeedManager([], TMP, NO_EGRESS_CONFIG);
+    const fm = new FeedManager(HOST, [], TMP, NO_EGRESS_CONFIG);
     await expect(fm.ingest('nope')).rejects.toThrow(/unknown source/);
   });
 
   it('ingest() throws on unknown adapter', async () => {
-    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP, NO_EGRESS_CONFIG, () => null);
+    const fm = new FeedManager(HOST, [{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP, NO_EGRESS_CONFIG, () => null);
     await expect(fm.ingest('q2')).rejects.toThrow(/unknown adapter/);
   });
 });
@@ -256,7 +261,7 @@ describe('FeedManager.toMarqueeText (#685 slice 5 — inline consumer)', () => {
   };
 
   async function ingestedManager() {
-    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'mq' }], TMP, NO_EGRESS_CONFIG, () => multiAdapter);
+    const fm = new FeedManager(HOST, [{ ...quakeCfg, sourceId: 'mq' }], TMP, NO_EGRESS_CONFIG, () => multiAdapter);
     await fm.ingest('mq');
     return fm;
   }

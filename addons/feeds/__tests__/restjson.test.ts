@@ -75,23 +75,23 @@ describe('buildRecord (#685, shared)', () => {
 describe('restJsonAdapter (#685)', () => {
   it('fetch() returns a bare array', async () => {
     const policy = stubFetch([{ id: 1 }, { id: 2 }]);
-    expect(await restJsonAdapter.fetch(base, policy)).toHaveLength(2);
+    expect(await restJsonAdapter.fetch(base, policy, guardedFetch)).toHaveLength(2);
   });
   it('fetch() unwraps an envelope', async () => {
     const policy = stubFetch({ results: [{ id: 1 }] });
-    expect(await restJsonAdapter.fetch(base, policy)).toEqual([{ id: 1 }]);
+    expect(await restJsonAdapter.fetch(base, policy, guardedFetch)).toEqual([{ id: 1 }]);
   });
   it('fetch() honours itemsPath dot-path', async () => {
     const policy = stubFetch({ data: { events: [{ id: 'a' }] } });
-    expect(await restJsonAdapter.fetch({ ...base, itemsPath: 'data.events' }, policy)).toEqual([{ id: 'a' }]);
+    expect(await restJsonAdapter.fetch({ ...base, itemsPath: 'data.events' }, policy, guardedFetch)).toEqual([{ id: 'a' }]);
   });
   it('fetch() throws on non-ok', async () => {
     const policy = stubFetch({}, false, 500);
-    await expect(restJsonAdapter.fetch(base, policy)).rejects.toThrow(/500/);
+    await expect(restJsonAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/500/);
   });
   it('fetch() returns [] when no array found', async () => {
     const policy = stubFetch({ a: 1 });
-    expect(await restJsonAdapter.fetch(base, policy)).toEqual([]);
+    expect(await restJsonAdapter.fetch(base, policy, guardedFetch)).toEqual([]);
   });
   it('parse() lifts the item fields as properties', () => {
     const r = restJsonAdapter.parse({ id: 'u1', title: 'Quake', mag: 5 }, base);
