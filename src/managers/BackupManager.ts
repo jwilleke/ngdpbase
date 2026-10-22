@@ -24,7 +24,8 @@ import { readBackupDocument, verifyBackupOffThread, type BackupDocument } from '
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, isLeftOutForNoKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 import { archiveTarget, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
 import { writeTreeArchive } from '../utils/treeArchive.js';
-import { envForBackup, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
+import { envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
+import { readEnvLine } from '../utils/instanceEnvSecret.js';
 import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -243,6 +244,46 @@ export const BACKUP_KEY_SAVED_KEY = 'ngdpbase.backup.key-saved-fingerprint';
 /** The banner while no admin has confirmed the backup key is saved off the server (#1876). */
 export function backupKeyNotSaved(fingerprint: string): string {
   return `Save the backup key off this server: Admin → Backup shows it (fingerprint ${fingerprint}). Every backup is encrypted with it, and a restore on a new server needs it. This stays until an admin confirms it is saved`;
+}
+
+/**
+ * The config key that records the names (never the values) the instance
+ * `.env` set when an admin last confirmed it is saved off the server (#1976),
+ * sorted. Null until the first check records the baseline. The names, not
+ * only their fingerprint, so the reminder can say which keys were added or
+ * removed.
+ */
+export const ENV_KEYS_SAVED_KEY = 'ngdpbase.backup.env-keys-saved';
+
+/** The title of the one notification per change of the `.env` key set (#1976). */
+export const ENV_KEYS_CHANGED_TITLE = 'Save a copy of .env';
+
+const ENV_KEYS_CHANGED_PREFIX = 'The keys in .env changed since an admin last saved it';
+const KEY_NOT_SAVED_PREFIX = 'Save the backup key off this server';
+
+/** The banner while the instance `.env` sets other names than the ones an admin last confirmed saved (#1976): names only, never a value. */
+export function envKeysChanged(change: { added: readonly string[]; removed: readonly string[] }): string {
+  const parts = [
+    ...(change.added.length > 0 ? [`added: ${change.added.join(', ')}`] : []),
+    ...(change.removed.length > 0 ? [`removed: ${change.removed.join(', ')}`] : [])
+  ];
+  return `${ENV_KEYS_CHANGED_PREFIX} (${parts.join('; ')}). Download .env on Admin → Backup and keep the copy off this server. This stays until an admin confirms it is saved`;
+}
+
+/** What Admin → Backup shows about the instance `.env` key set (#1976): names only, never a value. */
+export interface EnvKeysInfo {
+  /** The names the file sets now, sorted. */
+  names: string[];
+  /** Their fingerprint, posted back with the confirmation so a stale page is refused. */
+  fingerprint: string;
+  /** Whether a set has been recorded at all: false only before the first check. */
+  recorded: boolean;
+  /** Names set now that were not when an admin last confirmed. */
+  added: string[];
+  /** Names an admin confirmed that the file no longer sets. */
+  removed: string[];
+  /** The file holds this site's current backup key, so a saved copy is a saved key too. */
+  holdsBackupKey: boolean;
 }
 
 /** What Admin → Backup shows about the backup key: never the key itself. */
@@ -892,30 +933,104 @@ class BackupManager extends BaseManager {
    * Read at start and at each backup.
    */
   private async checkBackupKey(): Promise<void> {
+    // #1976: the .env key set is checked whatever the key, so its one notice is never lost behind another banner.
+    const envReminder = await this.checkInstanceEnvKeys();
     const key = currentBackupKey();
     if (key) {
       this.markReadyIfDegradedBy(BACKUP_KEY_MISSING);
-      // #1876: the banner asking an admin to save the key off the server, until one confirms.
-      const fingerprint = backupKeyFingerprint(key);
-      const notSaved = backupKeyNotSaved(fingerprint);
+      // #1876: the banner asking an admin to save the key off the server, until one confirms;
+      // then #1976's, while the .env key set differs from the one last confirmed. One at a time,
+      // and one confirmation ("I have saved .env", which holds the key) can clear both.
+      const reminder = this.backupKeyInfo().saved ? envReminder : backupKeyNotSaved(backupKeyFingerprint(key));
       const status = this.getManagerStatus();
-      if (this.backupKeyInfo().saved) {
-        if (status.state === 'degraded' && status.reason?.startsWith('Save the backup key off this server')) this.markReady();
-      } else if (status.state !== 'degraded' || status.reason?.startsWith('Save the backup key off this server')) {
-        this.markNeedsAttention(notSaved, BACKUP_KEY_SAVED_KEY);
+      const ours = status.state === 'degraded' && (status.reason?.startsWith(KEY_NOT_SAVED_PREFIX) || status.reason?.startsWith(ENV_KEYS_CHANGED_PREFIX));
+      if (!reminder) {
+        if (ours) this.markReady();
+      } else if (status.state !== 'degraded' || ours) {
+        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : BACKUP_KEY_SAVED_KEY);
       }
       return;
     }
     // A degraded backup directory (preflight) is the worse fault, and keeps the banner.
     const status = this.getManagerStatus();
     if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING) this.markNeedsAttention(BACKUP_KEY_MISSING, BACKUP_KEY_ENV);
-    try {
-      const notifications = this.engine.getManager<{ getAllNotifications?(includeExpired?: boolean): Array<{ title: string }> }>('NotificationManager');
-      if (notifications?.getAllNotifications?.(true).some((n) => n.title === BACKUP_KEY_MISSING_TITLE)) return;
-    } catch (err) {
-      logger.warn('[BackupManager] Could not check for an earlier backup-key notice:', err);
-    }
+    if (this.alreadyNotified(BACKUP_KEY_MISSING_TITLE)) return;
     await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard lists Backup under "Working, but needs your attention"; this is the only notification about it.`);
+  }
+
+  /**
+   * Whether a notification with this title (and message, when given) is
+   * among the stored ones, which persist across restarts and keep a dismissed
+   * one: how a one-time notice is deduplicated (`pageMetadataMissing`).
+   */
+  private alreadyNotified(title: string, message?: string): boolean {
+    try {
+      const notifications = this.engine.getManager<{ getAllNotifications?(includeExpired?: boolean): Array<{ title: string; message?: string }> }>('NotificationManager');
+      return Boolean(notifications?.getAllNotifications?.(true).some((n) => n.title === title && (message === undefined || n.message === message)));
+    } catch (err) {
+      logger.warn(`[BackupManager] Could not check for an earlier '${title}' notice:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * The instance `.env` key set against the one an admin last confirmed saved
+   * off the server (#1976): the reminder while they differ, else null. Names
+   * only — a value is never kept, logged or shown.
+   *
+   * The first check on a site with nothing recorded (a new site, or one
+   * upgraded to this release) records the names it finds as the baseline,
+   * silently: an upgraded site's keys are already in every encrypted backup,
+   * and a new site is already asked to save its backup key, so asking again at
+   * that moment would be noise. Every change after it asks. One notification
+   * per change, deduplicated by its title and words among the stored
+   * notifications, so a restart never repeats it.
+   */
+  private async checkInstanceEnvKeys(): Promise<string | null> {
+    const info = this.envKeysInfo();
+    if (!info) return null;
+    if (!info.recorded) {
+      // A site not installed yet has no custom configuration to record into: the first check after the install does it.
+      const customFile = (this.configManager() as { getCustomConfigPath?(): string } | null)?.getCustomConfigPath?.();
+      if (customFile && !existsSync(customFile)) return null;
+      try {
+        await this.configManager()?.setProperty(ENV_KEYS_SAVED_KEY, info.names,
+          systemContext(this.engine, 'the names in the instance .env recorded as the baseline for the reminder to save it (#1976)'));
+      } catch (err) {
+        logger.warn('[BackupManager] The names in the instance .env could not be recorded:', err);
+      }
+      return null;
+    }
+    if (info.added.length === 0 && info.removed.length === 0) return null;
+    const reminder = envKeysChanged(info);
+    const message = `${reminder}. The /admin dashboard lists Backup under "Working, but needs your attention" until then.`;
+    if (!this.alreadyNotified(ENV_KEYS_CHANGED_TITLE, message)) await this.notifyAdmins('warning', ENV_KEYS_CHANGED_TITLE, message);
+    return reminder;
+  }
+
+  /** The instance `.env` key set as Admin → Backup shows it (#1976), or null when the site has no instance data folder or the file can't be read. Never a value. */
+  envKeysInfo(): EnvKeysInfo | null {
+    const file = this.instanceEnvFile();
+    if (!file) return null;
+    let content = '';
+    try {
+      if (existsSync(file)) content = readFileSync(file, 'utf8');
+    } catch (err) {
+      logger.warn(`[BackupManager] The instance .env could not be read for its key names: ${(err as NodeJS.ErrnoException).code ?? 'error'}`);
+      return null;
+    }
+    const names = envKeyNames(content);
+    const stored = this.setting<unknown>(ENV_KEYS_SAVED_KEY, null);
+    const recorded = Array.isArray(stored) ? stored.filter((n): n is string => typeof n === 'string') : null;
+    const key = currentBackupKey();
+    return {
+      names,
+      fingerprint: envKeyNamesFingerprint(names),
+      recorded: recorded !== null,
+      added: recorded ? names.filter((n) => !recorded.includes(n)) : [],
+      removed: recorded ? recorded.filter((n) => !names.includes(n)) : [],
+      holdsBackupKey: Boolean(key) && readEnvLine(content, BACKUP_KEY_ENV) === key
+    };
   }
 
   /** The backup key as Admin → Backup shows it: set or not, its fingerprint, and whether an admin confirmed it is saved. Never the key. */
@@ -966,13 +1081,25 @@ class BackupManager extends BaseManager {
    * written through ConfigurationManager, which records the change), so it
    * survives restarts; a different key asks again. Refused when the
    * fingerprint is not the current key's: the page they read was stale.
+   *
+   * With `envFingerprint` (#1976) the admin confirms the whole `.env` is
+   * saved, the one confirmation for both reminders: the names it sets are
+   * recorded (`ngdpbase.backup.env-keys-saved`), and so is the backup key
+   * when the file holds it. Refused when the names changed since the page
+   * was loaded.
    */
-  async confirmBackupKeySaved(ctx: ActorContext, fingerprint: string): Promise<void> {
+  async confirmBackupKeySaved(ctx: ActorContext, fingerprint: string, envFingerprint?: string): Promise<void> {
+    const STALE_KEY = 'That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved';
     const info = this.backupKeyInfo();
-    if (!info.set || info.fingerprint !== fingerprint) throw new Error('That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved');
+    const env = envFingerprint === undefined ? null : this.envKeysInfo();
+    if (envFingerprint !== undefined && env?.fingerprint !== envFingerprint) throw new Error('The keys in .env changed since that page was loaded; reload Admin → Backup, download .env again and confirm');
+    // A saved .env is a saved backup key only when the file holds the key this site uses.
+    const recordsKey = info.set && (env ? env.holdsBackupKey : true);
+    if (recordsKey ? info.fingerprint !== fingerprint : !env) throw new Error(STALE_KEY);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
-    await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);
+    if (recordsKey) await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);
+    if (env) await configManager.setProperty(ENV_KEYS_SAVED_KEY, env.names, ctx);
     await this.checkBackupKey();
   }
 

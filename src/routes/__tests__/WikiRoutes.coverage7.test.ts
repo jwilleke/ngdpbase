@@ -162,6 +162,7 @@ const mockBackupManager = {
   startRestore: vi.fn(),
   // #1876
   backupKeyInfo: vi.fn(),
+  envKeysInfo: vi.fn(),
   revealBackupKey: vi.fn(),
   confirmBackupKeySaved: vi.fn(),
   // #1938
@@ -337,6 +338,7 @@ function resetMocks() {
   mockBackupManager.findStoredBackup.mockResolvedValue(null);
   mockBackupManager.startRestore.mockResolvedValue({ done: Promise.resolve(null) });
   mockBackupManager.backupKeyInfo.mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: false });
+  mockBackupManager.envKeysInfo.mockReturnValue({ names: ['NGDPBASE_BACKUP_KEY', 'SMTP_PASSWORD'], fingerprint: '0123456789abcdef', recorded: true, added: ['SMTP_PASSWORD'], removed: [], holdsBackupKey: true });
   mockBackupManager.revealBackupKey.mockReturnValue('the-backup-key-value');
   mockBackupManager.confirmBackupKeySaved.mockResolvedValue(undefined);
   mockBackupManager.revealInstanceEnv.mockResolvedValue(Buffer.from(ENV_FILE));
@@ -1001,7 +1003,13 @@ describe('WikiRoutes — coverage batch 7', () => {
     test('confirming it is saved passes the fingerprint and the caller\'s context', async () => {
       const res = await request(app).post('/admin/backup/key/saved').set('x-csrf-token', 'test-csrf-token').send({ fingerprint: 'abcdef0123456789' });
       expect(decodeURIComponent(res.headers.location)).toMatch(/success=.*saved off the server/);
-      expect(mockBackupManager.confirmBackupKeySaved).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'abcdef0123456789');
+      expect(mockBackupManager.confirmBackupKeySaved).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'abcdef0123456789', undefined);
+    });
+
+    test('#1976: confirming .env is saved passes the .env names fingerprint through the same route', async () => {
+      const res = await request(app).post('/admin/backup/key/saved').set('x-csrf-token', 'test-csrf-token').send({ fingerprint: 'abcdef0123456789', envFingerprint: '0123456789abcdef' });
+      expect(decodeURIComponent(res.headers.location)).toMatch(/success=.*\.env is recorded as saved/);
+      expect(mockBackupManager.confirmBackupKeySaved).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }), 'abcdef0123456789', '0123456789abcdef');
     });
 
     test('confirming is refused without config-manage', async () => {

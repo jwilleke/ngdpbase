@@ -23,8 +23,10 @@
  * Everything here is synchronous and depends on nothing but the filesystem:
  * it runs before the logger, the configuration or any manager exists.
  */
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import dotenv from 'dotenv';
 import { BACKUP_KEY_ENV } from './backupKey.js';
 import { DATABASE_KEY_ENV } from './databaseKey.js';
 import { configFilePaths, readConfigFilesSync } from './configFiles.js';
@@ -39,6 +41,19 @@ export const KEPT_ON_RESTORE: readonly string[] = [BACKUP_KEY_ENV, DATABASE_KEY_
 /** The instance `.env`: the one file ngdpbase writes generated secrets into (#1194). */
 export function instanceEnvPath(instanceDataDir: string): string {
   return path.join(instanceDataDir, '.env');
+}
+
+/**
+ * The names the instance `.env` sets, sorted, read the way the boot loads it
+ * (`dotenv.parse`, `bootstrap-env.ts`): never a value (#1976).
+ */
+export function envKeyNames(content: string): string[] {
+  return Object.keys(dotenv.parse(content)).sort();
+}
+
+/** A short fingerprint of a set of `.env` names (#1976): the first 16 hex digits of a SHA-256 of the sorted names, one per line. */
+export function envKeyNamesFingerprint(names: readonly string[]): string {
+  return createHash('sha256').update([...names].sort().join('\n')).digest('hex').slice(0, 16);
 }
 
 function assigns(line: string, names: readonly string[]): boolean {
