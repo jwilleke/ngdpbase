@@ -151,6 +151,7 @@ const mockBackupManager = {
   listStoredBackups: vi.fn().mockResolvedValue([]),
   isRestoreRunning: vi.fn().mockReturnValue(false),
   backupKeyInfo: vi.fn().mockReturnValue({ set: true, fingerprint: 'abcdef0123456789', saved: true }),
+  envKeysInfo: vi.fn().mockReturnValue(null),
   // #1945
   getStagedSiteRestore: vi.fn().mockReturnValue(null),
   siteRestoreScope: vi.fn().mockReturnValue({ restored: [], notRestored: [] })

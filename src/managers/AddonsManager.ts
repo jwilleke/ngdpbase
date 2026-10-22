@@ -293,6 +293,37 @@ export interface AddonManifest {
    * `host.setEnabledForPerson`. Absent or anything but `true`: not per-person.
    */
   perPerson?: boolean;
+  /**
+   * #1965: the add-on's About page, a page it ships in `pages/`, by uuid or
+   * slug. `[{ConfigAccessor type='addons'}]` links to it ("More about it").
+   * The site overrides it with `ngdpbase.addons.<slug>.about-page`.
+   */
+  aboutPage?: string;
+  /**
+   * #1965: the heading the add-on is listed under, shared by related add-ons
+   * (e.g. "Accounting" for accounting, accounting-donations and accounting-dues).
+   */
+  family?: string;
+  /** #1965: `false` keeps plumbing (e.g. elasticsearch) out of the add-on listings. */
+  listed?: boolean;
+}
+
+/**
+ * One add-on as the listings show it (#1965), from `AddonsManager.listedAddons()`.
+ * `version`, `loaded` and `error` are for administrators; the plugin that
+ * renders a listing decides who sees them.
+ */
+export interface AddonListing {
+  slug: string;
+  description: string;
+  /** The heading it is grouped under, or null */
+  family: string | null;
+  /** The About page (uuid or slug), the site's override first; null when none */
+  aboutPage: string | null;
+  perPerson: boolean;
+  version: string;
+  loaded: boolean;
+  error: string | null;
 }
 
 /**
@@ -2030,6 +2061,35 @@ class AddonsManager extends BaseManager {
         );
       }
     }
+  }
+
+  /**
+   * The add-ons the site's listings show (#1965): enabled, and not
+   * `listed: false` in their manifest, in load order. Cheap: it calls no
+   * add-on's status(), so a page can render it.
+   */
+  listedAddons(): AddonListing[] {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const listing: AddonListing[] = [];
+    for (const [slug, addon] of this.addons) {
+      if (!addon.enabled || addon.manifest?.listed === false) continue;
+      const override = configManager?.getProperty(`ngdpbase.addons.${slug}.about-page`, '');
+      const shipped = addon.manifest?.aboutPage;
+      const aboutPage = typeof override === 'string' && override.trim() ? override.trim()
+        : typeof shipped === 'string' && shipped.trim() ? shipped.trim() : null;
+      const family = typeof addon.manifest?.family === 'string' && addon.manifest.family.trim() ? addon.manifest.family.trim() : null;
+      listing.push({
+        slug,
+        description: addon.module.description || '',
+        family,
+        aboutPage,
+        perPerson: addon.manifest?.perPerson === true,
+        version: addon.module.version || 'unknown',
+        loaded: addon.loaded,
+        error: addon.error
+      });
+    }
+    return listing;
   }
 
   /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */

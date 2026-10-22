@@ -74,6 +74,24 @@ What breaks when they disagree:
 
 Every other place the slug is written down is the [identity contract](../platform/addon-identity-contract.md). That page is the inventory; the rules above are the ones that decide whether the addon loads.
 
+## The manifest
+
+The `ngdpbase` block in the addon's `package.json` is its manifest, read without importing the module (`AddonManifest` in `src/managers/AddonsManager.ts`, exported by `@jwilleke/ngdpbase-types`). Every field is optional.
+
+| Field | What it does | Rules |
+| --- | --- | --- |
+| `slug` | The addon's identity | [Identity](#identity) |
+| `minVersion` | The oldest core it runs on | [Standing rules](#standing-rules) |
+| `type` | `domain` when the addon is the site, else `additive` | [`domainDefaults`](#domaindefaults) |
+| `domainDefaults` | Site defaults applied at load | [`domainDefaults`](#domaindefaults) |
+| `stores` | Private store kinds it owns | [Declare a Private Store](#declare-a-private-store-1414) |
+| `perPerson` | Each person turns it on for themselves | [Per-person add-ons](#per-person-add-ons-and-their-switch) |
+| `aboutPage` | The uuid or slug of a page the addon ships in `pages/` that says what it is | Listings link to it as "More about it". The site overrides it with `ngdpbase.addons.<slug>.about-page` in its configuration |
+| `family` | The heading the addon is listed under, shared by related add-ons | For example `"Accounting"` on accounting, accounting-donations and accounting-dues. Add-ons with no family are listed under "Other" when any add-on has one |
+| `listed` | `false` keeps the addon out of the listings | For plumbing other add-ons use, such as elasticsearch. It still loads |
+
+The listings are `[{ConfigAccessor type='addons'}]` (the site's enabled add-ons, with version and status shown only to viewers who hold `admin-read`) and `[{ConfigAccessor type='my-addons'}]` (the viewer's per-person add-ons). Both read `AddonsManager.listedAddons()`; the description shown is the module's `description`.
+
 ## Where it is loaded
 
 Three ways an addon reaches a running instance. The slug, the module, and `register()` are the same. Pick by who owns the addon.
@@ -570,7 +588,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -1731,6 +1749,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An add-on cannot remove a form it no longer ships: the copy stays, read-only. Nothing on the site removes it either.
   - `formVersion` is stored on the submission and passed to your handler; the forms admin does not show it yet.
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
+- [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 
 ---
 

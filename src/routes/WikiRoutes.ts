@@ -11790,6 +11790,8 @@ ${panes}
         restoreRunning: backupManager.isRestoreRunning(),
         // #1876: the backup key's fingerprint and whether it is saved off the server — never the key.
         backupKey: backupManager.backupKeyInfo(),
+        // #1976: the names the instance .env sets, and which changed since an admin last saved it — never a value.
+        envKeys: backupManager.envKeysInfo(),
         backupHealth,
         formatBytes,
         siteName: this.siteName(),
@@ -11849,15 +11851,23 @@ ${panes}
     }
   }
 
-  /** POST /admin/backup/key/saved — an admin confirms the backup key is saved off the server (#1876, config-manage). */
+  /**
+   * POST /admin/backup/key/saved — an admin confirms the backup key is saved off the server (#1876, config-manage),
+   * or, with `envFingerprint`, the whole instance .env, which holds it (#1976).
+   */
   async adminBackupKeySaved(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const backupManager = this.engine.getManager<BackupManager>('BackupManager');
       if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
-      await backupManager.confirmBackupKeySaved(wikiContext.userContext, (() => { const f = (req.body as Record<string, unknown> | undefined)?.fingerprint; return typeof f === 'string' ? f : ''; })());
-      return res.redirect('/admin/backup?success=' + encodeURIComponent('Thank you: the backup key is recorded as saved off the server.'));
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const field = (name: string): string | undefined => { const v = body[name]; return typeof v === 'string' ? v : undefined; };
+      const envFingerprint = field('envFingerprint');
+      await backupManager.confirmBackupKeySaved(wikiContext.userContext, field('fingerprint') ?? '', envFingerprint);
+      return res.redirect('/admin/backup?success=' + encodeURIComponent(envFingerprint === undefined
+        ? 'Thank you: the backup key is recorded as saved off the server.'
+        : 'Thank you: .env is recorded as saved off the server.'));
     } catch (err: unknown) {
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
     }
