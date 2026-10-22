@@ -153,6 +153,7 @@
     "node-cache": "^5.1.2",
     "nodemailer": "^10.1.1",
     "pako": "^3.0.2",
+    "pdf-lib": "1.17.1",
     "pm2": "^7.0.4",
     "rrule-temporal": "2.2.8",
     "sanitize-html": "^2.18.1",
@@ -244,5 +245,8 @@
   "engines": {
     "node": ">=24.15.0",
     "npm": ">=11.0.0"
+  },
+  "optionalDependencies": {
+    "playwright-core": "1.64.1"
   }
 }

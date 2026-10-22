@@ -392,7 +392,7 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('data-state="submitted"');
     expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(1);
-    const [to, subject, text] = mockEmailManager.sendTo.mock.calls[0];
+    const [, to, subject, text] = mockEmailManager.sendTo.mock.calls[0];
     expect(to).toBe('admin@example.com');
     expect(subject).toBe('Hello');
     expect(text).toContain('From: Alice Smith <alice@example.com>');
@@ -403,7 +403,7 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     const { subject: _omit, ...bodyNoSubject } = validBody;
     const res = await request(app).post('/contact').send(bodyNoSubject);
     expect(res.status).toBe(200);
-    const [, subject] = mockEmailManager.sendTo.mock.calls[0];
+    const [, , subject] = mockEmailManager.sendTo.mock.calls[0];
     expect(subject).toBe('Contact form submission from Alice Smith');
   });
 

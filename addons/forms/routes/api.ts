@@ -151,7 +151,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
 
           // #1916: a failure is logged and reported to administrators by EmailManager;
           // the submission still succeeds.
-          emailManager.sendInBackground(submitterEmail, subject, text);
+          emailManager.sendInBackground(ctx.getActor(), submitterEmail, subject, text);
         }
 
         // ── 8. In-app notification to the form's notifyRole (fire-and-forget)

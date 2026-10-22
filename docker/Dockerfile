@@ -69,6 +69,16 @@ RUN apk upgrade --no-cache
 # Note: g++ is needed at runtime for node-gyp if bcrypt needs recompilation
 RUN apk add --no-cache libstdc++
 
+# HTML → PDF (#1974): ExportManager.htmlToPdf drives headless Chromium through
+# playwright-core (an optionalDependency, kept by `npm prune --omit=dev`).
+# Alpine's chromium is found at /usr/bin/chromium-browser with no config, and
+# Liberation gives the metric-compatible Arial/Times/Courier faces print CSS
+# usually names. One fixed font set per image is part of what makes the same
+# HTML give the same PDF bytes. Without these the site still runs; PDF export
+# reports itself unavailable. Measured on arm64: +320 MB compressed (294 MB to
+# 614 MB), +1.1 GB unpacked (1.6 GB to 2.7 GB).
+RUN apk add --no-cache chromium font-liberation
+
 # Remove npm and npx from the runtime image entirely (#956).
 #
 # #859 replaced the base image's npm with npm@12 so its bundled dependencies

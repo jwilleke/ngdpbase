@@ -24,6 +24,27 @@ export interface MailMessage {
   text: string;
   /** Optional HTML body */
   html?: string;
+  /** Files sent with the message (#1974); their total is capped by `ngdpbase.mail.attachments.max-bytes`. */
+  attachments?: MailAttachment[];
+}
+
+/**
+ * One file attached to a message (#1974), as Nodemailer takes it. The content
+ * is never logged: a log line says how many files and how many bytes.
+ */
+export interface MailAttachment {
+  /** The name the recipient sees, e.g. `invoice-2026-0042.pdf`. */
+  filename: string;
+  /** Its media type, e.g. `application/pdf`. */
+  contentType: string;
+  content: Buffer;
+}
+
+/** How many files and bytes a message carries — the only thing a log line says about attachments. */
+export function describeAttachments(attachments: MailAttachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) return '';
+  const bytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
+  return ` attachments=${attachments.length} attachment-bytes=${bytes}`;
 }
 
 /**
@@ -45,6 +66,7 @@ export class ConsoleMailProvider implements MailProvider {
     logger.info(`[ConsoleMailProvider] To:      an address at ${emailDomain(message.to)}`);
     logger.info(`[ConsoleMailProvider] Subject: ${message.subject}`);
     logger.info(`[ConsoleMailProvider] Body:\n${redactEmailAddresses(message.text)}`);
+    if (message.attachments?.length) logger.info(`[ConsoleMailProvider]${describeAttachments(message.attachments)}`);
     logger.info('[ConsoleMailProvider] ──────────────────────────────────────');
     return Promise.resolve();
   }

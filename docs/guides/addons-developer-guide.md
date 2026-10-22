@@ -588,7 +588,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` (with `PdfOptions`, `PdfMargin`, `PdfPageSize`, `PdfUnavailableError`), `EmailManager` (with `SendOptions`, `MailAttachment`, `AttachmentRefusedError`), `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -636,6 +636,7 @@ Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `Att
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
 `PersonManager`, `OrganizationManager` ([Contacts](#contacts-persons-and-organizations)),
+`ExportManager`, `EmailManager` ([Make a PDF and email it](#make-a-pdf-and-email-it)),
 `MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
 
 ### Contacts: persons and organizations
@@ -709,6 +710,39 @@ const donor = await persons.create(ctx.getActor(), {
 // Store donor['@id'] (and orgId, when the gift is from the organization) on the gift,
 // with the donor's name as given, so the gift still reads right if the person is deleted.
 ```
+
+### Make a PDF and email it
+
+Core turns an HTML document into a PDF, and sends it as an email attachment ([#1974](https://github.com/jwilleke/ngdpbase/issues/1974)). An add-on never bundles its own PDF engine. Both are managers: `engine.getManager('ExportManager')` and `engine.getManager('EmailManager')`, typed by `@jwilleke/ngdpbase-types`.
+
+```typescript
+import type { ActorContext, EmailManager, ExportManager } from '@jwilleke/ngdpbase-types';
+
+async function emailInvoice(engine: WikiEngine, ctx: ActorContext, to: string, html: string, number: string): Promise<void> {
+  const exportManager = engine.getManager<ExportManager>('ExportManager')!;
+  const email = engine.getManager<EmailManager>('EmailManager')!;
+  try {
+    const pdf = await exportManager.htmlToPdf(ctx, html, { format: 'Letter', margin: { top: '15mm', bottom: '15mm' } });
+    // Store sha256(pdf) with the issued invoice: the same HTML gives the same bytes.
+    await email.sendTo(ctx, to, `Invoice ${number}`, 'Your invoice is attached.', undefined, {
+      attachments: [{ filename: `invoice-${number}.pdf`, contentType: 'application/pdf', content: pdf }]
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'PDF_UNAVAILABLE') throw err;
+    // No PDF engine on this site: send the HTML instead.
+    await email.sendTo(ctx, to, `Invoice ${number}`, 'Your invoice is below.', html);
+  }
+}
+```
+
+- __Pass the context you were given.__ Both methods take it first and refuse without one.
+- __Inline everything.__ The render loads nothing: every request except a `data:` URI is refused, and JavaScript is off. Put images and fonts in as `data:` URIs and styles in a `<style>` element. A remote image is not an error; it is simply missing from the PDF.
+- __Print CSS applies.__ `@page { size; margin }` wins over the options; `@media print` rules are used.
+- __Deterministic bytes.__ The same HTML on the same core version and the same Chromium gives the same SHA-256, so an issued document's fingerprint holds. A different Chromium (another image, a direct install) may give different bytes for the same HTML; fingerprint what you issued, not a re-render. Embed your fonts as `data:` URIs to depend on no installed font.
+- __When there is no engine__, `htmlToPdf` throws an error with `code: 'PDF_UNAVAILABLE'`. You cannot import core's error class (the types package is types only), so test the `code`. Fall back to HTML, as above. The admin dashboard then shows ExportManager as needing attention.
+- __Attachments__ total at most `ngdpbase.mail.attachments.max-bytes` (10 MiB). Over it, or with a filename holding a path or a line break, `sendTo` rejects with `code: 'ATTACHMENT_REFUSED'` before anything is sent. `sendInBackground(ctx, …, options)` takes the same attachments and never rejects.
+- __Audit is yours.__ Neither call records an audit event: the render reads and changes nothing, and core does not audit email. Record that you issued the document with your own event ([audit-developer-guide.md](audit-developer-guide.md#addons)).
+- The engine, the keys and the unavailable behaviour are in [ExportManager](../managers/ExportManager.md#html-to-pdf).
 
 ### Mount Express Routes
 
@@ -1750,7 +1784,8 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - `formVersion` is stored on the submission and passed to your handler; the forms admin does not show it yet.
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
+- [#1974](https://github.com/jwilleke/ngdpbase/issues/1974) — [PDF](#make-a-pdf-and-email-it): the same HTML gives the same bytes only on the same Chromium and fonts; another site's image or a direct install may differ. Core ships no font files of its own, so embed yours as `data:` URIs. `PdfUnavailableError` and `AttachmentRefusedError` are types only in `@jwilleke/ngdpbase-types`; test the error's `code`. A render waiting for a slot has no queue limit.
 
 ---
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22

@@ -13,6 +13,7 @@ import EmailManager, { SEND_FAILING_REASON, SEND_FAILING_TITLE } from '../EmailM
 import NotificationManager from '../NotificationManager';
 import logger from '../../utils/logger';
 import { loggedText } from './__fixtures__/loggedText';
+import { TEST_ACTOR } from '../../test-support/actors';
 
 const BODY = 'SECRET-BODY-TEXT do not log me';
 const ADDRESS = 'bob.private@example.org';
@@ -68,7 +69,7 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
 
   test('a failure is logged with provider, recipient domain, subject and error — never the body or the full address', async () => {
     const { manager } = await setup({ failWith: smtpError() });
-    await expect(manager.sendTo(ADDRESS, 'Your reservation', BODY)).rejects.toThrow();
+    await expect(manager.sendTo(TEST_ACTOR, ADDRESS, 'Your reservation', BODY)).rejects.toThrow();
     await flush();
 
     const errors = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => c.map(String).join(' '));
@@ -87,7 +88,7 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
 
   test('N failures inside the window make ONE notice, to administrators only, with the running count', async () => {
     const { manager, notifications } = await setup({ failWith: smtpError() });
-    for (let i = 0; i < 4; i++) manager.sendInBackground(ADDRESS, `Copy ${i}`, BODY);
+    for (let i = 0; i < 4; i++) manager.sendInBackground(TEST_ACTOR, ADDRESS, `Copy ${i}`, BODY);
     await flush();
 
     expect(notifications.createNotification).toHaveBeenCalledTimes(1);
@@ -107,15 +108,15 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
     try {
       now.mockReturnValue(1_000_000);
       const { manager, notifications } = await setup({ failWith: smtpError(), windowMinutes: 5 });
-      await manager.sendTo(ADDRESS, 'a', BODY).catch(() => undefined);
+      await manager.sendTo(TEST_ACTOR, ADDRESS, 'a', BODY).catch(() => undefined);
       await flush();
       now.mockReturnValue(1_000_000 + 4 * 60_000);
-      await manager.sendTo(ADDRESS, 'b', BODY).catch(() => undefined);
+      await manager.sendTo(TEST_ACTOR, ADDRESS, 'b', BODY).catch(() => undefined);
       await flush();
       expect(notifications.createNotification).toHaveBeenCalledTimes(1);
 
       now.mockReturnValue(1_000_000 + 6 * 60_000);
-      await manager.sendTo(ADDRESS, 'c', BODY).catch(() => undefined);
+      await manager.sendTo(TEST_ACTOR, ADDRESS, 'c', BODY).catch(() => undefined);
       await flush();
       expect(notifications.createNotification).toHaveBeenCalledTimes(2);
       expect(String(notifications.createNotification.mock.calls[1][0].message)).toMatch(/^1 email could not be sent/);
@@ -129,12 +130,12 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
     const { manager, providerSend } = setupResult;
     expect(manager.getManagerStatus().state).toBe('ready');
 
-    await manager.sendTo(ADDRESS, 'x', BODY).catch(() => undefined);
+    await manager.sendTo(TEST_ACTOR, ADDRESS, 'x', BODY).catch(() => undefined);
     expect(manager.getManagerStatus()).toMatchObject({ state: 'degraded', reason: SEND_FAILING_REASON });
     expect(manager.isDeliveryFailing()).toBe(true);
 
     providerSend.mockResolvedValueOnce(undefined);
-    await manager.sendTo(ADDRESS, 'y', BODY);
+    await manager.sendTo(TEST_ACTOR, ADDRESS, 'y', BODY);
     expect(manager.getManagerStatus().state).toBe('ready');
     expect(manager.isDeliveryFailing()).toBe(false);
   });
@@ -142,7 +143,7 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
   test('the console provider is never a failure', async () => {
     const { manager, notifications } = await setup({ provider: 'console' });
     expect(manager.getProviderName()).toBe('console');
-    await expect(manager.sendTo(ADDRESS, 'hello', BODY)).resolves.toBeUndefined();
+    await expect(manager.sendTo(TEST_ACTOR, ADDRESS, 'hello', BODY)).resolves.toBeUndefined();
     await flush();
     expect(manager.getManagerStatus().state).toBe('ready');
     expect(notifications.createNotification).not.toHaveBeenCalled();
@@ -150,7 +151,7 @@ describe('EmailManager — failed sends are reported (#1916)', () => {
 
   test('sendInBackground never rejects (no unhandled rejection) but still reports', async () => {
     const { manager, notifications } = await setup({ failWith: smtpError() });
-    expect(() => manager.sendInBackground(ADDRESS, 'bg', BODY)).not.toThrow();
+    expect(() => manager.sendInBackground(TEST_ACTOR, ADDRESS, 'bg', BODY)).not.toThrow();
     await flush();
     expect(manager.isDeliveryFailing()).toBe(true);
     expect(notifications.createNotification).toHaveBeenCalledTimes(1);
@@ -208,7 +209,7 @@ describe('EmailManager + NotificationManager — the failure notice is never ema
     (emailManager as unknown as { provider: unknown }).provider = { send: providerSend };
 
     try {
-      await emailManager.sendTo(ADDRESS, 'Your copy', BODY).catch(() => undefined);
+      await emailManager.sendTo(TEST_ACTOR, ADDRESS, 'Your copy', BODY).catch(() => undefined);
       // The notice is written to disk before escalation would run; give any
       // escalation email time to be attempted.
       await vi.waitFor(() => {

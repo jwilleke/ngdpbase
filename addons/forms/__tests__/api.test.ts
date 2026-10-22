@@ -30,6 +30,7 @@ vi.mock('../../../dist/src/context/ApiContext', async () => {
       from: () => ({
         username: 'testuser',
         subject: SUBMITTER,
+        getActor: () => SUBMITTER,
         requirePermission: async (p: string) => { permission.asked.push(p); if (permission.refusal) throw permission.refusal; }
       })
     }
@@ -539,7 +540,7 @@ describe('POST /api/forms/submit/:formId — submission email', () => {
       FormsDataManager: { getDefinition: () => emailForm, saveSubmission: async (s: object) => s },
       ConfigurationManager: { getProperty: () => '' },
       // #1916: the route sends through sendInBackground, which never rejects.
-      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      EmailManager: { isEnabled: () => true, sendInBackground: (_ctx: unknown, to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
       LedgerManager: {
         toFormOptions: async (_o: unknown, viewer: unknown) => {
           viewers.push(viewer);
@@ -597,7 +598,7 @@ describe('POST /api/forms/submit/:formId — notify (#1954)', () => {
         saveSubmission: async (s: object) => s
       },
       ConfigurationManager: { getProperty: () => '' },
-      EmailManager: { isEnabled: () => true, sendInBackground: (to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
+      EmailManager: { isEnabled: () => true, sendInBackground: (_ctx: unknown, to: string, subject: string, text: string) => { sent.push({ to, subject, text }); } },
       NotificationManager: { createNotification: async (n: unknown) => { notices.push(n); return 'n1'; } },
       UserManager: { searchUsers: async () => [{ username: 'admin' }] }
     });

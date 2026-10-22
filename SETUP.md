@@ -30,6 +30,14 @@ npm run build
 
 The server runs from `dist/`; `./server.sh start` stops with "dist/ not found" until it is built.
 
+#### Optional: Chromium for PDF
+
+Add-ons that send invoices or statements as PDF use core's HTML-to-PDF export, which runs headless Chromium. The container image already has it. On a direct install it is optional: without it the site runs, and PDF export reports itself unavailable (add-ons fall back to HTML).
+
+- `npm install` brings `playwright-core` (an optional dependency, skipped by `--omit=optional`). It downloads no browser.
+- Then any one of: a system Chromium or Chrome (`apt install chromium`, `apk add chromium`, or Google Chrome in its usual place); `npx playwright install chromium`; or set `ngdpbase.export.pdf.chromium-path` in `app-custom-config.json` to the browser's executable.
+- No restart is needed: the browser is looked for on each render. Which one is used, and every setting, is in [ExportManager](docs/managers/ExportManager.md#html-to-pdf).
+
 ### 3. Create `.env`
 
 [`.env.example`](.env.example) is the one list of every variable the server reads, with what each does. Copy it and edit:

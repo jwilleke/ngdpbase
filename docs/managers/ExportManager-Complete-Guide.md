@@ -347,7 +347,7 @@ app.delete('/admin/exports/:filename', async (req, res) => {
 - __HTML styling:__ Exports include embedded CSS for consistent rendering
 - __Print support:__ HTML exports have print-friendly styles
 - __File sanitization:__ Filenames are sanitized to remove special characters
-- __No PDF yet:__ PDF export listed in supportedFormats but not implemented
+- __PDF:__ `htmlToPdf(ctx, html, options?)` turns an HTML document into a PDF (#1974); see [ExportManager.md](ExportManager.md#html-to-pdf). There is no page-to-PDF export route yet
 
 ---
 

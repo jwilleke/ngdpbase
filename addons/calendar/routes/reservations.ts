@@ -124,10 +124,10 @@ export default function reservationRoutes(
         const mgrEmail = managerEmail();
 
         if (requesterEmail) {
-          em.sendInBackground(requesterEmail, subject, text);
+          em.sendInBackground(ctx.getActor(), requesterEmail, subject, text);
         }
         if (mgrEmail) {
-          em.sendInBackground(mgrEmail, `[Manager] ${subject}`, text);
+          em.sendInBackground(ctx.getActor(), mgrEmail, `[Manager] ${subject}`, text);
         }
       }
 

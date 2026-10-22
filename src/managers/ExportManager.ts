@@ -8,6 +8,31 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type PageManager from './PageManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { actorOf } from '../context/ActorContext.js';
+import {
+  PdfUnavailableError,
+  renderPdfInChild,
+  resolveChromium,
+  resolvePdfOptions,
+  type PdfJob,
+  type PdfJobResult,
+  type PdfOptions,
+  type ChromiumResolution
+} from '../export/pdfEngine.js';
+
+export { PdfUnavailableError };
+export type { PdfOptions, PdfMargin, PdfPageSize } from '../export/pdfEngine.js';
+
+/**
+ * The needs-attention reason while PDF export has no engine (#1974). Set only
+ * when something asked for a PDF and could not have one; cleared by the next
+ * render that works.
+ */
+export const PDF_UNAVAILABLE_REASON =
+  'PDF export unavailable: no Chromium, or it could not start. Install Chromium or set ngdpbase.export.pdf.chromium-path (the server log says which)';
+
+/** Shipped defaults of the `ngdpbase.export.pdf.*` keys. */
+const PDF_DEFAULTS = { pageSize: 'Letter', timeoutMs: 30_000, maxConcurrent: 2 };
 
 /**
  * Export file metadata interface
@@ -56,7 +81,8 @@ export interface PageForExport {
  * ExportManager - Handles page exports to multiple formats
  *
  * Similar to JSPWiki's export functionality, provides page export capabilities
- * to HTML, PDF, markdown, and other formats.
+ * to HTML and markdown, the one CSV writer, and HTML → PDF (`htmlToPdf`, #1974)
+ * through an optional headless Chromium.
  *
  * @class ExportManager
  * @extends BaseManager
@@ -74,6 +100,14 @@ const CSV_FORMULA_START = /^[=+\-@\t\r]/;
 
 class ExportManager extends BaseManager {
   private exportDirectory: string;
+
+  /** The render and the engine lookup; replaced in tests. */
+  protected pdfRenderer: (job: PdfJob) => Promise<PdfJobResult> = renderPdfInChild;
+  protected chromiumResolver: (configuredPath: string) => Promise<ChromiumResolution> = (p) => resolveChromium(p);
+
+  /** Renders running now, and renders waiting for a slot (`ngdpbase.export.pdf.max-concurrent`). */
+  private pdfActive = 0;
+  private pdfWaiting: Array<() => void> = [];
 
   /**
    * Creates a new ExportManager instance
@@ -117,6 +151,86 @@ class ExportManager extends BaseManager {
    */
   toCsv(headers: readonly string[], rows: readonly (readonly unknown[])[]): string {
     return [headers, ...rows].map((row) => row.map((cell) => this.csvCell(cell)).join(',')).join('\r\n') + '\r\n';
+  }
+
+  /**
+   * A rendered HTML document (print CSS and all) as PDF bytes (#1974).
+   *
+   * - __Sandboxed:__ headless Chromium with JavaScript off and every request
+   *   refused except `data:` URIs, so images, stylesheets and fonts must be
+   *   inlined. A remote URL in the HTML is simply not loaded.
+   * - __Deterministic:__ the same HTML on the same core version and Chromium
+   *   gives the same bytes (no dates, no random ID), so an add-on can store the
+   *   document's SHA-256.
+   * - __Off the request path:__ each render is its own child process, killed
+   *   at `ngdpbase.export.pdf.timeout-ms`; at most
+   *   `ngdpbase.export.pdf.max-concurrent` run at once and the rest wait.
+   * - __Optional:__ with no engine it throws `PdfUnavailableError`
+   *   (`code: 'PDF_UNAVAILABLE'`), logs why, and this manager shows "needs
+   *   attention" on the admin dashboard until a render works. A site that never
+   *   asks for a PDF is never flagged.
+   *
+   * Records no audit event: it reads nothing and changes nothing. The caller
+   * that issues the document records that, with its own event.
+   *
+   * @param ctx - Who is asking; named in the log line
+   * @param html - A complete HTML document
+   * @param options - Page size, margins, printBackground; an `@page` rule in the HTML wins
+   * @returns The PDF
+   */
+  async htmlToPdf(ctx: ActorContext, html: string, options?: PdfOptions): Promise<Buffer> {
+    if (!ctx) throw new TypeError('htmlToPdf: a context is required (security-posture P1)');
+    if (typeof html !== 'string' || html.length === 0) throw new TypeError('htmlToPdf: html must be a non-empty string');
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const setting = <T>(key: string, fallback: T): T => (config?.getProperty(key, fallback) as T | undefined) ?? fallback;
+    const resolved = resolvePdfOptions(options, String(setting('ngdpbase.export.pdf.page-size', PDF_DEFAULTS.pageSize)));
+    const timeoutMs = positiveInt(setting('ngdpbase.export.pdf.timeout-ms', PDF_DEFAULTS.timeoutMs), PDF_DEFAULTS.timeoutMs);
+    const maxConcurrent = positiveInt(setting('ngdpbase.export.pdf.max-concurrent', PDF_DEFAULTS.maxConcurrent), PDF_DEFAULTS.maxConcurrent);
+
+    const engine = await this.chromiumResolver(String(setting('ngdpbase.export.pdf.chromium-path', '')));
+    if (!engine.ok) this.pdfUnavailable(engine.reason);
+
+    const started = Date.now();
+    await this.acquirePdfSlot(maxConcurrent);
+    let result: PdfJobResult;
+    try {
+      result = await this.pdfRenderer({ html, executablePath: engine.executablePath, options: resolved, timeoutMs });
+    } finally {
+      this.releasePdfSlot();
+    }
+    if (!result.ok) {
+      if (result.stage === 'launch') this.pdfUnavailable(`Chromium at ${engine.executablePath} could not start: ${result.error}`);
+      throw new Error(`PDF render failed: ${result.error}`);
+    }
+    this.markReadyIfDegradedBy(PDF_UNAVAILABLE_REASON);
+    const pdf = Buffer.from(result.pdf);
+    logger.info(`[ExportManager] PDF rendered bytes=${pdf.length} ms=${Date.now() - started} engine=${engine.source} by=${actorOf(ctx).user}`);
+    return pdf;
+  }
+
+  /** Log why, flag the manager (unless something worse is already shown), and refuse. */
+  private pdfUnavailable(reason: string): never {
+    logger.warn(`[ExportManager] PDF export unavailable: ${reason}`);
+    const status = this.getManagerStatus();
+    if (status.state === 'ready' || status.reason === PDF_UNAVAILABLE_REASON) {
+      this.markNeedsAttention(PDF_UNAVAILABLE_REASON, 'ngdpbase.export.pdf.chromium-path');
+    }
+    throw new PdfUnavailableError(`PDF export unavailable: ${reason}`);
+  }
+
+  private async acquirePdfSlot(limit: number): Promise<void> {
+    if (this.pdfActive < limit) {
+      this.pdfActive++;
+      return;
+    }
+    // The slot is handed over by releasePdfSlot, so pdfActive stays as it is.
+    await new Promise<void>((resolve) => this.pdfWaiting.push(resolve));
+  }
+
+  private releasePdfSlot(): void {
+    const next = this.pdfWaiting.shift();
+    if (next) next();
+    else this.pdfActive--;
   }
 
   /**
@@ -504,6 +618,12 @@ class ExportManager extends BaseManager {
     // Fallback to system default
     return date.toLocaleString();
   }
+}
+
+/** A positive whole number from config, or the shipped default. */
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
 export default ExportManager;

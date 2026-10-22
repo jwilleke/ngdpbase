@@ -827,8 +827,8 @@ describe('NotificationManager — email escalation', () => {
     await new Promise(r => setTimeout(r, 20));
 
     expect(sendTo).toHaveBeenCalledTimes(2);
-    expect(sendTo).toHaveBeenCalledWith('jim@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
-    expect(sendTo).toHaveBeenCalledWith('alice@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
+    expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'jim@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
+    expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'alice@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
     await mgr.shutdown();
   });
 

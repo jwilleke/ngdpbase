@@ -121,17 +121,25 @@ function hasOwnTypes(name: string): boolean {
  * The dependencies the shipped files import, at core's own ranges. A package
  * the kit runs must be one core declares. A package only a declaration names
  * and core does not declare (a dependency's own dependency, such as
- * winston-transport) is left to that dependency, and said.
+ * winston-transport) is left to that dependency, and said. A package core
+ * declares in `optionalDependencies` (playwright-core, #1974) is left out:
+ * core's code already copes with it being absent, and the kit never needs it.
  */
-function dependenciesOf(runtime: string[], declarations: string[], core: Ranges): Ranges {
+function dependenciesOf(runtime: string[], declarations: string[], core: Ranges, optional: Ranges = {}): Ranges {
   const deps: Ranges = {};
   const add = (name: string): boolean => {
     if (!core[name]) return false;
     deps[name] = core[name];
     return true;
   };
+  const leftOut = new Set<string>();
   for (const file of runtime) {
     for (const name of specifiersIn(fs.readFileSync(file, 'utf8')).map(packageOf)) {
+      if (name && optional[name]) {
+        if (!leftOut.has(name)) console.log(`  ${name}: optional in core, imported only when present; left out`);
+        leftOut.add(name);
+        continue;
+      }
       if (name && !add(name)) throw new Error(`${path.relative(OUT, file)} needs ${name} at run time, which core's package.json does not declare`);
     }
   }
@@ -168,7 +176,12 @@ function typecheckConsumer(): void {
       files: ['index.ts']
     }));
     fs.writeFileSync(path.join(dir, 'index.ts'), [
-      "import type { AddonModule, AddonHost, WikiEngine, ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, SimplePlugin, AuditEvent, JobRunContext, DatabaseManager, ExportManager, PolicyDecisionPoint, Migration, AddonDatabaseDeclaration } from '@jwilleke/ngdpbase-types';",
+      "import type { AddonModule, AddonHost, WikiEngine, ApiContext, ActorContext, PermissionSubject, Decision, PluginContext, PluginFormatters, SimplePlugin, AuditEvent, JobRunContext, DatabaseManager, ExportManager, EmailManager, PolicyDecisionPoint, Migration, AddonDatabaseDeclaration } from '@jwilleke/ngdpbase-types';",
+      // #1974: an add-on renders a PDF and emails it.
+      'async function emailPdf(engine: WikiEngine, ctx: ActorContext): Promise<void> {',
+      "  const pdf = await engine.getManager<ExportManager>('ExportManager')!.htmlToPdf(ctx, '<p>x</p>', { format: 'A4', margin: { top: '20mm' }, printBackground: true });",
+      "  await engine.getManager<EmailManager>('EmailManager')!.sendTo(ctx, 'a@example.org', 's', 't', undefined, { attachments: [{ filename: 'x.pdf', contentType: 'application/pdf', content: pdf }] });",
+      '}',
       "import { buildAddonHost, openAddonTestDatabase, toCsv, formatters } from '@jwilleke/ngdpbase-types/testing';",
       'const migrations: Migration[] = [];',
       "const plugin: SimplePlugin = { name: 'P', execute: (context, params) => context.formatters.escapeHtml(String(params.x)) };",
@@ -186,7 +199,7 @@ function typecheckConsumer(): void {
       "const host: AddonHost = buildAddonHost('demo', {});",
       "openAddonTestDatabase('demo', { migrations, ledgerTable: 'demo_schema_migrations' });",
       "const csv: string = toCsv(['a'], [[1]]) + formatters.escapeHtml('<');",
-      'export { addon, plugin, host, csv };',
+      'export { addon, plugin, host, csv, emailPdf };',
       'export type { Used };',
       ''
     ].join('\n'));
@@ -198,7 +211,7 @@ function typecheckConsumer(): void {
 }
 
 function main(): void {
-  const core = readJson<{ version: string; dependencies?: Ranges; devDependencies?: Ranges }>(path.join(REPO, 'package.json'));
+  const core = readJson<{ version: string; dependencies?: Ranges; devDependencies?: Ranges; optionalDependencies?: Ranges }>(path.join(REPO, 'package.json'));
   const ranges: Ranges = { ...core.devDependencies, ...core.dependencies };
 
   fs.rmSync(OUT, { recursive: true, force: true });
@@ -219,7 +232,7 @@ function main(): void {
   const template = readJson<Record<string, unknown>>(path.join(PKG, 'package.json'));
   delete template['//'];
   delete template.private;
-  const manifest = { ...template, version: core.version, dependencies: dependenciesOf([...runtime], declarations, ranges) };
+  const manifest = { ...template, version: core.version, dependencies: dependenciesOf([...runtime], declarations, ranges, core.optionalDependencies) };
   fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   fs.copyFileSync(path.join(PKG, 'README.md'), path.join(OUT, 'README.md'));
   fs.copyFileSync(path.join(REPO, 'LICENSE'), path.join(OUT, 'LICENSE'));
