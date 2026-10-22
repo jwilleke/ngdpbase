@@ -611,7 +611,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         const githubEnv = path.join(bin, 'github-env');
         fs.writeFileSync(githubEnv, '');
         const s = releaseStep(yaml.load(publishWorkflow({})) as Workflow, 'npm serves the published tarball');
-        expect(s.env!.NPM_WAIT_SECONDS).toBe('300');
+        expect(s.env!.NPM_WAIT_SECONDS).toBe('900');
         const r = runStep(s, ws, {
           ...s.env, SPEC, PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_ENV: githubEnv,
           ...(o.wait ? { NPM_WAIT_SECONDS: o.wait } : {})
@@ -636,9 +636,10 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       test('times out with ::error:: and a nonzero exit, and never makes the release', () => {
         const r = check({ misses: 1000 });
         expect(r.status).not.toBe(0);
-        expect(r.out).toContain(`::error::npm did not serve ${SPEC} within 300 seconds`);
-        // 5 + 10 + 20 + 40 + 60 + 60 + 60 + 60 = 315: the backoff caps at 60 and stops past the limit.
-        expect(r.sleeps).toEqual([5, 10, 20, 40, 60, 60, 60, 60]);
+        expect(r.out).toContain(`::error::npm did not serve ${SPEC} within 900 seconds, so the release was not made.`);
+        expect(r.out).toContain(`The package is published; re-run the failed jobs once 'npm view ${SPEC}' shows it.`);
+        // 5 + 10 + 20 + 40 + 14 × 60 = 915: the backoff caps at 60 and stops past the limit.
+        expect(r.sleeps).toEqual([5, 10, 20, 40, ...Array<number>(14).fill(60)]);
         expect(r.env).toBe('');
       });
 
@@ -889,22 +890,31 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         const v1 = publishWorkflow({}).replace(/: \d+\n/, ': 1\n').replace(' "$@" \\', ' \\');
         expect(v1).not.toContain('"$@"');
         await fs.outputFile(file(), v1);
-        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 1, to: 3, plainTags: false });
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 1, to: PUBLISH_WORKFLOW_VERSION, plainTags: false });
         const now = await fs.readFile(file(), 'utf8');
         expect(now).toBe(publishWorkflow({}));
         expect(now).toContain('set -- --latest=false');
       });
 
-      test('rewrites a version-2 file, whose release fetched the tarball back from npm, to version 3', async () => {
-        expect(PUBLISH_WORKFLOW_VERSION).toBe(3);
+      test('rewrites a version-2 file, whose release fetched the tarball back from npm, to the current version', async () => {
         const v2 = publishWorkflow({}).replace(/: \d+\n/, ': 2\n');
         await fs.outputFile(file(), v2);
-        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 2, to: 3, plainTags: false });
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 2, to: PUBLISH_WORKFLOW_VERSION, plainTags: false });
         const now = await fs.readFile(file(), 'utf8');
-        expect(now.split('\n')[0]).toBe('# ngdpbase-publish-workflow: 3');
+        expect(now.split('\n')[0]).toBe(`# ngdpbase-publish-workflow: ${PUBLISH_WORKFLOW_VERSION}`);
         expect(now).toBe(publishWorkflow({}));
         expect(now).toContain('actions/download-artifact@v8');
         expect(now).not.toContain('npm pack "$SPEC"');
+      });
+
+      test('rewrites a version-3 file, which waited only 300 s for npm, to version 4 (#1987)', async () => {
+        expect(PUBLISH_WORKFLOW_VERSION).toBe(4);
+        const v3 = publishWorkflow({}).replace(/: \d+\n/, ': 3\n').replace("NPM_WAIT_SECONDS: '900'", "NPM_WAIT_SECONDS: '300'");
+        await fs.outputFile(file(), v3);
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 3, to: 4, plainTags: false });
+        const now = await fs.readFile(file(), 'utf8');
+        expect(now).toBe(publishWorkflow({}));
+        expect(now).toContain("NPM_WAIT_SECONDS: '900'");
       });
 
       test('keeps a default (slug-tag) file default, reads a pre-marker v* file as plain, and writes a missing one', async () => {

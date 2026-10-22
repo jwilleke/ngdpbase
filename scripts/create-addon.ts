@@ -757,7 +757,7 @@ jobs:
  * marker line, so `--update-publish` can tell an older generated file from the
  * current one and rewrite it.
  */
-export const PUBLISH_WORKFLOW_VERSION = 3;
+export const PUBLISH_WORKFLOW_VERSION = 4;
 
 const PUBLISH_MARKER = /^# ngdpbase-publish-workflow: (\d+)$/m;
 const PLAIN_TAGS_SETTING = /^ {2}NGDPBASE_PLAIN_TAGS: '(true|false)'$/m;
@@ -1006,7 +1006,7 @@ jobs:
       - name: npm serves the published tarball
         env:
           SPEC: @{{ needs.publish.outputs.name }}@@{{ needs.publish.outputs.version }}
-          NPM_WAIT_SECONDS: '300'
+          NPM_WAIT_SECONDS: '900'
           NPM_FIRST_DELAY_SECONDS: '5'
           NPM_MAX_DELAY_SECONDS: '60'
         run: |
@@ -1029,7 +1029,7 @@ jobs:
             served=$(npm view "$SPEC" dist.integrity --prefer-online 2>/dev/null || true)
             [ -n "$served" ] && break
             if [ "$waited" -ge "$NPM_WAIT_SECONDS" ]; then
-              echo "::error::npm did not serve $SPEC within $NPM_WAIT_SECONDS seconds, so the release was not made. The package is published: once npm view $SPEC shows it, re-run this job"
+              echo "::error::npm did not serve $SPEC within $NPM_WAIT_SECONDS seconds, so the release was not made. The package is published; re-run the failed jobs once 'npm view $SPEC' shows it."
               exit 1
             fi
             echo "npm does not serve $SPEC yet; waiting $delay seconds"
