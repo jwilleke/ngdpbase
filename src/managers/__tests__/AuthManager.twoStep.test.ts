@@ -32,11 +32,12 @@ describe('two-step sign-in (#1523)', () => {
         getCustomProperty: () => undefined,
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.auth.credentials.file' ? file : d),
         isBaseUrlExplicit: () => true,
-        getBaseURL: () => 'https://wiki.example.com'
+        getBaseURL: () => 'https://wiki.example.com',
+        getApplicationName: () => 'Willeke Family'
       },
       PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve(action === 'account-security' && ['molly', 'sam'].includes(s.username)) },
       UserManager: {
-        getUser: (u: string) => Promise.resolve({ molly: { username: 'molly', email: 'molly@example.com' }, sam: { username: 'sam', email: '' } }[u] ?? null),
+        getUser: (u: string) => Promise.resolve({ molly: { username: 'molly', email: 'molly@example.com', preferences: { timezone: 'America/New_York', locale: 'en-US', timeFormat: '24h' } }, sam: { username: 'sam', email: '' } }[u] ?? null),
         hasPassword: () => Promise.resolve(true)
       },
       EmailManager: mailOn ? { send: (m: { to: string; subject: string; text: string }) => { if (mailFails) return Promise.reject(new Error('smtp down')); sent.push(m); return Promise.resolve(); }, getProviderName: () => 'test' } : null,
@@ -111,7 +112,7 @@ describe('two-step sign-in (#1523)', () => {
     expect(await am.sendEmailApproval(handle, 'browser-1')).toBe('too-soon');
 
     const token = linkToken();
-    expect(am.approvalDetails(token)).toMatchObject({ username: 'molly', ip: '1.2.3.4', userAgent: 'Chrome' });
+    expect(await am.approvalDetails(token)).toMatchObject({ username: 'molly', ip: '1.2.3.4', userAgent: 'Chrome' });
     expect(am.completeTwoStep(handle, 'browser-1')).toBeNull();
     expect(am.approveByToken(token)).toBe('molly');
     expect(am.approveByToken(token)).toBeNull();
@@ -121,6 +122,35 @@ describe('two-step sign-in (#1523)', () => {
     expect(done?.result.factors?.map((f) => f.provider)).toEqual(['password', 'email-link']);
     expect(am.signInRecord(done!.result)).toMatchObject({ amr: ['pwd', 'email'], aal: 1, acr: 'aal1' });
     expect(am.completeTwoStep(handle, 'browser-1')).toBeNull();
+  });
+
+  test('#1532: the message and the page say which site, when in the person\'s own time zone, and from what browser', async () => {
+    const CHROME_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-02T18:02:00Z'));
+      const am = await enrolled();
+      const handle = await am.beginTwoStep(FIRST, { binding: 'b', ip: '1.2.3.4', userAgent: CHROME_WINDOWS });
+      expect(await am.sendEmailApproval(handle, 'b')).toBe('sent');
+      const mail = sent.at(-1);
+      expect(mail.subject).toBe('Approve or deny a sign-in to Willeke Family');
+      // Sabotage check: formatting in UTC instead of molly's zone shows 18:02 and turns this red.
+      expect(mail.text).toMatch(/^A sign-in request for Willeke Family was sent at .*2026.*14:02 EDT from Chrome on Windows\.$/m);
+      expect(mail.text).toMatch(/^Was this you\? Open to approve or deny: https:\/\/wiki\.example\.com\/login\/approve\?t=/m);
+      expect(await am.approvalDetails(linkToken())).toMatchObject({
+        site: 'Willeke Family', device: 'Chrome on Windows', when: expect.stringMatching(/14:02 EDT/)
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('#1532: a browser it cannot name is left out of the message, not guessed', async () => {
+    const am = await enrolled();
+    const handle = await am.beginTwoStep(FIRST, { binding: 'b', userAgent: 'curl/8.4.0' });
+    await am.sendEmailApproval(handle, 'b');
+    expect(sent.at(-1).text).toMatch(/^A sign-in request for Willeke Family was sent at [^\n]* [A-Z]{2,5}\.$/m);
+    expect(await am.approvalDetails(linkToken())).toMatchObject({ device: null });
   });
 
   test('#1916: an approval email that cannot be sent says so, leaves no live link, and does not block a retry', async () => {

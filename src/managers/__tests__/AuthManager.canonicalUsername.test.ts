@@ -63,7 +63,8 @@ describe('sign-in ends with the stored username (#1882)', () => {
       getCustomProperty: () => undefined,
       getResolvedDataPath: (k: string) => (k === 'ngdpbase.auth.credentials.file' ? path.join(dir, 'credentials.json') : dir),
       isBaseUrlExplicit: () => true,
-      getBaseURL: () => 'https://site.example.test'
+      getBaseURL: () => 'https://site.example.test',
+      getApplicationName: () => 'ngdpbase'
     };
     const store = new FileUserProvider({ getManager: (n: string) => (n === 'ConfigurationManager' ? config : null) });
     await store.initialize();

@@ -140,7 +140,7 @@ describe('two-step sign-in routes (#1523)', () => {
 
   test('opening the link changes nothing: the page only shows the details', async () => {
     const approveByToken = vi.fn();
-    const { r } = routes({ approvalDetails: vi.fn(() => ({ username: 'molly', requestedAt: 0 })), approveByToken });
+    const { r } = routes({ approvalDetails: vi.fn(() => Promise.resolve({ username: 'molly', requestedAt: 0 })), approveByToken });
     const out = res();
     await r.approvePage(req(session(), { query: { t: 'tok' } }), out);
     expect(approveByToken).not.toHaveBeenCalled();

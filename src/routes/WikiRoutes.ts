@@ -6880,13 +6880,13 @@ ${panes}
    */
   async approvePage(req: Request, res: Response): Promise<void> {
     const token = typeof req.query.t === 'string' ? req.query.t : '';
-    const details = token ? this.authManagerFor2Step().approvalDetails(token) : null;
+    const details = token ? await this.authManagerFor2Step().approvalDetails(token) : null;
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.render('login-approve', { ...commonData, title: 'Approve a sign-in', token, details, outcome: '' });
   }
 
-  /** POST /login/approve — Approve, or "This wasn't me". */
+  /** POST /login/approve — Approve, or Deny. */
   async approveDecision(req: Request, res: Response): Promise<void> {
     const body = req.body as { t?: unknown; decision?: unknown };
     const token = typeof body.t === 'string' ? body.t : '';

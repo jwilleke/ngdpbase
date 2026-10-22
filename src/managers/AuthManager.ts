@@ -71,6 +71,8 @@ import type EmailManager from './EmailManager.js';
 import type AgentTokenManager from './AgentTokenManager.js';
 import type { OidcManager } from './OidcManager.js';
 import logger from '../utils/logger.js';
+import LocaleUtils from '../utils/LocaleUtils.js';
+import { describeBrowser } from '../utils/browserDescription.js';
 import { createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
@@ -254,10 +256,24 @@ export interface PendingSignIn {
   privateStoreHandle?: string;
   /** The second factor, once satisfied. */
   approved?: SatisfiedFactor;
-  /** Refused by the person ("this wasn't me"). */
+  /** Refused by the person (Deny). */
   denied?: boolean;
   /** When the last approval message went out, for the resend limit. */
   lastSentAt?: number;
+}
+
+/** What the approval page shows about a waiting sign-in (#1532). */
+export interface ApprovalDetails {
+  username: string;
+  requestedAt: number;
+  ip?: string;
+  userAgent?: string;
+  /** The site's name (`ngdpbase.application-name`). */
+  site: string;
+  /** When it was asked, in the account holder's own time zone. */
+  when: string;
+  /** "Chrome on Windows", or null when the browser could not be named. */
+  device: string | null;
 }
 
 /** A second factor a person has enrolled and can use now. */
@@ -2807,23 +2823,26 @@ class AuthManager extends BaseManager {
     const previousSentAt = p.lastSentAt;
     p.lastSentAt = Date.now();
     const url = `${this.linkBase()}/login/approve?t=${token}`;
+    const about = await this.approvalContext(p);
+    // #1532: the decided wording — which site, when (the person's own time
+    // zone), from what browser; one link, no code. The page carries the buttons.
+    const asked = `A sign-in request for ${about.site} was sent at ${about.when}${about.device ? ` from ${about.device}` : ''}.`;
+    const plain = (v: string): string => v.replace(/[<>&"]/g, '');
     // #1916: a send that fails is reported by EmailManager; here the person
     // waiting is told, and nothing says a link is on its way.
     const sent = await mail.send({
       to: row.subject,
-      subject: 'Approve your sign-in',
+      subject: `Approve or deny a sign-in to ${about.site}`,
       text: [
-        `Someone signed in as ${p.username} with your password and is waiting for approval.`,
+        asked,
+        `Was this you? Open to approve or deny: ${url}`,
         '',
-        'Open this link to see the details and approve or refuse it:',
-        url,
-        '',
-        'It works once, for the next 10 minutes. If this was not you, refuse it and change your password.'
+        'The link works once, for the next 10 minutes.'
       ].join('\n'),
       html: [
-        `<p>Someone signed in as <strong>${p.username.replace(/[<>&"]/g, '')}</strong> with your password and is waiting for approval.</p>`,
-        `<p><a href="${url}">See the details and approve or refuse it</a></p>`,
-        '<p>It works once, for the next 10 minutes. If this was not you, refuse it and change your password.</p>'
+        `<p>A sign-in request for <strong>${plain(about.site)}</strong> was sent at <strong>${plain(about.when)}</strong>${about.device ? ` from ${plain(about.device)}` : ''}.</p>`,
+        `<p>Was this you? <a href="${url}">Open to approve or deny</a></p>`,
+        '<p>The link works once, for the next 10 minutes.</p>'
       ].join('\n')
     }).then(() => true, () => false);
     if (!sent) {
@@ -2835,12 +2854,37 @@ class AuthManager extends BaseManager {
   }
 
   /** What the approval page shows about the waiting sign-in; null for an unknown or used link. */
-  approvalDetails(token: string): { username: string; requestedAt: number; ip?: string; userAgent?: string } | null {
+  async approvalDetails(token: string): Promise<ApprovalDetails | null> {
     const entry = this.approvalTokens.get(token);
     if (!entry || Date.now() > entry.expiresAt) return null;
     const p = this.pendingSignIns.get(entry.handle);
     if (!p || p.approved || p.denied) return null;
-    return { username: p.username, requestedAt: p.requestedAt, ip: p.requestIp, userAgent: p.requestUserAgent };
+    return { username: p.username, requestedAt: p.requestedAt, ip: p.requestIp, userAgent: p.requestUserAgent, ...(await this.approvalContext(p)) };
+  }
+
+  /**
+   * What an approval request says about a waiting sign-in (#1532), one source
+   * for the message and the page: the site's name, when it was asked in the
+   * account holder's own time zone (their preference, else the site default),
+   * and the browser and device it came from, or null when the header names
+   * neither.
+   */
+  private async approvalContext(p: PendingSignIn): Promise<{ site: string; when: string; device: string | null }> {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const prefs = (await this.engine.getManager<UserManager>('UserManager')?.getUser(p.username))?.preferences;
+    const zone = [prefs?.timezone, cm?.getProperty('ngdpbase.default.timezone', 'UTC')].find((z): z is string => typeof z === 'string' && LocaleUtils.isValidTimezone(z)) ?? 'UTC';
+    const opts: Intl.DateTimeFormatOptions = {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short',
+      ...(prefs?.timeFormat === '12h' || prefs?.timeFormat === '24h' ? { hour12: prefs.timeFormat === '12h' } : {})
+    };
+    const at = new Date(p.requestedAt);
+    let when: string;
+    try {
+      when = at.toLocaleString(LocaleUtils.normalizeLocale(typeof prefs?.locale === 'string' ? prefs.locale : 'en-US'), opts);
+    } catch {
+      when = at.toLocaleString('en-US', opts);
+    }
+    return { site: cm?.getApplicationName() ?? 'ngdpbase', when, device: describeBrowser(p.requestUserAgent) };
   }
 
   /** Approve the waiting sign-in from its link (the button press). Single use; returns the username, or null. */
@@ -2854,7 +2898,7 @@ class AuthManager extends BaseManager {
     return p.username;
   }
 
-  /** Refuse the waiting sign-in from its link ("this wasn't me"). Returns the username, or null. */
+  /** Refuse the waiting sign-in from its link (Deny). Returns the username, or null. */
   denyByToken(token: string): string | null {
     const entry = this.approvalTokens.get(token);
     this.approvalTokens.delete(token);
