@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AuthManager from '../AuthManager';
+import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 import { hashPassword } from '../../utils/passwordHash';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 
@@ -86,6 +87,7 @@ describe('sign-in ends with the stored username (#1882)', () => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: config,
       UserManager: userManager,
+      PluginManager: TEST_PLUGIN_MANAGER,
       AuditManager: { ...audit, logAuditEvent: () => Promise.resolve('evt') },
       PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve(action === 'account-security' && s.username === 'admin') },
       EmailManager: { send: (m: { to: string; text: string }) => { sent.push(m); return Promise.resolve(); }, getProviderName: () => 'test' }
@@ -169,6 +171,7 @@ describe('sign-in ends with the stored username (#1882)', () => {
 
     const first = await am.authenticate('password', { username: 'ADMIN', password: PW });
     expect(am.secondFactorsFor(first.username)).toHaveLength(1);
+    expect(am.needsSecondStep(first)).toBe(true);
     const keys = await am.unlockVaults(first.username, PW);
     expect(unlocked).toEqual(['admin']);
 
@@ -177,7 +180,7 @@ describe('sign-in ends with the stored username (#1882)', () => {
     expect(am.pendingSignIn(handle, 'b')?.username).toBe('admin');
     expect(await am.sendEmailApproval(handle, 'b')).toBe('sent');
     const approve = /approve\?t=([\w-]+)/.exec(sent.at(-1).text)[1];
-    expect(am.approveByToken(approve)).toBe('admin');
+    expect(await am.approveByToken(approve)).toBe('admin');
     const done = am.completeTwoStep(handle, 'b')!;
 
     const { req, session } = fakeReq();

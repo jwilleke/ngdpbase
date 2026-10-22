@@ -28,6 +28,9 @@
   "ngdpbase.server.tls.cert-file": "",
   "ngdpbase.server.tls.key-file": "",
   "ngdpbase.server.trust-proxy": false,
+  "_comment_server_ip_location": "#1532 — roughly where a request came from (\"Columbus, United States\"), said in a sign-in approval message and page beside the IP address. Nothing is bundled and nothing is looked up outside the site; with neither set, no place is said. behind-cloudflare: true only when the site is reached through Cloudflare alone, so its cf-ipcity / cf-ipcountry headers can be believed (turn on Cloudflare's visitor location headers); anyone can send those headers to a site that is not behind Cloudflare, so they are never read while this is false. geolite2-city-file: the path to a MaxMind GeoLite2 City .mmdb file the operator downloads and keeps current (MaxMind's licence; free account), read on first use and again when the file changes. Cloudflare's headers win when both are set and name a place.",
+  "ngdpbase.server.behind-cloudflare": false,
+  "ngdpbase.server.geolite2-city-file": "",
   "_comment_config_sensitive_values": "#1750 — which configuration VALUES may be shown, and to whom. Renamed from ngdpbase.config.secret-keys, which is still read as an alias with a boot warning. Each key maps to a level. secret: never shown (Admin Configuration masks it until an admin explicitly reveals it; ConfigAccessor and every page show it only to a holder of secret-reveal, which asks for a fresh sign-in), never written to the audit log or a log line. sensitive: how this instance is run (the access policies, storage paths, outside services) — shown only to a holder of admin-read; anonymous visitors and ordinary signed-in users see (hidden). Hidden values are replaced on the server before any page is built, so they never reach page source or the cache. A key that is NOT listed but whose name looks like a secret (secret, password, token, credential, api-key, private-key) and whose value is a string is treated as secret — a backstop that fails closed; booleans and numbers under such names stay visible. A value every page already exposes (the base URL) is not worth listing. Add-ons declare their own entries in their config/default-config.json; the map merges per entry, and an instance removes a shipped entry with false or null. Deliberately short: list a key when its VALUE says something about how this instance is run or would let someone act as it.",
   "ngdpbase.config.sensitive-values": {
     "ngdpbase.session.secret": "secret",
@@ -47,6 +50,7 @@
     "ngdpbase.media.folders": "sensitive",
     "ngdpbase.server.tls.cert-file": "sensitive",
     "ngdpbase.server.tls.key-file": "sensitive",
+    "ngdpbase.server.geolite2-city-file": "sensitive",
     "ngdpbase.telemetry.otlp.endpoint": "sensitive",
     "ngdpbase.auth.authentik-bearer.issuer": "sensitive",
     "ngdpbase.auth.authentik-bearer.jwks-url": "sensitive",
@@ -2406,6 +2410,62 @@
     },
     "reauth-failure": {
       "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-request": {
+      "description": "Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-open": {
+      "description": "Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-approve": {
+      "description": "Sign-in approval: the person pressed Approve (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-deny": {
+      "description": "Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-expire": {
+      "description": "Sign-in approval: a waiting sign-in expired before it was completed (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-sendfail": {
+      "description": "Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-abandon": {
+      "description": "Sign-in approval: the browser that was waiting gave up the sign-in (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-throttle": {
+      "description": "Sign-in approval: another approval message was asked for too soon and not sent (#1532)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

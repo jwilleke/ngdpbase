@@ -15,10 +15,11 @@
           <% } else if (!details) { %>
             <div class="alert alert-secondary mb-0">This link has expired or was already used.</div>
           <% } else { %>
-            <p>A sign-in request for <strong><%= details.site %></strong> was sent at <strong><%= details.when %></strong><% if (details.device) { %> from <%= details.device %><% } %>.</p>
+            <%# The same sentence as the message (AuthManager.approvalSentence): site, time, browser, IP address and
+                roughly where (#1532). Every value in it is escaped there, so it is printed unescaped here. %>
+            <p><%- details.sentenceHtml %></p>
             <ul class="small text-muted">
               <li>Account: <%= details.username %></li>
-              <% if (details.ip) { %><li>Address: <%= details.ip %></li><% } %>
               <% if (!details.device && details.userAgent) { %><li>Browser: <%= details.userAgent %></li><% } %>
             </ul>
             <p>Was this you? Approve only if it was you, just now.</p>
