@@ -264,3 +264,32 @@ describe('verifyLog() — explained breaks (#1124)', () => {
     expect(r.segments).toHaveLength(3);
   });
 });
+
+describe('#1537 verification from a retention checkpoint', () => {
+  const restart = (previousHash: string | null) =>
+    stampRecord({ eventType: CHAIN_RESTART_EVENT, id: 'r', metadata: { previousSeq: null, previousHash, reason: 'test', actor: 'operator' } }, 1, GENESIS_HASH);
+
+  it('what remains after a checkpoint verifies from it, and not from genesis', () => {
+    const all = chainOf(5);
+    const kept = all.slice(2);
+    const start = { seq: 2, hash: all[1].hash as string };
+    expect(verifyChain(kept, { start }).ok).toBe(true);
+    expect(verifyLog(kept, { start }).ok).toBe(true);
+    expect(verifyChain(kept).ok).toBe(false);
+  });
+
+  it('a checkpoint that does not match the first record is a break', () => {
+    const all = chainOf(5);
+    expect(verifyChain(all.slice(2), { start: { seq: 2, hash: 'forged' } }).reason).toMatch(/prevHash/);
+    // A row removed just after the checkpoint is a gap.
+    expect(verifyChain(all.slice(3), { start: { seq: 2, hash: all[1].hash as string } }).reason).toMatch(/sequence gap: 2 followed by 4/);
+  });
+
+  it('a restart marker right after a checkpoint begins at genesis, and its claim is checked against the checkpoint', () => {
+    const start = { seq: 9, hash: 'head-at-9' };
+    expect(verifyLog([restart('head-at-9')], { start }).ok).toBe(true);
+    const wrong = verifyLog([restart('another-head')], { start });
+    expect(wrong.ok).toBe(false);
+    expect(wrong.segments[0].mismatchedPrevious).toBe(true);
+  });
+});

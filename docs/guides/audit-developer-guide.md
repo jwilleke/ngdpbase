@@ -1,9 +1,9 @@
 ---
 name: Audit developer guide
 description: How to add or change an audit event — the configuration entry, the names module, the emitter, the on-failure rule, the actor, the tests, and the checks that fail
-dateModified: 2026-10-21
+dateModified: 2026-10-22
 category: guides
-relatedModules: [AuditManager, FileAuditProvider]
+relatedModules: [AuditManager, FileAuditProvider, DatabaseAuditProvider]
 ---
 
 # Audit developer guide
@@ -45,6 +45,24 @@ Decided by the operator on 2026-10-17 ([#1825](https://github.com/jwilleke/ngdpb
 
 These records are what a person's read-only view of what happened to their own data is built from ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)).
 
+## The entries about one person
+
+A person sees the one audit log filtered to the entries about them, never a second log and never a copy (operator, 2026-10-22, [#1537](https://github.com/jwilleke/ngdpbase/issues/1537)). Nothing reading it removes anything; only retention removes rows. A row is about a person when the person is:
+
+- its `user`: the account acted on, or the person represented under a proxy grant;
+- its `actor`: who actually did it under a proxy grant;
+- or the owner of the resource it names: `metadata.owner`. So an emitter whose action touches something a person owns puts that person's username in `metadata.owner`, read from storage, never from the request.
+
+Core and add-ons ask through `AuditManager` with the request's subject, a page at a time:
+
+```ts
+const audit = engine.getManager('AuditManager');
+const page = await audit.searchEntriesAbout(person, { limit: 50, offset: 0 }, ctx.subject);
+// page: { results, total, limit, offset, hasMore }, newest first
+```
+
+The manager asks the PDP with that subject: `profile-manage` when the subject's username is `person` (every account holds it), `admin-system` for anyone else's entries. A refusal throws `AuditQueryForbiddenError`; never catch it into an empty page. An add-on (yourPHR's patient view) calls it from its own route or manager with the subject core handed it, and renders the rows itself. The database provider answers from indexes; the file provider from the newest 10,000 records it holds in memory.
+
 ## Addons
 
 An add-on audits its own actions without any core change (#1638):
@@ -72,7 +90,8 @@ npm run lint:audit
 npm run lint:audit-attribution
 npm run docs:audit:check
 npm run audit:coverage
-npm run audit:verify
+npm run audit:verify                 # the file provider's log
+npm run audit:verify -- --database   # the database provider's log (#1537)
 ```
 
 At boot the log says which provider loaded and whether the posture changed since the previous start; `/admin/audit` lists every declared event in its filter.

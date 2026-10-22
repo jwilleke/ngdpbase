@@ -1,17 +1,17 @@
-import BaseAuditProvider, { AuditFilters, AuditSearchResults, AuditStats, AuditBackupData } from './BaseAuditProvider.js';
+import BaseAuditProvider, {
+  AuditFilters, AuditSearchResults, AuditStats, AuditBackupData, AUDIT_RETENTION_INTERVAL_MS,
+  recordIsAbout, toStoredAuditRecord, type PersonEntriesOptions, type StoredAuditRecord
+} from './BaseAuditProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
-import type ExportManager from '../managers/ExportManager.js';
 import path from 'path';
 import fs from 'fs-extra';
 import fsp from 'fs/promises';
-import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { AuditEvent } from '../types/index.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import type { AuditReport } from './BaseAuditProvider.js';
-import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
 import { refusesOnFailure, refuseOnFailureEventTypes } from '../utils/auditRegistry.js';
 import { attributedTo, scheduleContext, systemContext } from '../context/bootActions.js';
 import type { JobContext } from '../context/JobContext.js';
@@ -19,41 +19,8 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { BackupPartRecord, ManagerBackupOptions, ManagerRestoreOptions, SiteRestoreStaging } from '../managers/BaseManager.js';
 import { extractTreeArchive, listTreeArchive, writeTreeArchive } from '../utils/treeArchive.js';
 
-export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
-export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
-
-/** A config value is `unknown`; anything that is not a string is not a path. */
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-/**
- * Extended audit event with additional fields used by FileAuditProvider
- */
-interface ExtendedAuditEvent {
-  id: string;
-  timestamp: string;
-  level?: string;
-  eventType: string;
-  user?: string;
-  /** Who actually did it when that is not `user` — under a proxy grant (#1762). */
-  actor?: string;
-  userId?: string;
-  sessionId?: string;
-  ipAddress?: string;
-  userAgent?: string;
-  resource?: string;
-  resourceType?: string;
-  action?: string;
-  result?: string;
-  reason?: string;
-  policyId?: string;
-  policyName?: string;
-  context?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  duration?: number;
-  severity?: string;
-}
+/** The stored record shape, shared with every storing provider (#1537). */
+type ExtendedAuditEvent = StoredAuditRecord;
 
 /**
  * Configuration for FileAuditProvider
@@ -83,7 +50,7 @@ interface FileAuditConfig {
  * - ngdpbase.audit.provider.file.maxfilesize - Maximum file size
  * - ngdpbase.audit.provider.file.maxfiles - Maximum number of archived files
  */
-const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
+const RETENTION_INTERVAL_MS = AUDIT_RETENTION_INTERVAL_MS;
 
 class FileAuditProvider extends BaseAuditProvider {
   /** #1122: how often retention runs after boot. Hourly is far finer than a day-scale window. */
@@ -98,10 +65,6 @@ class FileAuditProvider extends BaseAuditProvider {
    */
   private flushChain: Promise<void> = Promise.resolve();
   private flushTimer: NodeJS.Timeout | null;
-
-  /** #1138: when the chain head was last published, and what was published. */
-  private witnessPublishedAtMs: number | null = null;
-  private witnessLast: ChainWitness | null = null;
   private config: FileAuditConfig | null;
 
   constructor(engine: WikiEngine) {
@@ -337,36 +300,7 @@ class FileAuditProvider extends BaseAuditProvider {
    * from the one written.
    */
   protected override prepareRecord(auditEvent: Record<string, unknown>): Record<string, unknown> {
-    // AuditEvent may come in different shapes - need flexible property access
-    const evt = auditEvent;
-    const legacy = auditEvent as unknown as { type?: string; actor?: string; target?: string; action?: string; result?: string; error?: string; data?: Record<string, unknown>; ipAddress?: string; userAgent?: string };
-    const event: ExtendedAuditEvent = {
-      id: uuidv4(),
-      timestamp: new Date().toISOString(),
-      level: (evt.level as string) || 'info',
-      eventType: (evt.eventType as string) || legacy.type || 'unknown',
-      user: (evt.user as string) || legacy.actor || 'anonymous',
-      // #1762: who actually did it, beside the account acted on. Kept only
-      // alongside a `user` — a legacy record's `actor` IS its user (above).
-      ...(evt.user && typeof evt.actor === 'string' && evt.actor ? { actor: evt.actor } : {}),
-      userId: evt.userId as string | undefined,
-      sessionId: evt.sessionId as string | undefined,
-      ipAddress: legacy.ipAddress,
-      userAgent: legacy.userAgent,
-      resource: (evt.resource as string) || legacy.target,
-      resourceType: evt.resourceType as string | undefined,
-      action: legacy.action,
-      result: (evt.result as string) || (legacy.result === 'success' ? 'allow' : 'deny'),
-      reason: (evt.reason as string) || legacy.error,
-      policyId: evt.policyId as string | undefined,
-      policyName: evt.policyName as string | undefined,
-      context: (evt.context as Record<string, unknown>) || {},
-      metadata: (evt.metadata as Record<string, unknown>) || legacy.data || {},
-      duration: evt.duration as number | undefined,
-      severity: (evt.severity as string) || 'low'
-    };
-
-    return event as unknown as Record<string, unknown>;
+    return toStoredAuditRecord(auditEvent) as unknown as Record<string, unknown>;
   }
 
   /**
@@ -572,28 +506,26 @@ class FileAuditProvider extends BaseAuditProvider {
    */
   async exportAuditLogs(filters: AuditFilters = {}, format: 'json' | 'csv' = 'json'): Promise<string> {
     const logs = await this.searchAuditLogs(filters, { limit: 10000 });
+    return this.formatExport(logs.results, format);
+  }
 
-    if (format === 'csv') {
-      // One CSV writer for every export, owned by ExportManager: quoting, and no cell a spreadsheet would run as a formula.
-      const exportManager = this.engine.getManager<ExportManager>('ExportManager');
-      if (!exportManager) throw new Error('FileAuditProvider: CSV export needs ExportManager, which is not registered');
-      const rows = logs.results.map((logEntry) => {
-        const log = logEntry as unknown as Record<string, unknown>;
-        return [
-          log.timestamp,
-          log.eventType || log.type,
-          log.user || log.actor,
-          log.resource || log.target,
-          log.action,
-          log.result,
-          log.severity || 'low',
-          log.reason || log.error || ''
-        ];
-      });
-      return exportManager.toCsv(['timestamp', 'eventType', 'user', 'resource', 'action', 'result', 'severity', 'reason'], rows);
-    }
-
-    return JSON.stringify(logs.results, null, 2);
+  /**
+   * The entries about one person (#1537), from the records held in memory —
+   * the same window `searchAuditLogs` reads. Newest first, a page at a time.
+   */
+  override searchEntriesAbout(person: string, options: PersonEntriesOptions = {}): Promise<AuditSearchResults> {
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+    const about = this.auditLogs
+      .filter((log) => recordIsAbout(log as unknown as Record<string, unknown>, person))
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return Promise.resolve({
+      results: about.slice(offset, offset + limit) as unknown as AuditEvent[],
+      total: about.length,
+      limit,
+      offset,
+      hasMore: offset + limit < about.length
+    });
   }
 
   /**
@@ -801,10 +733,11 @@ class FileAuditProvider extends BaseAuditProvider {
     }
   }
 
-  /**
-   * Close/cleanup the audit provider
-   * @returns {Promise<void>}
-   */
+  /** Where the chain head is published, or null when nothing publishes it (#1138). */
+  override getGuarantees(): AuditReport {
+    return { ...super.getGuarantees(), headWitness: this.headWitnessReport() };
+  }
+
   /**
    * What this provider does with a record before it is on disk (#1148).
    *
@@ -826,88 +759,6 @@ class FileAuditProvider extends BaseAuditProvider {
    * The bound is still the machine. `fsync` trusts a disk controller's cache,
    * and a failed disk takes the log with it — off-box is #1138.
    */
-  /**
-   * Publish the chain head to the configured destination (#1138).
-   *
-   * The chain cannot detect truncation of its own tail — removing records from
-   * the end breaks no link — and it cannot be fixed locally, because an
-   * attacker who owns the machine owns anything the machine wrote locally. So
-   * the head goes to wherever the operator points it, and this code takes no
-   * view on whether that is genuinely off-box (D13): it reports the
-   * destination and never claims what the destination is (D21).
-   *
-   * Failure to publish is logged and swallowed. An instance that refuses to
-   * serve because it could not write a witness would be trading a working
-   * system for a detection property, which is the wrong way round — and the
-   * absence of a fresh witness is itself visible in getGuarantees().
-   */
-  private async publishChainHead(): Promise<void> {
-    const cm = this.engine?.getManager?.('ConfigurationManager') as {
-      getProperty?: (k: string, d: unknown) => unknown;
-    } | null;
-    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
-    if (destination === '') return;
-
-    const intervalMinutes = Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60);
-    const intervalMs = intervalMinutes * 60_000;
-    const now = Date.now();
-    if (!shouldPublish(this.witnessPublishedAtMs, now, intervalMs)) return;
-    // Nothing to witness yet — publishing a genesis head would assert that an
-    // empty log is complete.
-    if (this.chainSeq <= 0) return;
-
-    // The key is `application-name`, hyphenated, as every other reader spells
-    // it (WikiEngine.ts:409, MetricsManager.ts:82, and the Config type). #1138
-    // asked for `applicationname`, which matches nothing, so every instance
-    // silently published `ngdpbase` — and this field exists precisely so one
-    // witness store can hold heads from several instances.
-    const instance = asString(cm?.getProperty?.('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
-    const witness = buildWitness({
-      seq: this.chainSeq,
-      hash: this.chainPrevHash,
-      instance,
-      at: new Date(now)
-    });
-
-    try {
-      await fs.ensureDir(path.dirname(destination));
-      // Appended, never overwritten: a witness store that can be rewritten
-      // reproduces the original problem one hop away, and the history of heads
-      // is itself the evidence.
-      await fs.appendFile(destination, `${JSON.stringify(witness)}\n`, 'utf8');
-      this.witnessPublishedAtMs = now;
-      this.witnessLast = witness;
-    } catch (err) {
-      logger.error(
-        `[FileAuditProvider] Could not publish the audit chain head to "${destination}": ` +
-        `${err instanceof Error ? err.message : String(err)}. Truncation of the log tail is undetectable ` +
-        'while no witness is being written.'
-      );
-    }
-  }
-
-  /**
-   * Report where the chain head is published, or null when nothing publishes
-   * it (#1138). Facts, not a claim — see the note on AuditReport.headWitness.
-   */
-  override getGuarantees(): AuditReport {
-    const cm = this.engine?.getManager?.('ConfigurationManager') as {
-      getProperty?: (k: string, d: unknown) => unknown;
-    } | null;
-    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
-    return {
-      ...super.getGuarantees(),
-      headWitness: destination === ''
-        ? null
-        : {
-          destination,
-          intervalMinutes: Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60),
-          lastPublishedAt: this.witnessLast?.publishedAt ?? null,
-          lastSeq: this.witnessLast?.seq ?? null
-        }
-    };
-  }
-
   override getDurability(): ProviderDurability | null {
     // Before initialize() the provider has not read its configuration, so it
     // does not know its own buffering and says nothing rather than reporting
