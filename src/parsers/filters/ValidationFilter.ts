@@ -1,4 +1,4 @@
-import BaseFilter from './BaseFilter.js';
+import BaseFilter, { type ParseContext } from './BaseFilter.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -83,17 +83,6 @@ interface ValidationReport {
 }
 
 /**
- * Parse context interface
- */
-interface ParseContext {
-  pageName?: string;
-  userName?: string;
-  engine?: {
-    getManager: (name: string) => unknown;
-  };
-}
-
-/**
  * Initialization context interface
  */
 interface InitContext {
@@ -107,19 +96,6 @@ interface InitContext {
  */
 interface ConfigManager {
   getProperty: (key: string, defaultValue: unknown) => unknown;
-}
-
-/**
- * Notification manager interface
- */
-interface NotificationManager {
-  addNotification: (notification: {
-    type: string;
-    title: string;
-    message: string;
-    priority: string;
-    source: string;
-  }) => void;
 }
 
 /**
@@ -418,7 +394,7 @@ class ValidationFilter extends BaseFilter {
    */
   async collectErrors(
     content: string,
-    context: ParseContext = {}
+    context?: ParseContext
   ): Promise<Array<{ filterId: string; rule: string; severity: 'error'; message: string; line?: number; column?: number }>> {
     if (!content) return [];
 
@@ -612,21 +588,25 @@ class ValidationFilter extends BaseFilter {
    * @param context - Parse context
    */
   async handleValidationResults(_content: string, errors: ValidationError[], warnings: ValidationError[], context: ParseContext): Promise<void> {
+    // The page is the parse's WikiContext's (#629 Pass 2 removed the
+    // ParseContext copy; reading `context.pageName` logged "undefined", #2000).
+    const pageName = context.wikiContext.pageName;
+
     // Log validation issues if configured
     if (this.validationConfig?.logValidationErrors) {
       if (errors.length > 0) {
-        logger.error(`❌ Validation errors in ${context.pageName}:`, errors);
+        logger.error(`❌ Validation errors in ${pageName}:`, errors);
       }
       if (warnings.length > 0) {
-        logger.warn(`⚠️  Validation warnings in ${context.pageName}:`, warnings);
+        logger.warn(`⚠️  Validation warnings in ${pageName}:`, warnings);
       }
     }
 
     // Store error reports for later review
     if (errors.length > 0 || warnings.length > 0) {
       this.errorReports.push({
-        pageName: context.pageName || '',
-        userName: context.userName || '',
+        pageName: pageName ?? '',
+        userName: context.userName,
         errors,
         warnings,
         timestamp: new Date().toISOString()
@@ -638,17 +618,8 @@ class ValidationFilter extends BaseFilter {
       }
     }
 
-    // Send to notification system if available
-    const notificationManager = context.engine?.getManager('NotificationManager') as NotificationManager | undefined;
-    if (notificationManager && errors.length > 0) {
-      notificationManager.addNotification({
-        type: 'validation',
-        title: `Content Validation Errors: ${context.pageName}`,
-        message: `${errors.length} validation errors found`,
-        priority: 'medium',
-        source: 'ValidationFilter'
-      });
-    }
+    // No admin notification (#2000, operator 2026-10-22): the person editing
+    // already sees the errors, and the log line above names the page.
 
     // Throw error if configured to fail on validation errors
     if (this.validationConfig?.failOnValidationError && errors.length > 0) {
