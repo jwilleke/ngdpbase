@@ -204,6 +204,21 @@ describe('the PDP answers what UserManager used to', () => {
     expect(evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['anonymous']);
   });
 
+  // #1813: who holds a permission is the PDP's question (was utils/administrators.ts).
+  test('usersHolding lists every account that holds the permission, each asked as the PIP resolves them now', async () => {
+    const { pdp } = makeWith((u) => (u === 'bob' ? { username: 'bob', roles: ['editor'], isAuthenticated: true } : null));
+    const users = { getUsers: vi.fn(async () => [{ username: 'bob' }, { username: 'ghost' }]) };
+    const engine = (pdp as unknown as { engine: { getManager: (n: string) => unknown } }).engine;
+    const inner = engine.getManager;
+    engine.getManager = (n: string) => (n === 'UserManager' ? users : inner(n));
+    expect(await pdp.usersHolding('page-edit')).toEqual(['bob']);
+  });
+
+  test('usersHolding is null when there is no UserManager to list accounts from', async () => {
+    const { pdp } = makeWith(() => null);
+    expect(await pdp.usersHolding('admin-system')).toBeNull();
+  });
+
   test('getUserPermissions is the union the policies give the user\'s current roles', async () => {
     const { pdp } = makeWith((u) => (u === 'bob' ? { username: 'bob', roles: ['editor'], isAuthenticated: true } : null));
     expect(await pdp.getUserPermissions('bob')).toEqual(['page-edit']);
