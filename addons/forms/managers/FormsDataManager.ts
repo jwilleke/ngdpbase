@@ -7,6 +7,8 @@ import { isAtLeast } from '../../../dist/src/utils/version.js';
 import { actorOf, type ActorContext } from '../../../dist/src/context/ActorContext.js';
 import { systemContext } from '../../../dist/src/context/bootActions.js';
 import { administratorUsernames } from '../../../dist/src/utils/administrators.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
+import type { AuditEventSink } from '../../../dist/src/utils/auditEvents.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -285,9 +287,19 @@ export default class FormsDataManager {
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
 
-  constructor(engine: unknown, dataPath: string) {
+  /** The add-on's host: how it records the audit events it declares. */
+  private host: Pick<AddonHost, 'recordAuditEvent' | 'addonAuditEventName'> | null;
+
+  /**
+   * @param engine - The running engine
+   * @param dataPath - The forms folder: definitions and submissions
+   * @param host - What core handed the forms add-on (`register`'s third
+   *   argument); without it, nothing that must be recorded can be done
+   */
+  constructor(engine: unknown, dataPath: string, host?: Pick<AddonHost, 'recordAuditEvent' | 'addonAuditEventName'>) {
     this.engine = (engine ?? null) as { getManager: (name: string) => unknown } | null;
     this.dataPath = dataPath;
+    this.host = host ?? null;
   }
 
   async initialize(): Promise<void> {
@@ -395,13 +407,57 @@ export default class FormsDataManager {
   }
 
   async getSubmissionCount(formId: string): Promise<number> {
-    const dir = path.join(this.dataPath, 'submissions', formId);
+    return (await this.submissionFiles(formId)).length;
+  }
+
+  /** The stored submission files of one form; none when it has no folder. */
+  private async submissionFiles(formId: string): Promise<string[]> {
     try {
-      const files = await fsp.readdir(dir);
-      return files.filter(f => f.endsWith('.json')).length;
+      return (await fsp.readdir(path.join(this.dataPath, 'submissions', formId))).filter(f => f.endsWith('.json'));
     } catch {
-      return 0;
+      return [];
     }
+  }
+
+  /**
+   * Remove every stored submission of one form (#1973), so the form can be
+   * deleted. Any form: built on the site, provided by an add-on, or one its
+   * add-on no longer provides; the definition is not touched. The
+   * `submission-clear` record (who, which form, how many) is written first
+   * and is declared on-failure: refuse, so a record that cannot be written
+   * leaves every submission in place. Only the files counted are removed: one
+   * submitted while this runs is kept.
+   *
+   * @param formId - The form whose submissions are removed
+   * @param ctx - Who is clearing them
+   * @returns How many were removed; 0 records nothing
+   * @throws When the form id is not a form id, there is no host to record
+   *   with, or the record cannot be written
+   */
+  async clearSubmissions(formId: string, ctx: ActorContext): Promise<number> {
+    if (!/^[a-z0-9-]+$/.test(formId)) throw new Error(`clearSubmissions: '${formId}' is not a form id`);
+    const files = await this.submissionFiles(formId);
+    if (files.length === 0) return 0;
+    if (!this.host) throw new Error('clearSubmissions: the forms add-on has no host to record with, so nothing was cleared');
+
+    const who = actorOf(ctx);
+    const providedBy = this.definitions.get(formId)?.providedBy;
+    await this.host.recordAuditEvent(this.engine?.getManager('AuditManager') as AuditEventSink | null | undefined, {
+      eventType: this.host.addonAuditEventName('submission-clear'),
+      ...who,
+      action: 'submission-clear',
+      result: 'success',
+      severity: 'high',
+      resource: formId,
+      resourceType: 'form',
+      metadata: { formId, count: files.length, ...(providedBy ? { providedBy } : {}), ...who.metadata }
+    }, (err) => console.warn(`[FormsDataManager] audit record failed for submission-clear of '${formId}':`, err));
+
+    const dir = path.join(this.dataPath, 'submissions', formId);
+    for (const file of files) await fsp.rm(path.join(dir, file), { force: true });
+    await fsp.rmdir(dir).catch(() => undefined); // kept when something arrived meanwhile
+    console.info(`[FormsDataManager] ${files.length} submission(s) of '${formId}' cleared by ${who.user}`);
+    return files.length;
   }
 
   /**
