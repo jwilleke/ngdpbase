@@ -964,8 +964,16 @@ A form you provide is read-only on the site:
 A form you stop shipping can be deleted by an administrator, and nothing else. It is orphaned when your add-on did not load this boot (removed, turned off, or failed to load), or loaded but did not call `registerShippedForm` for that id. `FormsDataManager` records the ids each add-on registers during the boot, and decides only once core's load pass is over (`AddonsManager.addonsLoaded()`, true after every enabled add-on's `register()` has run); before that, nothing is orphaned. `FormsDataManager.orphanedFrom(formId)` returns the add-on's slug for an orphaned form, otherwise undefined.
 
 - The forms admin shows it as "No longer provided by `<addon>`", with Delete and still no Edit.
-- `deleteDefinition` and the builder's delete route allow it; a form your add-on still provides is refused as above (403). As for any form, a delete with submissions is refused (409), and a delete never removes submissions.
+- `deleteDefinition` and the builder's delete route allow it; a form your add-on still provides is refused as above (403). As for any form, a delete with submissions is refused (409), and a delete never removes submissions: an administrator clears them first (below).
 - If your add-on ships the form again, its next start writes it again, as a first install.
+
+An administrator can clear a form's stored submissions, on any form: built on the site, one your add-on still provides, or one it no longer provides ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)). Clearing removes data and leaves the definition alone, so it doesn't make a still-provided form deletable.
+
+- The forms admin card of a form with submissions has __Clear submissions__: the count, a link to the CSV export, and a box where the admin types the form id. The button stays disabled until the id matches, and the route checks it again.
+- `POST /addons/forms/:formId/submissions/clear` (CSRF, `admin-system`) calls `FormsDataManager.clearSubmissions(formId, ctx)`. It removes the `<dataPath>/submissions/<formId>/*.json` files it counted and returns that count. A submission that arrives while it runs is kept.
+- The manager records `submission-clear` first: who, the form, `count`, and `providedBy` when the form has one. The forms add-on declares it in its own `config/default-config.json` (`"grantable": false`, `on-failure: refuse`) and writes it through `host.recordAuditEvent`, so a record that can't be written leaves every submission in place. Without the host (`register`'s third argument), the manager clears nothing.
+- `GET /addons/forms/:formId/export.csv` (`admin-system`) downloads every stored submission, oldest first, through `ExportManager.toCsv`. Columns: `id`, `submittedAt`, `submittedBy`, `status`, `formVersion`, the `onBehalfOf` fields, `notes`, then one column per field, plus any key a submission carries that the form no longer has. Lists and `lines` rows are written as JSON. The submissions page links to it too.
+- A form with `"store": false` has no stored submissions, so it never needs clearing.
 
 Each submission records `formVersion`: the `providedBy` version of the form it was submitted on. Your handler receives it on the submission, and the stored submission keeps it. A site-built form's submissions have none.
 
@@ -1757,8 +1765,8 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - Versions compare as `x.y.z` only. A pre-release version (`1.2.0-rc.1`) makes `registerShippedForm` throw, as a malformed `minVersion` is refused.
   - The version recorded is the `package.json` `version`; Admin → Add-ons shows the module's own `version`. Keep them the same, or the two pages disagree.
   - The notice for an older add-on is raised at every start until a newer one is installed; nothing remembers it was sent.
-  - An add-on cannot remove a form it no longer ships: the copy stays, read-only. Nothing on the site removes it either.
-  - `formVersion` is stored on the submission and passed to your handler; the forms admin does not show it yet.
+  - An add-on cannot remove a form it no longer ships: the copy stays, read-only, until an administrator clears its submissions and deletes it.
+  - `formVersion` is stored on the submission and passed to your handler; the forms admin pages don't show it, though the CSV export has it as a column.
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 
