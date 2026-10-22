@@ -284,6 +284,27 @@ describe('BackupManager', () => {
       expect(results.skipped).toContain('GhostManager');
     });
 
+    test('#1813 skips a registered manager without restore(), as backup skips one without backup()', async () => {
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'no-restore.json.gz' });
+      // An add-on manager that used to extend BaseManager, whose default backup() wrote an empty entry.
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'CalendarDataManager') return { toMarqueeText: vi.fn() };
+        return null;
+      });
+
+      const { promisify } = await import('util');
+      const { gzip, gunzip } = await import('zlib');
+      const data = JSON.parse((await promisify(gunzip)(await fs.readFile(backupPath))).toString('utf8'));
+      data.managers['CalendarDataManager'] = { managerName: 'CalendarDataManager', timestamp: new Date().toISOString(), data: null };
+      await fs.writeFile(backupPath, await promisify(gzip)(JSON.stringify(data)));
+
+      const results = await bm.restoreFromFile(ADMIN_CTX, backupPath);
+
+      expect(results.skipped).toContain('CalendarDataManager');
+      expect(results.failed).toEqual([]);
+    });
+
     test('skips managers with backup errors', async () => {
       const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'error-skip.json.gz' });
 

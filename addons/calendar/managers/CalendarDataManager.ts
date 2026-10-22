@@ -4,8 +4,6 @@ import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { areIntervalsOverlapping, parseISO, addDays, format } from 'date-fns';
-import BaseManager from '../../../dist/src/managers/BaseManager.js';
-import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.js';
 
 /**
@@ -85,17 +83,17 @@ export interface UserContext {
  * CalendarDataManager
  *
  * Manages events across N calendars. Each calendar is stored in its own JSON
- * file under `dataPath/<calendarId>.json`. Extends BaseManager to integrate
- * with the engine's manager registry and the MarqueePlugin.
+ * file under `dataPath/<calendarId>.json`. A plain class (#1813): it is
+ * registered with `engine.registerManager`, and MarqueePlugin reaches its
+ * `toMarqueeText` by name. Its `dataPath` is backed up by BackupManager.
  */
-class CalendarDataManager extends BaseManager {
+class CalendarDataManager {
   private dataPath: string;
   private events: Map<string, CalendarEvent>;
 
   readonly description = 'Event calendar data manager — multi-calendar, RFC 5545 fields';
 
-  constructor(engine: WikiEngine, dataPath: string) {
-    super(engine);
+  constructor(dataPath: string) {
     this.dataPath = dataPath;
     this.events = new Map();
   }
@@ -379,7 +377,7 @@ class CalendarDataManager extends BaseManager {
    * Events with `class: CONFIDENTIAL` are always excluded.
    */
    
-  override async toMarqueeText(options: ManagerFetchOptions = {}): Promise<string> {
+  async toMarqueeText(options: ManagerFetchOptions = {}): Promise<string> {
     const raw = options as Record<string, unknown>;
 
     const calendarId = typeof raw['calendarId'] === 'string'

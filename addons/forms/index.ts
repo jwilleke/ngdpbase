@@ -55,7 +55,6 @@ import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonHost } from '../../dist/src/utils/addonHost.js';
-import { ApiError } from '../../dist/src/context/ApiContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
 import FormsPlugin from './plugins/FormsPlugin.js';
@@ -91,6 +90,9 @@ const formsAddon = {
 
   _handlers: new Map<string, FormHandler>(),
 
+  /** What core handed this add-on at register (#1813); null until then. */
+  _host: null as AddonHost | null,
+
   registerHandler(formId: string, handler: FormHandler): void {
     this._handlers.set(formId, handler);
     console.info(`[FormsAddon] Handler registered for form: ${formId}`);
@@ -107,20 +109,20 @@ const formsAddon = {
       return await handler(submission, context);
     } catch (err) {
       // The handler's own permission check refused: the route sends it, as any add-on route would.
-      if (err instanceof ApiError) throw err;
+      if (this._host && err instanceof this._host.ApiError) throw err;
       console.error(`[FormsAddon] Handler error for form ${formId}:`, err);
       return { ok: false, error: 'Handler threw an unexpected error' };
     }
   },
 
-  async register(engine: WikiEngine, config: Record<string, unknown>, host?: AddonHost): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
+    formsAddon._host = host;
     const cm = engine.getManager<ConfigurationManager>('ConfigurationManager');
     const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
       ? config['dataPath']
       : (cm?.resolveDataPath?.('forms') ?? './data/forms');
 
     // ── 1. FormsDataManager ──────────────────────────────────────────────────
-    // The host records this add-on's audit events (submission-clear, #1973).
     dataManager = new FormsDataManager(engine, dataPath, host);
     await dataManager.initialize();
     engine.registerManager('FormsDataManager', dataManager);
@@ -154,9 +156,9 @@ const formsAddon = {
     engine.app?.set('views', [...[existing].flat(), path.join(__dirname, 'views')]);
 
     // ── 7. Mount routes ──────────────────────────────────────────────────────
-    engine.app?.use('/api/forms',           apiRoutes(engine, formsAddon));
-    engine.app?.use('/addons/forms/builder', builderRoutes(engine));
-    engine.app?.use('/addons/forms',         adminRoutes(engine, formsAddon));
+    engine.app?.use('/api/forms',           apiRoutes(engine, formsAddon, host));
+    engine.app?.use('/addons/forms/builder', builderRoutes(engine, host));
+    engine.app?.use('/addons/forms',         adminRoutes(engine, formsAddon, host));
 
     // ── 8. Announce capability ───────────────────────────────────────────────
     engine.setCapability('forms', true);
@@ -173,6 +175,7 @@ const formsAddon = {
 
   async shutdown(): Promise<void> {
     dataManager = null;
+    this._host = null;
     this._handlers.clear();
   }
 };

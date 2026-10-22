@@ -48,7 +48,7 @@ async function setup(opts: { provider?: 'console' | 'smtp'; windowMinutes?: numb
     ConfigurationManager: configManager,
     NotificationManager: notifications,
     UserManager: { getUsers: async () => [{ username: 'admin' }, { username: 'reader' }] },
-    PolicyDecisionPoint: { userHoldsPermission: async (u: string, a: string) => u === 'admin' && a === 'admin-system' }
+    PolicyDecisionPoint: { usersHolding: async (a: string) => (a === 'admin-system' ? ['admin'] : []) }
   };
   const manager = new EmailManager({ getManager: (name: string) => managers[name] });
   await manager.initialize();
@@ -194,7 +194,7 @@ describe('EmailManager + NotificationManager — the failure notice is never ema
         getUsers: async () => [{ username: 'admin' }],
         searchUsers: async () => [{ username: 'admin', email: 'admin@example.net' }]
       },
-      PolicyDecisionPoint: { userHoldsPermission: async (u: string) => u === 'admin' }
+      PolicyDecisionPoint: { usersHolding: async () => ['admin'] }
     };
     const engine = { getManager: (name: string) => managers[name] };
     const notificationManager = new NotificationManager(engine);

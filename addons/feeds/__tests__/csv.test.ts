@@ -139,14 +139,14 @@ describe('preambleSuspicion (#1102)', () => {
 describe('csvAdapter (#911)', () => {
   it('fetch() parses the CSV body into RawRecords', async () => {
     const policy = stubFetch(FIRMS);
-    const rows = await csvAdapter.fetch(base, policy);
+    const rows = await csvAdapter.fetch(base, policy, guardedFetch);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ latitude: '64.4314', confidence: 'n' });
   });
 
   it('fetch() throws on non-ok', async () => {
     const policy = stubFetch('', false, 503);
-    await expect(csvAdapter.fetch(base, policy)).rejects.toThrow(/503/);
+    await expect(csvAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/503/);
   });
 
   it('parse() lifts columns as properties and synthesizes a stable id when none', () => {
@@ -167,7 +167,7 @@ describe('csvAdapter (#911)', () => {
   it('fetch() warns when the parse looks like it hit an unskipped preamble', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const policy = stubFetch(PREAMBLE);
-    await csvAdapter.fetch(base, policy);
+    await csvAdapter.fetch(base, policy, guardedFetch);
     expect(spy).toHaveBeenCalledTimes(1);
     const msg = String(spy.mock.calls[0][0]);
     expect(msg).toContain("feed 'firms'");
@@ -178,7 +178,7 @@ describe('csvAdapter (#911)', () => {
   it('fetch() does not warn once skipLines is set correctly', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const policy = stubFetch(PREAMBLE);
-    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 }, policy);
+    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 }, policy, guardedFetch);
     expect(spy).not.toHaveBeenCalled();
     expect(Object.keys(rows[0])).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
     spy.mockRestore();
@@ -187,7 +187,7 @@ describe('csvAdapter (#911)', () => {
   it('fetch() does not warn for an ordinary multi-column feed', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const policy = stubFetch(FIRMS);
-    await csvAdapter.fetch(base, policy);
+    await csvAdapter.fetch(base, policy, guardedFetch);
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
