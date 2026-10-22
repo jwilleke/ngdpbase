@@ -34,10 +34,7 @@ import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type AssetManager from '../../dist/src/managers/AssetManager.js';
 import { Sist2AssetProvider } from './src/Sist2AssetProvider.js';
-import { validateUrl } from '../../dist/src/http/ssrf.js';
-import { createGuardedElasticsearchClient, refusedNodeMessage } from '../../dist/src/http/guardedElasticsearch.js';
-import { resolveEgressPolicy } from '../../dist/src/http/egressPolicy.js';
-import logger from '../../dist/src/utils/logger.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import adminRoutes from './routes/admin.js';
 
 import { fileURLToPath } from 'url';
@@ -58,7 +55,8 @@ const elasticsearchAddon = {
    * Called at startup when the add-on is enabled.
    */
    
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
+    const { validateUrl, resolveEgressPolicy, createGuardedElasticsearchClient, refusedNodeMessage, logger } = host;
     const esUrl    = typeof config['es-url']    === 'string' ? config['es-url']    : 'http://localhost:9200';
     const esIndex  = typeof config['es-index']  === 'string' ? config['es-index']  : 'sist2';
     // #1186: NO default. The one that shipped, http://localhost:4090, is
@@ -106,7 +104,7 @@ const elasticsearchAddon = {
     const esVerdict = validateUrl(esUrl, resolveEgressPolicy(readConfig).policy);
     if (!esVerdict.ok) logger.error(refusedNodeMessage('elasticsearch addon', esUrl, esVerdict.reason));
     const client = createGuardedElasticsearchClient(esUrl, readConfig);
-    provider = new Sist2AssetProvider(client, esIndex, sist2Url, indexIds, readConfig, pathAccess, hiddenPaths);
+    provider = new Sist2AssetProvider(host, client, esIndex, sist2Url, indexIds, readConfig, pathAccess, hiddenPaths);
     storedConfig = { esUrl, esIndex, sist2Url, indexIds, hiddenPaths };
 
     // #1186: say it once at boot, not only on the admin page. A refused
@@ -140,7 +138,7 @@ const elasticsearchAddon = {
     engine.app?.set('views', [...[existing].flat(), path.join(__dirname, 'views')]);
 
     // ── Mount admin route ─────────────────────────────────────────────────────
-    engine.app?.use('/addons/elasticsearch', adminRoutes(engine, () => provider, storedConfig));
+    engine.app?.use('/addons/elasticsearch', adminRoutes(engine, () => provider, storedConfig, host));
 
     const addonsManager = engine.getManager<AddonsManager>('AddonsManager');
     if (addonsManager) {
