@@ -17,6 +17,8 @@
  *   GET  /addons/forms/:formId/submissions — list submissions for a form
  *   GET  /addons/forms/:formId/submissions/:id — view a submission
  *   POST /addons/forms/:formId/submissions/:id/status — update submission status
+ *   GET  /addons/forms/:formId/export.csv  — download a form's submissions as CSV
+ *   POST /addons/forms/:formId/submissions/clear — remove a form's stored submissions (#1973)
  *
  * Shipping a form from another add-on (#1973):
  *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');

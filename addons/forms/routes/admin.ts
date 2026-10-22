@@ -3,7 +3,28 @@ import type { Router, Request, Response } from 'express';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
-import type { SubmissionStatus } from '../managers/FormsDataManager.js';
+import type { FormDefinition, FormSubmission, SubmissionStatus } from '../managers/FormsDataManager.js';
+import type ExportManager from '../../../dist/src/managers/ExportManager.js';
+
+/**
+ * A form's submissions as a table for CSV (#1973): who and when, then one
+ * column per field the form has, then any other key a submission carries
+ * (a field since removed). A list or a row of lines is written as JSON.
+ */
+export function submissionsTable(form: FormDefinition, submissions: FormSubmission[]): { headers: string[]; rows: unknown[][] } {
+  const names = form.fields.filter(f => f.type !== 'section').map(f => f.name);
+  for (const s of submissions) {
+    for (const key of Object.keys(s.data)) if (!names.includes(key)) names.push(key);
+  }
+  const headers = ['id', 'submittedAt', 'submittedBy', 'status', 'formVersion',
+    'onBehalfOf.name', 'onBehalfOf.email', 'onBehalfOf.phone', 'onBehalfOf.address', 'notes', ...names];
+  const rows = submissions.map(s => [
+    s.id, s.submittedAt, s.submittedBy, s.status, s.formVersion,
+    s.onBehalfOf?.name, s.onBehalfOf?.email, s.onBehalfOf?.phone, s.onBehalfOf?.address, s.notes,
+    ...names.map(n => s.data[n])
+  ]);
+  return { headers, rows };
+}
 
 export default function adminRoutes(engine: WikiEngine, _addon: unknown, host: AddonHost): Router {
   const { ApiContext, ApiError, sendApiError } = host;
@@ -92,6 +113,60 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown, host: A
           form,
           submission
         });
+      } catch (err) {
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
+        res.status(500).send(String(err));
+      }
+    })();
+  });
+
+  // ── GET /addons/forms/:formId/export.csv ──────────────────────────────────
+  // #1973: every stored submission of one form, oldest first, through core's one CSV writer.
+  router.get('/:formId/export.csv', async (req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
+
+        const m = fdm();
+        const form = m?.getDefinition(String(req.params['formId']));
+        if (!form) { res.status(404).send('Form not found'); return; }
+        const exporter = engine.getManager<ExportManager>('ExportManager');
+        if (!exporter) { res.status(503).send('ExportManager not available'); return; }
+
+        const submissions = (await m!.getSubmissions(form.id)).reverse();
+        const { headers, rows } = submissionsTable(form, submissions);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${form.id}-submissions.csv"`);
+        res.send(exporter.toCsv(headers, rows));
+      } catch (err) {
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
+        res.status(500).send(String(err));
+      }
+    })();
+  });
+
+  // ── POST /addons/forms/:formId/submissions/clear ──────────────────────────
+  // #1973: remove a form's stored submissions so it can be deleted. Any form,
+  // including one an add-on still provides; the admin types the form id.
+  router.post('/:formId/submissions/clear', async (req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
+
+        const m = fdm();
+        const formId = String(req.params['formId']);
+        if (!m?.getDefinition(formId)) { res.status(404).send('Form not found'); return; }
+        const body = req.body as Record<string, unknown>;
+        const confirm = typeof body['confirm'] === 'string' ? body['confirm'].trim() : '';
+        if (confirm !== formId) {
+          res.redirect(`/addons/forms?flash=not-cleared&form=${encodeURIComponent(formId)}`);
+          return;
+        }
+
+        const count = await m.clearSubmissions(formId, ctx.getActor());
+        res.redirect(`/addons/forms?flash=cleared&form=${encodeURIComponent(formId)}&count=${count}`);
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
