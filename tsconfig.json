@@ -79,6 +79,7 @@
     "scripts/check-addon-load.ts",
     "scripts/check-context-discipline.ts",
     "scripts/check-audit-attribution.ts",
+    "scripts/check-backup-boundary.ts",
     "scripts/check-http-boundary.ts",
     "scripts/check-lockfile-audit.ts",
     "scripts/check-page-door.ts",

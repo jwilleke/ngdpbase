@@ -17,6 +17,8 @@ import { verifyChain } from '../../utils/auditChain';
 import { beginSiteRestore, commitSiteRestore, readSiteRestore } from '../../utils/siteRestore';
 import { BACKUP_KEY_ENV } from '../../utils/backupKey';
 import { listTreeArchive, writeTreeArchive } from '../../utils/treeArchive';
+// BackupManager names and checks each archive, and hands the provider the means in its options (#1985).
+import { archiveReader, archiveWriter } from '../../utils/directoryBackup';
 
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
 let dir: string;
@@ -65,7 +67,7 @@ afterEach(async () => {
 
 async function stage(p: FileAuditProvider, data: Awaited<ReturnType<FileAuditProvider['backupFiles']>>['data']): Promise<void> {
   beginSiteRestore(siteFile, { stagedAt: new Date().toISOString(), backup: new Date().toISOString(), source: 'b1.json.gz.enc', stagedBy: 'admin' });
-  await p.stageRestore(data, { ctx: CTX, directory: backups, siteRestore: siteFile });
+  await p.stageRestore(data, { ctx: CTX, directory: backups, siteRestore: siteFile, readArchive: archiveReader(backups) });
   commitSiteRestore(siteFile);
 }
 
@@ -75,7 +77,7 @@ describe('the audit log in a backup (#1876)', () => {
     const p = makeProvider();
     await p.initialize();
     for (let i = 0; i < 3; i++) await p.logAuditEvent({ eventType: 'page-edit', user: `before-${i}` });
-    const { data } = await p.backupFiles({ ctx: CTX, directory: backups, stem: 'b1' });
+    const { data } = await p.backupFiles({ ctx: CTX, directory: backups, stem: 'b1', archive: archiveWriter(backups, 'b1') });
     expect(data).toMatchObject({ archive: 'b1.audit.tar.enc', files: 1, keyFingerprint: expect.any(String) });
     const entries: string[] = [];
     await listTreeArchive(path.join(backups, data.archive), (e) => entries.push(e.path), { backupKey: process.env[BACKUP_KEY_ENV] });
@@ -121,7 +123,7 @@ describe('the audit log in a backup (#1876)', () => {
     await writeTreeArchive(path.join(backups, 'b1.audit.tar.enc'), work, { backupKey: process.env[BACKUP_KEY_ENV] });
     const { backupKeyFingerprint } = await import('../../utils/backupKey');
     beginSiteRestore(siteFile, { stagedAt: '', backup: '', source: 'b1', stagedBy: 'admin' });
-    await expect(p.stageRestore({ format: 1, archive: 'b1.audit.tar.enc', files: 1, bytes: 1, keyFingerprint: backupKeyFingerprint(process.env[BACKUP_KEY_ENV]) }, { ctx: CTX, directory: backups, siteRestore: siteFile }))
+    await expect(p.stageRestore({ format: 1, archive: 'b1.audit.tar.enc', files: 1, bytes: 1, keyFingerprint: backupKeyFingerprint(process.env[BACKUP_KEY_ENV]) }, { ctx: CTX, directory: backups, siteRestore: siteFile, readArchive: archiveReader(backups) }))
       .rejects.toThrow(/not audit files/);
     expect(await fs.pathExists(path.join(logs, 'audit.log.staged'))).toBe(false);
     await p.close();

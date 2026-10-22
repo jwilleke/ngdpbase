@@ -31,8 +31,7 @@
  */
 
 import BaseManager from './BaseManager.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
-import { applyFilePartAtStart, backupFilePart, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import type { BackupData, BackupFolder } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
@@ -1264,12 +1263,10 @@ class AuthManager extends BaseManager {
   private async openCredentialsStore(configManager: ConfigurationManager | null | undefined): Promise<void> {
     this.credentials = null;
     const key = process.env[CREDENTIALS_KEY_ENV] ?? '';
-    const file = configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json');
+    // #1876, #1985: a staged site restore put the backed-up store in place in initialize(), before this reads it.
+    const file = this.configuredCredentialsFile(configManager);
     if (!file) return;
     this.credentialsFile = file;
-    // #1876: a staged site restore puts the backed-up store in place before it is read.
-    const restored = applyFilePartAtStart('AuthManager', file, configManager);
-    if (restored?.refused) this.markNeedsAttention(`A staged restore of the credentials store was not applied: ${restored.refused}`, 'ngdpbase.auth.credentials.file');
     if (!key) {
       this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
       return;
@@ -3110,49 +3107,41 @@ class AuthManager extends BaseManager {
     return Array.from(this.providers.values());
   }
 
-  /**
-   * The provider list, and the credentials store (#1876): passkeys, TOTP,
-   * verified email and phone, devices, linked identities and proxy grants,
-   * as its own file beside the document, __always encrypted under
-   * `NGDPBASE_BACKUP_KEY`__ (`<stem>.credentials.tar.enc`). Without the key the
-   * store is left out and the backup is reported incomplete; it is never in a
-   * backup unencrypted. The rows stay signed with `NGDPBASE_CREDENTIALS_KEY`,
-   * which is not in the backup: a site restored under another credentials key
-   * holds them in quarantine (#1633).
-   */
-  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    const providers = Array.from(this.providers.keys());
-    const base = { managerName: 'AuthManager', timestamp: new Date().toISOString() };
-    if (!options?.directory) return { ...base, data: { providers, credentials: null } };
-    const part = await backupFilePart('AuthManager', 'credentials', this.credentialsFile, options, { requireKey: true, what: 'credentials store' });
-    return {
-      ...base,
-      data: { providers, credentials: part.data },
-      ...(part.note ? { note: part.note } : {}),
-      ...(part.warnings.length > 0 ? { warnings: part.warnings } : {})
-    };
+  /** `ngdpbase.auth.credentials.file`, resolved: the credentials store. */
+  private configuredCredentialsFile(configManager: ConfigurationManager | null | undefined = this.engine.getManager<ConfigurationManager>('ConfigurationManager')): string | null {
+    return configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json') ?? null;
   }
 
   /**
-   * Stage the credentials store from a backup for the next start, with the
-   * rest of a site restore (#1876). A backup that left it out (no backup key
-   * when it was taken) stages nothing: the store on the site stays, and the
-   * restore's notification names it as not restored.
+   * The provider list. The credentials store (#1876) — passkeys, TOTP,
+   * verified email and phone, devices, linked identities and proxy grants —
+   * is a declared file (`backupFolders`), which BackupManager writes beside
+   * the document as `data.credentials`.
    */
-  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    const credentials = (backupData.data as { credentials?: DirectoryBackupData | null } | null)?.credentials ?? null;
-    if (!credentials) {
-      logger.warn('[AuthManager] The backup holds no credentials store (it was taken without NGDPBASE_BACKUP_KEY); the store on this site is kept (#1876)');
-      return;
-    }
-    if (!this.credentialsFile) throw new Error('This site has no credentials store configured (ngdpbase.auth.credentials.file); nothing was staged');
-    await stageFilePart('AuthManager', this.credentialsFile, credentials, options, { whenAbsent: JSON.stringify({ version: 1, rows: [] }) });
+  async backup(): Promise<BackupData> {
+    return { managerName: 'AuthManager', timestamp: new Date().toISOString(), data: { providers: Array.from(this.providers.keys()) } };
   }
 
-  /** Staged for the next start with the rest of a site restore (#1876). */
-  override restoreIsStaged(): boolean {
-    return true;
+  /**
+   * The credentials store, as its own file beside the backup document,
+   * __always encrypted under `NGDPBASE_BACKUP_KEY`__
+   * (`<stem>.credentials.tar.enc`; #1876, declared since #1985). Without the
+   * key it is left out and the backup is reported incomplete; it is never in
+   * a backup unencrypted. A backup that left it out stages nothing: the store
+   * on the site stays, and the restore's notification names it as not
+   * restored. The rows stay signed with `NGDPBASE_CREDENTIALS_KEY`, which is
+   * not in the backup: a site restored under another credentials key holds
+   * them in quarantine (#1633).
+   */
+  override backupFolders(): BackupFolder[] {
+    return [{
+      part: 'credentials',
+      file: this.credentialsFile ?? this.configuredCredentialsFile(),
+      what: 'credentials store',
+      requireKey: true,
+      whenAbsent: JSON.stringify({ version: 1, rows: [] }),
+      optional: true
+    }];
   }
 }
 

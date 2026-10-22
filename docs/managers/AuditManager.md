@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-10-19'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -1229,7 +1229,7 @@ __Recommendations:__
 
 ## Backup and restore
 
-With `fileauditprovider` the audit log is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `AuditManager.backup()` asks the provider's `backupFiles()`, which flushes the queue and writes the live log and every archive as `<stem>.audit.tar` (`.tar.enc` under the backup key) — the audit files only, never the application logs in the same folder. A provider that keeps no files (database, cloud) is not in the file backup. A restore is staged (`restoreIsStaged()` is true): `stageRestore()` refuses an archive holding anything but audit files and extracts it to `audit.log.staged/`. At the next start, before the chain head is read, every audit file now in the folder (newer archives included) moves into `audit.log.pre-restore/` and the backup's take their place. The chain then resumes from the backup's last record and verifies; the records written after the backup verify in the pre-restore folder; a chain-head witness holds heads past the restored log, which that folder answers. See the [backup and restore guide](../guides/backup-restore-guide.md#what-each-staged-part-does-at-the-restart).
+With `fileauditprovider` the audit log is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `AuditManager.backup()` asks the provider's `backupFiles()`, which flushes the queue and writes the live log and every archive as `<stem>.audit.tar` (`.tar.enc` under the backup key), the archive named and keyed by BackupManager (`options.archive`, [#1985](https://github.com/jwilleke/ngdpbase/issues/1985)); the audit files are not one folder, so this is special handling, not a declaration — the audit files only, never the application logs in the same folder. A provider that keeps no files (database, cloud) is not in the file backup. A restore is staged (`restoreIsStaged()` is true): `stageRestore()` reads the archive BackupManager checks (`options.readArchive`), refuses one holding anything but audit files, and extracts it to `audit.log.staged/`. At the next start, before the chain head is read, every audit file now in the folder (newer archives included) moves into `audit.log.pre-restore/` and the backup's take their place. The chain then resumes from the backup's last record and verifies; the records written after the backup verify in the pre-restore folder; a chain-head witness holds heads past the restored log, which that folder answers. See the [backup and restore guide](../guides/backup-restore-guide.md#what-each-staged-part-does-at-the-restart).
 
 ## Security Considerations
 

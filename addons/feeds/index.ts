@@ -64,8 +64,8 @@ const feedsAddon = {
       (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback
     );
 
-    // #1876: a staged site restore of the record stores goes in before any is read.
-    if (configManager) feedManager.applyRestoreAtStart(configManager);
+    // #1876, #1985: the record stores under dataPath are backed up by BackupManager, and a
+    // staged restore of them was put in place before register() ran.
 
     // Reachable for the fetch='FeedManager.toMarqueeText(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);

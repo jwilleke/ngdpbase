@@ -37,8 +37,7 @@ export class AuditQueryForbiddenError extends Error {
  * const auditManager = engine.getManager('AuditManager');
  * await auditManager.logAccess('admin', 'Main', 'view', 'granted');
  */
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
-import type { DirectoryBackupData } from '../utils/directoryBackup.js';
+import BaseManager, { type BackupData, type BackupPartRecord, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
 import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -995,8 +994,8 @@ class AuditManager extends BaseManager {
 
   /** The active provider's file backup and staged restore, when it keeps files (FileAuditProvider, #1876). */
   private fileProvider(): {
-    backupFiles(options: ManagerBackupOptions): Promise<{ data: DirectoryBackupData; warnings: string[] }>;
-    stageRestore(data: DirectoryBackupData, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void>;
+    backupFiles(options: ManagerBackupOptions): Promise<{ data: BackupPartRecord; warnings: string[] }>;
+    stageRestore(data: BackupPartRecord, options: ManagerRestoreOptions & { siteRestore: string }): Promise<void>;
   } | null {
     const p = this.provider as unknown as { backupFiles?: unknown; stageRestore?: unknown } | null;
     return p && typeof p.backupFiles === 'function' && typeof p.stageRestore === 'function' ? p as ReturnType<AuditManager['fileProvider']> : null;
@@ -1020,7 +1019,7 @@ class AuditManager extends BaseManager {
   /** Staged for the next start with the rest of a site restore (#1876); the live log keeps recording until then. */
   override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
     await super.restore(backupData);
-    const data = backupData.data as DirectoryBackupData | null;
+    const data = backupData.data as BackupPartRecord | null;
     if (!data) {
       logger.warn('[AuditManager] The backup holds no audit files; the audit log on this site is kept (#1876)');
       return;
