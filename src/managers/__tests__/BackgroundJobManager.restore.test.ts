@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import BackgroundJobManager, { type JobDefinition } from '../BackgroundJobManager';
 import FileJobStateProvider from '../../providers/FileJobStateProvider';
-import { beginSiteRestore, commitSiteRestore, readSiteRestore } from '../../utils/siteRestore';
+import { beginSiteRestore, commitSiteRestore, readSiteRestore, stagingFor } from '../../utils/siteRestore';
 import { BACKUP_KEY_ENV } from '../../utils/backupKey';
 import { backupDeclaredParts, placePartRecords, stageDeclaredParts } from '../../utils/directoryBackup';
 import type { BackupData } from '../BaseManager';
@@ -97,7 +97,7 @@ async function backupEntry(m: BackgroundJobManager): Promise<BackupData> {
 async function backupAndStage(m: BackgroundJobManager): Promise<void> {
   const data = await backupEntry(m);
   beginSiteRestore(siteFile(), { stagedAt: new Date(clock).toISOString(), backup: BACKUP_AT, source: 'b1.json.gz.enc', stagedBy: 'admin' });
-  await stageDeclaredParts('BackgroundJobManager', m.backupFolders(), data, { ctx: CTX, directory: backups(), siteRestore: siteFile() });
+  await stageDeclaredParts('BackgroundJobManager', m.backupFolders(), data, { ctx: CTX, directory: backups(), siteRestore: stagingFor(siteFile(), 'BackgroundJobManager') });
   commitSiteRestore(siteFile());
 }
 

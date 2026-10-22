@@ -18,8 +18,8 @@
  * named `.tar.enc`; a restore reads them only under the key they were made
  * with; BackupManager names each archive and checks its key (#1985).
  *
- * A restore stages, all or nothing with the rest of a site restore
- * (`src/utils/siteRestore.ts`): the pool is extracted to `<pool>.staged`
+ * A restore stages, all or nothing with the rest of a site restore, whose
+ * record BackupManager keeps (#1986): the pool is extracted to `<pool>.staged`
  * with the metadata written from the document; each vault's files to
  * `<store>/attachments.staged` and `<store>/files-index.json.staged`. A
  * vault whose files are not all sealed bytes is refused when the vault on
@@ -32,8 +32,8 @@ import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, m
 import path from 'node:path';
 import logger from '../utils/logger.js';
 import { extractTreeArchive, listTreeArchive, readHead, vanishedDuringBackup, vanishedNote, writeTreeArchive } from '../utils/treeArchive.js';
-import type { BackupArchiveTarget, ManagerRestoreOptions } from '../managers/BaseManager.js';
-import { applyPartAtStart, recordStagedPart, stagedPathFor, type PartOutcome, type StagedSwap } from '../utils/siteRestore.js';
+import type { BackupArchiveTarget, ManagerRestoreOptions, SiteRestoreStaging, StagedRestoreAtStart, StagedSwap } from '../managers/BaseManager.js';
+import type { WikiEngine } from '../types/WikiEngine.js';
 import { isSealedBytes } from '../utils/privateStoreCrypto.js';
 import { vaultMustBeSealed } from '../utils/privateStoreFiles.js';
 import {
@@ -187,7 +187,7 @@ export async function stageAttachmentFiles(
   readArchive: NonNullable<ManagerRestoreOptions['readArchive']>,
   data: AttachmentFilesBackupData,
   metadataJson: string,
-  siteRestore: string
+  siteRestore: SiteRestoreStaging
 ): Promise<{ skippedVaults: string[] }> {
   // #1985: BackupManager checks each name (a bare file in the backup directory) and the key.
   const poolArchive = readArchive('AttachmentManager', data?.pool?.archive, data?.keyFingerprint);
@@ -197,7 +197,7 @@ export async function stageAttachmentFiles(
   const skippedVaults: string[] = [];
   try {
     // The shared pool, with its metadata from the document.
-    const poolStaged = stagedPathFor(places.pool);
+    const poolStaged = siteRestore.stagedPathFor(places.pool);
     swaps.push({ live: places.pool, staged: poolStaged });
     await extractTreeArchive(poolArchive.path, poolStaged, { backupKey });
     const metadataRel = path.relative(places.pool, places.metadataFile);
@@ -206,7 +206,7 @@ export async function stageAttachmentFiles(
       mkdirSync(path.dirname(target), { recursive: true });
       writeFileSync(target, metadataJson, { mode: 0o600 });
     } else {
-      const staged = stagedPathFor(places.metadataFile);
+      const staged = siteRestore.stagedPathFor(places.metadataFile);
       writeFileSync(staged, metadataJson, { mode: 0o600 });
       swaps.push({ live: places.metadataFile, staged });
     }
@@ -226,7 +226,7 @@ export async function stageAttachmentFiles(
       const indexRel = `${prefix}${places.layout.files.storefiles}`;
       const staged: string[] = [];
       if (await archiveHas(vaultArchive.path, attachmentsRel, backupKey)) {
-        const dirStaged = stagedPathFor(dir);
+        const dirStaged = siteRestore.stagedPathFor(dir);
         swaps.push({ live: dir, staged: dirStaged });
         await extractTreeArchive(vaultArchive.path, dirStaged, { select: (rel) => rel.startsWith(attachmentsRel), strip: 4, backupKey });
         staged.push(dirStaged);
@@ -234,7 +234,7 @@ export async function stageAttachmentFiles(
       if (await archiveHas(vaultArchive.path, indexRel, backupKey)) {
         const tmp = path.join(path.dirname(index), `.${path.basename(index)}.restore`);
         await extractTreeArchive(vaultArchive.path, tmp, { select: (rel) => rel === indexRel, strip: 3, backupKey });
-        const indexStaged = stagedPathFor(index);
+        const indexStaged = siteRestore.stagedPathFor(index);
         rmSync(indexStaged, { force: true });
         renameSync(path.join(tmp, path.basename(index)), indexStaged);
         rmSync(tmp, { recursive: true, force: true });
@@ -248,7 +248,7 @@ export async function stageAttachmentFiles(
         }
       }
     }
-    recordStagedPart(siteRestore, { manager: 'AttachmentManager', swaps });
+    siteRestore.record(swaps);
     return { skippedVaults };
   } catch (err) {
     for (const s of swaps) rmSync(s.staged, { recursive: true, force: true });
@@ -268,7 +268,7 @@ async function archiveHas(archive: string, rel: string, backupKey: string | unde
  * read: only the pool, its metadata file and vault attachment paths may be
  * replaced, whatever the manifest says.
  */
-export function applyAttachmentFilesAtStart(places: AttachmentFilePlaces, siteRestore: string): PartOutcome | null {
+export async function applyAttachmentFilesAtStart(engine: WikiEngine, places: AttachmentFilePlaces): Promise<StagedRestoreAtStart | null> {
   const pool = path.resolve(places.pool);
   const metadataFile = path.resolve(places.metadataFile);
   const isVaultPath = (live: string): boolean => {
@@ -277,19 +277,18 @@ export function applyAttachmentFilesAtStart(places: AttachmentFilePlaces, siteRe
     return rel.length === 4 && rel[0] === places.layout.privateRoot && isSafePathSegment(rel[1]) && isValidStoreId(rel[2])
       && (rel[3] === places.layout.attachmentsDir || rel[3] === places.layout.files.storefiles);
   };
-  return applyPartAtStart(siteRestore, 'AttachmentManager', {
+  const { applyStagedPartAtStart } = await import('../managers/BackupManager.js');
+  return applyStagedPartAtStart(engine, 'AttachmentManager', {
     allowed: (swap) => {
       const live = path.resolve(swap.live);
       return live === pool || live === metadataFile || isVaultPath(live);
     },
-    strays: () => {
-      const found = [stagedPathFor(places.pool), stagedPathFor(places.metadataFile)].filter((p) => existsSync(p));
+    mayBeStaged: () => {
+      const lives = [places.pool, places.metadataFile];
       for (const { owner, store } of vaultStores(places).stores) {
-        for (const live of [privateStoreAttachmentsDir(places.pagesDirectory!, owner, store, places.layout), storeFileIndexPath(places.pagesDirectory!, owner, store, places.layout)]) {
-          if (existsSync(stagedPathFor(live))) found.push(stagedPathFor(live));
-        }
+        lives.push(privateStoreAttachmentsDir(places.pagesDirectory!, owner, store, places.layout), storeFileIndexPath(places.pagesDirectory!, owner, store, places.layout));
       }
-      return found;
+      return lives;
     }
   });
 }

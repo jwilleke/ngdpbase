@@ -1,7 +1,9 @@
 import path from 'path';
 import type { Readable } from 'stream';
 import { create as createTar } from 'tar';
-import BaseManager, { type BackupData as BaseBackupData, type BackupFolder, type StagedRestoreAtStart } from './BaseManager.js';
+import BaseManager, {
+  type BackupData as BaseBackupData, type BackupFolder, type StagedRestoreAtStart, type StagedSwap
+} from './BaseManager.js';
 import type DatabaseManager from './DatabaseManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
@@ -16,7 +18,8 @@ import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
-  beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, readSiteRestore, siteRestoreFile,
+  applyPartAtStart, beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, gatePart, markPart, readSiteRestore, siteRestoreFile,
+  stagedPathFor, stagingFor,
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
 import { encryptBuffer, ENCRYPTED_SUFFIX } from '../utils/backupCrypto.js';
@@ -229,6 +232,75 @@ export function applyStagedPartsAtStart(engine: WikiEngine, manager: string, dec
   const configManager = engine?.getManager?.<ConfigurationManager>('ConfigurationManager');
   if (!configManager) return null;
   return applyDeclaredPartsAtStart(manager, declared, configManager);
+}
+
+/** The site restore manifest's file, as configured; a module function for the start, before BackupManager exists (#1986). */
+function manifestFileOf(engine: WikiEngine): string {
+  return siteRestoreFile(engine?.getManager?.<ConfigurationManager>('ConfigurationManager'));
+}
+
+/** How a manager whose restore is staged (`restoreIsStaged()`) puts its part in place at start (#1986). */
+export interface StagedPartAtStartOptions {
+  /** Whether this manager may replace that live path: a manifest naming any other is refused, whatever it says. */
+  allowed: (swap: StagedSwap) => boolean;
+  /** The live paths of this manager's that may have a staged copy beside them: one no committed restore names (an interrupted staging) is set aside. */
+  mayBeStaged?: () => string[];
+  /**
+   * Put one swap in place yourself, instead of the rename: for a part whose
+   * live path is not a file or folder of its own (the audit files share the
+   * log folder). Move the live content to `kept` and the staged one in;
+   * throw to refuse.
+   */
+  put?: (swap: StagedSwap, kept: string) => void;
+}
+
+/**
+ * Put `manager`'s part of a staged site restore in place, at start, before
+ * it reads its data (#1876, #1986): when the whole restore is there to
+ * apply, each live path steps aside as `<live>.pre-restore` and the staged
+ * copy takes its name; otherwise its staged files are set aside as
+ * `*.incomplete`. The part is marked in BackupManager's record either way.
+ * For a manager whose restore is staged by its own `restore()` (the
+ * attachments, the audit log); declared folders and files go through
+ * `applyStagedPartsAtStart`. A module function: most managers start before
+ * BackupManager. Null when there was nothing to do.
+ */
+export function applyStagedPartAtStart(engine: WikiEngine, manager: string, options: StagedPartAtStartOptions): StagedRestoreAtStart | null {
+  return applyPartAtStart(manifestFileOf(engine), manager, {
+    allowed: options.allowed,
+    strays: () => (options.mayBeStaged?.() ?? []).map(stagedPathFor).filter((p) => existsSync(p)),
+    ...(options.put ? { put: options.put } : {})
+  });
+}
+
+/**
+ * BackupManager's answer, at start, for a manager that applies a staged
+ * restore of its own kind (the databases, #1723): whether its part of a
+ * staged site restore is to go in now (#1876, #1986).
+ *
+ * - `none` — no site restore names it: the manager does as it would alone.
+ * - `apply` — the whole restore is there: put it in, then `settle` it.
+ * - `set-aside` — it isn't (`reason`): set the staged files aside, then `settle` it.
+ */
+export interface SiteRestorePartAtStart {
+  decision: 'none' | 'apply' | 'set-aside';
+  reason?: string;
+  /** Record what became of the part. Nothing to record for `none`, or a set-aside with no part of this manager's. */
+  settle(status: 'applied' | 'set-aside', note?: string): void;
+}
+
+/** BackupManager's start-time gate on `manager`'s part of a staged site restore (#1986): see {@link SiteRestorePartAtStart}. */
+export function siteRestorePartAtStart(engine: WikiEngine, manager: string): SiteRestorePartAtStart {
+  const file = manifestFileOf(engine);
+  const gate = gatePart(file, manager);
+  const named = gate.decision === 'apply' || (gate.decision === 'set-aside' && Boolean(gate.part));
+  return {
+    decision: gate.decision,
+    ...(gate.decision === 'set-aside' ? { reason: gate.reason } : {}),
+    settle: (status, note) => {
+      if (named) markPart(file, manager, status, note);
+    }
+  };
 }
 
 /** Managers whose backup entry holds nothing of the site's own: never named as not restored. */
@@ -1699,7 +1771,7 @@ class BackupManager extends BaseManager {
       for (const name of ordered) {
         logger.info(`📦 Staging ${name}...`);
         const restoreOptions = {
-          ctx, directory, source: path.basename(backupPath), safetyBackup: before, siteRestore: siteFile,
+          ctx, directory, source: path.basename(backupPath), safetyBackup: before, siteRestore: stagingFor(siteFile, name),
           replaceStaged: options.replaceStaged || Boolean(databaseStaged), readArchive: archiveReader(directory)
         };
         // #1985: declared folders and files are staged here; the manager writes no restore code for them.
@@ -1715,7 +1787,7 @@ class BackupManager extends BaseManager {
       const envFile = this.instanceEnvFile();
       if (env && envFile) {
         logger.info('📦 Staging the instance .env...');
-        await stageFilePart(INSTANCE_ENV_PART, envFile, env, { ctx, directory, siteRestore: siteFile }, { whenAbsent: '' });
+        await stageFilePart(INSTANCE_ENV_PART, envFile, env, { ctx, directory, siteRestore: stagingFor(siteFile, INSTANCE_ENV_PART) }, { whenAbsent: '' });
       }
       const committed = commitSiteRestore(siteFile);
       // #1876: every part of the backup that is not in the restore — no staged

@@ -24,11 +24,12 @@
 import { existsSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type {
-  BackupArchiveTarget, BackupData, BackupFolder, BackupFilePart, BackupPartRecord, ManagerBackupOptions, ManagerRestoreOptions, StagedRestoreAtStart
+  BackupArchiveTarget, BackupData, BackupFolder, BackupFilePart, BackupPartRecord, ManagerBackupOptions, ManagerRestoreOptions, SiteRestoreStaging, StagedRestoreAtStart,
+  StagedSwap
 } from '../managers/BaseManager.js';
 import logger from './logger.js';
 import { extractTreeArchive, vanishedNote, writeTreeArchive } from './treeArchive.js';
-import { applyPartAtStart, readSiteRestore, recordStagedPart, siteRestoreFile, stagedPathFor, type StagedSwap } from './siteRestore.js';
+import { applyPartAtStart, readSiteRestore, siteRestoreFile, stagedPathFor } from './siteRestore.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from './backupKey.js';
 import { ENCRYPTED_SUFFIX } from './backupCrypto.js';
 
@@ -193,7 +194,7 @@ function isPartRecord(value: unknown): value is BackupPartRecord {
   return Boolean(value) && typeof value === 'object' && (value as BackupPartRecord).format === 1 && 'archive' in (value as object);
 }
 
-function requireSiteRestore(manager: string, options?: ManagerRestoreOptions): asserts options is ManagerRestoreOptions & { siteRestore: string } {
+function requireSiteRestore(manager: string, options?: ManagerRestoreOptions): asserts options is ManagerRestoreOptions & { siteRestore: SiteRestoreStaging } {
   if (!options?.siteRestore || !options.directory) {
     throw new Error(`${manager}'s restore is staged with the rest of the site, so it is restored through BackupManager (#1876)`);
   }
@@ -238,7 +239,7 @@ export async function stageDeclaredParts(manager: string, declared: BackupFolder
       if (isFilePart(part)) await stageOneFile(live, path.join(options.directory, data.archive), backupKey, part.whenAbsent);
       else await extractTreeArchive(path.join(options.directory, data.archive), staged, { backupKey });
     }
-    if (swaps.length > 0) recordStagedPart(options.siteRestore, { manager, swaps });
+    if (swaps.length > 0) options.siteRestore.record(swaps);
   } catch (err) {
     for (const s of swaps) rmSync(s.staged, { recursive: true, force: true });
     throw err;

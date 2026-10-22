@@ -55,7 +55,6 @@ import {
   applyStagedRestore, manifestPath, runOffThread, setAsideStagedRestore, stagedPath, writeManifest,
   type ApplyOutcome, type DatabaseExport, type DatabaseStage, type StagedRestoreManifest
 } from '../providers/sqliteBackup.js';
-import { gatePart, markPart, recordStagedPart, siteRestoreFile } from '../utils/siteRestore.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
 
 // The environment variable holding the SQLCipher key: one declaration, `src/utils/databaseKey.ts`.
@@ -214,7 +213,7 @@ class DatabaseManager extends BaseManager {
     this.databaseFile = file;
     // #1723: a staged restore goes in now, before any database opens.
     try {
-      this.applyRestoreAtStart(file);
+      await this.applyRestoreAtStart(file);
     } catch (err) {
       this.markUnavailable(`A staged database restore could not be put in place: ${(err as Error).message}. ` +
         'No database was opened. Some databases may already be restored: each one moved is kept beside it as *.pre-restore, and the rest are still *.staged beside ' +
@@ -577,13 +576,7 @@ class DatabaseManager extends BaseManager {
     };
     writeManifest(manifestFile, manifest);
     // #1876: part of a site restore — the databases go in with the other parts, or not at all.
-    if (options.siteRestore) {
-      recordStagedPart(options.siteRestore, {
-        manager: 'DatabaseManager',
-        swaps: manifest.databases.map((d) => ({ live: d.live, staged: d.staged })),
-        discard: [manifestFile]
-      });
-    }
+    options.siteRestore?.record(manifest.databases.map((d) => ({ live: d.live, staged: d.staged })), { discard: [manifestFile] });
     const names = stages.map((s) => s.name).join(', ');
     logger.warn(`[DatabaseManager] Restore staged for ${names} — restart to apply it (#1723)`);
     const unopened = this.unavailable
@@ -696,7 +689,7 @@ class DatabaseManager extends BaseManager {
   }
 
   /** Put a staged restore in place, before any database opens; loud when it cannot. */
-  private applyRestoreAtStart(file: string): void {
+  private async applyRestoreAtStart(file: string): Promise<void> {
     const dir = path.resolve(path.dirname(file));
     const allowed = (live: string): boolean => {
       const resolved = path.resolve(live);
@@ -706,17 +699,18 @@ class DatabaseManager extends BaseManager {
     };
     // #1876: a database restore staged as part of a site restore goes in only
     // when the whole site restore does; otherwise it is set aside with it.
-    const siteFile = siteRestoreFile(this.engine.getManager<ConfigurationManager>('ConfigurationManager'));
+    // BackupManager keeps that record and decides (#1986); a module function, as DatabaseManager starts first.
+    const { siteRestorePartAtStart } = await import('./BackupManager.js');
     const stagedBackupAt = this.getStagedRestore()?.backup ?? '';
-    const gate = gatePart(siteFile, 'DatabaseManager');
+    const gate = siteRestorePartAtStart(this.engine, 'DatabaseManager');
     let outcome: ApplyOutcome | null;
     if (gate.decision === 'set-aside') {
       outcome = setAsideStagedRestore(file, `the site restore it belongs to was not applied: ${gate.reason}`);
-      if (gate.part) markPart(siteFile, 'DatabaseManager', 'set-aside', gate.reason);
+      gate.settle('set-aside', gate.reason);
     } else {
       outcome = applyStagedRestore(file, allowed);
       if (gate.decision === 'apply') {
-        markPart(siteFile, 'DatabaseManager', outcome && !outcome.refused ? 'applied' : 'set-aside', outcome?.refused ?? (outcome ? undefined : 'no staged database restore was found'));
+        gate.settle(outcome && !outcome.refused ? 'applied' : 'set-aside', outcome?.refused ?? (outcome ? undefined : 'no staged database restore was found'));
       }
     }
     if (!outcome) return;

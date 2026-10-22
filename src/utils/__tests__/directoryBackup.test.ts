@@ -13,7 +13,7 @@ import path from 'node:path';
 import {
   applyDeclaredPartsAtStart, backupDeclaredParts, partRecordIn, placePartRecords, stageDeclaredParts, stageFilePart, type DirectoryBackupData
 } from '../directoryBackup';
-import { beginSiteRestore, commitSiteRestore, readSiteRestore, recordStagedPart } from '../siteRestore';
+import { beginSiteRestore, commitSiteRestore, readSiteRestore, recordStagedPart, stagingFor } from '../siteRestore';
 import { BACKUP_KEY_ENV } from '../backupKey';
 import { isEncryptedBackup } from '../backupCrypto';
 import type { BackupFolder } from '../../managers/BaseManager';
@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 const backupOptions = () => ({ ctx: CTX, directory: path.join(dir, 'backups'), stem: 'b1' }) as never;
-const restoreOptions = () => ({ ctx: CTX, directory: path.join(dir, 'backups'), siteRestore: path.join(dir, 'site-restore.json') }) as never;
+const restoreOptions = (manager: string) => ({ ctx: CTX, directory: path.join(dir, 'backups'), siteRestore: stagingFor(path.join(dir, 'site-restore.json'), manager) }) as never;
 const siteFile = () => path.join(dir, 'site-restore.json');
 const begin = () => beginSiteRestore(siteFile(), { stagedAt: '', backup: '2026-10-01T00:00:00.000Z', source: 'b1', stagedBy: 'admin' });
 const configManager = () => ({ getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.backup.restore-manifest' ? siteFile() : def) });
@@ -54,7 +54,7 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     expect(backup.data).toMatchObject({ format: 1, archive: 'b1.roles.tar.enc', files: 1, keyFingerprint: expect.any(String) });
     expect(isEncryptedBackup(fs.readFileSync(path.join(dir, 'backups', 'b1.roles.tar.enc')))).toBe(true);
     begin();
-    await stageDeclaredParts('RoleManager', roles(), backup, restoreOptions());
+    await stageDeclaredParts('RoleManager', roles(), backup, restoreOptions('RoleManager'));
     expect(fs.readFileSync(path.join(dir, 'roles.staged', 'editor.json'), 'utf8')).toContain('alice');
     expect(readSiteRestore(siteFile())?.parts).toEqual([{ manager: 'RoleManager', swaps: [{ live: path.join(dir, 'roles'), staged: path.join(dir, 'roles.staged') }] }]);
   });
@@ -63,9 +63,9 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     const backup = await entry('RoleManager', roles());
     begin();
     process.env[BACKUP_KEY_ENV] = 'another-key';
-    await expect(stageDeclaredParts('RoleManager', roles(), backup, restoreOptions())).rejects.toThrow(/made with a different backup key .*nothing was staged/);
+    await expect(stageDeclaredParts('RoleManager', roles(), backup, restoreOptions('RoleManager'))).rejects.toThrow(/made with a different backup key .*nothing was staged/);
     delete process.env[BACKUP_KEY_ENV];
-    await expect(stageDeclaredParts('RoleManager', roles(), backup, restoreOptions())).rejects.toThrow(/encrypted under the backup key, and NGDPBASE_BACKUP_KEY is not set/);
+    await expect(stageDeclaredParts('RoleManager', roles(), backup, restoreOptions('RoleManager'))).rejects.toThrow(/encrypted under the backup key, and NGDPBASE_BACKUP_KEY is not set/);
     expect(fs.existsSync(path.join(dir, 'roles.staged'))).toBe(false);
     expect(readSiteRestore(siteFile())?.parts).toEqual([]);
   });
@@ -83,7 +83,7 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     expect(fs.readdirSync(path.join(dir, 'backups'))).toEqual(['b1.roles.tar']);
     // A backup that left it out stages nothing for it, and the site's store stays.
     begin();
-    expect(await stageDeclaredParts('AuthManager', credentials(file), auth, restoreOptions())).toEqual({ leftOut: ['credentials'] });
+    expect(await stageDeclaredParts('AuthManager', credentials(file), auth, restoreOptions('AuthManager'))).toEqual({ leftOut: ['credentials'] });
     expect(fs.existsSync(`${file}.staged`)).toBe(false);
   });
 
@@ -93,7 +93,7 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     expect(absent.data).toMatchObject({ providers: ['password'], credentials: { archive: 'b1.credentials.tar.enc', files: 0 } });
     expect(partRecordIn(absent, credentials(file), 'credentials')).toMatchObject({ files: 0 });
     begin();
-    await stageDeclaredParts('AuthManager', credentials(file), absent, restoreOptions());
+    await stageDeclaredParts('AuthManager', credentials(file), absent, restoreOptions('AuthManager'));
     expect(fs.readFileSync(`${file}.staged`, 'utf8')).toBe('{"version":1,"rows":[]}');
   });
 
@@ -102,16 +102,16 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     fs.writeFileSync(file, 'A=1\n');
     const record = (await entry('BackupManager', [{ part: 'env', file, what: '.env', whenAbsent: '' }])).data as DirectoryBackupData;
     begin();
-    await stageFilePart('BackupManager', file, record, restoreOptions(), { whenAbsent: '' });
+    await stageFilePart('BackupManager', file, record, restoreOptions('BackupManager'), { whenAbsent: '' });
     expect(fs.readFileSync(`${file}.staged`, 'utf8')).toBe('A=1\n');
   });
 
   test('a part the backup does not hold refuses the restore unless it is optional', async () => {
     begin();
-    await expect(stageDeclaredParts('RoleManager', roles(), { managerName: 'RoleManager', timestamp: '', data: null }, restoreOptions()))
+    await expect(stageDeclaredParts('RoleManager', roles(), { managerName: 'RoleManager', timestamp: '', data: null }, restoreOptions('RoleManager')))
       .rejects.toThrow(/The backup holds no RoleManager files .*nothing was staged/);
     const optional: BackupFolder[] = [{ ...roles()[0], optional: true }];
-    expect(await stageDeclaredParts('RoleManager', optional, { managerName: 'RoleManager', timestamp: '', data: { backend: 'sqlite' } }, restoreOptions())).toEqual({ leftOut: ['roles'] });
+    expect(await stageDeclaredParts('RoleManager', optional, { managerName: 'RoleManager', timestamp: '', data: { backend: 'sqlite' } }, restoreOptions('RoleManager'))).toEqual({ leftOut: ['roles'] });
   });
 
   test('two parts of one manager are recorded under data[part], staged together, and a failure removes both', async () => {
@@ -121,13 +121,13 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     const backup = await entry('ExampleManager', two);
     expect(Object.keys(backup.data as object).sort()).toEqual(['extra', 'roles']);
     begin();
-    await stageDeclaredParts('ExampleManager', two, backup, restoreOptions());
+    await stageDeclaredParts('ExampleManager', two, backup, restoreOptions('ExampleManager'));
     expect(readSiteRestore(siteFile())?.parts[0].swaps).toHaveLength(2);
     // The second archive gone: the first part's staged folder is removed too.
     fs.rmSync(path.join(dir, 'roles.staged'), { recursive: true });
     fs.rmSync(path.join(dir, 'extra.staged'), { recursive: true });
     fs.rmSync(path.join(dir, 'backups', 'b1.extra.tar.enc'));
-    await expect(stageDeclaredParts('ExampleManager', two, backup, restoreOptions())).rejects.toThrow(/missing/);
+    await expect(stageDeclaredParts('ExampleManager', two, backup, restoreOptions('ExampleManager'))).rejects.toThrow(/missing/);
     expect(fs.existsSync(path.join(dir, 'roles.staged'))).toBe(false);
   });
 });
@@ -136,7 +136,7 @@ describe('applying declared parts at start (#1985)', () => {
   test('only a declared path is put in place; the backup time comes with the outcome', async () => {
     const backup = await entry('RoleManager', roles());
     begin();
-    await stageDeclaredParts('RoleManager', roles(), backup, restoreOptions());
+    await stageDeclaredParts('RoleManager', roles(), backup, restoreOptions('RoleManager'));
     commitSiteRestore(siteFile());
     fs.writeFileSync(path.join(dir, 'roles', 'editor.json'), '{"member":[]}');
     const outcome = applyDeclaredPartsAtStart('RoleManager', roles(), configManager());
