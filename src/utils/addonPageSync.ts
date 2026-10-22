@@ -68,8 +68,8 @@ export function evaluateSeededAddonPage(args: {
 /**
  * How a shipped item's sync status reads on an admin screen: the status words
  * and the edit protection of Admin → Required Pages, which every screen that
- * syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`;
- * shipped forms, #1918).
+ * syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`,
+ * #1918).
  *
  *  - `status` — `modified` when the live copy differs from what ships,
  *    `current` when it is the same.

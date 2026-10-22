@@ -328,6 +328,17 @@ class PolicyInformationPoint extends BaseManager {
     return this.anonymousSubject();
   }
 
+  /**
+   * The subject's per-person add-ons that are turned on (#1963): an attribute
+   * the PIP supplies to a decision (the page audience `addon:<slug>`, #1964)
+   * the way it supplies roles from RoleManager. AddonsManager owns the answer;
+   * none when it is not running.
+   */
+  async subjectEnabledAddons(ctx: ActorContext): Promise<string[]> {
+    const addonsManager = this.engine.getManager<{ enabledAddonsFor(c: ActorContext): Promise<string[]> }>('AddonsManager');
+    return addonsManager ? addonsManager.enabledAddonsFor(ctx) : [];
+  }
+
   private userManager(): UserManager {
     const userManager = this.engine.getManager<UserManager>('UserManager');
     if (!userManager) throw new Error('PolicyInformationPoint requires UserManager');

@@ -147,6 +147,22 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     expect(await parser.parse('[{EditorsOnly}]', as(['reader']))).toContain('nothing');
   });
 
+  test('a per-viewer list is never served to another viewer with the same roles, and follows their preference (#1965)', async () => {
+    // What ConfigAccessor type='my-addons' relies on: the key holds the
+    // username, and a preference saved through UserManager bumps its topic.
+    const turnedOn: Record<string, string[]> = { molly: ['phr'], dan: [] };
+    const plugins = (parser as unknown as { engine: { getManager(n: string): { registerPlugin(n: string, p: unknown): Promise<void> } } }).engine.getManager('PluginManager');
+    await plugins.registerPlugin('Mine', {
+      execute: (context: { userContext?: { username?: string } }) => `<span>${(turnedOn[context.userContext?.username ?? ''] ?? []).join(',') || 'none'}</span>`
+    });
+    const as = (username: string) => ({ pageName: 'My add-ons', userContext: { username, roles: ['reader'] } });
+    expect(await parser.parse('[{Mine}]', as('molly'))).toContain('>phr<');
+    expect(await parser.parse('[{Mine}]', as('dan'))).toContain('>none<');
+    turnedOn.dan = ['phr'];
+    versions.set('UserManager', 'v2'); // the preference write bumps the account topic
+    expect(await parser.parse('[{Mine}]', as('dan'))).toContain('>phr<');
+  });
+
   test('a plugin that depends on the clock re-renders once the minute changes, not on every read', async () => {
     let shown = 0;
     const plugins = (parser as unknown as { engine: { getManager(n: string): { registerPlugin(n: string, p: unknown): Promise<void> } } }).engine.getManager('PluginManager');

@@ -63,12 +63,26 @@ describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {
     expect(Object.isFrozen(host)).toBe(true);
   });
 
+  test('#1973: buildAddonHost\'s systemContext names the engine\'s system principal, or core\'s fallback without one', () => {
+    const engine = { getManager: (n: string) => (n === 'PolicyInformationPoint' ? { systemPrincipalName: () => 'svc-test' } : null) };
+    expect(buildAddonHost('ledger', defaults, undefined, engine).systemContext('ledger: seed')).toMatchObject({ username: 'svc-test', origin: 'boot', reason: 'ledger: seed' });
+    expect(buildAddonHost('ledger', defaults).systemContext('ledger: seed').username).toBe('system');
+  });
+
   test('buildAddonHost refuses an undeclared event, as on a site', async () => {
     const host = buildAddonHost('ledger', defaults);
     const sink = { logAuditEvent: vi.fn(async () => 'id-1') };
     expect(() => host.addonAuditEventName('ledger-close')).toThrow(/may record only the audit events it declares/);
     await expect(host.recordAuditEvent(sink, event('ledger-close'))).rejects.toThrow(/'ledger-close' is not one of them/);
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('buildAddonHost: setEnabledForPerson refuses unless the test gives it a setter (#1963)', async () => {
+    const ctx = { username: 'alice', roles: ['reader'], isAuthenticated: true };
+    await expect(buildAddonHost('ledger', defaults).setEnabledForPerson(ctx, true)).rejects.toThrow(/built without a site/);
+    const setter = vi.fn(async () => {});
+    await buildAddonHost('ledger', defaults, setter).setEnabledForPerson(ctx, true);
+    expect(setter).toHaveBeenCalledWith(ctx, true);
   });
 
   test('openAddonTestDatabase runs the migrations and records them in the ledger', () => {

@@ -15,7 +15,9 @@ import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { toPermissionSubject } from '../context/JobContext.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
@@ -284,6 +286,52 @@ export interface AddonManifest {
    * docs/guides/addons-developer-guide.md "Declare a Private Store".
    */
   stores?: unknown;
+  /**
+   * #1963: each person turns this add-on on or off for themselves. Their
+   * switch is the preference `<slug>.enabled` (`personSwitchKey`), read only
+   * by `AddonsManager.enabledAddonsFor` and written only through
+   * `host.setEnabledForPerson`. Absent or anything but `true`: not per-person.
+   */
+  perPerson?: boolean;
+  /**
+   * #1965: the add-on's About page, a page it ships in `pages/`, by uuid or
+   * slug. `[{ConfigAccessor type='addons'}]` links to it ("More about it").
+   * The site overrides it with `ngdpbase.addons.<slug>.about-page`.
+   */
+  aboutPage?: string;
+  /**
+   * #1965: the heading the add-on is listed under, shared by related add-ons
+   * (e.g. "Accounting" for accounting, accounting-donations and accounting-dues).
+   */
+  family?: string;
+  /** #1965: `false` keeps plumbing (e.g. elasticsearch) out of the add-on listings. */
+  listed?: boolean;
+}
+
+/**
+ * One add-on as the listings show it (#1965), from `AddonsManager.listedAddons()`.
+ * `version`, `loaded` and `error` are for administrators; the plugin that
+ * renders a listing decides who sees them.
+ */
+export interface AddonListing {
+  slug: string;
+  description: string;
+  /** The heading it is grouped under, or null */
+  family: string | null;
+  /** The About page (uuid or slug), the site's override first; null when none */
+  aboutPage: string | null;
+  perPerson: boolean;
+  version: string;
+  loaded: boolean;
+  error: string | null;
+}
+
+/**
+ * The preference that holds a person's switch for a per-person add-on (#1963):
+ * `<slug>.enabled`. The one place the key is spelled.
+ */
+export function personSwitchKey(slug: string): string {
+  return `${slug}.enabled`;
 }
 
 /**
@@ -318,6 +366,9 @@ interface AddonEntry {
 
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
+
+  /** The `version` in the add-on's package.json, when it has one (#1973) */
+  packageVersion?: string;
 
   /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration or site-critical value was refused (#1559, #1860, #1883), its required-encryption database has no key (#1860), or it could not be imported or has no register() (#1883); null otherwise. */
   incompatible: string | null;
@@ -836,7 +887,8 @@ class AddonsManager extends BaseManager {
         loaded: false,
         error: null,
         manifest,
-        incompatible: null
+        incompatible: null,
+        ...(packageVersion ? { packageVersion } : {})
       });
       this.warnOldProfileHook(canonicalId, addonModule);
 
@@ -981,6 +1033,19 @@ class AddonsManager extends BaseManager {
       return { ok: true };
     }
     return { ok: false, blockedBy: blockers };
+  }
+
+  /**
+   * The installed version of an add-on (#1973): the `version` in its
+   * package.json, or its module's `version` when the package.json has none.
+   * Undefined for an add-on that was not discovered.
+   *
+   * @param slug - The add-on's slug
+   */
+  getAddonVersion(slug: string): string | undefined {
+    const addon = this.addons.get(slug);
+    if (!addon) return undefined;
+    return addon.packageVersion ?? (addon.module.version || undefined);
   }
 
   /**
@@ -1717,7 +1782,11 @@ class AddonsManager extends BaseManager {
       // #1813: the host is built per add-on: its logger tagged with the slug,
       // its audit helpers limited to the events this add-on declares.
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {});
+      // #1963: the switch setter is bound to this add-on's slug, so it can set
+      // only its own switch; there is no slug argument to give another's.
+      // #1973: the engine names the system principal for host.systemContext.
+      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {},
+        (ctx, on) => this.#writePersonSwitch(addonName, ctx, on), this.engine);
 
       // Call the add-on's register function
       await addon.module.register(this.engine, addonConfig, host);
@@ -1979,6 +2048,90 @@ class AddonsManager extends BaseManager {
         );
       }
     }
+  }
+
+  /**
+   * The add-ons the site's listings show (#1965): enabled, and not
+   * `listed: false` in their manifest, in load order. Cheap: it calls no
+   * add-on's status(), so a page can render it.
+   */
+  listedAddons(): AddonListing[] {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const listing: AddonListing[] = [];
+    for (const [slug, addon] of this.addons) {
+      if (!addon.enabled || addon.manifest?.listed === false) continue;
+      const override = configManager?.getProperty(`ngdpbase.addons.${slug}.about-page`, '');
+      const shipped = addon.manifest?.aboutPage;
+      const aboutPage = typeof override === 'string' && override.trim() ? override.trim()
+        : typeof shipped === 'string' && shipped.trim() ? shipped.trim() : null;
+      const family = typeof addon.manifest?.family === 'string' && addon.manifest.family.trim() ? addon.manifest.family.trim() : null;
+      listing.push({
+        slug,
+        description: addon.module.description || '',
+        family,
+        aboutPage,
+        perPerson: addon.manifest?.perPerson === true,
+        version: addon.module.version || 'unknown',
+        loaded: addon.loaded,
+        error: addon.error
+      });
+    }
+    return listing;
+  }
+
+  /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
+  private perPersonAddons(): string[] {
+    return [...this.addons].filter(([, addon]) => addon.loaded && addon.manifest?.perPerson === true).map(([slug]) => slug);
+  }
+
+  /**
+   * The per-person add-ons this subject has turned on (#1963): each loaded
+   * add-on whose manifest says `perPerson: true` and whose switch, the
+   * person's preference `<slug>.enabled`, is `true`.
+   *
+   * It reads exactly those keys and no other preference, so no access check
+   * or listing built on it can come to depend on an arbitrary setting. An
+   * anonymous subject, an unknown or inactive account, and the system
+   * principal (which has no account) have none.
+   *
+   * @param ctx - Whose add-ons: the request's subject, or a job's context
+   * @returns The slugs, in load order
+   */
+  async enabledAddonsFor(ctx: ActorContext): Promise<string[]> {
+    if (!isJobContext(ctx) && !ctx.isAuthenticated) return [];
+    const slugs = this.perPersonAddons();
+    if (slugs.length === 0) return [];
+    const user = await this.engine.getManager<{ getUser(u: string): Promise<AddonProfileUser | undefined> }>('UserManager')
+      ?.getUser(ctx.username);
+    if (!user || user.isActive === false) return [];
+    const preferences = (user.preferences ?? {}) as Record<string, unknown>;
+    return slugs.filter((slug) => preferences[personSwitchKey(slug)] === true);
+  }
+
+  /**
+   * Set or clear one add-on's switch for the person `ctx` acts as (#1963).
+   * Reached only through that add-on's `host.setEnabledForPerson`, which binds
+   * the slug: a true private method, so no add-on can name another's slug.
+   * Self-service like `/profile`, so it asks for `profile-manage`.
+   */
+  async #writePersonSwitch(slug: string, ctx: ActorContext, on: boolean): Promise<void> {
+    if (this.addons.get(slug)?.manifest?.perPerson !== true) {
+      throw new Error(`Add-on '${slug}' is not per-person (set "perPerson": true in the "ngdpbase" block of its package.json), so it has no switch to set`);
+    }
+    if (typeof on !== 'boolean') throw new Error(`setEnabledForPerson takes true or false, not ${typeof on}`);
+    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!subject.isAuthenticated || !pdp || !(await pdp.permits(subject, 'profile-manage'))) {
+      throw new Error(`${ctx.username} may not change their add-on settings (needs profile-manage)`);
+    }
+    const userManager = this.engine.getManager<{
+      getUser(u: string): Promise<AddonProfileUser | undefined>;
+      updateUser(u: string, updates: { preferences: Record<string, unknown> }, c: ActorContext): Promise<unknown>;
+        }>('UserManager');
+    const user = await userManager?.getUser(ctx.username);
+    if (!userManager || !user) throw new Error(`No account '${ctx.username}' to set the ${slug} switch on`);
+    const preferences = { ...(user.preferences ?? {}), [personSwitchKey(slug)]: on };
+    await userManager.updateUser(ctx.username, { preferences }, ctx);
   }
 
   /**
