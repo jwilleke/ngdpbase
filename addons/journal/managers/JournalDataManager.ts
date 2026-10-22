@@ -1,5 +1,4 @@
 
-import BaseManager from '../../../dist/src/managers/BaseManager.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type SearchManager from '../../../dist/src/managers/SearchManager.js';
@@ -60,12 +59,17 @@ export interface JournalQueryOptions {
  *
  * Implements core's `JournalAuthorCounter` (#1868): core calls countByAuthor
  * through that shape, so a signature change here fails the add-on build.
+ *
+ * A plain class (#1813): registered with `engine.registerManager`, reached by
+ * name; MarqueePlugin finds `toMarqueeText` by name. It keeps no files, so
+ * there is nothing to back up.
  */
-class JournalDataManager extends BaseManager implements JournalAuthorCounter {
+class JournalDataManager implements JournalAuthorCounter {
   readonly description = 'Journal entry query helpers over SearchManager + PageManager';
+  private readonly engine: WikiEngine;
 
   constructor(engine: WikiEngine) {
-    super(engine);
+    this.engine = engine;
   }
 
   // ── Persistence (retired — no-ops kept for back-compat) ──────────────────────
@@ -239,7 +243,7 @@ class JournalDataManager extends BaseManager implements JournalAuthorCounter {
       .sort((a, b) => b.count - a.count);
   }
 
-  // ── BaseManager overrides ────────────────────────────────────────────────────
+  // ── Counts and the marquee ───────────────────────────────────────────────────
 
   /**
    * How many public entries the shared index holds. Private entries are in
