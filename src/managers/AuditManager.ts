@@ -219,6 +219,7 @@ interface BaseAuditProvider {
   close(): Promise<void>;
   isHealthy(): Promise<boolean>;
   getProviderInfo(): ProviderInfo;
+  searchEntriesAbout?(person: string, options: { limit?: number; offset?: number }): Promise<AuditSearchResults>;
 }
 
 /**
@@ -735,7 +736,7 @@ class AuditManager extends BaseManager {
    * refuse. The audit log has no per-record narrowing, and a list that
    * cannot be narrowed refuses rather than returning everything.
    */
-  private async assertQueryCallerAllowed(caller?: AuditQueryCaller, permission: 'admin-system' | 'audit-export' = 'admin-system'): Promise<AuditQueryCaller> {
+  private async assertQueryCallerAllowed(caller?: AuditQueryCaller, permission: 'admin-system' | 'audit-export' | 'profile-manage' = 'admin-system'): Promise<AuditQueryCaller> {
     const username = caller?.username;
     if (caller && username) {
       // #1762 slice 4: `permits` with the subject, not `userHoldsPermission`
@@ -771,6 +772,36 @@ class AuditManager extends BaseManager {
     // hyphen rename retired the dotted names without a mapping, on the
     // operator's decision that the trail was days old and may die.
     return await this.provider.searchAuditLogs(filters, options);
+  }
+
+  /**
+   * The audit entries about one person, newest first, a page at a time
+   * (#1537): the one audit log, filtered to the rows where the person is the
+   * `user` (the account acted on, or the person represented under a proxy
+   * grant), the `actor` (who actually did it under a proxy grant), or the
+   * owner of the resource the row names (`metadata.owner`). Nothing is
+   * removed from the log by reading it.
+   *
+   * Decided by the PDP with the caller's subject: a person asking about
+   * themselves needs `profile-manage` (granted to every account); asking about
+   * anyone else is reading the audit log, `admin-system`. Under a proxy grant
+   * the subject's username is the person represented, and the PDP bounds the
+   * answer by the grant. Refused with {@link AuditQueryForbiddenError}.
+   *
+   * @param person - The username whose entries are listed
+   * @param options - `limit` (capped by the provider) and `offset`
+   * @param caller - Who is asking: the request's subject
+   */
+  async searchEntriesAbout(person: string, options: { limit?: number; offset?: number } = {}, caller?: AuditQueryCaller): Promise<AuditSearchResults> {
+    if (!person) throw new Error('searchEntriesAbout needs the person whose entries are listed');
+    await this.assertQueryCallerAllowed(caller, caller?.username === person ? 'profile-manage' : 'admin-system');
+    if (!this.provider) {
+      throw new Error('Audit provider not initialized');
+    }
+    if (!this.provider.searchEntriesAbout) {
+      throw new Error(`The audit provider ${this.provider.getProviderInfo().name} cannot list the entries about one person`);
+    }
+    return await this.provider.searchEntriesAbout(person, options);
   }
 
   /**
@@ -1004,19 +1035,34 @@ class AuditManager extends BaseManager {
   /**
    * The audit log in a backup (#1876): the provider's own files beside the
    * document, with the hash chain they carry (`FileAuditProvider.backupFiles`).
-   * A provider that keeps no files (the database or a cloud sink) is not in
-   * the file backup: its records are wherever it keeps them.
+   * A provider that keeps no files is not in the file backup: the database
+   * provider's records are in the application database, which DatabaseManager
+   * backs up after writing the audit queue (#1537).
    */
   override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
     const base = { managerName: 'AuditManager', timestamp: new Date().toISOString() };
     const files = this.fileProvider();
-    if (!files) return { ...base, data: null, note: `The audit provider ${this.providerClass ?? 'none'} keeps no files; its records are not in the file backup` };
+    if (!files) {
+      const where = this.providerClass === 'DatabaseAuditProvider'
+        ? 'its records are in the application database, backed up by DatabaseManager'
+        : 'its records are not in the file backup';
+      return { ...base, data: null, note: `The audit provider ${this.providerClass ?? 'none'} keeps no files; ${where}` };
+    }
     if (!options?.directory || !options.stem) throw new Error('AuditManager writes its files beside the backup document, so it is backed up through BackupManager (#1876)');
     const { data, warnings } = await files.backupFiles(options);
     return { ...base, data, ...(warnings.length > 0 ? { warnings } : {}) };
   }
 
-  /** Staged for the next start with the rest of a site restore (#1876); the live log keeps recording until then. */
+  /**
+   * Staged for the next start with the rest of a site restore (#1876); the
+   * live log keeps recording until then.
+   *
+   * A site whose audit provider keeps no files (the database provider, #1537)
+   * stages nothing from a backup's audit files and does not fail the restore:
+   * its audit records are restored with the databases, and the file part is
+   * left out, so BackupManager reports "the audit log" as not restored. The
+   * files stay in the backup.
+   */
   override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
     await super.restore(backupData);
     const data = backupData.data as BackupPartRecord | null;
@@ -1025,7 +1071,11 @@ class AuditManager extends BaseManager {
       return;
     }
     const files = this.fileProvider();
-    if (!files) throw new Error(`The backup holds audit files, but this site's audit provider (${this.providerClass ?? 'none'}) keeps none; nothing was staged`);
+    if (!files) {
+      logger.warn(`[AuditManager] The backup holds audit files, but this site's audit provider (${this.providerClass ?? 'none'}) keeps none, so they are not restored; ` +
+        'a database-provider site restores its audit records with the databases (#1537)');
+      return;
+    }
     if (!options?.siteRestore || !options.directory) throw new Error("AuditManager's restore is staged with the rest of the site, so it is restored through BackupManager (#1876)");
     await files.stageRestore(data, { ...options, siteRestore: options.siteRestore });
   }

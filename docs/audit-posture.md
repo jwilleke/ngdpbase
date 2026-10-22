@@ -1,9 +1,9 @@
 ---
 name: Audit posture
 description: Inventory of audit capabilities ngdpbase actually implements — chain, registry, durability, witness, and verification
-dateModified: 2026-09-04
+dateModified: 2026-10-22
 category: architecture
-relatedModules: [AuditManager, FileAuditProvider, BaseAuditProvider, NullAuditProvider]
+relatedModules: [AuditManager, FileAuditProvider, DatabaseAuditProvider, BaseAuditProvider, NullAuditProvider]
 ---
 
 # Audit posture
@@ -36,7 +36,7 @@ A flag that turns the mechanism off creates two code paths, and the weak one is 
 | `configured` | Name that was requested (differs from `provider` when degraded) |
 | `degraded` | Configured provider failed; events are being discarded |
 | `reason` | Why it degraded, or `null` |
-| `guarantees` | What the *active* provider claims: `tamperEvident`, `durability`, `queryable`, `headWitness` |
+| `guarantees` | What the *active* provider claims: `tamperEvident`, `durability`, `queryable`, `headWitness`, and `encryptedAtRest` where the provider knows it (the database provider: whether the application database is SQLCipher-encrypted) |
 
 A degraded instance must not report the guarantees of the provider it lost. `NullAuditProvider` reports `tamperEvident: false`, `queryable: false`, and `durability: null`.
 
@@ -111,7 +111,7 @@ A broken chain is not repaired automatically. `npm run audit:restart-chain` writ
 
 ### Truncation detection (witness)
 
-`ngdpbase.audit.chain-witness.destination` is a *file path*, not a directory. When set, `FileAuditProvider` appends one JSON line per publication (sequence + hash, not event content) on `ngdpbase.audit.chain-witness.interval-minutes` (default 60). It never overwrites the file. `getGuarantees().headWitness` reports destination, interval, last publication time, and last sequence.
+`ngdpbase.audit.chain-witness.destination` is a *file path*, not a directory. When set, the storing provider (file or database) appends one JSON line per publication (sequence + hash, not event content) on `ngdpbase.audit.chain-witness.interval-minutes` (default 60). It never overwrites the file. `getGuarantees().headWitness` reports destination, interval, last publication time, and last sequence.
 
 Verification (`npm run audit:verify`) uses that fingerprint — or an assessor's `--head` / `--witness` — to detect a truncated tail. Exit 0 means the log matches a witness; exit 3 means the chain is intact but no witness was supplied, so truncation was not checked.
 
@@ -121,7 +121,7 @@ The code never claims the path is off-box — nothing on the machine can verify 
 
 ## Durability
 
-`FileAuditProvider.getDurability()` reports:
+`FileAuditProvider.getDurability()` and `DatabaseAuditProvider.getDurability()` report the same shape (the database provider's `refuse` events are committed with SQLite `synchronous = FULL`):
 
 - `fsync: false` — `continue` events are buffered (`ngdpbase.audit.flushinterval`, default 30s; `maxqueuesize`, default 1000)
 - `fsyncedClasses` — the `refuse` events, written through and fsynced before the action completes ([#1158](https://github.com/jwilleke/ngdpbase/issues/1158))
@@ -130,7 +130,7 @@ A page or attachment delete whose audit record cannot be written is refused (HTT
 
 Losses of `continue` events increment a counter, log on an escalating schedule, and surface on the admin dashboard. They never fail the action.
 
-On clean shutdown the file provider flushes with fsync. `system-shutdown` is itself `refuse`, so its absence before the next `system-start` is how the log states the previous run died and buffered records may be missing.
+On clean shutdown the file provider flushes with fsync, and the database provider writes its queue in one transaction. `system-shutdown` is itself `refuse`, so its absence before the next `system-start` is how the log states the previous run died and buffered records may be missing.
 
 ## Reviewability
 
@@ -149,18 +149,32 @@ A row's `user` is the account acted on. Under a proxy grant ([#1762](https://git
 | `continue` (shipped default) | Fall back to `NullAuditProvider`, mark the instance degraded, keep serving, banner on the admin dashboard |
 | `refuse-boot` | `engine.maintenance.enter(…)` ([#1906](https://github.com/jwilleke/ngdpbase/issues/1906)) — the process stays alive in maintenance mode so `/admin` and `/login` remain reachable; the instance does not finish booting as a serving system |
 
-Selecting `databaseauditprovider` or `cloudauditprovider` takes this path. Both classes exist, extend `BaseAuditProvider`, and *reject* `initialize()` (`DatabaseAuditProvider not yet implemented. Use FileAuditProvider instead.` and the cloud equivalent). They are not silent no-ops: a configured stub becomes either a degraded instance or a blocked boot, depending on `on-failure`.
+Selecting `cloudauditprovider` takes this path: the class exists, extends `BaseAuditProvider`, and *rejects* `initialize()`. It is not a silent no-op: a configured stub becomes either a degraded instance or a blocked boot, depending on `on-failure`. So does `databaseauditprovider` on a site with no application database open (`ngdpbase.database.provider` `none`, or a database that could not be opened safely): the provider names the cause.
 
 ## Storage that actually stores
 
 | Provider | Status | Notes |
 | --- | --- | --- |
 | `FileAuditProvider` | Production default | JSONL at `ngdpbase.audit.provider.file.logdirectory` / `auditfilename` (shipped `${FAST_STORAGE}/logs` / `audit.log`). Size rotation, archive, hourly retention against `ngdpbase.audit.retentiondays` (default 90). Chain resume from the file. Witness publication |
+| `DatabaseAuditProvider` | Production ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)) | Rows in the application database (`ngdpbase.database.provider` `sqlite`), on `DatabaseManager`'s connection. Same chain and witness. Retention by checkpoint. Indexed queries. [Below](#the-database-provider) |
 | `NullAuditProvider` | Production | Discards every event. Used when auditing is off, and as the degrade target |
-| `DatabaseAuditProvider` | Stub | `initialize()` rejects. Advertised config keys exist; there is no database client |
-| `CloudAuditProvider` | Stub | Same: `initialize()` rejects. No CloudWatch / Azure / GCP client |
+| `CloudAuditProvider` | Stub | `initialize()` rejects. No CloudWatch / Azure / GCP client |
 
-Retention is defined and enforced by file rotation and archive expiry. It is not per-record demonstrable: a gap at a rotated-file boundary is either legitimate ageing or a deletion, and those look identical without an external head.
+With the file provider, retention is defined and enforced by file rotation and archive expiry. It is not per-record demonstrable: a gap at a rotated-file boundary is either legitimate ageing or a deletion, and those look identical without an external head. With the database provider, retention leaves a checkpoint, and what remains verifies from it.
+
+### The database provider
+
+Built in [#1537](https://github.com/jwilleke/ngdpbase/issues/1537), on the operator's decisions of 2026-10-22 recorded there. Select it with `ngdpbase.audit.provider: databaseauditprovider` on a site whose `ngdpbase.database.provider` is `sqlite`.
+
+- __One store.__ Every event goes to one table, `audit_events`, in the application database (core migration `20261022120000`). Nothing routes an event to another store, and nobody clears the log: only retention removes rows.
+- __The chain.__ The same contract as the file provider: `BaseAuditProvider` stamps `seq`, `prevHash` and `hash`, and the row keeps the stamped record exactly as hashed (`record`), with copies of its fields in indexed columns (time, type, user, actor, owner, resource). Rows are kept in the order written (`row_id`), which is chain order; a chain restart's `seq` 1 is just another row. The chain head resumes from the newest row at start. The head witness is published exactly as the file provider publishes it, after the write.
+- __Writes.__ A `continue` event is queued and the queue written in one transaction on `ngdpbase.audit.flushinterval`, or sooner at `ngdpbase.audit.maxqueuesize`. A `refuse` event writes the queue and itself in one transaction before the action goes on, so rows land in chain order; SQLite runs with `synchronous = FULL`, so the commit is on the device. A failed write puts the batch back at the front of the queue and, for a `refuse` event, refuses the action. The queue is written before every query, at shutdown, and before `DatabaseManager` copies the database into a backup.
+- __Retention by checkpoint.__ Hourly (the `audit.database-retention` maintenance job) and at start, one transaction deletes the oldest rows up to the last one older than `ngdpbase.audit.retentiondays`, and writes a row in `audit_checkpoints` naming the seq and hash of the last row it removed. Verification starts from the newest checkpoint: the first remaining row must carry the next seq and link to that hash. The purge is recorded as `security-event` with `action: 'audit-archive-purge'`, resource `audit_events`, under the context of whoever ran it (the system principal, origin `boot` or `schedule`), with how many rows went and the checkpoint. A chain pruned to nothing resumes from the checkpoint.
+- __Encryption at rest.__ The rows are encrypted when the database is (SQLCipher, `NGDPBASE_DATABASE_KEY`). An unencrypted database never stops the provider: `getGuarantees().encryptedAtRest` is `false`, and the start warns.
+- __Queries.__ `searchAuditLogs`, `getAuditStats` and `exportAuditLogs` take the existing filters and run as SQL over the indexed columns, a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows (default 10000) in a page or an export.
+- __The entries about one person.__ `AuditManager.searchEntriesAbout(person, { limit, offset }, caller)`: the rows where the person is the `user`, the `actor`, or the owner of the resource (`metadata.owner`), newest first. A person reads their own with `profile-manage`; anyone else's needs `admin-system`; the PDP decides with the caller's subject. See [AuditManager](managers/AuditManager.md#searchentriesaboutperson-options-caller).
+- __Backup and restore.__ The rows are in the application database, so they are in `DatabaseManager`'s copy of it and come back with it; AuditManager's own entry holds no files. On such a site, a backup that holds audit files (from a time the file provider was active) restores without them, and "the audit log" is named among the parts not restored ([AuditManager — Backup and restore](managers/AuditManager.md#backup-and-restore)).
+- __Health.__ `isHealthy()` queries the audit tables; a provider that cannot start (no database open, or the database unavailable) degrades to the null provider or blocks the boot exactly as [Failure of auditing itself](#failure-of-auditing-itself) says.
 
 ## Operator knobs
 
@@ -173,7 +187,8 @@ The mechanism (chain, registry, vocabulary, parity tests, guarantees report) is 
 | `ngdpbase.audit.on-failure` | `continue` | Degrade vs maintenance-mode refuse |
 | `ngdpbase.permissions.definitions` (`audit` field) | the catalog | Every event's on-failure rule and `enabled` switch; `page-read` ships off |
 | `ngdpbase.audit.events` | `{}` | Read only so a custom file written before #1638 can still override or remove (`null`) an event |
-| `ngdpbase.audit.retentiondays` | `90` | File-provider archive expiry |
+| `ngdpbase.audit.retentiondays` | `90` | File provider: archive expiry. Database provider: rows removed behind a checkpoint |
+| `ngdpbase.audit.provider.database.max-results` | `10000` | Database provider: the largest page a search returns and the most rows an export holds |
 | `ngdpbase.audit.chain-witness.destination` | `""` | Path to append chain-head fingerprints |
 | `ngdpbase.audit.chain-witness.interval-minutes` | `60` | Maximum truncation window while a witness is configured |
 | `ngdpbase.audit.flushinterval` | `30000` | Buffer flush for `continue` events (ms) |
@@ -193,6 +208,12 @@ npm run audit:verify
 
 npx tsx scripts/verify-audit-chain.ts /path/to/audit.log --witness /path/to/audit-witness.jsonl
 npx tsx scripts/verify-audit-chain.ts /path/to/audit.log --head <hash>
+
+# The database provider's log: reads ngdpbase.database.file (or the path given)
+# directly, read-only, under NGDPBASE_DATABASE_KEY, without booting the app,
+# and verifies from the newest retention checkpoint.
+npm run audit:verify -- --database
+npx tsx scripts/verify-audit-chain.ts --database /path/to/ngdpbase.db --head <hash>
 ```
 
 `--head` (an assessor's own hash, never stored on the audited machine) wins over `--witness`, which wins over the configured destination.
@@ -256,8 +277,8 @@ Switched off, on purpose: `asset-read`, `search-page`, `user-read`, `admin-read`
 
 Also not implemented:
 
-- Database and cloud backends (stubs that fail closed, as above)
-- Per-record retention proof
+- The cloud backend (a stub that fails closed, as above)
+- Per-record retention proof for the file provider (the database provider's checkpoint is the proof for its cut)
 - Production emission of `authorization-allow` and `policy-evaluate`
 
 ## Audit planning

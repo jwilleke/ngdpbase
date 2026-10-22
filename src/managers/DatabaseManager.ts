@@ -253,6 +253,15 @@ class DatabaseManager extends BaseManager {
   }
 
   /**
+   * Whether the open application database is encrypted at rest (SQLCipher,
+   * `NGDPBASE_DATABASE_KEY`); false when none is open. Asked by a provider
+   * that reports what its records are stored under (#1537).
+   */
+  isEncrypted(): boolean {
+    return this.provider?.storage().encrypted ?? false;
+  }
+
+  /**
    * Why the configured application database is not open (#1892): it could not
    * be opened safely, and the site is in maintenance mode. Null when it is
    * open, or when none is configured (`ngdpbase.database.provider` `none`).
@@ -445,6 +454,15 @@ class DatabaseManager extends BaseManager {
       await this.notify('error', 'The backup key is the database key', `${keyProblem}. This backup was still taken.`);
     } else {
       this.clearFault('backup-key');
+    }
+
+    // #1537: the database audit provider buffers `continue` records; written
+    // first, so every record accepted before the backup is in the copy. A
+    // flush that fails leaves them queued and is logged; the backup goes on.
+    try {
+      await this.engine.getManager<{ flushAuditQueue?(): Promise<void> }>('AuditManager')?.flushAuditQueue?.();
+    } catch (err) {
+      logger.warn('[DatabaseManager] The audit queue could not be written before the backup; records still queued are not in it (#1537):', err);
     }
 
     const sources = this.backupSources(this.databaseFile);
