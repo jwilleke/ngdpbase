@@ -62,9 +62,55 @@ export function resolveFrontmatterPrincipals(
 }
 
 /**
+ * The entry `addon:<slug>` (#1964): "people who turned on the per-person
+ * add-on <slug>". It is matched only against the viewer's enabled add-ons,
+ * never against a role or a username.
+ */
+export const ADDON_PRINCIPAL_PREFIX = 'addon:';
+
+/** The slug an `addon:<slug>` entry names, or null for any other entry. */
+function addonSlugOf(principal: unknown): string | null {
+  return typeof principal === 'string' && principal.startsWith(ADDON_PRINCIPAL_PREFIX)
+    ? principal.slice(ADDON_PRINCIPAL_PREFIX.length)
+    : null;
+}
+
+/**
+ * Whether deciding `action` on this page needs the viewer's enabled add-ons —
+ * so a caller asks for them only when the page names one (#1964).
+ */
+export function namesAddonPrincipal(metadata: AccessMetadataLike | null | undefined, action: string): boolean {
+  return resolveFrontmatterPrincipals(metadata, action)?.some((p) => addonSlugOf(p) !== null) ?? false;
+}
+
+/**
+ * Every add-on slug the page names in `audience` or in any `access` list, once
+ * each, in the order first named — for the warning about a slug that can match
+ * nobody (#1964).
+ */
+export function addonAudienceSlugs(metadata: AccessMetadataLike | null | undefined): string[] {
+  if (!metadata) return [];
+  const lists: unknown[] = [metadata.audience];
+  if (metadata.access && typeof metadata.access === 'object') lists.push(...Object.values(metadata.access as Record<string, unknown>));
+  const slugs = new Set<string>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const p of list) {
+      const slug = addonSlugOf(p);
+      if (slug !== null) slugs.add(slug);
+    }
+  }
+  return [...slugs];
+}
+
+/**
  * Decide Tier 1 for a viewer described as a flat principal list — their roles
  * plus their username. Callers holding a `UserContext` should pass
  * `[...roles, username]`; the provider layer already works in these terms.
+ *
+ * An `addon:<slug>` entry matches only when `<slug>` is in `enabledAddons`,
+ * the viewer's enabled per-person add-ons (#1964); a caller that does not
+ * supply them matches no such entry, so it can under-list but never leak.
  *
  * Denies when the page states a rule and nothing matches. That default is the
  * point: a listing that treats "no match" as "show it" is the bug this exists
@@ -73,13 +119,16 @@ export function resolveFrontmatterPrincipals(
 export function decideFrontmatterAccess(
   metadata: AccessMetadataLike | null | undefined,
   viewerPrincipals: readonly string[],
-  action: string
+  action: string,
+  enabledAddons: readonly string[] = []
 ): FrontmatterDecision {
   const principals = resolveFrontmatterPrincipals(metadata, action);
   if (!principals) return { decided: false, allowed: false };
 
   for (const p of principals) {
-    if (viewerPrincipals.includes(p)) {
+    const slug = addonSlugOf(p);
+    const matches = slug === null ? viewerPrincipals.includes(p) : slug !== '' && enabledAddons.includes(slug);
+    if (matches) {
       return { decided: true, allowed: true, matched: p };
     }
   }

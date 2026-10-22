@@ -110,7 +110,7 @@ The 3-tier evaluator runs in order; the first tier that decides wins:
 | Tier | Source | What it checks |
 |---|---|---|
 | 0 | Page front matter `user-keywords: [private]` | Hard constraint — only the page creator and admins can pass. Non-overridable by other tiers. |
-| 1 | Page front matter `audience: [...]` / `access: ...` | Per-page allowlist. If declared and the user matches, allow; if declared and the user doesn't match, deny. |
+| 1 | Page front matter `audience: [...]` / `access: ...` | Per-page allowlist of roles, usernames and `addon:<slug>` entries. If declared and the user matches, allow; if declared and the user doesn't match, deny. The entries are in [access-policies.md](../access-policies.md#how-a-decision-is-made). |
 | 2 | Global policies via `PolicyEvaluator` | Evaluates `{pageName, action, userContext}` against the policy file (priority-ordered, with `effect: allow|deny`). |
 
 ```ts

@@ -7,7 +7,7 @@
  * the regression net behind it.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveFrontmatterPrincipals, decideFrontmatterAccess } from '../frontmatterAccess.js';
+import { resolveFrontmatterPrincipals, decideFrontmatterAccess, namesAddonPrincipal, addonAudienceSlugs } from '../frontmatterAccess.js';
 
 describe('resolveFrontmatterPrincipals', () => {
   test('no metadata or no rule falls through', () => {
@@ -81,5 +81,63 @@ describe('decideFrontmatterAccess', () => {
   test('a page with only an edit rule is undecided for view', () => {
     expect(decideFrontmatterAccess({ access: { edit: ['admin'] } }, ['anonymous'], 'view').decided)
       .toBe(false);
+  });
+});
+
+describe('the audience entry addon:<slug> (#1964)', () => {
+  test('matches a viewer who turned the add-on on, and only them', () => {
+    const md = { audience: ['addon:phr'] };
+    expect(decideFrontmatterAccess(md, ['reader', 'bob'], 'view', ['phr']))
+      .toEqual({ decided: true, allowed: true, matched: 'addon:phr' });
+    expect(decideFrontmatterAccess(md, ['reader', 'bob'], 'view', ['journal']))
+      .toEqual({ decided: true, allowed: false });
+    expect(decideFrontmatterAccess(md, ['reader', 'bob'], 'view'))
+      .toEqual({ decided: true, allowed: false });
+  });
+
+  test('a role or username spelled addon:<slug> never matches it', () => {
+    // The add-on entry is matched only against the enabled add-ons, so a
+    // principal list that happens to hold the string does not count.
+    expect(decideFrontmatterAccess({ audience: ['addon:phr'] }, ['addon:phr'], 'view', []))
+      .toEqual({ decided: true, allowed: false });
+  });
+
+  test('an enabled add-on never matches a plain entry of the same name', () => {
+    expect(decideFrontmatterAccess({ audience: ['phr'] }, ['reader'], 'view', ['phr']))
+      .toEqual({ decided: true, allowed: false });
+  });
+
+  test('combines with other entries: any one matching allows', () => {
+    const md = { audience: ['addon:phr', 'admin'] };
+    expect(decideFrontmatterAccess(md, ['admin', 'root'], 'view', []).allowed).toBe(true);
+    expect(decideFrontmatterAccess(md, ['reader', 'bob'], 'view', ['phr']).allowed).toBe(true);
+    expect(decideFrontmatterAccess(md, ['reader', 'bob'], 'view', []).allowed).toBe(false);
+  });
+
+  test('works in access[action] as in audience', () => {
+    const md = { access: { edit: ['addon:phr'] } };
+    expect(decideFrontmatterAccess(md, ['editor'], 'edit', ['phr']).allowed).toBe(true);
+    expect(decideFrontmatterAccess(md, ['editor'], 'edit', []).allowed).toBe(false);
+  });
+
+  test('an empty slug names nothing and matches nobody', () => {
+    expect(decideFrontmatterAccess({ audience: ['addon:'] }, ['reader'], 'view', ['']))
+      .toEqual({ decided: true, allowed: false });
+  });
+
+  test('namesAddonPrincipal says whether deciding needs the viewer\'s add-ons', () => {
+    expect(namesAddonPrincipal({ audience: ['addon:phr'] }, 'view')).toBe(true);
+    expect(namesAddonPrincipal({ audience: ['addon:phr'] }, 'edit')).toBe(false);
+    expect(namesAddonPrincipal({ audience: ['admin'] }, 'view')).toBe(false);
+    expect(namesAddonPrincipal({}, 'view')).toBe(false);
+    expect(namesAddonPrincipal(null, 'view')).toBe(false);
+  });
+
+  test('addonAudienceSlugs lists every add-on the page names, in audience and access', () => {
+    expect(addonAudienceSlugs({ audience: ['addon:phr', 'admin'], access: { edit: ['addon:journal', 'addon:phr'] } }))
+      .toEqual(['phr', 'journal']);
+    expect(addonAudienceSlugs({ audience: ['admin'] })).toEqual([]);
+    expect(addonAudienceSlugs({ audience: ['addon:'] })).toEqual(['']);
+    expect(addonAudienceSlugs(null)).toEqual([]);
   });
 });

@@ -483,6 +483,10 @@ class WikiEngine extends Engine {
     } else {
       await addonsManager.initialize();
       logger.info('[WikiEngine] Addons initialized');
+      // #1964: with add-ons loaded, name each page whose audience names an
+      // add-on that can match nobody.
+      await this.getManager<PageManager>('PageManager')?.reportUnmatchableAddonAudiences()
+        .catch((err: unknown) => logger.warn('[WikiEngine] Could not check pages for addon: audiences:', err));
     }
     // #1876: every manager, add-ons included, has now applied its part of a
     // staged restore; say what the restore did, and what it did not bring back.

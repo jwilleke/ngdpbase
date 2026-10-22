@@ -22,7 +22,7 @@ import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
-import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { decideFrontmatterAccess, namesAddonPrincipal } from '../utils/frontmatterAccess.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { REQUIRED_SETTINGS_HELP } from '../utils/requiredSettings.js';
 
@@ -339,6 +339,21 @@ class PolicyInformationPoint extends BaseManager {
     return addonsManager ? addonsManager.enabledAddonsFor(ctx) : [];
   }
 
+  /**
+   * {@link subjectEnabledAddons} for a page decision (#1964): none for no
+   * subject, and none when the lookup fails — an `addon:<slug>` entry then
+   * matches nobody, never everyone.
+   */
+  private async enabledAddonsOf(userContext: UserContext | null | undefined): Promise<readonly string[]> {
+    if (!userContext) return [];
+    try {
+      return await this.subjectEnabledAddons(userContext);
+    } catch (e) {
+      logger.warn('[ACL] could not read the subject\'s enabled add-ons — addon: audience entries match nobody', { error: e instanceof Error ? e.message : String(e) });
+      return [];
+    }
+  }
+
   private userManager(): UserManager {
     const userManager = this.engine.getManager<UserManager>('UserManager');
     if (!userManager) throw new Error('PolicyInformationPoint requires UserManager');
@@ -584,6 +599,7 @@ class PolicyInformationPoint extends BaseManager {
       // Asked only if the page is author-locked and the subject is not its
       // author — the author needs no override.
       mayOverrideLock: () => subjectMayDo(this.engine, userContext, 'admin-system'),
+      enabledAddons: () => this.enabledAddonsOf(userContext),
       policy: async (extra) => {
         // An evaluator fault denies; it never opens the page. There is no tier
         // below this one to fall through to (Tier 3 was removed in #1431 7a).
@@ -661,6 +677,8 @@ class PolicyInformationPoint extends BaseManager {
     privateCtx: WikiContext;
     pageManager: PrivateAccessCheck | null | undefined;
     mayOverrideLock: () => Promise<boolean>;
+    /** The subject's enabled per-person add-ons (#1964); asked only for a page that names one. */
+    enabledAddons: () => Promise<readonly string[]>;
     policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
   }): Promise<{ allowed: boolean; reason: string }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
@@ -697,7 +715,11 @@ class PolicyInformationPoint extends BaseManager {
     // Tier 1: frontmatter audience / access, when it states a rule. Not on a
     // vault page — its container already decided who may be here.
     if (metadata && vault === undefined) {
-      const fm = this.checkFrontmatterAccess(metadata, userContext, action);
+      // #1964: an `addon:<slug>` entry needs the subject's enabled add-ons —
+      // asked only when this page names one, and by the caller's own means
+      // (once per batch for a list).
+      const enabledAddons = namesAddonPrincipal(metadata, action) ? await args.enabledAddons() : [];
+      const fm = this.checkFrontmatterAccess(metadata, userContext, action, enabledAddons);
       if (fm.decided) return { allowed: fm.allowed, reason: fm.reason };
     }
 
@@ -910,6 +932,10 @@ class PolicyInformationPoint extends BaseManager {
     // Tier 0 reads only the subject: owner or delegate, never a role.
     const privateCtx = { userContext: userContext ?? null } as unknown as WikiContext;
     const decidePolicy = this.policyEvaluator?.compile(userContext ?? undefined, policyAction);
+    // #1964: the subject's add-ons, resolved once for the whole batch and only
+    // if some page names one.
+    let enabledAddons: Promise<readonly string[]> | undefined;
+    const enabledAddonsOnce = (): Promise<readonly string[]> => (enabledAddons ??= this.enabledAddonsOf(userContext));
 
     const out: string[] = [];
     for (const { title, metadata } of candidates) {
@@ -930,6 +956,7 @@ class PolicyInformationPoint extends BaseManager {
         privateCtx,
         pageManager,
         mayOverrideLock: async () => mayOverrideLock,
+        enabledAddons: enabledAddonsOnce,
         policy: async (extra) => {
           const p = decidePolicy?.(title, { 'system-category': metadata['system-category'], ...extra });
           return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
@@ -996,7 +1023,8 @@ class PolicyInformationPoint extends BaseManager {
   private checkFrontmatterAccess(
     metadata: PageFrontmatter,
     userContext: UserContext | null | undefined,
-    action: string
+    action: string,
+    enabledAddons: readonly string[]
   ): { decided: boolean; allowed: boolean; reason: string } {
     // #1054: the rule itself now lives in utils/frontmatterAccess so the page
     // LISTERS decide identically to this evaluator. They previously did not —
@@ -1008,7 +1036,7 @@ class PolicyInformationPoint extends BaseManager {
     const username  = userContext?.username ?? '';
     const viewerPrincipals = username ? [...userRoles, username] : [...userRoles];
 
-    const decision = decideFrontmatterAccess(metadata, viewerPrincipals, action);
+    const decision = decideFrontmatterAccess(metadata, viewerPrincipals, action, enabledAddons);
     if (!decision.decided) return { decided: false, allowed: false, reason: '' };
     return decision.allowed
       ? { decided: true, allowed: true, reason: `frontmatter_principal_${decision.matched}` }

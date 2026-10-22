@@ -3,6 +3,7 @@ import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
+import { addonAudienceSlugs } from '../utils/frontmatterAccess.js';
 import { defaultShippedPageAccess, evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
@@ -2331,6 +2332,13 @@ class PageManager extends BaseManager implements CatalogSource {
       );
     }
 
+    // #1964: an audience naming an add-on that can match nobody. Only once
+    // add-ons have loaded — before that every slug is unknown, and the startup
+    // report covers the pages written while they load.
+    if (this.engine.getManager<{ isInitialized?(): boolean }>('AddonsManager')?.isInitialized?.()) {
+      this.warnUnmatchableAddonAudience(saved.name, enrichedMetadata);
+    }
+
     return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers, normalisedTitleFrom };
   }
 
@@ -3250,6 +3258,48 @@ class PageManager extends BaseManager implements CatalogSource {
       metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
     })));
     return acl.filterAccessiblePages(subject as PermissionSubject | null | undefined, action, candidates);
+  }
+
+  /**
+   * The `addon:<slug>` entries on a page that can match nobody (#1964): the
+   * slugs it names in `audience` or `access` that are not a loaded per-person
+   * add-on. Such an entry still decides — it refuses everyone it would have
+   * let in — so the author is told.
+   *
+   * @param metadata - The page's frontmatter
+   * @returns The slugs, in the order the page names them
+   */
+  unmatchableAddonAudience(metadata: Partial<PageFrontmatter> | null | undefined): string[] {
+    const named = addonAudienceSlugs(metadata);
+    if (named.length === 0) return [];
+    const perPerson = new Set(this.engine.getManager<{ perPersonAddons?(): string[] }>('AddonsManager')?.perPersonAddons?.() ?? []);
+    return named.filter((slug) => !perPerson.has(slug));
+  }
+
+  /** Warn, naming the page and each slug, about {@link unmatchableAddonAudience}. */
+  private warnUnmatchableAddonAudience(pageName: string, metadata: Partial<PageFrontmatter> | null | undefined): string[] {
+    const slugs = this.unmatchableAddonAudience(metadata);
+    for (const slug of slugs) {
+      logger.warn(`[PageManager] Page '${pageName}' names 'addon:${slug}' in its audience or access, which matches nobody: ` +
+        `no per-person add-on '${slug}' is loaded on this site (#1964)`);
+    }
+    return slugs;
+  }
+
+  /**
+   * At startup, once add-ons have loaded (#1964): warn about every page whose
+   * `audience` or `access` names an add-on that can match nobody — unknown,
+   * not per-person, or not loaded.
+   *
+   * @returns Each page and slug warned about
+   */
+  async reportUnmatchableAddonAudiences(): Promise<Array<{ page: string; slug: string }>> {
+    if (!this.provider) return [];
+    const found: Array<{ page: string; slug: string }> = [];
+    for (const info of await this.provider.getAllPageInfo()) {
+      for (const slug of this.warnUnmatchableAddonAudience(info.title, info.metadata)) found.push({ page: info.title, slug });
+    }
+    return found;
   }
 
   /**
