@@ -1,6 +1,5 @@
-import BaseManager, { BackupData, type BackupArchiveTarget, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import BaseManager, { BackupData, type BackupArchiveTarget, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats, type SiteRestoreStaging, type StagedRestoreAtStart } from './BaseManager.js';
 import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
-import type { PartOutcome } from '../utils/siteRestore.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
@@ -79,8 +78,8 @@ interface BaseAttachmentProvider {
   restore(backupData: unknown): Promise<void>;
   /** #1876: the files themselves beside the backup document, and their staged restore. */
   backupFiles?(archive: (part: string) => BackupArchiveTarget): Promise<AttachmentFilesBackupOutcome>;
-  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: string): Promise<{ skippedVaults: string[] }>;
-  takeRestoreAtStart?(): PartOutcome | null;
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: SiteRestoreStaging): Promise<{ skippedVaults: string[] }>;
+  takeRestoreAtStart?(): StagedRestoreAtStart | null;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
   // #1400 / #1460: files in a private store, listed in the store's own index —

@@ -16,9 +16,8 @@ import type { ActorContext } from '../context/ActorContext.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
-import type { BackupArchiveTarget, ManagerRestoreOptions } from '../managers/BaseManager.js';
+import type { BackupArchiveTarget, ManagerRestoreOptions, SiteRestoreStaging, StagedRestoreAtStart } from '../managers/BaseManager.js';
 import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
-import { siteRestoreFile, type PartOutcome } from '../utils/siteRestore.js';
 import {
   applyAttachmentFilesAtStart,
   backupAttachmentFiles,
@@ -241,7 +240,7 @@ async function extractImageMetadata(buffer: Buffer): Promise<AssetMetadata | nul
 class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetProvider {
   private storageDirectory: string | null;
   /** What the start did with a staged restore of the files (#1876). */
-  private restoreAtStart: PartOutcome | null = null;
+  private restoreAtStart: StagedRestoreAtStart | null = null;
   /** Pre-#1386 attachments/{legacyprivateroot}/{user}/ — migrate-FROM and read fallback only. */
   private legacyPrivateDir: string | null;
   private pagesDirectory: string | null;
@@ -370,7 +369,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     }
 
     // #1876: a staged site restore goes in before the metadata is read.
-    this.restoreAtStart = applyAttachmentFilesAtStart(this.filePlaces(), siteRestoreFile(configManager));
+    this.restoreAtStart = await applyAttachmentFilesAtStart(this.engine, this.filePlaces());
     if (this.restoreAtStart?.refused) logger.error(`[BasicAttachmentProvider] A staged restore of the attachment files was NOT applied: ${this.restoreAtStart.refused} (#1876)`);
     for (const a of this.restoreAtStart?.applied ?? []) logger.warn(`[BasicAttachmentProvider] Restore applied: ${a.live} (previous kept as ${path.basename(a.kept)}) (#1876)`);
 
@@ -1721,7 +1720,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
    * (#1876). The metadata is the document's; the live files and metadata are
    * not touched.
    */
-  async stageFilesRestore(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: string): Promise<{ skippedVaults: string[] }> {
+  async stageFilesRestore(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: SiteRestoreStaging): Promise<{ skippedVaults: string[] }> {
     const entries = (providerBackup as Partial<BackupData>)?.attachments;
     if (!Array.isArray(entries)) throw new Error('Invalid backup data for BasicAttachmentProvider: no attachment metadata; nothing was staged');
     const json: MetadataFile = {
@@ -1734,7 +1733,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     return stageAttachmentFiles(this.filePlaces(), readArchive, files, JSON.stringify(json, null, 2), siteRestore);
   }
 
-  takeRestoreAtStart(): PartOutcome | null {
+  takeRestoreAtStart(): StagedRestoreAtStart | null {
     const outcome = this.restoreAtStart;
     this.restoreAtStart = null;
     return outcome;
