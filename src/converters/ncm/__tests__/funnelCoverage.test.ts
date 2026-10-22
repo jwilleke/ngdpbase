@@ -37,8 +37,18 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
   const mcpServer = read('mcp-server.ts');
   const pageManager = read('src/managers/PageManager.ts');
 
-  test('ImportManager.importPages normalizes registered text formats', () => {
-    expect(importManager).toMatch(/normalizeToNcm\(content, formatId/);
+  // #1979: the converters run as ICE shims; the folder import runs the shim,
+  // and the shim calls the normalizer.
+  test('ImportManager.importPages normalizes registered text formats, through the converter shims', () => {
+    expect(region(importManager, 'async importSinglePage(', '\n  async ')).toContain('convertChain(');
+    expect(read('src/ice/converterShim.ts')).toMatch(/normalizeToNcm\(text, formatId/);
+  });
+
+  test('the ICE pages receiver runs the fix steps and saves through PageManager (#1979)', () => {
+    const pages = region(importManager, 'private pagesReceiver(', '\n  private ');
+    expect(pages).toContain('this.applyFixSteps(');
+    expect(pages).toContain('this.createPageThroughPipeline(');
+    expect(pages).not.toContain('fs.writeFile');
   });
 
   test('URL import normalizes and saves through PageManager, never a raw file write (#1337)', () => {
@@ -121,6 +131,7 @@ describe('#1486 one NCM door: every path takes the same writing half', () => {
     expect(region(wikiRoutes, 'async ingestPageMarkdown(', '\n  async ')).toContain('completeNcmConversion(');
     expect(mcpServer.match(/pageManager\.completeNcmConversion\(/g)).toHaveLength(2);
     expect(region(importManager, 'async importSinglePage(', '\n  async ')).toContain('completeNcmConversion(');
+    expect(region(importManager, 'private pagesReceiver(', '\n  private ')).toContain('completeNcmConversion(');
   });
 
   test('no path reaches around the door to a side effect', () => {

@@ -7,6 +7,8 @@
 __Source:__ `src/managers/ImportManager.ts`  
 __Converters:__ `src/converters/`
 
+Since [#1979](https://github.com/jwilleke/ngdpbase/issues/1979) ImportManager is also the ICE engine, and every registered converter runs as the shim `core.<formatId>`. The engine, its shims and receivers are in [ImportManager.md](ImportManager.md); this guide covers the folder import.
+
 ---
 
 ## Supported Formats

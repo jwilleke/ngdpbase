@@ -14,7 +14,7 @@
 
 // The module an add-on exports, and what `register` is handed.
 export type { AddonModule, AddonManifest, AddonListing } from '../../src/managers/AddonsManager.js';
-export type { AddonHost, PersonSwitchSetter } from '../../src/utils/addonHost.js';
+export type { AddonHost, AddonIceDeclaration, PersonSwitchSetter } from '../../src/utils/addonHost.js';
 export type { WikiEngine } from '../../src/types/WikiEngine.js';
 
 // Requests, contexts and subjects.
@@ -39,6 +39,14 @@ export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager } from '../../src/managers/ExportManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';
+
+// ICE (#1979): the import engine, and the shims and receivers an add-on registers through `host`.
+export type { default as ImportManager } from '../../src/managers/ImportManager.js';
+export type {
+  IceShim, IceReceiver, IceItem, IceKind, IceWarning, ShimDirection, ShimAccepts, ShimTools, ShimReadResult,
+  ReceiveInfo, ReceiveOutcome, IceCitation, KeptOriginal, OriginalChoice, IceUpload, IceSource, IceRunRequest,
+  IceRunReport, IceFileReport, IceFileStatus
+} from '../../src/ice/types.js';
 
 // Contacts (#1930): the person and organization doors, their records, and their refusal.
 export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';

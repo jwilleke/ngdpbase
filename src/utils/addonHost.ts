@@ -15,6 +15,8 @@
  *   the add-on (#1973);
  * - `setEnabledForPerson` sets this add-on's own per-person switch (#1963),
  *   bound to its slug, so it can never set another add-on's;
+ * - `registerShim` and `registerReceiver` (#1979, ICE) register into the import
+ *   engine under this add-on's slug, and only the names its manifest declares;
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -31,6 +33,8 @@ import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
 import logger from './logger.js';
+import type { IceReceiver, IceShim } from '../ice/types.js';
+import type { AddonManifest } from '../managers/AddonsManager.js';
 
 /** The values core offers an add-on, under the names they were imported as. */
 export interface AddonHost {
@@ -58,6 +62,27 @@ export interface AddonHost {
    * does not say `perPerson: true`, or the person may not manage their profile.
    */
   readonly setEnabledForPerson: PersonSwitchSetter;
+  /**
+   * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
+   * in `register`. Refused when the manifest's `shims` does not name it.
+   * Returns the shim's id; site configuration switches it on and off.
+   */
+  readonly registerShim: (shim: IceShim) => string;
+  /**
+   * #1979 (ICE, D4): register a receiver — your manager's own door for what
+   * shims produce — as `<slug>.<receiver.name>`. Refused when the manifest's
+   * `receivers` does not name it. Returns the receiver's id.
+   */
+  readonly registerReceiver: (receiver: IceReceiver) => string;
+}
+
+/** What the host may register for an add-on: the shim and receiver names its manifest declares (#1979). */
+export type AddonIceDeclaration = Pick<AddonManifest, 'shims' | 'receivers'>;
+
+/** The engine's registry, as the host reaches it. */
+interface IceRegistry {
+  registerShim(owner: string, shim: IceShim): string;
+  registerReceiver(owner: string, receiver: IceReceiver): string;
 }
 
 /** Sets one add-on's per-person switch; core binds the slug when it builds the host (#1963). */
@@ -94,15 +119,38 @@ function refuseUndeclared(slug: string, name: string, declared: ReadonlySet<stri
  * @param setEnabledForPerson - This add-on's switch setter, slug already bound
  *   (`AddonsManager` supplies it); without one, the host's setter refuses
  * @param engine - The running engine, which names the system principal for
- *   `systemContext`; without one (a test) it is core's fallback principal
+ *   `systemContext` and holds the import engine `registerShim` reaches;
+ *   without one (a test) it is core's fallback principal, and no registry
+ * @param manifest - The add-on's manifest (`ngdpbase` in its package.json):
+ *   the shims and receivers it may register (#1979)
  */
 export function buildAddonHost(
   slug: string,
   addonDefaults: Record<string, unknown>,
   setEnabledForPerson: PersonSwitchSetter = noPersonSwitch,
-  engine?: Parameters<typeof systemContext>[0]
+  engine?: Parameters<typeof systemContext>[0],
+  manifest?: AddonIceDeclaration | null
 ): AddonHost {
   const declared = addonDeclaredAuditEvents(addonDefaults);
+
+  const names = (list: unknown): ReadonlySet<string> =>
+    new Set(Array.isArray(list) ? list.filter((n): n is string => typeof n === 'string') : []);
+  const iceDeclared = { shim: names(manifest?.shims), receiver: names(manifest?.receivers) };
+  const iceRegistry = (what: 'shim' | 'receiver', name: unknown): IceRegistry => {
+    const allowed = iceDeclared[what];
+    if (typeof name !== 'string' || !allowed.has(name)) {
+      const message =
+        `Add-on '${slug}' may register only the ${what}s its manifest declares ("ngdpbase": { "${what}s": [...] } in package.json); ` +
+        `'${String(name)}' is not one of them (declared: ${allowed.size > 0 ? [...allowed].sort().join(', ') : 'none'}).`;
+      logger.error(`[addons] ${message}`);
+      throw new Error(message);
+    }
+    const registry = engine?.getManager('ImportManager') as Partial<IceRegistry> | null | undefined;
+    if (typeof registry?.registerShim !== 'function' || typeof registry.registerReceiver !== 'function') {
+      throw new Error(`register${what === 'shim' ? 'Shim' : 'Receiver'} is not available: this host was built without a site's ImportManager`);
+    }
+    return registry as IceRegistry;
+  };
 
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
     const checked = addonAuditEventName(name);
@@ -127,6 +175,8 @@ export function buildAddonHost(
     systemContext: (reason: string) => systemContext(engine, reason),
     logger: logger.child({ addon: slug }),
     guardedFetch,
-    setEnabledForPerson
+    setEnabledForPerson,
+    registerShim: (shim: IceShim) => iceRegistry('shim', shim?.name).registerShim(slug, shim),
+    registerReceiver: (receiver: IceReceiver) => iceRegistry('receiver', receiver?.name).registerReceiver(slug, receiver)
   });
 }

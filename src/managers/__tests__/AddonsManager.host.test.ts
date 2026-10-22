@@ -16,7 +16,8 @@ const HOST_KEYS = [
   'ApiContext', 'ApiError', 'sendApiError',
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
-  'logger', 'guardedFetch', 'setEnabledForPerson'
+  'logger', 'guardedFetch', 'setEnabledForPerson',
+  'registerShim', 'registerReceiver'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -44,6 +45,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
         if (key === 'ngdpbase.version') return '99.0.0';
         if (key === 'ngdpbase.addons.ledger.enabled') return true;
         if (key === 'ngdpbase.addons.legacy.enabled') return true;
+        if (key === 'ngdpbase.addons.importer.enabled') return true;
         return def;
       }),
       getAddonDeclaredDefaults: vi.fn((slug: string) => (slug === 'ledger' ? ledgerDefaults : {})),
@@ -55,15 +57,22 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     };
     // #1973: the system principal is the PolicyInformationPoint's, as on a site.
     const pip = { systemPrincipalName: () => 'svc-site' };
-    const manager = new AddonsManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? cm : n === 'PolicyInformationPoint' ? pip : null) });
+    const managers: Record<string, unknown> = { ConfigurationManager: cm, PolicyInformationPoint: pip, ImportManager: iceRegistry };
+    const manager = new AddonsManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
     return manager;
   };
 
-  const writeAddon = async (slug: string, registerSource: string) => {
+  /** #1979: the import engine's registry, as the host reaches it. */
+  const iceRegistry = {
+    registerShim: vi.fn((owner: string, shim: { name: string }) => `${owner}.${shim.name}`),
+    registerReceiver: vi.fn((owner: string, receiver: { name: string }) => `${owner}.${receiver.name}`)
+  };
+
+  const writeAddon = async (slug: string, registerSource: string, manifest?: Record<string, unknown>) => {
     const dir = path.join(tmpDir, slug);
     await fs.ensureDir(dir);
-    await fs.writeJson(path.join(dir, 'package.json'), { name: slug, version: '1.0.0' });
+    await fs.writeJson(path.join(dir, 'package.json'), { name: slug, version: '1.0.0', ...(manifest ? { ngdpbase: manifest } : {}) });
     await fs.writeFile(path.join(dir, 'index.js'),
       `module.exports = { name: '${slug}', version: '1.0.0', register: ${registerSource} };\n`);
   };
@@ -159,6 +168,24 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     const host = hostOf('ledger');
     expect(host.addonAuditEventName('ledger-post')).toBe('ledger-post');
     expect(host.addonAuditEventName('ledger-close')).toBe('ledger-close');
+  });
+
+  test('#1979: the manifest\'s shims and receivers are what the host lets the add-on register', async () => {
+    iceRegistry.registerShim.mockClear();
+    iceRegistry.registerReceiver.mockClear();
+    await writeAddon('importer',
+      `function (engine, config, host) {
+        globalThis['${SLOT}'].importer = [engine, config, host];
+        host.registerReceiver({ name: 'statements', accepts: ['importer.line'], mayUse: async () => true, receive: async () => ({ status: 'stored' }) });
+        host.registerShim({ name: 'ofx', direction: 'in', accepts: { extensions: ['.ofx'] }, produces: 'importer.line', receivers: ['importer.statements'], read: async () => ({ items: [] }) });
+      }`,
+      { shims: ['ofx'], receivers: ['statements'] });
+    const manager = await load();
+    expect((await manager.getStatus()).find((s: any) => s.name === 'importer')).toMatchObject({ loaded: true, error: null });
+    expect(iceRegistry.registerShim).toHaveBeenCalledWith('importer', expect.objectContaining({ name: 'ofx' }));
+    expect(iceRegistry.registerReceiver).toHaveBeenCalledWith('importer', expect.objectContaining({ name: 'statements' }));
+    // The ledger add-on's manifest declares none.
+    expect(() => hostOf('ledger').registerShim({ name: 'ofx' })).toThrow(/declared: none/);
   });
 
   test('an undeclared audit event is refused through the host', async () => {
