@@ -17,6 +17,8 @@
  *   GET  /addons/forms/:formId/submissions — list submissions for a form
  *   GET  /addons/forms/:formId/submissions/:id — view a submission
  *   POST /addons/forms/:formId/submissions/:id/status — update submission status
+ *   GET  /addons/forms/:formId/export.csv  — download a form's submissions as CSV
+ *   POST /addons/forms/:formId/submissions/clear — remove a form's stored submissions (#1973)
  *
  * Shipping a form from another add-on (#1973):
  *   const forms = engine.getManager<FormsDataManager>('FormsDataManager');
@@ -52,6 +54,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import { ApiError } from '../../dist/src/context/ApiContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
@@ -110,14 +113,15 @@ const formsAddon = {
     }
   },
 
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host?: AddonHost): Promise<void> {
     const cm = engine.getManager<ConfigurationManager>('ConfigurationManager');
     const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
       ? config['dataPath']
       : (cm?.resolveDataPath?.('forms') ?? './data/forms');
 
     // ── 1. FormsDataManager ──────────────────────────────────────────────────
-    dataManager = new FormsDataManager(engine, dataPath);
+    // The host records this add-on's audit events (submission-clear, #1973).
+    dataManager = new FormsDataManager(engine, dataPath, host);
     await dataManager.initialize();
     engine.registerManager('FormsDataManager', dataManager);
 

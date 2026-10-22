@@ -24,6 +24,16 @@
       <i class="fas fa-trash me-1"></i>Form definition deleted.
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+  <% } else if (flash === 'cleared') { %>
+    <div class="alert alert-info alert-dismissible fade show" role="alert" data-testid="flash-cleared">
+      <i class="fas fa-eraser me-1"></i>Cleared <%= query.count %> submission<%= query.count !== '1' ? 's' : '' %> of <code><%= query.form %></code>.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  <% } else if (flash === 'not-cleared') { %>
+    <div class="alert alert-warning alert-dismissible fade show" role="alert" data-testid="flash-not-cleared">
+      <i class="fas fa-exclamation-triangle me-1"></i>Nothing was cleared: type the form id, <code><%= query.form %></code>, exactly to confirm.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
   <% } %>
 
   <% if (forms.length === 0) { %>
@@ -64,6 +74,22 @@
                   <i class="fas fa-puzzle-piece me-1"></i>Provided by <a href="/admin/addons"><%= form.providedBy.addon %></a> <%= form.providedBy.version %>; it updates this form.
                 </p>
               <% } %>
+              <% if (form.submissionCount > 0) { %>
+                <%# #1973: a form with submissions cannot be deleted until they are cleared. %>
+                <details class="mt-2" data-testid="clear-submissions">
+                  <summary class="small text-danger">Clear submissions</summary>
+                  <form method="POST" action="/addons/forms/<%= encodeURIComponent(form.id) %>/submissions/clear" class="border rounded p-2 mt-2">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <p class="small mb-2">Removes all <strong><%= form.submissionCount %></strong> stored submission<%= form.submissionCount !== 1 ? 's' : '' %> of <strong><%= form.title %></strong>. This cannot be undone. The form itself is kept.</p>
+                    <p class="small mb-2"><a href="/addons/forms/<%= encodeURIComponent(form.id) %>/export.csv" data-testid="export-csv"><i class="fas fa-download me-1"></i>Download them as CSV</a> first to keep a copy.</p>
+                    <label for="clear-<%= form.id %>" class="form-label small">Type the form id, <strong><%= form.id %></strong>, to confirm</label>
+                    <input type="text" class="form-control form-control-sm clear-confirm mb-2" id="clear-<%= form.id %>" name="confirm" autocomplete="off" required data-expected="<%= form.id %>" data-submit="clear-submit-<%= form.id %>">
+                    <button type="submit" class="btn btn-sm btn-danger" id="clear-submit-<%= form.id %>" disabled>
+                      <i class="fas fa-eraser me-1"></i>Clear <%= form.submissionCount %> submission<%= form.submissionCount !== 1 ? 's' : '' %>
+                    </button>
+                  </form>
+                </details>
+              <% } %>
             </div>
             <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
               <a href="/addons/forms/<%= encodeURIComponent(form.id) %>/submissions" class="btn btn-sm btn-outline-primary">
@@ -98,6 +124,14 @@ document.addEventListener('click', function (e) {
   var button = e.target.closest('button[type="submit"]');
   var asks = button && (button.closest('[data-confirm]'));
   if (asks && !confirm(asks.dataset.confirm)) e.preventDefault();
+});
+// #1973: Clear submissions stays disabled until the form id is typed, as a site restore asks for the site name.
+document.querySelectorAll('input.clear-confirm').forEach(function (input) {
+  var button = document.getElementById(input.dataset.submit);
+  if (!button) return;
+  var update = function () { button.disabled = input.value.trim() !== input.dataset.expected; };
+  input.addEventListener('input', update);
+  update();
 });
 </script>
 
