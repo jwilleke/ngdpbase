@@ -325,11 +325,11 @@ class ValidationManager extends BaseManager {
         // Build valid categories list from enabled categories
         const categories: string[] = [];
         for (const [key, categoryConfig] of Object.entries(systemCategoriesConfig)) {
-          // #1503: a missing or unknown source reads as 'site'. Say so, because an
-          // entry written for the old storageLocation switch would silently lose
-          // its shipped/repo behaviour.
-          if (categorySource(categoryConfig) !== categoryConfig.source) {
-            logger.warn(`System category '${key}' has no valid source (site | shipped | repo); treating it as 'site'`);
+          // #1503: a missing or unknown source reads as 'site'. A missing one is
+          // silent: source was dropped and the guides say leave it out (#1988).
+          // Only a value that is present but not site | shipped | repo warns.
+          if (categoryConfig.source !== undefined && categorySource(categoryConfig) !== categoryConfig.source) {
+            logger.warn(`System category '${key}' has an unknown source '${String(categoryConfig.source)}' (site | shipped | repo); treating it as 'site'`);
           }
           if (categoryConfig.enabled !== false) {
             // Use the label as the valid category value
