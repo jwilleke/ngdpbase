@@ -20,6 +20,10 @@ import { Sist2AssetProvider } from '../src/Sist2AssetProvider';
 import type { Client } from '@elastic/elasticsearch';
 import { ALLOWED_RANGES_KEY } from '../../../dist/src/http/egressPolicy.js';
 import { REFUSAL } from '../../../dist/src/http/ssrf.js';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the elasticsearch add-on (#1813). */
+const HOST = buildAddonHost('elasticsearch', {});
 
 const witness = vi.hoisted(() => ({ requests: [] as string[] }));
 
@@ -49,7 +53,7 @@ function readerWith(allowed: () => string[]) {
 }
 
 const provider = (sist2Url: string, allowed: () => string[] = () => []) =>
-  new Sist2AssetProvider(client, 'sist2', sist2Url, [], readerWith(allowed));
+  new Sist2AssetProvider(HOST, client, 'sist2', sist2Url, [], readerWith(allowed));
 
 beforeEach(() => {
   witness.requests.length = 0;

@@ -1,6 +1,6 @@
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormSubmission, SubmissionStatus } from '../managers/FormsDataManager.js';
@@ -26,7 +26,8 @@ export function submissionsTable(form: FormDefinition, submissions: FormSubmissi
   return { headers, rows };
 }
 
-export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router {
+export default function adminRoutes(engine: WikiEngine, _addon: unknown, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function fdm(): FormsDataManager | undefined {

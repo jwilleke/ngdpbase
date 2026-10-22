@@ -43,9 +43,9 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 - An addon that keeps rows declares its database under `ngdpbase.addons.<slug>.database` in its `config/default-config.json` before it calls `DatabaseManager.openAddonDatabase`; an undeclared one is refused, and an invalid declaration stops the addon loading ([storage guide](storage-developer-guide.md#declaring-a-database), #1860).
 - An addon that does not load, for any reason, is reported to admins at the most severe level. One the site cannot work without declares `ngdpbase.addons.<slug>.site-critical: true`, and then any failure to load puts the whole site in maintenance mode ([When an addon does not load](#when-an-addon-does-not-load-site-critical), #1883).
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
-- `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts importing something core added (a `dist/src/...` module, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
+- `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts using something core added (a `host` entry, a manager method, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
-- Reach core values through `host`, the third argument to `register` ([Using the Engine](#4-using-the-engine)). Host HTTP is `host.guardedFetch`; an addon that still imports it uses `../../dist/src/http/guardedFetch.js`, never `src/http/`.
+- Reach core values through `host`, the third argument to `register`, and a manager's job through `engine.getManager` ([Importing core](#importing-core--types-only)). Host HTTP is `host.guardedFetch`. Never value-import core: `npm run lint:addons` refuses a value import that resolves under `dist/` or `src/` ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). `import type` stays allowed.
 - A request through `guardedFetch` that names no `User-Agent` (any case) is sent with the site's, `ngdpbase.http.user-agent` (default `ngdpbase/<version> (+<base URL>)`, the bracketed part only when `ngdpbase.application.base-url` is set explicitly) ([#1947](https://github.com/jwilleke/ngdpbase/issues/1947)). Do not invent one of your own. Pass `headers` only for what a provider asks for (a contact in the User-Agent, an `Accept`), and pass `timeoutMs` where the 30 s default is wrong for that endpoint. An option the operator sets per source is validated when the config is read, not at fetch: the feeds addon refuses hop-by-hop, framing and credential headers, and a `timeoutMs` outside its configured range, each with a warning ([FeedManager](../managers/FeedManager.md#configuration)).
 - One slow upstream must not hold up unrelated work. The feeds scheduler ingests due sources side by side, up to `ngdpbase.addons.feeds.max-concurrent-ingests`, so a source hanging until its timeout delays no other ([#1955](https://github.com/jwilleke/ngdpbase/issues/1955)).
 - Recurring work is a scheduled job ([Background Jobs](#8-background-jobs)), never `setInterval`: a timer catches nothing up, runs twice during a rolling update, and records nothing when it misses.
@@ -301,7 +301,7 @@ Worked examples: `addons/journal/config/default-config.json` declares `journal-r
 An addon under `addons/` is linted with the host. These run in `npm run lint`, in `lint:ci`, and (for the ones named) on the pre-commit hook:
 
 - `npm run lint:code` — eslint on `src/**/*.ts`, `addons/**/*.ts` and `packages/`. The hook runs `eslint --fix` on the staged `.ts` files.
-- `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)), and no value import of `express` in addon runtime code ([#1861](https://github.com/jwilleke/ngdpbase/issues/1861); types and tests exempt). On the pre-commit hook.
+- `npm run lint:addons` — no addon value-import of host `src/`, and none of core's `dist/` in addon runtime code ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813); `import type` and tests exempt), no compiled `.js` left under `src/`, no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)), and no value import of `express` in addon runtime code ([#1861](https://github.com/jwilleke/ngdpbase/issues/1861); types and tests exempt). On the pre-commit hook.
 - `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`. On the pre-commit hook.
 - `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `host.recordAuditEvent` and `host.addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
 
@@ -505,7 +505,7 @@ async register(engine, config) {
 
 ### The `host` parameter
 
-`host` is how an addon reaches core values ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). Core builds one for each addon from its own running code, and freezes it. The names are the ones the values were imported under, so moving an addon over is mechanical: `import { X } from '../../dist/…'` becomes `const { X } = host`.
+`host` is how an addon reaches core values ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). Core builds one for each addon from its own running code, and freezes it. The names are the ones the values were imported under: `import { X } from '../../dist/…'` became `const { X } = host` when the bundled addons moved over, and `lint:addons` now refuses the import ([Importing core](#importing-core--types-only)).
 
 | Name | What it is |
 |---|---|
@@ -517,6 +517,9 @@ async register(engine, config) {
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
 | `setEnabledForPerson` | Turn this add-on on or off for a person, when it is [per-person](#per-person-add-ons-and-their-switch) |
+| `resolveEgressPolicy`, `validateUrl` | The site's egress policy, read through a `getProperty` reader at each call, and whether a URL may be fetched under it (before any socket) |
+| `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
+| `isAtLeast` | Whether an `x.y.z` version is at least another; throws on anything else |
 
 ```typescript
 async register(engine, config, host) {
@@ -591,7 +594,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager`, `PolicyDecisionPoint`, `PageManager`, `PageAction`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -607,26 +610,31 @@ import { buildAddonHost, openAddonTestDatabase } from '@jwilleke/ngdpbase-types/
 
 In this repository the package is built by `npm run build:types-package` into `packages/ngdpbase-types/dist/`. That build also checks that the main entry emits no JavaScript, that the test kit loads in Node, and that an addon importing both entries typechecks against the built package alone. `.github/workflows/publish-types.yml` publishes it on each `v*` release tag.
 
-### Importing host code — through `dist/`, never `src/`
+### Importing core — types only
 
-Use [`host`](#the-host-parameter) for any value it offers. Importing through `../../dist/…` still works for now, and is what the bundled addons do until they move over; once they have, `npm run lint:addons` will refuse a value import from `../../dist` ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). `import type` stays allowed.
-
-The host compiles to `dist/`. A bundled addon compiles __in place__ (its `tsconfig.json` has `rootDir` and `outDir` of `../..`), so its `.js` sits beside its `.ts`. Any value you import from the host must therefore be a path that exists at runtime:
+An addon takes core's values from [`host`](#the-host-parameter) and a manager's job from [`engine.getManager`](#access-a-manager). It never value-imports core ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)): `../../dist/…` resolves only for an addon sitting at `<ngdpbase>/addons/<slug>/`, so an addon installed into the data folder fails with `ERR_MODULE_NOT_FOUND`, and one run against another checkout loads a second copy of core. Anything an addon needs that neither offers is added to core by pull request: a manager's job as a method on that manager, a small ownerless tool on `host`.
 
 ```typescript
-// Right — resolves in Node and in vitest (CI builds before it tests)
-import logger from '../../dist/src/utils/logger.js';
-import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
+// Right — values from the host, types erased at compile
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
+import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
+import type PageManager from '../../dist/src/managers/PageManager.js';
 
-// Wrong — see below
+async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost) {
+  const { ApiContext, logger, guardedFetch } = host;
+  const pageManager = engine.getManager<PageManager>('PageManager');
+}
+
+// Wrong — refused by lint:addons
+import logger from '../../dist/src/utils/logger.js';
 import { guardedFetch } from '../../../src/http/guardedFetch.js';
 ```
 
-The wrong form is worse than a missing file. Because the addon's `rootDir` spans the repository, importing `src/http/guardedFetch.js` pulls the host's `.ts` into __your__ compilation and emits `src/http/guardedFetch.js` next to it. On your machine the import then works. The container image copies `dist/` and `addons/` but not `src/`, so there Node throws `ERR_MODULE_NOT_FOUND` on the addon's first line and `AddonsManager` skips the addon with one log line. That is how v4.13.0 shipped with `elasticsearch` and `feeds` dead while every test was green ([#1192](https://github.com/jwilleke/ngdpbase/issues/1192)).
+`import type` from `dist/` is fine: it is erased at compile and seeks no file, and `dist/` has the `.d.ts` files. An addon in its own repository uses [`@jwilleke/ngdpbase-types`](#types-and-the-test-kit-jwillekengdpbase-types) instead. Never point a type import at `src/` either: there is no reason to, since `dist/` has the same types.
 
-`import type` from either place is fine — it is erased at compile and seeks no file — but `dist/` has the `.d.ts` files too, so there is no reason to point at `src/`.
+A value import of `src/` is worse than a missing file. A bundled addon compiles __in place__ (its `tsconfig.json` has `rootDir` and `outDir` of `../..`), so importing `src/http/guardedFetch.js` pulls the host's `.ts` into __your__ compilation and emits `src/http/guardedFetch.js` next to it. On your machine the import then works. The container image copies `dist/` and `addons/` but not `src/`, so there Node throws `ERR_MODULE_NOT_FOUND` on the addon's first line and `AddonsManager` skips the addon with one log line. That is how v4.13.0 shipped with `elasticsearch` and `feeds` dead while every test was green ([#1192](https://github.com/jwilleke/ngdpbase/issues/1192)).
 
-Two gates enforce this: `npm run lint:addons` fails on any addon value import that resolves under `src/` (and on any compiled `.js` found under `src/`), and `npm run check:addon-load` imports every `addons/*/index.js` in a child Node process after the build.
+Two gates enforce this: `npm run lint:addons` fails on any addon value import (static, `import()` or `require()`) that resolves under `src/` or, in runtime code, under `dist/`, and on any compiled `.js` found under `src/`; `npm run check:addon-load` imports every `addons/*/index.js` in a child Node process after the build. An addon's tests may import core's values (`buildAddonHost`, a manager to stand in for core), since they run against a core checkout.
 
 ### Access a Manager
 
@@ -635,7 +643,13 @@ const pageManager = engine.getManager('PageManager');
 const pages = await pageManager.getAllPages();
 ```
 
-Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `AttachmentManager`,
+A core job an addon needs is a method on the manager that owns it, for example:
+
+- a page's URL, `/view/…` or `/vaults/…`: `PageManager.pageUrl(pageName, action?)`;
+- the name of a page in a person's vault: `PageManager.privatePageName(owner, title, vault?)` (their default vault without `vault`);
+- who holds a permission, such as the administrators a notice goes to: `PolicyDecisionPoint.usersHolding('admin-system')`. An empty list or null means nobody to tell: log only, since an empty `targetUsers` is every user.
+
+Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `PolicyDecisionPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
 `PersonManager`, `OrganizationManager` ([Contacts](#contacts-persons-and-organizations)),
@@ -1162,7 +1176,7 @@ Do not read the left menu or `req.session.csrfToken` yourself; a missing key mak
 __Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the person follows in the browser (`'page'`), as a redirect to sign in again or to sign-in:
 
 ```typescript
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+const { ApiContext, ApiError, sendApiError } = host;   // register()'s third argument, handed to the route
 
 router.post('/thing', (req, res) => {
   void (async () => {
@@ -1246,9 +1260,14 @@ The page then stays cached while nothing changes and is re-rendered on the next 
 
 ## 6. Writing a Manager
 
-Managers hold domain data and business logic. For an add-on a manager is just a plain
-class — it does not need to extend `BaseManager` unless you want lifecycle hooks
-(`initialize`, `shutdown`, `backup`, `restore`).
+Managers hold domain data and business logic. For an add-on a manager is a plain
+class: it does not extend `BaseManager`, which is core's and is not on `host`
+([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). What `BaseManager` would give an add-on is done for it already:
+its `dataPath` and any folder its module declares in `backupFolders(config)` are
+backed up and restored by BackupManager ([Backup](#backup-your-datapath-is-backed-up-for-you)),
+`engine.registerManager` takes any object, and `MarqueePlugin` and the form
+`optionsSource` reach `toMarqueeText` and `toFormOptions` by name. Keep the
+engine, or `host`, as a field if the manager needs them.
 
 ```javascript
 // managers/MyDataManager.js
@@ -1333,10 +1352,12 @@ router.get('/feed.ics', async (req, res) => {
 ```typescript
 // routes/api.ts
 import type { Router } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 
-export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
+// register() mounts it: engine.app?.use('/api/my-addon', apiRoutes(engine, config, host));
+export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   // Public route — SHOULD use ApiContext for consistent caller identity
@@ -1745,7 +1766,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 ## Known gaps
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
-- [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports.
+- [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — [importing core](#importing-core--types-only): `lint:addons` reads `.ts` files only, so a plain-JavaScript addon's value import of `../../dist` is not refused (`check:addon-load` still imports it); and it resolves relative paths, so a bare `ngdpbase/…` specifier would not be seen (core has no `exports`, so one cannot load either).
 - [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
 - [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file. A builder save keeps them ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)).
 - [#1921](https://github.com/jwilleke/ngdpbase/issues/1921) — `views/header.ejs` shows the page editor's Save and Cancel for any view whose `title` starts with the word "Edit" and a space (`title.startsWith('Edit ')`), and those need a `pageName`. An add-on view with no page must not title itself `Edit …`: the form builder's edit page did, and every edit of a form answered 500. The builder is titled `Form Builder — Edit Form` now; the header still decides edit mode from the title.
@@ -1772,4 +1793,4 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 ---
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22

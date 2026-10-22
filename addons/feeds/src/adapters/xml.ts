@@ -1,4 +1,3 @@
-import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
 import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
 import { isOk, reason, requestOptions } from './http.js';
 /**
@@ -19,7 +18,7 @@ import { isOk, reason, requestOptions } from './http.js';
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import type { SourceAdapter, RawRecord, NormalizedRecord } from './types.js';
+import type { SourceAdapter, RawRecord, NormalizedRecord, GuardedFetch } from './types.js';
 import type { FeedSourceConfig } from '../types.js';
 import { getByPath } from './dotpath.js';
 import { buildRecord, pickItemsArray } from './buildRecord.js';
@@ -47,7 +46,7 @@ export function coerceItems(located: unknown): RawRecord[] {
 export const xmlAdapter: SourceAdapter = {
   name: 'xml',
 
-  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy, guardedFetch: GuardedFetch): Promise<RawRecord[]> {
     const res = await guardedFetch(cfg.url, requestOptions(cfg, policy));
     if (!isOk(res)) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);

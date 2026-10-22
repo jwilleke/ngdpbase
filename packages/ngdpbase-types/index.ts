@@ -39,6 +39,9 @@ export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager } from '../../src/managers/ExportManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';
+// #1813: a page's URL and a vault page's name (`pageUrl`, `privatePageName`), for add-ons.
+export type { default as PageManager } from '../../src/managers/PageManager.js';
+export type { PageAction } from '../../src/utils/pageUrl.js';
 
 // Contacts (#1930): the person and organization doors, their records, and their refusal.
 export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';

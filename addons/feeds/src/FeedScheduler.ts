@@ -18,7 +18,7 @@
  * without real timers or network.
  */
 
-import logger from '../../../dist/src/utils/logger.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { FeedSourceConfig } from './types.js';
 import type { UpsertResult } from './RecordStore.js';
 import { FEED_SETTING_DEFAULTS } from './config.js';
@@ -63,9 +63,13 @@ export class FeedScheduler {
   private readonly state = new Map<string, SourceState>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * @param logger - The host's logger (#1813): where starts, ingests and stale sources are said
+   */
   constructor(
     private readonly configs: FeedSourceConfig[],
     private readonly ingest: IngestFn,
+    private readonly logger: Pick<AddonHost['logger'], 'info' | 'warn'>,
     opts: FeedSchedulerOptions = {}
   ) {
     this.now = opts.now ?? Date.now;
@@ -81,7 +85,7 @@ export class FeedScheduler {
     const timer = setInterval(() => void this.tick(), this.tickMs);
     timer.unref?.(); // don't block process exit (BackupManager pattern)
     this.timer = timer;
-    logger.info(`[feeds] scheduler started — ${this.configs.length} source(s), tick ${this.tickMs}ms`);
+    this.logger.info(`[feeds] scheduler started — ${this.configs.length} source(s), tick ${this.tickMs}ms`);
   }
 
   stop(): void {
@@ -175,10 +179,10 @@ export class FeedScheduler {
       st.lastSuccessAt = now;
       st.failures = 0;
       st.staleWarned = false;
-      logger.info(`[feeds] ${cfg.sourceId}: ingested (added=${res.added} updated=${res.updated} unchanged=${res.unchanged} removed=${res.removed})`);
+      this.logger.info(`[feeds] ${cfg.sourceId}: ingested (added=${res.added} updated=${res.updated} unchanged=${res.unchanged} removed=${res.removed})`);
     } catch (err) {
       st.failures++;
-      logger.warn(`[feeds] ${cfg.sourceId}: ingest failed (${st.failures} consecutive): ${String(err)}`);
+      this.logger.warn(`[feeds] ${cfg.sourceId}: ingest failed (${st.failures} consecutive): ${String(err)}`);
     } finally {
       st.running = false;
       this.releaseSlot();
@@ -197,7 +201,7 @@ export class FeedScheduler {
       const detail = st.lastSuccessAt === null
         ? `has never fetched successfully (${st.failures} consecutive failures)`
         : `last succeeded ${Math.round((now - st.lastSuccessAt) / MINUTE_MS)} min ago`;
-      logger.warn(`[feeds] stale source '${cfg.sourceId}' — ${detail}`);
+      this.logger.warn(`[feeds] stale source '${cfg.sourceId}' — ${detail}`);
       this.notify({
         level: 'warning',
         title: 'Stale data feed',

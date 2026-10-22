@@ -14,6 +14,7 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import FormsDataManager, { ProvidedFormError } from '../managers/FormsDataManager';
 import type { FormDefinition } from '../managers/FormsDataManager';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 
 /** The add-on's boot context, as `host.systemContext(reason)` makes it. */
 const BOOT = { username: 'system', origin: 'boot' as const, requestedAt: new Date().toISOString(), reason: 'test: register forms' };
@@ -62,14 +63,15 @@ function engine(): { getManager: (name: string) => unknown } {
     },
     NotificationManager: { createNotification: async (n: Sent) => { sent.push(n); return `n${sent.length}`; } },
     UserManager: { getUsers: async () => [{ username: 'admin' }, { username: 'reader' }] },
-    PolicyDecisionPoint: { userHoldsPermission: async (u: string, p: string) => p === 'admin-system' && u === 'admin' }
+    PolicyDecisionPoint: { usersHolding: async (p: string) => (p === 'admin-system' ? ['admin'] : []) }
   };
   return { getManager: (name: string) => managers[name] };
 }
 
 /** A fresh manager over the same folder: what the next start sees. */
 async function boot(): Promise<FormsDataManager> {
-  const m = new FormsDataManager(engine(), dir);
+  const e = engine();
+  const m = new FormsDataManager(e, dir, buildAddonHost('forms', {}, undefined, e));
   await m.initialize();
   return m;
 }

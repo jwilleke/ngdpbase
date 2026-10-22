@@ -12,6 +12,10 @@ import { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
 import apiRoutes from '../routes/api';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the forms add-on (#1813); its ApiContext is the stub below. */
+const host = () => buildAddonHost('forms', {});
 import { TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 
 // Stub ApiContext.from so it doesn't need a real session in tests.
@@ -74,7 +78,7 @@ const noopAddon = {
 function makeContext(engine: ReturnType<typeof makeEngine>) {
   const app = express();
   app.use(express.json());
-  app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+  app.use('/api/forms', apiRoutes(engine as never, noopAddon, host()));
   return app;
 }
 
@@ -252,7 +256,7 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     const addon = { callHandler: async (_id: string, s: unknown) => (opts.handler ? opts.handler(s as { data: Record<string, unknown> }) : { ok: true }) };
     const app = express();
     app.use(express.json());
-    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    app.use('/api/forms', apiRoutes(engine as never, addon as never, host()));
     return { app, saved };
   }
 
@@ -348,7 +352,7 @@ describe('POST /api/forms/submit/:formId — checklist', () => {
     const app = express();
     app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
     app.use(express.json());
-    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    app.use('/api/forms', apiRoutes(engine as never, addon as never, host()));
     return { app, seen, viewers };
   }
 
@@ -404,7 +408,7 @@ describe('POST /api/forms/submit/:formId — confirmation email fails (#1916)', 
       ConfigurationManager: { getProperty: (key: string, def: unknown) => (key === 'ngdpbase.mail.enabled' ? true : def) },
       NotificationManager: { createNotification, updateNotificationMessage: vi.fn(async () => true) },
       UserManager: { getUsers: async () => [{ username: 'admin' }] },
-      PolicyDecisionPoint: { userHoldsPermission: async (u: string) => u === 'admin' }
+      PolicyDecisionPoint: { usersHolding: async () => ['admin'] }
     };
     const emailManager = new EmailManager({ getManager: (n: string) => core[n] } as never);
     await emailManager.initialize();
@@ -461,7 +465,7 @@ describe('POST /api/forms/submit/:formId — lines', () => {
     const app = express();
     app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
     app.use(express.json());
-    app.use('/api/forms', apiRoutes(engine as never, addon as never));
+    app.use('/api/forms', apiRoutes(engine as never, addon as never, host()));
     return { app, seen, viewers };
   }
 
@@ -550,7 +554,7 @@ describe('POST /api/forms/submit/:formId — submission email', () => {
     const app = express();
     app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'molly' }; next(); });
     app.use(express.json());
-    app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+    app.use('/api/forms', apiRoutes(engine as never, noopAddon, host()));
     const res = await request(app).post('/api/forms/submit/test-form').send({
       email: 'molly@example.com',
       fundId: 'general',
@@ -731,7 +735,7 @@ describe('POST /api/forms/submit/:formId — formVersion (#1973)', () => {
     });
     const app = express();
     app.use(express.json());
-    app.use('/api/forms', apiRoutes(engine as never, { callHandler: async (_id: string, s: unknown) => { handled.push(s as Record<string, unknown>); return { ok: true }; } }));
+    app.use('/api/forms', apiRoutes(engine as never, { callHandler: async (_id: string, s: unknown) => { handled.push(s as Record<string, unknown>); return { ok: true }; } }, host()));
     return { app, saved, handled };
   }
 

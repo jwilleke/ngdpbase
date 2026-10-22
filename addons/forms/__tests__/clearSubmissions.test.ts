@@ -24,26 +24,10 @@ import adminRoutes from '../routes/admin';
 import builderRoutes from '../routes/builder';
 import FormsDataManager from '../managers/FormsDataManager';
 import ExportManager from '../../../dist/src/managers/ExportManager.js';
-import { addonDeclaredAuditEvents } from '../../../dist/src/utils/addonHost.js';
+import { addonDeclaredAuditEvents, buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 
 const permission = { allowed: true };
-
-vi.mock('../../../dist/src/context/ApiContext', () => {
-  class ApiError extends Error { status = 403; }
-  return {
-    ApiContext: {
-      from: () => ({
-        getActor: () => ({ username: 'admin', roles: ['admin'], isAuthenticated: true }),
-        requireAuthenticated: () => undefined,
-        requirePermission: async (p: string) => {
-          if (!permission.allowed) throw new ApiError(`needs ${p}`);
-        }
-      })
-    },
-    ApiError,
-    sendApiError: (res: express.Response, err: Error & { status?: number }) => { res.status(err.status ?? 500).send(err.message); }
-  };
-}, { virtual: true });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOOT = { username: 'system', origin: 'boot' as const, requestedAt: new Date().toISOString(), reason: 'test' };
@@ -66,16 +50,32 @@ beforeEach(async () => {
 });
 afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
 
+const coreHost = buildAddonHost('forms', {});
+/**
+ * The host core hands the forms add-on (#1813), with a stand-in ApiContext (an
+ * admin who holds admin-system unless `permission.allowed` is false) and an
+ * audit sink that keeps what it is given.
+ */
 const host = {
+  ...coreHost,
+  ApiContext: {
+    from: () => ({
+      getActor: () => ({ username: 'admin', roles: ['admin'], isAuthenticated: true }),
+      requireAuthenticated: () => undefined,
+      requirePermission: async (p: string) => {
+        if (!permission.allowed) throw new coreHost.ApiError(403, `needs ${p}`);
+      }
+    })
+  },
   addonAuditEventName: ((name: string) => name) as never,
   recordAuditEvent: (async (_sink: unknown, event: Recorded) => {
     if (recordFails) throw new Error('audit device full');
     recorded.push(event);
     return 'recorded';
   }) as never
-};
+} as unknown as AddonHost;
 
-async function setUp(withHost = true) {
+async function setUp() {
   const addons = {
     getAddonVersion: (slug: string) => (slug === 'phr' ? '1.2.0' : undefined),
     addonsLoaded: () => state.done,
@@ -86,7 +86,7 @@ async function setUp(withHost = true) {
     getManager: (name: string) => (name === 'AddonsManager' ? addons : name === 'ExportManager' ? exporter : name === 'FormsDataManager' ? m : undefined),
     createRouter: () => express.Router()
   };
-  const m = new FormsDataManager(engine, dir, withHost ? host : undefined);
+  const m = new FormsDataManager(engine, dir, host);
   await m.initialize();
   await m.saveDefinition({ id: 'ours', title: 'Ours', proxySubmission: false, notifyRole: 'admin', store: true, notify: true, fields }, BOOT);
   await m.registerShippedForm('phr', { id: 'phr-note', title: 'Health note', fields }, BOOT);
@@ -96,8 +96,8 @@ async function setUp(withHost = true) {
     res.render = ((view: string, locals?: object) => { res.json({ view, ...locals }); });
     next();
   });
-  app.use('/addons/forms/builder', builderRoutes(engine as never));
-  app.use('/addons/forms', adminRoutes(engine as never, null));
+  app.use('/addons/forms/builder', builderRoutes(engine as never, host));
+  app.use('/addons/forms', adminRoutes(engine as never, null, host));
   return { m, app };
 }
 
@@ -137,13 +137,6 @@ describe('FormsDataManager.clearSubmissions (#1973)', () => {
     recordFails = true;
     await expect(m.clearSubmissions('ours', BOOT)).rejects.toThrow('audit device full');
     expect(await m.getSubmissionCount('ours')).toBe(2);
-  });
-
-  test('without a host to record with, nothing is cleared', async () => {
-    const { m } = await setUp(false);
-    await submit(m, 'ours', 1);
-    await expect(m.clearSubmissions('ours', BOOT)).rejects.toThrow(/no host/);
-    expect(await m.getSubmissionCount('ours')).toBe(1);
   });
 
   test('a form with no submissions clears nothing and records nothing', async () => {

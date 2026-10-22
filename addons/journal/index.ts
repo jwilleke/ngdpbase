@@ -45,6 +45,7 @@ import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
 import type PolicyInformationPoint from '../../dist/src/security/PolicyInformationPoint.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import JournalDataManager from './managers/JournalDataManager.js';
 import JournalPlugin from './plugins/JournalPlugin.js';
 import apiRoutes from './routes/api.js';
@@ -75,7 +76,7 @@ const journalAddon = {
   author: 'Jim Willeke',
   dependencies: [] as string[],
 
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
     // #534: capture engine reference + voice-to-text flag for the
     // profileSection / saveProfileSection hooks below.
     // Coerce explicitly — config values arriving as strings ("false", "off",
@@ -112,10 +113,10 @@ const journalAddon = {
     engine.app?.set('views', [...[existing].flat(), path.join(__dirname, 'views')]);
 
     // ── 6. Mount routes (/api before /journal to avoid slug wildcard conflict) ─
-    engine.app?.use('/api/journal',   apiRoutes(engine, config));
-    engine.app?.use('/journal',       editorRoutes(engine, config));
-    engine.app?.use('/journal',       publicRoutes(engine, config));
-    engine.app?.use('/addons/journal', adminRoutes(engine, config));
+    engine.app?.use('/api/journal',   apiRoutes(engine, config, host));
+    engine.app?.use('/journal',       editorRoutes(engine, config, host));
+    engine.app?.use('/journal',       publicRoutes(engine, config, host));
+    engine.app?.use('/addons/journal', adminRoutes(engine, config, host));
 
     // ── 6b. Wiki-link alias: [journal] → /journal ────────────────────────────
     // Addons load before WikiRoutes, so this fires before the /view/:pageName catch-all.

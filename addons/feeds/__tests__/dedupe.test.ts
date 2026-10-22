@@ -14,6 +14,10 @@ import { FeedManager } from '../src/FeedManager';
 import { recordDateIso } from '../src/normalize';
 import type { NormalizedRecord, SourceAdapter } from '../src/adapters/types';
 import type { FeedSourceConfig } from '../src/types';
+import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+
+/** The host core hands the feeds add-on (#1813). */
+const HOST = buildAddonHost('feeds', {});
 
 // Temp store dir — os.tmpdir, NEVER ./data (live-data-destruction rule).
 const TMP = mkdtempSync(path.join(os.tmpdir(), 'feeds-dedupe-test-'));
@@ -216,26 +220,26 @@ describe('parseSourceConfigs — shaping + adapter keys (#989)', () => {
   it('carries dedupeBy, maxAgeHours and dedupeDateField through', () => {
     const [cfg] = parseSourceConfigs({
       vaac: { adapter: 'xml-index', url: 'u', type: 'Advisory', dedupeBy: 'volcanoName', maxAgeHours: 48, dedupeDateField: 'issuedAt' }
-    });
+    }, HOST.logger);
     expect(cfg).toMatchObject({ dedupeBy: 'volcanoName', maxAgeHours: 48, dedupeDateField: 'issuedAt' });
   });
 
   it('rejects a non-positive or non-numeric maxAgeHours instead of coercing it', () => {
     for (const bad of [0, -1, 'soon', null, NaN]) {
-      const [cfg] = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', maxAgeHours: bad } });
+      const [cfg] = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', maxAgeHours: bad } }, HOST.logger);
       expect(cfg.maxAgeHours).toBeUndefined();
     }
   });
 
   it('ignores a blank dedupeBy', () => {
-    const [cfg] = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', dedupeBy: '   ' } });
+    const [cfg] = parseSourceConfigs({ s: { adapter: 'geojson', url: 'u', type: 'Event', dedupeBy: '   ' } }, HOST.logger);
     expect(cfg.dedupeBy).toBeUndefined();
   });
 
   it('carries the adapter keys that were previously dropped (linkPattern, maxItems, delimiter)', () => {
     const [cfg] = parseSourceConfigs({
       vaac: { adapter: 'xml-index', url: 'u', type: 'Advisory', linkPattern: 'xml_files/.*\\.xml$', maxItems: 25, delimiter: '\t' }
-    });
+    }, HOST.logger);
     expect(cfg).toMatchObject({ linkPattern: 'xml_files/.*\\.xml$', maxItems: 25, delimiter: '\t' });
   });
 });
@@ -258,6 +262,7 @@ describe('FeedManager.ingest — shaping is applied before the store (#989)', ()
     };
 
     const fm = new FeedManager(
+      HOST,
       [{ sourceId: 'vaac-1', adapter: 'stub', url: 'u', type: 'Advisory', dedupeBy: 'volcanoName' }],
       TMP,
       NO_EGRESS_CONFIG,

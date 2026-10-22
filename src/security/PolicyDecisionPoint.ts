@@ -278,6 +278,29 @@ export class PolicyDecisionPoint extends BaseManager {
   }
 
   /**
+   * The usernames of every account that holds a permission, each asked through
+   * {@link userHoldsPermission} (#1813; was `utils/administrators.ts`). With
+   * `admin-system` this is "who are the administrators": the people an
+   * operator problem is reported to (#1431 7b, #1916), never a role name.
+   *
+   * An empty answer means "nobody to tell", and a caller sending a
+   * notification must then only log it: an empty `targetUsers` list means
+   * every user in NotificationManager.
+   *
+   * @returns The usernames, or null when there is no UserManager to list
+   *   accounts from (tests, a half-booted engine); treat that like nobody
+   */
+  async usersHolding(action: string): Promise<string[] | null> {
+    const users = this.engine?.getManager<{ getUsers(): Promise<Array<{ username: string }>> }>('UserManager');
+    if (!users) return null;
+    const holders: string[] = [];
+    for (const { username } of await users.getUsers()) {
+      if (await this.userHoldsPermission(username, action)) holders.push(username);
+    }
+    return holders;
+  }
+
+  /**
    * The permissions a user's roles give them, for display (#1431 step 10).
    *
    * The union of their roles' rows in the admin Security Policy Summary, read

@@ -1,6 +1,5 @@
-import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
-import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/egressPolicy.js';
-import { validateUrl } from '../../../dist/src/http/ssrf.js';
+import type { ConfigReader } from '../../../dist/src/http/egressPolicy.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 /**
  * Sist2AssetProvider — read-only AssetProvider backed by a sist2 Elasticsearch index.
  *
@@ -27,7 +26,6 @@ import type {
   ProviderCapability
 } from '../../../dist/src/types/Asset.js';
 import type { Sist2Document } from './types.js';
-import logger from '../../../dist/src/utils/logger.js';
 
 /**
  * Document types sist2 treats as "document" for mimeCategory filtering.
@@ -58,6 +56,12 @@ export class Sist2AssetProvider implements AssetProvider {
   readonly capabilities: ProviderCapability[];
 
   constructor(
+    /**
+     * What core handed the elasticsearch add-on (#1813): `guardedFetch`, the
+     * egress policy and URL check, and the logger. Positional and first, so a
+     * provider cannot be built without the guarded way out.
+     */
+    private readonly host: Pick<AddonHost, 'guardedFetch' | 'resolveEgressPolicy' | 'validateUrl' | 'logger'>,
     private readonly esClient: Client,
     private readonly esIndex: string,
     /**
@@ -292,7 +296,7 @@ export class Sist2AssetProvider implements AssetProvider {
       // page so one broken provider does not take down the merged search.
       const message = err instanceof Error ? err.message : String(err);
       this.lastSearchError = { message, at: new Date().toISOString() };
-      logger.error(
+      this.host.logger.error(
         `[Sist2AssetProvider] Search failed against index '${this.esIndex}' — `
         + `returning no results. This is a query or mapping fault, not an empty index: ${message}`
       );
@@ -344,8 +348,8 @@ export class Sist2AssetProvider implements AssetProvider {
     // #1186: not configured is not a failed fetch. No request is made.
     if (!this.sist2Url) return null;
     try {
-      const { policy } = resolveEgressPolicy(this.readConfig);
-      const res = await guardedFetch(`${this.sist2Url}/t/${id}`, { policy });
+      const { policy } = this.host.resolveEgressPolicy(this.readConfig);
+      const res = await this.host.guardedFetch(`${this.sist2Url}/t/${id}`, { policy });
       if (res.status < 200 || res.status >= 300) return null;
       return res.body;
     } catch {
@@ -408,8 +412,8 @@ export class Sist2AssetProvider implements AssetProvider {
       };
     }
 
-    const { policy } = resolveEgressPolicy(this.readConfig);
-    const verdict = validateUrl(this.sist2Url, policy);
+    const { policy } = this.host.resolveEgressPolicy(this.readConfig);
+    const verdict = this.host.validateUrl(this.sist2Url, policy);
     if (!verdict.ok) {
       // The guard will never let this through, so a probe would only report
       // "unreachable" and send the operator to check the sist2 host.
@@ -424,7 +428,7 @@ export class Sist2AssetProvider implements AssetProvider {
 
     let sist2Ok: boolean;
     try {
-      const probe = await guardedFetch(`${this.sist2Url}/i`, { policy });
+      const probe = await this.host.guardedFetch(`${this.sist2Url}/i`, { policy });
       sist2Ok = probe.status >= 200 && probe.status < 300;
     } catch {
       sist2Ok = false;
