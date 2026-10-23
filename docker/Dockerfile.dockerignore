@@ -1,0 +1,27 @@
+# Build-context exclusions for docker/Dockerfile.
+#
+# With `docker build -f docker/Dockerfile .` BuildKit reads this file
+# (`<Dockerfile>.dockerignore`), never docker/.dockerignore, so that file has
+# never applied. This list keeps a LOCAL build's context the same as CI's clean
+# checkout: it drops only what a fresh `git clone` would not contain. Without it
+# a working tree sent agent worktrees (.claude/worktrees, ~35 GB with their own
+# node_modules) and Docker Desktop's daemon ran out of memory mid-build
+# (2026-10-23, the v5.27.0 release).
+
+.git/
+.claude/worktrees/
+private/
+data/
+node_modules/
+addons/*/node_modules/
+packages/*/node_modules/
+coverage/
+test-results/
+playwright-report/
+tests/e2e/.output/
+tests/e2e/.auth/
+**/.vitest-cache/
+reports/
+exports/
+search-index/
+*.log
