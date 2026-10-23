@@ -77,7 +77,7 @@ describe('resolveChromium', () => {
 
   test('nothing found: unavailable, naming the config key', async () => {
     const r = await resolveChromium('', { playwrightInstalled: installed, platform: 'linux', exists: none, playwrightChromium: async () => null });
-    expect(r).toEqual({ ok: false, reason: expect.stringContaining('ngdpbase.export.pdf.chromium-path') });
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('ngdpbase.export.pdf.provider.local-chrome.chromium-path') });
   });
 });
 

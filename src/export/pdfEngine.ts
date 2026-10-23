@@ -1,6 +1,7 @@
 /**
- * The HTML → PDF engine (#1974): headless Chromium, driven by `playwright-core`,
- * both optional at run time.
+ * The HTML → PDF engine (#1974): the options and the error every provider
+ * shares, and the child process the `local-chrome` provider renders in
+ * (headless Chromium, driven by `playwright-core`, both optional at run time).
  *
  * - `resolveChromium` finds a Chromium to run: the configured path, then the
  *   one Playwright installed (`npx playwright install chromium`), then the
@@ -8,8 +9,12 @@
  * - `renderPdfInChild` renders one document in a child process
  *   (`pdfRenderWorker.ts`), killed at the timeout, so the site never waits on
  *   Chromium or on PDF parsing.
+ * - `normalizePdfInChild` gives a PDF a PDF service made (the
+ *   `chrome-service` provider) the same metadata pass, in the same kind of
+ *   child, so parsing it never runs on the thread that answers requests.
  *
- * `ExportManager.htmlToPdf` is the door; nothing else calls these.
+ * `ExportManager.htmlToPdf` is the door, through its providers
+ * (`PdfProvider.ts`); nothing else calls these.
  */
 import { fork } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -49,13 +54,24 @@ export interface ResolvedPdfOptions {
   printBackground: boolean;
 }
 
-/** One render, as the child receives it. */
+/** One local Chromium render, as the child receives it. */
 export interface PdfJob {
+  kind: 'render';
   html: string;
   executablePath: string;
   options: ResolvedPdfOptions;
   timeoutMs: number;
 }
+
+/** A PDF made elsewhere, to normalise in the child. */
+export interface PdfNormalizeJob {
+  kind: 'normalize';
+  pdf: Uint8Array;
+  timeoutMs: number;
+}
+
+/** Anything the child is asked to do. */
+export type PdfChildJob = PdfJob | PdfNormalizeJob;
 
 /** What the child sends back. `launch` means Chromium could not start: the engine is unavailable. */
 export type PdfJobResult =
@@ -69,8 +85,8 @@ export type PdfJobResult =
  */
 export class PdfUnavailableError extends Error {
   readonly code = 'PDF_UNAVAILABLE';
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'PdfUnavailableError';
   }
 }
@@ -148,7 +164,7 @@ async function playwrightChromiumPath(): Promise<string | null> {
  * Find a Chromium to render with. Read on every call, so installing Chromium
  * or setting the path takes effect without a restart.
  *
- * @param configuredPath - `ngdpbase.export.pdf.chromium-path` ('' = find one)
+ * @param configuredPath - `ngdpbase.export.pdf.provider.local-chrome.chromium-path` ('' = find one)
  */
 export async function resolveChromium(configuredPath: string, deps: ResolveDeps = {}): Promise<ChromiumResolution> {
   const exists = deps.exists ?? existsSync;
@@ -158,14 +174,14 @@ export async function resolveChromium(configuredPath: string, deps: ResolveDeps 
   if (configuredPath) {
     return exists(configuredPath)
       ? { ok: true, executablePath: configuredPath, source: 'configured' }
-      : { ok: false, reason: `ngdpbase.export.pdf.chromium-path is set, but nothing is there: ${configuredPath}` };
+      : { ok: false, reason: `ngdpbase.export.pdf.provider.local-chrome.chromium-path is set, but nothing is there: ${configuredPath}` };
   }
   const bundled = await (deps.playwrightChromium ?? playwrightChromiumPath)();
   if (bundled && exists(bundled)) return { ok: true, executablePath: bundled, source: 'playwright' };
   for (const candidate of SYSTEM_CHROMIUM_PATHS[deps.platform ?? process.platform] ?? []) {
     if (exists(candidate)) return { ok: true, executablePath: candidate, source: 'system' };
   }
-  return { ok: false, reason: 'no Chromium found: install Chromium, or set ngdpbase.export.pdf.chromium-path' };
+  return { ok: false, reason: 'no Chromium found: install Chromium, or set ngdpbase.export.pdf.provider.local-chrome.chromium-path' };
 }
 
 /**
@@ -192,6 +208,24 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
  * @param job - The render
  */
 export function renderPdfInChild(job: PdfJob): Promise<PdfJobResult> {
+  return runPdfChild(job);
+}
+
+/**
+ * Normalise a PDF in a child process (`normalizePdf`, the same pass a local
+ * render gets). Rejects when the bytes are not a PDF pdf-lib can read, or the
+ * child times out.
+ *
+ * @param pdf - A PDF a PDF service returned
+ * @param timeoutMs - The child is killed after this
+ */
+export async function normalizePdfInChild(pdf: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
+  const result = await runPdfChild({ kind: 'normalize', pdf, timeoutMs });
+  if (!result.ok) throw new Error(`the PDF could not be read: ${result.error}`);
+  return result.pdf;
+}
+
+function runPdfChild(job: PdfChildJob): Promise<PdfJobResult> {
   // Compiled, the worker is the .js beside this file. From source (vitest,
   // tsx) it is the .ts, which needs tsx's loader.
   const fromSource = import.meta.url.endsWith('.ts');

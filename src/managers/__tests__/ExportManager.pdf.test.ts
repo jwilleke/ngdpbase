@@ -22,7 +22,7 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const props: Record<string, unknown> = {};
+  const props: Record<string, unknown> = { 'ngdpbase.export.pdf.provider': 'local-chrome' };
   const manager = new ExportManager({
     getManager: (name: string) =>
       name === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => (k in props ? props[k] : d) } : undefined
@@ -47,7 +47,7 @@ describe('ExportManager.htmlToPdf (#1974)', () => {
     const out = await h.manager.htmlToPdf(TEST_ACTOR, HTML);
     expect(Buffer.isBuffer(out)).toBe(true);
     expect(out.equals(PDF)).toBe(true);
-    expect(h.jobs).toEqual([{ html: HTML, executablePath: '/usr/bin/chromium', options: { format: 'Letter', margin: {}, printBackground: true }, timeoutMs: 30000 }]);
+    expect(h.jobs).toEqual([{ kind: 'render', html: HTML, executablePath: '/usr/bin/chromium', options: { format: 'Letter', margin: {}, printBackground: true }, timeoutMs: 30000 }]);
   });
 
   test('the caller\'s options and the configured page size, timeout and Chromium path reach the render', async () => {
@@ -55,7 +55,7 @@ describe('ExportManager.htmlToPdf (#1974)', () => {
     Object.assign(h.props, {
       'ngdpbase.export.pdf.page-size': 'A4',
       'ngdpbase.export.pdf.timeout-ms': 5000,
-      'ngdpbase.export.pdf.chromium-path': '/opt/chrome'
+      'ngdpbase.export.pdf.provider.local-chrome.chromium-path': '/opt/chrome'
     });
     await h.manager.htmlToPdf(TEST_ACTOR, HTML, { margin: { top: '20mm' }, printBackground: false });
     expect(h.jobs[0]).toMatchObject({ executablePath: '/opt/chrome', timeoutMs: 5000, options: { format: 'A4', margin: { top: '20mm' }, printBackground: false } });
@@ -90,7 +90,7 @@ describe('ExportManager.htmlToPdf (#1974)', () => {
 
     test('asking throws PdfUnavailableError (code PDF_UNAVAILABLE), logs why, and flags the manager as needing attention', async () => {
       const h = harness();
-      h.setEngine({ ok: false, reason: 'no Chromium found: install Chromium, or set ngdpbase.export.pdf.chromium-path' });
+      h.setEngine({ ok: false, reason: 'no Chromium found: install Chromium, or set ngdpbase.export.pdf.provider.local-chrome.chromium-path' });
       const err = await h.manager.htmlToPdf(TEST_ACTOR, HTML).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(PdfUnavailableError);
       expect((err as PdfUnavailableError).code).toBe('PDF_UNAVAILABLE');
@@ -101,7 +101,7 @@ describe('ExportManager.htmlToPdf (#1974)', () => {
         state: 'degraded',
         kind: 'attention',
         reason: PDF_UNAVAILABLE_REASON,
-        configKey: 'ngdpbase.export.pdf.chromium-path'
+        configKey: 'ngdpbase.export.pdf.provider'
       });
     });
 
@@ -170,5 +170,72 @@ describe('ExportManager.htmlToPdf (#1974)', () => {
     await expect(h.manager.htmlToPdf(TEST_ACTOR, HTML)).rejects.toThrow(/timed out/);
     h.setRender(async () => ({ ok: true, pdf: PDF }));
     await expect(h.manager.htmlToPdf(TEST_ACTOR, HTML)).resolves.toBeInstanceOf(Buffer);
+  });
+});
+
+describe('ngdpbase.export.pdf.provider (#1974)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  test('none is the default: unavailable, nothing rendered, flagged only once asked', async () => {
+    const h = harness();
+    delete h.props['ngdpbase.export.pdf.provider'];
+    expect(h.manager.getManagerStatus().state).toBe('ready');
+    const err = await h.manager.htmlToPdf(TEST_ACTOR, HTML).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PdfUnavailableError);
+    expect((err as PdfUnavailableError).code).toBe('PDF_UNAVAILABLE');
+    expect((err as Error).message).toMatch(/ngdpbase\.export\.pdf\.provider is none/);
+    expect(h.jobs).toHaveLength(0);
+    expect(h.manager.getManagerStatus()).toMatchObject({ kind: 'attention', configKey: 'ngdpbase.export.pdf.provider' });
+  });
+
+  test('a name that is not a provider is unavailable, naming the ones there are', async () => {
+    const h = harness();
+    h.props['ngdpbase.export.pdf.provider'] = 'weasyprint';
+    await expect(h.manager.htmlToPdf(TEST_ACTOR, HTML)).rejects.toThrow(/'weasyprint' is not a PDF provider: use none, local-chrome, chrome-service/);
+    expect(h.jobs).toHaveLength(0);
+  });
+
+  test('read on every render: switching to local-chrome works without a restart and clears the flag', async () => {
+    const h = harness();
+    h.props['ngdpbase.export.pdf.provider'] = 'none';
+    await h.manager.htmlToPdf(TEST_ACTOR, HTML).catch(() => undefined);
+    h.props['ngdpbase.export.pdf.provider'] = 'local-chrome';
+    await expect(h.manager.htmlToPdf(TEST_ACTOR, HTML)).resolves.toBeInstanceOf(Buffer);
+    expect(h.manager.getManagerStatus().state).toBe('ready');
+  });
+
+  describe('chrome-service', () => {
+    /** The service, as the transport sees it: records the request and answers with a PDF. */
+    function service(h: Harness): string[] {
+      const urls: string[] = [];
+      const m = h.manager as unknown as { pdfServiceTransport: unknown; pdfNormalizer: unknown };
+      m.pdfServiceTransport = async (url: URL) => {
+        urls.push(url.toString());
+        return { status: 200, headers: {}, body: (async function* () { yield Buffer.from('%PDF-1.7 from the service'); })() };
+      };
+      m.pdfNormalizer = async (pdf: Uint8Array) => Buffer.concat([Buffer.from(pdf), Buffer.from(' normalised')]);
+      h.props['ngdpbase.export.pdf.provider'] = 'chrome-service';
+      h.props['ngdpbase.export.pdf.provider.chrome-service.url'] = 'http://192.168.68.71:3000';
+      return urls;
+    }
+
+    test('posts to the configured service once its range is allowed, and returns the normalised PDF', async () => {
+      const h = harness();
+      const urls = service(h);
+      h.props['ngdpbase.security.egress.allowed-ranges'] = ['192.168.68.0/24'];
+      const pdf = await h.manager.htmlToPdf(TEST_ACTOR, HTML);
+      expect(pdf.toString()).toBe('%PDF-1.7 from the service normalised');
+      expect(urls).toEqual(['http://192.168.68.71:3000/forms/chromium/convert/html']);
+      expect(h.jobs).toHaveLength(0);
+      expect(vi.mocked(logger.info).mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/engine=chrome-service by=test-user/);
+    });
+
+    test('the site\'s egress policy refuses a LAN service it has not allowed: unavailable, flagged', async () => {
+      const h = harness();
+      const urls = service(h);
+      await expect(h.manager.htmlToPdf(TEST_ACTOR, HTML)).rejects.toBeInstanceOf(PdfUnavailableError);
+      expect(urls).toEqual([]);
+      expect(h.manager.getManagerStatus().kind).toBe('attention');
+    });
   });
 });

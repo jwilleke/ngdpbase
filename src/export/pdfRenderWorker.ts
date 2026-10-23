@@ -2,13 +2,15 @@
  * The PDF render child (#1974) — see `renderPdfInChild` in pdfEngine.ts.
  *
  * One job per process: receive the HTML, render it in headless Chromium with
- * no network and no JavaScript, normalise the bytes, send them back, exit. A
+ * no network and no JavaScript, normalise the bytes, send them back, exit. Or,
+ * for the chrome-service provider, receive a PDF the service made and only
+ * normalise it (`kind: 'normalize'`; playwright-core is never loaded). A
  * separate process, so a hung or crashing Chromium and the PDF parsing in
  * `normalizePdf` never touch the thread that answers requests, and a timeout
  * can kill all of it. Chromium talks to Playwright over a pipe, so when this
  * process dies Chromium exits with it.
  */
-import type { PdfJob, PdfJobResult } from './pdfEngine.js';
+import type { PdfChildJob, PdfJob, PdfJobResult, PdfNormalizeJob } from './pdfEngine.js';
 import { isAllowedPdfRequest, normalizePdf } from './pdfNormalize.js';
 
 /** Chromium flags: no shared-memory assumptions (containers), and a dead proxy behind the request block. */
@@ -67,6 +69,14 @@ async function render(job: PdfJob): Promise<PdfJobResult> {
   }
 }
 
-process.once('message', (job: PdfJob) => {
-  render(job).then(reply, (err: unknown) => reply({ ok: false, stage: 'render', error: (err as Error).message }));
+async function normalize(job: PdfNormalizeJob): Promise<PdfJobResult> {
+  try {
+    return { ok: true, pdf: await normalizePdf(job.pdf) };
+  } catch (err) {
+    return { ok: false, stage: 'render', error: (err as Error).message.split('\n')[0] };
+  }
+}
+
+process.once('message', (job: PdfChildJob) => {
+  (job.kind === 'normalize' ? normalize(job) : render(job)).then(reply, (err: unknown) => reply({ ok: false, stage: 'render', error: (err as Error).message }));
 });

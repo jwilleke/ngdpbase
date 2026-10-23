@@ -45,7 +45,7 @@ const invoice = (remote = ''): string => `<!doctype html>
 </body></html>`;
 
 function exportManager(): ExportManager {
-  const props: Record<string, unknown> = { 'ngdpbase.export.pdf.chromium-path': engine.ok ? engine.executablePath : '' };
+  const props: Record<string, unknown> = { 'ngdpbase.export.pdf.provider': 'local-chrome', 'ngdpbase.export.pdf.provider.local-chrome.chromium-path': engine.ok ? engine.executablePath : '' };
   return new ExportManager({
     getManager: (name: string) => (name === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => (k in props ? props[k] : d) } : undefined)
   });
@@ -93,7 +93,7 @@ describe.skipIf(!engine.ok)('htmlToPdf with real Chromium (#1974)', () => {
   }, 60_000);
 
   test('a render past the timeout is killed and rejected', async () => {
-    const props: Record<string, unknown> = { 'ngdpbase.export.pdf.chromium-path': engine.ok ? engine.executablePath : '', 'ngdpbase.export.pdf.timeout-ms': 1 };
+    const props: Record<string, unknown> = { 'ngdpbase.export.pdf.provider': 'local-chrome', 'ngdpbase.export.pdf.provider.local-chrome.chromium-path': engine.ok ? engine.executablePath : '', 'ngdpbase.export.pdf.timeout-ms': 1 };
     const manager = new ExportManager({
       getManager: (name: string) => (name === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => (k in props ? props[k] : d) } : undefined)
     });

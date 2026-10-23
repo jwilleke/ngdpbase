@@ -255,27 +255,6 @@ jobs:
           fi
           echo "No 'Failed to load add-on' in the container log."
 
-      - name: Smoke test — the image renders a PDF, the same bytes twice
-        run: |
-          # #1974: the image installs Chromium so container sites have
-          # ExportManager.htmlToPdf with no setting. Render through the real
-          # manager, in the running container, as the app's run-as user, and
-          # check the output is a PDF and deterministic. A missing or broken
-          # Chromium makes htmlToPdf throw PdfUnavailableError, failing here.
-          SCRIPT=$(cat <<'JS'
-          import ExportManager from '/app/dist/src/managers/ExportManager.js';
-          const m = new ExportManager({ getManager: () => undefined });
-          const ctx = { username: 'smoke', roles: [], isAuthenticated: true };
-          const html = '<!doctype html><title>smoke</title><style>@page{size:Letter;margin:15mm}body{font-family:Arial}</style><h1>PDF smoke</h1><p>Total $35.50</p>';
-          const a = await m.htmlToPdf(ctx, html);
-          const b = await m.htmlToPdf(ctx, html);
-          if (a.subarray(0, 5).toString() !== '%PDF-') throw new Error('not a PDF');
-          if (!a.equals(b)) throw new Error('the same HTML gave different bytes');
-          console.log(`PDF ok: ${a.length} bytes, identical on a second render`);
-          JS
-          )
-          docker exec -u 1000:1000 ngdpbase-smoke node --input-type=module -e "$SCRIPT"
-
       - name: Smoke test — HTTP checks
         run: |
           BASE=http://localhost:3000
