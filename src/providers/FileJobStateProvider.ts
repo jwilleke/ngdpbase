@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'fs-extra';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import { networkFilesystemAt, type StatFsLike } from './sqliteLocation.js';
 import {
   assertJobId, checkpointJson, slotKey,
@@ -46,7 +47,7 @@ class FileJobStateProvider implements JobStateProvider {
   private readonly checkpointMaxBytes: number;
   private readonly now: () => number;
   /** One read-modify-write at a time per file, within this process. */
-  private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly queues = new KeyedSerial();
 
   constructor(private readonly root: string, options: FileJobStateOptions = {}) {
     const network = networkFilesystemAt(root, options.statfs, options.platform);
@@ -93,12 +94,7 @@ class FileJobStateProvider implements JobStateProvider {
 
   /** Run `task` after every earlier task on the same file has settled. */
   private serial<T>(file: string, task: () => Promise<T>): Promise<T> {
-    const before = this.queues.get(file) ?? Promise.resolve();
-    const run = before.then(task, task);
-    const settled = run.then(() => undefined, () => undefined);
-    this.queues.set(file, settled);
-    void settled.then(() => { if (this.queues.get(file) === settled) this.queues.delete(file); });
-    return run;
+    return this.queues.run(file, task);
   }
 
   async getState(jobId: string): Promise<JobState | null> {

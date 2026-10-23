@@ -2,7 +2,7 @@ import BaseManager, { type BackupFolder } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type { Role, RoleUpdate } from '../types/Role.js';
+import type { IdRef, Role, RoleUpdate } from '../types/Role.js';
 import type { RoleProvider } from '../types/RoleProvider.js';
 import type PersonManager from './PersonManager.js';
 import type OrganizationManager from './OrganizationManager.js';
@@ -13,6 +13,8 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, type SystemActionEvent } from '../context/bootActions.js';
 import type { JobContext } from '../context/JobContext.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
+import { RoleChangeError } from '../utils/roleChangeError.js';
 
 interface RoleProviderConstructor {
   new (engine: WikiEngine): RoleProvider;
@@ -52,6 +54,12 @@ class RoleManager extends BaseManager {
   // process scope — multi-process scaling needs a cache bus (see #620).
   private memberCache = new Map<string, Role[]>();
   private byOrgPositionCache = new Map<string, Role | null>();
+  // #2015: bumped by invalidateCache. A read that started before a write
+  // finishes after it with the old record; it must not put that in the cache.
+  private cacheGeneration = 0;
+
+  /** #2015: one membership change at a time per role record, read included. */
+  private readonly membership = new KeyedSerial();
 
   // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
   // `undefined` = not yet looked up; `null` = looked up, not available.
@@ -171,8 +179,9 @@ class RoleManager extends BaseManager {
       return this.byOrgPositionCache.get(key) ?? null;
     }
     this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'miss' });
+    const generation = this.cacheGeneration;
     const role = await this.requireProvider().getByOrgAndPosition(organizationId, namedPosition);
-    this.byOrgPositionCache.set(key, role);
+    if (generation === this.cacheGeneration) this.byOrgPositionCache.set(key, role);
     return role;
   }
 
@@ -183,8 +192,9 @@ class RoleManager extends BaseManager {
       return cached;
     }
     this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'memberCache', result: 'miss' });
+    const generation = this.cacheGeneration;
     const fresh = await this.requireProvider().listByMember(personId);
-    this.memberCache.set(personId, fresh);
+    if (generation === this.cacheGeneration) this.memberCache.set(personId, fresh);
     return fresh;
   }
 
@@ -217,6 +227,7 @@ class RoleManager extends BaseManager {
    * Public so callers (e.g., admin "rebuild" tools) can force a cache miss.
    */
   invalidateCache(): void {
+    this.cacheGeneration++;
     this.memberCache.clear();
     this.byOrgPositionCache.clear();
   }
@@ -337,16 +348,30 @@ class RoleManager extends BaseManager {
    * Make the user's memberships go from `oldRoles` to `newRoles`. Used by
    * UserManager when an account is created or edited; the account write
    * records its own audit event, so this records none.
+   *
+   * #2015: every change is tried; when any could not be saved this throws a
+   * `RoleChangeError` naming them, after the rest have landed.
    */
   async applyRoleDiff(username: string, oldRoles: string[], newRoles: string[]): Promise<void> {
     const oldSet = new Set(oldRoles);
     const newSet = new Set(newRoles);
+    const failed: string[] = [];
+    const causes: unknown[] = [];
+    const attempt = async (label: string, change: () => Promise<void>): Promise<void> => {
+      try {
+        await change();
+      } catch (error) {
+        failed.push(label);
+        causes.push(error);
+      }
+    };
     for (const r of newRoles) {
-      if (!oldSet.has(r)) await this.addMember(username, r);
+      if (!oldSet.has(r)) await attempt(`add ${r}`, () => this.addMember(username, r));
     }
     for (const r of oldRoles) {
-      if (!newSet.has(r)) await this.removeMember(username, r);
+      if (!newSet.has(r)) await attempt(`remove ${r}`, () => this.removeMember(username, r));
     }
+    if (failed.length > 0) throw new RoleChangeError(username, failed, causes);
   }
 
   /**
@@ -366,13 +391,27 @@ class RoleManager extends BaseManager {
     const installOrg = await this.engine.getManager<OrganizationManager>('OrganizationManager')?.getInstallOrg();
     if (!installOrg) return 0;
     if (await this.getByOrgAndPosition(installOrg['@id'], roleName)) return 0;
+    let given = 0;
+    const missed: string[] = [];
     for (const username of usernames) {
-      await this.addMember(username, roleName);
+      // #2015: a grant that cannot be saved is not recorded as given. This
+      // runs at boot with nobody to answer, so a miss is an error in the log
+      // naming every account to fix by hand, and the rest still get the role.
+      try {
+        await this.addMember(username, roleName);
+      } catch {
+        missed.push(username);
+        continue;
+      }
+      given++;
       await recordSystemAction(this.engine, ctx, roleChangeEvent(username, 'assign', roleName));
     }
-    await this.getOrCreateRoleRecord(installOrg, roleName);
-    logger.info(`🔑 Gave '${roleName}' to ${usernames.length} existing account(s), once (#1539)`);
-    return usernames.length;
+    await this.membership.run(this.membershipKey(installOrg['@id'], roleName), () => this.getOrCreateRoleRecord(installOrg, roleName));
+    if (missed.length > 0) {
+      logger.error(`❌ Could not give '${roleName}' to ${missed.length} existing account(s): ${missed.join(', ')}. Assign it to them by hand (#1539, #2015)`);
+    }
+    logger.info(`🔑 Gave '${roleName}' to ${given} existing account(s), once (#1539)`);
+    return given;
   }
 
   /**
@@ -384,9 +423,11 @@ class RoleManager extends BaseManager {
   async moveMemberships(fromPersonId: string, toPersonId: string): Promise<number> {
     const held = await this.listByMember(fromPersonId);
     for (const role of held) {
-      const members = (role.member ?? []).filter((m) => m['@id'] !== fromPersonId);
-      if (!members.some((m) => m['@id'] === toPersonId)) members.push({ '@id': toPersonId });
-      await this.update(role['@id'], { member: members });
+      await this.changeMembers(role, (current) => {
+        const members = current.filter((m) => m['@id'] !== fromPersonId);
+        if (!members.some((m) => m['@id'] === toPersonId)) members.push({ '@id': toPersonId });
+        return members;
+      });
     }
     return held.length;
   }
@@ -400,8 +441,7 @@ class RoleManager extends BaseManager {
       if (!person) return;
       const memberOf = await this.listByMember(person['@id']);
       for (const role of memberOf) {
-        const after = (role.member ?? []).filter((m) => m['@id'] !== person['@id']);
-        await this.update(role['@id'], { member: after });
+        await this.changeMembers(role, (current) => current.filter((m) => m['@id'] !== person['@id']));
       }
     } catch (error) {
       logger.error(`❌ Failed to clean up role memberships for deleted user ${username}: ${error instanceof Error ? error.message : String(error)}`);
@@ -412,9 +452,10 @@ class RoleManager extends BaseManager {
    * Add the user's Person `@id` to the role record for (installOrg, roleName).
    * Idempotent: a no-op when the Person is already a member.
    *
-   * Failures are logged, not thrown — account writes must succeed even when
-   * role storage is degraded. #1027: every abandon path says why, because a
-   * silent one is indistinguishable from success.
+   * With no PersonManager, Person record or anchor Organization there is
+   * nothing to attach, so it warns and returns (#1027: every abandon path says
+   * why). A change that could not be saved throws (#2015): the caller has to
+   * hear that the role is missing, not only the log.
    */
   private async addMember(username: string, roleName: string): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
@@ -438,14 +479,17 @@ class RoleManager extends BaseManager {
         );
         return;
       }
-      const role = await this.getOrCreateRoleRecord(installOrg, roleName);
-      const memberIds = new Set((role.member ?? []).map((m) => m['@id']));
-      if (memberIds.has(person['@id'])) return;
-      const newMembers = [...(role.member ?? []), { '@id': person['@id'] }];
-      await this.update(role['@id'], { member: newMembers });
-      logger.info(`🔑 Role added: ${username} → ${roleName}`);
+      const added = await this.membership.run(this.membershipKey(installOrg['@id'], roleName), async () => {
+        const role = await this.getOrCreateRoleRecord(installOrg, roleName);
+        const members = role.member ?? [];
+        if (members.some((m) => m['@id'] === person['@id'])) return false;
+        await this.update(role['@id'], { member: [...members, { '@id': person['@id'] }] });
+        return true;
+      });
+      if (added) logger.info(`🔑 Role added: ${username} → ${roleName}`);
     } catch (error) {
       logger.error(`❌ Failed to add role (${username}, ${roleName}): ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
   }
 
@@ -473,19 +517,44 @@ class RoleManager extends BaseManager {
         );
         return;
       }
-      const role = await this.getByOrgAndPosition(installOrg['@id'], roleName);
-      if (!role) {
-        // Not an error: nothing to revoke if the role record never existed.
-        return;
-      }
-      const before = role.member ?? [];
-      const after = before.filter((m) => m['@id'] !== person['@id']);
-      if (after.length === before.length) return;
-      await this.update(role['@id'], { member: after });
-      logger.info(`🔑 Role removed: ${username} → ${roleName}`);
+      // A role record that never existed is not an error: nothing to revoke.
+      const removed = await this.changeMembers(
+        { organization: { '@id': installOrg['@id'] }, namedPosition: roleName },
+        (current) => current.filter((m) => m['@id'] !== person['@id'])
+      );
+      if (removed) logger.info(`🔑 Role removed: ${username} → ${roleName}`);
     } catch (error) {
       logger.error(`❌ Failed to remove role (${username}, ${roleName}): ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
+  }
+
+  /** #2015: the membership queue's key for one role record. */
+  private membershipKey(organizationId: string, namedPosition: string): string {
+    return `${organizationId}\0${namedPosition}`;
+  }
+
+  /**
+   * Change an existing role record's members, one change at a time per record
+   * (#2015). The record is read inside the queue, so a change never works from
+   * a member list another change has since replaced. `change` gets the current
+   * members and returns the new list. False, writing nothing, when the record
+   * does not exist or the list is unchanged.
+   */
+  private changeMembers(
+    role: { organization: { '@id': string }; namedPosition: string },
+    change: (members: IdRef[]) => IdRef[]
+  ): Promise<boolean> {
+    const orgId = role.organization['@id'];
+    return this.membership.run(this.membershipKey(orgId, role.namedPosition), async () => {
+      const current = await this.getByOrgAndPosition(orgId, role.namedPosition);
+      if (!current) return false;
+      const before = current.member ?? [];
+      const after = change([...before]);
+      if (after.length === before.length && after.every((m, i) => m['@id'] === before[i]['@id'])) return false;
+      await this.update(current['@id'], { member: after });
+      return true;
+    });
   }
 
   /**

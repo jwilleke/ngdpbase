@@ -1,7 +1,7 @@
 ---
 name: RoleManager
 description: Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up)
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/RoleManager.ts
 ---
@@ -25,7 +25,11 @@ Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/is
 | `removeAllMemberships(username)` | a deleted account's Person leaves every role |
 | `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands; each grant recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
 
-A write that cannot happen (no Person, no anchor Organization) is logged with its cause and does not throw, so an account write still succeeds when role storage is degraded (#1027).
+A write that cannot happen (no Person, no anchor Organization) is logged with its cause and does not throw (#1027).
+
+A write that fails is never only logged ([#2015](https://github.com/jwilleke/ngdpbase/issues/2015)): `assignRole` and `removeRole` reject with the cause, and `applyRoleDiff` tries every change, then throws a `RoleChangeError` (`src/utils/roleChangeError.ts`) naming the ones not saved. `UserManager.createUser` and `updateUser` keep the account write, record the roles the account really has, and then throw it, so the administrator's form shows which role change to make again. `grantToEveryAccountOnce` runs at boot with nobody to tell: it gives the role to every account it can and logs an error naming the rest.
+
+Membership changes to one role record run one at a time, the read included (`KeyedSerial`, `src/utils/keyedSerial.ts`), so concurrent changes all land. The caches are not refilled by a read that started before a write.
 
 ## What a record holds
 

@@ -12,6 +12,7 @@ import UserManager from '../UserManager';
 import type RoleManager from '../RoleManager';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { roleManagerOver } from './__fixtures__/roleManagerOver';
+import { RoleChangeError } from '../../utils/roleChangeError';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { Role as OrganizationRoleRecord } from '../../types/Role';
 /** #1179: the account writes take the actor's context — a request subject here. */
@@ -254,7 +255,10 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect(mocks.roleManager.update).not.toHaveBeenCalled();
     });
 
-    test('mirror failures do not break createUser', async () => {
+    // #2015: this used to resolve, the account created without its role and
+    // nobody told. The account is kept, its creation recorded, and the caller
+    // is told which role change was not saved.
+    test('a role that cannot be saved keeps the account and fails createUser, naming the role', async () => {
       const roleManager = makeRoleManagerStub();
       roleManager.create.mockRejectedValue(new Error('disk full'));
       const mocks = makeMocks({ person: { '@id': PERSON_ID, identifier: 'alice' }, roleManager });
@@ -266,14 +270,16 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
-      await expect(
-        userManager.createUser({
-          username: 'alice',
-          email: 'a@x',
-          password: 'pw',
-          roles: ['admin']
-        }, ACTOR)
-      ).resolves.toMatchObject({ username: 'alice' });
+      const failure = await userManager.createUser({
+        username: 'alice',
+        email: 'a@x',
+        password: 'pw',
+        roles: ['admin']
+      }, ACTOR).catch((e: unknown) => e);
+      expect(failure).toBeInstanceOf(RoleChangeError);
+      expect((failure as RoleChangeError).failed).toEqual(['add admin']);
+      expect((failure as Error).message).toContain('alice');
+      expect(userManager.provider.createUser).toHaveBeenCalledTimes(1);
     });
   });
 

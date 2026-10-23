@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import logger from '../utils/logger.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type { RoleProvider } from '../types/RoleProvider.js';
@@ -23,6 +25,8 @@ class FileRoleProvider implements RoleProvider {
   engine: WikiEngine;
   initialized = false;
   private storageDir: string | null = null;
+  /** #2015: one change at a time per role `@id`, so a read-merge-write sees the last write. */
+  private readonly records = new KeyedSerial();
 
   constructor(engine: WikiEngine) {
     this.engine = engine;
@@ -95,7 +99,11 @@ class FileRoleProvider implements RoleProvider {
     return all.filter((r) => Array.isArray(r.member) && r.member.some((m) => m['@id'] === personId));
   }
 
-  async create(role: Role): Promise<Role> {
+  create(role: Role): Promise<Role> {
+    return this.records.run(role['@id'], () => this.createNow(role));
+  }
+
+  private async createNow(role: Role): Promise<Role> {
     const dir = this.requireDir();
     const target = path.join(dir, `${role.namedPosition}.json`);
 
@@ -119,7 +127,11 @@ class FileRoleProvider implements RoleProvider {
     return role;
   }
 
-  async update(id: string, patch: RoleUpdate): Promise<Role | null> {
+  update(id: string, patch: RoleUpdate): Promise<Role | null> {
+    return this.records.run(id, () => this.updateNow(id, patch));
+  }
+
+  private async updateNow(id: string, patch: RoleUpdate): Promise<Role | null> {
     const dir = this.requireDir();
     const entries = await fs.readdir(dir);
     for (const entry of entries) {
@@ -143,7 +155,11 @@ class FileRoleProvider implements RoleProvider {
     return null;
   }
 
-  async delete(id: string): Promise<boolean> {
+  delete(id: string): Promise<boolean> {
+    return this.records.run(id, () => this.deleteNow(id));
+  }
+
+  private async deleteNow(id: string): Promise<boolean> {
     const dir = this.requireDir();
     const entries = await fs.readdir(dir);
     for (const entry of entries) {
@@ -177,11 +193,9 @@ class FileRoleProvider implements RoleProvider {
     }
   }
 
-  private async writeAtomic(target: string, value: unknown): Promise<void> {
-    const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
-    await fs.rename(tmp, target);
+  /** #2015: the shared temp-then-rename, whose temp names never collide. */
+  private writeAtomic(target: string, value: unknown): Promise<void> {
+    return writeFileAtomic(target, JSON.stringify(value, null, 2));
   }
 
   private async fileExists(p: string): Promise<boolean> {

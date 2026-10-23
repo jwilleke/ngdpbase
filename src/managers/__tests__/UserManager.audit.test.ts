@@ -11,6 +11,7 @@
  */
 import UserManager from '../UserManager';
 import RoleManager from '../RoleManager';
+import { RoleChangeError } from '../../utils/roleChangeError';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
@@ -107,6 +108,40 @@ describe('#1204 user-create', () => {
     expect(sink[0]).toMatchObject({ user: 'System', metadata: { origin: 'boot', reason: 'seed the demo account' } });
     expect(sink[0].metadata.actorMissing).toBeUndefined();
     expect(sink[0].ipAddress).toBeUndefined();
+  });
+});
+
+describe('#2015 a role change that is not saved', () => {
+  /** applyRoleDiff as RoleManager does it when the save of `role` fails: the rest land, then it throws. */
+  const failSaving = (roles: RoleManager, role: string, held: Map<string, string[]>) => {
+    Object.assign(roles, {
+      resolveUserRoles: async (n: string) => held.get(n) ?? [],
+      applyRoleDiff: async (n: string, o: string[], nw: string[]) => {
+        held.set(n, nw.filter((r) => r !== role || o.includes(r)));
+        if (nw.includes(role) && !o.includes(role)) throw new RoleChangeError(n, [`add ${role}`], [new Error('ENOENT')]);
+      }
+    });
+  };
+
+  test('createUser keeps the account, records the roles it really has, then throws', async () => {
+    const { um, roles, sink, users } = makeManager();
+    failSaving(roles, 'editor', new Map());
+    await expect(um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader', 'editor'] }, ADMIN))
+      .rejects.toBeInstanceOf(RoleChangeError);
+    expect(users.has('alice')).toBe(true);
+    expect(sink.map((e) => e.eventType)).toEqual(['user-create']);
+    expect(sink[0].metadata).toMatchObject({ username: 'alice', roles: ['reader'] });
+  });
+
+  test('updateUser records the roles the account really has, then throws', async () => {
+    const { um, roles, sink } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    const held = new Map([['alice', ['reader']]]);
+    failSaving(roles, 'editor', held);
+    sink.length = 0;
+    await expect(um.updateUser('alice', { roles: ['reader', 'editor'] }, ADMIN)).rejects.toThrow(/editor/);
+    expect(sink.map((e) => e.eventType)).toEqual(['user-edit']);
+    expect(sink[0].metadata).toMatchObject({ roles: { from: ['reader'], to: ['reader'] } });
   });
 });
 

@@ -1011,7 +1011,11 @@ class UserManager extends BaseManager {
     await this.writeAccounts(this.provider.createUser(user));
 
     await this.syncPersonOnCreate(user, ctx);
-    await this.roleManager().applyRoleDiff(username, [], roles);
+    // #2015: the account exists now, so a role that could not be saved does
+    // not undo it. The creation is still recorded, with the roles it really
+    // has, and the failure is thrown last so the caller is told.
+    const roleFailure = await this.roleManager().applyRoleDiff(username, [], roles).then(() => null, (err: Error) => err);
+    const rolesHeld = roleFailure ? await this.roleManager().resolveUserRoles(username) : roles;
     await this.offerContactLink(username, ctx);
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
@@ -1028,7 +1032,7 @@ class UserManager extends BaseManager {
         severity: 'medium',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles: [...roles], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, ...who.metadata }
+        metadata: { username, roles: [...rolesHeld], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, ...who.metadata }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
     }
 
@@ -1042,6 +1046,7 @@ class UserManager extends BaseManager {
       logger.warn(`⚠️  Failed to create user page for ${username}:`, error instanceof Error ? error.message : String(error));
     }
 
+    if (roleFailure) throw roleFailure;
     return publicRecord(user);
   }
 
@@ -1144,9 +1149,12 @@ class UserManager extends BaseManager {
     if (disabling) await this.closeAccess(username, 'disable', ctx);
 
     await this.syncPersonOnUpdate(username, updates, ctx);
-    if (incomingRoles) {
-      await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles);
-    }
+    // #2015: the account fields are saved; a role change that was not is
+    // recorded as the roles the account really has, then thrown to the caller.
+    const roleFailure = incomingRoles
+      ? await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles).then(() => null, (err: Error) => err)
+      : null;
+    const rolesHeld = roleFailure ? await this.roleManager().resolveUserRoles(username) : incomingRoles;
 
     logger.info(`👤 Updated user: ${username}`);
 
@@ -1169,13 +1177,14 @@ class UserManager extends BaseManager {
         metadata: {
           username,
           fields: changed,
-          ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
+          ...(rolesHeld ? { roles: { from: oldRoles, to: [...rolesHeld] } } : {}),
           ...(testChange ? { isTest: testChange } : {}),
           selfEdit: ctx.username === username,
           ...who.metadata
         }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
     }
+    if (roleFailure) throw roleFailure;
     return user;
   }
 
