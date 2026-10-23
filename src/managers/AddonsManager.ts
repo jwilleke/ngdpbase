@@ -2167,8 +2167,11 @@ class AddonsManager extends BaseManager {
     return this.addons.get(slug)?.manifest?.perPerson === true;
   }
 
-  /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
-  private perPersonAddons(): string[] {
+  /**
+   * #1963: the loaded add-ons whose manifest says `perPerson: true`, in load
+   * order — every slug an `addon:<slug>` page audience can match (#1964).
+   */
+  perPersonAddons(): string[] {
     return [...this.addons].filter(([, addon]) => addon.loaded && addon.manifest?.perPerson === true).map(([slug]) => slug);
   }
 

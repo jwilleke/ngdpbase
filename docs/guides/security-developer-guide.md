@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-22
+dateModified: 2026-10-23
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -48,6 +48,17 @@ Rules:
 - Batch, never one door call per row: both doors decide a whole list against policy compiled once, with no log line or audit record per page.
 - Search through `searchWithContext` / `advancedSearchWithContext` with the request's context, never `search` / `advancedSearch`, which know no reader. A plugin passes its render context; its output is cached per viewer.
 - No door means nothing listed: without `PolicyInformationPoint` both doors return nothing, never the unfiltered list.
+
+## A page's audience covers every action; administrators are its one exception
+
+A page's frontmatter `audience` restricts reading and writing alike: someone it leaves out is refused the view, lists and search, the editor, the raw editor, a save, a rename and a delete (operator, 2026-10-23, [#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The rule is one function, `decideFrontmatterAccess` in `src/utils/frontmatterAccess.ts`, run by `PolicyInformationPoint.walkPageTiers` for every page decision — view, edit, lists and search.
+
+Rules:
+
+- The exception is a permission, `admin-system`, asked of the PDP (`subjectMayDo(engine, subject, 'admin-system')`), never `roles.includes('admin')`. It is asked only when an audience leaves the subject out, and once per list.
+- `access.<action>` has no exception: it binds administrators too. Private stores are decided by their container; the exception never reaches into a vault.
+- A write meets the audience at `PageManager`'s write door too: `savePage`, `deletePage` and `getRawPageContent` ask `PolicyInformationPoint.audienceAdmits(subject, metadata)` with the caller's context and throw `PageAudienceRefusedError`, which a route answers with 403. A route still asks the full page decision (`canAccess('edit')`, `writeRefusal`) first; the door is the floor, not the decision.
+- A job's subject (`resolveRolesNow`) is matched against the roles its principal holds now; the system principal holds `admin-system` by default (`ngdpbase.system.roles`).
 
 ## Every security-relevant call carries a context
 
@@ -120,3 +131,4 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 - [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — proxy access is complete (slices 1–7), reachable while `ngdpbase.auth.proxy-access.enabled` is on. The private-store risk (a proxy's username matching the owner's) is closed, and the audit queries take the subject. Left: the "Jim acted for you" entries wait for the sign-in history page ([#1766](https://github.com/jwilleke/ngdpbase/issues/1766)); after a proxy approves a device, the browser's provider session stays signed in as the person represented, so the proxy's own app sign-in is refused (fails closed) until that session ends.
 - [#1937](https://github.com/jwilleke/ngdpbase/issues/1937) — what a closed account's sessions still cannot be checked against (old sessions with no sign-in time, stores that cannot list by id) is in the authentication guide's Known gaps.
 - [#1962](https://github.com/jwilleke/ngdpbase/issues/1962) — page surfaces not yet through the page-list door: the keyword and category catalogs on the `/search` page and in the editor (`SearchManager.getAllUserKeywords` / `getAllSystemKeywords` / `getAllCategories`) name keywords of pages the reader cannot open; the journal marquee's public-entry count (`JournalDataManager.publicCount`) counts them; a keyword share album's pages are chosen by `searchByUserKeywords` and its own exclusion list (`ShareManager.isPageExcluded`: private, audience, access), a second copy of part of the rule that does not see a policy such as a system-category deny. `SearchManager.getSuggestions` and `WikiRoutes.searchSuggestions` filter nothing but are not routed.
+- [#1964](https://github.com/jwilleke/ngdpbase/issues/1964) — the provider-level listings that decide Tier 1 from a principal list, not through the page-list door (`getRecentChanges` for RecentChanges and AppHealth, `getPagesSharedWith` for "shared with me"), are given no enabled add-ons and no administrator exception, so an `addon:<slug>` page is left out of them even for a person with the add-on on, and an audience page is left out for an administrator outside its audience. It under-lists; it never shows the page to anyone else.

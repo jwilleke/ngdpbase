@@ -156,7 +156,7 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
+import { PageAudienceRefusedError, PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -4199,9 +4199,9 @@ ${panes}
       }
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager') as {
-        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+        getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
       } | null;
-      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName, wikiContext.userContext) : null;
       if (!raw) {
         await this.renderError(req, res, 404, 'Page Not Found', `No page named '${pageName}' on this instance.`);
         return;
@@ -4216,6 +4216,10 @@ ${panes}
         csrfToken: req.session?.csrfToken ?? ''
       });
     } catch (err) {
+      if (err instanceof PageAudienceRefusedError) {
+        await this.renderError(req, res, 403, 'Access Denied', err.message);
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error('adminEditRaw failed:', err);
       await this.renderError(req, res, 500, 'Error', `Failed to load raw editor: ${errorMessage}`);
@@ -4257,7 +4261,7 @@ ${panes}
       }
       const pageManager = this.engine.getManager('PageManager') as {
         saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<PageSaveResult>;
-        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+        getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
       } | null;
       if (!pageManager?.saveRawPageWithAdminOverride) {
         await this.renderError(req, res, 500, 'Unavailable', 'PageManager does not support raw save on this deployment.');
@@ -4267,7 +4271,7 @@ ${panes}
 
       // Audit log — best-effort; don't fail the save if audit is down.
       // #1205: through recordAuditEvent (see clear-anonymous above).
-      const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName, wikiContext.userContext) : null;
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.PAGE_RAW_EDIT,
         ...WikiRoutes.auditWho(req, wikiContext.userContext, 'unknown'),
@@ -4285,12 +4289,16 @@ ${panes}
 
       res.redirect(`/view/${encodeURIComponent(pageName)}`);
     } catch (err) {
+      if (err instanceof PageAudienceRefusedError) {
+        await this.renderError(req, res, 403, 'Access Denied', err.message);
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.warn(`adminSaveRaw('${pageName}') failed: ${errorMessage}`);
       const pageManager = this.engine.getManager('PageManager') as {
-        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+        getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
       } | null;
-      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName, wikiContext.userContext).catch(() => null) : null;
       const templateData = await this.getCommonTemplateData(req);
       res.status(400).render('admin-edit-raw', {
         ...templateData,
