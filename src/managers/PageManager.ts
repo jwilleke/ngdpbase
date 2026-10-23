@@ -3,7 +3,7 @@ import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
-import { addonAudienceSlugs } from '../utils/frontmatterAccess.js';
+import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
 import { defaultShippedPageAccess, evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
@@ -257,6 +257,21 @@ function metadataForDecision(metadata: PageFrontmatter): PageFrontmatter {
 /** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
 export interface PageConvertResult extends NcmResult {
   fixes: FixChange[];
+}
+
+/**
+ * A write refused because the page's `audience` leaves the writer out (#1964).
+ * Someone outside a page's audience may neither read nor edit it; an
+ * administrator (`admin-system`) is the exception. Routes answer it with 403.
+ */
+export class PageAudienceRefusedError extends Error {
+  readonly pageName: string;
+
+  constructor(pageName: string) {
+    super(`'${pageName}' is limited to its audience, and you are not in it`);
+    this.name = 'PageAudienceRefusedError';
+    this.pageName = pageName;
+  }
 }
 
 export class PageContentValidationError extends Error {
@@ -1734,12 +1749,37 @@ class PageManager extends BaseManager implements CatalogSource {
    * the normal getPage() path sanitises or normalises away. Returns null
    * when the page is unknown or the provider doesn't support raw reads.
    */
-  async getRawPageContent(identifier: string): Promise<{ filePath: string; content: string } | null> {
+  async getRawPageContent(identifier: string, ctx: ActorContext): Promise<{ filePath: string; content: string } | null> {
     // `getRawFile` is an optional capability declared on the PageProvider
     // interface — feature-detect, never assume.
     const provider = this.provider;
     if (!provider?.getRawFile) return null;
+    // #1964: the raw file is the page's text — someone outside its audience
+    // may not read it here either. A page whose frontmatter cannot be read
+    // states no audience, and repairing it is what this editor is for.
+    const metadata = await provider.getPageMetadata(identifier, ctx).catch(() => null);
+    await this.assertAudienceAdmits(identifier, metadata, ctx);
     return provider.getRawFile(identifier);
+  }
+
+  /**
+   * The write door's audience check (#1964, operator 2026-10-23): someone a
+   * page's `audience` leaves out may neither read nor edit it, by any route —
+   * the editor, the raw editor, the API, a rename, a delete. The rule is the
+   * PIP's (`audienceAdmits`, the same one Tier 1 applies), asked with the
+   * caller's context; an administrator (`admin-system`) is admitted. A page
+   * that states no audience is not checked here — the routes ask the full
+   * page decision before they call the door.
+   *
+   * @throws PageAudienceRefusedError when the audience leaves `ctx` out
+   */
+  private async assertAudienceAdmits(pageName: string, metadata: PageFrontmatter | null | undefined, ctx: ActorContext): Promise<void> {
+    if (!audiencePrincipals(metadata)) return;
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    const subject = (isJobContext(ctx) ? toPermissionSubject(ctx) : ctx) as unknown as Parameters<PolicyInformationPoint['audienceAdmits']>[0];
+    if (pip && await pip.audienceAdmits(subject, metadata)) return;
+    logger.warn(`[PageManager] write to '${pageName}' refused: ${actorOf(ctx).user} is outside its audience (#1964)`);
+    throw new PageAudienceRefusedError(pageName);
   }
 
   /**
@@ -2237,6 +2277,11 @@ class PageManager extends BaseManager implements CatalogSource {
       : pageName ? await this.provider.getPage(pageName, ctx) : null;
     if (options.moveFrom && !existingPage) {
       throw new Error('PageManager.savePage: the page to move was not found');
+    }
+    // #1964: an edit, rename or move of a page whose audience leaves the
+    // writer out is refused here, whatever route it came by.
+    if (existingPage) {
+      await this.assertAudienceAdmits(options.moveFrom ?? pageName, existingPage.metadata, ctx);
     }
 
     // #946: the agent this write came through, if any — stamped on the page by
@@ -2784,6 +2829,8 @@ class PageManager extends BaseManager implements CatalogSource {
     logger.info(`[PageManager] Deleting page: ${identifier} by user: ${actorOf(ctx).user}`);
 
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
+    // #1964: nobody outside a page's audience deletes it.
+    if (before) await this.assertAudienceAdmits(identifier, before.metadata, ctx);
     const deleted = await this.provider.deletePage(identifier, ctx);
     if (deleted && before) {
       await this.reconcileSharedIndexes({

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { APIRequestContext, Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { TEST_PAGE_PREFIX, deletePage, markTestArtifact, waitForServerReady } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, instanceOrigin, markTestArtifact, signInWithPassword, waitForServerReady } from './fixtures/helpers';
 
 /**
  * #1964 — page audience `addon:<slug>`: the people who turned on <slug>.
@@ -10,16 +10,18 @@ import { TEST_PAGE_PREFIX, deletePage, markTestArtifact, waitForServerReady } fr
  *   ADDON  audience [addon:per-person-audience-e2e]
  *   MIXED  audience [addon:per-person-audience-e2e, admin]
  *   GHOST  audience [addon:no-such-addon-e2e]  (an add-on the site does not have)
- * A test reader opens them, finds them in search and in the page-name list
- * with their switch on, and not with it off; an admin, whose switch is off,
- * gets MIXED only; an anonymous visitor gets none.
+ * A test editor opens them, finds them in search and in the page-name list
+ * with their switch on, and not with it off; with it off they cannot edit
+ * them either — the editor, a save and a delete are refused. An admin, whose
+ * switch is off, gets all three: an administrator is the audience's one
+ * exception (operator, 2026-10-23). An anonymous visitor gets none.
  *
  * Needs the fixture add-on in tests/e2e/fixtures/addons/per-person-audience-e2e
  * on the instance under test:
  *   "ngdpbase.addons.per-person-audience-e2e.enabled": true,
  *   "ngdpbase.managers.addons-manager.addons-path": ["./addons", "<checkout>/tests/e2e/fixtures/addons"]
  * Skips when it is missing. Everything it makes is its own — the three pages
- * (marked test-artifact) and the reader account — and is deleted at the end.
+ * (marked test-artifact) and the editor account — and is deleted at the end.
  */
 
 test.use({ storageState: './tests/e2e/.auth/user.json' });
@@ -50,12 +52,8 @@ async function csrfFrom(request: APIRequestContext): Promise<string> {
 async function signIn(browser: Browser, username: string, password: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
-  await page.goto('/admin/login');
-  const form = page.locator('form:has(input[type="password"])');
-  await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
-  await form.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+  // Accepts the site's terms when asked (#1603), as a new account is.
+  await signInWithPassword(page, username, password);
   return { context, page };
 }
 
@@ -109,15 +107,13 @@ test.describe('Page audience addon:<slug> (#1964)', () => {
       const saved = await request.post(`/save/${encodeURIComponent(TITLES[key])}`, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         data: form.toString(),
-        // The save answers with a redirect to the page, which the admin
-        // (add-on off) is refused for ADDON and GHOST: that is the rule.
         maxRedirects: 0
       });
       expect(saved.status(), await saved.text()).toBeLessThan(400);
       await markTestArtifact(request, TITLES[key]);
     }
     const made = await request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'reader', isTest: 'on' }
+      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'editor', isTest: 'on' }
     });
     expect(made.ok()).toBe(true);
     expect(made.url()).not.toContain('error=');
@@ -135,25 +131,55 @@ test.describe('Page audience addon:<slug> (#1964)', () => {
     await context.close();
   });
 
-  test('the admin, with the add-on off, gets only the page that also names admin', async ({ page }) => {
+  test('the admin, with the add-on off, gets every audience page, and may edit them', async ({ page }) => {
     test.skip(!fixtureLoaded, 'the per-person-audience-e2e fixture add-on is not enabled on this instance');
     // The index takes the saves shortly after they land.
-    await expect.poll(async () => (await reach(page.request)).mixed.search, { timeout: 15000 }).toBe(true);
-    expect(await reach(page.request)).toEqual({ addon: SHUT, mixed: OPEN, ghost: SHUT });
-    // `audience` restricts viewing only: edit is the policies' answer, so the
-    // admin keeps edit through their own rights (the existing Tier-1 rule).
-    expect((await page.request.get(`/edit/${encodeURIComponent(TITLES.addon)}`, { maxRedirects: 0 })).status()).toBe(200);
+    await expect.poll(async () => (await reach(page.request)).ghost.search, { timeout: 15000 }).toBe(true);
+    // An administrator is the audience's one exception (operator, 2026-10-23).
+    expect(await reach(page.request)).toEqual({ addon: OPEN, mixed: OPEN, ghost: OPEN });
+    for (const title of Object.values(TITLES)) {
+      expect((await page.request.get(`${await instanceOrigin(page)}/edit/${encodeURIComponent(title)}`, { maxRedirects: 0 })).status(), title).toBe(200);
+    }
   });
 
-  test('a reader sees the pages only while their switch is on', async ({ browser }) => {
+  test('an editor sees the pages only while their switch is on, and cannot edit them with it off', async ({ browser }) => {
     test.skip(!fixtureLoaded, 'the per-person-audience-e2e fixture add-on is not enabled on this instance');
     const { context, page } = await signIn(browser, READER, READER_PASS);
+    const origin = await instanceOrigin(page);
+    const editStatus = async (title: string): Promise<number> =>
+      (await page.request.get(`${origin}/edit/${encodeURIComponent(title)}`, { maxRedirects: 0 })).status();
     try {
       expect(await reach(page.request)).toEqual({ addon: SHUT, mixed: SHUT, ghost: SHUT });
+      // Outside the audience, an editor's page-edit does not reach the page:
+      // not the editor, not a save, not a delete.
+      expect(await editStatus(TITLES.addon)).toBe(403);
+      const form = new URLSearchParams({ _csrf: await csrfFrom(page.request), title: TITLES.addon, content: 'overwritten', 'system-category': 'general' });
+      const save = await page.request.post(`${origin}/save/${encodeURIComponent(TITLES.addon)}`, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, data: form.toString(), maxRedirects: 0
+      });
+      expect(save.status()).toBe(403);
+      const del = await page.request.post(`${origin}/delete/${encodeURIComponent(TITLES.addon)}`, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: new URLSearchParams({ _csrf: await csrfFrom(page.request) }).toString(),
+        maxRedirects: 0
+      });
+      expect(del.status()).toBe(403);
+
       await setSwitch(page.request, true);
       expect(await reach(page.request)).toEqual({ addon: OPEN, mixed: OPEN, ghost: SHUT });
+      expect(await editStatus(TITLES.addon)).toBe(200);
+      // The same save, now inside the audience, is allowed: the refusal above
+      // was the audience, not the form.
+      const form2 = new URLSearchParams({ _csrf: await csrfFrom(page.request), title: TITLES.addon, content: `This page holds the word ${WORD}.`, 'system-category': 'general' });
+      for (const a of AUDIENCE.addon) form2.append('audience', a);
+      const save2 = await page.request.post(`${origin}/save/${encodeURIComponent(TITLES.addon)}`, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, data: form2.toString(), maxRedirects: 0
+      });
+      expect(save2.status(), await save2.text()).toBeLessThan(400);
+      expect(await editStatus(TITLES.ghost)).toBe(403);
       await setSwitch(page.request, false);
       expect(await reach(page.request)).toEqual({ addon: SHUT, mixed: SHUT, ghost: SHUT });
+      expect(await editStatus(TITLES.mixed)).toBe(403);
     } finally {
       await context.close();
     }

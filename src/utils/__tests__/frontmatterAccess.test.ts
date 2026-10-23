@@ -7,47 +7,83 @@
  * the regression net behind it.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveFrontmatterPrincipals, decideFrontmatterAccess, namesAddonPrincipal, addonAudienceSlugs } from '../frontmatterAccess.js';
+import {
+  audiencePrincipals, accessPrincipals, audienceExcludes, decideFrontmatterAccess, namesAddonPrincipal, addonAudienceSlugs
+} from '../frontmatterAccess.js';
 
-describe('resolveFrontmatterPrincipals', () => {
-  test('no metadata or no rule falls through', () => {
-    expect(resolveFrontmatterPrincipals(null, 'view')).toBeNull();
-    expect(resolveFrontmatterPrincipals(undefined, 'view')).toBeNull();
-    expect(resolveFrontmatterPrincipals({}, 'view')).toBeNull();
+describe('audiencePrincipals / accessPrincipals', () => {
+  test('no metadata or no rule states nothing', () => {
+    expect(audiencePrincipals(null)).toBeNull();
+    expect(audiencePrincipals(undefined)).toBeNull();
+    expect(audiencePrincipals({})).toBeNull();
+    expect(accessPrincipals({}, 'view')).toBeNull();
   });
 
-  test('access[action] supplies the principals', () => {
-    expect(resolveFrontmatterPrincipals({ access: { view: ['editor'] } }, 'view')).toEqual(['editor']);
-    expect(resolveFrontmatterPrincipals({ access: { edit: ['admin'] } }, 'edit')).toEqual(['admin']);
-  });
-
-  test('an access rule for a DIFFERENT action does not restrict this one', () => {
+  test('access[action] supplies the principals for that action only', () => {
+    expect(accessPrincipals({ access: { view: ['editor'] } }, 'view')).toEqual(['editor']);
+    expect(accessPrincipals({ access: { edit: ['admin'] } }, 'edit')).toEqual(['admin']);
     // `access: {edit: [admin]}` leaves viewing open — the real shape behind
     // `using-formplugin`, which is publicly readable but admin-only editable.
-    expect(resolveFrontmatterPrincipals({ access: { edit: ['admin'] } }, 'view')).toBeNull();
-  });
-
-  test('audience is the shorthand for access.view, and view only', () => {
-    expect(resolveFrontmatterPrincipals({ audience: ['jim'] }, 'view')).toEqual(['jim']);
-    expect(resolveFrontmatterPrincipals({ audience: ['jim'] }, 'edit')).toBeNull();
-  });
-
-  test('access.view wins over audience', () => {
-    expect(resolveFrontmatterPrincipals(
-      { access: { view: ['editor'] }, audience: ['jim'] }, 'view'
-    )).toEqual(['editor']);
+    expect(accessPrincipals({ access: { edit: ['admin'] } }, 'view')).toBeNull();
   });
 
   test('an empty list is no rule, not a deny-all', () => {
     // A bare `access:` key parses to an empty/absent value; treating that as
     // "restricted to nobody" would hide public pages.
-    expect(resolveFrontmatterPrincipals({ audience: [] }, 'view')).toBeNull();
-    expect(resolveFrontmatterPrincipals({ access: { view: [] } }, 'view')).toBeNull();
+    expect(audiencePrincipals({ audience: [] })).toBeNull();
+    expect(accessPrincipals({ access: { view: [] } }, 'view')).toBeNull();
   });
 
   test('non-array values are ignored rather than coerced', () => {
-    expect(resolveFrontmatterPrincipals({ audience: 'jim' }, 'view')).toBeNull();
-    expect(resolveFrontmatterPrincipals({ access: 'view:jim' }, 'view')).toBeNull();
+    expect(audiencePrincipals({ audience: 'jim' })).toBeNull();
+    expect(accessPrincipals({ access: 'view:jim' }, 'view')).toBeNull();
+  });
+});
+
+describe('audience covers every action; admins are its one exception (#1964, operator 2026-10-23)', () => {
+  for (const audience of [['treasurer'], ['addon:phr']]) {
+    const md = { audience };
+    for (const action of ['view', 'edit', 'delete', 'rename', 'page-read', 'page-edit']) {
+      test(`${audience[0]}: someone outside it is refused ${action}`, () => {
+        expect(decideFrontmatterAccess(md, ['editor', 'bob'], action, []))
+          .toEqual({ decided: true, allowed: false });
+      });
+      test(`${audience[0]}: an administrator outside it is not refused ${action}`, () => {
+        const d = decideFrontmatterAccess(md, ['admin', 'root'], action, [], true);
+        expect(d.allowed || !d.decided).toBe(true);
+      });
+    }
+    test(`${audience[0]}: an administrator is allowed to view, by admin-system`, () => {
+      expect(decideFrontmatterAccess(md, ['admin', 'root'], 'view', [], true))
+        .toEqual({ decided: true, allowed: true, matched: 'admin-system' });
+    });
+    test(`${audience[0]}: a member is allowed to view, and edit falls through to policy`, () => {
+      expect(decideFrontmatterAccess(md, ['treasurer', 'bob'], 'view', ['phr']).allowed).toBe(true);
+      expect(decideFrontmatterAccess(md, ['treasurer', 'bob'], 'edit', ['phr']).decided).toBe(false);
+    });
+  }
+
+  test('access[action] binds administrators too', () => {
+    expect(decideFrontmatterAccess({ access: { view: ['editor'] } }, ['admin', 'root'], 'view', [], true))
+      .toEqual({ decided: true, allowed: false });
+    // An audience the admin passes by the exception does not lift access either.
+    expect(decideFrontmatterAccess({ audience: ['treasurer'], access: { edit: ['editor'] } }, ['admin', 'root'], 'edit', [], true))
+      .toEqual({ decided: true, allowed: false });
+  });
+
+  test('with both, a viewer must pass the audience and then access', () => {
+    const md = { audience: ['treasurer'], access: { view: ['editor'] } };
+    expect(decideFrontmatterAccess(md, ['editor'], 'view').allowed).toBe(false);
+    expect(decideFrontmatterAccess(md, ['treasurer'], 'view').allowed).toBe(false);
+    expect(decideFrontmatterAccess(md, ['treasurer', 'editor'], 'view').allowed).toBe(true);
+  });
+
+  test('audienceExcludes is true only when an audience names no match', () => {
+    expect(audienceExcludes({}, ['bob'])).toBe(false);
+    expect(audienceExcludes({ audience: ['bob'] }, ['bob'])).toBe(false);
+    expect(audienceExcludes({ audience: ['addon:phr'] }, ['bob'], ['phr'])).toBe(false);
+    expect(audienceExcludes({ audience: ['addon:phr'] }, ['bob'], [])).toBe(true);
+    expect(audienceExcludes({ audience: ['treasurer'] }, ['admin'])).toBe(true);
   });
 });
 
@@ -127,7 +163,9 @@ describe('the audience entry addon:<slug> (#1964)', () => {
 
   test('namesAddonPrincipal says whether deciding needs the viewer\'s add-ons', () => {
     expect(namesAddonPrincipal({ audience: ['addon:phr'] }, 'view')).toBe(true);
-    expect(namesAddonPrincipal({ audience: ['addon:phr'] }, 'edit')).toBe(false);
+    // An audience covers every action, so edit needs the add-ons too.
+    expect(namesAddonPrincipal({ audience: ['addon:phr'] }, 'edit')).toBe(true);
+    expect(namesAddonPrincipal({ access: { edit: ['addon:phr'] } }, 'view')).toBe(false);
     expect(namesAddonPrincipal({ audience: ['admin'] }, 'view')).toBe(false);
     expect(namesAddonPrincipal({}, 'view')).toBe(false);
     expect(namesAddonPrincipal(null, 'view')).toBe(false);

@@ -22,7 +22,7 @@ import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
-import { decideFrontmatterAccess, namesAddonPrincipal } from '../utils/frontmatterAccess.js';
+import { audienceExcludes, audiencePrincipals, decideFrontmatterAccess, namesAddonPrincipal } from '../utils/frontmatterAccess.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { REQUIRED_SETTINGS_HELP } from '../utils/requiredSettings.js';
 
@@ -105,6 +105,13 @@ interface AccessDecisionLog {
   allowed?: boolean;
   reason?: string;
   context?: Record<string, unknown>;
+}
+
+/** A subject as Tier 1 matches it: its roles, then its username. */
+function principalsOf(userContext: UserContext | null | undefined): string[] {
+  const roles = userContext?.roles ?? [];
+  const username = userContext?.username ?? '';
+  return username ? [...roles, username] : [...roles];
 }
 
 /**
@@ -596,9 +603,10 @@ class PolicyInformationPoint extends BaseManager {
       viaShare,
       privateCtx: wikiContext,
       pageManager: this.engine.getManager<PrivateAccessCheck>('PageManager'),
-      // Asked only if the page is author-locked and the subject is not its
-      // author — the author needs no override.
-      mayOverrideLock: () => subjectMayDo(this.engine, userContext, 'admin-system'),
+      // Asked only when a rule has an administrator exception and the subject
+      // needs it: an author-lock they did not write, an audience that leaves
+      // them out (#1964).
+      holdsAdminSystem: () => subjectMayDo(this.engine, userContext, 'admin-system'),
       enabledAddons: () => this.enabledAddonsOf(userContext),
       policy: async (extra) => {
         // An evaluator fault denies; it never opens the page. There is no tier
@@ -661,7 +669,9 @@ class PolicyInformationPoint extends BaseManager {
    * - __Tier 0.5, author-lock__, `edit` only. It only denies: an author, or a
    *   subject holding `admin-system` (#1431 7b), falls through to Tier 1+.
    * - __Tier 1, frontmatter__ `access[action]` / `audience`. Page-level, and
-   *   overrides global policy when it states a rule (#1054).
+   *   overrides global policy when it states a rule (#1054). An `audience`
+   *   covers every action, and a subject holding `admin-system` is its one
+   *   exception; `access` has none (#1964).
    * - __Tier 2.__ For a share visitor the share IS the policy (#1222); for
    *   anyone else, global policy.
    * - __Default deny.__ Nothing below Tier 2 grants — JSPWiki's page-body ACL
@@ -676,7 +686,11 @@ class PolicyInformationPoint extends BaseManager {
     viaShare: ShareGrant | undefined;
     privateCtx: WikiContext;
     pageManager: PrivateAccessCheck | null | undefined;
-    mayOverrideLock: () => Promise<boolean>;
+    /**
+     * Does the subject hold `admin-system`? The exception to an author-lock
+     * (#1431 7b) and to an audience (#1964); asked only when one applies.
+     */
+    holdsAdminSystem: () => Promise<boolean>;
     /** The subject's enabled per-person add-ons (#1964); asked only for a page that names one. */
     enabledAddons: () => Promise<readonly string[]>;
     policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
@@ -707,7 +721,7 @@ class PolicyInformationPoint extends BaseManager {
     // Tier 0.5: author-lock denies a non-author edit; it grants nothing.
     if (action.toLowerCase() === 'edit' && metadata?.['author-lock'] === true) {
       const isAuthor = (userContext?.username ?? '') === (metadata.author ?? '');
-      if (!isAuthor && !(await args.mayOverrideLock())) {
+      if (!isAuthor && !(await args.holdsAdminSystem())) {
         return { allowed: false, reason: 'author_lock_deny' };
       }
     }
@@ -719,7 +733,7 @@ class PolicyInformationPoint extends BaseManager {
       // asked only when this page names one, and by the caller's own means
       // (once per batch for a list).
       const enabledAddons = namesAddonPrincipal(metadata, action) ? await args.enabledAddons() : [];
-      const fm = this.checkFrontmatterAccess(metadata, userContext, action, enabledAddons);
+      const fm = await this.checkFrontmatterAccess(metadata, userContext, action, enabledAddons, args.holdsAdminSystem);
       if (fm.decided) return { allowed: fm.allowed, reason: fm.reason };
     }
 
@@ -910,11 +924,11 @@ class PolicyInformationPoint extends BaseManager {
     candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
   ): Promise<string[]> {
     const policyAction = permissionForPageAction(action);
-    // #1431 step 7b: the author-lock override is `admin-system`, asked once
-    // for the subject — it does not vary by page — and only for `edit`, the
-    // one action author-lock constrains.
-    const mayOverrideLock = action.toLowerCase() === 'edit'
-      && await subjectMayDo(this.engine, userContext, 'admin-system');
+    // #1431 step 7b, #1964: `admin-system` — the exception to an author-lock
+    // and to an audience — asked once for the subject, since it does not vary
+    // by page, and only when some page needs it.
+    let adminSystem: Promise<boolean> | undefined;
+    const adminSystemOnce = (): Promise<boolean> => (adminSystem ??= subjectMayDo(this.engine, userContext, 'admin-system'));
 
     // The ceilings that bound the SUBJECT decide once, for every page — the
     // PDP's, so this is not a third copy of them (#1431). No resource is
@@ -955,7 +969,7 @@ class PolicyInformationPoint extends BaseManager {
         viaShare,
         privateCtx,
         pageManager,
-        mayOverrideLock: async () => mayOverrideLock,
+        holdsAdminSystem: adminSystemOnce,
         enabledAddons: enabledAddonsOnce,
         policy: async (extra) => {
           const p = decidePolicy?.(title, { 'system-category': metadata['system-category'], ...extra });
@@ -1017,30 +1031,59 @@ class PolicyInformationPoint extends BaseManager {
   }
 
   /**
-   * Check front matter audience / access fields (Tier 1.5).
+   * Check front matter audience / access fields (Tier 1).
    * Returns a decision object; decided=false means no front matter restriction — fall through.
+   *
+   * An audience that leaves the subject out refuses every action, unless the
+   * subject holds `admin-system` (#1964, operator 2026-10-23): asked only
+   * then. `access[action]` has no such exception.
    */
-  private checkFrontmatterAccess(
+  private async checkFrontmatterAccess(
     metadata: PageFrontmatter,
     userContext: UserContext | null | undefined,
     action: string,
-    enabledAddons: readonly string[]
-  ): { decided: boolean; allowed: boolean; reason: string } {
-    // #1054: the rule itself now lives in utils/frontmatterAccess so the page
-    // LISTERS decide identically to this evaluator. They previously did not —
-    // getRecentChanges only consulted `audience` on already-private pages, so a
-    // non-private page with an audience was listed to viewers this method
-    // correctly 403s. Behaviour here is unchanged; only the home of the logic
-    // moved. The `reason` strings stay, since callers branch on them.
-    const userRoles = userContext?.roles ?? [];
-    const username  = userContext?.username ?? '';
-    const viewerPrincipals = username ? [...userRoles, username] : [...userRoles];
+    enabledAddons: readonly string[],
+    holdsAdminSystem: () => Promise<boolean>
+  ): Promise<{ decided: boolean; allowed: boolean; reason: string }> {
+    // #1054: the rule itself lives in utils/frontmatterAccess so the page
+    // LISTERS decide identically to this evaluator. The `reason` strings
+    // stay, since callers branch on them.
+    const viewerPrincipals = principalsOf(userContext);
+    const admin = audienceExcludes(metadata, viewerPrincipals, enabledAddons) && await holdsAdminSystem();
 
-    const decision = decideFrontmatterAccess(metadata, viewerPrincipals, action, enabledAddons);
+    const decision = decideFrontmatterAccess(metadata, viewerPrincipals, action, enabledAddons, admin);
     if (!decision.decided) return { decided: false, allowed: false, reason: '' };
     return decision.allowed
       ? { decided: true, allowed: true, reason: `frontmatter_principal_${decision.matched}` }
       : { decided: true, allowed: false, reason: 'frontmatter_deny' };
+  }
+
+  /**
+   * Does the page's `audience` admit this subject (#1964)? True when the page
+   * names no audience, the subject matches it, or the subject holds
+   * `admin-system`. The same rule Tier 1 applies, asked by PageManager's
+   * write door, so a write cannot reach a page its writer is outside the
+   * audience of — whatever route it came by. Records nothing; the door does.
+   *
+   * @param userContext - the subject, as given
+   * @param metadata - the page's current frontmatter
+   */
+  async audienceAdmits(
+    userContext: UserContext | null | undefined,
+    metadata: PageFrontmatter | null | undefined
+  ): Promise<boolean> {
+    if (!audiencePrincipals(metadata)) return true;
+    // A job's subject carries no roles, only the instruction to resolve them
+    // now (#1212): an audience naming a role is matched against what its
+    // principal holds at this moment.
+    const roles = (userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow
+      ? (await this.resolveSubjectNow(userContext?.username)).roles ?? []
+      : userContext?.roles ?? [];
+    // permission-subject-ignore: matching only — the roles were resolved above, from the store.
+    const matchable = userContext ? { username: userContext.username, roles } : null;
+    const enabledAddons = namesAddonPrincipal(metadata, 'view') ? await this.enabledAddonsOf(userContext) : [];
+    if (!audienceExcludes(metadata, principalsOf(matchable as UserContext | null), enabledAddons)) return true;
+    return subjectMayDo(this.engine, userContext, 'admin-system');
   }
 
   // #632: deprecated `checkPagePermission(pageName, action, userContext, content)`

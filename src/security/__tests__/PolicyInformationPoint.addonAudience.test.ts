@@ -8,6 +8,9 @@
  * and a real AddonsManager loading add-on folders from a mkdtemp directory.
  * Only the page store, the search index and the account store are fakes.
  *
+ * An audience covers every action, and an administrator (`admin-system`) is
+ * its one exception; `access:` has none (operator, 2026-10-23).
+ *
  * Sabotage: drop the enabled add-ons from Tier 1 and the "phr on" rows go red;
  * match `addon:<slug>` against roles and the spoof row goes red; resolve the
  * add-ons per page and the once-per-batch rows go red.
@@ -24,6 +27,7 @@ import PageManager from '../../managers/PageManager';
 import PolicyEvaluator from '../../managers/PolicyEvaluator';
 import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import PolicyInformationPoint from '../PolicyInformationPoint';
+import { PageAudienceRefusedError } from '../../managers/PageManager';
 import logger from '../../utils/logger';
 
 const shipped = JSON.parse(
@@ -59,7 +63,9 @@ const anonymous = { username: 'Anonymous', roles: ['anonymous'], isAuthenticated
 const EXPECTED: Array<[string, Record<string, unknown>, string[]]> = [
   ['phr on', pat, ['Health Notes', 'Health Or Admin', 'Open Page']],
   ['phr off', olly, ['Open Page']],
-  ['admin, phr off', root, ['Health Or Admin', 'Open Page']],
+  // #1964 (operator, 2026-10-23): an administrator is the audience's one
+  // exception, so every audience page opens for them, add-on or not.
+  ['admin, phr off', root, ['Dormant Notes', 'Ghost Notes', 'Health Notes', 'Health Or Admin', 'Ledger Notes', 'Open Page']],
   ['anonymous', anonymous, ['Open Page']]
 ];
 
@@ -85,7 +91,8 @@ describe('page audience addon:<slug> (#1964)', () => {
     users = {
       pat: { username: 'pat', isActive: true, preferences: { 'phr.enabled': true, 'ledger.enabled': true, 'dormant.enabled': true, 'nosuch.enabled': true } },
       olly: { username: 'olly', isActive: true, preferences: { 'phr.enabled': false } },
-      root: { username: 'root', isActive: true, preferences: {} }
+      root: { username: 'root', isActive: true, preferences: {} },
+      ed: { username: 'ed', isActive: true, preferences: {} }
     };
     corpus = { ...PAGES };
 
@@ -246,5 +253,113 @@ describe('page audience addon:<slug> (#1964)', () => {
     await bare.initialize();
     expect(await bare.canUserAccessPage(pat as never, 'Health Notes', 'view')).toBe(false);
     expect(await bare.canUserAccessPage(root as never, 'Health Or Admin', 'view')).toBe(true);
+  });
+  describe('an audience covers every action; admins are the exception, access: has none (operator, 2026-10-23)', () => {
+    // An editor holds page-edit, page-delete and page-rename by policy, so
+    // only the audience can refuse them.
+    const ed = { username: 'ed', roles: ['editor'], isAuthenticated: true };
+    const decide = (subject: unknown, title: string, action: string): Promise<boolean> =>
+      pip.checkPagePermissionWithContext({ pageName: title, content: '', userContext: subject, pageMetadata: corpus[title] }, action);
+
+    beforeEach(() => {
+      corpus['Treasury'] = page('Treasury', { audience: ['treasurer'] });
+      corpus['Editors Only'] = page('Editors Only', { access: { view: ['editor'] } });
+    });
+
+    test('the editor holds the actions on an open page (the fixture is as described)', async () => {
+      for (const action of ['view', 'edit', 'delete', 'rename']) {
+        expect(await decide(ed, 'Open Page', action), action).toBe(true);
+      }
+    });
+
+    test.each([['Treasury'], ['Health Notes']])('%s: someone outside the audience is refused view, edit, delete and rename', async (title) => {
+      for (const action of ['view', 'edit', 'delete', 'rename']) {
+        expect(await decide(ed, title, action), action).toBe(false);
+        expect(await pip.canUserAccessPage(ed as never, title, action), action).toBe(false);
+      }
+    });
+
+    test.each([['Treasury'], ['Health Notes']])('%s: an administrator outside the audience may view, edit, delete and rename', async (title) => {
+      for (const action of ['view', 'edit', 'delete', 'rename']) {
+        expect(await decide(root, title, action), action).toBe(true);
+      }
+    });
+
+    test('a member of the audience still meets policy for edit: a reader with phr on may view but not edit', async () => {
+      expect(await decide(pat, 'Health Notes', 'view')).toBe(true);
+      expect(await decide(pat, 'Health Notes', 'edit')).toBe(false);
+    });
+
+    test('access: view binds an administrator as it always has', async () => {
+      expect(await decide(root, 'Editors Only', 'view')).toBe(false);
+      expect(await decide(ed, 'Editors Only', 'view')).toBe(true);
+      expect(await pageManager.listPagesFor(root as never, 'view')).not.toContain('Editors Only');
+    });
+
+    test('lists and search include audience pages for an administrator, and not for others', async () => {
+      expect(await pageManager.listPagesFor(root as never, 'view')).toEqual(expect.arrayContaining(['Treasury', 'Health Notes']));
+      expect(await pageManager.listPagesFor(ed as never, 'view')).not.toContain('Treasury');
+      const found = (await searchManager.searchWithContext({ userContext: root }, 'notes')).map((h) => h.name);
+      expect(found).toEqual(expect.arrayContaining(['Treasury', 'Health Notes']));
+      const edFound = (await searchManager.searchWithContext({ userContext: ed }, 'notes')).map((h) => h.name);
+      expect(edFound).not.toContain('Treasury');
+      expect(edFound).not.toContain('Health Notes');
+    });
+
+    test('the admin-system question is asked once per list, and only when an audience leaves the subject out', async () => {
+      const pdp = (pip as unknown as { engine: { getManager(n: string): { permits: (...a: unknown[]) => unknown } } }).engine.getManager('PolicyDecisionPoint');
+      const permits = vi.spyOn(pdp, 'permits');
+      await pageManager.listPagesFor(root, 'view');
+      expect(permits.mock.calls.filter((c) => c[1] === 'admin-system')).toHaveLength(1);
+      permits.mockClear();
+      corpus = { 'Open Page': PAGES['Open Page'] };
+      await pageManager.listPagesFor(root, 'view');
+      expect(permits.mock.calls.filter((c) => c[1] === 'admin-system')).toHaveLength(0);
+    });
+
+    describe('PageManager\'s write door asks the same rule', () => {
+      let written: string[];
+      let deleted: string[];
+      beforeEach(() => {
+        written = [];
+        deleted = [];
+        const provider = (pageManager as unknown as { provider: Record<string, unknown> }).provider;
+        Object.assign(provider, {
+          getPage: async (name: string) => (corpus[name] ? { title: name, uuid: corpus[name].uuid, content: 'body', metadata: corpus[name] } : null),
+          savePage: async (name: string) => { written.push(name); return { name, uuid: corpus[name]?.uuid ?? 'u-new' }; },
+          deletePage: async (name: string) => { deleted.push(name); return true; },
+          getRawFile: async (name: string) => ({ filePath: `/pages/${name}.md`, content: 'raw' }),
+          pageExists: (name: string) => name in corpus
+        });
+      });
+
+      test.each([['Treasury'], ['Health Notes']])('%s: save, rename, delete and the raw file are refused to someone outside the audience', async (title) => {
+        await expect(pageManager.savePage(title, 'new body', { ...corpus[title] }, ed as never, { skipValidation: true })).rejects.toBeInstanceOf(PageAudienceRefusedError);
+        await expect(pageManager.savePage(`${title} Renamed`, 'body', { ...corpus[title], title: `${title} Renamed` }, ed as never, { skipValidation: true, moveFrom: title })).rejects.toBeInstanceOf(PageAudienceRefusedError);
+        await expect(pageManager.deletePage(title, ed as never)).rejects.toBeInstanceOf(PageAudienceRefusedError);
+        await expect(pageManager.getRawPageContent(title, ed as never)).rejects.toBeInstanceOf(PageAudienceRefusedError);
+        await expect(pageManager.saveRawPageWithAdminOverride(title, `---\ntitle: ${title}\n---\nx`, ed as never)).rejects.toBeInstanceOf(PageAudienceRefusedError);
+        expect(written).toEqual([]);
+        expect(deleted).toEqual([]);
+      });
+
+      test.each([['Treasury'], ['Health Notes']])('%s: an administrator outside the audience gets through the door', async (title) => {
+        await pageManager.savePage(title, 'new body', { ...corpus[title] }, root, { skipValidation: true, skipConflictCheck: true });
+        expect(written).toEqual([title]);
+        expect(await pageManager.getRawPageContent(title, root as never)).toEqual({ filePath: `/pages/${title}.md`, content: 'raw' });
+        expect(await pageManager.deletePage(title, root as never)).toBe(true);
+        expect(deleted).toEqual([title]);
+      });
+
+      test('a member of the audience gets through the door', async () => {
+        await pageManager.savePage('Health Notes', 'new body', { ...corpus['Health Notes'] }, pat, { skipValidation: true, skipConflictCheck: true });
+        expect(written).toEqual(['Health Notes']);
+      });
+
+      test('a page with no audience is not the door\'s to refuse', async () => {
+        await pageManager.savePage('Open Page', 'new body', { ...corpus['Open Page'] }, olly, { skipValidation: true, skipConflictCheck: true });
+        expect(written).toEqual(['Open Page']);
+      });
+    });
   });
 });
