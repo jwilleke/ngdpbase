@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.26.0",
+  "ngdpbase.version": "5.27.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -96,7 +96,13 @@
   "_comment_jobs_checkpoints": "#1716 — the largest checkpoint a job may save with ctx.checkpoint(data), in bytes of JSON. A larger one throws to the job. A checkpoint is a bookmark (\"done through account 311\"), not storage for results.",
   "ngdpbase.jobs.max-checkpoint-bytes": 65536,
   "_comment_import_engine": "#1979 ICE — the import engine's limits. noise: paths dropped before any shim sees them ('dir/' a directory segment, 'x*' / '*x' a name prefix or suffix, else an exact file name). zip-max-entries / zip-max-bytes: per archive, inflated. zip-max-depth: zips inside zips. max-file-bytes: one file. max-chain-depth: shims one file may pass through. default-original: cite | keep | none, when the person importing does not choose (D11). ledger-dir: fingerprints, per-file status and item keys, one file per scope. ledger-max-entries: per scope. max-kept-runs: run reports held in memory. Each shim is switched with ngdpbase.import.shims.<shim id>.enabled (default true) and given ngdpbase.import.shims.<shim id>.options.",
-  "ngdpbase.import.engine.noise": ["__MACOSX/", ".DS_Store", "Thumbs.db", "desktop.ini", "._*"],
+  "ngdpbase.import.engine.noise": [
+    "__MACOSX/",
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+    "._*"
+  ],
   "ngdpbase.import.engine.zip-max-entries": 10000,
   "ngdpbase.import.engine.zip-max-bytes": 268435456,
   "ngdpbase.import.engine.zip-max-depth": 3,
