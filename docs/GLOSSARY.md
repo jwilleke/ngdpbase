@@ -486,6 +486,46 @@ A per-page frontmatter flag (`author-lock: true`) that restricts the edit form t
 
 ---
 
+## Identities
+
+Never assume an identity is human: it may be a person, an agent or a service. Never use "person" on its own for any of these terms (operator, 2026-10-23).
+
+### Digital Identity
+
+Preferred: __Digital identity__
+Avoid: "person", "human", "people" for the general case
+
+Anything the site keeps a record of that can be named, contacted or given a role. Every digital identity is either a __User__ or a __Contact__.
+
+### User
+
+Preferred: __User__
+Avoid: "person", "member", "account" for the identity itself
+
+A digital identity for which the site holds credentials: a password, a passkey, or a link to an outside sign-in. Only users sign in and act. Owned by `UserManager`.
+
+### Contact
+
+Preferred: __Contact__
+Avoid: "person", "person without an account"
+
+A digital identity with no credentials. A contact cannot sign in and never acts. It becomes a user only when it is joined to a new account.
+
+### Identity Record
+
+Preferred: __Identity record__
+Avoid: "person", "person record"
+
+What `PersonManager` keeps about a user or a contact: name, email, address. A record, never something that acts. A user's identity record is part of their profile.
+
+### Profile
+
+Preferred: __Profile__
+
+What a user reads and manages about themselves, at `/profile`, under `profile-manage`, which every user holds. Reading or changing anyone else's identity record needs `contact-read` / `contact-manage`.
+
+---
+
 ## Managers & Providers
 
 ### Manager
