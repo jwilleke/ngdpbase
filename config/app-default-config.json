@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.24.0",
+  "ngdpbase.version": "5.26.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -28,6 +28,9 @@
   "ngdpbase.server.tls.cert-file": "",
   "ngdpbase.server.tls.key-file": "",
   "ngdpbase.server.trust-proxy": false,
+  "_comment_server_ip_location": "#1532 — roughly where a request came from (\"Columbus, United States\"), said in a sign-in approval message and page beside the IP address. Nothing is bundled and nothing is looked up outside the site; with neither set, no place is said. behind-cloudflare: true only when the site is reached through Cloudflare alone, so its cf-ipcity / cf-ipcountry headers can be believed (turn on Cloudflare's visitor location headers); anyone can send those headers to a site that is not behind Cloudflare, so they are never read while this is false. geolite2-city-file: the path to a MaxMind GeoLite2 City .mmdb file the operator downloads and keeps current (MaxMind's licence; free account), read on first use and again when the file changes. Cloudflare's headers win when both are set and name a place.",
+  "ngdpbase.server.behind-cloudflare": false,
+  "ngdpbase.server.geolite2-city-file": "",
   "_comment_config_sensitive_values": "#1750 — which configuration VALUES may be shown, and to whom. Renamed from ngdpbase.config.secret-keys, which is still read as an alias with a boot warning. Each key maps to a level. secret: never shown (Admin Configuration masks it until an admin explicitly reveals it; ConfigAccessor and every page show it only to a holder of secret-reveal, which asks for a fresh sign-in), never written to the audit log or a log line. sensitive: how this instance is run (the access policies, storage paths, outside services) — shown only to a holder of admin-read; anonymous visitors and ordinary signed-in users see (hidden). Hidden values are replaced on the server before any page is built, so they never reach page source or the cache. A key that is NOT listed but whose name looks like a secret (secret, password, token, credential, api-key, private-key) and whose value is a string is treated as secret — a backstop that fails closed; booleans and numbers under such names stay visible. A value every page already exposes (the base URL) is not worth listing. Add-ons declare their own entries in their config/default-config.json; the map merges per entry, and an instance removes a shipped entry with false or null. Deliberately short: list a key when its VALUE says something about how this instance is run or would let someone act as it.",
   "ngdpbase.config.sensitive-values": {
     "ngdpbase.session.secret": "secret",
@@ -47,6 +50,7 @@
     "ngdpbase.media.folders": "sensitive",
     "ngdpbase.server.tls.cert-file": "sensitive",
     "ngdpbase.server.tls.key-file": "sensitive",
+    "ngdpbase.server.geolite2-city-file": "sensitive",
     "ngdpbase.telemetry.otlp.endpoint": "sensitive",
     "ngdpbase.auth.authentik-bearer.issuer": "sensitive",
     "ngdpbase.auth.authentik-bearer.jwks-url": "sensitive",
@@ -489,6 +493,12 @@
   "ngdpbase.audit.chain-witness.destination": "",
   "ngdpbase.audit.chain-witness.interval-minutes": 60,
   "ngdpbase.audit.retentiondays": 90,
+  "_comment_consent": "#1603 — consent to the site's terms. ConsentManager asks each person to accept the documents named here, by page slug, when they sign up and at their first interactive sign-in after a document's version changes. Each is a page in the system category (admin-edit only) whose front matter carries version: (what people accept; change it, with Admin → Edit raw, to ask everyone again; an ordinary edit does not) and effective: (a date). Core ships terms-of-service and privacy-policy, version 1, as templates for the operator to review. A document whose page is missing, or has no version, is not asked for, and ConsentManager shows as needing attention on the admin dashboard. Add-ons register their own documents with ConsentManager. storagedir: one append-only file per account, owner-only, backed up with the site.",
+  "ngdpbase.consent.documents": [
+    "terms-of-service",
+    "privacy-policy"
+  ],
+  "ngdpbase.consent.storagedir": "${FAST_STORAGE}/consent",
   "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code's names are generated from configuration into src/utils/auditEventNames.generated.ts. #1638: every event is declared on its permission entry (ngdpbase.permissions.definitions.<name>.audit); an event that is a record rather than an action anyone may be granted (system-start, authentication-failed, job-*) is an entry with grantable: false. This map ships empty: it remains so an app-custom-config.json written before #1638 still overrides an event here (warned at boot). A name is declared in exactly one place. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
   "ngdpbase.audit.events": {},
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",
@@ -711,8 +721,9 @@
   "ngdpbase.audit.provider.file.archivefilename": "audit-archive.log",
   "ngdpbase.audit.provider.file.maxfilesize": "10MB",
   "ngdpbase.audit.provider.file.maxfiles": 10,
-  "_comment_audit_provider_database": "DatabaseAuditProvider settings (future)",
-  "_comment_audit_scaffolds": "#1118 — DatabaseAuditProvider and CloudAuditProvider are SCAFFOLDS. Their source is a list of TODOs and both refuse at initialize(). Their configuration keys were removed rather than left here: a populated connectionstring reads as a working feature, and selecting one previously produced an instance that silently audited nowhere. Restore these keys in the same change that implements the provider, not before.",
+  "_comment_audit_provider_database": "#1537 — DatabaseAuditProvider (ngdpbase.audit.provider: databaseauditprovider) keeps the audit log in the application database: it needs ngdpbase.database.provider sqlite, and is encrypted when the database is (NGDPBASE_DATABASE_KEY; unencrypted is warned, never refused). It uses ngdpbase.audit.flushinterval, maxqueuesize and retentiondays like the file provider; retention removes the oldest rows and writes a checkpoint the rest verifies from. max-results is the largest page a search returns and the most rows an export holds.",
+  "ngdpbase.audit.provider.database.max-results": 10000,
+  "_comment_audit_scaffolds": "#1118 — CloudAuditProvider is a SCAFFOLD. Its source is a list of TODOs and it refuses at initialize(). Its configuration keys were removed rather than left here: a populated connection setting reads as a working feature, and selecting it previously produced an instance that silently audited nowhere. Restore these keys in the same change that implements the provider, not before.",
   "_comment_audit_provider_cloud": "CloudAuditProvider settings (future)",
   "_comment_markup": "MarkupParser and Handler system configuration",
   "_comment_markup_render_tags": "Fenced code block language tags the system recognises. Tags not in this list are flagged as unknown on page save. 'wiki' is intentionally absent — it has no special meaning here.",
@@ -2058,6 +2069,20 @@
         "on-failure": "refuse"
       }
     },
+    "consent-grant": {
+      "description": "A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "consent-withdraw": {
+      "description": "A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "proxy-switch": {
       "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762)",
       "grantable": false,
@@ -2406,6 +2431,62 @@
     },
     "reauth-failure": {
       "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-request": {
+      "description": "Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-open": {
+      "description": "Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-approve": {
+      "description": "Sign-in approval: the person pressed Approve (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-deny": {
+      "description": "Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-expire": {
+      "description": "Sign-in approval: a waiting sign-in expired before it was completed (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-sendfail": {
+      "description": "Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-abandon": {
+      "description": "Sign-in approval: the browser that was waiting gave up the sign-in (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "signinapproval-throttle": {
+      "description": "Sign-in approval: another approval message was asked for too soon and not sent (#1532)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

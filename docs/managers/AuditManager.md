@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-10-19'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -125,16 +125,17 @@ All configuration keys use __lowercase__ format per Issue #102 refactoring.
 | `ngdpbase.audit.provider.file.maxfilesize` |string |`"10MB"` |Maximum file size before rotation |
 | `ngdpbase.audit.provider.file.maxfiles` |number |`10` |Maximum archived files to keep |
 
-#### DatabaseAuditProvider (Future)
+#### DatabaseAuditProvider
 
 ```json
 {
-  "ngdpbase.audit.provider.database.type": "postgresql",
-  "ngdpbase.audit.provider.database.connectionstring": "",
-  "ngdpbase.audit.provider.database.tablename": "audit_logs",
-  "ngdpbase.audit.provider.database.maxconnections": 10
+  "ngdpbase.database.provider": "sqlite",
+  "ngdpbase.audit.provider": "databaseauditprovider",
+  "ngdpbase.audit.provider.database.max-results": 10000
 }
 ```
+
+The audit log in the application database ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), on `DatabaseManager`'s one connection, so it needs `ngdpbase.database.provider` `sqlite` and is encrypted when the database is (`NGDPBASE_DATABASE_KEY`). It shares `ngdpbase.audit.flushinterval`, `maxqueuesize` and `retentiondays` with the file provider. `max-results` is the largest page a search or the entries about one person returns, and the most rows an export holds. There is no connection string, table name or pool: the database is `DatabaseManager`'s. What it guarantees and how retention keeps the chain verifiable is in [audit-posture.md — The database provider](../audit-posture.md#the-database-provider).
 
 #### CloudAuditProvider (Future)
 
@@ -155,7 +156,7 @@ All configuration keys use __lowercase__ format per Issue #102 refactoring.
 | ----- | ----- | ----- | ----- |
 | __FileAuditProvider__ | ✅ Production | Single-instance, development | Local files, rotation, search |
 | __NullAuditProvider__ | ✅ Production | Disabled auditing, testing | No-op operations |
-| __DatabaseAuditProvider__ | 🚧 Planned | Enterprise, high-volume | SQL/NoSQL, scalable, queryable |
+| __DatabaseAuditProvider__ | ✅ Production | A site with an application database; indexed queries, the entries about one person | SQLite (SQLCipher when keyed), hash chain, checkpoint retention, witness |
 | __CloudAuditProvider__ | 🚧 Planned | Cloud deployments | CloudWatch, Azure, GCP |
 
 ### Provider Selection Logic
@@ -499,6 +500,8 @@ audited.
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
+| `consent-grant` | A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
+| `consent-withdraw` | A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
 | `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
@@ -548,6 +551,14 @@ audited.
 | `reauth-prompt` | Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one | continue | yes |
 | `reauth-success` | Step-up: the person re-authenticated, with the factor used | continue | yes |
 | `reauth-failure` | Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) | continue | yes |
+| `signinapproval-request` | Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) | continue | yes |
+| `signinapproval-open` | Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) | continue | yes |
+| `signinapproval-approve` | Sign-in approval: the person pressed Approve (#1532) | continue | yes |
+| `signinapproval-deny` | Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) | continue | yes |
+| `signinapproval-expire` | Sign-in approval: a waiting sign-in expired before it was completed (#1532) | continue | yes |
+| `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
+| `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
+| `signinapproval-throttle` | Sign-in approval: another approval message was asked for too soon and not sent (#1532) | continue | yes |
 <!-- AUTO:audit-events END -->
 
 #### Retired names
@@ -693,7 +704,7 @@ __Parameters:__
   - `offset` (number): Result offset (default: 0)
   - `sortBy` (string): Sort field (default: 'timestamp')
   - `sortOrder` (string): Sort order 'asc' or 'desc' (default: 'desc')
-- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A person's read-only view of what happened to their own data ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)) is not built; until it is, only those permissions read the log.
+- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A person reads the entries about themselves through [searchEntriesAbout](#searchentriesaboutperson-options-caller).
 
 __Returns:__ `Promise<Object>`
 
@@ -706,6 +717,20 @@ __Returns:__ `Promise<Object>`
   hasMore: boolean             // More results available
 }
 ```
+
+#### searchEntriesAbout(person, options, caller)
+
+The entries about one person, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the person when the person is its `user` (the account acted on, or the person represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
+
+```javascript
+const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0 }, ctx.subject);
+```
+
+- `person` (string): the username whose entries are listed
+- `options`: `limit` (default 100, capped by the provider: `ngdpbase.audit.provider.database.max-results`) and `offset`
+- `caller` (PermissionSubject): the request's subject. The PDP decides with it: `profile-manage` (every account holds it) when `caller.username` is `person`, `admin-system` for anyone else's. Under a proxy grant the subject's username is the person represented and the PDP bounds the answer by the grant. A refusal is `AuditQueryForbiddenError`.
+
+__Returns:__ the same page shape as `searchAuditLogs`. The database provider answers from indexed columns; the file provider from the records it holds in memory (the newest 10,000); a provider that cannot answer (the null provider) rejects rather than returning an empty page.
 
 #### getAuditStats(filters)
 
@@ -894,7 +919,7 @@ await recordAuditEvent(sink, event);
 
 // Consider provider scalability
 // FileAuditProvider: Single instance, moderate volume
-// DatabaseAuditProvider: Multi-instance, high volume
+// DatabaseAuditProvider: high volume, indexed queries (SQLite: one instance per database file)
 // CloudAuditProvider: Enterprise scale, distributed
 ```
 
@@ -1028,7 +1053,7 @@ __Cause:__ FileAuditProvider loads recent events into memory for search
 __Solutions:__
 
 - Reduce in-memory log count (FileAuditProvider keeps last 1000 events)
-- Use DatabaseAuditProvider for high-volume scenarios (when available)
+- Use DatabaseAuditProvider for high-volume scenarios: its queries use indexes, not the in-memory window
 - Implement pagination with smaller `limit` values
 
 ```javascript
@@ -1155,11 +1180,7 @@ This will output detailed information about audit operations:
 
 ### Planned Features
 
-1. __DatabaseAuditProvider Implementation__
-   - PostgreSQL, MySQL, MongoDB support
-   - Efficient indexing for fast queries
-   - Connection pooling
-   - Automatic schema migrations
+1. __DatabaseAuditProvider__ — built on SQLite in [#1537](https://github.com/jwilleke/ngdpbase/issues/1537); other database engines are not planned
 
 2. __CloudAuditProvider Implementation__
    - AWS CloudWatch Logs integration
@@ -1212,24 +1233,15 @@ This will output detailed information about audit operations:
 __Recommendations:__
 
 - Single instance: up to 100,000 events/day
-- Multi-instance: Use DatabaseAuditProvider instead
+- Higher volume: use DatabaseAuditProvider instead
 
-### DatabaseAuditProvider (Projected)
+### DatabaseAuditProvider
 
-| Operation | Events/sec | Latency (p95) | Notes |
-| ----------- | ----------- | --------------- | ------- |
-| logAuditEvent | 50,000 | <5ms | Batch inserts |
-| searchAuditLogs | 5,000 | 20ms | Indexed queries |
-| exportAuditLogs | 1,000 | 200ms | Streaming export |
-
-__Recommendations:__
-
-- Enterprise: millions of events/day
-- Requires proper database tuning and indexing
+Not measured. `continue` records are written in one transaction per flush (`ngdpbase.audit.flushinterval`, `maxqueuesize`); a `refuse` record commits the queue and itself before the action goes on. Searches, stats and the entries about one person are SQL over indexed columns (time, type, user, actor, owner, resource), a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows.
 
 ## Backup and restore
 
-With `fileauditprovider` the audit log is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `AuditManager.backup()` asks the provider's `backupFiles()`, which flushes the queue and writes the live log and every archive as `<stem>.audit.tar` (`.tar.enc` under the backup key) — the audit files only, never the application logs in the same folder. A provider that keeps no files (database, cloud) is not in the file backup. A restore is staged (`restoreIsStaged()` is true): `stageRestore()` refuses an archive holding anything but audit files and extracts it to `audit.log.staged/`. At the next start, before the chain head is read, every audit file now in the folder (newer archives included) moves into `audit.log.pre-restore/` and the backup's take their place. The chain then resumes from the backup's last record and verifies; the records written after the backup verify in the pre-restore folder; a chain-head witness holds heads past the restored log, which that folder answers. See the [backup and restore guide](../guides/backup-restore-guide.md#what-each-staged-part-does-at-the-restart).
+With `fileauditprovider` the audit log is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): `AuditManager.backup()` asks the provider's `backupFiles()`, which flushes the queue and writes the live log and every archive as `<stem>.audit.tar` (`.tar.enc` under the backup key), the archive named and keyed by BackupManager (`options.archive`, [#1985](https://github.com/jwilleke/ngdpbase/issues/1985)); the audit files are not one folder, so this is special handling, not a declaration — the audit files only, never the application logs in the same folder. A provider that keeps no files is not in the file backup: with `databaseauditprovider` the records are rows in the application database, so they are in `DatabaseManager`'s copy of it, which writes the audit queue first ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), and they come back when the databases are restored; AuditManager's entry says so in its note. On such a site, a backup that holds audit files (taken while the file provider was active) restores without them: `restore()` stages nothing for them and does not fail, and BackupManager names "the audit log" among the parts not restored. The files stay in the backup. A restore is staged (`restoreIsStaged()` is true): `stageRestore()` reads the archive BackupManager checks (`options.readArchive`), refuses one holding anything but audit files, and extracts it to `audit.log.staged/`, recorded through the `siteRestore` restore option. At the next start, before the chain head is read, through BackupManager's `applyStagedPartAtStart` ([#1986](https://github.com/jwilleke/ngdpbase/issues/1986)), every audit file now in the folder (newer archives included) moves into `audit.log.pre-restore/` and the backup's take their place. The chain then resumes from the backup's last record and verifies; the records written after the backup verify in the pre-restore folder; a chain-head witness holds heads past the restored log, which that folder answers. See the [backup and restore guide](../guides/backup-restore-guide.md#what-each-staged-part-does-at-the-restart).
 
 ## Security Considerations
 
@@ -1237,11 +1249,11 @@ With `fileauditprovider` the audit log is in a backup ([#1876](https://github.co
 
 1. __Encryption at Rest:__
    - FileAuditProvider: Use OS-level encryption (FileVault, BitLocker, LUKS)
-   - DatabaseAuditProvider: Use database encryption (TDE, encrypted columns)
+   - DatabaseAuditProvider: set `NGDPBASE_DATABASE_KEY`, so the application database is SQLCipher-encrypted; without it the provider still runs, warns at start, and reports `encryptedAtRest: false`
    - CloudAuditProvider: Enable cloud service encryption
 
 2. __Encryption in Transit:__
-   - DatabaseAuditProvider: Use SSL/TLS connections
+   - DatabaseAuditProvider: none needed — the database is a local file on `DatabaseManager`'s connection
    - CloudAuditProvider: HTTPS APIs only
 
 3. __Access Control:__

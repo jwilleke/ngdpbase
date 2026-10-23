@@ -55,6 +55,11 @@ export function vanishedDuringBackup(err: unknown): boolean {
   return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 }
 
+/** The log's note of entries deleted while they were backed up (#1563): skipped, not a failure. */
+export function vanishedNote(vanished: string[]): string {
+  return vanished.length > 0 ? `; ${vanished.length} entr${vanished.length === 1 ? 'y' : 'ies'} deleted during the backup skipped (${vanished.slice(0, 5).join(', ')})` : '';
+}
+
 /** Two 512-byte zero blocks: a tar with no entries. */
 const EMPTY_TAR = Buffer.alloc(1024);
 

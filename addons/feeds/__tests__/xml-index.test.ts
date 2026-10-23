@@ -88,7 +88,7 @@ describe('xmlIndexAdapter (#912)', () => {
       [u1]: advisoryXml('A1', 'Etna'),
       [u2]: advisoryXml('A2', 'Kilauea')
     });
-    const records = await xmlIndexAdapter.fetch(base, policy);
+    const records = await xmlIndexAdapter.fetch(base, policy, guardedFetch);
     expect(records).toHaveLength(2);
     expect(records[0]).toMatchObject({ id: 'A1', volcano: 'Etna', __itemUrl: u1 });
   });
@@ -99,20 +99,20 @@ describe('xmlIndexAdapter (#912)', () => {
       [u1]: advisoryXml('A1', 'Etna')
       // u2 missing → not ok → skipped
     });
-    const records = await xmlIndexAdapter.fetch(base, policy);
+    const records = await xmlIndexAdapter.fetch(base, policy, guardedFetch);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ id: 'A1' });
   });
 
   it('fetch() throws when the index itself is non-ok', async () => {
     const policy = stubRouted({}, () => false);
-    await expect(xmlIndexAdapter.fetch(base, policy)).rejects.toThrow(/404|HTTP/);
+    await expect(xmlIndexAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/404|HTTP/);
   });
 
   it('fetch() throws when linkPattern is missing', async () => {
     const policy = stubRouted({ [INDEX_URL]: INDEX_HTML });
     const { linkPattern: _omit, ...noPattern } = base;
-    await expect(xmlIndexAdapter.fetch(noPattern, policy)).rejects.toThrow(/linkPattern/);
+    await expect(xmlIndexAdapter.fetch(noPattern, policy, guardedFetch)).rejects.toThrow(/linkPattern/);
   });
 
   it('parse() lifts item fields (minus __itemUrl) and falls back to __itemUrl for id', () => {

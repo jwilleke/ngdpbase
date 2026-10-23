@@ -1,8 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
+import BaseManager, { type BackupFolder } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -54,16 +53,12 @@ export default class FootnoteManager extends BaseManager {
   }
 
   async initialize(): Promise<void> {
+    // #1985: a staged site restore of the folder goes in here, before anything is read.
+    await super.initialize();
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (configManager) {
       this.enabled = configManager.getProperty('ngdpbase.footnotes.enabled', true) as boolean;
-      this.storageDir = configManager.getResolvedDataPath(
-        'ngdpbase.footnotes.storagedir',
-        './data/footnotes'
-      );
-      // #1876: a staged site restore goes in before anything is read.
-      const restored = applyDirectoryPartAtStart('FootnoteManager', this.storageDir, configManager);
-      if (restored?.refused) this.markNeedsAttention(`A staged restore of the public pages' footnotes was not applied: ${restored.refused}`);
+      this.storageDir = this.configuredDir();
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(
@@ -81,23 +76,19 @@ export default class FootnoteManager extends BaseManager {
     }
   }
 
+  /** `ngdpbase.footnotes.storagedir`, resolved, or the default when there is no configuration (a test). */
+  private configuredDir(): string {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getResolvedDataPath('ngdpbase.footnotes.storagedir', './data/footnotes') ?? this.storageDir;
+  }
+
   /**
    * The public folder is in the backup (#1876), as `<stem>.footnotes.tar` beside
    * the document: the public pages' footnotes. A vault page's are in its vault, which
-   * PageManager backs up with the vault, sealed as stored.
+   * PageManager backs up with the vault, sealed as stored. BackupManager backs
+   * it up, stages it, and puts it in place at the next start (#1985).
    */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('FootnoteManager', 'footnotes', this.storageDir, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore (#1876); the live folder is untouched. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    await stageDirectoryPart('FootnoteManager', this.storageDir, backupData, options);
-  }
-
-  override restoreIsStaged(): boolean {
-    return true;
+  override backupFolders(): BackupFolder[] {
+    return [{ part: 'footnotes', folder: this.configuredDir() }];
   }
 
   isEnabled(): boolean {

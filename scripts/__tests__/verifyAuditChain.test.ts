@@ -3,6 +3,8 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { stampRecord, GENESIS_HASH } from '../../src/utils/auditChain';
+import SqliteDatabaseProvider from '../../src/providers/SqliteDatabaseProvider';
+import DATABASE_MIGRATIONS from '../../src/providers/databaseMigrations';
 
 /**
  * #1161 — the verifier is "the thing to run in front of an assessor", and
@@ -26,10 +28,10 @@ function buildChain(count: number): { lines: string[]; head: { seq: number; hash
   return { lines, head: last };
 }
 
-function run(args: string[]): { code: number; out: string } {
+function run(args: string[], env: Record<string, string> = {}): { code: number; out: string } {
   try {
     const out = execFileSync('npx', ['tsx', 'scripts/verify-audit-chain.ts', ...args], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], cwd: process.cwd()
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], cwd: process.cwd(), env: { ...process.env, ...env }
     });
     return { code: 0, out };
   } catch (err) {
@@ -109,5 +111,70 @@ describe('#1161 the verifier reads a witness', () => {
 
     const { out } = run([log]);
     expect(out).toContain(log);
+  }, 30_000);
+});
+
+describe('#1537 --database reads the database audit log without booting the app', () => {
+  const KEY = 'test-key-not-a-secret';
+
+  /** A database holding `count` chained rows; the first `pruned` removed behind a checkpoint, as retention leaves them. */
+  function buildDatabase(file: string, count: number, options: { key?: string; pruned?: number } = {}): { head: { seq: number; hash: string } } {
+    const { lines, head } = buildChain(count);
+    const db = new SqliteDatabaseProvider(file, options.key ?? '', DATABASE_MIGRATIONS);
+    const insert = db.handle.prepare(`INSERT INTO audit_events (id, seq, prev_hash, hash, timestamp, event_type, user, record)
+      VALUES (?, ?, ?, ?, '2026-10-22T00:00:00.000Z', 'page-edit', 'x', ?)`);
+    lines.forEach((line, i) => {
+      const r = JSON.parse(line) as { seq: number; prevHash: string; hash: string };
+      insert.run(`e${i}`, r.seq, r.prevHash, r.hash, line);
+    });
+    const pruned = options.pruned ?? 0;
+    if (pruned > 0) {
+      const last = JSON.parse(lines[pruned - 1]) as { seq: number; hash: string };
+      db.handle.prepare('DELETE FROM audit_events WHERE row_id <= ?').run(pruned);
+      db.handle.prepare(`INSERT INTO audit_checkpoints (through_row, seq, hash, removed, cutoff, retention_days, created_at)
+        VALUES (?, ?, ?, ?, '2026-10-01', 90, '2026-10-22')`).run(pruned, last.seq, last.hash, pruned);
+    }
+    db.close();
+    return { head };
+  }
+
+  test('an intact chain verifies from its checkpoint, against --head', async () => {
+    const file = path.join(dir, 'app.db');
+    const { head } = buildDatabase(file, 6, { pruned: 2 });
+
+    const { code, out } = run(['--database', file, '--head', head.hash]);
+    expect(out).toMatch(/retention checkpoint at seq 2/);
+    expect(out).toMatch(/segment 1: 4 record\(s\) intact/);
+    expect(code).toBe(0);
+  }, 30_000);
+
+  test('with no witness an intact chain exits 3', async () => {
+    const file = path.join(dir, 'app.db');
+    buildDatabase(file, 3);
+    const { code, out } = run(['--database', file]);
+    expect(code).toBe(3);
+    expect(out).toMatch(/UNWITNESSED/);
+  }, 30_000);
+
+  test('an edited row fails', async () => {
+    const file = path.join(dir, 'app.db');
+    const { head } = buildDatabase(file, 4, { pruned: 1 });
+    const db = new SqliteDatabaseProvider(file, '', DATABASE_MIGRATIONS);
+    const row = db.handle.prepare('SELECT row_id, record FROM audit_events WHERE seq = 3').get() as { row_id: number; record: string };
+    db.handle.prepare('UPDATE audit_events SET record = ? WHERE row_id = ?').run(JSON.stringify({ ...JSON.parse(row.record) as object, user: 'mallory' }), row.row_id);
+    db.close();
+
+    const { code, out } = run(['--database', file, '--head', head.hash]);
+    expect(code).toBe(1);
+    expect(out).toMatch(/hash does not match/);
+  }, 30_000);
+
+  test('an encrypted database is read under NGDPBASE_DATABASE_KEY, and refused without it', async () => {
+    const file = path.join(dir, 'app.db');
+    const { head } = buildDatabase(file, 3, { key: KEY });
+    expect(run(['--database', file, '--head', head.hash], { NGDPBASE_DATABASE_KEY: KEY }).code).toBe(0);
+    const without = run(['--database', file, '--head', head.hash], { NGDPBASE_DATABASE_KEY: '' });
+    expect(without.code).toBe(2);
+    expect(without.out).toMatch(/NGDPBASE_DATABASE_KEY/);
   }, 30_000);
 });

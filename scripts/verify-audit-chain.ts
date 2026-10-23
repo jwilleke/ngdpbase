@@ -32,6 +32,16 @@
  * different statements, and mapping the second to success would tell an
  * operator their log is fine when nothing can say so.
  *
+ * The database provider's log (#1537):
+ *   npx tsx scripts/verify-audit-chain.ts --database [path/to/ngdpbase.db] [--head <hash>] [--witness <path>]
+ *
+ * reads the application database directly, read-only, under
+ * NGDPBASE_DATABASE_KEY (from the environment or the instance .env), without
+ * booting the application. With no path it reads ngdpbase.database.file from
+ * the configuration files. The chain is verified from the newest retention
+ * checkpoint: the records before it were removed by retention, and the
+ * checkpoint holds the seq and hash of the last one removed.
+ *
  * Exit codes: 0 verified with a witness, 1 broken, 2 could not read the log,
  * 3 chain intact but truncation undetectable.
  */
@@ -39,10 +49,26 @@
 import '../src/bootstrap-env.js';
 import fs from 'fs-extra';
 import path from 'path';
-import { verifyLog } from '../src/utils/auditChain.js';
+import { verifyLog, type ChainStart } from '../src/utils/auditChain.js';
 import { assessWitness, type ChainWitness } from '../src/utils/auditHeadWitness.js';
+import { configFilePaths, readConfigFilesSync } from '../src/utils/configFiles.js';
+import { DATABASE_KEY_ENV } from '../src/utils/databaseKey.js';
+import SqliteDatabaseProvider from '../src/providers/SqliteDatabaseProvider.js';
+import { readAuditChain } from '../src/providers/DatabaseAuditProvider.js';
 
 const WITNESS_KEY = 'ngdpbase.audit.chain-witness.destination';
+const DATABASE_FILE_KEY = 'ngdpbase.database.file';
+
+/**
+ * Where the application database is, from the configuration files (the
+ * operator's, then the shipped default), with `${VAR}` expanded from the
+ * environment as the application does for paths.
+ */
+function configuredDatabaseFile(): string {
+  const files = readConfigFilesSync(configFilePaths());
+  const raw = files.customConfig[DATABASE_FILE_KEY] ?? files.defaultConfig?.[DATABASE_FILE_KEY] ?? './data/ngdpbase.db';
+  return String(raw).replace(/\$\{([A-Z0-9_]+)\}/g, (whole, name: string) => process.env[name] ?? (name === 'FAST_STORAGE' ? './data' : whole));
+}
 
 /**
  * Where the instance was told to publish its head.
@@ -138,29 +164,48 @@ async function main(): Promise<void> {
   if (headIndex >= 0) valueIndexes.add(headIndex + 1);
   if (witnessIndex >= 0) valueIndexes.add(witnessIndex + 1);
   const positional = args.filter((a, i) => !a.startsWith('--') && !valueIndexes.has(i));
+  const fromDatabase = args.includes('--database');
 
   const file = positional[0]
-    ?? path.join(process.env.FAST_STORAGE ?? './data', 'logs', 'audit.log');
+    ?? (fromDatabase ? configuredDatabaseFile() : path.join(process.env.FAST_STORAGE ?? './data', 'logs', 'audit.log'));
 
   if (!(await fs.pathExists(file))) {
-    console.error(`✗ No audit log at ${file}`);
+    console.error(`✗ No audit ${fromDatabase ? 'database' : 'log'} at ${file}`);
     process.exit(2);
   }
 
-  const { records, unstamped, unparseable } = await readLog(file);
-  console.log(`Audit log: ${file}`);
-  if (unstamped > 0) {
-    console.log(`  ${unstamped} record(s) predate chaining (#1119) — not verifiable, not a break`);
-  }
-  if (unparseable > 0) {
-    console.log(`  ⚠️  ${unparseable} unparseable line(s) — a truncated final line is a kill mid-write; more than one is worth investigating`);
+  let records: Record<string, unknown>[];
+  let start: ChainStart | null = null;
+  if (fromDatabase) {
+    // #1537: read-only, under the site's key; nothing is migrated or written.
+    try {
+      ({ records, start } = SqliteDatabaseProvider.readOnce(file, process.env[DATABASE_KEY_ENV] ?? '', readAuditChain));
+    } catch (err) {
+      console.error(`✗ Could not read the audit log in ${file}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`  An encrypted database needs ${DATABASE_KEY_ENV}, in the environment or the instance .env.`);
+      process.exit(2);
+    }
+    console.log(`Audit database: ${file}`);
+    if (start) {
+      console.log(`  Verified from the retention checkpoint at seq ${start.seq} (${start.hash}): the records before it were removed by retention`);
+    }
+  } else {
+    const parsed = await readLog(file);
+    records = parsed.records;
+    console.log(`Audit log: ${file}`);
+    if (parsed.unstamped > 0) {
+      console.log(`  ${parsed.unstamped} record(s) predate chaining (#1119) — not verifiable, not a break`);
+    }
+    if (parsed.unparseable > 0) {
+      console.log(`  ⚠️  ${parsed.unparseable} unparseable line(s) — a truncated final line is a kill mid-write; more than one is worth investigating`);
+    }
   }
   if (records.length === 0) {
     console.log('  No chained records yet. Nothing to verify.');
     process.exit(0);
   }
 
-  const verdict = verifyLog(records);
+  const verdict = verifyLog(records, start ? { start } : {});
   const head = records[records.length - 1].hash as string;
 
   // #1124: a log may contain deliberate discontinuities. Reporting each
@@ -226,9 +271,11 @@ async function main(): Promise<void> {
     process.exit(3);
   }
 
+  // #1537: the checkpoint stands for the last record retention removed, so a
+  // head published at exactly that record still matches.
   const assessment = assessWitness(
     witness,
-    records.map((r) => ({ seq: r.seq as number, hash: r.hash as string }))
+    [...(start ? [start] : []), ...records.map((r) => ({ seq: r.seq as number, hash: r.hash as string }))]
   );
   console.log(`Witness: ${witnessPath} (seq ${witness.seq}, published ${witness.publishedAt})`);
 

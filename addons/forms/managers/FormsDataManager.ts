@@ -3,12 +3,10 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { isAtLeast } from '../../../dist/src/utils/version.js';
-import { actorOf, type ActorContext } from '../../../dist/src/context/ActorContext.js';
-import { systemContext } from '../../../dist/src/context/bootActions.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
-import { administratorUsernames } from '../../../dist/src/utils/administrators.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
+import type { AuditEventSink } from '../../../dist/src/utils/auditEvents.js';
+import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionPoint.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -128,7 +126,7 @@ function isActorContext(ctx: unknown): ctx is ActorContext {
 }
 
 /** Whether a version is x.y.z, the form core's version checks read (`isAtLeast`). */
-function isVersion(value: string): boolean {
+function isVersion(isAtLeast: AddonHost['isAtLeast'], value: string): boolean {
   try {
     return isAtLeast(value, value);
   } catch {
@@ -287,15 +285,23 @@ export default class FormsDataManager {
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
 
-  constructor(engine: unknown, dataPath: string) {
+  /** What core handed the forms add-on (#1813): `actorOf`, `systemContext`, `isAtLeast`. */
+  private readonly host: AddonHost;
+
+  /**
+   * @param engine - The running engine
+   * @param dataPath - Where definitions and submissions are kept
+   * @param host - What core handed the forms add-on (`register`'s third argument)
+   */
+  constructor(engine: unknown, dataPath: string, host: AddonHost) {
     this.engine = (engine ?? null) as { getManager: (name: string) => unknown } | null;
     this.dataPath = dataPath;
+    this.host = host;
   }
 
   async initialize(): Promise<void> {
-    // #1876: a staged site restore puts the backed-up forms folder in place before it is read.
-    const configManager = this.engine?.getManager?.('ConfigurationManager') as { getResolvedDataPath(key: string, def: string): string } | null | undefined;
-    if (configManager) applyDirectoryPartAtStart('FormsDataManager', this.dataPath, configManager);
+    // #1876, #1985: the add-on's dataPath is backed up by BackupManager, and a staged
+    // restore of it was put in place before register() ran.
     await fsp.mkdir(path.join(this.dataPath, 'definitions'), { recursive: true });
     await fsp.mkdir(path.join(this.dataPath, 'submissions'), { recursive: true });
     await this.loadDefinitions();
@@ -398,13 +404,55 @@ export default class FormsDataManager {
   }
 
   async getSubmissionCount(formId: string): Promise<number> {
-    const dir = path.join(this.dataPath, 'submissions', formId);
+    return (await this.submissionFiles(formId)).length;
+  }
+
+  /** The stored submission files of one form; none when it has no folder. */
+  private async submissionFiles(formId: string): Promise<string[]> {
     try {
-      const files = await fsp.readdir(dir);
-      return files.filter(f => f.endsWith('.json')).length;
+      return (await fsp.readdir(path.join(this.dataPath, 'submissions', formId))).filter(f => f.endsWith('.json'));
     } catch {
-      return 0;
+      return [];
     }
+  }
+
+  /**
+   * Remove every stored submission of one form (#1973), so the form can be
+   * deleted. Any form: built on the site, provided by an add-on, or one its
+   * add-on no longer provides; the definition is not touched. The
+   * `submission-clear` record (who, which form, how many) is written first
+   * and is declared on-failure: refuse, so a record that cannot be written
+   * leaves every submission in place. Only the files counted are removed: one
+   * submitted while this runs is kept.
+   *
+   * @param formId - The form whose submissions are removed
+   * @param ctx - Who is clearing them
+   * @returns How many were removed; 0 records nothing
+   * @throws When the form id is not a form id, or the record cannot be written
+   */
+  async clearSubmissions(formId: string, ctx: ActorContext): Promise<number> {
+    if (!/^[a-z0-9-]+$/.test(formId)) throw new Error(`clearSubmissions: '${formId}' is not a form id`);
+    const files = await this.submissionFiles(formId);
+    if (files.length === 0) return 0;
+
+    const who = this.host.actorOf(ctx);
+    const providedBy = this.definitions.get(formId)?.providedBy;
+    await this.host.recordAuditEvent(this.engine?.getManager('AuditManager') as AuditEventSink | null | undefined, {
+      eventType: this.host.addonAuditEventName('submission-clear'),
+      ...who,
+      action: 'submission-clear',
+      result: 'success',
+      severity: 'high',
+      resource: formId,
+      resourceType: 'form',
+      metadata: { formId, count: files.length, ...(providedBy ? { providedBy } : {}), ...who.metadata }
+    }, (err) => console.warn(`[FormsDataManager] audit record failed for submission-clear of '${formId}':`, err));
+
+    const dir = path.join(this.dataPath, 'submissions', formId);
+    for (const file of files) await fsp.rm(path.join(dir, file), { force: true });
+    await fsp.rmdir(dir).catch(() => undefined); // kept when something arrived meanwhile
+    console.info(`[FormsDataManager] ${files.length} submission(s) of '${formId}' cleared by ${who.user}`);
+    return files.length;
   }
 
   /**
@@ -421,7 +469,7 @@ export default class FormsDataManager {
     if (live?.providedBy) throw new ProvidedFormError(live);
     if (form.providedBy) throw new ProvidedFormError(form);
     await this.writeDefinition(form);
-    console.info(`[FormsDataManager] form '${form.id}' saved by ${actorOf(ctx).user}`);
+    console.info(`[FormsDataManager] form '${form.id}' saved by ${this.host.actorOf(ctx).user}`);
   }
 
   /**
@@ -451,7 +499,7 @@ export default class FormsDataManager {
     if (!isActorContext(ctx)) {
       // An add-on built before #1973 passes no context, or the old options object.
       console.warn(`[FormsDataManager] ${addon} registered a form without a context; pass host.systemContext(reason) as the third argument`);
-      ctx = systemContext(this.engine, `${addon}: register a form it provides`);
+      ctx = this.host.systemContext(`${addon}: register a form it provides`);
     }
     const { providedBy: _ignored, ...parsed } = FormDefinitionSchema.parse(definition);
     const version = this.addonVersion(addon);
@@ -459,7 +507,7 @@ export default class FormsDataManager {
     ids.add(parsed.id);
     this.registeredThisBoot.set(addon, ids);
     const stored: FormDefinition = { ...parsed, providedBy: { addon, version } };
-    const who = actorOf(ctx).user;
+    const who = this.host.actorOf(ctx).user;
 
     const live = this.definitions.get(parsed.id);
     if (live?.providedBy && live.providedBy.addon !== addon) {
@@ -468,8 +516,8 @@ export default class FormsDataManager {
     }
     const was = live?.providedBy?.version;
     // A stored version that is not x.y.z cannot be compared; the add-on's form wins.
-    if (live && was !== undefined && isVersion(was) && isAtLeast(was, version)) {
-      if (isAtLeast(version, was)) return 'unchanged';
+    if (live && was !== undefined && isVersion(this.host.isAtLeast, was) && this.host.isAtLeast(was, version)) {
+      if (this.host.isAtLeast(version, was)) return 'unchanged';
       await this.noticeOlder(addon, live, was, version);
       return 'refused';
     }
@@ -506,7 +554,7 @@ export default class FormsDataManager {
     const addons = this.engine?.getManager('AddonsManager') as { getAddonVersion?(slug: string): string | undefined } | null | undefined;
     const version = addons?.getAddonVersion?.(addon);
     if (!version) throw new Error(`registerShippedForm: no installed add-on '${addon}', so its version is unknown`);
-    if (!isVersion(version)) throw new Error(`registerShippedForm: ${addon}'s version '${version}' is not x.y.z`);
+    if (!isVersion(this.host.isAtLeast, version)) throw new Error(`registerShippedForm: ${addon}'s version '${version}' is not x.y.z`);
     return version;
   }
 
@@ -527,7 +575,9 @@ export default class FormsDataManager {
       } | null | undefined;
       if (!notifications) return;
       // An empty target list means every user, so nobody to tell is log-only.
-      const admins = (await administratorUsernames(this.engine)) ?? [];
+      // Whoever holds admin-system, asked of the PDP (#1813), never a role name.
+      const pdp = this.engine?.getManager('PolicyDecisionPoint') as Pick<PolicyDecisionPoint, 'usersHolding'> | null | undefined;
+      const admins = (await pdp?.usersHolding('admin-system')) ?? [];
       if (admins.length === 0) {
         console.error(`[FormsDataManager] no user holds admin-system; '${live.id}' reported in the log only`);
         return;
@@ -563,7 +613,7 @@ export default class FormsDataManager {
     try {
       await fsp.unlink(filePath);
       this.definitions.delete(formId);
-      console.info(`[FormsDataManager] form '${formId}' deleted by ${actorOf(ctx).user}`);
+      console.info(`[FormsDataManager] form '${formId}' deleted by ${this.host.actorOf(ctx).user}`);
       return true;
     } catch {
       return false;
@@ -587,19 +637,4 @@ export default class FormsDataManager {
     }
   }
 
-  // ── Backup (#1876) ──────────────────────────────────────────────────────────
-
-  /** The forms folder — definitions and submissions — as `<stem>.forms.tar` beside the backup document (`.tar.enc` under the backup key). */
-  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('FormsDataManager', 'forms', this.dataPath, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore; the live folder is untouched until then. */
-  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await stageDirectoryPart('FormsDataManager', this.dataPath, backupData, options);
-  }
-
-  restoreIsStaged(): boolean {
-    return true;
-  }
 }

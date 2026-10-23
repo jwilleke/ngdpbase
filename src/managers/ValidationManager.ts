@@ -11,6 +11,7 @@ import BaseManager from './BaseManager.js';
 import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
+import ParseContext from '../parsers/context/ParseContext.js';
 import { parsePrivatestore, PRIVATE_SLUG_PREFIX } from '../utils/privateStorePath.js';
 import { SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from '../utils/systemCategoryRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -325,11 +326,11 @@ class ValidationManager extends BaseManager {
         // Build valid categories list from enabled categories
         const categories: string[] = [];
         for (const [key, categoryConfig] of Object.entries(systemCategoriesConfig)) {
-          // #1503: a missing or unknown source reads as 'site'. Say so, because an
-          // entry written for the old storageLocation switch would silently lose
-          // its shipped/repo behaviour.
-          if (categorySource(categoryConfig) !== categoryConfig.source) {
-            logger.warn(`System category '${key}' has no valid source (site | shipped | repo); treating it as 'site'`);
+          // #1503: a missing or unknown source reads as 'site'. A missing one is
+          // silent: source was dropped and the guides say leave it out (#1988).
+          // Only a value that is present but not site | shipped | repo warns.
+          if (categoryConfig.source !== undefined && categorySource(categoryConfig) !== categoryConfig.source) {
+            logger.warn(`System category '${key}' has an unknown source '${String(categoryConfig.source)}' (site | shipped | repo); treating it as 'site'`);
           }
           if (categoryConfig.enabled !== false) {
             // Use the label as the valid category value
@@ -950,7 +951,7 @@ class ValidationManager extends BaseManager {
     type FilterChainLike = {
       collectErrors: (
         c: string,
-        ctx: { pageName?: string; userName?: string; engine?: unknown }
+        ctx: ParseContext
       ) => Promise<Array<{ filterId: string; rule: string; severity: 'error'; message: string; line?: number; column?: number }>>;
     };
     type FilterManagerLike = { getFilterChain?: () => FilterChainLike | null };
@@ -960,10 +961,9 @@ class ValidationManager extends BaseManager {
     if (!filterChain || typeof filterChain.collectErrors !== 'function') return [];
 
     try {
-      return await filterChain.collectErrors(content, {
-        ...context,
-        engine: this.engine
-      });
+      // The same ParseContext a render hands the filters (#2000), so a filter
+      // reads the page and user one way on both paths.
+      return await filterChain.collectErrors(content, new ParseContext(content, context, this.engine));
     } catch (err) {
       // Validation must never crash a save. Log and degrade to "no errors".
       logger.warn(

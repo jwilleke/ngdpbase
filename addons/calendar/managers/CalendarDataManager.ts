@@ -4,11 +4,7 @@ import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { areIntervalsOverlapping, parseISO, addDays, format } from 'date-fns';
-import BaseManager from '../../../dist/src/managers/BaseManager.js';
-import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -87,17 +83,17 @@ export interface UserContext {
  * CalendarDataManager
  *
  * Manages events across N calendars. Each calendar is stored in its own JSON
- * file under `dataPath/<calendarId>.json`. Extends BaseManager to integrate
- * with the engine's manager registry and the MarqueePlugin.
+ * file under `dataPath/<calendarId>.json`. A plain class (#1813): it is
+ * registered with `engine.registerManager`, and MarqueePlugin reaches its
+ * `toMarqueeText` by name. Its `dataPath` is backed up by BackupManager.
  */
-class CalendarDataManager extends BaseManager {
+class CalendarDataManager {
   private dataPath: string;
   private events: Map<string, CalendarEvent>;
 
   readonly description = 'Event calendar data manager — multi-calendar, RFC 5545 fields';
 
-  constructor(engine: WikiEngine, dataPath: string) {
-    super(engine);
+  constructor(dataPath: string) {
     this.dataPath = dataPath;
     this.events = new Map();
   }
@@ -109,9 +105,8 @@ class CalendarDataManager extends BaseManager {
    * Called once during addon register(). Safe to call on an empty directory.
    */
   async load(): Promise<void> {
-    // #1876: a staged site restore puts the backed-up calendars in place before they are read.
-    const configManager = this.engine.getManager<{ getResolvedDataPath(key: string, def: string): string }>('ConfigurationManager');
-    if (configManager) applyDirectoryPartAtStart('CalendarDataManager', this.dataPath, configManager);
+    // #1876, #1985: the add-on's dataPath is backed up by BackupManager, and a staged
+    // restore of it was put in place before register() ran.
     if (!existsSync(this.dataPath)) {
       mkdirSync(this.dataPath, { recursive: true });
       return;
@@ -382,7 +377,7 @@ class CalendarDataManager extends BaseManager {
    * Events with `class: CONFIDENTIAL` are always excluded.
    */
    
-  override async toMarqueeText(options: ManagerFetchOptions = {}): Promise<string> {
+  async toMarqueeText(options: ManagerFetchOptions = {}): Promise<string> {
     const raw = options as Record<string, unknown>;
 
     const calendarId = typeof raw['calendarId'] === 'string'
@@ -418,22 +413,6 @@ class CalendarDataManager extends BaseManager {
       .join(separator);
   }
 
-  // ── Backup (#1876) ──────────────────────────────────────────────────────────
-
-  /** The calendar files under `dataPath` as `<stem>.calendar.tar` beside the backup document (`.tar.enc` under the backup key). */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('CalendarDataManager', 'calendar', this.dataPath, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore; the live calendars are untouched until then. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    await stageDirectoryPart('CalendarDataManager', this.dataPath, backupData, options);
-  }
-
-  override restoreIsStaged(): boolean {
-    return true;
-  }
 }
 
 export default CalendarDataManager;

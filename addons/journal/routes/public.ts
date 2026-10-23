@@ -11,7 +11,7 @@
  */
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { UserContext } from '../../../dist/src/context/WikiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
@@ -21,7 +21,8 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import { mayOnEntry, mayShowOnEntry } from './helpers.js';
 
-export default function publicRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
+export default function publicRoutes(engine: WikiEngine, _config: Record<string, unknown>, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function jdm(): JournalDataManager | undefined {

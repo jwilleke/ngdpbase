@@ -286,7 +286,7 @@ import { toPermissionSubject } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
-import { pageUrl } from '../utils/pageUrl.js';
+import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
@@ -3484,6 +3484,31 @@ class PageManager extends BaseManager implements CatalogSource {
     const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, ctx);
     if (!pageMetadata?.uuid) return null;
     return { creator: name.owner, store: name.store };
+  }
+
+  /**
+   * The URL for `action` on the page named `pageName` (#1813): `/view/Main`,
+   * or for a vault page `/vaults/{owner}/{vault}/{title}` and its actions below
+   * it (#1456). The door an add-on asks; core's routes and views share the
+   * same `utils/pageUrl`. Reads no data and no config.
+   */
+  pageUrl(pageName: string, action: PageAction = 'view'): string {
+    return pageUrl(pageName, action);
+  }
+
+  /**
+   * The page name of `title` in `owner`'s vault `vault`, or in their default
+   * vault when no vault is given (#1813): `vaults/{owner}/{vault}/{title}`.
+   * The default vault is the system-category entry marked default, read live
+   * through ConfigurationManager (#1504). It names a page; it does not say the
+   * page exists or that anyone may open it.
+   */
+  privatePageName(owner: string, title: string, vault?: string): string {
+    if (vault) return formatPrivatePageName(owner, vault, title);
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) throw new Error('PageManager.privatePageName: ConfigurationManager not available');
+    const defaultVault = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)).defaultStoreId;
+    return formatPrivatePageName(owner, defaultVault, title);
   }
 
   async refreshPageList(): Promise<void> {

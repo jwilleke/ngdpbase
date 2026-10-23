@@ -17,8 +17,10 @@
  */
 
 import ValidationFilter from '../ValidationFilter';
+import ParseContext from '../../context/ParseContext';
 
-const ctx = { pageName: 'TestPage', engine: { getManager: vi.fn(() => null) } };
+const engine = { getManager: vi.fn(() => null) };
+const ctx = new ParseContext('', { pageName: 'TestPage' }, engine);
 
 function makeFilter(): ValidationFilter {
   const f = new ValidationFilter();
@@ -171,7 +173,7 @@ describe('ValidationFilter', () => {
   describe('clearValidationReports()', () => {
     test('clears stored reports', async () => {
       const f = makeFilter();
-      await f.process('<script>', { pageName: 'P', engine: { getManager: vi.fn(() => null) } });
+      await f.process('<script>', new ParseContext('<script>', { pageName: 'P' }, engine));
       f.clearValidationReports();
       expect(f.getValidationReports()).toHaveLength(0);
     });

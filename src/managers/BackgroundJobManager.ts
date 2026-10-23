@@ -1,10 +1,8 @@
 import { randomUUID } from 'crypto';
 import os from 'node:os';
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
+import BaseManager, { type BackupData, type BackupFolder } from './BaseManager.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
-import { readSiteRestore, siteRestoreFile } from '../utils/siteRestore.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -384,7 +382,7 @@ class BackgroundJobManager extends BaseManager {
         if (this.restoredAtStart) this.runsReplacedAtStart = this.readReplacedDatabaseRuns();
       } else {
         this.stateDir = configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs');
-        this.applyRestoreAtStart(this.stateDir, configManager);
+        this.noteRestoreAtStart(this.stateDir);
         this.stateProvider = new FileJobStateProvider(this.stateDir, limits);
       }
       if (this.restoredAtStart) logger.warn('[BackgroundJobManager] Job state was restored from a backup: every job starts from now, nothing since the backup is caught up, and a run unfinished in the backup is not run again (#1876)');
@@ -1352,56 +1350,58 @@ class BackgroundJobManager extends BaseManager {
   }
 
   /**
-   * Job state in a backup (#1876). Files (`ngdpbase.jobs.state.dir`): the
-   * state, run history and checkpoints as `<stem>.jobs.tar` beside the
-   * document, without the slot locks, which belong to the server that holds
-   * them. In the database: nothing here — it is in the database backup.
+   * Where job state is kept in files, before this manager has started
+   * (#1985): null when it is in the database, held for an unavailable
+   * database, or a test's own provider. After the start, `stateDir`.
    */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
+  private configuredFileStateDir(): string | null {
+    if (this.stateProvider) return null;
+    if (this.engine.getManager<{ getUnavailableReason?(): string | null }>('DatabaseManager')?.getUnavailableReason?.()) return null;
+    const configManager = this.configManager();
+    if (!configManager) return null;
+    const database = this.engine.getManager<{ isEnabled(): boolean }>('DatabaseManager');
+    if (database && selectJobStateBackend(configManager.getProperty('ngdpbase.jobs.state.provider', 'auto'), database.isEnabled()) === 'sqlite') return null;
+    return configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs');
+  }
+
+  /**
+   * File job state (`ngdpbase.jobs.state.dir`) is a declared folder (#1876,
+   * #1985): the state, run history and checkpoints as `<stem>.jobs.tar`
+   * beside the document, without the slot locks, which belong to the server
+   * that holds them. A backup without it (its job state was in the database)
+   * stages nothing for it. Job state in the database is in the database
+   * backup, and comes back with it.
+   */
+  override backupFolders(): BackupFolder[] {
+    const dir = this.stateDir ?? (this.isInitialized() ? null : this.configuredFileStateDir());
+    return dir ? [{ part: 'jobs', folder: dir, exclude: (rel) => rel === 'locks' || rel.startsWith('locks/'), optional: true }] : [];
+  }
+
+  /** Where job state is when it is not a declared folder: the database, or nowhere while held (#1876). */
+  override async backup(): Promise<BackupData> {
     const base = { managerName: 'BackgroundJobManager', timestamp: new Date().toISOString() };
     if (this.stateProvider?.backend === 'sqlite') return { ...base, data: { backend: 'sqlite' }, note: 'Job state is in the application database, so it is in the database backup' };
     if (!this.stateDir) return { ...base, data: null, note: this.held ?? 'No file job state is open' };
-    return backupDirectoryPart('BackgroundJobManager', 'jobs', this.stateDir, options, { exclude: (rel) => rel === 'locks' || rel.startsWith('locks/') });
+    return { ...base, data: null };
   }
 
-  /** File job state is staged for the next start with the rest of a site restore (#1876). Database job state comes back with the database. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    const data = backupData.data as { backend?: string; archive?: string } | null;
-    if (!data?.archive) {
-      logger.info(`[BackgroundJobManager] The backup holds no job state files${data?.backend === 'sqlite' ? ' (its job state is in the database backup)' : ''}; nothing staged (#1876)`);
-      return;
-    }
-    if (!this.stateDir) {
-      logger.warn('[BackgroundJobManager] The backup holds job state files, but this site keeps job state in the database; they are not restored (#1876)');
-      return;
-    }
-    await stageDirectoryPart('BackgroundJobManager', this.stateDir, backupData, options);
-  }
-
+  /** Database job state comes back with the database; file job state is a declared folder BackupManager stages (#1876, #1985). */
   override restoreIsStaged(): boolean {
     return true;
   }
 
   /**
-   * Put staged file job state in place, at start, before it is opened
-   * (#1876). The runs in the live state since the backup was taken are read
-   * first, before it is replaced, for the restore's notification.
+   * Whether file job state was put back from a backup at this start (#1876):
+   * BaseManager applied it before this manager opened it (#1985). The runs
+   * in the state it replaced, started since the backup, are read from where
+   * it was kept, for the restore's notification.
    */
-  private applyRestoreAtStart(stateDir: string, configManager: ConfigurationManager): void {
-    let since: string | null = null;
-    try {
-      const manifest = readSiteRestore(siteRestoreFile(configManager));
-      const part = manifest?.parts.find((p) => p.manager === 'BackgroundJobManager');
-      if (manifest?.state === 'staged' && part && !part.status) since = manifest.backup;
-    } catch { /* the gate below says so */ }
-    const replaced = since ? this.readLiveRunsSince(stateDir, since) : [];
-    const outcome = applyDirectoryPartAtStart('BackgroundJobManager', stateDir, configManager);
-    if (outcome?.refused) this.markNeedsAttention(`A staged restore of the job state was not applied: ${outcome.refused}`);
-    if (outcome && !outcome.refused && outcome.applied.length > 0) {
-      this.restoredAtStart = true;
-      this.runsReplacedAtStart = replaced;
-    }
+  private noteRestoreAtStart(stateDir: string): void {
+    const outcome = this.stagedRestoreAtStart();
+    const kept = outcome && !outcome.refused ? outcome.applied.find((a) => path.resolve(a.live) === path.resolve(stateDir))?.kept : undefined;
+    if (!kept) return;
+    this.restoredAtStart = true;
+    this.runsReplacedAtStart = outcome?.backupTakenAt ? this.readLiveRunsSince(kept, outcome.backupTakenAt) : [];
   }
 
   /**
