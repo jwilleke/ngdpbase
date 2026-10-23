@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { deletePage } from './fixtures/helpers';
+import { deletePages, markTestArtifact } from './fixtures/helpers';
 
 /**
  * #1979 — /admin/import keeps working exactly as before now that today's
@@ -13,6 +13,8 @@ import { deletePage } from './fixtures/helpers';
  * of each format into its own mkdtemp directory (the server is on this
  * machine), previews it, imports it through the page's own buttons, opens each
  * page, then deletes the pages it made and its own directory — nothing else.
+ * Each imported page is marked `test-artifact` (#2008) as soon as it exists,
+ * so the end-of-run sweep finds it if this cleanup does not run.
  */
 
 test.use({ storageState: './tests/e2e/.auth/user.json' });
@@ -46,9 +48,8 @@ test.describe('Admin folder import (#1979: converters as ICE shims)', () => {
   test.afterAll(async ({ browser }) => {
     const page = await browser.newPage({ storageState: './tests/e2e/.auth/user.json' });
     try {
-      for (const title of Object.values(TITLES)) {
-        await deletePage(page, title).catch(() => undefined);
-      }
+      // #2008: loud — a failed delete was swallowed here, and the pages stayed.
+      await deletePages(page, Object.values(TITLES));
     } finally {
       await page.close();
       // Only this spec's own temporary directory.
@@ -75,6 +76,7 @@ test.describe('Admin folder import (#1979: converters as ICE shims)', () => {
     await expect(page.locator('#import-results')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('#result-converted')).toHaveText('4');
     await expect(page.locator('#result-failed')).toHaveText('0');
+    for (const title of Object.values(TITLES)) await markTestArtifact(page, title);
 
     const bodies: Record<keyof typeof TITLES, RegExp> = {
       markdown: new RegExp(`Markdown body ${RUN}`),

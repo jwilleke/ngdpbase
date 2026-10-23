@@ -67,7 +67,7 @@ test.describe('Contacts (#1930)', () => {
     // A test account with a different address: the case the admin link exists for.
     const csrf = await csrfFrom(page);
     const made = await page.request.post('/admin/users', {
-      form: { _csrf: csrf, username, email: `e2e-account-${RUN}@example.test`, displayName: username, password: `pw-${randomUUID()}`, roles: 'reader', isTest: 'on' }
+      form: { _csrf: csrf, username, email: `e2e-account-${RUN}@example.test`, displayName: username, password: `pw-${randomUUID()}`, roles: 'reader', isTest: 'true' }
     });
     expect(made.ok()).toBe(true);
     expect(made.url()).not.toContain('error=');
@@ -99,7 +99,7 @@ test.describe('Contacts (#1930)', () => {
     const username = `e2e-demo-${RUN}`;
     const password = `pw-${randomUUID()}`;
     const made = await page.request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(page), username, email: `${username}@example.test`, displayName: username, password, roles: 'demo-admin', isTest: 'on' }
+      form: { _csrf: await csrfFrom(page), username, email: `${username}@example.test`, displayName: username, password, roles: 'demo-admin', isTest: 'true' }
     });
     expect(made.url()).not.toContain('error=');
 

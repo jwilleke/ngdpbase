@@ -51,6 +51,7 @@
     "src/plugins/**/*.ts",
     "scripts/migrate-br-to-ncm.ts",
     "scripts/reset-admin-password.ts",
+    "scripts/sweep-test-pages.ts",
     "scripts/seed-e2e-test-data.ts",
     "scripts/migrate-user-pages-category.ts",
     "scripts/migrate-page-created.ts",

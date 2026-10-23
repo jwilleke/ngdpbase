@@ -858,6 +858,12 @@ class UserManager extends BaseManager {
         description: `${user.displayName}'s profile page`,
         badge: `Profile ${user.displayName}`
       });
+      // #2008: a test account's profile is a test artifact — found by the
+      // end-of-run sweep, and deleted with the account.
+      if (user.isTest === true) {
+        const current = Array.isArray(metadata['system-keywords']) ? metadata['system-keywords'] as string[] : [];
+        metadata['system-keywords'] = [...current, 'test-artifact'];
+      }
 
       // The new account's own subject — never a rebuilt or ambient one (#1399).
       const owner = await this.policyInformationPoint().subjectFor(user.username);
@@ -1215,6 +1221,15 @@ class UserManager extends BaseManager {
     // exists, then delete the Person.
     await this.roleManager().removeAllMemberships(username);
     await this.syncPersonOnDelete(username, ctx);
+
+    // #2008: a test account's profile page goes with it; an ordinary
+    // account's is kept (operator, 2026-10-23). Only pages stamped
+    // test-artifact are reached. A failure is logged: the account is gone.
+    if (user.isTest === true) {
+      await this.engine.getManager<PageManager>('PageManager')
+        ?.deleteTestArtifacts(ctx, { author: username, systemCategory: 'user-profile' })
+        .catch((err: unknown) => logger.error(`[UserManager] The profile page of test account ${username} was not deleted:`, err));
+    }
 
     logger.info(`👤 Deleted user: ${username}`);
     return true;

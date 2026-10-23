@@ -113,7 +113,7 @@ test.describe('Page audience addon:<slug> (#1964)', () => {
       await markTestArtifact(request, TITLES[key]);
     }
     const made = await request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'editor', isTest: 'on' }
+      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'editor', isTest: 'true' }
     });
     expect(made.ok()).toBe(true);
     expect(made.url()).not.toContain('error=');

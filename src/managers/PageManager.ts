@@ -2844,6 +2844,78 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Delete the pages a test made (#2008): every shared page carrying the
+   * `test-artifact` system keyword (#1355), and never a page without it.
+   * `only` narrows the set further — a deleted test account's profile is
+   * `{ author, systemCategory: 'user-profile' }`.
+   *
+   * Each page is recorded as `page-delete` before it is deleted (on-failure
+   * refuse: a page whose record cannot be written is not deleted), then goes
+   * through {@link deletePage}, so the delete is soft and the shared indexes
+   * follow. One page's failure never stops the rest; it is reported.
+   *
+   * The caller decides who may ask: the sweep route asks `admin-system`, and
+   * an account delete has already been decided as `user-delete`. Private
+   * vault pages are not in the shared index, so they are not reached here.
+   *
+   * @param ctx - Who is acting; named in every record
+   * @param only - Narrow to one author and/or system-category
+   */
+  async deleteTestArtifacts(
+    ctx: ActorContext,
+    only: { author?: string; systemCategory?: string } = {}
+  ): Promise<{ deleted: Array<{ title: string; uuid: string }>; failed: Array<{ title: string; uuid: string; error: string }> }> {
+    if (!ctx) {
+      throw new Error('PageManager.deleteTestArtifacts requires an ActorContext');
+    }
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    const candidates = (await this.provider.getAllPageInfo()).filter((info) => {
+      const md = (info.metadata ?? {}) as Record<string, unknown>;
+      const keywords = Array.isArray(md['system-keywords']) ? md['system-keywords'] as unknown[] : [];
+      if (!keywords.some((k) => String(k).trim().toLowerCase() === 'test-artifact')) return false;
+      if (only.author !== undefined && md.author !== only.author) return false;
+      if (only.systemCategory !== undefined && md['system-category'] !== only.systemCategory) return false;
+      return true;
+    });
+
+    const deleted: Array<{ title: string; uuid: string }> = [];
+    const failed: Array<{ title: string; uuid: string; error: string }> = [];
+    const who = actorOf(ctx);
+    for (const info of candidates) {
+      try {
+        await recordAuditEvent(this.engine.getManager('AuditManager'), {
+          eventType: AUDIT_EVENT.PAGE_DELETE,
+          ...who,
+          action: 'page-delete',
+          result: 'success',
+          severity: 'medium',
+          resource: info.uuid,
+          resourceType: 'page',
+          metadata: {
+            ...who.metadata,
+            pageName: info.title,
+            uuid: info.uuid,
+            owner: (info.metadata as { author?: string } | undefined)?.author ?? null,
+            outcome: 'attempted',
+            reason: 'test-artifact'
+          }
+        });
+        if (await this.deletePage(info.title, ctx)) {
+          deleted.push({ title: info.title, uuid: info.uuid });
+        } else {
+          failed.push({ title: info.title, uuid: info.uuid, error: 'not deleted' });
+        }
+      } catch (err) {
+        failed.push({ title: info.title, uuid: info.uuid, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    logger.info(`[PageManager] Deleted ${deleted.length} test-artifact page(s) by ${who.user}${failed.length ? `; ${failed.length} failed` : ''} (#2008)`);
+    return { deleted, failed };
+  }
+
+  /**
    * The name a page was reached by, as the shared indexes key it: a private
    * page's path (#1456), else its title — the caller may have used a uuid or
    * slug.

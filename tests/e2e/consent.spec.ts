@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword } from './fixtures/helpers';
+import { deletePage, markTestArtifact, signInWithPassword } from './fixtures/helpers';
 
 /**
  * #1603 — the site's terms: accepted at sign-up, asked at the first sign-in
@@ -76,6 +76,10 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
       await page.fill('#confirmPassword', password);
       await page.check('#acceptTerms');
       await Promise.all([page.waitForURL(/\/login\?success/), page.getByRole('button', { name: 'Register' }).click()]);
+      // #2008: a self-registered account cannot be a test account, so its
+      // profile is not stamped for it: mark it here, and delete it below
+      // (deleting an ordinary account keeps its profile page).
+      await markTestArtifact(admin, `Profile: ${username}`);
 
       const landed = await signInOnly(page, username, password);
       expect(landed.pathname).not.toBe('/consent');
@@ -88,6 +92,8 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
     } finally {
       await context.close();
       await deleteAccount(admin, username);
+      // 404 is fine: registration is off, or it failed before the page was made.
+      await deletePage(admin, `Profile: ${username}`);
     }
   });
 
@@ -95,7 +101,7 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
     const username = `e2e-ask-${RUN}`;
     const password = `pw-${randomUUID()}`;
     const made = await admin.request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'on' }
+      form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'true' }
     });
     expect(made.url()).not.toContain('error=');
     const { context, page } = await freshContext(browser);
@@ -135,7 +141,7 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
     const username = `e2e-bump-${RUN}`;
     const password = `pw-${randomUUID()}`;
     const made = await admin.request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'on' }
+      form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'true' }
     });
     expect(made.url()).not.toContain('error=');
     try {

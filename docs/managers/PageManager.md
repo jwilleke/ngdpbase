@@ -1,7 +1,7 @@
 ---
 name: PageManager
 description: Page CRUD and storage facade over the PageProvider registry
-dateModified: 2026-10-22
+dateModified: 2026-10-23
 category: managers
 code: src/managers/PageManager.ts
 relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
@@ -68,6 +68,7 @@ await pageManager.deletePage('My Page');
 | `getPageMetadata(identifier)` | `Promise<Object\|null>` | Get metadata only |
 | `savePage(name, content, metadata, ctx, options?)` | `Promise<PageSaveResult>` | Save page — the one write door ([#1462](https://github.com/jwilleke/ngdpbase/issues/1462)) |
 | `deletePage(identifier, ctx)` | `Promise<boolean>` | Delete page — the one delete door |
+| `deleteTestArtifacts(ctx, only?)` | `Promise<{ deleted, failed }>` | Delete every shared page carrying the `test-artifact` system keyword, never one without it; `only` narrows by `author` / `systemCategory`. Records `page-delete` before each, then `deletePage` (#2008) |
 | `restoreVersion(identifier, version, ctx)` | `Promise<PageSaveResult & { version }>` | Put an old version's body back, as a new version |
 | `restoreDeletedPage(uuid, ctx)` | `Promise<{ ok, title } \| { ok, reason }>` | Bring a page back from the trash, and back into the shared indexes |
 | `saveRawPageWithAdminOverride(name, raw, ctx)` | `Promise<PageSaveResult>` | The admin raw editor's save ([#689](https://github.com/jwilleke/ngdpbase/issues/689)) |

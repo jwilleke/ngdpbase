@@ -27,7 +27,7 @@ async function csrfFrom(page: Page): Promise<string> {
 
 async function createAccount(admin: Page, username: string, password: string): Promise<void> {
   const made = await admin.request.post('/admin/users', {
-    form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'on' }
+    form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'true' }
   });
   expect(made.ok()).toBe(true);
   expect(made.url()).not.toContain('error=');

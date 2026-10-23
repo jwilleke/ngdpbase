@@ -845,6 +845,55 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
     });
 
+    // #2008: the end-of-run sweep of pages a test made — admin only, through
+    // PageManager's test-artifact door, which deletes nothing without the keyword.
+    describe('POST /api/admin/test-artifacts/sweep', () => {
+      const sweep = () => request(app)
+        .post('/api/admin/test-artifacts/sweep')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+
+      test('an admin sweeps: the door is asked with the request\'s own context and its answer returned', async () => {
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
+        mockPageManager.deleteTestArtifacts = vi.fn().mockResolvedValue({
+          deleted: [{ title: 'NGDPBASE-test-A', uuid: 'u1' }], failed: []
+        });
+
+        const res = await sweep();
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ success: true, deleted: [{ title: 'NGDPBASE-test-A', uuid: 'u1' }], failed: [] });
+        expect(mockPageManager.deleteTestArtifacts).toHaveBeenCalledTimes(1);
+        // The whole sweep: no narrowing argument.
+        expect(mockPageManager.deleteTestArtifacts.mock.calls[0]).toHaveLength(1);
+        // The request's own context, forwarded (never rebuilt or omitted).
+        expect(mockPageManager.deleteTestArtifacts.mock.calls[0][0]).toHaveProperty('username');
+      });
+
+      test('a non-admin is refused and nothing is deleted', async () => {
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
+        mockPolicyDecisionPoint.permits.mockReturnValue(false);
+        mockPageManager.deleteTestArtifacts = vi.fn();
+
+        const res = await sweep();
+
+        expect(res.status).toBe(403);
+        expect(mockPageManager.deleteTestArtifacts).not.toHaveBeenCalled();
+      });
+
+      test('anonymous is refused and nothing is deleted', async () => {
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(null);
+        mockPolicyDecisionPoint.permits.mockReturnValue(false);
+        mockPageManager.deleteTestArtifacts = vi.fn();
+
+        const res = await sweep();
+
+        expect([401, 403]).toContain(res.status);
+        expect(mockPageManager.deleteTestArtifacts).not.toHaveBeenCalled();
+      });
+    });
+
     describe('GET /create', () => {
       test('should return 200 for authenticated user', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
