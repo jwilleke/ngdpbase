@@ -11,6 +11,8 @@ import logger from '../../utils/logger';
 
 const HTML = '<!doctype html><title>Invoice</title><p>Total $35.50</p>';
 const PDF = Buffer.from('%PDF-1.7 fake');
+/** A PDF service on the LAN: a private address the egress policy refuses until its range is allowed. */
+const SERVICE_HOST = '192.168.50.10';
 const FOUND: ChromiumResolution = { ok: true, executablePath: '/usr/bin/chromium', source: 'system' };
 
 interface Harness {
@@ -215,17 +217,17 @@ describe('ngdpbase.export.pdf.provider (#1974)', () => {
       };
       m.pdfNormalizer = async (pdf: Uint8Array) => Buffer.concat([Buffer.from(pdf), Buffer.from(' normalised')]);
       h.props['ngdpbase.export.pdf.provider'] = 'chrome-service';
-      h.props['ngdpbase.export.pdf.provider.chrome-service.url'] = 'http://192.168.68.71:3000';
+      h.props['ngdpbase.export.pdf.provider.chrome-service.url'] = `http://${SERVICE_HOST}:3000`;
       return urls;
     }
 
     test('posts to the configured service once its range is allowed, and returns the normalised PDF', async () => {
       const h = harness();
       const urls = service(h);
-      h.props['ngdpbase.security.egress.allowed-ranges'] = ['192.168.68.0/24'];
+      h.props['ngdpbase.security.egress.allowed-ranges'] = ['192.168.50.0/24'];
       const pdf = await h.manager.htmlToPdf(TEST_ACTOR, HTML);
       expect(pdf.toString()).toBe('%PDF-1.7 from the service normalised');
-      expect(urls).toEqual(['http://192.168.68.71:3000/forms/chromium/convert/html']);
+      expect(urls).toEqual([`http://${SERVICE_HOST}:3000/forms/chromium/convert/html`]);
       expect(h.jobs).toHaveLength(0);
       expect(vi.mocked(logger.info).mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/engine=chrome-service by=test-user/);
     });

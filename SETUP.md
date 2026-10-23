@@ -52,7 +52,7 @@ The container image carries no browser. Run [Gotenberg](https://gotenberg.dev) (
   ```
 
   Put it on the site's Docker network (or in its compose file); don't publish its port to the world, since it has no sign-in.
-- Set `"ngdpbase.export.pdf.provider": "chrome-service"` and `"ngdpbase.export.pdf.provider.chrome-service.url"` to its address, e.g. `http://gotenberg:3000`.
+- Set `"ngdpbase.export.pdf.provider": "chrome-service"` and `"ngdpbase.export.pdf.provider.chrome-service.url"` to its address, e.g. `http://<container-name>:3000`.
 - Allow its address range out of the site. Outbound requests go through the egress policy, which refuses private addresses by default: add the range Gotenberg's address is in to `ngdpbase.security.egress.allowed-ranges` (for a Docker network usually `172.16.0.0/12`, or the network's own subnet from `docker network inspect`; for a host on the LAN its `/32`). Loopback is never reachable, so `http://localhost:3000` does not work; use the container or LAN address.
 - Check it: until a PDF renders, Admin shows ExportManager as needing attention once something asked for one, and the server log says why (`PDF export unavailable: …`).
 

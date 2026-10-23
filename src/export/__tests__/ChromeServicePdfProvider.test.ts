@@ -139,8 +139,8 @@ describe('the Gotenberg request', () => {
   });
 
   test('a path on the service URL is kept', () => {
-    expect(serviceEndpoint('http://pdf.lan:3000')).toBe('http://pdf.lan:3000/forms/chromium/convert/html');
-    expect(serviceEndpoint('http://pdf.lan:3000/gotenberg')).toBe('http://pdf.lan:3000/gotenberg/forms/chromium/convert/html');
+    expect(serviceEndpoint('http://pdf.test:3000')).toBe('http://pdf.test:3000/forms/chromium/convert/html');
+    expect(serviceEndpoint('http://pdf.test:3000/gotenberg')).toBe('http://pdf.test:3000/gotenberg/forms/chromium/convert/html');
   });
 });
 

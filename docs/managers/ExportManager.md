@@ -131,7 +131,7 @@ No audit event is recorded: the render reads and changes nothing. The add-on tha
 | --- | --- | --- |
 | `ngdpbase.export.pdf.provider` | `"none"` | `none`, `local-chrome` or `chrome-service` |
 | `ngdpbase.export.pdf.provider.local-chrome.chromium-path` | `""` | The browser to run; empty finds one. `sensitive`: shown only to `admin-read` holders |
-| `ngdpbase.export.pdf.provider.chrome-service.url` | `""` | The service's base URL, e.g. `http://gotenberg.pdf.svc.cluster.local:3000`. `sensitive` |
+| `ngdpbase.export.pdf.provider.chrome-service.url` | `""` | The service's base URL, e.g. `http://gotenberg.<namespace>.svc.cluster.local:3000`. `sensitive` |
 | `ngdpbase.export.pdf.provider.chrome-service.max-bytes` | `52428800` | The largest PDF accepted from the service |
 | `ngdpbase.export.pdf.page-size` | `"Letter"` | Page size when the caller names none |
 | `ngdpbase.export.pdf.timeout-ms` | `30000` | A render, or the whole service request, is stopped after this |
