@@ -186,6 +186,58 @@
                     </div>
                     <% } %>
 
+                    <!-- #1603: Your consents — what you accepted (core's terms, each add-on's), plus the
+                         per-use permissions you gave, read from their owners (apps you approved, share links). -->
+                    <% const yourConsents = typeof consents !== 'undefined' ? consents : null; %>
+                    <% if (yourConsents) { %>
+                    <div class="row mb-4" id="your-consents">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-file-signature"></i> Your consents <%- include('_help-icon', { slug: 'your-consents', label: 'Your consents' }) %></h6>
+                                </div>
+                                <div class="card-body">
+                                    <% if (yourConsents.length === 0) { %>
+                                    <p class="text-muted small mb-2">This site asks you to accept no documents.</p>
+                                    <% } %>
+                                    <% yourConsents.forEach(function (group) { %>
+                                    <h6 class="small text-muted text-uppercase mt-2"><%= group.scope === 'core' ? 'This site' : group.scope %></h6>
+                                    <ul class="list-group list-group-flush mb-2">
+                                        <% group.statuses.forEach(function (st) { %>
+                                        <li class="list-group-item d-flex flex-wrap align-items-center justify-content-between" data-consent-status="<%= st.document.id %>" data-consent-accepted="<%= st.current ? 'yes' : 'no' %>">
+                                            <span>
+                                                <a href="/view/<%= encodeURIComponent(st.document.id) %>"><%= st.document.title %></a>
+                                                <small class="text-muted ms-1">version <%= st.document.version %><% if (st.document.effective) { %>, in effect from <%= st.document.effective %><% } %></small>
+                                            </span>
+                                            <% if (st.current) { %>
+                                            <span class="badge bg-success">Accepted <time datetime="<%= st.current.acceptedAt %>" data-local-time><%= st.current.acceptedAt.slice(0, 16).replace('T', ' ') %> UTC</time></span>
+                                            <% } else if (st.latest) { %>
+                                            <span class="badge bg-warning text-dark">Changed since you accepted version <%= st.latest.version %>: you will be asked again</span>
+                                            <% } else { %>
+                                            <span class="badge bg-secondary">Not accepted yet</span>
+                                            <% } %>
+                                        </li>
+                                        <% }) %>
+                                    </ul>
+                                    <% }) %>
+                                    <% const apps = typeof approvedApps !== 'undefined' && approvedApps ? approvedApps : []; %>
+                                    <% if (apps.length > 0 || (typeof myShares !== 'undefined' && myShares)) { %>
+                                    <h6 class="small text-muted text-uppercase mt-3">Permissions you gave</h6>
+                                    <ul class="list-group list-group-flush">
+                                        <% apps.forEach(function (a) { %>
+                                        <li class="list-group-item small" data-consent-app="<%= a.grantId %>">App or device <strong><%= a.name %></strong> may see <%= a.scopes.join(', ') %><% if (a.approvedAt) { %>, approved <time datetime="<%= a.approvedAt %>" data-local-time><%= a.approvedAt.slice(0, 16).replace('T', ' ') %> UTC</time><% } %> <span class="text-muted">(revoke it under My tokens and devices)</span></li>
+                                        <% }) %>
+                                        <% if (typeof myShares !== 'undefined' && myShares) { %>
+                                        <li class="list-group-item small">Share links: <%= myShares.active %> active <a href="/shares" class="ms-1">Manage</a></li>
+                                        <% } %>
+                                    </ul>
+                                    <% } %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #1842: your vault pages whose files, footnotes or comments are still outside the vault -->
                     <% const ownRepairs = typeof vaultRepairs !== 'undefined' ? vaultRepairs : []; %>
                     <% const repairNotice = typeof vaultRepairNotice !== 'undefined' ? vaultRepairNotice : null; %>
@@ -736,7 +788,25 @@
                                             <% addonProfileSections.forEach(function(section) { %>
                                                 <div class="card mt-4" data-addon="<%= section.addonName %>">
                                                     <div class="card-header"><h6 class="mb-0"><%= section.title %></h6></div>
-                                                    <div class="card-body"><%- section.html %></div>
+                                                    <div class="card-body"><%- section.html %>
+                                                        <%# #1603: what this add-on asks you to accept before it turns on, recorded before its switch flips. %>
+                                                        <% const asks = (typeof addonConsentPending !== 'undefined' && addonConsentPending[section.addonName]) || []; %>
+                                                        <% if (asks.length > 0) { %>
+                                                        <div class="border-top mt-3 pt-2" data-addon-consent="<%= section.addonName %>">
+                                                            <% asks.forEach(function (d) { %>
+                                                            <input type="hidden" name="consent.<%= section.addonName %>.document" value="<%= d.id %>">
+                                                            <input type="hidden" name="consent.<%= section.addonName %>.version" value="<%= d.version %>">
+                                                            <% }) %>
+                                                            <div class="form-check">
+                                                                <input class="form-check-input" type="checkbox" name="consent.<%= section.addonName %>.accept" id="consent-<%= section.addonName %>-accept">
+                                                                <label class="form-check-label small" for="consent-<%= section.addonName %>-accept">
+                                                                    To use <%= section.title %>, I have read and accept its
+                                                                    <% asks.forEach(function (d, i) { %><%= i > 0 ? ' and ' : '' %><a href="/view/<%= encodeURIComponent(d.id) %>" target="_blank" rel="noopener"><%= d.title %></a> (version <%= d.version %>)<% }) %>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        <% } %>
+                                                    </div>
                                                 </div>
                                             <% }); %>
                                         <% } %>

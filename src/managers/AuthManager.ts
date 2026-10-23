@@ -30,9 +30,9 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/396}
  */
 
+import { CONSENT_PATH } from '../types/Consent.js';
 import BaseManager from './BaseManager.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
-import { applyFilePartAtStart, backupFilePart, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import type { BackupData, BackupFolder } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
@@ -72,6 +72,10 @@ import type EmailManager from './EmailManager.js';
 import type AgentTokenManager from './AgentTokenManager.js';
 import type { OidcManager } from './OidcManager.js';
 import logger from '../utils/logger.js';
+import LocaleUtils from '../utils/LocaleUtils.js';
+import { describeBrowser } from '../utils/browserDescription.js';
+import { approximateLocation } from '../utils/ipLocation.js';
+import type { PluginFormatters } from './PluginManager.js';
 import { createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
@@ -82,7 +86,7 @@ import {
   type RejectedCredential
 } from '../providers/BaseCredentialsProvider.js';
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
-import { recordAuditEvent } from '../utils/auditEvents.js';
+import { recordAuditEvent, type AuditResult } from '../utils/auditEvents.js';
 import { actorOf } from '../context/ActorContext.js';
 import { proxyAttribution } from '../utils/proxyClaim.js';
 import { lackingScopes, requireScopeList, VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
@@ -243,6 +247,12 @@ export function credentialLabel(label: unknown): string {
  */
 export interface PendingSignIn {
   handle: string;
+  /**
+   * The id every audit record of this sign-in's approval carries (#1532), so
+   * the steps read as one trail. Random and separate from the handle and the
+   * link token, which are secrets.
+   */
+  id: string;
   username: string;
   first: AuthenticateResult;
   /** The requesting browser's binding value (an HTTP-only cookie); every step must present it. */
@@ -251,14 +261,63 @@ export interface PendingSignIn {
   expiresAt: number;
   requestIp?: string;
   requestUserAgent?: string;
+  /** Roughly where the request came from ("Columbus, United States"), or null when no source says (#1532). */
+  requestLocation?: string | null;
   /** Private-store keys unlocked by the password, held until the sign-in completes or is dropped. */
   privateStoreHandle?: string;
   /** The second factor, once satisfied. */
   approved?: SatisfiedFactor;
-  /** Refused by the person ("this wasn't me"). */
+  /** Refused by the person (Deny). */
   denied?: boolean;
   /** When the last approval message went out, for the resend limit. */
   lastSentAt?: number;
+}
+
+/**
+ * What an approval request says about a waiting sign-in (#1532): one source
+ * for the message and the page.
+ */
+export interface ApprovalAbout {
+  /** The site's name (`ngdpbase.application-name`). */
+  site: string;
+  /** When it was asked, in the account holder's own time zone. */
+  when: string;
+  /** "Chrome on Windows", or null when the browser could not be named. */
+  device: string | null;
+  /** The IP address it came from (Express's `req.ip`, so `trust-proxy` applies). */
+  ip?: string;
+  /** Roughly where ("Columbus, United States"), or null when no source says. */
+  location: string | null;
+}
+
+/** What the approval page shows about a waiting sign-in (#1532). */
+export interface ApprovalDetails extends ApprovalAbout {
+  username: string;
+  requestedAt: number;
+  userAgent?: string;
+  /** The sentence the message says, as HTML with every value escaped. */
+  sentenceHtml: string;
+}
+
+/**
+ * The approval sentence (#1532, decided wording plus the IP and place):
+ * "A sign-in request for Willeke Family was sent at 2 Oct 2026, 14:02 EDT
+ * from Chrome on Windows at IP address 81.2.69.160, near Columbus, United
+ * States." `strong` marks the site and time, `text` every other value; for
+ * HTML both escape.
+ */
+export function approvalSentence(about: ApprovalAbout, strong: (v: string) => string = (v) => v, text: (v: string) => string = (v) => v): string {
+  const from = [about.device ? text(about.device) : null, about.ip ? `IP address ${text(about.ip)}` : null].filter(Boolean).join(' at ');
+  return `A sign-in request for ${strong(about.site)} was sent at ${strong(about.when)}`
+    + (from ? ` from ${from}` : '')
+    + (about.location ? `, near ${text(about.location)}` : '')
+    + '.';
+}
+
+/** Who opened the approval page or pressed its button (#1532): recorded, never trusted for anything. */
+export interface ApprovalVisitor {
+  ip?: string;
+  userAgent?: string;
 }
 
 /** A second factor a person has enrolled and can use now. */
@@ -421,7 +480,14 @@ export type OutsideSignIn =
   /** Refused; nothing says whether an account exists. */
   | { outcome: 'refused' }
   /** The state was already used: no second session. */
-  | { outcome: 'replayed' };
+  | { outcome: 'replayed' }
+  /**
+   * #1532: the provider's sign-in reached only AAL1 and the account has a
+   * second factor: held as a pending sign-in, as after a password. The route
+   * binds the browser (`binding`), keeps `handle` in the session and sends the
+   * person to the second-factor page; `next` is where they were going.
+   */
+  | { outcome: 'second-step'; handle: string; binding: string; next: string };
 
 /** What the one completion step leaves for the route (#1743): where to go instead, when a pending identity waits to be confirmed. */
 export interface SignInCompleted {
@@ -1089,6 +1155,12 @@ class AuthManager extends BaseManager {
     if (result.success) {
       // #1021: the state is good for one sign-in; a replayed callback must not open a second session.
       if (!provider.consumeToken(state)) return { outcome: 'replayed' };
+      // #1532: a provider's sign-in at AAL1 is a password elsewhere; the second step applies as after one here.
+      if (this.needsSecondStep(result)) {
+        const binding = randomBytes(24).toString('base64url');
+        const handle = await this.beginTwoStep(result, { binding, ip: req.ip, userAgent: req.get?.('user-agent'), location: await this.approximateLocation(req) });
+        return { outcome: 'second-step', handle, binding, next: safeRedirect(redirect) };
+      }
       const done = await this.completeSignIn(req, result, { method: providerId, returnTo: redirect });
       return { outcome: 'signed-in', next: done.next ?? safeRedirect(redirect) };
     }
@@ -1115,8 +1187,9 @@ class AuthManager extends BaseManager {
       return { outcome: 'refused' };
     }
     const reported = reportedValues(identity.reported, this.trustsOutsideMfa(provider));
-    await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId, reported), reported }, { method: providerId });
-    return { outcome: 'created', next: safeRedirect(redirect) };
+    const done = await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId, reported), reported }, { method: providerId, returnTo: redirect });
+    // #1603: an account made from an outside sign-in is asked to accept the terms at once.
+    return { outcome: 'created', next: done.next ?? safeRedirect(redirect) };
   }
 
   /**
@@ -1264,12 +1337,10 @@ class AuthManager extends BaseManager {
   private async openCredentialsStore(configManager: ConfigurationManager | null | undefined): Promise<void> {
     this.credentials = null;
     const key = process.env[CREDENTIALS_KEY_ENV] ?? '';
-    const file = configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json');
+    // #1876, #1985: a staged site restore put the backed-up store in place in initialize(), before this reads it.
+    const file = this.configuredCredentialsFile(configManager);
     if (!file) return;
     this.credentialsFile = file;
-    // #1876: a staged site restore puts the backed-up store in place before it is read.
-    const restored = applyFilePartAtStart('AuthManager', file, configManager);
-    if (restored?.refused) this.markNeedsAttention(`A staged restore of the credentials store was not applied: ${restored.refused}`, 'ngdpbase.auth.credentials.file');
     if (!key) {
       this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
       return;
@@ -1557,6 +1628,8 @@ class AuthManager extends BaseManager {
         if (grant && (grant.owner === username || grant.proxy === username)) await this.endProxyGrant(ctx, grant, 'account-deleted');
       }
     });
+    // #1603: what the account accepted goes with it; the audit log keeps consent-withdraw.
+    await step('consent records', async () => this.engine.getManager<{ removeAccount(u: string, c: PermissionSubject): Promise<void> }>('ConsentManager')?.removeAccount(username, ctx));
     await step('credentials', async () => {
       if (!this.credentials) return;
       for (const row of this.credentials.list(username)) {
@@ -2572,17 +2645,40 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
     }
+    let next: string | undefined;
     if (pending && pending.expiresAt > Date.now()) {
       req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
-      return { next: '/login/connect/confirm' };
+      next = '/login/connect/confirm';
+    } else if (this.proxyAccessEnabled() && this.credentials && this.liveGrantsOn(this.credentials, { asProxy: username }).length > 0) {
+      // #1762 slice 4: a person someone has let act for them is asked whom to act
+      // for, then sent on to where they were going. Acting as themselves is the
+      // default: a sign-in never starts acting for anyone unasked.
+      next = `${ACTING_FOR_PATH}?returnTo=${encodeURIComponent(safeRedirect(how.returnTo))}`;
     }
-    // #1762 slice 4: a person someone has let act for them is asked whom to act
-    // for, then sent on to where they were going. Acting as themselves is the
-    // default: a sign-in never starts acting for anyone unasked.
-    if (this.proxyAccessEnabled() && this.credentials && this.liveGrantsOn(this.credentials, { asProxy: username }).length > 0) {
-      return { next: `${ACTING_FOR_PATH}?returnTo=${encodeURIComponent(safeRedirect(how.returnTo))}` };
+    // #1603: terms they have not accepted at their current version come first,
+    // then on to wherever they were going. The session is held to the prompt
+    // (consentPending, the consent gate) until they accept or sign out.
+    if (await this.termsPendingFor(username)) {
+      req.session.consentPending = true;
+      return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}` };
     }
-    return {};
+    return next ? { next } : {};
+  }
+
+  /**
+   * Whether `username` has core documents to accept (#1603), asked of
+   * ConsentManager. A store that cannot be read asks nothing, loudly: a
+   * broken consent folder must not lock everyone out.
+   */
+  private async termsPendingFor(username: string): Promise<boolean> {
+    const consent = this.engine.getManager<{ pendingFor(u: string): Promise<unknown[]> }>('ConsentManager');
+    if (!consent) return false;
+    try {
+      return (await consent.pendingFor(username)).length > 0;
+    } catch (err) {
+      logger.error(`[AuthManager] could not tell whether ${username} has terms to accept, so they are not asked this time (#1603):`, err);
+      return false;
+    }
   }
 
   /**
@@ -2762,8 +2858,44 @@ class AuthManager extends BaseManager {
     return out;
   }
 
+  /**
+   * Whether a successful first step needs a second (#1532, operator
+   * 2026-10-22): everyone who arrives with only a password behind them — a
+   * password typed here, or an outside provider's sign-in at AAL1 — when the
+   * account has a second factor it can use now. Never after an email link
+   * (the second factor would go to the same inbox), and never after a sign-in
+   * already at AAL2 or above (a passkey, a provider whose second factor the
+   * admin trusts).
+   */
+  needsSecondStep(result: AuthenticateResult): boolean {
+    const record = result.success && result.username ? this.signInRecord(result) : null;
+    if (!record || record.aal >= 2 || record.amr.includes('email')) return false;
+    return this.secondFactorsFor(result.username as string).length > 0;
+  }
+
+  /**
+   * Roughly where `req` came from, for the approval message (#1532):
+   * Cloudflare's location headers when `ngdpbase.server.behind-cloudflare`,
+   * else the GeoLite2 City file at `ngdpbase.server.geolite2-city-file`, else
+   * null. Read when asked, so a change applies at the next sign-in. The IP is
+   * Express's `req.ip`, which honours `ngdpbase.server.trust-proxy`.
+   */
+  async approximateLocation(req: Pick<Request, 'ip'> & { get?: (name: string) => string | undefined }): Promise<string | null> {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const file = cm?.getProperty('ngdpbase.server.geolite2-city-file', '');
+    try {
+      return await approximateLocation(req.ip, (name) => req.get?.(name), {
+        behindCloudflare: cm?.getProperty('ngdpbase.server.behind-cloudflare', false) === true,
+        geoliteFile: typeof file === 'string' ? file.trim() : ''
+      });
+    } catch (err) {
+      logger.warn('[AuthManager] could not tell where a sign-in came from (#1532):', err);
+      return null;
+    }
+  }
+
   /** Hold a sign-in whose first factor passed, until a second factor completes it. Returns its handle. */
-  async beginTwoStep(first: AuthenticateResult, ctx: { binding: string; ip?: string; userAgent?: string; privateStoreHandle?: string }): Promise<string> {
+  async beginTwoStep(first: AuthenticateResult, ctx: { binding: string; ip?: string; userAgent?: string; location?: string | null; privateStoreHandle?: string }): Promise<string> {
     if (!first.success || !first.username) throw new Error('No first factor to continue from');
     const username = await this.storedUsername(first.username);
     if (!username) throw new Error('beginTwoStep: no stored account has that username (#1882)');
@@ -2773,6 +2905,7 @@ class AuthManager extends BaseManager {
     const now = Date.now();
     this.pendingSignIns.set(handle, {
       handle,
+      id: randomUUID(),
       username,
       first,
       binding: ctx.binding,
@@ -2780,8 +2913,11 @@ class AuthManager extends BaseManager {
       expiresAt: now + PENDING_SIGN_IN_TTL_MS,
       requestIp: ctx.ip,
       requestUserAgent: ctx.userAgent,
+      requestLocation: ctx.location ?? null,
       privateStoreHandle: ctx.privateStoreHandle
     });
+    // #1532: an expiry is recorded when it happens, not when someone next looks.
+    setTimeout(() => this.expirePending(handle), PENDING_SIGN_IN_TTL_MS + 1).unref?.();
     return handle;
   }
 
@@ -2790,75 +2926,178 @@ class AuthManager extends BaseManager {
     if (!handle) return null;
     const p = this.pendingSignIns.get(handle);
     if (!p) return null;
-    if (Date.now() > p.expiresAt) { this.dropPending(handle); return null; }
+    if (Date.now() > p.expiresAt) { this.expirePending(handle); return null; }
     return binding && p.binding === binding ? p : null;
+  }
+
+  /**
+   * Record one step of a sign-in's approval (#1532): every record carries the
+   * pending sign-in's `id` (never its handle or the link token), the account
+   * it is for, and who took the step — the IP and browser of the request, the
+   * opener or the presser. `user` is the account signing in: there is no
+   * session yet, so no proxy (whom to act for is chosen after sign-in).
+   */
+  private async recordApproval(eventType: AuditEventName, p: PendingSignIn, result: AuditResult, from: ApprovalVisitor | undefined, metadata: Record<string, unknown> = {}): Promise<void> {
+    const severity = eventType === AUDIT_EVENT.SIGNINAPPROVAL_DENY ? 'high'
+      : eventType === AUDIT_EVENT.SIGNINAPPROVAL_SENDFAIL || eventType === AUDIT_EVENT.SIGNINAPPROVAL_THROTTLE ? 'medium'
+        : 'low';
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType,
+      user: p.username,
+      ipAddress: from?.ip,
+      action: eventType,
+      result,
+      severity,
+      resource: p.id,
+      resourceType: 'sign-in',
+      metadata: {
+        pendingSignIn: p.id,
+        channel: 'email',
+        ...(from?.userAgent ? { userAgent: from.userAgent, device: describeBrowser(from.userAgent) } : {}),
+        ...metadata
+      }
+    }, (err) => logger.warn(`[two-step] audit record failed for ${eventType}:`, err));
+  }
+
+  /**
+   * HTML escaping for the approval message and page (#1532): PluginManager's
+   * formatter (#1820), the one escapeHtml. Its absence is a wiring fault, not
+   * a reason to send a value unescaped.
+   */
+  private escapeHtml(): (v: string) => string {
+    const formatters = this.engine.getManager<{ formatters?: PluginFormatters }>('PluginManager')?.formatters;
+    if (!formatters) throw new Error('PluginManager is not available to escape the sign-in approval (#1532)');
+    return (v) => formatters.escapeHtml(v);
+  }
+
+  /** Where the sign-in asked from, as the request, send and expiry records say it. */
+  private static askedFrom(p: PendingSignIn): ApprovalVisitor {
+    return { ip: p.requestIp, userAgent: p.requestUserAgent };
   }
 
   /**
    * Email a one-time approval link for the pending sign-in (#1523, #1532).
    * The link only opens the approval page; the button there approves, so a
    * mail scanner opening links approves nothing. Limited to one per minute.
+   * Each outcome is recorded: sent (`signinapproval-request`), too soon
+   * (`-throttle`), or not sent (`-sendfail`).
    */
   async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable' | 'failed'> {
     const p = this.pendingSignIn(handle, binding);
+    if (!p) return 'unavailable';
     const mail = this.mailForLinks();
-    const row = p ? (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email') : undefined;
-    if (!p || !mail || !row) return 'unavailable';
-    if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) return 'too-soon';
+    const row = (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email');
+    const from = AuthManager.askedFrom(p);
+    if (!mail || !row) {
+      await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_SENDFAIL, p, 'error', from, { reason: mail ? 'no email factor enrolled' : 'mail is not configured' });
+      return 'unavailable';
+    }
+    if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) {
+      await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_THROTTLE, p, 'deny', from, { lastSentAt: new Date(p.lastSentAt).toISOString() });
+      return 'too-soon';
+    }
     const token = randomBytes(32).toString('base64url');
     this.approvalTokens.set(token, { handle, expiresAt: p.expiresAt });
     const previousSentAt = p.lastSentAt;
     p.lastSentAt = Date.now();
     const url = `${this.linkBase()}/login/approve?t=${token}`;
-    // #1916: a send that fails is reported by EmailManager; here the person
-    // waiting is told, and nothing says a link is on its way.
+    const about = await this.approvalContext(p);
+    const escapeHtml = this.escapeHtml();
+    // #1532: the decided wording — which site, when (the person's own time
+    // zone), from what browser, IP address and roughly where; one link, no
+    // code. The page carries the buttons. Every value is escaped in the HTML.
     const sent = await mail.send({
       to: row.subject,
-      subject: 'Approve your sign-in',
+      subject: `Approve or deny a sign-in to ${about.site}`,
       text: [
-        `Someone signed in as ${p.username} with your password and is waiting for approval.`,
+        approvalSentence(about),
+        `Was this you? Open to approve or deny: ${url}`,
         '',
-        'Open this link to see the details and approve or refuse it:',
-        url,
-        '',
-        'It works once, for the next 10 minutes. If this was not you, refuse it and change your password.'
+        'The link works once, for the next 10 minutes.'
       ].join('\n'),
       html: [
-        `<p>Someone signed in as <strong>${p.username.replace(/[<>&"]/g, '')}</strong> with your password and is waiting for approval.</p>`,
-        `<p><a href="${url}">See the details and approve or refuse it</a></p>`,
-        '<p>It works once, for the next 10 minutes. If this was not you, refuse it and change your password.</p>'
+        `<p>${approvalSentence(about, (v) => `<strong>${escapeHtml(v)}</strong>`, escapeHtml)}</p>`,
+        `<p>Was this you? <a href="${escapeHtml(url)}">Open to approve or deny</a></p>`,
+        '<p>The link works once, for the next 10 minutes.</p>'
       ].join('\n')
     }).then(() => true, () => false);
+    // #1916: a send that fails is reported by EmailManager; here the person
+    // waiting is told, and nothing says a link is on its way.
     if (!sent) {
       this.approvalTokens.delete(token);
       p.lastSentAt = previousSentAt;
+      await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_SENDFAIL, p, 'error', from, { reason: 'the message could not be sent' });
       return 'failed';
     }
+    await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_REQUEST, p, 'success', from, { location: about.location, browser: about.device });
     return 'sent';
   }
 
-  /** What the approval page shows about the waiting sign-in; null for an unknown or used link. */
-  approvalDetails(token: string): { username: string; requestedAt: number; ip?: string; userAgent?: string } | null {
+  /**
+   * What the approval page shows about the waiting sign-in; null for an
+   * unknown or used link. Opening the page changes nothing, but it is
+   * recorded (`signinapproval-open`) with who opened it (#1532): a mail
+   * scanner opens links too.
+   */
+  async approvalDetails(token: string, opener?: ApprovalVisitor): Promise<ApprovalDetails | null> {
     const entry = this.approvalTokens.get(token);
     if (!entry || Date.now() > entry.expiresAt) return null;
     const p = this.pendingSignIns.get(entry.handle);
     if (!p || p.approved || p.denied) return null;
-    return { username: p.username, requestedAt: p.requestedAt, ip: p.requestIp, userAgent: p.requestUserAgent };
+    await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_OPEN, p, 'success', opener);
+    const about = await this.approvalContext(p);
+    const escapeHtml = this.escapeHtml();
+    return {
+      username: p.username, requestedAt: p.requestedAt, userAgent: p.requestUserAgent, ...about,
+      sentenceHtml: approvalSentence(about, (v) => `<strong>${escapeHtml(v)}</strong>`, escapeHtml)
+    };
+  }
+
+  /**
+   * What an approval request says about a waiting sign-in (#1532), one source
+   * for the message and the page: the site's name, when it was asked in the
+   * account holder's own time zone (their preference, else the site default),
+   * the browser and device it came from (null when the header names
+   * neither), its IP address, and roughly where (null when no source says).
+   */
+  private async approvalContext(p: PendingSignIn): Promise<ApprovalAbout> {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const prefs = (await this.engine.getManager<UserManager>('UserManager')?.getUser(p.username))?.preferences;
+    const zone = [prefs?.timezone, cm?.getProperty('ngdpbase.default.timezone', 'UTC')].find((z): z is string => typeof z === 'string' && LocaleUtils.isValidTimezone(z)) ?? 'UTC';
+    const opts: Intl.DateTimeFormatOptions = {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short',
+      ...(prefs?.timeFormat === '12h' || prefs?.timeFormat === '24h' ? { hour12: prefs.timeFormat === '12h' } : {})
+    };
+    const at = new Date(p.requestedAt);
+    let when: string;
+    try {
+      when = at.toLocaleString(LocaleUtils.normalizeLocale(typeof prefs?.locale === 'string' ? prefs.locale : 'en-US'), opts);
+    } catch {
+      when = at.toLocaleString('en-US', opts);
+    }
+    return {
+      site: cm?.getApplicationName() ?? 'ngdpbase',
+      when,
+      device: describeBrowser(p.requestUserAgent),
+      ...(p.requestIp ? { ip: p.requestIp } : {}),
+      location: p.requestLocation ?? null
+    };
   }
 
   /** Approve the waiting sign-in from its link (the button press). Single use; returns the username, or null. */
-  approveByToken(token: string): string | null {
+  async approveByToken(token: string, presser?: ApprovalVisitor): Promise<string | null> {
     const entry = this.approvalTokens.get(token);
     this.approvalTokens.delete(token);
     if (!entry || Date.now() > entry.expiresAt) return null;
     const p = this.pendingSignIns.get(entry.handle);
     if (!p || p.approved || p.denied || Date.now() > p.expiresAt) return null;
     p.approved = { provider: 'email-link', ...EMAIL_FACTOR, at: new Date().toISOString() };
+    await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_APPROVE, p, 'success', presser);
     return p.username;
   }
 
-  /** Refuse the waiting sign-in from its link ("this wasn't me"). Returns the username, or null. */
-  denyByToken(token: string): string | null {
+  /** Refuse the waiting sign-in from its link (Deny). Returns the username, or null. */
+  async denyByToken(token: string, presser?: ApprovalVisitor): Promise<string | null> {
     const entry = this.approvalTokens.get(token);
     this.approvalTokens.delete(token);
     if (!entry) return null;
@@ -2866,6 +3105,7 @@ class AuthManager extends BaseManager {
     if (!p || p.approved) return null;
     p.denied = true;
     if (p.privateStoreHandle) lockPrivateStores(p.privateStoreHandle);
+    await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_DENY, p, 'deny', presser);
     return p.username;
   }
 
@@ -2884,17 +3124,40 @@ class AuthManager extends BaseManager {
     };
   }
 
+  /**
+   * The waiting browser gave up the sign-in (Cancel, #1532): dropped, its
+   * keys locked, and recorded as `signinapproval-abandon`.
+   */
+  async abandonTwoStep(handle: string, binding: string, from?: ApprovalVisitor): Promise<void> {
+    const p = this.pendingSignIn(handle, binding);
+    if (!p) return;
+    this.dropPending(handle);
+    await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_ABANDON, p, 'failure', from, { state: p.denied ? 'denied' : p.approved ? 'approved' : 'waiting' });
+  }
+
   /** Drop a pending sign-in and lock any keys it held. */
   dropPending(handle: string): void {
     const p = this.pendingSignIns.get(handle);
     if (!p) return;
     if (p.privateStoreHandle) lockPrivateStores(p.privateStoreHandle);
     this.pendingSignIns.delete(handle);
+    for (const [token, entry] of this.approvalTokens) if (entry.handle === handle) this.approvalTokens.delete(token);
+  }
+
+  /** A pending sign-in past its time: dropped, and recorded once as `signinapproval-expire` (#1532). */
+  private expirePending(handle: string): void {
+    const p = this.pendingSignIns.get(handle);
+    if (!p || Date.now() <= p.expiresAt) return;
+    this.dropPending(handle);
+    void this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_EXPIRE, p, 'failure', AuthManager.askedFrom(p), {
+      state: p.denied ? 'denied' : p.approved ? 'approved' : 'waiting',
+      messageSent: Boolean(p.lastSentAt)
+    });
   }
 
   private sweepPending(): void {
     const now = Date.now();
-    for (const [handle, p] of this.pendingSignIns) if (now > p.expiresAt) this.dropPending(handle);
+    for (const [handle, p] of this.pendingSignIns) if (now > p.expiresAt) this.expirePending(handle);
     for (const [token, e] of this.approvalTokens) if (now > e.expiresAt) this.approvalTokens.delete(token);
     for (const [token, e] of this.enrolTokens) if (now > e.expiresAt) this.enrolTokens.delete(token);
   }
@@ -3110,49 +3373,41 @@ class AuthManager extends BaseManager {
     return Array.from(this.providers.values());
   }
 
-  /**
-   * The provider list, and the credentials store (#1876): passkeys, TOTP,
-   * verified email and phone, devices, linked identities and proxy grants,
-   * as its own file beside the document, __always encrypted under
-   * `NGDPBASE_BACKUP_KEY`__ (`<stem>.credentials.tar.enc`). Without the key the
-   * store is left out and the backup is reported incomplete; it is never in a
-   * backup unencrypted. The rows stay signed with `NGDPBASE_CREDENTIALS_KEY`,
-   * which is not in the backup: a site restored under another credentials key
-   * holds them in quarantine (#1633).
-   */
-  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    const providers = Array.from(this.providers.keys());
-    const base = { managerName: 'AuthManager', timestamp: new Date().toISOString() };
-    if (!options?.directory) return { ...base, data: { providers, credentials: null } };
-    const part = await backupFilePart('AuthManager', 'credentials', this.credentialsFile, options, { requireKey: true, what: 'credentials store' });
-    return {
-      ...base,
-      data: { providers, credentials: part.data },
-      ...(part.note ? { note: part.note } : {}),
-      ...(part.warnings.length > 0 ? { warnings: part.warnings } : {})
-    };
+  /** `ngdpbase.auth.credentials.file`, resolved: the credentials store. */
+  private configuredCredentialsFile(configManager: ConfigurationManager | null | undefined = this.engine.getManager<ConfigurationManager>('ConfigurationManager')): string | null {
+    return configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json') ?? null;
   }
 
   /**
-   * Stage the credentials store from a backup for the next start, with the
-   * rest of a site restore (#1876). A backup that left it out (no backup key
-   * when it was taken) stages nothing: the store on the site stays, and the
-   * restore's notification names it as not restored.
+   * The provider list. The credentials store (#1876) — passkeys, TOTP,
+   * verified email and phone, devices, linked identities and proxy grants —
+   * is a declared file (`backupFolders`), which BackupManager writes beside
+   * the document as `data.credentials`.
    */
-  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    const credentials = (backupData.data as { credentials?: DirectoryBackupData | null } | null)?.credentials ?? null;
-    if (!credentials) {
-      logger.warn('[AuthManager] The backup holds no credentials store (it was taken without NGDPBASE_BACKUP_KEY); the store on this site is kept (#1876)');
-      return;
-    }
-    if (!this.credentialsFile) throw new Error('This site has no credentials store configured (ngdpbase.auth.credentials.file); nothing was staged');
-    await stageFilePart('AuthManager', this.credentialsFile, credentials, options, { whenAbsent: JSON.stringify({ version: 1, rows: [] }) });
+  async backup(): Promise<BackupData> {
+    return { managerName: 'AuthManager', timestamp: new Date().toISOString(), data: { providers: Array.from(this.providers.keys()) } };
   }
 
-  /** Staged for the next start with the rest of a site restore (#1876). */
-  override restoreIsStaged(): boolean {
-    return true;
+  /**
+   * The credentials store, as its own file beside the backup document,
+   * __always encrypted under `NGDPBASE_BACKUP_KEY`__
+   * (`<stem>.credentials.tar.enc`; #1876, declared since #1985). Without the
+   * key it is left out and the backup is reported incomplete; it is never in
+   * a backup unencrypted. A backup that left it out stages nothing: the store
+   * on the site stays, and the restore's notification names it as not
+   * restored. The rows stay signed with `NGDPBASE_CREDENTIALS_KEY`, which is
+   * not in the backup: a site restored under another credentials key holds
+   * them in quarantine (#1633).
+   */
+  override backupFolders(): BackupFolder[] {
+    return [{
+      part: 'credentials',
+      file: this.credentialsFile ?? this.configuredCredentialsFile(),
+      what: 'credentials store',
+      requireKey: true,
+      whenAbsent: JSON.stringify({ version: 1, rows: [] }),
+      optional: true
+    }];
   }
 }
 

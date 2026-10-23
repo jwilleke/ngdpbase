@@ -2,13 +2,11 @@
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
-import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
 import type ValidationManager from '../../../dist/src/managers/ValidationManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
-import { type UserContext } from '../../../dist/src/context/WikiContext.js';
-import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../dist/src/utils/privateStorePath.js';
+import type { UserContext } from '../../../dist/src/context/WikiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import { v4 as uuidv4 } from 'uuid';
-import { ApiError } from '../../../dist/src/context/ApiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 
 /**
@@ -30,18 +28,26 @@ export function legacyJournalSlug(date: string, username: string): string {
 }
 
 /**
+ * The URL of an action on an entry's page, as PageManager builds it (#1813):
+ * `/edit/<title>` for a public entry, `/vaults/<user>/<vault>/<title>/edit`
+ * for a private one (#1456).
+ */
+export function entryUrl(engine: WikiEngine, pageName: string, action: 'view' | 'edit'): string {
+  const pm = engine.getManager<PageManager>('PageManager');
+  if (!pm) throw new Error('PageManager not available');
+  return pm.pageUrl(pageName, action);
+}
+
+/**
  * A journal title as the user's private page (#1456), in the vault the journal
  * system-category declares (#1505), or in the user's default vault. A new
  * entry goes to the first; an entry made before #1505 may be in the second.
  */
-function privateJournalNames(engine: WikiEngine, username: string, title: string): { journal: string; fallback: string } {
-  const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
-  if (!configManager) throw new Error('ConfigurationManager not available');
-  const defaultVault = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId;
-  const journalVault = engine.getManager<ValidationManager>('ValidationManager')?.getVaultId('journal') ?? defaultVault;
+function privateJournalNames(engine: WikiEngine, pm: PageManager, username: string, title: string): { journal: string; fallback: string } {
+  const journalVault = engine.getManager<ValidationManager>('ValidationManager')?.getVaultId('journal') ?? undefined;
   return {
-    journal: formatPrivatePageName(username, journalVault, title),
-    fallback: formatPrivatePageName(username, defaultVault, title)
+    journal: pm.privatePageName(username, title, journalVault),
+    fallback: pm.privatePageName(username, title)
   };
 }
 
@@ -64,7 +70,7 @@ export async function findJournalEntryName(
   const pm = engine.getManager<PageManager>('PageManager');
   if (!pm) return null;
   const title = journalPageName(date, username);
-  const privateNames = privateJournalNames(engine, username, title);
+  const privateNames = privateJournalNames(engine, pm, username, title);
   // Existence probes for the caller's own entry: only the name leaves here.
   // page-door-ignore: existence probes, nothing read is returned.
   if (await pm.getPage(privateNames.journal, ctx)) return privateNames.journal;
@@ -147,7 +153,8 @@ export async function createJournalEntry(
   config: Record<string, unknown>,
   userContext: UserContext,
   date: string,
-  door: PageDoor
+  door: PageDoor,
+  host: AddonHost
 ): Promise<string> {
   const pm = engine.getManager<PageManager>('PageManager');
   if (!pm) throw new Error('PageManager not available');
@@ -159,7 +166,7 @@ export async function createJournalEntry(
   const defaultAuthorLock = config['defaultAuthorLock'] !== false;
 
   const title = journalPageName(date, username);
-  const name = isPrivate ? privateJournalNames(engine, username, title).journal : title;
+  const name = isPrivate ? privateJournalNames(engine, pm, username, title).journal : title;
 
   const metadata: Record<string, unknown> = {
     title,
@@ -176,7 +183,7 @@ export async function createJournalEntry(
   // #1539: creating the entry is creating a page — asked about that page, so
   // a private entry goes through the vault check (the owner, vault-owner).
   if (!(await door.hasPermissionOn('page-create', name))) {
-    throw new ApiError(403, 'You do not have permission to create this journal entry');
+    throw new host.ApiError(403, 'You do not have permission to create this journal entry');
   }
 
   // #1328: empty, not ' ' — the author's first keystroke starts the line.

@@ -11,7 +11,7 @@ import type { AddonModule, AddonHost, WikiEngine } from '@jwilleke/ngdpbase-type
 import { buildAddonHost, openAddonTestDatabase, toCsv, formatters } from '@jwilleke/ngdpbase-types/testing';
 ```
 
-- The main entry is types only. Importing it at run time fails, on purpose.
+- The main entry is types only. Importing it at run time fails, on purpose. An add-on takes core's values from `host` (`AddonHost`: the request and audit helpers, the logger, `guardedFetch`, the egress tools, `isAtLeast`) and a manager's job from `engine.getManager` (such as `PageManager.pageUrl` or `PolicyDecisionPoint.usersHolding`); it never imports core's values ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)).
 - `/testing` is for tests. `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)` is the real host; `host.setEnabledForPerson` calls the setter you pass (it refuses without one), and `engine` names the system principal `host.systemContext(reason)` uses (core's fallback without one). `openAddonTestDatabase(owner, { migrations, ledgerTable })` is the handle `openAddonDatabase` returns, in memory. `toCsv` is `ExportManager.toCsv`. `formatters` is a plugin's `context.formatters`.
 
 The add-on guide is [docs/guides/addons-developer-guide.md](https://github.com/jwilleke/ngdpbase/blob/master/docs/guides/addons-developer-guide.md).

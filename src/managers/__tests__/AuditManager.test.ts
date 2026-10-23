@@ -19,7 +19,7 @@
 import fs from 'fs';
 import { pendingBootActions, recordSystemAction, resetBootActions, systemContext } from '../../context/bootActions';
 import path from 'path';
-import AuditManager from '../AuditManager';
+import AuditManager, { AuditQueryForbiddenError } from '../AuditManager';
 import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { MaintenanceState } from '../../utils/maintenanceState';
@@ -745,5 +745,87 @@ describe('#1156 the posture is recorded at boot and compared with the previous b
     const { am, written } = harness({}, null);
     await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
     expect(record(written)).toBeUndefined();
+  });
+});
+
+/**
+ * #1537 — the entries about one person: the one log, filtered; decided by the
+ * PDP with the caller's subject. profile-manage for one's own entries,
+ * admin-system for anyone else's.
+ */
+describe('#1537 searchEntriesAbout', () => {
+  const page = { results: [], total: 0, limit: 100, offset: 0, hasMore: false };
+
+  function managerWith(grants: Record<string, string[]>) {
+    const permits = vi.fn(async ({ username }: { username?: string | null }, permission: string) => (grants[username ?? ''] ?? []).includes(permission));
+    const engine = {
+      maintenance: new MaintenanceState(),
+      getManager: (name: string) => (name === 'PolicyDecisionPoint' ? { permits } : null)
+    } as unknown as WikiEngine;
+    const am = new AuditManager(engine);
+    const searchEntriesAbout = vi.fn().mockResolvedValue(page);
+    (am as unknown as { provider: unknown }).provider = { searchEntriesAbout, getProviderInfo: () => ({ name: 'P' }) };
+    return { am, permits, searchEntriesAbout };
+  }
+
+  test('a person reads their own entries with profile-manage, through the PDP with their subject', async () => {
+    const { am, permits, searchEntriesAbout } = managerWith({ jim: ['profile-manage'] });
+    const caller = { username: 'jim', roles: [], isAuthenticated: true };
+    await expect(am.searchEntriesAbout('jim', { limit: 20, offset: 40 }, caller)).resolves.toEqual(page);
+    expect(permits).toHaveBeenCalledWith(caller, 'profile-manage');
+    expect(searchEntriesAbout).toHaveBeenCalledWith('jim', { limit: 20, offset: 40 });
+  });
+
+  test('another person\'s entries need admin-system; profile-manage is not enough', async () => {
+    const { am, searchEntriesAbout } = managerWith({ jim: ['profile-manage'] });
+    await expect(am.searchEntriesAbout('ann', {}, { username: 'jim', roles: [], isAuthenticated: true }))
+      .rejects.toThrow(AuditQueryForbiddenError);
+    expect(searchEntriesAbout).not.toHaveBeenCalled();
+  });
+
+  test('an administrator reads anyone\'s entries', async () => {
+    const { am, permits } = managerWith({ admin: ['admin-system'] });
+    await am.searchEntriesAbout('ann', {}, { username: 'admin', roles: ['admin'], isAuthenticated: true });
+    expect(permits).toHaveBeenCalledWith(expect.objectContaining({ username: 'admin' }), 'admin-system');
+  });
+
+  test('no caller, or a refusal, never reaches the provider', async () => {
+    const { am, searchEntriesAbout } = managerWith({});
+    await expect(am.searchEntriesAbout('jim', {})).rejects.toThrow(AuditQueryForbiddenError);
+    await expect(am.searchEntriesAbout('jim', {}, { username: 'jim', roles: [], isAuthenticated: true })).rejects.toThrow(AuditQueryForbiddenError);
+    expect(searchEntriesAbout).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #1537 — a site whose audit provider keeps no files (the database provider)
+ * restoring a backup that holds audit files: the restore goes on, nothing is
+ * staged for the audit log, and BackupManager names it as not restored. It
+ * threw "keeps none" before, which failed the whole site restore.
+ */
+describe('#1537 restore on a database-provider site', () => {
+  test('a backup with audit files restores without them, and records no part', async () => {
+    const am = new AuditManager(makeEngine());
+    (am as unknown as { provider: unknown; providerClass: string }).provider = { getProviderInfo: () => ({ name: 'DatabaseAuditProvider' }) };
+    (am as unknown as { providerClass: string }).providerClass = 'DatabaseAuditProvider';
+    const record = vi.fn();
+    const siteRestore = { record, stagedPathFor: vi.fn() };
+    vi.mocked(logger.warn).mockClear();
+
+    await expect(am.restore(
+      { managerName: 'AuditManager', timestamp: '2026-10-22T00:00:00Z', data: { format: 1, archive: 'b.audit.tar', files: 2, bytes: 10 } },
+      { directory: '/backups', siteRestore }
+    )).resolves.toBeUndefined();
+    expect(record).not.toHaveBeenCalled();
+    expect(vi.mocked(logger.warn).mock.calls.some(([m]) => /restores its audit records with the databases/.test(String(m)))).toBe(true);
+  });
+
+  test('its backup part says where the records are', async () => {
+    const am = new AuditManager(makeEngine());
+    (am as unknown as { provider: unknown; providerClass: string }).provider = { getProviderInfo: () => ({ name: 'DatabaseAuditProvider' }) };
+    (am as unknown as { providerClass: string }).providerClass = 'DatabaseAuditProvider';
+    const backup = await am.backup({ directory: '/backups', stem: 's' });
+    expect(backup.data).toBeNull();
+    expect(backup.note).toMatch(/application database, backed up by DatabaseManager/);
   });
 });

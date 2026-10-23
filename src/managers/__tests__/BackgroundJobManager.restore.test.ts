@@ -4,7 +4,9 @@
  * runs a job again: a run the backup caught in progress is closed, not
  * resumed or retried, and no slot between the backup and the restore is
  * caught up. The runs since the backup are read from the live state before
- * it is replaced, for the restore's notification.
+ * it is replaced, for the restore's notification. Since #1985 the state
+ * folder is declared (`backupFolders`) and BackupManager's parts code backs
+ * it up and stages it; the test drives that code for this one manager.
  *
  * A real FileJobStateProvider over a temp directory; a second manager over
  * it is a restart. Each test removes only its own directory.
@@ -16,8 +18,10 @@ import os from 'node:os';
 import path from 'node:path';
 import BackgroundJobManager, { type JobDefinition } from '../BackgroundJobManager';
 import FileJobStateProvider from '../../providers/FileJobStateProvider';
-import { beginSiteRestore, commitSiteRestore, readSiteRestore } from '../../utils/siteRestore';
+import { beginSiteRestore, commitSiteRestore, readSiteRestore, stagingFor } from '../../utils/siteRestore';
 import { BACKUP_KEY_ENV } from '../../utils/backupKey';
+import { backupDeclaredParts, placePartRecords, stageDeclaredParts } from '../../utils/directoryBackup';
+import type { BackupData } from '../BaseManager';
 
 const SLOT = '2026-10-09T10:00:00.000Z';
 const BACKUP_AT = '2026-10-09T10:00:05.000Z';
@@ -82,11 +86,18 @@ async function inProgressAtBackup(withLock = false): Promise<FileJobStateProvide
   return state;
 }
 
-async function backupAndStage(m: BackgroundJobManager): Promise<void> {
+/** The manager's entry in a backup, as BackupManager writes it: its own data, and its declared folder beside the document (#1985). */
+async function backupEntry(m: BackgroundJobManager): Promise<BackupData> {
   fs.mkdirSync(backups(), { recursive: true });
-  const data = await m.backup({ ctx: CTX, directory: backups(), stem: 'b1' });
+  const options = { ctx: CTX, directory: backups(), stem: 'b1' } as never;
+  const declared = m.backupFolders();
+  return placePartRecords(await m.backup(), declared, await backupDeclaredParts('BackgroundJobManager', declared, options));
+}
+
+async function backupAndStage(m: BackgroundJobManager): Promise<void> {
+  const data = await backupEntry(m);
   beginSiteRestore(siteFile(), { stagedAt: new Date(clock).toISOString(), backup: BACKUP_AT, source: 'b1.json.gz.enc', stagedBy: 'admin' });
-  await m.restore(data, { ctx: CTX, directory: backups(), siteRestore: siteFile() });
+  await stageDeclaredParts('BackgroundJobManager', m.backupFolders(), data, { ctx: CTX, directory: backups(), siteRestore: stagingFor(siteFile(), 'BackgroundJobManager') });
   commitSiteRestore(siteFile());
 }
 
@@ -95,8 +106,7 @@ describe('file job state in the backup (#1876)', () => {
     await inProgressAtBackup(true);
     expect(fs.readdirSync(path.join(stateDir(), 'locks'))).toHaveLength(1);
     const m = await start();
-    fs.mkdirSync(backups(), { recursive: true });
-    const data = await m.backup({ ctx: CTX, directory: backups(), stem: 'b1' });
+    const data = await backupEntry(m);
     expect(data.data).toMatchObject({ format: 1, archive: 'b1.jobs.tar.enc', files: 2 });
     const { listTreeArchive } = await import('../../utils/treeArchive');
     const entries: string[] = [];
@@ -106,7 +116,8 @@ describe('file job state in the backup (#1876)', () => {
 
   test('database job state is not in the file backup: it is in the database backup', async () => {
     const m = new BackgroundJobManager({ getManager: () => null }, { stateProvider: { backend: 'sqlite' } as never });
-    expect((await m.backup({ ctx: CTX, directory: dir, stem: 'b1' })).data).toEqual({ backend: 'sqlite' });
+    expect((await m.backup()).data).toEqual({ backend: 'sqlite' });
+    expect(m.backupFolders()).toEqual([]);
   });
 });
 

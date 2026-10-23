@@ -42,6 +42,12 @@ declare module 'express-session' {
     pendingRedirect?: string;
     /** A verified outside identity no account has connected, waiting for the person to sign in another way (#1743). */
     pendingConnection?: PendingConnection;
+    /**
+     * Set at sign-in when the person has core terms to accept at their current
+     * version (#1603); the consent gate holds the session to the prompt until
+     * they accept (or sign out). Cleared by the acceptance.
+     */
+    consentPending?: boolean;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     /** When this session signed in, epoch ms: the start of `ngdpbase.session.max-age` (#1767). A re-authentication never moves it. */

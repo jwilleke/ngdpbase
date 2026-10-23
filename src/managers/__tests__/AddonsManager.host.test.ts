@@ -17,7 +17,8 @@ const HOST_KEYS = [
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
   'logger', 'guardedFetch', 'setEnabledForPerson',
-  'registerShim', 'registerReceiver'
+  'registerShim', 'registerReceiver',
+  'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -98,7 +99,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     await fs.remove(tmpDir).catch(() => {});
   });
 
-  test('a three-argument add-on receives the host with all eleven values', async () => {
+  test('a three-argument add-on receives the host with all its values', async () => {
     const manager = await load();
     expect((await manager.getStatus()).find((s: any) => s.name === 'ledger')).toMatchObject({ loaded: true, error: null });
 
@@ -116,6 +117,16 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     expect(host.jobContextFromRequest).toBe(jobs.jobContextFromRequest);
     expect(host.jobContextFromSystem).toBe(jobs.jobContextFromSystem);
     expect(host.guardedFetch).toBe(http.guardedFetch);
+    // #1813: the egress tools and the version check are core's own functions, unchanged.
+    const egress = await import('../../http/egressPolicy');
+    const ssrf = await import('../../http/ssrf');
+    const es = await import('../../http/guardedElasticsearch');
+    const version = await import('../../utils/version');
+    expect(host.resolveEgressPolicy).toBe(egress.resolveEgressPolicy);
+    expect(host.validateUrl).toBe(ssrf.validateUrl);
+    expect(host.createGuardedElasticsearchClient).toBe(es.createGuardedElasticsearchClient);
+    expect(host.refusedNodeMessage).toBe(es.refusedNodeMessage);
+    expect(host.isAtLeast).toBe(version.isAtLeast);
     expect(typeof host.recordAuditEvent).toBe('function');
     expect(typeof host.addonAuditEventName).toBe('function');
     expect(typeof host.logger.info).toBe('function');

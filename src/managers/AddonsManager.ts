@@ -22,6 +22,7 @@ import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
+import type { BackupFolder } from './BaseManager.js';
 import {
   ADDONS_INSTALL_KEY,
   installedAddonsDir,
@@ -55,6 +56,7 @@ import {
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
+import { ConsentRequiredError } from '../types/Consent.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
 
 /**
@@ -147,6 +149,15 @@ export interface AddonModule {
     config: Record<string, unknown>,
     host?: AddonHost
   ): Promise<void> | void;
+
+  /**
+   * Folders it keeps data in besides its `dataPath` (#1985), given its
+   * configuration. Its `dataPath` is backed up and restored without being
+   * declared; an add-on declares only further folders, and writes no backup
+   * code. BackupManager archives each one, stages it in a site restore, and
+   * puts it in place before `register()` runs at the next start.
+   */
+  backupFolders?(config: Record<string, unknown>): BackupFolder[];
 
   /**
    * Optional health check returning add-on status details.
@@ -386,6 +397,8 @@ interface AddonEntry {
   /** Why it is never loaded: its `minVersion` is newer than this core (#1757), its system-category or database declaration or site-critical value was refused (#1559, #1860, #1883), its required-encryption database has no key (#1860), or it could not be imported or has no register() (#1883); null otherwise. */
   incompatible: string | null;
 
+  /** Its `dataPath` and the folders it declares, as read when it was loaded (#1985): what BackupManager backs up for it. */
+  backupFolders?: { dataPath: string | null; folders: BackupFolder[] };
 }
 
 /**
@@ -1072,6 +1085,43 @@ class AddonsManager extends BaseManager {
    */
   addonsLoaded(): boolean {
     return this.loadPassDone;
+  }
+
+  /**
+   * An add-on's folders (#1985): its `dataPath` — `ngdpbase.addons.<slug>.dataPath`,
+   * or `<FAST_STORAGE>/<slug>` when that is not set, as the bundled add-ons
+   * read it — under the part name of its slug, then any further folders its
+   * module declares. A `dataPath` that is the instance data folder, or holds
+   * it, is never one: a restore would swap the whole site's data.
+   */
+  private addonFolders(slug: string, module: AddonModule, config: Record<string, unknown>): { dataPath: string | null; folders: BackupFolder[] } {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const raw = typeof config.dataPath === 'string' && config.dataPath !== '' ? config.dataPath : configManager?.resolveDataPath?.(slug) ?? null;
+    let dataPath = raw ? path.resolve(raw) : null;
+    const instance = configManager?.getInstanceDataFolder?.();
+    if (dataPath && instance) {
+      const rel = path.relative(dataPath, path.resolve(instance));
+      if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+        logger.error(`[AddonsManager] ${slug}'s dataPath ${dataPath} is the instance data folder or holds it, so it is not backed up as the add-on's folder (#1985). Give the add-on a folder of its own (ngdpbase.addons.${slug}.dataPath).`);
+        dataPath = null;
+      }
+    }
+    let declared: BackupFolder[] = [];
+    if (typeof module.backupFolders === 'function') {
+      try {
+        declared = module.backupFolders(config);
+      } catch (err) {
+        logger.error(`[AddonsManager] ${slug}'s backupFolders() failed, so only its dataPath is backed up: ${(err as Error).message}`);
+      }
+    }
+    return { dataPath, folders: [...(dataPath ? [{ part: slug, folder: dataPath }] : []), ...declared] };
+  }
+
+  /** Each loaded add-on's `dataPath` and declared folders (#1985), in load order: what BackupManager backs up for it. */
+  addonBackupFolders(): Array<{ slug: string; dataPath: string | null; folders: BackupFolder[] }> {
+    return [...this.addons]
+      .filter(([, addon]) => addon.loaded && addon.backupFolders)
+      .map(([slug, addon]) => ({ slug, ...addon.backupFolders! }));
   }
 
   /**
@@ -1805,6 +1855,12 @@ class AddonsManager extends BaseManager {
       // Get add-on specific configuration
       const addonConfig = this.getAddonConfig(addonName);
 
+      // #1985: its dataPath and declared folders are BackupManager's to back
+      // up; a staged restore of them goes in now, before register() reads them.
+      addon.backupFolders = this.addonFolders(addonName, addon.module, addonConfig);
+      this.engine.getManager<{ applyAddonPartsAtStart?(slug: string, folders: BackupFolder[]): unknown }>('BackupManager')
+        ?.applyAddonPartsAtStart?.(addonName, addon.backupFolders.folders);
+
       // #1813: the host is built per add-on: its logger tagged with the slug,
       // its audit helpers limited to the events this add-on declares.
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -2059,9 +2115,14 @@ class AddonsManager extends BaseManager {
    *
    * Errors are caught per-addon and logged so one bad addon cannot block
    * other addons' saves or the core-preferences save.
+   *
+   * #1603: an add-on whose switch was refused because its documents are not
+   * accepted yet (`ConsentRequiredError`) is returned, so the route can tell
+   * the person what to accept instead of the save failing silently.
    */
-  async saveProfileSections(ctx: ActorContext, body: Record<string, unknown>): Promise<void> {
+  async saveProfileSections(ctx: ActorContext, body: Record<string, unknown>): Promise<{ consentRequired: ConsentRequiredError[] }> {
     const flatBody = flattenDottedKeys(body);
+    const consentRequired: ConsentRequiredError[] = [];
 
     for (const [name, addon] of this.addons) {
       if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
@@ -2070,11 +2131,16 @@ class AddonsManager extends BaseManager {
         // #1234: the caller's context, forwarded — the addon writes on its behalf.
         await addon.module.saveProfileSection(ctx, flatBody);
       } catch (err) {
+        if (err instanceof ConsentRequiredError) {
+          consentRequired.push(err);
+          continue;
+        }
         logger.warn(
           `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
         );
       }
     }
+    return { consentRequired };
   }
 
   /**
@@ -2104,6 +2170,15 @@ class AddonsManager extends BaseManager {
       });
     }
     return listing;
+  }
+
+  /**
+   * Whether `slug` is an add-on whose manifest says `perPerson: true` (#1963),
+   * loaded or still loading. ConsentManager asks it when an add-on registers
+   * documents: they guard the per-person switch, so only such an add-on has any.
+   */
+  isPerPerson(slug: string): boolean {
+    return this.addons.get(slug)?.manifest?.perPerson === true;
   }
 
   /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
@@ -2157,6 +2232,16 @@ class AddonsManager extends BaseManager {
         }>('UserManager');
     const user = await userManager?.getUser(ctx.username);
     if (!userManager || !user) throw new Error(`No account '${ctx.username}' to set the ${slug} switch on`);
+    // #1603: turning it on needs its documents accepted first, at their
+    // current versions. ConsentManager asks the person and records it; until
+    // then the switch stays off. Turning it off, or saving it on when it is
+    // already on, asks nothing: a changed version is asked when they next use it.
+    const preferences0 = (user.preferences ?? {}) as Record<string, unknown>;
+    if (on && preferences0[personSwitchKey(slug)] !== true) {
+      const pending = await this.engine.getManager<{ pendingFor(u: string, s: string): Promise<Array<{ id: string }>> }>('ConsentManager')
+        ?.pendingFor(ctx.username, slug) ?? [];
+      if (pending.length > 0) throw new ConsentRequiredError(slug, pending.map((d) => d.id));
+    }
     const preferences = { ...(user.preferences ?? {}), [personSwitchKey(slug)]: on };
     await userManager.updateUser(ctx.username, { preferences }, ctx);
   }

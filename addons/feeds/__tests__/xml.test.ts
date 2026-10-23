@@ -48,35 +48,35 @@ describe('xmlAdapter (#685)', () => {
 
   it('fetch() locates repeated elements via itemsPath', async () => {
     const policy = stubFetch('<rss><channel><item><id>a</id></item><item><id>b</id></item></channel></rss>');
-    const items = await xmlAdapter.fetch({ ...base, itemsPath: 'rss.channel.item' }, policy);
+    const items = await xmlAdapter.fetch({ ...base, itemsPath: 'rss.channel.item' }, policy, guardedFetch);
     expect(items).toEqual([{ id: 'a' }, { id: 'b' }]);
   });
 
   it('fetch() coerces a single element to a 1-item array', async () => {
     const policy = stubFetch('<rss><channel><item><id>only</id></item></channel></rss>');
-    const items = await xmlAdapter.fetch({ ...base, itemsPath: 'rss.channel.item' }, policy);
+    const items = await xmlAdapter.fetch({ ...base, itemsPath: 'rss.channel.item' }, policy, guardedFetch);
     expect(items).toEqual([{ id: 'only' }]);
   });
 
   it('fetch() without itemsPath unwraps the root and envelope-detects', async () => {
     const policy = stubFetch('<feed><items><id>1</id></items><items><id>2</id></items></feed>');
-    const items = await xmlAdapter.fetch(base, policy);
+    const items = await xmlAdapter.fetch(base, policy, guardedFetch);
     expect(items).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
   it('fetch() returns [] when itemsPath resolves to nothing', async () => {
     const policy = stubFetch('<feed><meta>x</meta></feed>');
-    expect(await xmlAdapter.fetch({ ...base, itemsPath: 'feed.nope' }, policy)).toEqual([]);
+    expect(await xmlAdapter.fetch({ ...base, itemsPath: 'feed.nope' }, policy, guardedFetch)).toEqual([]);
   });
 
   it('fetch() throws on non-ok', async () => {
     const policy = stubFetch('', false, 503);
-    await expect(xmlAdapter.fetch(base, policy)).rejects.toThrow(/503/);
+    await expect(xmlAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/503/);
   });
 
   it('exposes attributes with the @ prefix and text under #text', async () => {
     const policy = stubFetch('<doc><adv id="A1"><link href="https://x.test/a1">Advisory A1</link></adv></doc>');
-    const [item] = await xmlAdapter.fetch({ ...base, itemsPath: 'doc.adv' }, policy);
+    const [item] = await xmlAdapter.fetch({ ...base, itemsPath: 'doc.adv' }, policy, guardedFetch);
     expect(item['@id']).toBe('A1');
     expect((item.link as Record<string, unknown>)['@href']).toBe('https://x.test/a1');
     expect((item.link as Record<string, unknown>)['#text']).toBe('Advisory A1');

@@ -17,6 +17,10 @@
  *   bound to its slug, so it can never set another add-on's;
  * - `registerShim` and `registerReceiver` (#1979, ICE) register into the import
  *   engine under this add-on's slug, and only the names its manifest declares;
+ * - the egress tools (`resolveEgressPolicy`, `validateUrl`,
+ *   `createGuardedElasticsearchClient`, `refusedNodeMessage`) and `isAtLeast`
+ *   are core's own pure functions, handed on unchanged, so an add-on never
+ *   imports them from `dist/` (#1813);
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -29,6 +33,10 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { jobContextFromRequest, jobContextFromSystem, type JobContext } from '../context/JobContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { validateUrl } from '../http/ssrf.js';
+import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
+import { isAtLeast } from './version.js';
 import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
@@ -62,6 +70,20 @@ export interface AddonHost {
    * does not say `perPerson: true`, or the person may not manage their profile.
    */
   readonly setEnabledForPerson: PersonSwitchSetter;
+  /**
+   * The site's egress policy, read through `read` (a `ConfigurationManager.getProperty`
+   * reader) each time it is called, so an operator tightening it applies at once.
+   * Hand its `policy` to `guardedFetch` or `validateUrl`.
+   */
+  readonly resolveEgressPolicy: typeof resolveEgressPolicy;
+  /** Whether a URL may be fetched under an egress policy, before any socket: http(s) and an allowed literal address. */
+  readonly validateUrl: typeof validateUrl;
+  /** An Elasticsearch client whose every connection is judged by the egress policy; the only way to build one. */
+  readonly createGuardedElasticsearchClient: typeof createGuardedElasticsearchClient;
+  /** The one boot-time line for an Elasticsearch node the egress policy refuses. */
+  readonly refusedNodeMessage: typeof refusedNodeMessage;
+  /** Whether an `x.y.z` version is at least another; throws on a version that is not `x.y.z`. */
+  readonly isAtLeast: typeof isAtLeast;
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -177,6 +199,11 @@ export function buildAddonHost(
     guardedFetch,
     setEnabledForPerson,
     registerShim: (shim: IceShim) => iceRegistry('shim', shim?.name).registerShim(slug, shim),
-    registerReceiver: (receiver: IceReceiver) => iceRegistry('receiver', receiver?.name).registerReceiver(slug, receiver)
+    registerReceiver: (receiver: IceReceiver) => iceRegistry('receiver', receiver?.name).registerReceiver(slug, receiver),
+    resolveEgressPolicy,
+    validateUrl,
+    createGuardedElasticsearchClient,
+    refusedNodeMessage,
+    isAtLeast
   });
 }

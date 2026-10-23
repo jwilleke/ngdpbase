@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { instanceOrigin } from './fixtures/helpers';
+import { instanceOrigin, signInWithPassword } from './fixtures/helpers';
 
 /**
  * #1937 — an account an admin deletes or turns off loses every signed-in
@@ -43,12 +43,7 @@ async function deleteAccount(admin: Page, username: string): Promise<number> {
 async function signIn(browser: Browser, username: string, password: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
-  await page.goto('/admin/login');
-  const form = page.locator('form:has(input[type="password"])');
-  await form.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="password"])').first().fill(username);
-  await form.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+  await signInWithPassword(page, username, password); // #1603: accepts the terms when asked
   return { context, page };
 }
 

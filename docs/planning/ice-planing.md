@@ -4,7 +4,7 @@ Epic: [#1979](https://github.com/jwilleke/ngdpbase/issues/1979)
 
 The source of truth for the ICE epic: one engine that brings data in, converts it, and sends it out, with add-ons supplying the format-specific pieces ("shims"). Decisions here are the operator's; development follows this page. Change it when a decision changes, in the same change that ships the code.
 
-Status: design agreed (2026-10-21/22). First slice built in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (draft, 2026-10-22): the engine, the shim registry and today's converters as shims. Its answers to the open questions it needed are proposals until the operator decides them (see [Open questions](#open-questions)).
+Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). A plugin as a receiver and how export is picked stay open.
 
 ## Where this came from
 
@@ -35,7 +35,7 @@ Each solves fingerprinting, skipping unchanged input and per-file status separat
   - handing results to receivers;
   - export the other way.
 
-  Not two engines sharing parsers: that would still build duplicate handling, status and fetching twice. The engine's name is open (keep `ImportManager`, or rename since it also exports).
+  Not two engines sharing parsers: that would still build duplicate handling, status and fetching twice. The engine keeps the name `ImportManager` (decided 2026-10-23).
 - __D2 — The DirXML model: core is the engine, add-ons supply shims (2026-10-22).__ A shim knows one outside format and nothing else. Everything else is the engine's.
 - __D3 — A shim may be two-way; most are inbound only (2026-10-22).__ PDF is the example: one shim can import a PDF or output one (ties to #1974). A shim declares its direction: `in`, `out` or `both`.
 - __D4 — Results go to a declared receiver (2026-10-22).__ Receivers:
@@ -109,18 +109,18 @@ Later, once the engine has proven itself:
 
 ## Open questions
 
-Answers marked __proposed__ were picked by the first slice so it could be built. They are the operator's to confirm or change; until then they are not decisions.
+Answers marked __decided__ were proposed by the first slice (PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981)) and accepted by the operator on 2026-10-23 ([#1979](https://github.com/jwilleke/ngdpbase/issues/1979)). The rest are still open.
 
 - The engine's name: keep `ImportManager`, or rename it since it also exports.
-  - __Proposed in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981): keep `ImportManager`.__ Renaming touches every caller, route and doc for no behaviour; export can live on it, or a rename can come with export.
-- A plugin as a receiver (D4): previews only, or not at all. (Not needed by the first slice; open.)
+  - __Decided (operator, 2026-10-23): keep `ImportManager`.__ Renaming touches every caller, route and doc for no behaviour; export can live on it, or a rename can come with export.
+- A plugin as a receiver (D4): previews only, or not at all. (Not needed by the first slice; still open.)
 - Where the engine keeps fingerprints and per-file status (a core database table, or the files layer), and how phr's existing `phr_source_files` history moves over.
-  - __Proposed in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981): the engine's own ledger behind an `IceLedger` interface__, first stored as one JSON file per scope under `ngdpbase.import.engine.ledger-dir` (FAST_STORAGE). The application database is off by default (`ngdpbase.database.provider: none`), and the files layer (#1851) has no write door yet. A database table implements the same interface when the database is on. A scope is `<receiver>/<username>` unless the caller names one (phr can pass its source id). phr's `phr_source_files` rows map one to one onto a ledger entry (name, SHA-256, size, status, message, time, references), so moving them over is a one-time copy into phr's scope.
+  - __Decided (operator, 2026-10-23): the engine's own ledger behind an `IceLedger` interface__, first stored as one JSON file per scope under `ngdpbase.import.engine.ledger-dir` (FAST_STORAGE). The application database is off by default (`ngdpbase.database.provider: none`), and the files layer (#1851) has no write door yet. A database table implements the same interface when the database is on. A scope is `<receiver>/<username>` unless the caller names one (phr can pass its source id). phr's `phr_source_files` rows map one to one onto a ledger entry (name, SHA-256, size, status, message, time, references), so moving them over is a one-time copy into phr's scope.
 - How a shim is registered on `host` (the exact call and types), and how the manifest declares it (with #1966).
-  - __Proposed in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981):__ `host.registerShim(shim: IceShim): string` and `host.registerReceiver(receiver: IceReceiver): string`, registering `<slug>.<name>`, types in `@jwilleke/ngdpbase-types` (`src/ice/types.ts`). The manifest declares names on the existing `AddonManifest`: `"ngdpbase": { "shims": ["ccda", "fhir"], "receivers": ["health-records"] }`; the host refuses any other name. #1966's schema should check the same two fields.
+  - __Decided (operator, 2026-10-23):__ `host.registerShim(shim: IceShim): string` and `host.registerReceiver(receiver: IceReceiver): string`, registering `<slug>.<name>`, types in `@jwilleke/ngdpbase-types` (`src/ice/types.ts`). The manifest declares names on the existing `AddonManifest`: `"ngdpbase": { "shims": ["ccda", "fhir"], "receivers": ["health-records"] }`; the host refuses any other name. #1966's schema should check the same two fields.
 - Keeping originals through the files layer (D11).
-  - __Proposed in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981):__ `keep` goes to the receiver's own `keepOriginal` when it has one (phr), else to the `core.files` receiver, which is AttachmentManager's upload door today because FileManager (#1851) only reads so far. It moves to FileManager's write door when that exists.
-- Export: how a person picks what to export, and to which shim. (Not needed by the first slice; open.)
+  - __Decided (operator, 2026-10-23):__ `keep` goes to the receiver's own `keepOriginal` when it has one (phr stores the original in its encrypted database beside the records); otherwise the original becomes an ordinary attachment on what was created, under the normal upload rules, through the `core.files` receiver, which is AttachmentManager's upload door today because FileManager (#1851) only reads so far. It moves to FileManager's write door when that exists.
+- Export: how a person picks what to export, and to which shim. (Not needed by the first slice; still open.)
 
 ## Related
 

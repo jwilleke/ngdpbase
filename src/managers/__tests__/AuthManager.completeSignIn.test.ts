@@ -322,3 +322,53 @@ describe('AuthManager.completeSignIn (#1758)', () => {
     });
   });
 });
+
+/**
+ * #1603: terms the person has not accepted at their current version are asked
+ * first, after any other step, and the session is held to the prompt.
+ * Sabotaged once (the pending check skipped): the first two tests went red.
+ */
+describe('AuthManager.completeSignIn — the terms prompt (#1603)', () => {
+  function withConsent(pending: unknown[] | Error) {
+    const { manager } = setup();
+    const consent = { pendingFor: vi.fn(() => (pending instanceof Error ? Promise.reject(pending) : Promise.resolve(pending))) };
+    const getManager = (manager as unknown as { engine: { getManager: ReturnType<typeof vi.fn> } }).engine.getManager;
+    const inner = getManager.getMockImplementation();
+    getManager.mockImplementation((name: string) => (name === 'ConsentManager' ? consent : inner(name)));
+    return { manager, consent };
+  }
+
+  test('with terms to accept, sends the person to the prompt with where they were going, and holds the session', async () => {
+    const { manager, consent } = withConsent([{ id: 'terms-of-service', version: '2' }]);
+    const { req, session } = fakeReq();
+    const done = await manager.completeSignIn(req, passwordResult, { method: 'password', returnTo: '/view/Main' });
+    expect(consent.pendingFor).toHaveBeenCalledWith('molly');
+    expect(done.next).toBe(`/consent?returnTo=${encodeURIComponent('/view/Main')}`);
+    expect(session.consentPending).toBe(true);
+  });
+
+  test('a pending outside identity still comes, after the terms', async () => {
+    const { manager } = withConsent([{ id: 'terms-of-service', version: '1' }]);
+    const { req, session } = fakeReq({ pendingConnection: { providerId: 'google', subject: 's', email: 'm@example.com', displayName: 'Google', expiresAt: Date.now() + 60_000 } });
+    const done = await manager.completeSignIn(req, passwordResult, { method: 'password' });
+    expect(done.next).toBe(`/consent?returnTo=${encodeURIComponent('/login/connect/confirm')}`);
+    expect(session.pendingConnection).toBeTruthy();
+  });
+
+  test('nothing to accept: no prompt, nothing held', async () => {
+    const { manager } = withConsent([]);
+    const { req, session } = fakeReq();
+    const done = await manager.completeSignIn(req, passwordResult, { method: 'password' });
+    expect(done.next).toBeUndefined();
+    expect(session.consentPending).toBeUndefined();
+  });
+
+  test('a consent store that cannot be read asks nothing this time (never locks everyone out)', async () => {
+    const { manager } = withConsent(new Error('disk gone'));
+    const { req, session } = fakeReq();
+    const done = await manager.completeSignIn(req, passwordResult, { method: 'password' });
+    expect(done.next).toBeUndefined();
+    expect(session.consentPending).toBeUndefined();
+    expect(session.isAuthenticated).toBe(true);
+  });
+});

@@ -30,9 +30,9 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 42 | 47 | Core system managers |
+| [Managers](#managers) | 43 | 48 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 45 | 50 | Storage and service providers |
+| [Providers](#providers) | 46 | 51 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -64,6 +64,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |
 | CommentManager | ✅ [doc](managers/CommentManager.md) | Per-page comment storage + CRUD; sidecar JSON keyed by page UUID |
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
+| ConsentManager | ✅ [doc](managers/ConsentManager.md) | What each person has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603) |
 | DatabaseManager | ✅ [doc](managers/DatabaseManager.md) | The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger |
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown, and the one CSV writer for every CSV export |
@@ -179,6 +180,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | ElasticsearchSearchProvider | 📘 [doc](providers/ElasticsearchSearchProvider.md) + [guide](providers/ElasticsearchSearchProvider-Complete-Guide.md) | Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages |
 | FileAuditProvider | ✅ [doc](providers/FileAuditProvider.md) | Appends audit events to JSONL files on local disk — the default backend |
 | FileBackupProvider | ✅ [doc](providers/FileBackupProvider.md) | Default backup storage provider — local filesystem against ngdpbase.backup.directory (#170) |
+| FileConsentProvider | ✅ [doc](providers/FileConsentProvider.md) | Consent records — one append-only, owner-only JSONL file per account under the consent folder (#1603) |
 | FileCredentialsProvider | ✅ [doc](providers/FileCredentialsProvider.md) | The credentials store as one signed JSON file beside the user store, written owner-only (#1524) |
 | FileJobStateProvider | ✅ [doc](providers/FileJobStateProvider.md) | Scheduled-job state, run history, checkpoints and slot locks as files in FAST_STORAGE; atomic fsynced writes, exclusive-create locks, refuses NFS/SMB (#1714) |
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
@@ -344,11 +346,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 42/42 with quick-reference docs (100%); 17 with Complete Guides.
+__Managers:__ 43/43 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 45/45 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 46/46 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

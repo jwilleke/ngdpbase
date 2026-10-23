@@ -14,6 +14,14 @@
         "enabled": false,
         "description": "Form submitted"
       }
+    },
+    "submission-clear": {
+      "description": "All stored submissions of one form cleared by an administrator; who, which form and how many",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Form submissions cleared; destruction, so the record must outlive the submissions"
+      }
     }
   },
   "ngdpbase.access.policies": [

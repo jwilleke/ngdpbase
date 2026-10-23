@@ -1,0 +1,68 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #1603 — what the signed-in person is asked to accept: core's terms (scope "core") or an add-on's
+    documents. Each document links to its page, which stays readable while they are asked. The
+    form says which version of each they were shown (document / version pairs), so an acceptance is
+    never recorded for a version they did not see. Locals: scope, documents (ConsentDocument[]),
+    canPutOff, actingFor, returnTo, error, csrfToken. %>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card mt-5" data-consent-scope="<%= scope %>">
+                <div class="card-header">
+                    <h4 class="mb-0"><%= scope === 'core' ? 'Please accept the terms' : 'Please accept to use ' + scope %></h4>
+                </div>
+                <div class="card-body">
+                    <% if (error) { %>
+                    <div class="alert alert-warning" role="alert"><%= error %></div>
+                    <% } %>
+                    <% if (actingFor) { %>
+                    <div class="alert alert-info" role="alert">You are acting for someone else. Only they can accept these, signed in themselves.</div>
+                    <% } %>
+                    <p>
+                        <% if (scope === 'core') { %>
+                        Before you go on, read and accept the following. When one of them changes, you are asked again the next time you sign in.
+                        <% } else { %>
+                        <%= scope %> has its own terms. Read and accept them to use it. When they change, you are asked again the next time you use it.
+                        <% } %>
+                    </p>
+                    <ul class="list-group mb-3">
+                        <% documents.forEach(function (d) { %>
+                        <li class="list-group-item" data-consent-document="<%= d.id %>">
+                            <a href="/view/<%= encodeURIComponent(d.id) %>" target="_blank" rel="noopener"><%= d.title %></a>
+                            <div class="small text-muted">Version <%= d.version %><% if (d.effective) { %>, in effect from <%= d.effective %><% } %></div>
+                        </li>
+                        <% }) %>
+                    </ul>
+                    <form action="/consent" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="scope" value="<%= scope %>">
+                        <input type="hidden" name="returnTo" value="<%= returnTo %>">
+                        <% documents.forEach(function (d) { %>
+                        <input type="hidden" name="document" value="<%= d.id %>">
+                        <input type="hidden" name="version" value="<%= d.version %>">
+                        <% }) %>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="accept" id="consent-accept" required>
+                            <label class="form-check-label" for="consent-accept">I have read and accept <%= documents.length === 1 ? 'it' : 'them' %></label>
+                        </div>
+                        <button type="submit" class="btn btn-primary" <%= actingFor ? 'disabled' : '' %>>Accept and continue</button>
+                    </form>
+                    <hr>
+                    <% if (canPutOff) { %>
+                    <p class="small text-muted mb-0">Not now? <a href="/profile">Go to your profile</a>, where you can turn <%= scope %> off.</p>
+                    <% } else { %>
+                    <form action="/logout" method="POST" class="m-0">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <p class="small text-muted mb-1">If you do not accept, you cannot use this site's account. You can sign out instead.</p>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Sign out</button>
+                    </form>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

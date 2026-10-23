@@ -8,7 +8,7 @@
  */
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { Sist2AssetProvider } from '../src/Sist2AssetProvider.js';
 
@@ -23,8 +23,10 @@ export interface ElasticsearchAdminConfig {
 export default function adminRoutes(
   engine: WikiEngine,
   getProvider: () => Sist2AssetProvider | null,
-  config: ElasticsearchAdminConfig
+  config: ElasticsearchAdminConfig,
+  host: AddonHost
 ): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   // ── GET /addons/elasticsearch ─────────────────────────────────────────────

@@ -302,7 +302,7 @@ add-ons is a separate, __unimplemented__ design discussion — see #444.
 Use `ApiContext` for all route authentication — the same pattern used by core wiki routes:
 
 ```typescript
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+const { ApiContext, ApiError, sendApiError } = host;   // register()'s third argument (#1813), never an import of dist/
 
 router.get('/resource', async (req, res) => {
   try {
@@ -389,7 +389,7 @@ Call `load()` manually in `register()` before calling `engine.registerManager()`
 Key points:
 
 - `rootDir: "../.."` and `outDir: "../.."` together cause output to land at `dist/addons/{name}/…` mirroring the source layout
-- Imports from core use `../../../dist/src/…` paths (compiled core output)
+- Type imports from core use `../../../dist/src/…` paths (compiled core output); values come from `host` and the managers, never an import (`lint:addons`, [#1813](https://github.com/jwilleke/ngdpbase/issues/1813))
 - The request's types (`req.userContext`, `req.session`) arrive through `dist/src/context/ApiContext.d.ts`, which imports the host's `Request` augmentation; no `include` entry is needed ([#1665](https://github.com/jwilleke/ngdpbase/issues/1665))
 
 ### eslint.config.mjs

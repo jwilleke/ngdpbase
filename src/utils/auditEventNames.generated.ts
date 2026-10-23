@@ -59,6 +59,10 @@ export const AUDIT_EVENT = {
   CONFIG_CHANGE: 'config-change',
   /** Every custom configuration value discarded; recorded before the reset, which cannot proceed without it */
   CONFIG_RESET: 'config-reset',
+  /** A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable */
+  CONSENT_GRANT: 'consent-grant',
+  /** A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed */
+  CONSENT_WITHDRAW: 'consent-withdraw',
   /** Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values */
   CONTACT_MANAGE: 'contact-manage',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
@@ -149,6 +153,22 @@ export const AUDIT_EVENT = {
   SHARE_EXTEND: 'share-extend',
   /** Share link revoked; pairs with token-revoke */
   SHARE_REVOKE: 'share-revoke',
+  /** Sign-in approval: the browser that was waiting gave up the sign-in (#1532) */
+  SIGNINAPPROVAL_ABANDON: 'signinapproval-abandon',
+  /** Sign-in approval: the person pressed Approve (#1532) */
+  SIGNINAPPROVAL_APPROVE: 'signinapproval-approve',
+  /** Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) */
+  SIGNINAPPROVAL_DENY: 'signinapproval-deny',
+  /** Sign-in approval: a waiting sign-in expired before it was completed (#1532) */
+  SIGNINAPPROVAL_EXPIRE: 'signinapproval-expire',
+  /** Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) */
+  SIGNINAPPROVAL_OPEN: 'signinapproval-open',
+  /** Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) */
+  SIGNINAPPROVAL_REQUEST: 'signinapproval-request',
+  /** Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) */
+  SIGNINAPPROVAL_SENDFAIL: 'signinapproval-sendfail',
+  /** Sign-in approval: another approval message was asked for too soon and not sent (#1532) */
+  SIGNINAPPROVAL_THROTTLE: 'signinapproval-throttle',
   /** A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record */
   STORE_CREATE: 'store-create',
   /** A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped */

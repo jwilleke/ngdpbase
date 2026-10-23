@@ -39,6 +39,21 @@ export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager } from '../../src/managers/ExportManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';
+// #1813: a page's URL and a vault page's name (`pageUrl`, `privatePageName`), for add-ons.
+export type { default as PageManager } from '../../src/managers/PageManager.js';
+export type { PageAction } from '../../src/utils/pageUrl.js';
+
+// Consent (#1603): an add-on registers its documents with ConsentManager at load.
+export type { default as ConsentManager, ConsentScopeStatus } from '../../src/managers/ConsentManager.js';
+export type {
+  AddonConsentRegistration,
+  ConsentDocument,
+  ConsentRecord,
+  ConsentRequiredError,
+  ConsentScope,
+  ConsentSeen,
+  ConsentStatus
+} from '../../src/types/Consent.js';
 
 // ICE (#1979): the import engine, and the shims and receivers an add-on registers through `host`.
 export type { default as ImportManager } from '../../src/managers/ImportManager.js';

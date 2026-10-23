@@ -29,10 +29,10 @@ import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type CatalogManager from '../../dist/src/managers/CatalogManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
-import logger from '../../dist/src/utils/logger.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import { FeedManager } from './src/FeedManager.js';
 import { parseSourceConfigs, readFeedSettings } from './src/config.js';
-import DataFeedPlugin from './src/DataFeedPlugin.js';
+import { createDataFeedPlugin } from './src/DataFeedPlugin.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,9 +46,10 @@ const feedsAddon = {
   author: 'Jim Willeke',
   dependencies: [] as string[],
 
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
-    const settings = readFeedSettings(config);
-    const sourceConfigs = parseSourceConfigs(config.sources, settings);
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
+    const { logger } = host;
+    const settings = readFeedSettings(config, logger);
+    const sourceConfigs = parseSourceConfigs(config.sources, logger, settings);
 
     // Record store lives under FAST_STORAGE (operational data); override via dataPath.
     const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -59,13 +60,14 @@ const feedsAddon = {
     // #1133 — how the adapters reach the egress policy. Positional and
     // required, because an adapter that was handed none must not compile.
     feedManager = new FeedManager(
+      host,
       sourceConfigs,
       baseDir,
       (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback
     );
 
-    // #1876: a staged site restore of the record stores goes in before any is read.
-    if (configManager) feedManager.applyRestoreAtStart(configManager);
+    // #1876, #1985: the record stores under dataPath are backed up by BackupManager, and a
+    // staged restore of them was put in place before register() ran.
 
     // Reachable for the fetch='FeedManager.toMarqueeText(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);
@@ -83,7 +85,7 @@ const feedsAddon = {
       | { registerPlugin?: (name: string, plugin: unknown) => Promise<void> | void }
       | null;
     if (pluginManager?.registerPlugin) {
-      await pluginManager.registerPlugin('DataFeed', DataFeedPlugin);
+      await pluginManager.registerPlugin('DataFeed', createDataFeedPlugin(logger));
     }
 
     // Vendored Leaflet for [{DataFeed format='map'}] (geohazardwatch#162) — matching

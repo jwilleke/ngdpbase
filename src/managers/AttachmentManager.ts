@@ -1,6 +1,5 @@
-import BaseManager, { BackupData, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats } from './BaseManager.js';
+import BaseManager, { BackupData, type BackupArchiveTarget, type ManagerBackupOptions, type ManagerRestoreOptions, type ManagerStats, type SiteRestoreStaging, type StagedRestoreAtStart } from './BaseManager.js';
 import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
-import type { PartOutcome } from '../utils/siteRestore.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
@@ -78,9 +77,9 @@ interface BaseAttachmentProvider {
   backup(): Promise<unknown>;
   restore(backupData: unknown): Promise<void>;
   /** #1876: the files themselves beside the backup document, and their staged restore. */
-  backupFiles?(directory: string, stem: string): Promise<AttachmentFilesBackupOutcome>;
-  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, directory: string, siteRestore: string): Promise<{ skippedVaults: string[] }>;
-  takeRestoreAtStart?(): PartOutcome | null;
+  backupFiles?(archive: (part: string) => BackupArchiveTarget): Promise<AttachmentFilesBackupOutcome>;
+  stageFilesRestore?(providerBackup: Record<string, unknown>, files: AttachmentFilesBackupData, readArchive: NonNullable<ManagerRestoreOptions['readArchive']>, siteRestore: SiteRestoreStaging): Promise<{ skippedVaults: string[] }>;
+  takeRestoreAtStart?(): StagedRestoreAtStart | null;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
   // #1400 / #1460: files in a private store, listed in the store's own index —
@@ -2836,13 +2835,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const providerBackup = await this.attachmentProvider.backup();
 
     // #1876: the files themselves, beside the document, never in it.
-    if (!options?.directory || !options.stem) {
+    if (!options?.archive) {
       throw new Error('AttachmentManager writes the attachment files beside the backup document, so it is backed up through BackupManager (#1876)');
     }
     if (!this.attachmentProvider.backupFiles) {
       throw new Error(`${this.providerClass} cannot write its files into a backup, so the attachment files are not backed up (#1876)`);
     }
-    const { data: files, warnings } = await this.attachmentProvider.backupFiles(options.directory, options.stem);
+    const { data: files, warnings } = await this.attachmentProvider.backupFiles(options.archive);
     for (const w of warnings) logger.error(`📎 [AttachmentManager] ${w}`);
     logger.info(`📎 Backed up ${files.pool.files} shared file(s) and ${files.vaults.files} vault file(s) (${files.vaults.stores.length} vault(s)) beside the document (#1876)`);
 
@@ -2873,7 +2872,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     // #1876: staged for the next start with the rest of the site, never written live.
-    if (!options?.siteRestore || !options.directory) {
+    if (!options?.siteRestore || !options.readArchive) {
       throw new Error('AttachmentManager\'s restore is staged with the rest of the site, so it is restored through BackupManager (#1876)');
     }
     if (backupData.providerClass !== this.providerClass) {
@@ -2885,7 +2884,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (!this.attachmentProvider.stageFilesRestore) {
       throw new Error(`${this.providerClass} cannot stage a restore of its files; nothing was staged (#1876)`);
     }
-    const { skippedVaults } = await this.attachmentProvider.stageFilesRestore(backupData.providerBackup as Record<string, unknown>, backupData.files, options.directory, options.siteRestore);
+    const { skippedVaults } = await this.attachmentProvider.stageFilesRestore(backupData.providerBackup as Record<string, unknown>, backupData.files, options.readArchive, options.siteRestore);
     logger.warn('📎 Attachment files and metadata staged — applied at the next start with the rest of the site restore (#1876)');
     if (skippedVaults.length > 0) {
       const message = `The backup holds files of vaults this site no longer has (${skippedVaults.join(', ')}), so they were not staged. Their pages are not on this site either.`;
