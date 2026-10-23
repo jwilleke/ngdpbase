@@ -18,7 +18,7 @@ import ExportManager from '../../src/managers/ExportManager.js';
 import { addonDatabaseDeclarationFor, checkAddonDatabaseRequest, type AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
 import { addonDatabaseLayer } from '../../src/utils/addonConfigLayer.js';
 import SqliteDatabaseProvider, { type SqliteHandle } from '../../src/providers/SqliteDatabaseProvider.js';
-import { buildAddonHost as buildHost, type AddonHost, type PersonSwitchSetter } from '../../src/utils/addonHost.js';
+import { buildAddonHost as buildHost, type AddonHost, type AddonIceDeclaration, type PersonSwitchSetter } from '../../src/utils/addonHost.js';
 import { bindAuditEvents } from '../../src/utils/auditRegistry.js';
 
 export { formatters } from '../../src/managers/PluginManager.js';
@@ -36,16 +36,21 @@ export { formatters } from '../../src/managers/PluginManager.js';
  *   test (#1963); a site binds core's setter. Without one it refuses.
  * @param engine - Optional: an engine (or stand-in) whose PolicyInformationPoint
  *   names the system principal for `host.systemContext`; without one it is
- *   core's fallback principal
+ *   core's fallback principal. Its `ImportManager` (a real one, or a
+ *   stand-in) is where `host.registerShim` and `host.registerReceiver` register
+ * @param manifest - Optional: the add-on's manifest (the `ngdpbase` block of
+ *   its package.json); its `shims` and `receivers` are the names the host lets
+ *   it register (#1979)
  */
 export function buildAddonHost(
   slug: string,
   addonDefaults: Record<string, unknown>,
   setEnabledForPerson?: PersonSwitchSetter,
-  engine?: Parameters<typeof buildHost>[3]
+  engine?: Parameters<typeof buildHost>[3],
+  manifest?: AddonIceDeclaration | null
 ): AddonHost {
   bindAuditEvents((key, fallback) => addonDefaults[key] ?? fallback);
-  return buildHost(slug, addonDefaults, setEnabledForPerson, engine);
+  return buildHost(slug, addonDefaults, setEnabledForPerson, engine, manifest);
 }
 
 /** The add-on whose declaration a test database is checked against: its slug and its own `config/default-config.json`. */

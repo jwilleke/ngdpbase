@@ -1,0 +1,12 @@
+{
+  "name": "@ngdpbase/per-person-audience-e2e",
+  "version": "1.0.0",
+  "description": "E2E fixture per-person add-on for the page audience addon:<slug> (#1964); never bundled",
+  "private": true,
+  "type": "module",
+  "ngdpbase": {
+    "slug": "per-person-audience-e2e",
+    "type": "additive",
+    "perPerson": true
+  }
+}

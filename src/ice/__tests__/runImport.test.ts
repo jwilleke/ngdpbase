@@ -1,0 +1,348 @@
+/**
+ * Each rule of one ICE run (#1979), against stand-in shims and receivers:
+ * fingerprint skip, unzip, the noise filter, per-file status, chaining, the
+ * receiver's door called with the run's context, a refusal by the receiver,
+ * the three original choices (D11), and per-item duplicates.
+ */
+import { packZip } from '../../utils/zipArchive';
+import { MemoryIceLedger } from '../ledger';
+import { runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
+import type {
+  IceItem, IceRunReport, IceRunRequest, ReceiveInfo, ReceiveOutcome, RegisteredReceiver, RegisteredShim
+} from '../types';
+import type { ActorContext } from '../../context/ActorContext';
+
+const ALICE: ActorContext = { username: 'alice', roles: ['reader'], isAuthenticated: true } as ActorContext;
+
+const SETTINGS: IceEngineSettings = {
+  noise: ['__MACOSX/', '.DS_Store', '._*'],
+  zip: { maxEntries: 100, maxTotalBytes: 1_000_000 },
+  maxZipDepth: 3,
+  maxFileBytes: 1_000_000,
+  maxChainDepth: 5,
+  defaultOriginal: 'none'
+};
+
+type Received = { item: IceItem; ctx: ActorContext; info: ReceiveInfo };
+
+/** A receiver that records what its door was handed, and refuses whom it is told to. */
+function recordingReceiver(id: string, accepts: string[], opts: { refuse?: (ctx: ActorContext) => boolean; keeps?: boolean } = {}) {
+  const received: Received[] = [];
+  const kept: Array<{ item: IceItem; ctx: ActorContext }> = [];
+  let n = 0;
+  const [owner, name] = id.split('.');
+  const receiver: RegisteredReceiver = {
+    id, owner, name, accepts,
+    mayUse: async (ctx) => !opts.refuse?.(ctx),
+    receive: async (item, ctx, info): Promise<ReceiveOutcome> => {
+      if (opts.refuse?.(ctx)) return { status: 'refused', message: `${ctx.username} may not` };
+      received.push({ item, ctx, info });
+      return { status: 'stored', ref: `${name}-${++n}` };
+    },
+    ...(opts.keeps ? {
+      keepOriginal: async (item: IceItem, ctx: ActorContext): Promise<ReceiveOutcome> => {
+        kept.push({ item, ctx });
+        return { status: 'stored', ref: `original-${kept.length}` };
+      }
+    } : {})
+  };
+  return { receiver, received, kept };
+}
+
+/** A shim reading `.rec` lines, `key=value`, into one `test.record` item per line. */
+function recordShim(overrides: Partial<RegisteredShim> = {}): RegisteredShim {
+  return {
+    id: 'test.rec', owner: 'test', name: 'rec', direction: 'in',
+    accepts: { extensions: ['.rec'], canRead: (input) => (input.text ?? '').includes('=') },
+    produces: 'test.record',
+    receivers: ['test.records'],
+    read: async (input) => ({
+      items: (input.text ?? '').split('\n').filter(Boolean).map(line => {
+        const [key, value] = line.split('=');
+        return { kind: 'test.record', name: input.name, data: { key, value }, itemKey: key };
+      })
+    }),
+    ...overrides
+  };
+}
+
+function deps(shims: RegisteredShim[], receivers: RegisteredReceiver[], ledger = new MemoryIceLedger(), settings: Partial<IceEngineSettings> = {}): IceRunDeps {
+  return {
+    shims,
+    receivers: new Map(receivers.map(r => [r.id, r])),
+    ledger,
+    settings: { ...SETTINGS, ...settings },
+    tools: () => ({ options: {}, fetch: async () => { throw new Error('no network in this test'); } }),
+    now: () => new Date('2026-10-22T12:00:00Z')
+  };
+}
+
+function report(request: IceRunRequest, ctx: ActorContext = ALICE): IceRunReport {
+  return { runId: 'run-1', receiver: request.receiver, scope: request.scope ?? `${request.receiver}/${ctx.username}`, username: ctx.username, state: 'queued', files: [] };
+}
+
+async function run(d: IceRunDeps, request: IceRunRequest, ctx: ActorContext = ALICE): Promise<IceRunReport> {
+  return runImport(d, request, ctx, report(request, ctx));
+}
+
+const upload = (name: string, text: string) => ({ name, bytes: Buffer.from(text) });
+
+describe('runImport', () => {
+  test('hands each item to the receiver door with the run\'s context, and reports the file imported', async () => {
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim()], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=120\nhr=60')] }, receiver: 'test.records' });
+
+    expect(result.state).toBe('done');
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]).toMatchObject({ name: 'a.rec', status: 'imported', stored: 2, chain: ['test.rec'], refs: ['records-1', 'records-2'] });
+    expect(received.map(r => r.item.data)).toEqual([{ key: 'bp', value: '120' }, { key: 'hr', value: '60' }]);
+    expect(received.every(r => r.ctx === ALICE)).toBe(true);
+    expect(received[0].info).toMatchObject({ runId: 'run-1', chain: ['test.rec'], source: { name: 'a.rec', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) } });
+  });
+
+  test('an unchanged file is skipped by its fingerprint; a changed one is imported again', async () => {
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const d = deps([recordShim({ duplicates: 'file' })], [receiver]);
+    const req = (text: string): IceRunRequest => ({ source: { type: 'upload', files: [upload('a.rec', text)] }, receiver: 'test.records' });
+
+    await run(d, req('bp=120'));
+    const again = await run(d, req('bp=120'));
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', refs: ['records-1'] });
+    expect(received).toHaveLength(1);
+
+    const changed = await run(d, req('bp=130'));
+    expect(changed.files[0].status).toBe('imported');
+    expect(received).toHaveLength(2);
+  });
+
+  test('fingerprints are per scope: another person importing the same file imports it', async () => {
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const d = deps([recordShim()], [receiver]);
+    const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records' };
+    await run(d, req);
+    const bob = { username: 'bob', roles: [], isAuthenticated: true } as unknown as ActorContext;
+    expect((await run(d, req, bob)).files[0].status).toBe('imported');
+    expect(received.map(r => r.ctx.username)).toEqual(['alice', 'bob']);
+  });
+
+  test('a file whose last import failed or was refused is tried again', async () => {
+    let refuse = true;
+    const { receiver } = recordingReceiver('test.records', ['test.record'], { refuse: () => refuse });
+    const d = deps([recordShim()], [receiver]);
+    const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records' };
+    expect((await run(d, req)).files[0].status).toBe('refused');
+    refuse = false;
+    expect((await run(d, req)).files[0].status).toBe('imported');
+  });
+
+  test('unzips, drops noise, and reports every file', async () => {
+    const zip = await packZip([
+      { path: 'records/a.rec', bytes: Buffer.from('bp=120') },
+      { path: 'records/.DS_Store', bytes: Buffer.from('x') },
+      { path: 'records/._a.rec', bytes: Buffer.from('bp=999') },
+      { path: 'notes.txt', bytes: Buffer.from('just words') }
+    ]);
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim()], [receiver]), {
+      source: { type: 'upload', files: [{ name: 'export.zip', bytes: zip }, upload('__MACOSX/x.rec', 'bp=1')] },
+      receiver: 'test.records'
+    });
+    const status = Object.fromEntries(result.files.map(f => [f.name, f.status]));
+    // The zip reader already leaves out `.DS_Store` and `__MACOSX/` members;
+    // the noise filter catches the rest, and noise outside an archive.
+    expect(status).toEqual({
+      'export.zip/records/a.rec': 'imported',
+      'export.zip/records/._a.rec': 'noise',
+      'export.zip/notes.txt': 'unreadable',
+      '__MACOSX/x.rec': 'noise'
+    });
+    expect(received.map(r => r.item.data)).toEqual([{ key: 'bp', value: '120' }]);
+  });
+
+  test('noise is not recorded in the ledger; an unreadable file is', async () => {
+    const ledger = new MemoryIceLedger();
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    await run(deps([recordShim()], [receiver], ledger), {
+      source: { type: 'upload', files: [upload('.DS_Store', 'x'), upload('notes.txt', 'words')] }, receiver: 'test.records'
+    });
+    expect((await ledger.files('test.records/alice')).map(f => [f.name, f.status])).toEqual([['notes.txt', 'unreadable']]);
+  });
+
+  test('a file larger than allowed fails without being read', async () => {
+    const read = vi.fn();
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim({ read })], [receiver], undefined, { maxFileBytes: 4 }), {
+      source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records'
+    });
+    expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/larger than the 4 bytes/) });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('a shim\'s "can I read this?" decides, even when the extension matches', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim()], [receiver]), {
+      source: { type: 'upload', files: [upload('a.rec', 'no equals sign here')] }, receiver: 'test.records'
+    });
+    expect(result.files[0]).toMatchObject({ status: 'unreadable', message: expect.stringMatching(/no shim reads this file/) });
+  });
+
+  test('a file with no matching extension is claimed by content', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim()], [receiver]), {
+      source: { type: 'upload', files: [upload('export.dat', 'bp=120')] }, receiver: 'test.records'
+    });
+    expect(result.files[0].status).toBe('imported');
+  });
+
+  test('shims chain until an item is of a kind the receiver takes (D9), carrying metadata and warnings', async () => {
+    const outer: RegisteredShim = {
+      id: 'test.wrap', owner: 'test', name: 'wrap', direction: 'in',
+      accepts: { extensions: ['.wrap'] }, produces: 'test.inner', receivers: [],
+      read: async (input) => ({
+        items: [{ kind: 'test.inner', name: input.name, text: (input.text ?? '').replace(/^WRAP:/, ''), metadata: { source: 'wrap', title: 'from wrap' }, warnings: [{ kind: 'wrap-note', detail: 'unwrapped' }] }]
+      })
+    };
+    const inner: RegisteredShim = recordShim({
+      id: 'test.inner-rec', name: 'inner-rec', accepts: { kinds: ['test.inner'] },
+      read: async (input) => ({ items: [{ kind: 'test.record', name: input.name, data: input.text, metadata: { title: 'from inner' } }] })
+    });
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([outer, inner], [receiver]), {
+      source: { type: 'upload', files: [upload('a.wrap', 'WRAP:bp=120')] }, receiver: 'test.records'
+    });
+    expect(result.files[0]).toMatchObject({ status: 'imported', chain: ['test.wrap', 'test.inner-rec'] });
+    expect(received[0].item).toMatchObject({ data: 'bp=120', metadata: { source: 'wrap', title: 'from inner' }, warnings: [{ kind: 'wrap-note', detail: 'unwrapped' }] });
+    expect(received[0].info.chain).toEqual(['test.wrap', 'test.inner-rec']);
+  });
+
+  test('a chain longer than allowed fails the file', async () => {
+    const loop: RegisteredShim = {
+      id: 'test.loop', owner: 'test', name: 'loop', direction: 'in',
+      accepts: { extensions: ['.loop'], kinds: ['test.loop'] }, produces: 'test.loop', receivers: [],
+      read: async (input) => ({ items: [{ kind: 'test.loop', name: input.name, text: input.text }] })
+    };
+    const terminal = recordShim({ id: 'test.end', name: 'end', accepts: { kinds: ['test.loop'] } });
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([loop, terminal], [receiver], undefined, { maxChainDepth: 2 }), {
+      source: { type: 'upload', files: [upload('a.loop', 'x')] }, receiver: 'test.records'
+    });
+    // `loop` is found first for test.loop, so the chain keeps looping until the limit.
+    expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/longer than 2 shims/) });
+  });
+
+  test('a shim hands only to receivers it declares (D7)', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([recordShim({ receivers: ['other.receiver'] })], [receiver]), {
+      source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records'
+    });
+    expect(result.files[0].status).toBe('unreadable');
+  });
+
+  test('a pinned shim is used, or the file is unreadable', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const d = deps([recordShim()], [receiver]);
+    expect((await run(d, { source: { type: 'upload', files: [upload('x.dat', 'bp=1')] }, receiver: 'test.records', shim: 'test.rec' })).files[0].status).toBe('imported');
+    expect((await run(d, { source: { type: 'upload', files: [upload('y.dat', 'bp=1')] }, receiver: 'test.records', shim: 'test.nope' })).files[0])
+      .toMatchObject({ status: 'unreadable', message: expect.stringMatching(/test.nope is not available/) });
+  });
+
+  test('the receiver refusing (its own permission, D5) marks the file refused and stores nothing', async () => {
+    const { receiver, received } = recordingReceiver('test.records', ['test.record'], { refuse: (ctx) => ctx.username === 'alice' });
+    const result = await run(deps([recordShim()], [receiver]), {
+      source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records'
+    });
+    expect(result.files[0]).toMatchObject({ status: 'refused', stored: 0, message: 'alice may not' });
+    expect(received).toEqual([]);
+  });
+
+  test('a shim\'s partial note makes the file partial', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const shim = recordShim({ read: async (input) => ({ items: [{ kind: 'test.record', name: input.name, data: 1 }], partial: '2 sections not read' }) });
+    const result = await run(deps([shim], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
+    expect(result.files[0]).toMatchObject({ status: 'partial', stored: 1, message: '2 sections not read' });
+  });
+
+  test('a shim that throws fails only its file', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const shim = recordShim({ read: async (input) => { if (input.name === 'bad.rec') throw new Error('malformed'); return { items: [{ kind: 'test.record', name: input.name }] }; } });
+    const result = await run(deps([shim], [receiver]), {
+      source: { type: 'upload', files: [upload('bad.rec', 'a=1'), upload('good.rec', 'a=2')] }, receiver: 'test.records'
+    });
+    expect(result.files.map(f => [f.name, f.status, f.message])).toEqual([['bad.rec', 'failed', 'malformed'], ['good.rec', 'imported', undefined]]);
+  });
+
+  test('an unknown receiver fails the run', async () => {
+    const result = await run(deps([recordShim()], []), { source: { type: 'upload', files: [] }, receiver: 'nobody.here' });
+    expect(result).toMatchObject({ state: 'failed', error: "No receiver 'nobody.here'" });
+  });
+
+  describe('per-item duplicates', () => {
+    test('a shim with per-item duplicates skips items already seen, not the whole file', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const d = deps([recordShim({ duplicates: 'item' })], [receiver]);
+      await run(d, { source: { type: 'upload', files: [upload('feed.rec', 'a=1\nb=2')] }, receiver: 'test.records' });
+      const next = await run(d, { source: { type: 'upload', files: [upload('feed.rec', 'a=1\nb=2\nc=3')] }, receiver: 'test.records' });
+      expect(next.files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 2 });
+      // The same bytes again are not "unchanged": per-item shims skip by item.
+      const same = await run(d, { source: { type: 'upload', files: [upload('feed.rec', 'a=1\nb=2\nc=3')] }, receiver: 'test.records' });
+      expect(same.files[0]).toMatchObject({ status: 'duplicate', stored: 0, duplicates: 3 });
+      expect(received.map(r => (r.item.data as { key: string }).key)).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('the original (D11)', () => {
+    const req = (original: 'cite' | 'keep' | 'none'): IceRunRequest => ({
+      source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records', original
+    });
+
+    test('none: no citation, nothing kept', async () => {
+      const { receiver, received, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      await run(deps([recordShim()], [receiver]), req('none'));
+      expect(received[0].info.citation).toBeUndefined();
+      expect(received[0].info.original).toBeUndefined();
+      expect(kept).toEqual([]);
+    });
+
+    test('cite: every item carries a citation to the origin', async () => {
+      const { receiver, received, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      await run(deps([recordShim()], [receiver]), req('cite'));
+      expect(received[0].info.citation).toEqual({ name: 'a.rec', sha256: expect.stringMatching(/^[0-9a-f]{64}$/), importedAt: '2026-10-22T12:00:00.000Z' });
+      expect(kept).toEqual([]);
+    });
+
+    test('keep: a receiver that keeps its own originals is handed the file, with the context', async () => {
+      const { receiver, received, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      const result = await run(deps([recordShim()], [receiver]), req('keep'));
+      expect(kept).toHaveLength(1);
+      expect(kept[0].ctx).toBe(ALICE);
+      expect(kept[0].item.bytes?.toString()).toBe('bp=120');
+      expect(received[0].info.original).toEqual({ name: 'a.rec', sha256: expect.any(String), ref: 'original-1' });
+      expect(result.files[0].original?.ref).toBe('original-1');
+    });
+
+    test('keep: otherwise the files receiver\'s door keeps it', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const files = recordingReceiver('core.files', ['file']);
+      await run(deps([recordShim()], [receiver, files.receiver]), req('keep'));
+      expect(files.received).toHaveLength(1);
+      expect(files.received[0]).toMatchObject({ ctx: ALICE, item: { kind: 'file', name: 'a.rec' } });
+      expect(received[0].info.original?.ref).toBe('files-1');
+    });
+
+    test('keep: when keeping is refused, nothing is imported', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const files = recordingReceiver('core.files', ['file'], { refuse: () => true });
+      const result = await run(deps([recordShim()], [receiver, files.receiver]), req('keep'));
+      expect(result.files[0]).toMatchObject({ status: 'refused', message: expect.stringMatching(/keeping the original was refused/) });
+      expect(received).toEqual([]);
+    });
+
+    test('the default comes from configuration', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      await run(deps([recordShim()], [receiver], undefined, { defaultOriginal: 'cite' }), {
+        source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records'
+      });
+      expect(received[0].info.citation).toBeDefined();
+    });
+  });
+});

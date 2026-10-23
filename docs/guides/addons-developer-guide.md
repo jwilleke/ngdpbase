@@ -89,6 +89,8 @@ The `ngdpbase` block in the addon's `package.json` is its manifest, read without
 | `aboutPage` | The uuid or slug of a page the addon ships in `pages/` that says what it is | Listings link to it as "More about it". The site overrides it with `ngdpbase.addons.<slug>.about-page` in its configuration |
 | `family` | The heading the addon is listed under, shared by related add-ons | For example `"Accounting"` on accounting, accounting-donations and accounting-dues. Add-ons with no family are listed under "Other" when any add-on has one |
 | `listed` | `false` keeps the addon out of the listings | For plumbing other add-ons use, such as elasticsearch. It still loads |
+| `shims` | The names of the import shims it registers | [Import shims and receivers](#import-shims-and-receivers-ice-1979). The host refuses any other |
+| `receivers` | The names of the import receivers it registers | [Import shims and receivers](#import-shims-and-receivers-ice-1979). The host refuses any other |
 
 The listings are `[{ConfigAccessor type='addons'}]` (the site's enabled add-ons, with version and status shown only to viewers who hold `admin-read`) and `[{ConfigAccessor type='my-addons'}]` (the viewer's per-person add-ons). Both read `AddonsManager.listedAddons()`; the description shown is the module's `description`.
 
@@ -517,6 +519,7 @@ async register(engine, config) {
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
 | `setEnabledForPerson` | Turn this add-on on or off for a person, when it is [per-person](#per-person-add-ons-and-their-switch) |
+| `registerShim`, `registerReceiver` | Register an import shim or receiver under this addon's slug, only the names its manifest declares ([Import shims and receivers](#import-shims-and-receivers-ice-1979)) |
 | `resolveEgressPolicy`, `validateUrl` | The site's egress policy, read through a `getProperty` reader at each call, and whether a URL may be fetched under it (before any socket) |
 | `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
 | `isAtLeast` | Whether an `x.y.z` version is at least another; throws on anything else |
@@ -574,6 +577,7 @@ Some add-ons are something each person turns on for themselves, such as a person
   - It is refused, with an error, when your manifest does not say `perPerson: true`, when the person is not signed in, or when they do not hold `profile-manage`, which is the permission `/profile` asks for.
 - __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-person add-ons this person has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
 - An add-on the site has not enabled, or one that did not load, is not in the list, whatever the person's switch says. Turning it back on brings back what each person chose.
+- __Pages for the people who turned it on__: give a page the audience `addon:<slug>`, for example `audience: [addon:phr]` in a page your add-on ships in `pages/` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The page view, every page list and search then show it only to people whose switch is on, and everyone else can neither read nor edit it (the editor, a save, a rename and a delete are refused too); anonymous visitors never see it. Add other entries to widen it, such as `[addon:phr, editor]`. Administrators (`admin-system`) are the one exception: they can read and edit every audience page, whether or not they turned your add-on on. An `access.<action>` list has no such exception, and a page in a person's vault is decided by the vault, not its audience. A slug that is not a loaded per-person add-on matches nobody and is warned about at startup, naming the page. The rule is in [access-policies.md](../access-policies.md), under "A page's own audience".
 
 ```typescript
 async saveProfileSection(ctx, body) {
@@ -615,7 +619,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` (with `PdfOptions`, `PdfMargin`, `PdfPageSize`, `PdfUnavailableError`), `EmailManager` (with `SendOptions`, `MailAttachment`, `AttachmentRefusedError`), `PolicyDecisionPoint`, `PageManager`, `PageAction`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` (with `PdfOptions`, `PdfMargin`, `PdfPageSize`, `PdfUnavailableError`), `EmailManager` (with `SendOptions`, `MailAttachment`, `AttachmentRefusedError`), `PolicyDecisionPoint`, `PageManager`, `PageAction`, and for contacts `PersonManager`, `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactRefusedError` and `LinkOfferOutcome`, and for imports `ImportManager`, `AddonIceDeclaration`, `IceShim`, `IceReceiver`, `IceItem`, `IceKind`, `IceWarning`, `ShimDirection`, `ShimAccepts`, `ShimTools`, `ShimReadResult`, `ReceiveInfo`, `ReceiveOutcome`, `IceCitation`, `KeptOriginal`, `OriginalChoice`, `IceUpload`, `IceSource`, `IceRunRequest`, `IceRunReport`, `IceFileReport` and `IceFileStatus`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -1148,6 +1152,59 @@ Guard admin panel EJS sections:
 ```
 
 ---
+
+### Import shims and receivers (ICE, [#1979](https://github.com/jwilleke/ngdpbase/issues/1979))
+
+Core's import engine (ImportManager) does the file handling: unzipping, the noise filter, SHA-256 fingerprints, skipping unchanged files, per-file status, keeping the original, running as a background job. An addon supplies only what knows its format (a __shim__), and, when the results are its own records, the door they go through (a __receiver__). The design is [ice-planing.md](../planning/ice-planing.md); the engine's reference is [ImportManager.md](../managers/ImportManager.md).
+
+- __Declare them in the manifest.__ `"ngdpbase": { "shims": ["ccda", "fhir"], "receivers": ["health-records"] }`. The host refuses a name not listed.
+- __Register them in `register()`__ with `host.registerShim(shim)` and `host.registerReceiver(receiver)`. Each is named `<slug>.<name>` (`phr.ccda`, `phr.health-records`); the call returns that id.
+- __Site configuration switches a shim__: `ngdpbase.import.shims.<id>.enabled` (default `true`), and hands it `ngdpbase.import.shims.<id>.options`. Configuration never holds code.
+
+A shim (`IceShim`):
+
+| Field | |
+| --- | --- |
+| `name` | Lower-case letters, numbers and dashes |
+| `direction` | `in` (with `read`), `out` (with `write`) or `both`. Only `in` runs today |
+| `accepts` | `extensions` (`['.xml']`), `mediaTypes`, `kinds` it takes from another shim, and `canRead(input)` — "can I read this?" on the content. When `canRead` is present it must say yes even when the extension matches |
+| `produces` | The kind of its items: `ncm` for pages, `file`, or your own `<slug>.<kind>` |
+| `receivers` | Receiver ids it may hand to. Empty when its output only feeds another shim |
+| `duplicates` | `file` (default): an unchanged file is skipped by its fingerprint. `item`: each item carries `itemKey` (its own id or time), and items already seen are skipped |
+| `read(input, tools)` | Returns `{ items, partial? }`. `partial` is a note when only part was read; the file's status is then `partial`. `input.text` and `input.bytes` hold the file. Fetch anything more with `tools.fetch(url)`, the engine's guarded fetch, never your own |
+
+A receiver (`IceReceiver`) is your manager's own door:
+
+- `accepts`: the kinds it takes.
+- `mayUse(ctx)`: your existing rule. The import screen shows a person only the receivers they may use.
+- `receive(item, ctx, info)`: check your rule again with `ctx` and store through your manager. Return `{ status: 'stored', ref }`, `{ status: 'duplicate' }` or `{ status: 'refused', message }`. There is no import permission: the run carries the person's context (or a job's), and your door decides.
+- `keepOriginal(item, ctx)` (optional): keep the original file yourself when the person chose to keep it. Without it, the original goes to the site's files through the upload door.
+
+```typescript
+async register(engine, config, host) {
+  const records = new HealthRecords(/* ... */);
+  host.registerReceiver({
+    name: 'health-records',
+    accepts: ['phr.health-record'],
+    mayUse: async (ctx) => records.mayWrite(ctx),
+    receive: async (item, ctx) => records.add(item.data, ctx),
+    keepOriginal: async (item, ctx) => records.keepOriginal(item.name, item.bytes, ctx)
+  });
+  host.registerShim({
+    name: 'ccda',
+    direction: 'in',
+    accepts: { extensions: ['.xml'], canRead: (input) => xmlKind(input.text ?? '') === 'ccda' },
+    produces: 'phr.health-record',
+    receivers: ['phr.health-records'],
+    async read(input) {
+      const { records, note } = readCcda(input.text ?? '');
+      return { items: records.map(r => ({ kind: 'phr.health-record', name: input.name, data: r })), partial: note };
+    }
+  });
+}
+```
+
+Start an import from your own route with `engine.getManager('ImportManager').enqueueImport({ source: { type: 'upload', files }, receiver: '<slug>.<receiver>', original }, jobContextFromRequest(req.userContext))`. It returns a run id at once; `getImportRun(runId, ctx)` gives that person the per-file report. The worked example is the test fixture addon `src/managers/__tests__/__fixtures__/ice-fixture-addon`, shaped like yourPHR's C-CDA and FHIR readers.
 
 ### Declare a Private Store ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
@@ -1847,6 +1904,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 - [#1974](https://github.com/jwilleke/ngdpbase/issues/1974) — [PDF](#make-a-pdf-and-email-it): the same HTML gives the same bytes only on the same provider and engine version; another site, provider or engine may differ. Core ships no font files of its own, so embed yours as `data:` URIs. `PdfUnavailableError` and `AttachmentRefusedError` are types only in `@jwilleke/ngdpbase-types`; test the error's `code`. A render waiting for a slot has no queue limit.
+- [#1979](https://github.com/jwilleke/ngdpbase/issues/1979) — [import shims](#import-shims-and-receivers-ice-1979): only uploads are a source, and only inbound shims run; export (`out`), scheduled URL sources (feeds) and the takeout import come later. No core screen starts an engine run yet, so an addon starts its own from its route. The manifest's `shims` and `receivers` are checked by the host at registration, not yet by a manifest schema (#1966).
 
 ---
 

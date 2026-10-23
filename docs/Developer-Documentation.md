@@ -72,7 +72,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | FileManager | ✅ [doc](managers/FileManager.md) | The one door for files (epic #1851). First step, read-only: today's attachments shown as file records, and the migration dry run |
 | FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
-| ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | Pluggable importer for external wiki formats — extensible converter registry (JSPWiki, MediaWiki, Confluence, …) |
+| ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | The ICE engine — imports through shims into receivers' own doors; the folder, URL and takeout imports |
 | Manager-SOT | ✅ [doc](managers/Manager-SOT.md) | Where each fact lives and which manager owns it — the standing rule, the current violations, and the plan to fix them. Starts with the access-control subject |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
 | MetricsManager | 📘 [doc](managers/MetricsManager.md) + [guide](managers/MetricsManager-Complete-Guide.md) | OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios |

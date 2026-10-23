@@ -317,6 +317,19 @@ export interface AddonManifest {
   family?: string;
   /** #1965: `false` keeps plumbing (e.g. elasticsearch) out of the add-on listings. */
   listed?: boolean;
+  /**
+   * #1979 (ICE, D6): the names of the import shims this add-on registers at
+   * load with `host.registerShim`, e.g. `["ccda", "fhir"]` (ids `<slug>.ccda`,
+   * `<slug>.fhir`). The host refuses a shim not named here. Site configuration
+   * switches each one: `ngdpbase.import.shims.<slug>.<name>.enabled`.
+   */
+  shims?: string[];
+  /**
+   * #1979 (ICE, D4): the names of the receivers this add-on registers with
+   * `host.registerReceiver` — its own manager's door for what shims produce,
+   * e.g. `["health-records"]`. The host refuses a receiver not named here.
+   */
+  receivers?: string[];
 }
 
 /**
@@ -1854,8 +1867,9 @@ class AddonsManager extends BaseManager {
       // #1963: the switch setter is bound to this add-on's slug, so it can set
       // only its own switch; there is no slug argument to give another's.
       // #1973: the engine names the system principal for host.systemContext.
+      // #1979: the manifest names the shims and receivers the host lets it register.
       const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {},
-        (ctx, on) => this.#writePersonSwitch(addonName, ctx, on), this.engine);
+        (ctx, on) => this.#writePersonSwitch(addonName, ctx, on), this.engine, addon.manifest);
 
       // Call the add-on's register function
       await addon.module.register(this.engine, addonConfig, host);
@@ -2167,8 +2181,11 @@ class AddonsManager extends BaseManager {
     return this.addons.get(slug)?.manifest?.perPerson === true;
   }
 
-  /** #1963: the loaded add-ons whose manifest says `perPerson: true`, in load order. */
-  private perPersonAddons(): string[] {
+  /**
+   * #1963: the loaded add-ons whose manifest says `perPerson: true`, in load
+   * order — every slug an `addon:<slug>` page audience can match (#1964).
+   */
+  perPersonAddons(): string[] {
     return [...this.addons].filter(([, addon]) => addon.loaded && addon.manifest?.perPerson === true).map(([slug]) => slug);
   }
 
