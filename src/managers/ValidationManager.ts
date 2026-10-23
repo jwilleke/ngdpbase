@@ -11,6 +11,7 @@ import BaseManager from './BaseManager.js';
 import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
+import ParseContext from '../parsers/context/ParseContext.js';
 import { parsePrivatestore, PRIVATE_SLUG_PREFIX } from '../utils/privateStorePath.js';
 import { SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from '../utils/systemCategoryRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -950,7 +951,7 @@ class ValidationManager extends BaseManager {
     type FilterChainLike = {
       collectErrors: (
         c: string,
-        ctx: { pageName?: string; userName?: string; engine?: unknown }
+        ctx: ParseContext
       ) => Promise<Array<{ filterId: string; rule: string; severity: 'error'; message: string; line?: number; column?: number }>>;
     };
     type FilterManagerLike = { getFilterChain?: () => FilterChainLike | null };
@@ -960,10 +961,9 @@ class ValidationManager extends BaseManager {
     if (!filterChain || typeof filterChain.collectErrors !== 'function') return [];
 
     try {
-      return await filterChain.collectErrors(content, {
-        ...context,
-        engine: this.engine
-      });
+      // The same ParseContext a render hands the filters (#2000), so a filter
+      // reads the page and user one way on both paths.
+      return await filterChain.collectErrors(content, new ParseContext(content, context, this.engine));
     } catch (err) {
       // Validation must never crash a save. Log and degrade to "no errors".
       logger.warn(
