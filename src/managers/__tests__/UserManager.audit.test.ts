@@ -11,6 +11,7 @@
  */
 import UserManager from '../UserManager';
 import RoleManager from '../RoleManager';
+import { RoleChangeError } from '../../utils/roleChangeError';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
@@ -62,7 +63,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   Object.assign(roles, {
     resolveUserRoles: async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
     applyRoleDiff: async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); },
-    removeAllMemberships: async () => undefined,
+    removeAllMemberships: async () => async () => undefined,
     addMember: async () => undefined,
     hasRole: async () => true
   });
@@ -107,6 +108,60 @@ describe('#1204 user-create', () => {
     expect(sink[0]).toMatchObject({ user: 'System', metadata: { origin: 'boot', reason: 'seed the demo account' } });
     expect(sink[0].metadata.actorMissing).toBeUndefined();
     expect(sink[0].ipAddress).toBeUndefined();
+  });
+});
+
+describe('#2015 a role change that cannot be made refuses the whole request', () => {
+  /** applyRoleDiff as RoleManager does it when `role` cannot be given: all or nothing, then it throws. */
+  const refuse = (roles: RoleManager, role: string) => {
+    const real = roles.applyRoleDiff.bind(roles);
+    Object.assign(roles, {
+      applyRoleDiff: async (n: string, o: string[], nw: string[]) => {
+        if (nw.includes(role) && !o.includes(role)) throw new RoleChangeError(n, [`add ${role}`], { cause: new Error('ENOENT') });
+        return real(n, o, nw);
+      },
+      removeAllMemberships: async () => { throw new RoleChangeError('alice', ['remove editor'], { cause: new Error('ENOENT') }); }
+    });
+  };
+
+  test('createUser leaves no account behind and records the creation as failed', async () => {
+    const { um, roles, sink, users } = makeManager();
+    refuse(roles, 'editor');
+    await expect(um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader', 'editor'] }, ADMIN))
+      .rejects.toBeInstanceOf(RoleChangeError);
+    expect(users.has('alice')).toBe(false);
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-create', 'failure']]);
+    expect(sink[0].metadata).toMatchObject({ username: 'alice', roles: ['reader', 'editor'], reason: expect.stringContaining('add editor') });
+  });
+
+  test('a retry after the failure finds the username and email free', async () => {
+    const { um, roles, users } = makeManager();
+    refuse(roles, 'editor');
+    await expect(um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['editor'] }, ADMIN)).rejects.toThrow();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    expect(users.has('alice')).toBe(true);
+  });
+
+  test('updateUser writes nothing of the edit and records it as failed', async () => {
+    const { um, roles, sink, users, provider } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    refuse(roles, 'editor');
+    sink.length = 0;
+    provider.updateUser.mockClear();
+    await expect(um.updateUser('alice', { displayName: 'Changed', isActive: false, roles: ['reader', 'editor'] }, ADMIN)).rejects.toThrow(/editor/);
+    expect(provider.updateUser).not.toHaveBeenCalled();
+    expect(users.get('alice')?.displayName).toBe('Alice');
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-edit', 'failure']]);
+  });
+
+  test('deleteUser: memberships that cannot be removed refuse the delete, recorded as failed', async () => {
+    const { um, roles, sink, users } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['editor'] }, ADMIN);
+    refuse(roles, 'editor');
+    sink.length = 0;
+    await expect(um.deleteUser('alice', ADMIN)).rejects.toBeInstanceOf(RoleChangeError);
+    expect(users.has('alice')).toBe(true);
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-delete', 'failure']]);
   });
 });
 

@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import logger from '../utils/logger.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type { PersonProvider } from '../types/PersonProvider.js';
@@ -31,6 +33,8 @@ class FilePersonProvider implements PersonProvider {
   engine: WikiEngine;
   initialized = false;
   private storageDir: string | null = null;
+  /** #2015: one change at a time per person file, so a read-merge-write sees the last write. */
+  private readonly records = new KeyedSerial();
 
   constructor(engine: WikiEngine) {
     this.engine = engine;
@@ -99,47 +103,53 @@ class FilePersonProvider implements PersonProvider {
     return all.find((p) => p.identifier === identifier) ?? null;
   }
 
-  async create(person: Person): Promise<Person> {
-    const dir = this.requireDir();
-    const target = path.join(dir, `${uuidFromId(person['@id'])}.json`);
-    await this.writeAtomic(target, person);
-    return person;
+  create(person: Person): Promise<Person> {
+    return this.records.run(uuidFromId(person['@id']), async () => {
+      await this.writeAtomic(this.fileFor(person['@id']), person);
+      return person;
+    });
   }
 
-  async replace(person: Person): Promise<Person> {
-    const dir = this.requireDir();
-    await this.writeAtomic(path.join(dir, `${uuidFromId(person['@id'])}.json`), person);
-    return person;
+  replace(person: Person): Promise<Person> {
+    return this.records.run(uuidFromId(person['@id']), async () => {
+      await this.writeAtomic(this.fileFor(person['@id']), person);
+      return person;
+    });
   }
 
-  async update(id: string, patch: PersonUpdate): Promise<Person | null> {
-    const existing = await this.getById(id);
-    if (!existing) return null;
-    const merged: Person = {
-      ...existing,
-      ...patch,
-      '@context': existing['@context'],
-      '@type': existing['@type'],
-      '@id': existing['@id'],
-      identifier: existing.identifier
-    };
-    const dir = this.requireDir();
-    const target = path.join(dir, `${uuidFromId(id)}.json`);
-    await this.writeAtomic(target, merged);
-    return merged;
+  update(id: string, patch: PersonUpdate): Promise<Person | null> {
+    return this.records.run(uuidFromId(id), async () => {
+      const existing = await this.getById(id);
+      if (!existing) return null;
+      const merged: Person = {
+        ...existing,
+        ...patch,
+        '@context': existing['@context'],
+        '@type': existing['@type'],
+        '@id': existing['@id'],
+        identifier: existing.identifier
+      };
+      await this.writeAtomic(this.fileFor(id), merged);
+      return merged;
+    });
   }
 
-  async delete(id: string): Promise<boolean> {
-    const dir = this.requireDir();
-    const target = path.join(dir, `${uuidFromId(id)}.json`);
-    try {
-      await fs.unlink(target);
-      return true;
-    } catch (err) {
-      const e = err as NodeError;
-      if (e.code === 'ENOENT') return false;
-      throw err;
-    }
+  delete(id: string): Promise<boolean> {
+    return this.records.run(uuidFromId(id), async () => {
+      try {
+        await fs.unlink(this.fileFor(id));
+        return true;
+      } catch (err) {
+        const e = err as NodeError;
+        if (e.code === 'ENOENT') return false;
+        throw err;
+      }
+    });
+  }
+
+  /** The file a person `@id` is stored in. */
+  private fileFor(id: string): string {
+    return path.join(this.requireDir(), `${uuidFromId(id)}.json`);
   }
 
   private requireDir(): string {
@@ -161,11 +171,9 @@ class FilePersonProvider implements PersonProvider {
     }
   }
 
-  private async writeAtomic(target: string, value: unknown): Promise<void> {
-    const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
-    await fs.rename(tmp, target);
+  /** #2015: the shared temp-then-rename, whose temp names never collide. */
+  private writeAtomic(target: string, value: unknown): Promise<void> {
+    return writeFileAtomic(target, JSON.stringify(value, null, 2));
   }
 }
 

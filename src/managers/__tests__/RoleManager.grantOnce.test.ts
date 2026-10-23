@@ -22,17 +22,20 @@ const personId = (u: string) => `urn:person:${u}`;
 describe('RoleManager.grantToEveryAccountOnce (#1539)', () => {
   let tmpDir: string;
   let manager: RoleManager;
+  const notifications: Record<string, unknown>[] = [];
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-grant-once-'));
     resetBootActions();
+    notifications.length = 0;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
         getResolvedDataPath: () => path.join(tmpDir, 'roles')
       },
-      PersonManager: { getByIdentifier: (u: string) => Promise.resolve({ '@id': personId(u) }) },
-      OrganizationManager: { getInstallOrg: () => Promise.resolve(ORG) }
+      PersonManager: { getByIdentifier: (u: string) => Promise.resolve(u === 'ghost' ? null : { '@id': personId(u) }) },
+      OrganizationManager: { getInstallOrg: () => Promise.resolve(ORG) },
+      NotificationManager: { addNotification: (n: Record<string, unknown>) => { notifications.push(n); return Promise.resolve('n'); } }
     };
     manager = new RoleManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -65,5 +68,15 @@ describe('RoleManager.grantToEveryAccountOnce (#1539)', () => {
     expect(await manager.grantToEveryAccountOnce('vault-owner', [], ctx())).toBe(0);
     expect(await manager.getByOrgAndPosition(ORG['@id'], 'vault-owner')).not.toBeNull();
     expect(await manager.grantToEveryAccountOnce('vault-owner', ['alice'], ctx())).toBe(0);
+  });
+
+  test('#2015: an account that cannot be given the role is recorded as a failure and admins get one error notice', async () => {
+    expect(await manager.grantToEveryAccountOnce('vault-owner', ['alice', 'ghost', 'bob'], ctx())).toBe(2);
+    expect(await members()).toEqual([personId('alice'), personId('bob')]);
+    const recorded = pendingBootActions().map((a) => a.event);
+    expect(recorded.map((e) => [e.resource, e.result])).toEqual([['alice', 'success'], ['ghost', 'failure'], ['bob', 'success']]);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(String(notifications[0].message)).toContain('ghost');
   });
 });

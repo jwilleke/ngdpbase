@@ -26,6 +26,7 @@ function makeManager(existing: Record<string, unknown>) {
       return Promise.resolve(u);
     }),
     updateUser: vi.fn(() => Promise.resolve()),
+    deleteUser: vi.fn((name: string) => { store.delete(name); return Promise.resolve(true); }),
     userExists: vi.fn((n: string) => Promise.resolve(store.has(n)))
   };
 
@@ -49,7 +50,7 @@ function makeManager(existing: Record<string, unknown>) {
   // dynamic provider import.
   (manager as unknown as { provider: unknown }).provider = provider;
 
-  return { manager, provider, store };
+  return { manager, provider, store, roleManager };
 }
 
 /** The decision under test, lifted out of initialize()'s provider loading. */
@@ -61,6 +62,17 @@ async function runBootstrapCheck(manager: UserManager, provider: { getUser: (n: 
 }
 
 describe('bootstrap admin recreation', () => {
+  test('#2015: when the admin role cannot be given, no admin is left behind and the boot fails', async () => {
+    resetBootActions();
+    const { manager, provider, store, roleManager } = makeManager({});
+    roleManager.applyRoleDiff.mockRejectedValueOnce(new Error('no anchor Organization'));
+
+    await expect(runBootstrapCheck(manager, provider)).rejects.toThrow('no anchor Organization');
+
+    expect(store.has('admin')).toBe(false);
+    expect(pendingBootActions().map((a) => a.event.result)).toEqual(['failure']);
+  });
+
   test('creates admin on a completely empty store', async () => {
     const { manager, provider, store } = makeManager({});
 

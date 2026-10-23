@@ -20,6 +20,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
 import writeFileAtomic from '../utils/atomicWrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import type { Adapter as OidcAdapter, AdapterPayload as OidcAdapterPayload } from 'oidc-provider';
 import { ensureSecretDir, SECRET_FILE_MODE, secureExistingSecretFile } from '../utils/secretFileMode.js';
 
@@ -34,7 +35,7 @@ const MODEL_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 
 export class FileOidcAdapterStore {
   private readonly models = new Map<string, Map<string, Row>>();
-  private readonly queues = new Map<string, Promise<void>>();
+  private readonly queues = new KeyedSerial();
 
   constructor(
     private readonly dir: string,
@@ -110,7 +111,7 @@ export class FileOidcAdapterStore {
 
   /** Wait for every pending write; used at shutdown. */
   async flush(): Promise<void> {
-    await Promise.all([...this.queues.values()].map((q) => q.catch(() => {})));
+    await this.queues.settled();
   }
 
   private live(rows: Map<string, Row>, id: string): OidcAdapterPayload | undefined {
@@ -162,21 +163,16 @@ export class FileOidcAdapterStore {
   }
 
   private persist(name: string): Promise<void> {
-    const previous = this.queues.get(name) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {})
-      .then(async () => {
-        const rows = this.models.get(name) ?? new Map<string, Row>();
-        const now = this.now();
-        const out: Record<string, Row> = {};
-        for (const [id, row] of rows) {
-          if (row.expiresAt === null || row.expiresAt > now) out[id] = row;
-          else rows.delete(id);
-        }
-        await writeFileAtomic(this.file(name), JSON.stringify(out), 'utf8', { mode: SECRET_FILE_MODE });
-      });
-    this.queues.set(name, next);
-    return next;
+    return this.queues.run(name, async () => {
+      const rows = this.models.get(name) ?? new Map<string, Row>();
+      const now = this.now();
+      const out: Record<string, Row> = {};
+      for (const [id, row] of rows) {
+        if (row.expiresAt === null || row.expiresAt > now) out[id] = row;
+        else rows.delete(id);
+      }
+      await writeFileAtomic(this.file(name), JSON.stringify(out), 'utf8', { mode: SECRET_FILE_MODE });
+    });
   }
 }
 

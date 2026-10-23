@@ -27,6 +27,7 @@ import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { RoleChangeError } from '../../utils/roleChangeError';
 import shippedConfig from '../../../config/app-default-config.json';
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -659,6 +660,15 @@ describe('WikiRoutes — coverage batch 5', () => {
       expect(mockUserManager.updateUser).toHaveBeenLastCalledWith('testuser', expect.objectContaining({ isTest: true }), expect.anything());
       await request(app).put('/admin/users/testuser').set('x-csrf-token', 'test-csrf-token').send({ isTest: false });
       expect(mockUserManager.updateUser).toHaveBeenLastCalledWith('testuser', expect.objectContaining({ isTest: false }), expect.anything());
+    });
+
+    test('#2015: a role change that was not saved is reported to the admin by name', async () => {
+      mockUserManager.updateUser.mockRejectedValueOnce(new RoleChangeError('testuser', ['add reader'], [new Error('ENOENT')]));
+      const res = await request(app).put('/admin/users/testuser').set('x-csrf-token', 'test-csrf-token').send({ roles: ['reader'] });
+      expect(res.status).toBe(500);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('add reader');
+      expect(res.body.message).not.toContain('ENOENT');
     });
 
     test('#1805: without user-edit nobody can set isTest', async () => {

@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import logger from '../utils/logger.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -23,6 +25,8 @@ class FileOrganizationProvider implements OrganizationProvider {
   engine: WikiEngine;
   initialized = false;
   private storageDir: string | null = null;
+  /** #2015: one change at a time per organization `@id`, so a read-merge-write sees the last write. */
+  private readonly records = new KeyedSerial();
 
   constructor(engine: WikiEngine) {
     this.engine = engine;
@@ -85,7 +89,11 @@ class FileOrganizationProvider implements OrganizationProvider {
     return this.readFile(path.join(dir, filename));
   }
 
-  async create(org: Organization, filename?: string): Promise<Organization> {
+  create(org: Organization, filename?: string): Promise<Organization> {
+    return this.records.run(org['@id'], () => this.createNow(org, filename));
+  }
+
+  private async createNow(org: Organization, filename?: string): Promise<Organization> {
     const dir = this.requireDir();
     const resolvedFilename = filename || filenameFromOrg({ url: org.url, name: org.name });
     const target = path.join(dir, resolvedFilename);
@@ -110,7 +118,11 @@ class FileOrganizationProvider implements OrganizationProvider {
     return org;
   }
 
-  async update(id: string, patch: OrganizationUpdate): Promise<Organization | null> {
+  update(id: string, patch: OrganizationUpdate): Promise<Organization | null> {
+    return this.records.run(id, () => this.updateNow(id, patch));
+  }
+
+  private async updateNow(id: string, patch: OrganizationUpdate): Promise<Organization | null> {
     const dir = this.requireDir();
     const entries = await fs.readdir(dir);
     for (const entry of entries) {
@@ -132,7 +144,11 @@ class FileOrganizationProvider implements OrganizationProvider {
     return null;
   }
 
-  async delete(id: string): Promise<boolean> {
+  delete(id: string): Promise<boolean> {
+    return this.records.run(id, () => this.deleteNow(id));
+  }
+
+  private async deleteNow(id: string): Promise<boolean> {
     const dir = this.requireDir();
     const entries = await fs.readdir(dir);
     for (const entry of entries) {
@@ -166,11 +182,9 @@ class FileOrganizationProvider implements OrganizationProvider {
     }
   }
 
-  private async writeAtomic(target: string, value: unknown): Promise<void> {
-    const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
-    await fs.rename(tmp, target);
+  /** #2015: the shared temp-then-rename, whose temp names never collide. */
+  private writeAtomic(target: string, value: unknown): Promise<void> {
+    return writeFileAtomic(target, JSON.stringify(value, null, 2));
   }
 
   private async fileExists(p: string): Promise<boolean> {

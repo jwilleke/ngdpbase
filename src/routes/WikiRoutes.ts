@@ -76,6 +76,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
 import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
+import { RoleChangeError } from '../utils/roleChangeError.js';
 import {
   DEVICE_STATE_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -11853,6 +11854,11 @@ ${panes}
       // #1748: an admin is told which account already has the email.
       if (err instanceof UserCreateError && err.reason === 'email-taken') {
         return res.status(409).json({ success: false, message: err.message });
+      }
+      // #2015: the administrator is told which role change was not saved.
+      if (err instanceof RoleChangeError) {
+        logger.error('Error updating user roles:', err);
+        return res.status(500).json({ success: false, message: err.message });
       }
       logger.error('Error updating user:', err);
       return res.status(500).json({ success: false, message: 'Error updating user' });

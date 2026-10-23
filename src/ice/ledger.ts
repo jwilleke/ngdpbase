@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fs from 'fs-extra';
 import type { IceLedger, LedgerFileEntry } from './types.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 
 interface ScopeFile {
   scope: string;
@@ -32,12 +33,9 @@ abstract class ScopedLedger implements IceLedger {
   protected abstract save(data: ScopeFile): Promise<void>;
 
   /** One writer per scope at a time, so two runs in one scope cannot lose each other's entries. */
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly chains = new KeyedSerial();
   private serial<T>(scope: string, work: () => Promise<T>): Promise<T> {
-    const prev = this.chains.get(scope) ?? Promise.resolve();
-    const next = prev.then(work, work);
-    this.chains.set(scope, next.catch(() => undefined));
-    return next;
+    return this.chains.run(scope, work);
   }
 
   async lastFile(scope: string, sha256: string): Promise<LedgerFileEntry | null> {
