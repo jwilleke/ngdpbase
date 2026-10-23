@@ -32,7 +32,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 - 4 If it is a security-related setting the instance should report, add it to `ngdpbase.security.posture` (see [security-posture.md](../security-posture.md) D15/D16). That change is an audited event.
 - 5 Decide who may see its value, every time, and record it in `ngdpbase.config.sensitive-values` (an add-on in its own `config/default-config.json`):
   - `secret` — it lets someone act as the instance or a user: a password, salt, signing key, client secret, API key or token.
-  - `sensitive` — it tells how the instance is run: a storage path, an outside service's address or identifier, the access policies.
+  - `sensitive` — it tells how the instance is run: a storage path, a program the site runs (`ngdpbase.export.pdf.provider.local-chrome.chromium-path`), an outside service's address or identifier, the access policies.
   - neither — leave it off the list; anyone who can read a page may see it. A key whose name looks like a secret (secret, password, token, credential, api-key, private-key) cannot be "neither": rename it, or declare it.
   - a map whose entries hold a secret: declare the path, with `*` for the map key (`ngdpbase.addons.<slug>.accounts.*.account-number`), and ship the value as a `$NAME` reference, never the secret.
 
@@ -49,6 +49,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 ## See also
 
 - [ConfigurationManager](../managers/ConfigurationManager.md)
+- Keys added with [#1974](https://github.com/jwilleke/ngdpbase/issues/1974), documented with their module: `ngdpbase.export.pdf.*`, the PDF provider (`none`, `local-chrome`, `chrome-service`) and its settings, in [ExportManager](../managers/ExportManager.md#configuration) (read on every render, no restart; a `chrome-service` URL on a private address also needs its range in `ngdpbase.security.egress.allowed-ranges`), `ngdpbase.mail.attachments.max-bytes` in [EmailManager](../managers/EmailManager.md#configuration) (read at startup)
 - [bootstrap-developer-guide.md](bootstrap-developer-guide.md)
 - [security-developer-guide.md](security-developer-guide.md) — addon merge of permissions and policies
 - `src/utils/configFiles.ts`, `src/utils/configEnvKeys.ts`

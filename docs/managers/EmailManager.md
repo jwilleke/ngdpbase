@@ -1,7 +1,7 @@
 ---
 name: EmailManager
-description: Shared outbound email transport — pluggable provider (console / SMTP)
-dateModified: '2026-10-20'
+description: Shared outbound email transport — pluggable provider (console / SMTP), with attachments
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/EmailManager.ts
 ---
@@ -27,6 +27,25 @@ See `docs/admin/email-setup.md` for the full config surface. Headline keys:
 - `ngdpbase.mail.from` — From address
 - `ngdpbase.mail.smtp.*` — SMTP host/port/auth (when `provider === smtp`)
 - `ngdpbase.mail.failure-notice.window-minutes` — default `60`; how long one failure notice to administrators keeps counting before a new one is opened
+- `ngdpbase.mail.attachments.max-bytes` — default `10485760` (10 MiB); the most one message's attachments may total. Read at startup
+
+## Sending
+
+`sendTo(ctx, to, subject, text, html?, options?)` and `sendInBackground(ctx, to, subject, text, html?, options?)` take the caller's context first and refuse without one (security-posture P1): a route passes the request's subject (`ctx.getActor()` on an `ApiContext`, `req.userContext` in a core route), a scheduled sender a `scheduleContext(engine, reason)`. `send(message)` is the `MailProvider` interface `MagicLinkAuthProvider` and the auth flows use.
+
+## Attachments
+
+`options.attachments` is a list of `{ filename, contentType, content: Buffer }`, handed to Nodemailer as they are ([#1974](https://github.com/jwilleke/ngdpbase/issues/1974)). A PDF from [`ExportManager.htmlToPdf`](ExportManager.md#html-to-pdf) is the case it was built for; the add-on example is in the [add-ons guide](../guides/addons-developer-guide.md#make-a-pdf-and-email-it).
+
+```javascript
+await engine.getManager('EmailManager').sendTo(ctx, to, 'Your invoice', 'Attached.', undefined, {
+  attachments: [{ filename: 'invoice-2026-0042.pdf', contentType: 'application/pdf', content: pdf }]
+});
+```
+
+- __Refused before sending__, with `AttachmentRefusedError` (`code: 'ATTACHMENT_REFUSED'`): a total over `ngdpbase.mail.attachments.max-bytes`; a filename that is empty or holds a path separator, a line break or a NUL; a `contentType` that is not a media type; `content` that is not a `Buffer`. This is the caller's error, so the manager is not degraded and administrators are not notified. `sendInBackground` logs the refusal (recipient domain and reason) and does not reject.
+- __Logged as counts only__: a send with attachments logs `attachments=<n> attachment-bytes=<total>` and who sent it (`by=<username>`). Never a file's name or content: a filename often names the person it is for.
+- The `console` provider prints the same count and size line instead of the files.
 
 ## Addresses in the server log
 

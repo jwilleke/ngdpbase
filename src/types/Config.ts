@@ -145,6 +145,9 @@ export interface WikiConfig {
    */
   'ngdpbase.mail.failure-notice.window-minutes': number;
 
+  /** The most a message's attachments may total, in bytes (#1974). Default: 10485760. */
+  'ngdpbase.mail.attachments.max-bytes': number;
+
   /**
    * Anti-spam: max submissions per IP per `window-minutes` window before
    * the 429 trips (#670 Phase E). Default: 5.

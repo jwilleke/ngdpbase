@@ -8,6 +8,37 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type PageManager from './PageManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { actorOf } from '../context/ActorContext.js';
+import {
+  PdfUnavailableError,
+  normalizePdfInChild,
+  renderPdfInChild,
+  resolveChromium,
+  resolvePdfOptions,
+  type PdfJob,
+  type PdfJobResult,
+  type PdfOptions,
+  type ChromiumResolution
+} from '../export/pdfEngine.js';
+import { NonePdfProvider, PDF_PROVIDERS, type PdfProvider, type PdfRendered } from '../export/PdfProvider.js';
+import { LocalChromePdfProvider } from '../export/LocalChromePdfProvider.js';
+import { ChromeServicePdfProvider } from '../export/ChromeServicePdfProvider.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import type { Transport } from '../http/guardedFetch.js';
+
+export { PdfUnavailableError };
+export type { PdfOptions, PdfMargin, PdfPageSize } from '../export/pdfEngine.js';
+
+/**
+ * The needs-attention reason while PDF export has no engine (#1974). Set only
+ * when something asked for a PDF and could not have one; cleared by the next
+ * render that works.
+ */
+export const PDF_UNAVAILABLE_REASON =
+  'PDF export unavailable: choose a PDF provider (local-chrome or chrome-service) in ngdpbase.export.pdf.provider, or fix the one chosen (the server log says why)';
+
+/** Shipped defaults of the `ngdpbase.export.pdf.*` keys. */
+const PDF_DEFAULTS = { provider: 'none', pageSize: 'Letter', timeoutMs: 30_000, maxConcurrent: 2, serviceMaxBytes: 52_428_800 };
 
 /**
  * Export file metadata interface
@@ -56,7 +87,8 @@ export interface PageForExport {
  * ExportManager - Handles page exports to multiple formats
  *
  * Similar to JSPWiki's export functionality, provides page export capabilities
- * to HTML, PDF, markdown, and other formats.
+ * to HTML and markdown, the one CSV writer, and HTML → PDF (`htmlToPdf`, #1974)
+ * through an optional headless Chromium.
  *
  * @class ExportManager
  * @extends BaseManager
@@ -74,6 +106,16 @@ const CSV_FORMULA_START = /^[=+\-@\t\r]/;
 
 class ExportManager extends BaseManager {
   private exportDirectory: string;
+
+  /** What the providers call out to; replaced in tests. A site never sets these. */
+  protected pdfRenderer: (job: PdfJob) => Promise<PdfJobResult> = renderPdfInChild;
+  protected chromiumResolver: (configuredPath: string) => Promise<ChromiumResolution> = (p) => resolveChromium(p);
+  protected pdfServiceTransport: Transport | undefined = undefined;
+  protected pdfNormalizer: (pdf: Uint8Array, timeoutMs: number) => Promise<Uint8Array> = normalizePdfInChild;
+
+  /** Renders running now, and renders waiting for a slot (`ngdpbase.export.pdf.max-concurrent`). */
+  private pdfActive = 0;
+  private pdfWaiting: Array<() => void> = [];
 
   /**
    * Creates a new ExportManager instance
@@ -120,6 +162,124 @@ class ExportManager extends BaseManager {
   }
 
   /**
+   * A rendered HTML document (print CSS and all) as PDF bytes (#1974).
+   *
+   * - __A provider renders it:__ `ngdpbase.export.pdf.provider` — `none`
+   *   (default), `local-chrome` (a Chromium on this machine) or
+   *   `chrome-service` (a Chromium service by URL, e.g. Gotenberg); see
+   *   `src/export/PdfProvider.ts`. Read on every render, so a change applies
+   *   without a restart.
+   * - __Sandboxed:__ `local-chrome` runs Chromium with JavaScript off and every
+   *   request refused except `data:` URIs, so images, stylesheets and fonts
+   *   must be inlined. A `chrome-service` is reached through the egress policy,
+   *   and what its Chromium may load is the service's own setting.
+   * - __Deterministic:__ the same HTML on the same core version, provider and
+   *   engine version gives the same bytes (no dates, no random ID), so an
+   *   add-on can store the document's SHA-256.
+   * - __Off the request path:__ a local render, and the metadata pass on a
+   *   service's PDF, each run in a child process; everything is bounded by
+   *   `ngdpbase.export.pdf.timeout-ms`, and at most
+   *   `ngdpbase.export.pdf.max-concurrent` run at once while the rest wait.
+   * - __Optional:__ with no engine (provider `none`, or the chosen one cannot
+   *   be used) it throws `PdfUnavailableError` (`code: 'PDF_UNAVAILABLE'`),
+   *   logs why, and this manager shows "needs attention" on the admin
+   *   dashboard until a render works. A site that never asks for a PDF is
+   *   never flagged.
+   *
+   * Records no audit event: it reads nothing and changes nothing. The caller
+   * that issues the document records that, with its own event.
+   *
+   * @param ctx - Who is asking; named in the log line
+   * @param html - A complete HTML document
+   * @param options - Page size, margins, printBackground; an `@page` rule in the HTML wins
+   * @returns The PDF
+   */
+  async htmlToPdf(ctx: ActorContext, html: string, options?: PdfOptions): Promise<Buffer> {
+    if (!ctx) throw new TypeError('htmlToPdf: a context is required (security-posture P1)');
+    if (typeof html !== 'string' || html.length === 0) throw new TypeError('htmlToPdf: html must be a non-empty string');
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const setting = <T>(key: string, fallback: T): T => (config?.getProperty(key, fallback) as T | undefined) ?? fallback;
+    const resolved = resolvePdfOptions(options, String(setting('ngdpbase.export.pdf.page-size', PDF_DEFAULTS.pageSize)));
+    const timeoutMs = positiveInt(setting('ngdpbase.export.pdf.timeout-ms', PDF_DEFAULTS.timeoutMs), PDF_DEFAULTS.timeoutMs);
+    const maxConcurrent = positiveInt(setting('ngdpbase.export.pdf.max-concurrent', PDF_DEFAULTS.maxConcurrent), PDF_DEFAULTS.maxConcurrent);
+
+    const provider = this.pdfProvider(setting);
+
+    const started = Date.now();
+    await this.acquirePdfSlot(maxConcurrent);
+    let rendered: PdfRendered;
+    try {
+      rendered = await provider.render({ html, options: resolved, timeoutMs });
+    } catch (err) {
+      if (err instanceof PdfUnavailableError) this.pdfUnavailable(err.message);
+      throw err;
+    } finally {
+      this.releasePdfSlot();
+    }
+    this.markReadyIfDegradedBy(PDF_UNAVAILABLE_REASON);
+    const pdf = Buffer.from(rendered.pdf);
+    logger.info(`[ExportManager] PDF rendered bytes=${pdf.length} ms=${Date.now() - started} engine=${rendered.engine} by=${actorOf(ctx).user}`);
+    return pdf;
+  }
+
+  /**
+   * The provider `ngdpbase.export.pdf.provider` names, built for this render
+   * from the current settings. A name that is not a provider is unavailable,
+   * with the reason, as `none` is.
+   */
+  private pdfProvider(setting: <T>(key: string, fallback: T) => T): PdfProvider {
+    const name = String(setting('ngdpbase.export.pdf.provider', PDF_DEFAULTS.provider));
+    switch (name) {
+    case 'none':
+      return new NonePdfProvider();
+    case 'local-chrome':
+      return new LocalChromePdfProvider(String(setting('ngdpbase.export.pdf.provider.local-chrome.chromium-path', '')), {
+        render: (job) => this.pdfRenderer(job),
+        resolve: (p) => this.chromiumResolver(p)
+      });
+    case 'chrome-service': {
+      const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const egress = resolveEgressPolicy((key, fallback) => config?.getProperty(key, fallback));
+      return new ChromeServicePdfProvider(
+        {
+          url: String(setting('ngdpbase.export.pdf.provider.chrome-service.url', '')),
+          policy: egress.policy,
+          maxBytes: positiveInt(setting('ngdpbase.export.pdf.provider.chrome-service.max-bytes', PDF_DEFAULTS.serviceMaxBytes), PDF_DEFAULTS.serviceMaxBytes)
+        },
+        { ...(this.pdfServiceTransport ? { transport: this.pdfServiceTransport } : {}), normalize: (pdf, ms) => this.pdfNormalizer(pdf, ms) }
+      );
+    }
+    default:
+      return new NonePdfProvider(`ngdpbase.export.pdf.provider '${name}' is not a PDF provider: use ${PDF_PROVIDERS.join(', ')}`);
+    }
+  }
+
+  /** Log why, flag the manager (unless something worse is already shown), and refuse. */
+  private pdfUnavailable(reason: string): never {
+    logger.warn(`[ExportManager] PDF export unavailable: ${reason}`);
+    const status = this.getManagerStatus();
+    if (status.state === 'ready' || status.reason === PDF_UNAVAILABLE_REASON) {
+      this.markNeedsAttention(PDF_UNAVAILABLE_REASON, 'ngdpbase.export.pdf.provider');
+    }
+    throw new PdfUnavailableError(`PDF export unavailable: ${reason}`);
+  }
+
+  private async acquirePdfSlot(limit: number): Promise<void> {
+    if (this.pdfActive < limit) {
+      this.pdfActive++;
+      return;
+    }
+    // The slot is handed over by releasePdfSlot, so pdfActive stays as it is.
+    await new Promise<void>((resolve) => this.pdfWaiting.push(resolve));
+  }
+
+  private releasePdfSlot(): void {
+    const next = this.pdfWaiting.shift();
+    if (next) next();
+    else this.pdfActive--;
+  }
+
+  /**
    * Initialize the ExportManager
    *
    * @async
@@ -149,7 +309,8 @@ class ExportManager extends BaseManager {
     // Create exports directory
     await fs.mkdir(this.exportDirectory, { recursive: true });
 
-    logger.info('ExportManager initialized');
+    const pdfProviderName = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.export.pdf.provider', PDF_DEFAULTS.provider) as string | undefined;
+    logger.info(`ExportManager initialized (PDF provider: ${pdfProviderName ?? PDF_DEFAULTS.provider})`);
   }
 
   /**
@@ -504,6 +665,12 @@ class ExportManager extends BaseManager {
     // Fallback to system default
     return date.toLocaleString();
   }
+}
+
+/** A positive whole number from config, or the shipped default. */
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
 export default ExportManager;

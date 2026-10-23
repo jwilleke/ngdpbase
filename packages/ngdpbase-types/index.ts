@@ -37,7 +37,8 @@ export type { JobRunContext } from '../../src/managers/BackgroundJobManager.js';
 export type { default as DatabaseManager, AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
 export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
-export type { default as ExportManager } from '../../src/managers/ExportManager.js';
+export type { default as ExportManager, PdfOptions, PdfMargin, PdfPageSize, PdfUnavailableError } from '../../src/managers/ExportManager.js';
+export type { default as EmailManager, SendOptions, MailAttachment, AttachmentRefusedError } from '../../src/managers/EmailManager.js';
 export type { default as PolicyDecisionPoint } from '../../src/security/PolicyDecisionPoint.js';
 // #1813: a page's URL and a vault page's name (`pageUrl`, `privatePageName`), for add-ons.
 export type { default as PageManager } from '../../src/managers/PageManager.js';

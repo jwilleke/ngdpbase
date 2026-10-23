@@ -146,6 +146,16 @@ Edit `configmap.yaml` to customize:
 }
 ```
 
+## PDF export (Gotenberg)
+
+The image carries no browser, so a cluster site that makes PDFs (invoices, statements) uses the `chrome-service` provider: a Gotenberg Deployment and ClusterIP Service beside ngdpbase, never exposed by an Ingress. Run it with the two lock-down flags in [SETUP.md](../../SETUP.md#chrome-service-gotenberg) as the container's args (`gotenberg`, `--chromium-disable-javascript=true`, `--chromium-allow-list=^(data:|file:///tmp/)`). Then, in the site's `app-custom-config.json` on its volume (Admin → Configuration):
+
+- `ngdpbase.export.pdf.provider`: `chrome-service`
+- `ngdpbase.export.pdf.provider.chrome-service.url`: the Service's address, e.g. `http://gotenberg.<namespace>.svc.cluster.local:3000`
+- `ngdpbase.security.egress.allowed-ranges`: add the cluster's Service CIDR (k3s's default is `10.43.0.0/16`), since a Service address is private and the egress policy refuses it otherwise
+
+A NetworkPolicy that limits ngdpbase's egress must allow the Gotenberg Service's port too. How the provider works is in [ExportManager](../../docs/managers/ExportManager.md#chrome-service).
+
 ## Storage
 
 Default: 10Gi PVC with ReadWriteOnce access.

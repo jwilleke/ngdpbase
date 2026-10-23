@@ -66,8 +66,8 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
 | ConsentManager | ✅ [doc](managers/ConsentManager.md) | What each person has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603) |
 | DatabaseManager | ✅ [doc](managers/DatabaseManager.md) | The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger |
-| EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
-| ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown, and the one CSV writer for every CSV export |
+| EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP), with attachments |
+| ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown, the one CSV writer for every CSV export, and HTML to PDF through a chosen provider (none, local Chromium, or a Chromium service) |
 | FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler. |
 | FileManager | ✅ [doc](managers/FileManager.md) | The one door for files (epic #1851). First step, read-only: today's attachments shown as file records, and the migration dry run |
 | FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |

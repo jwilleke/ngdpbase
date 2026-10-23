@@ -537,10 +537,11 @@ class NotificationManager extends BaseManager {
     const text = `${notification.title}\n\n${notification.message}\n\nLevel: ${notification.level}\nCreated: ${notification.createdAt.toISOString()}`;
     const html = `<h2>${notification.title}</h2><p>${notification.message}</p><p><strong>Level:</strong> ${notification.level}<br><strong>Created:</strong> ${notification.createdAt.toISOString()}</p>`;
 
+    const sender = scheduleContext(this.engine, `notification escalation: email ${notification.level} notice`);
     for (const user of withEmail) {
       // #1916: a failed send is reported once, by EmailManager; it is not
       // logged again here, and the other recipients are still tried.
-      const sent = await emailManager.sendTo(user.email, subject, text, html).then(() => true, () => false);
+      const sent = await emailManager.sendTo(sender, user.email, subject, text, html).then(() => true, () => false);
       if (sent) this.logger.info(`[NotificationManager] Escalation email sent to ${user.username} (an address at ${emailDomain(user.email)})`);
     }
   }

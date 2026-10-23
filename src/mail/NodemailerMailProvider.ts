@@ -11,7 +11,7 @@
  */
 
 import nodemailer from 'nodemailer';
-import type { MailMessage, MailProvider } from './MailProvider.js';
+import { describeAttachments, type MailMessage, type MailProvider } from './MailProvider.js';
 import logger from '../utils/logger.js';
 import { emailDomain } from '../utils/emailForLog.js';
 
@@ -44,8 +44,11 @@ export class NodemailerMailProvider implements MailProvider {
       to: message.to,
       subject: message.subject,
       text: message.text,
-      ...(message.html ? { html: message.html } : {})
+      ...(message.html ? { html: message.html } : {}),
+      ...(message.attachments?.length
+        ? { attachments: message.attachments.map(({ filename, contentType, content }) => ({ filename, contentType, content })) }
+        : {})
     });
-    logger.info(`[NodemailerMailProvider] Sent email to-domain=${emailDomain(message.to)}: ${message.subject}`);
+    logger.info(`[NodemailerMailProvider] Sent email to-domain=${emailDomain(message.to)}${describeAttachments(message.attachments)}: ${message.subject}`);
   }
 }

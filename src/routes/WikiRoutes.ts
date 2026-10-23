@@ -7921,7 +7921,7 @@ ${panes}
    *  - rate limit per `req.ip` (5 / 15 min) → 429
    *  - honeypot field `_website` filled → 200 silent success, no mail
    *  - validation errors → re-render form with formError + formValues
-   *  - happy path → EmailManager.sendTo(recipient, subject, body),
+   *  - happy path → EmailManager.sendTo(ctx, recipient, subject, body),
    *                 then re-render with state="submitted"
    *
    * CSRF: validated by the app-wide csrf middleware (`src/middleware/csrf.ts`,
@@ -8040,7 +8040,7 @@ ${panes}
       // would never ship. Logged at error level — the previous "warn + proceed"
       // path lied to visitors when mail was off.
       const emailManager = this.engine.getManager('EmailManager') as
-        | { sendTo(to: string, subject: string, text: string, html?: string): Promise<void>; isEnabled(): boolean }
+        | { sendTo(ctx: ActorContext, to: string, subject: string, text: string, html?: string): Promise<void>; isEnabled(): boolean }
         | null;
       const mailReady = !!emailManager && emailManager.isEnabled();
 
@@ -8155,7 +8155,7 @@ ${panes}
       ].filter(line => line !== null).join('\n');
 
       try {
-        await emailManager.sendTo(recipient, finalSubject, text);
+        await emailManager.sendTo(req.userContext, recipient, finalSubject, text);
       } catch {
         // #1916: EmailManager has reported the failure (domain only); not logged again here.
         await persistSubmission('mail-failed', recipient);
