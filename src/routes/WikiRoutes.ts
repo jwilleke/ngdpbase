@@ -420,6 +420,8 @@ interface IPageManager {
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
   /** #1462 slice 3: one delete door, with the context mandatory and positional. */
   deletePage(name: string, ctx: ActorContext): Promise<boolean>;
+  /** #2008: delete the pages carrying `test-artifact`, and nothing else. */
+  deleteTestArtifacts: PageManagerClass['deleteTestArtifacts'];
   /** #1462 slice 3: a version restore is a save — validated, audited, indexed. */
   restoreVersion(name: string, version: number, ctx: ActorContext): Promise<PageSaveResult & { version: number | null }>;
   /** #1462 slice 3: out of the trash and back into the shared indexes. */
@@ -4577,6 +4579,34 @@ ${panes}
       return res.json({ success: true, pageName, changed: true, systemKeywords });
     } catch (error) {
       logger.error('[apiMarkTestArtifact] failed:', error);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * POST /api/admin/test-artifacts/sweep — delete every page a test made (#2008).
+   *
+   * The E2E global teardown calls this at the end of a run. Admin only
+   * (`admin-system`, like the mark above). The work is PageManager's
+   * `deleteTestArtifacts`: only pages carrying the `test-artifact` system
+   * keyword, each recorded as `page-delete` and soft-deleted through the door.
+   * Answers what it deleted and what failed.
+   */
+  async apiSweepTestArtifacts(req: Request, res: Response) {
+    try {
+      const gate = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, response: res });
+      if (!(await gate.hasPermission('admin-system'))) {
+        return res.status(403).json({ error: 'Access denied', message: 'Only administrators can sweep test artifacts' });
+      }
+      const pageManager = this.engine.getManager('PageManager');
+      if (!pageManager) {
+        return res.status(500).json({ error: 'PageManager not available' });
+      }
+      const { deleted, failed } = await pageManager.deleteTestArtifacts(req.userContext);
+      logger.info(`[WikiRoutes] Test-artifact sweep by ${req.userContext?.username}: ${deleted.length} deleted, ${failed.length} failed`);
+      return res.json({ success: failed.length === 0, deleted, failed });
+    } catch (error) {
+      logger.error('[apiSweepTestArtifacts] failed:', error);
       return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
     }
   }
@@ -16344,6 +16374,10 @@ ${panes}
     // #1355: admin-only — stamp the `test-artifact` provenance keyword
     app.post('/api/page/:identifier/test-artifact', (req: Request, res: Response) =>
       void this.apiMarkTestArtifact(req, res)
+    );
+    // #2008: admin-only — delete every test-artifact page (the E2E teardown)
+    app.post('/api/admin/test-artifacts/sweep', (req: Request, res: Response) =>
+      void this.apiSweepTestArtifacts(req, res)
     );
 
     // #947 trash API — admin-only, enforced inside each handler

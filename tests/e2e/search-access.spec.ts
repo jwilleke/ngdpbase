@@ -70,7 +70,7 @@ test.describe('Search keeps to the pages the searcher may open (#1962)', () => {
     expect(saved.status(), await saved.text()).toBeLessThan(400);
     await markTestArtifact(request, TITLE);
     const made = await request.post('/admin/users', {
-      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'reader', isTest: 'on' }
+      form: { _csrf: await csrfFrom(request), username: READER, email: `${READER}@example.test`, displayName: READER, password: READER_PASS, roles: 'reader', isTest: 'true' }
     });
     expect(made.ok()).toBe(true);
     expect(made.url()).not.toContain('error=');

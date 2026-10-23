@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, deletePage } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, markTestArtifact } from './fixtures/helpers';
 
 /**
  * #1471 — the editor's preview pane, for a page whose title contains `'`.
@@ -51,6 +51,9 @@ test.describe('The preview pane and a title containing an apostrophe (#1471)', (
       page.waitForURL(/\/(edit|view)\//, { timeout: 30000 }),
       createButton.first().click()
     ]);
+    // #2008: the create made the page; mark it before anything can fail. This
+    // test never saves, so the mark's save cannot meet a stale-edit conflict.
+    await markTestArtifact(page, pageName);
     if (!page.url().includes('/edit/')) {
       await page.goto(`/edit/${encodeURIComponent(pageName)}`);
     }

@@ -1,7 +1,7 @@
 ---
 name: Testing developer guide
 description: Non-negotiable rules for tests in this repo — teardown, proving a test can fail, reproducing the way the suite runs
-dateModified: 2026-10-21
+dateModified: 2026-10-23
 category: guides
 ---
 
@@ -33,6 +33,26 @@ Every page an E2E test, probe or script creates on a real instance carries the s
 - Scripts and probes that save through `PageManager` or the provider put `system-keywords: ['test-artifact']` in the metadata they save.
 - Unit tests never write to a live instance (see Standing rules), so they have nothing to mark.
 - `test-artifact` is not `test-page`: `test-page` marks the permanent, shipped test pages below.
+
+A spec that makes a page also deletes it ([#2008](https://github.com/jwilleke/ngdpbase/issues/2008)):
+
+- Mark every page the spec makes, however it was made: the create form, `/save`, an import (`admin-import.spec.ts` marks each page it imports), a page the server made for an account the spec created.
+- Delete it in `afterAll` with `deletePage` / `deletePages` from `tests/e2e/fixtures/helpers.ts`, which fail loudly and purge what they deleted from the trash. Do not swallow the failure with `.catch(() => undefined)`: that is how `E2E Import …` pages stayed behind.
+- Accounts a spec creates are test accounts (`isTest: 'true'` on `POST /admin/users`, the value the form's checkbox sends; `'on'` reads as unchecked, which is why no E2E account was a test account before #2008). A test account's profile page is stamped `test-artifact` when the account is created and deleted with the account. An account the spec cannot flag, such as one made through `/register`, keeps its profile page when deleted (as every ordinary account does), so the spec marks that page itself and deletes it after the account.
+- Private vault pages are not in the shared index, so neither the sweep below nor the leftover check sees them; a spec that makes one deletes it itself (`vault-share.spec.ts`).
+
+At the end of every run, `tests/e2e/global-teardown.ts` (Playwright `globalTeardown`) deletes every page carrying `test-artifact`:
+
+- Through the site's API as the run's admin session (`tests/e2e/.auth/user.json`): `POST /api/admin/test-artifacts/sweep`, gated by `admin-system`, which calls `PageManager.deleteTestArtifacts`. Each page is recorded as `page-delete` and soft-deleted through the page door; the teardown then purges those uuids, and only those, from the trash. Never a file, never a page without the keyword.
+- It logs each page it deleted. A refused sweep, or a page it could not delete, fails the run.
+- Without a saved admin session (setup did not run) it skips with a warning.
+
+Leftovers from before #2008, most without the keyword, are cleared once per instance by `scripts/sweep-test-pages.ts`, run by the operator against a running site:
+
+- `npm run sweep:test-pages -- --base-url <url>` lists them (dry run, the default); add `--apply` to delete.
+- It matches titles starting `Profile: e2e-` (only when no account, active or not, has that username or display name), `E2E Import` (then a space) and `NGDPBASE-test-`.
+- It signs in with an admin session from a Playwright storage state (default `tests/e2e/.auth/user.json`, written by `npx playwright test --project=setup` against that site), or a Cookie header in `--cookie` / `NGDPBASE_SWEEP_COOKIE`. A password session is not enough where admin needs a passkey.
+- Deletes go through `DELETE /api/page/:identifier`: recorded, and soft, so each page stays in the trash for the retention window.
 
 ## Test pages (rendering shapes)
 

@@ -63,6 +63,10 @@ export default defineConfig({
   // Run tests in parallel
   fullyParallel: true,
 
+  // #2008: at the end of the run, delete every page carrying `test-artifact`
+  // (admin-only, through the site's API; nothing without the keyword).
+  globalTeardown: './tests/e2e/global-teardown.ts',
+
   // Fail the build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
 
