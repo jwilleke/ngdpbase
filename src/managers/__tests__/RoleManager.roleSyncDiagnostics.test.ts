@@ -1,15 +1,12 @@
 /**
- * Role-assignment diagnostics (#1027).
+ * Role-assignment diagnostics (#1027), now refusals (#2015).
  *
- * An instance with no anchor Organization cannot attach a Person to a Role, so
- * NO role is ever assigned — including `admin` on the default admin account.
- * That used to happen in complete silence: the add/remove member paths had five
- * bare `return`s between them and logged nothing, so a failed assignment was
- * indistinguishable from a successful one.
- *
- * These tests pin the diagnostics rather than the behaviour. The behaviour
- * (assignment does not happen) is correct and unchanged — the bug was that
- * nobody could tell.
+ * An instance with no anchor Organization cannot attach a Person to a Role.
+ * That used to happen in complete silence (#1027), then with a warning while
+ * the account was still created without the role. Operator, 2026-10-23: a
+ * role that cannot be added or removed is always an error, whatever the
+ * cause — thrown to whoever asked, logged at error level, and an error
+ * notification for admins. Never a warning.
  *
  * The membership writes are RoleManager's (#1431 step 12); they were
  * UserManager's syncRoleAdd / syncRoleRemove.
@@ -17,6 +14,7 @@
 
 import { roleManagerOver } from './__fixtures__/roleManagerOver';
 import logger from '../../utils/logger';
+import { RoleChangeError } from '../../utils/roleChangeError';
 
 const PERSON_ID = 'urn:uuid:22222222-2222-2222-2222-222222222222';
 const ORG_ID = 'https://example.com/';
@@ -33,6 +31,8 @@ const makeConfigManager = () => ({
   }),
   getResolvedDataPath: vi.fn(() => '/tmp/ngdpbase-test-users')
 });
+
+const notifications: Record<string, unknown>[] = [];
 
 function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
   const roleManager = {
@@ -54,8 +54,10 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
     )
   };
 
+  notifications.length = 0;
   const engine = {
     getManager: vi.fn((name: string) => {
+      if (name === 'NotificationManager') return { addNotification: async (n: Record<string, unknown>) => { notifications.push(n); return 'n1'; } };
       if (name === 'ConfigurationManager') return makeConfigManager();
       if (name === 'PersonManager') return personManager;
       if (name === 'OrganizationManager') return organizationManager;
@@ -66,14 +68,8 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
   return roleManagerOver(engine, roleManager);
 }
 
-/** addMember / removeMember are private; exercised through the documented seam. */
-type RoleSync = {
-  addMember(username: string, roleName: string): Promise<void>;
-  removeMember(username: string, roleName: string): Promise<void>;
-};
-
-function warnings(): string {
-  return (logger.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls
+function logged(level: 'warn' | 'error'): string {
+  return (logger[level] as unknown as { mock: { calls: unknown[][] } }).mock.calls
     .map((c) => String(c[0]))
     .join('\n');
 }
@@ -82,46 +78,54 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('role assignment with no anchor Organization (#1027)', () => {
-  test('warns instead of failing silently, naming user, role and cause', async () => {
+describe('role assignment with no anchor Organization (#1027, #2015)', () => {
+  test('is refused with an error naming user, role and cause — never a warning', async () => {
     const manager = makeEngine({ installOrg: null });
-    await (manager as unknown as RoleSync).addMember('admin', 'admin');
+    const failure = await manager.applyRoleDiff('admin', [], ['admin']).catch((e: unknown) => e);
 
-    const out = warnings();
-    expect(out).toContain('admin');
-    expect(out).toMatch(/anchor Organization/i);
-    // Names the key to set — a warning that does not say what to do is nearly
-    // as useless as no warning.
-    expect(out).toContain('ngdpbase.application.organization.file');
+    expect(failure).toBeInstanceOf(RoleChangeError);
+    const message = (failure as Error).message;
+    expect(message).toContain('admin');
+    expect(message).toMatch(/anchor Organization/i);
+    // Names the key to set — an error that does not say what to do is nearly as useless as none.
+    expect(message).toContain('ngdpbase.application.organization.file');
+    expect(logged('error')).toMatch(/anchor Organization/i);
+    expect(logged('warn')).not.toMatch(/anchor Organization/i);
   });
 
-  test('warns on revocation too — the more dangerous direction', async () => {
-    // A revoke that silently does nothing leaves the operator believing access
-    // was removed when it was not.
+  test('a revocation is refused too — the more dangerous direction', async () => {
     const manager = makeEngine({ installOrg: null });
-    await (manager as unknown as RoleSync).removeMember('bob', 'editor');
+    const failure = await manager.applyRoleDiff('bob', ['editor'], []).catch((e: unknown) => e);
 
-    const out = warnings();
-    expect(out).toContain('bob');
-    expect(out).toContain('editor');
-    expect(out).toMatch(/anchor Organization/i);
+    expect(failure).toBeInstanceOf(RoleChangeError);
+    expect((failure as Error).message).toContain('bob');
+    expect((failure as Error).message).toContain('remove editor');
+    expect(logged('error')).toContain('bob');
   });
 
-  test('warns when there is no Person record for the username', async () => {
+  test('is refused when there is no Person record for the username', async () => {
     const manager = makeEngine({ person: null });
-    await (manager as unknown as RoleSync).addMember('ghost', 'admin');
+    await expect(manager.applyRoleDiff('ghost', [], ['admin'])).rejects.toThrow(/no Person record/i);
+    expect(logged('error')).toMatch(/no Person record/i);
+  });
 
-    expect(warnings()).toMatch(/no Person record/i);
+  test('admins get an error notification', async () => {
+    const manager = makeEngine({ installOrg: null });
+    await manager.applyRoleDiff('admin', [], ['admin']).catch(() => undefined);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(String(notifications[0].message)).toContain('admin');
   });
 });
 
 describe('role assignment with a healthy anchor Organization', () => {
-  test('does not warn — diagnostics must not fire on the happy path', async () => {
-    // Otherwise the warning becomes noise and stops being read, which is how
+  test('nothing is logged as an error — diagnostics must not fire on the happy path', async () => {
+    // Otherwise the error becomes noise and stops being read, which is how
     // this class of failure hides in the first place.
     const manager = makeEngine();
-    await (manager as unknown as RoleSync).addMember('alice', 'admin');
+    await manager.applyRoleDiff('alice', [], ['admin']);
 
-    expect(warnings()).not.toMatch(/anchor Organization/i);
+    expect(logged('error')).toBe('');
+    expect(notifications).toHaveLength(0);
   });
 });

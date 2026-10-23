@@ -427,11 +427,14 @@ class PersonManager extends BaseManager {
     joined['@id'] = target['@id'];
     joined.identifier = user.username;
 
+    // #2015: the roles move first, all or nothing, so a move that fails
+    // leaves both persons as they were and the join is refused.
+    const merging = accountPerson && accountPerson['@id'] !== target['@id'] ? accountPerson : null;
+    const roles = this.engine.getManager<RoleMembershipMover>('RoleManager');
+    if (merging) await roles?.moveMemberships(merging['@id'], target['@id']);
     await provider.replace(joined);
-    if (accountPerson && accountPerson['@id'] !== target['@id']) {
-      const roles = this.engine.getManager<RoleMembershipMover>('RoleManager');
-      await roles?.moveMemberships(accountPerson['@id'], target['@id']);
-      await provider.delete(accountPerson['@id']);
+    if (merging) {
+      await provider.delete(merging['@id']);
       roles?.invalidateCache?.();
     }
     this.invalidateCache();

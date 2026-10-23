@@ -1,27 +1,32 @@
 /**
- * A role change that could not be saved (#2015).
+ * A role change that did not happen (#2015).
  *
- * Role membership used to be written best-effort: a failed save was logged and
- * the account write it belonged to reported success, so an administrator who
- * created an account with a role got the account without it and was never
- * told. `RoleManager.applyRoleDiff` now tries every change it was asked for and
- * then throws this, naming the ones that did not land, so the request that
- * asked hears about it.
+ * Operator, 2026-10-23: adding or removing a role completes or it does not
+ * happen, everywhere, and one that cannot be made is always an error. So a
+ * request that asks for several role changes either gets all of them or none:
+ * RoleManager undoes the ones that landed before the failure, then throws
+ * this, and the request that asked fails with it.
  *
- * The message names the account and the roles, never storage detail: it is
- * shown to the administrator who made the change. The causes are kept for the
- * log.
+ * The message is shown to whoever asked (an administrator's form). It names
+ * the account, the change that failed and, when it is something an
+ * administrator can fix, the reason (no Person record, no anchor
+ * Organization). Storage detail (paths, errno) stays in `cause`, for the log.
  */
 export class RoleChangeError extends Error {
-  /** The changes that were not saved, as `add <role>` / `remove <role>`. */
+  /** The change that could not be made, as `add <role>` / `remove <role>`. */
   readonly failed: readonly string[];
-  /** What each failed change threw, in the same order. */
-  readonly causes: readonly unknown[];
+  /** Changes that landed, could not be undone, and so are still in effect. Empty when nothing was left changed. */
+  readonly notUndone: readonly string[];
 
-  constructor(username: string, failed: readonly string[], causes: readonly unknown[]) {
-    super(`The role change for "${username}" could not be saved (${failed.join(', ')}). Its other changes were saved; make the role change again.`);
+  constructor(subject: string, failed: readonly string[], options: { reason?: string; cause?: unknown; notUndone?: readonly string[] } = {}) {
+    const notUndone = options.notUndone ?? [];
+    const why = options.reason ? `: ${options.reason}` : '';
+    const outcome = notUndone.length === 0
+      ? 'No role was changed; try again once it is fixed.'
+      : `Undoing ${notUndone.join(', ')} also failed, so those are still in effect.`;
+    super(`The role change for "${subject}" could not be made (${failed.join(', ')})${why}. ${outcome}`, { cause: options.cause });
     this.name = 'RoleChangeError';
     this.failed = failed;
-    this.causes = causes;
+    this.notUndone = notUndone;
   }
 }

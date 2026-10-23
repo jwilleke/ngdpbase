@@ -703,21 +703,32 @@ class UserManager extends BaseManager {
       preferences: {}
     };
 
-    await this.writeAccounts(this.provider.createUser(adminUser));
+    const bootstrapCtx = systemContext(this.engine, 'create the bootstrap admin account at first boot');
     // #1197: the bootstrap ACTS — an account now exists. Recorded under the
     // system principal, origin boot; deferred until the audit sink is up.
-    void recordSystemAction(this.engine, systemContext(this.engine, 'create the bootstrap admin account at first boot'), {
+    const recordBootstrap = (result: 'success' | 'failure', reason?: string): Promise<void> => recordSystemAction(this.engine, bootstrapCtx, {
       eventType: AUDIT_EVENT.USER_CREATE,
       action: 'create',
       resource: adminUser.username,
       resourceType: 'user',
-      result: 'success',
+      result,
       severity: 'high',
-      metadata: { bootstrap: true }
+      metadata: { bootstrap: true, ...(reason ? { reason } : {}) }
     });
 
-    await this.syncPersonOnCreate(adminUser, systemContext(this.engine, 'create the bootstrap admin account at first boot'));
-    await this.roleManager().applyRoleDiff(adminUser.username, [], this.withAccountRoles(['admin']));
+    await this.writeAccounts(this.provider.createUser(adminUser));
+    await this.syncPersonOnCreate(adminUser, bootstrapCtx);
+    // #2015: the admin is created with its roles or not at all. A failure
+    // takes the account back and stops this boot; the user store is empty
+    // again, so the next boot tries again.
+    try {
+      await this.roleManager().applyRoleDiff(adminUser.username, [], this.withAccountRoles(['admin']));
+    } catch (error) {
+      await this.undoAccountCreate(adminUser.username, bootstrapCtx);
+      await recordBootstrap('failure', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+    void recordBootstrap('success');
 
     // Never log the value. `2b48d838` removed the equivalent echo from the
     // startup banner but left this one, which writes the live credential into
@@ -1011,11 +1022,27 @@ class UserManager extends BaseManager {
     await this.writeAccounts(this.provider.createUser(user));
 
     await this.syncPersonOnCreate(user, ctx);
-    // #2015: the account exists now, so a role that could not be saved does
-    // not undo it. The creation is still recorded, with the roles it really
-    // has, and the failure is thrown last so the caller is told.
-    const roleFailure = await this.roleManager().applyRoleDiff(username, [], roles).then(() => null, (err: Error) => err);
-    const rolesHeld = roleFailure ? await this.roleManager().resolveUserRoles(username) : roles;
+    // #2015: an account is created with its roles or not at all. When a role
+    // cannot be given, the account and its Person are removed again, so a
+    // retry finds the username and email free, and the creation is recorded
+    // as failed.
+    try {
+      await this.roleManager().applyRoleDiff(username, [], roles);
+    } catch (error) {
+      await this.undoAccountCreate(username, ctx);
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_CREATE,
+        ...who,
+        action: 'user-create',
+        result: 'failure',
+        severity: 'medium',
+        resource: username,
+        resourceType: 'user',
+        metadata: { username, roles: [...roles], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, reason: error instanceof Error ? error.message : String(error), ...who.metadata }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
+      throw error;
+    }
     await this.offerContactLink(username, ctx);
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
@@ -1032,7 +1059,7 @@ class UserManager extends BaseManager {
         severity: 'medium',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles: [...rolesHeld], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, ...who.metadata }
+        metadata: { username, roles: [...roles], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, ...who.metadata }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
     }
 
@@ -1046,8 +1073,22 @@ class UserManager extends BaseManager {
       logger.warn(`⚠️  Failed to create user page for ${username}:`, error instanceof Error ? error.message : String(error));
     }
 
-    if (roleFailure) throw roleFailure;
     return publicRecord(user);
+  }
+
+  /**
+   * Take back an account whose roles could not be given (#2015): its Person,
+   * then the account. A failure here is an error in the log; the role failure
+   * that caused it is what the caller is told.
+   */
+  private async undoAccountCreate(username: string, ctx: ActorContext): Promise<void> {
+    await this.syncPersonOnDelete(username, ctx);
+    try {
+      await this.writeAccounts(this.provider!.deleteUser(username));
+      logger.error(`❌ Account ${username} was not created: its roles could not be given (#2015)`);
+    } catch (error) {
+      logger.error(`❌ Account ${username} could not be taken back after its roles failed; delete it by hand (#2015): ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
@@ -1097,15 +1138,75 @@ class UserManager extends BaseManager {
       typeof updates.currentPassword === 'string' ? updates.currentPassword : undefined;
     delete updates.currentPassword;
 
-    let passwordChange: string | undefined;
+    // Everything that can refuse the edit is checked before anything is written.
     if (updates.password) {
       // Use the incoming isExternal value if being changed in the same request
       const willBeExternal = updates.isExternal !== undefined ? updates.isExternal : user.isExternal;
       if (willBeExternal) {
         throw new Error('Cannot set a password for an external OAuth user. Change the account type to Local first.');
       }
-      const newPasswordPlain = updates.password;
-      if (currentPasswordPlain) {
+    }
+    // #1748: one email, one account — a change to another account's email is refused.
+    if (updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email)) {
+      await this.assertEmailFree(updates.email, username);
+    }
+
+    // #617 iteration 3b: the `roles` field on User is deprecated; role
+    // membership is owned by RoleManager. Strip it from the update before
+    // it lands on the User record, diff against the current RoleManager
+    // state, and apply the changes through the canonical write path.
+    // The password is not copied: setPassword() is the one definition of a
+    // change (#1592) — hash, end every other session (#1482; the session that
+    // made the change is re-stamped by its route), and record when.
+    const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
+    // #1805: the value, not only the field name — recorded only when it changes.
+    const wasTest = user.isTest === true;
+    const testChange = updates.isTest !== undefined && (updates.isTest === true) !== wasTest
+      ? { from: wasTest, to: updates.isTest === true } : undefined;
+    const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
+    const disabling = user.isActive !== false && updates.isActive === false;
+    // #1204: only a change that alters what the account may do or who holds
+    // it is recorded. Preferences, last-login and login-count updates arrive
+    // through the same method on every sign-in and every theme toggle; a
+    // record for each would bury the ones that matter. Field NAMES only —
+    // never a password or an email value.
+    const changed = SENSITIVE_USER_FIELDS.filter((f) => f in updates && (updates as Record<string, unknown>)[f] !== undefined);
+    const recordEdit = async (result: 'success' | 'failure', reason?: string): Promise<void> => {
+      if (changed.length === 0) return;
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_EDIT,
+        ...who,
+        action: 'user-edit',
+        result,
+        severity: changed.includes('roles') || changed.includes('isActive') ? 'high' : 'medium',
+        resource: username,
+        resourceType: 'user',
+        metadata: {
+          username,
+          fields: changed,
+          ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
+          ...(testChange ? { isTest: testChange } : {}),
+          selfEdit: ctx.username === username,
+          ...(reason ? { reason } : {}),
+          ...who.metadata
+        }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
+    };
+
+    // #2015: the role change goes first, all or nothing. When it cannot be
+    // made, nothing of this edit is written and the edit is recorded as failed.
+    if (incomingRoles) {
+      try {
+        await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles);
+      } catch (error) {
+        await recordEdit('failure', error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    }
+
+    try {
+      if (updates.password && currentPasswordPlain) {
         const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
         const pagesDirectory = configManager?.getResolvedDataPath?.(
           'ngdpbase.page.provider.filesystem.storagedir',
@@ -1116,75 +1217,26 @@ class UserManager extends BaseManager {
             pagesDirectory,
             username,
             oldPassword: currentPasswordPlain,
-            newPassword: newPasswordPlain
+            newPassword: updates.password
           });
         }
       }
-      passwordChange = newPasswordPlain;
+      Object.assign(user, userFieldUpdates);
+      if (updates.password) await setPassword(user, updates.password);
+      await this.writeAccounts(this.provider.updateUser(username, user));
+    } catch (error) {
+      // #2015: the account was not saved, so its roles go back as they were.
+      // A failure to put them back is reported by RoleManager; the caller hears the original error.
+      if (incomingRoles) await this.roleManager().applyRoleDiff(username, incomingRoles, oldRoles).catch(() => undefined);
+      throw error;
     }
-
-    // #617 iteration 3b: the `roles` field on User is deprecated; role
-    // membership is owned by RoleManager. Strip it from the update before
-    // it lands on the User record, diff against the current RoleManager
-    // state, and apply the changes through the canonical write path.
-    // The password is not copied: setPassword() is the one definition of a
-    // change (#1592) — hash, end every other session (#1482; the session that
-    // made the change is re-stamped by its route), and record when.
-    // #1748: one email, one account — a change to another account's email is refused.
-    if (updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email)) {
-      await this.assertEmailFree(updates.email, username);
-    }
-
-    const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
-    // #1805: the value, not only the field name — recorded only when it changes.
-    const wasTest = user.isTest === true;
-    const testChange = updates.isTest !== undefined && (updates.isTest === true) !== wasTest
-      ? { from: wasTest, to: updates.isTest === true } : undefined;
-    const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
-    const disabling = user.isActive !== false && updates.isActive === false;
-    Object.assign(user, userFieldUpdates);
-    if (passwordChange !== undefined) await setPassword(user, passwordChange);
-    await this.writeAccounts(this.provider.updateUser(username, user));
     // #1765: turning an account off goes through the one deactivation step.
     if (disabling) await this.closeAccess(username, 'disable', ctx);
 
     await this.syncPersonOnUpdate(username, updates, ctx);
-    // #2015: the account fields are saved; a role change that was not is
-    // recorded as the roles the account really has, then thrown to the caller.
-    const roleFailure = incomingRoles
-      ? await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles).then(() => null, (err: Error) => err)
-      : null;
-    const rolesHeld = roleFailure ? await this.roleManager().resolveUserRoles(username) : incomingRoles;
 
     logger.info(`👤 Updated user: ${username}`);
-
-    // #1204: only a change that alters what the account may do or who holds
-    // it is recorded. Preferences, last-login and login-count updates arrive
-    // through the same method on every sign-in and every theme toggle; a
-    // record for each would bury the ones that matter. Field NAMES only —
-    // never a password or an email value.
-    const changed = SENSITIVE_USER_FIELDS.filter((f) => f in updates && (updates as Record<string, unknown>)[f] !== undefined);
-    if (changed.length > 0) {
-      const who = actorOf(ctx);
-      await recordAuditEvent(this.auditSink(), {
-        eventType: AUDIT_EVENT.USER_EDIT,
-        ...who,
-        action: 'user-edit',
-        result: 'success',
-        severity: changed.includes('roles') || changed.includes('isActive') ? 'high' : 'medium',
-        resource: username,
-        resourceType: 'user',
-        metadata: {
-          username,
-          fields: changed,
-          ...(rolesHeld ? { roles: { from: oldRoles, to: [...rolesHeld] } } : {}),
-          ...(testChange ? { isTest: testChange } : {}),
-          selfEdit: ctx.username === username,
-          ...who.metadata
-        }
-      }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
-    }
-    if (roleFailure) throw roleFailure;
+    await recordEdit('success');
     return user;
   }
 
@@ -1204,31 +1256,43 @@ class UserManager extends BaseManager {
       throw new Error('Cannot delete system user');
     }
 
-    // #1204: user-delete is CRITICAL — destruction of an identity and its
-    // attribution — so the record is written and flushed BEFORE the delete,
-    // and a failure refuses it (the token-mint / share-create ordering).
-    {
-      const who = actorOf(ctx);
-      const roles = await this.roleManager().resolveUserRoles(username);
-      await recordAuditEvent(this.auditSink(), {
-        eventType: AUDIT_EVENT.USER_DELETE,
-        ...who,
-        action: 'user-delete',
-        result: 'success',
-        severity: 'high',
-        resource: username,
-        resourceType: 'user',
-        metadata: { username, roles, isExternal: user.isExternal === true, ...who.metadata }
-      }, (err) => logger.warn(`[UserManager] Audit record failed for user-delete of ${username}:`, err));
+    const who = actorOf(ctx);
+    const roles = await this.roleManager().resolveUserRoles(username);
+    const recordDelete = (result: 'success' | 'failure', reason?: string): Promise<unknown> => recordAuditEvent(this.auditSink(), {
+      eventType: AUDIT_EVENT.USER_DELETE,
+      ...who,
+      action: 'user-delete',
+      result,
+      severity: 'high',
+      resource: username,
+      resourceType: 'user',
+      metadata: { username, roles, isExternal: user.isExternal === true, ...(reason ? { reason } : {}), ...who.metadata }
+    }, (err) => logger.warn(`[UserManager] Audit record failed for user-delete of ${username}:`, err));
+
+    // #2015: the account's role memberships go first, all or nothing — while
+    // the Person record still exists. When they cannot all be removed the
+    // delete does not happen, and is recorded as failed.
+    let giveRolesBack: () => Promise<void>;
+    try {
+      giveRolesBack = await this.roleManager().removeAllMemberships(username);
+    } catch (error) {
+      await recordDelete('failure', error instanceof Error ? error.message : String(error));
+      throw error;
     }
 
-    await this.writeAccounts(this.provider.deleteUser(username));
+    try {
+      // #1204: user-delete is CRITICAL — destruction of an identity and its
+      // attribution — so the record is written and flushed BEFORE the delete,
+      // and a failure refuses it (the token-mint / share-create ordering).
+      await recordDelete('success');
+      await this.writeAccounts(this.provider.deleteUser(username));
+    } catch (error) {
+      // A failure to give them back is reported by RoleManager; the caller hears the original error.
+      await giveRolesBack().catch(() => undefined);
+      throw error;
+    }
     // #1765: the one deactivation step — sessions, tokens, app grants, shares, credentials.
     await this.closeAccess(username, 'delete', ctx);
-
-    // Order matters: clear role memberships while the Person record still
-    // exists, then delete the Person.
-    await this.roleManager().removeAllMemberships(username);
     await this.syncPersonOnDelete(username, ctx);
 
     // #2008: a test account's profile page goes with it; an ordinary

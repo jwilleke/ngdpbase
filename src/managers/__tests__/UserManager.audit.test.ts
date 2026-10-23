@@ -63,7 +63,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   Object.assign(roles, {
     resolveUserRoles: async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
     applyRoleDiff: async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); },
-    removeAllMemberships: async () => undefined,
+    removeAllMemberships: async () => async () => undefined,
     addMember: async () => undefined,
     hasRole: async () => true
   });
@@ -111,37 +111,57 @@ describe('#1204 user-create', () => {
   });
 });
 
-describe('#2015 a role change that is not saved', () => {
-  /** applyRoleDiff as RoleManager does it when the save of `role` fails: the rest land, then it throws. */
-  const failSaving = (roles: RoleManager, role: string, held: Map<string, string[]>) => {
+describe('#2015 a role change that cannot be made refuses the whole request', () => {
+  /** applyRoleDiff as RoleManager does it when `role` cannot be given: all or nothing, then it throws. */
+  const refuse = (roles: RoleManager, role: string) => {
+    const real = roles.applyRoleDiff.bind(roles);
     Object.assign(roles, {
-      resolveUserRoles: async (n: string) => held.get(n) ?? [],
       applyRoleDiff: async (n: string, o: string[], nw: string[]) => {
-        held.set(n, nw.filter((r) => r !== role || o.includes(r)));
-        if (nw.includes(role) && !o.includes(role)) throw new RoleChangeError(n, [`add ${role}`], [new Error('ENOENT')]);
-      }
+        if (nw.includes(role) && !o.includes(role)) throw new RoleChangeError(n, [`add ${role}`], { cause: new Error('ENOENT') });
+        return real(n, o, nw);
+      },
+      removeAllMemberships: async () => { throw new RoleChangeError('alice', ['remove editor'], { cause: new Error('ENOENT') }); }
     });
   };
 
-  test('createUser keeps the account, records the roles it really has, then throws', async () => {
+  test('createUser leaves no account behind and records the creation as failed', async () => {
     const { um, roles, sink, users } = makeManager();
-    failSaving(roles, 'editor', new Map());
+    refuse(roles, 'editor');
     await expect(um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader', 'editor'] }, ADMIN))
       .rejects.toBeInstanceOf(RoleChangeError);
-    expect(users.has('alice')).toBe(true);
-    expect(sink.map((e) => e.eventType)).toEqual(['user-create']);
-    expect(sink[0].metadata).toMatchObject({ username: 'alice', roles: ['reader'] });
+    expect(users.has('alice')).toBe(false);
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-create', 'failure']]);
+    expect(sink[0].metadata).toMatchObject({ username: 'alice', roles: ['reader', 'editor'], reason: expect.stringContaining('add editor') });
   });
 
-  test('updateUser records the roles the account really has, then throws', async () => {
-    const { um, roles, sink } = makeManager();
+  test('a retry after the failure finds the username and email free', async () => {
+    const { um, roles, users } = makeManager();
+    refuse(roles, 'editor');
+    await expect(um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['editor'] }, ADMIN)).rejects.toThrow();
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
-    const held = new Map([['alice', ['reader']]]);
-    failSaving(roles, 'editor', held);
+    expect(users.has('alice')).toBe(true);
+  });
+
+  test('updateUser writes nothing of the edit and records it as failed', async () => {
+    const { um, roles, sink, users, provider } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    refuse(roles, 'editor');
     sink.length = 0;
-    await expect(um.updateUser('alice', { roles: ['reader', 'editor'] }, ADMIN)).rejects.toThrow(/editor/);
-    expect(sink.map((e) => e.eventType)).toEqual(['user-edit']);
-    expect(sink[0].metadata).toMatchObject({ roles: { from: ['reader'], to: ['reader'] } });
+    provider.updateUser.mockClear();
+    await expect(um.updateUser('alice', { displayName: 'Changed', isActive: false, roles: ['reader', 'editor'] }, ADMIN)).rejects.toThrow(/editor/);
+    expect(provider.updateUser).not.toHaveBeenCalled();
+    expect(users.get('alice')?.displayName).toBe('Alice');
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-edit', 'failure']]);
+  });
+
+  test('deleteUser: memberships that cannot be removed refuse the delete, recorded as failed', async () => {
+    const { um, roles, sink, users } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['editor'] }, ADMIN);
+    refuse(roles, 'editor');
+    sink.length = 0;
+    await expect(um.deleteUser('alice', ADMIN)).rejects.toBeInstanceOf(RoleChangeError);
+    expect(users.has('alice')).toBe(true);
+    expect(sink.map((e) => [e.eventType, (e as { result?: string }).result])).toEqual([['user-delete', 'failure']]);
   });
 });
 

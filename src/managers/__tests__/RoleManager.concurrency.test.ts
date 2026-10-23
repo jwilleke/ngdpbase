@@ -74,27 +74,81 @@ describe('RoleManager membership under concurrency (#2015)', () => {
     expect(await stored('reader')).toEqual(expected);
   });
 
-  test('a role change that cannot be saved throws a RoleChangeError naming it; the other changes land', async () => {
+  /** Make every save of `role`'s record fail, the way jimstest's rename did. */
+  const failSavesOf = (role: string) => {
     const provider = manager.getProvider()!;
     const realUpdate = provider.update.bind(provider);
-    await manager.applyRoleDiff('alice', [], ['reader', 'editor']);
-    vi.spyOn(provider, 'update').mockImplementation(async (id, patch) => {
-      if (id.includes('/roles/reader')) throw new Error("ENOENT: no such file or directory, rename 'reader.json.tmp' -> 'reader.json'");
+    return vi.spyOn(provider, 'update').mockImplementation(async (id, patch) => {
+      if (id.includes(`/roles/${role}#`)) throw new Error(`ENOENT: no such file or directory, rename '${role}.json.tmp' -> '${role}.json'`);
       return realUpdate(id, patch);
     });
+  };
 
-    const failure = await manager.applyRoleDiff('bob', [], ['reader', 'editor']).catch((e: unknown) => e);
+  test('all or nothing: when one role cannot be saved, the ones already made are undone', async () => {
+    await manager.applyRoleDiff('alice', [], ['reader', 'editor']);
+    failSavesOf('reader');
+
+    const failure = await manager.applyRoleDiff('bob', [], ['editor', 'reader']).catch((e: unknown) => e);
     expect(failure).toBeInstanceOf(RoleChangeError);
     expect((failure as RoleChangeError).failed).toEqual(['add reader']);
-    expect((failure as RoleChangeError).message).toContain('bob');
-    expect(await stored('editor')).toEqual([personId('alice'), personId('bob')].sort());
+    expect((failure as RoleChangeError).notUndone).toEqual([]);
+    expect((failure as Error).message).toContain('bob');
+    expect((failure as Error).message).not.toContain('ENOENT');
+    expect(await stored('editor')).toEqual([personId('alice')]);
     expect(await stored('reader')).toEqual([personId('alice')]);
+  });
+
+  test('an edit that cannot be completed leaves every role as it was', async () => {
+    await manager.applyRoleDiff('alice', [], ['reader']);
+    failSavesOf('editor');
+    await expect(manager.applyRoleDiff('alice', ['reader'], ['editor'])).rejects.toBeInstanceOf(RoleChangeError);
+    expect(await stored('reader')).toEqual([personId('alice')]);
+    expect(await stored('editor')).toEqual([]);
+  });
+
+  test('a change that could not be undone is named, so nobody believes nothing changed', async () => {
+    await manager.applyRoleDiff('alice', [], ['reader', 'editor']);
+    const provider = manager.getProvider()!;
+    const realUpdate = provider.update.bind(provider);
+    let editorWrites = 0;
+    vi.spyOn(provider, 'update').mockImplementation(async (id, patch) => {
+      if (id.includes('/roles/reader#')) throw new Error('disk full');
+      // The first editor write (the add) lands; the undo then fails.
+      if (id.includes('/roles/editor#') && ++editorWrites > 1) throw new Error('disk full');
+      return realUpdate(id, patch);
+    });
+    const failure = await manager.applyRoleDiff('bob', [], ['editor', 'reader']).catch((e: unknown) => e) as RoleChangeError;
+    expect(failure.notUndone).toEqual(['add editor']);
+    expect(failure.message).toMatch(/still in effect/);
   });
 
   test('assignRole and removeRole reject when the save fails, instead of reporting success', async () => {
     await manager.applyRoleDiff('alice', [], ['reader']);
     vi.spyOn(manager.getProvider(), 'update').mockRejectedValue(new Error('disk full'));
-    await expect(manager.assignRole('bob', 'reader', ADMIN)).rejects.toThrow('disk full');
-    await expect(manager.removeRole('alice', 'reader', ADMIN)).rejects.toThrow('disk full');
+    await expect(manager.assignRole('bob', 'reader', ADMIN)).rejects.toBeInstanceOf(RoleChangeError);
+    await expect(manager.removeRole('alice', 'reader', ADMIN)).rejects.toBeInstanceOf(RoleChangeError);
+  });
+
+  test('removeAllMemberships: all or nothing, and its undo gives every role back', async () => {
+    await manager.applyRoleDiff('alice', [], ['reader', 'editor']);
+    const spy = failSavesOf('reader');
+    await expect(manager.removeAllMemberships('alice')).rejects.toBeInstanceOf(RoleChangeError);
+    expect(await stored('editor')).toEqual([personId('alice')]);
+    expect(await stored('reader')).toEqual([personId('alice')]);
+
+    spy.mockRestore();
+    const giveBack = await manager.removeAllMemberships('alice');
+    expect(await stored('editor')).toEqual([]);
+    await giveBack();
+    expect(await stored('editor')).toEqual([personId('alice')]);
+    expect(await stored('reader')).toEqual([personId('alice')]);
+  });
+
+  test('moveMemberships: all or nothing', async () => {
+    await manager.applyRoleDiff('alice', [], ['reader', 'editor']);
+    failSavesOf('reader');
+    await expect(manager.moveMemberships(personId('alice'), personId('carol'))).rejects.toBeInstanceOf(RoleChangeError);
+    expect(await stored('editor')).toEqual([personId('alice')]);
+    expect(await stored('reader')).toEqual([personId('alice')]);
   });
 });

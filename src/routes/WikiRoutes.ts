@@ -11857,7 +11857,7 @@ ${panes}
       }
       // #2015: the administrator is told which role change was not saved.
       if (err instanceof RoleChangeError) {
-        logger.error('Error updating user roles:', err, err.causes);
+        logger.error('Error updating user roles:', err);
         return res.status(500).json({ success: false, message: err.message });
       }
       logger.error('Error updating user:', err);

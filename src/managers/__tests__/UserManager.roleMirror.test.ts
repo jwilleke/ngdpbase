@@ -210,7 +210,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect(patch.member).toEqual([{ '@id': PERSON_ID }]);
     });
 
-    test('skips mirror silently when the install has no anchor org', async () => {
+    test('#2015: refuses the account when the install has no anchor org', async () => {
       const mocks = makeMocks({
         person: { '@id': PERSON_ID, identifier: 'alice' },
         installOrg: null
@@ -221,20 +221,22 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue([]);
       userManager.provider.createUser = vi.fn().mockResolvedValue(undefined);
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
+      userManager.provider.deleteUser = vi.fn().mockResolvedValue(undefined);
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
-      await userManager.createUser({
+      await expect(userManager.createUser({
         username: 'alice',
         email: 'a@x',
         password: 'pw',
         roles: ['admin']
-      }, ACTOR);
+      }, ACTOR)).rejects.toBeInstanceOf(RoleChangeError);
+      expect(userManager.provider.deleteUser).toHaveBeenCalledWith('alice');
 
       expect(mocks.roleManager.create).not.toHaveBeenCalled();
       expect(mocks.roleManager.update).not.toHaveBeenCalled();
     });
 
-    test('skips mirror silently when the user has no paired Person record', async () => {
+    test('#2015: refuses the account when the user has no paired Person record', async () => {
       const mocks = makeMocks({ person: null });
       const userManager = await newUserManager(mocks);
 
@@ -242,23 +244,25 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue([]);
       userManager.provider.createUser = vi.fn().mockResolvedValue(undefined);
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
+      userManager.provider.deleteUser = vi.fn().mockResolvedValue(undefined);
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
-      await userManager.createUser({
+      await expect(userManager.createUser({
         username: 'alice',
         email: 'a@x',
         password: 'pw',
         roles: ['admin']
-      }, ACTOR);
+      }, ACTOR)).rejects.toBeInstanceOf(RoleChangeError);
+      expect(userManager.provider.deleteUser).toHaveBeenCalledWith('alice');
 
       expect(mocks.roleManager.create).not.toHaveBeenCalled();
       expect(mocks.roleManager.update).not.toHaveBeenCalled();
     });
 
     // #2015: this used to resolve, the account created without its role and
-    // nobody told. The account is kept, its creation recorded, and the caller
-    // is told which role change was not saved.
-    test('a role that cannot be saved keeps the account and fails createUser, naming the role', async () => {
+    // nobody told. Now the account is taken back and the caller is told which
+    // role change could not be made.
+    test('a role that cannot be saved fails createUser, naming the role, and takes the account back', async () => {
       const roleManager = makeRoleManagerStub();
       roleManager.create.mockRejectedValue(new Error('disk full'));
       const mocks = makeMocks({ person: { '@id': PERSON_ID, identifier: 'alice' }, roleManager });
@@ -268,6 +272,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue([]);
       userManager.provider.createUser = vi.fn().mockResolvedValue(undefined);
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
+      userManager.provider.deleteUser = vi.fn().mockResolvedValue(undefined);
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
       const failure = await userManager.createUser({
@@ -280,6 +285,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect((failure as RoleChangeError).failed).toEqual(['add admin']);
       expect((failure as Error).message).toContain('alice');
       expect(userManager.provider.createUser).toHaveBeenCalledTimes(1);
+      expect(userManager.provider.deleteUser).toHaveBeenCalledWith('alice');
     });
   });
 
