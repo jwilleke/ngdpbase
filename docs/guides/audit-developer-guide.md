@@ -1,7 +1,7 @@
 ---
 name: Audit developer guide
 description: How to add or change an audit event — the configuration entry, the names module, the emitter, the on-failure rule, the actor, the tests, and the checks that fail
-dateModified: 2026-10-22
+dateModified: 2026-10-23
 category: guides
 relatedModules: [AuditManager, FileAuditProvider, DatabaseAuditProvider]
 ---
@@ -27,7 +27,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 - 3 __Regenerate__ with `npm run generate:permissions`: `AUDIT_EVENT.<NAME>` (the name upper-cased with underscores) now exists. An add-on instead declares the event in its own `config/default-config.json` and emits it through `host` — see [Addons](#addons) below.
 - 4 __Emit it__ through `recordAuditEvent(sink, event, onError)`, where the sink is `engine.getManager('AuditManager')`. Never call `logAuditEvent` directly: that skips the `enabled` switch, the on-failure rule and the outcome.
 - 5 __Decide `on-failure`.__ `refuse` means the action must not complete unless the record does: record first, then act, so a failed record refuses the action rather than leaving it done and unrecorded (`AgentTokenManager.mint`, `ShareManager.issue`, `UserManager.deleteUser` are the pattern). `continue` means the action proceeds and the loss is counted. This is failure handling, not importance; importance is `severity` on the record.
-- 6 __Carry the actor.__ The record's "who" comes from the context the caller was given ([Every security-relevant call carries a context](security-developer-guide.md#every-security-relevant-call-carries-a-context)), built in one place: spread `actorOf(ctx)` (`{ eventType, ...who, …, metadata: { ...who.metadata, … } }`), never copy `user: ctx.username` across. A content builder (`buildPageMutationAuditEvent` and the rest) takes `viaProxy` beside `viaToken`. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that gives `user` = the person represented and a top-level `actor` = who actually did it, plus `metadata.delegated: 'proxy'` and `proxyGrantId`; with no proxy there is no `actor` field at all. `npm run lint:audit-attribution` fails on an audit row that sets `user` from anything else, or a builder call without `viaProxy`, unless the script lists it with a reason. There is no "nothing was given": a door that records takes the context as a mandatory parameter, so a job records its `JobContext` (origin and reason) and a boot path the system principal, never `unknown`. Never invent an identity from imported content or a default.
+- 6 __Carry the actor.__ The record's "who" comes from the context the caller was given ([Every security-relevant call carries a context](security-developer-guide.md#every-security-relevant-call-carries-a-context)), built in one place: spread `actorOf(ctx)` (`{ eventType, ...who, …, metadata: { ...who.metadata, … } }`), never copy `user: ctx.username` across. A content builder (`buildPageMutationAuditEvent` and the rest) takes `viaProxy` beside `viaToken`. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that gives `user` = the user represented and a top-level `actor` = who actually did it, plus `metadata.delegated: 'proxy'` and `proxyGrantId`; with no proxy there is no `actor` field at all. `npm run lint:audit-attribution` fails on an audit row that sets `user` from anything else, or a builder call without `viaProxy`, unless the script lists it with a reason. There is no "nothing was given": a door that records takes the context as a mandatory parameter, so a job records its `JobContext` (origin and reason) and a boot path the system principal, never `unknown`. Never invent an identity from imported content or a default.
 - 7 __Record names, never values.__ A password field changed is `fields: ['password']`; a secret revealed is the key, not the value; an audit export is who, format and filter, never the content.
 - 8 __Regenerate the docs__: `npm run docs:audit`.
 - 9 __Test it, then sabotage it.__ One test that the record is written with the actor and the metadata; for `refuse`, one that a failing sink refuses the action and leaves the state untouched. Then break the emitter on purpose and watch the test go red before trusting it; write what you broke in the test's comment.
@@ -36,22 +36,22 @@ What a developer has to do so that an action leaves a record. The decisions behi
 
 Decided by the operator on 2026-10-17 ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)):
 
-- __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the person acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, AttachmentManager for files, an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares.
+- __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the user acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, AttachmentManager for files, an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares.
 - __Core records every refusal.__ A refused attempt is never left to the enforcement point to remember:
   - page and media doors record each denial as `authorization-deny` (`PolicyInformationPoint.logAccessDecision`); an affordance records nothing;
-  - `ApiContext.enforceDeny`, the one refusal helper, records the same `authorization-deny` event: actor, the person acted for, action, the resource and its owner when given, and the reason. __Not built yet__ (see [Known gaps](#known-gaps)).
+  - `ApiContext.enforceDeny`, the one refusal helper, records the same `authorization-deny` event: actor, the user acted for, action, the resource and its owner when given, and the reason. __Not built yet__ (see [Known gaps](#known-gaps)).
 - __The PDP records nothing.__ It decides; recording is the enforcement point's and the refusal helper's.
 - Which events are recorded at all is configuration: each event's `enabled` in its catalog entry.
 
-These records are what a person's read-only view of what happened to their own data is built from ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)).
+These records are what a user's read-only view of what happened to their own data is built from ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)).
 
-## The entries about one person
+## The entries about one user
 
-A person sees the one audit log filtered to the entries about them, never a second log and never a copy (operator, 2026-10-22, [#1537](https://github.com/jwilleke/ngdpbase/issues/1537)). Nothing reading it removes anything; only retention removes rows. A row is about a person when the person is:
+A user sees the one audit log filtered to the entries about them, never a second log and never a copy (operator, 2026-10-22, [#1537](https://github.com/jwilleke/ngdpbase/issues/1537)). Nothing reading it removes anything; only retention removes rows. A row is about a user when the user is:
 
-- its `user`: the account acted on, or the person represented under a proxy grant;
+- its `user`: the account acted on, or the user represented under a proxy grant;
 - its `actor`: who actually did it under a proxy grant;
-- or the owner of the resource it names: `metadata.owner`. So an emitter whose action touches something a person owns puts that person's username in `metadata.owner`, read from storage, never from the request.
+- or the owner of the resource it names: `metadata.owner`. So an emitter whose action touches something a user owns puts that user's username in `metadata.owner`, read from storage, never from the request.
 
 Core and add-ons ask through `AuditManager` with the request's subject, a page at a time:
 

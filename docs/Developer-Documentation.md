@@ -64,7 +64,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |
 | CommentManager | ✅ [doc](managers/CommentManager.md) | Per-page comment storage + CRUD; sidecar JSON keyed by page UUID |
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
-| ConsentManager | ✅ [doc](managers/ConsentManager.md) | What each person has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603) |
+| ConsentManager | ✅ [doc](managers/ConsentManager.md) | What each user has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603) |
 | DatabaseManager | ✅ [doc](managers/DatabaseManager.md) | The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger |
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP), with attachments |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown, the one CSV writer for every CSV export, and HTML to PDF through a chosen provider (none, local Chromium, or a Chromium service) |

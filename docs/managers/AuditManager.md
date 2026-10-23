@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -135,7 +135,7 @@ All configuration keys use __lowercase__ format per Issue #102 refactoring.
 }
 ```
 
-The audit log in the application database ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), on `DatabaseManager`'s one connection, so it needs `ngdpbase.database.provider` `sqlite` and is encrypted when the database is (`NGDPBASE_DATABASE_KEY`). It shares `ngdpbase.audit.flushinterval`, `maxqueuesize` and `retentiondays` with the file provider. `max-results` is the largest page a search or the entries about one person returns, and the most rows an export holds. There is no connection string, table name or pool: the database is `DatabaseManager`'s. What it guarantees and how retention keeps the chain verifiable is in [audit-posture.md — The database provider](../audit-posture.md#the-database-provider).
+The audit log in the application database ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), on `DatabaseManager`'s one connection, so it needs `ngdpbase.database.provider` `sqlite` and is encrypted when the database is (`NGDPBASE_DATABASE_KEY`). It shares `ngdpbase.audit.flushinterval`, `maxqueuesize` and `retentiondays` with the file provider. `max-results` is the largest page a search or the entries about one user returns, and the most rows an export holds. There is no connection string, table name or pool: the database is `DatabaseManager`'s. What it guarantees and how retention keeps the chain verifiable is in [audit-posture.md — The database provider](../audit-posture.md#the-database-provider).
 
 #### CloudAuditProvider (Future)
 
@@ -156,7 +156,7 @@ The audit log in the application database ([#1537](https://github.com/jwilleke/n
 | ----- | ----- | ----- | ----- |
 | __FileAuditProvider__ | ✅ Production | Single-instance, development | Local files, rotation, search |
 | __NullAuditProvider__ | ✅ Production | Disabled auditing, testing | No-op operations |
-| __DatabaseAuditProvider__ | ✅ Production | A site with an application database; indexed queries, the entries about one person | SQLite (SQLCipher when keyed), hash chain, checkpoint retention, witness |
+| __DatabaseAuditProvider__ | ✅ Production | A site with an application database; indexed queries, the entries about one user | SQLite (SQLCipher when keyed), hash chain, checkpoint retention, witness |
 | __CloudAuditProvider__ | 🚧 Planned | Cloud deployments | CloudWatch, Azure, GCP |
 
 ### Provider Selection Logic
@@ -350,7 +350,7 @@ const authFailures = await auditManager.searchAuditLogs({
 });
 
 // Search what a proxy did while acting for others (#1762): `user` is the
-// person represented, `actor` the person who acted
+// user represented, `actor` the user who acted
 const byProxy = await auditManager.searchAuditLogs({ actor: 'jim' });
 
 // Search denied access attempts
@@ -611,7 +611,7 @@ how the other read-volume events (`asset-read`, `search-page`, `user-read`,
   timestamp: '2025-01-15T10:30:00.000Z', // ISO 8601 timestamp
   level: 'info',                         // Log level (debug, info, warn, error)
   eventType: 'page-edit',                // Type of event (see Event Types)
-  user: 'john.doe',                      // The account acted on (under a proxy grant: the person represented)
+  user: 'john.doe',                      // The account acted on (under a proxy grant: the user represented)
   actor: 'jane.roe',                     // Only under a proxy grant (#1762): who actually did it; absent otherwise
   userId: 'user-123',                    // Internal user ID
   sessionId: 'session-456',              // Session identifier
@@ -704,7 +704,7 @@ __Parameters:__
   - `offset` (number): Result offset (default: 0)
   - `sortBy` (string): Sort field (default: 'timestamp')
   - `sortOrder` (string): Sort order 'asc' or 'desc' (default: 'desc')
-- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A person reads the entries about themselves through [searchEntriesAbout](#searchentriesaboutperson-options-caller).
+- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A user reads the entries about themselves through [searchEntriesAbout](#searchentriesaboutperson-options-caller).
 
 __Returns:__ `Promise<Object>`
 
@@ -720,7 +720,7 @@ __Returns:__ `Promise<Object>`
 
 #### searchEntriesAbout(person, options, caller)
 
-The entries about one person, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the person when the person is its `user` (the account acted on, or the person represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
+The entries about one user, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the user when the user is its `user` (the account acted on, or the user represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
 
 ```javascript
 const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0 }, ctx.subject);
@@ -728,7 +728,7 @@ const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0
 
 - `person` (string): the username whose entries are listed
 - `options`: `limit` (default 100, capped by the provider: `ngdpbase.audit.provider.database.max-results`) and `offset`
-- `caller` (PermissionSubject): the request's subject. The PDP decides with it: `profile-manage` (every account holds it) when `caller.username` is `person`, `admin-system` for anyone else's. Under a proxy grant the subject's username is the person represented and the PDP bounds the answer by the grant. A refusal is `AuditQueryForbiddenError`.
+- `caller` (PermissionSubject): the request's subject. The PDP decides with it: `profile-manage` (every account holds it) when `caller.username` is `person`, `admin-system` for anyone else's. Under a proxy grant the subject's username is the user represented and the PDP bounds the answer by the grant. A refusal is `AuditQueryForbiddenError`.
 
 __Returns:__ the same page shape as `searchAuditLogs`. The database provider answers from indexed columns; the file provider from the records it holds in memory (the newest 10,000); a provider that cannot answer (the null provider) rejects rather than returning an empty page.
 
@@ -1237,7 +1237,7 @@ __Recommendations:__
 
 ### DatabaseAuditProvider
 
-Not measured. `continue` records are written in one transaction per flush (`ngdpbase.audit.flushinterval`, `maxqueuesize`); a `refuse` record commits the queue and itself before the action goes on. Searches, stats and the entries about one person are SQL over indexed columns (time, type, user, actor, owner, resource), a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows.
+Not measured. `continue` records are written in one transaction per flush (`ngdpbase.audit.flushinterval`, `maxqueuesize`); a `refuse` record commits the queue and itself before the action goes on. Searches, stats and the entries about one user are SQL over indexed columns (time, type, user, actor, owner, resource), a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows.
 
 ## Backup and restore
 

@@ -1,7 +1,7 @@
 ---
 name: BackgroundJobManager
 description: Long-running job registry + scheduler with progress reporting and polling API
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/BackgroundJobManager.ts
 ---
@@ -83,8 +83,8 @@ jobManager.registerJob({
 
 A run started by `enqueue()` or Run now is recorded like a scheduled run: who asked, when, the attempt, and `running`, under a lock with a heartbeat (kept apart from slot locks, under `<jobId>.by-hand`). On the next start every registered job is looked at once for a run a restart cut off:
 
-- __The job declares `persist: true`__ (safe to run again): the run is restarted as the person who asked — same run id, `ctx.resume` with its last checkpoint, an info notification. If the job declares a `permission`, the person must still hold it (by policy, `pdp.holds`); a crash counts as an attempt, up to `maxAttempts`.
-- __It does not__ (the default for a job that is only enqueued, since running it twice could do harm): the run is recorded as failed, audited (`job-failed`, as the person), and posted to admins as an error notification asking them to run it again. Never silent.
+- __The job declares `persist: true`__ (safe to run again): the run is restarted as the user who asked — same run id, `ctx.resume` with its last checkpoint, an info notification. If the job declares a `permission`, the user must still hold it (by policy, `pdp.holds`); a crash counts as an attempt, up to `maxAttempts`.
+- __It does not__ (the default for a job that is only enqueued, since running it twice could do harm): the run is recorded as failed, audited (`job-failed`, as the user), and posted to admins as an error notification asking them to run it again. Never silent.
 - At shutdown a resumable run is handed off as `interrupted` and restarted at once, without counting an attempt; any other is aborted and recorded as failed.
 - A run whose lock a live server still holds (a rolling update) is left alone and looked at again later. Of several unfinished runs of one job, the newest is restarted and the older ones reported.
 
@@ -102,14 +102,14 @@ Core's maintenance jobs: `media.folder-scan` (`ngdpbase.media.scaninterval`), `p
 
 | Action | Form | API | Permission |
 |---|---|---|---|
-| Run now: outside the schedule, as the person asking; marks no slot done, is not retried | `POST /admin/jobs/:jobId/run-now` | `POST /api/admin/jobs/:jobId/run-now` | `admin-system` |
+| Run now: outside the schedule, as the user asking; marks no slot done, is not retried | `POST /admin/jobs/:jobId/run-now` | `POST /api/admin/jobs/:jobId/run-now` | `admin-system` |
 | Run a skipped slot, or one that failed for good, again under its own time (`slot` in the body); success marks that slot done, the next slot does not move | `…/rerun` | `…/rerun` | `admin-system` |
 | Retry a run waiting out its backoff now | `…/retry` | `…/retry` | `admin-system` |
 | Pause or resume (`paused` true or false): writes `ngdpbase.jobs.<jobId>.enabled` | `…/pause` | `…/pause` | `config-manage`, with step-up |
 
 - One run of a job at a time: run now and rerun are refused (409) while the job runs or has an unfinished run (waiting for a retry, or interrupted).
 - The manager methods are `listScheduledJobs`, `runNow`, `rerunSlot` and `retryNow`; a refusal is a `JobActionError` carrying its HTTP status.
-- Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the person as the user; retry now as `job-retry`; pause as a configuration change.
+- Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the user who asked as the audit `user`; retry now as `job-retry`; pause as a configuration change.
 
 ## When the application database is unavailable (#1892)
 

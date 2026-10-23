@@ -403,7 +403,7 @@ The `User` interface in `src/types/User.ts` is authoritative; this is an illustr
 | `isSystem` | Account cannot be deleted — nothing more | `deleteUser` |
 | `isExternal` | Identity owned by an external provider; empty hash, no password can match | Password paths |
 | `profileLocked` | Password, email and display name frozen against self-service change (#1029) | `POST /profile` |
-| `isTest` | Test account: test or synthetic data only (#1805). An attribute, not a role | Nowhere in core: marked in `/admin/users`, a banner for the person, `userContext.isTest`, OIDC `test_account` — the host enforces its own rules |
+| `isTest` | Test account: test or synthetic data only (#1805). An attribute, not a role | Nowhere in core: marked in `/admin/users`, a banner for the user, `userContext.isTest`, OIDC `test_account` — the host enforces its own rules |
 
 Independent by design — none implies another, and none restricts an administrator. `isSystem` in particular is set on `admin`, which must keep self-service password change, so it can never come to mean "immutable". `profileLocked` covers email specifically because magic-link login resolves accounts by address: a shared account without it can be taken over by repointing the email, whatever its password.
 

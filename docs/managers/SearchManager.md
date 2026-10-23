@@ -1,7 +1,7 @@
 ---
 name: SearchManager
 description: "Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker"
-dateModified: '2026-10-21'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/SearchManager.ts
 ---
@@ -64,8 +64,8 @@ const similar = await searchManager.suggestSimilarPages('HomePage', 5);
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `search(query, options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a person |
-| `advancedSearch(options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a person |
+| `search(query, options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a viewer |
+| `advancedSearch(options)` | `Promise<Array>` | The raw index, for callers with no reader. Never rendered to a viewer |
 | `searchWithContext(context, query, options)` | `Promise<Array>` | Text search; only pages the context's subject may open, see [Who sees a hit](#who-sees-a-hit) |
 | `advancedSearchWithContext(context, options)` | `Promise<Array>` | Filtered and no-text search; only pages the context's subject may open |
 | `getSuggestions(partial)` | `Promise<string[]>` | Auto-complete suggestions |
@@ -180,7 +180,7 @@ A search index knows a page's words, not who may read it: not its `audience`, it
 - The provider's own private-page check (`LunrSearchProvider.isDocVisible`, the Elasticsearch privacy filter) only narrows what the index offers; it is not the decision.
 - The requester's own private pages are in no shared index; they are merged in afterwards from the requester's own stores, through the page door ([#1458](https://github.com/jwilleke/ngdpbase/issues/1458)).
 
-The callers that return page hits to a person all use the context forms: `/api/assets/search` (`types=page` and "All sources", which the `/search` page and the asset picker load), `/api/keywords/related`, and `[{Search}]`. The standing rule is in [security-developer-guide.md](../guides/security-developer-guide.md#every-page-a-person-is-shown-goes-through-the-page-list-door).
+The callers that return page hits to a viewer all use the context forms: `/api/assets/search` (`types=page` and "All sources", which the `/search` page and the asset picker load), `/api/keywords/related`, and `[{Search}]`. The standing rule is in [security-developer-guide.md](../guides/security-developer-guide.md#every-page-a-viewer-is-shown-goes-through-the-page-list-door).
 
 ## WikiContext Integration
 

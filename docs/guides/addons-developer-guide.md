@@ -20,7 +20,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 - __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
 - __A whole repository__ (the addon at `addons/<slug>/`, plus CI, an npm publish workflow, Renovate and a licence; nothing deployment-specific): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
 
-Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
+Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a user's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
 
 Then set `ngdpbase.addons.<slug>.enabled` to `true`, run `./server.sh restart`, and confirm the addon under `/admin` → Add-ons. Every addon starts disabled, including one discovered outside `./addons`.
 
@@ -30,10 +30,10 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 
 - Addon code is subject to the same invariants as `src/`: context forwarded, allow/deny from `hasPermission` / `canAccess`, outbound HTTP through `src/http/`. Read [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md) before writing a route, manager method or job; they apply [security-posture.md](../security-posture.md) and [audit-posture.md](../audit-posture.md).
 - An addon never names a role in code. It declares its own permission, and a policy granting it, in its `config/default-config.json`, and its routes ask for the permission. A policy may name the roles it grants to on day one (an operator narrows them in `app-custom-config.json`).
-- There is no "signed in" gate. A route asks `requirePermission`; a feature that belongs to a person then asks `ctx.actingUsername()` for who it acts as ([#1430](https://github.com/jwilleke/ngdpbase/issues/1430)).
+- There is no "signed in" gate. A route asks `requirePermission`; a feature that belongs to a user then asks `ctx.actingUsername()` for who it acts as ([#1430](https://github.com/jwilleke/ngdpbase/issues/1430)).
 - Where an addon's content goes ([system-category.md](../system-category.md); the practice, with a declared system-category and vault example, is [storage-developer-guide.md](storage-developer-guide.md)):
   - __Pages it generates and owns__ go in its own category and vault, never `general` or the user's `default` vault.
-  - __A `general` page it helps a person create__ is that person's page, with no addon rules afterwards.
+  - __A `general` page it helps a user create__ is that user's page, with no addon rules afterwards.
   - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
   - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); any other value, the string `"true"` included, refuses the entry, and the add-on is not loaded. Core reads the entry from every installed add-on, enabled or not (#1559): turning the addon off keeps its category's pages and vault reachable, and only stops the category being offered.
@@ -85,7 +85,7 @@ The `ngdpbase` block in the addon's `package.json` is its manifest, read without
 | `type` | `domain` when the addon is the site, else `additive` | [`domainDefaults`](#domaindefaults) |
 | `domainDefaults` | Site defaults applied at load | [`domainDefaults`](#domaindefaults) |
 | `stores` | Private store kinds it owns | [Declare a Private Store](#declare-a-private-store-1414) |
-| `perPerson` | Each person turns it on for themselves | [Per-person add-ons](#per-person-add-ons-and-their-switch) |
+| `perPerson` | Each user turns it on for themselves | [Per-person add-ons](#per-person-add-ons-and-their-switch) |
 | `aboutPage` | The uuid or slug of a page the addon ships in `pages/` that says what it is | Listings link to it as "More about it". The site overrides it with `ngdpbase.addons.<slug>.about-page` in its configuration |
 | `family` | The heading the addon is listed under, shared by related add-ons | For example `"Accounting"` on accounting, accounting-donations and accounting-dues. Add-ons with no family are listed under "Other" when any add-on has one |
 | `listed` | `false` keeps the addon out of the listings | For plumbing other add-ons use, such as elasticsearch. It still loads |
@@ -288,7 +288,7 @@ Declare the permission and grant it in the addon's own `config/default-config.js
 }
 ```
 
-`label` is the permission in plain words for the person reading it: the __Can do__ column of "My tokens and devices", the app consent screen, the roles matrix and the shipped Permissions page all show it. `description` is the note for administrators and developers. Without a `label` those places show the `description`, so give one. A scope that is not a permission at all (an app's own scope) has no declaration and is shown by its name.
+`label` is the permission in plain words for the user reading it: the __Can do__ column of "My tokens and devices", the app consent screen, the roles matrix and the shipped Permissions page all show it. `description` is the note for administrators and developers. Without a `label` those places show the `description`, so give one. A scope that is not a permission at all (an app's own scope) has no declaration and is shown by its name.
 
 A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
 
@@ -518,7 +518,7 @@ async register(engine, config) {
 | `systemContext(reason)` | The context your own start-up work runs under: core's system principal (`NGDPBASE_SYSTEM_USER`, never a name you choose), with `reason` for the record ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
-| `setEnabledForPerson` | Turn this add-on on or off for a person, when it is [per-person](#per-person-add-ons-and-their-switch) |
+| `setEnabledForPerson` | Turn this add-on on or off for a user, when it is [per-person](#per-person-add-ons-and-their-switch) |
 | `registerShim`, `registerReceiver` | Register an import shim or receiver under this addon's slug, only the names its manifest declares ([Import shims and receivers](#import-shims-and-receivers-ice-1979)) |
 | `resolveEgressPolicy`, `validateUrl` | The site's egress policy, read through a `getProperty` reader at each call, and whether a URL may be fetched under it (before any socket) |
 | `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
@@ -536,23 +536,23 @@ async register(engine, config, host) {
 - An addon whose `register` takes two arguments still loads.
 - Anything an addon needs that `host` does not offer is added to core by pull request; the addon does not import it.
 
-### A section on the signed-in person's profile ([#534](https://github.com/jwilleke/ngdpbase/issues/534))
+### A section on the signed-in user's profile ([#534](https://github.com/jwilleke/ngdpbase/issues/534))
 
-An addon that has per-person settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
+An addon that has per-user settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
 
-- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this person. `user` is the person's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
+- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this user. `user` is the user's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
 - `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write (`userManager.updateUser(ctx.username, updates, ctx)`), never build a new one from `ctx.username`. An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
 
-What it is not: it is only the signed-in person's own `/profile`. There is one route, `/profile`, and it always shows the person who is signed in; there is no profile page for someone else. Showing data about other people belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
+What it is not: it is only the signed-in user's own `/profile`. There is one route, `/profile`, and it always shows the user who is signed in; there is no profile page for someone else. Showing data about anyone else belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
 
 How core calls them:
 
-- `GET /profile` (checked against `profile-manage`) reads the person's fresh record and calls `AddonsManager.getProfileSections(user)`. It calls every loaded addon's `profileSection()` in parallel. An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded.
-- `POST /preferences` (also `profile-manage`) saves the core preferences first, then calls `AddonsManager.saveProfileSections(ctx, body)` with a copy of the request body. The addons are called one at a time, so each one's read-merge-write of the person's preferences sees the one before it. Dotted field names arrive flat: `<input name="journal.x">` is `body['journal.x']`. An addon that throws is logged; it does not stop the core save or another addon's save, and the person is not told their preferences failed.
+- `GET /profile` (checked against `profile-manage`) reads the user's fresh record and calls `AddonsManager.getProfileSections(user)`. It calls every loaded addon's `profileSection()` in parallel. An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded.
+- `POST /preferences` (also `profile-manage`) saves the core preferences first, then calls `AddonsManager.saveProfileSections(ctx, body)` with a copy of the request body. The addons are called one at a time, so each one's read-merge-write of the user's preferences sees the one before it. Dotted field names arrive flat: `<input name="journal.x">` is `body['journal.x']`. An addon that throws is logged; it does not stop the core save or another addon's save, and the user is not told their preferences failed.
 
 The rules, which core cannot enforce for you:
 
-- __`html` is inserted raw__ (`<%- %>`) inside the person's form. Escape every value you put in it: use `<%= %>` in your EJS partial. Unescaped input there is stored XSS against everyone who opens their profile.
+- __`html` is inserted raw__ (`<%- %>`) inside the user's form. Escape every value you put in it: use `<%= %>` in your EJS partial. Unescaped input there is stored XSS against everyone who opens their profile.
 - __No `<input name="_csrf">`__: it overrides the host form's token and breaks the save.
 - __No `<form>` of your own__: the fields submit with the host's preferences form, and a nested `<form>` is invalid HTML.
 - __Put a hidden presence marker in the card__ (`<input type="hidden" name="<slug>._rendered" value="1">`) and have `saveProfileSection` return at once when it is missing. A checkbox that is not ticked sends nothing, so without the marker "unticked" and "the card was not on the form" look the same, and a save would quietly set every stored checkbox to false.
@@ -561,23 +561,23 @@ The rules, which core cannot enforce for you:
 
 The worked example is the journal addon: `profileSection` and `saveProfileSection` in `addons/journal/index.ts`, and the partial `addons/journal/views/_profile-section.ejs`.
 
-- 1 `profileSection` reads the person's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', html }`.
+- 1 `profileSection` reads the user's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', html }`.
 - 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
-- 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the person's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
+- 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the user's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
 
 ### Per-person add-ons and their switch
 
-Some add-ons are something each person turns on for themselves, such as a personal health record ([#1963](https://github.com/jwilleke/ngdpbase/issues/1963)). The site enables the add-on; then each person decides whether they use it. Core keeps track of who turned it on, so page access and listings can use it.
+Some add-ons are something each user turns on for themselves, such as a personal health record ([#1963](https://github.com/jwilleke/ngdpbase/issues/1963)). The site enables the add-on; then each user decides whether they use it. Core keeps track of who turned it on, so page access and listings can use it.
 
 - __Declare it__ in the `ngdpbase` block of `package.json`: `"perPerson": true`. Nothing else makes an add-on per-person.
-- __The switch__ is the person's preference `<slug>.enabled`, for example `phr.enabled`. It is on only when it is the boolean `true`.
+- __The switch__ is the user's preference `<slug>.enabled`, for example `phr.enabled`. It is on only when it is the boolean `true`.
 - __Set it only through `host.setEnabledForPerson(ctx, on)`__, normally from your `saveProfileSection(ctx, body)`: pass the `ctx` you were given and `true` or `false`. Do not write `<slug>.enabled` with `userManager.updateUser` yourself.
-  - It sets the switch of the person `ctx` acts as, and keeps their other preferences.
+  - It sets the switch of the user `ctx` acts as, and keeps their other preferences.
   - The host is built for your add-on, so it sets only your own switch. There is no way to name another add-on's.
-  - It is refused, with an error, when your manifest does not say `perPerson: true`, when the person is not signed in, or when they do not hold `profile-manage`, which is the permission `/profile` asks for.
-- __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-person add-ons this person has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
-- An add-on the site has not enabled, or one that did not load, is not in the list, whatever the person's switch says. Turning it back on brings back what each person chose.
-- __Pages for the people who turned it on__: give a page the audience `addon:<slug>`, for example `audience: [addon:phr]` in a page your add-on ships in `pages/` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The page view, every page list and search then show it only to people whose switch is on, and everyone else can neither read nor edit it (the editor, a save, a rename and a delete are refused too); anonymous visitors never see it. Add other entries to widen it, such as `[addon:phr, editor]`. Administrators (`admin-system`) are the one exception: they can read and edit every audience page, whether or not they turned your add-on on. An `access.<action>` list has no such exception, and a page in a person's vault is decided by the vault, not its audience. A slug that is not a loaded per-person add-on matches nobody and is warned about at startup, naming the page. The rule is in [access-policies.md](../access-policies.md), under "A page's own audience".
+  - It is refused, with an error, when your manifest does not say `perPerson: true`, when the user is not signed in, or when they do not hold `profile-manage`, which is the permission `/profile` asks for.
+- __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-person add-ons this user has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
+- An add-on the site has not enabled, or one that did not load, is not in the list, whatever the user's switch says. Turning it back on brings back what each user chose.
+- __Pages for the users who turned it on__: give a page the audience `addon:<slug>`, for example `audience: [addon:phr]` in a page your add-on ships in `pages/` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The page view, every page list and search then show it only to users whose switch is on, and everyone else can neither read nor edit it (the editor, a save, a rename and a delete are refused too); anonymous visitors never see it. Add other entries to widen it, such as `[addon:phr, editor]`. Administrators (`admin-system`) are the one exception: they can read and edit every audience page, whether or not they turned your add-on on. An `access.<action>` list has no such exception, and a page in a user's vault is decided by the vault, not its audience. A slug that is not a loaded per-person add-on matches nobody and is warned about at startup, naming the page. The rule is in [access-policies.md](../access-policies.md), under "A page's own audience".
 
 ```typescript
 async saveProfileSection(ctx, body) {
@@ -586,26 +586,26 @@ async saveProfileSection(ctx, body) {
 }
 ```
 
-### Terms an add-on asks people to accept
+### Terms an add-on asks users to accept
 
-A per-person add-on can have its own terms, such as a health record's terms of service and privacy policy ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Core asks each person to accept them before the add-on turns on for them, records the acceptance, and asks again when a document's version changes. The add-on writes no consent code of its own; [ConsentManager](../managers/ConsentManager.md) does it.
+A per-person add-on can have its own terms, such as a health record's terms of service and privacy policy ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Core asks each user to accept them before the add-on turns on for them, records the acceptance, and asks again when a document's version changes. The add-on writes no consent code of its own; [ConsentManager](../managers/ConsentManager.md) does it.
 
-- __Ship each document as a page__ in your `pages/` folder ([Seed Wiki Pages](#seed-wiki-pages)), with the slug `<slug>-<name>` (for example `phr-terms-of-service`) and front matter `version: 1` and `effective: 'YYYY-MM-DD'`. Raise `version` when people must accept again; an ordinary edit leaves it alone.
+- __Ship each document as a page__ in your `pages/` folder ([Seed Wiki Pages](#seed-wiki-pages)), with the slug `<slug>-<name>` (for example `phr-terms-of-service`) and front matter `version: 1` and `effective: 'YYYY-MM-DD'`. Raise `version` when users must accept again; an ordinary edit leaves it alone.
 - __Register them from `register()`__, through the engine:
 
   ```typescript
   async register(engine, config, host) {
     engine.getManager<ConsentManager>('ConsentManager')?.registerAddonDocuments('phr', {
       documents: ['phr-terms-of-service', 'phr-privacy-policy'],
-      paths: ['/phr']   // optional: where a person uses the add-on in the browser
+      paths: ['/phr']   // optional: where a user uses the add-on in the browser
     });
   }
   ```
 
   The type is `ConsentManager` from `@jwilleke/ngdpbase-types`. Registering is refused (it throws) unless the add-on is per-person and every id starts `<slug>-`.
-- __Turning it on asks first.__ While any document is not accepted at its current version, `host.setEnabledForPerson(ctx, true)` refuses with `ConsentRequiredError` (its `scope` is your slug, its `documents` what is still to accept) and the switch stays off. Let that error propagate from `saveProfileSection`: core shows the documents with an "I accept" box on your profile card, records the acceptance before your save runs, and tells the person when the switch was refused. Turning it off, or saving it on when it is already on, asks nothing.
-- __A changed version__ is asked when the person next uses the add-on: under a registered `path`, a person who has it on is sent to accept before going on. Without `paths` they are asked only when they next turn it on. Requests with an agent or app token, and someone acting for the person under a proxy grant, are never held.
-- Only the person accepts, signed in themselves. A missing page, or one with no `version:`, is not asked for and shows on the admin dashboard as needing attention.
+- __Turning it on asks first.__ While any document is not accepted at its current version, `host.setEnabledForPerson(ctx, true)` refuses with `ConsentRequiredError` (its `scope` is your slug, its `documents` what is still to accept) and the switch stays off. Let that error propagate from `saveProfileSection`: core shows the documents with an "I accept" box on your profile card, records the acceptance before your save runs, and tells the user when the switch was refused. Turning it off, or saving it on when it is already on, asks nothing.
+- __A changed version__ is asked when the user next uses the add-on: under a registered `path`, a user who has it on is sent to accept before going on. Without `paths` they are asked only when they next turn it on. Requests with an agent or app token, and someone acting for the user under a proxy grant, are never held.
+- Only the user accepts, signed in themselves. A missing page, or one with no `version:`, is not asked for and shows on the admin dashboard as needing attention.
 
 ---
 
@@ -671,7 +671,7 @@ const pages = await pageManager.getAllPages();
 A core job an addon needs is a method on the manager that owns it, for example:
 
 - a page's URL, `/view/…` or `/vaults/…`: `PageManager.pageUrl(pageName, action?)`;
-- the name of a page in a person's vault: `PageManager.privatePageName(owner, title, vault?)` (their default vault without `vault`);
+- the name of a page in a user's vault: `PageManager.privatePageName(owner, title, vault?)` (their default vault without `vault`);
 - who holds a permission, such as the administrators a notice goes to: `PolicyDecisionPoint.usersHolding('admin-system')`. An empty list or null means nobody to tell: log only, since an empty `targetUsers` is every user.
 
 Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `PolicyDecisionPoint`, `AttachmentManager`,
@@ -744,14 +744,14 @@ router.get('/api/donors', async (req, res) => {
 });
 
 // A new donor who is not in the list yet (the route asks contact-manage first):
-// a person with no account, affiliated with their organization.
+// a contact, affiliated with their organization.
 const donor = await persons.create(ctx.getActor(), {
   name: 'Dana Donor',
   email: 'dana@example.org',
   affiliation: [{ organization: orgId, role: 'Treasurer' }]
 });
 // Store donor['@id'] (and orgId, when the gift is from the organization) on the gift,
-// with the donor's name as given, so the gift still reads right if the person is deleted.
+// with the donor's name as given, so the gift still reads right if the identity record is deleted.
 ```
 
 ### Make a PDF and email it
@@ -1073,7 +1073,7 @@ A `dropdown` or `checklist` field with `"optionsSource": "fetch:YourManager.toFo
 
 - Answer an array of strings, or of `{ value, label, amount? }` (`FormOption` in `src/utils/pluginFormatters.ts`). `amount` is whole minor units (cents), an integer; anything else is dropped.
 - A `checklist` field ([#1904](https://github.com/jwilleke/ngdpbase/issues/1904)) reaches your handler as an array of the ticked values (`submission.data.receiptIds: ["r-101", "r-102"]`), never a comma string; nothing ticked is `[]`. `required` means at least one.
-- When any choice has an `amount`, the checklist shows "Ticked: N · $sum" with core's `formatMoney`. With `totalField: "<amount field>"` it shows whether the sum matches that field, parsed as the `amount` field is. That is a hint to the person: the forms add-on does not refuse a mismatch, so a handler that needs them equal checks it and answers `{ ok: false, fields: { total: '...' } }`.
+- When any choice has an `amount`, the checklist shows "Ticked: N · $sum" with core's `formatMoney`. With `totalField: "<amount field>"` it shows whether the sum matches that field, parsed as the `amount` field is. That is a hint to the user: the forms add-on does not refuse a mismatch, so a handler that needs them equal checks it and answers `{ ok: false, fields: { total: '...' } }`.
 - The field reference for site authors is the shipped [Form Definition Reference](../../required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md).
 
 ### Lines: repeating rows of fields
@@ -1177,9 +1177,9 @@ A shim (`IceShim`):
 A receiver (`IceReceiver`) is your manager's own door:
 
 - `accepts`: the kinds it takes.
-- `mayUse(ctx)`: your existing rule. The import screen shows a person only the receivers they may use.
-- `receive(item, ctx, info)`: check your rule again with `ctx` and store through your manager. Return `{ status: 'stored', ref }`, `{ status: 'duplicate' }` or `{ status: 'refused', message }`. There is no import permission: the run carries the person's context (or a job's), and your door decides.
-- `keepOriginal(item, ctx)` (optional): keep the original file yourself when the person chose to keep it. Without it, the original goes to the site's files through the upload door.
+- `mayUse(ctx)`: your existing rule. The import screen shows a user only the receivers they may use.
+- `receive(item, ctx, info)`: check your rule again with `ctx` and store through your manager. Return `{ status: 'stored', ref }`, `{ status: 'duplicate' }` or `{ status: 'refused', message }`. There is no import permission: the run carries the user's context (or a job's), and your door decides.
+- `keepOriginal(item, ctx)` (optional): keep the original file yourself when the user chose to keep it. Without it, the original goes to the site's files through the upload door.
 
 ```typescript
 async register(engine, config, host) {
@@ -1205,7 +1205,7 @@ async register(engine, config, host) {
 }
 ```
 
-Start an import from your own route with `engine.getManager('ImportManager').enqueueImport({ source: { type: 'upload', files }, receiver: '<slug>.<receiver>', original }, jobContextFromRequest(req.userContext))`. It returns a run id at once; `getImportRun(runId, ctx)` gives that person the per-file report. The worked example is the test fixture addon `src/managers/__tests__/__fixtures__/ice-fixture-addon`, shaped like yourPHR's C-CDA and FHIR readers.
+Start an import from your own route with `engine.getManager('ImportManager').enqueueImport({ source: { type: 'upload', files }, receiver: '<slug>.<receiver>', original }, jobContextFromRequest(req.userContext))`. It returns a run id at once; `getImportRun(runId, ctx)` gives that user the per-file report. The worked example is the test fixture addon `src/managers/__tests__/__fixtures__/ice-fixture-addon`, shaped like yourPHR's C-CDA and FHIR readers.
 
 ### Declare a Private Store ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
@@ -1287,7 +1287,7 @@ router.get('/', (req, res) => {
 
 Do not read the left menu or `req.session.csrfToken` yourself; a missing key makes the sidebar empty or every POST a CSRF 403.
 
-__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the person follows in the browser (`'page'`), as a redirect to sign in again or to sign-in:
+__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the user follows in the browser (`'page'`), as a redirect to sign in again or to sign-in:
 
 ```typescript
 const { ApiContext, ApiError, sendApiError } = host;   // register()'s third argument, handed to the route
@@ -1448,7 +1448,7 @@ The request's types come with the host: `dist/src/context/ApiContext.d.ts` impor
 __`ApiContext.from()` always succeeds — it never throws for anonymous callers.__
 On an unauthenticated request it returns a context with `isAuthenticated: false`
 and the anonymous subject's username and roles. The guards (`requirePermission`,
-then `actingUsername` for a per-person feature) are opt-in — a public route simply does not call them.
+then `actingUsername` for a per-user feature) are opt-in — a public route simply does not call them.
 There is no "signed in" guard: whether an anonymous visitor may do something is a policy question,
 answered by `requirePermission` ([#1430](https://github.com/jwilleke/ngdpbase/issues/1430)):
 
@@ -1494,7 +1494,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
     try {
       const ctx = ApiContext.from(req, engine);
       await ctx.requirePermission('my-addon-manage'); // → 401 anonymous, 403 signed in, unless a policy grants it
-      const username = ctx.actingUsername();          // only for a per-person feature: → 401 if nobody to act as
+      const username = ctx.actingUsername();          // only for a per-user feature: → 401 if nobody to act as
 
       const mgr = engine.getManager('MyDataManager');
       const item = await mgr.create(req.body, username);
@@ -1522,10 +1522,10 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `await ctx.hasPermission(permission)` | `true` if policy grants the permission — deny policies and the token and share ceilings included |
 | `await ctx.requirePermission(permission)` | Throws unless policy grants the permission: `ApiError(401)` for an anonymous caller, `ApiError(403)` for a signed-in one |
 | `await ctx.enforceDeny(permission, decision)` | Turns a deny from `pdp.decide` into the refusal `requirePermission` throws — always throws; an allow is a programming error. See [Permissions](#permissions) |
-| `ctx.actingUsername()` | The signed-in username a per-person feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
+| `ctx.actingUsername()` | The signed-in username a per-user feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
 | `ctx.engine` | Reference to the engine |
 
-`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the person followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
+`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the user followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
 
 There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 
@@ -1551,13 +1551,13 @@ jobManager.registerJob({
   }
 });
 
-// From a route, as the person asking:
+// From a route, as the user asking:
 const runId = await jobManager.enqueue('my-addon.reindex', jobContextFromRequest(req.userContext));
 ```
 
 `enqueue` returns at once; `getStatus(runId)` gives progress. A job enqueued again while it runs returns the run already going.
 
-__If the server restarts mid-run__ the run is never lost silently. By default it is reported: recorded as failed, audited, and an error notification tells the admins to run it again. Declare `persist: true` when running the job again does no harm — a rebuild, a reindex — and it is restarted instead, as the person who asked, with `ctx.resume` and its last checkpoint. Add `permission: '<the permission your route checks>'` and the restart happens only if that person still holds it. Leave `persist` off for work that must not repeat unchecked, such as an import that would post twice.
+__If the server restarts mid-run__ the run is never lost silently. By default it is reported: recorded as failed, audited, and an error notification tells the admins to run it again. Declare `persist: true` when running the job again does no harm — a rebuild, a reindex — and it is restarted instead, as the user who asked, with `ctx.resume` and its last checkpoint. Add `permission: '<the permission your route checks>'` and the restart happens only if that user still holds it. Leave `persist` off for work that must not repeat unchecked, such as an import that would post twice.
 
 ### A job that runs on a schedule
 
@@ -1598,7 +1598,7 @@ __The schedule.__ An iCalendar recurrence rule (RFC 5545 RRULE), or one of these
 | `start-of-year` | 1 January |
 
 - An RRULE goes in as `FREQ=…`, or as `{ rrule, tz, dtstart }`. Interval rules (`every 30d`) count from `dtstart`, default `2000-01-01T00:00:00`, so their phase is the same on every start.
-- The time zone is `tz`, else `ngdpbase.default.timezone`. Daylight saving does what a person expects: a time skipped in spring runs at the next valid instant; a time repeated in autumn runs once.
+- The time zone is `tz`, else `ngdpbase.default.timezone`. Daylight saving does what a user expects: a time skipped in spring runs at the next valid instant; a time repeated in autumn runs once.
 - A date that does not exist is skipped, as RFC 5545 says: `BYMONTHDAY=31` skips short months. The last day of a month is `BYMONTHDAY=-1`.
 - `FREQ=SECONDLY` and slots closer than `ngdpbase.jobs.min-interval-ms` (default 60 s) are refused. A schedule that does not compile throws from `registerJob`, naming the job: it is your error at start, never a job that silently never runs.
 - Cron is not accepted.
@@ -1893,7 +1893,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
-- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-and-identity-records): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-and-identity-records): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its users can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
 - [#2018](https://github.com/jwilleke/ngdpbase/issues/2018) — [contacts](#contacts-and-identity-records): there is no checked call yet for the signed-in user to read their own identity record; accounting and donations use the context-free `PersonManager.getByUserIdentifier(username)` until it lands, and accommodation's role job uses the context-free `RoleManager.hasRole`. Add no new calls to either.
 - [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
 - [#1957](https://github.com/jwilleke/ngdpbase/issues/1957) — [form notices](#ship-form-definitions): the "New form submission" notification is addressed to the holders of the form's `notifyRole`, but `/admin/notifications` and the admin dashboard list every notification (`getAllNotifications`), whatever its targets. Anyone who can view those admin pages sees a notice addressed to `treasurer`. No other page shows notifications by target yet.
