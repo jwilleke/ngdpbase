@@ -1,0 +1,11 @@
+{
+  "name": "ice-fixture-addon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test fixture for #1979: an add-on shaped like yourPHR, whose C-CDA and FHIR shims hand health records to its own manager through the ICE engine",
+  "ngdpbase": {
+    "slug": "ice-fixture",
+    "shims": ["ccda", "fhir"],
+    "receivers": ["health-records"]
+  }
+}

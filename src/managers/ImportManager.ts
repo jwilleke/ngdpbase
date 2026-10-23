@@ -55,7 +55,16 @@ import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { toPermissionSubject } from '../context/JobContext.js';
+import { toPermissionSubject, type JobContext } from '../context/JobContext.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type BackgroundJobManager from './BackgroundJobManager.js';
+import { converterShim } from '../ice/converterShim.js';
+import { convertChain, defaultScope, runImport, type IceEngineSettings } from '../ice/runImport.js';
+import { FileIceLedger } from '../ice/ledger.js';
+import type {
+  IceItem, IceLedger, IceReceiver, IceRunReport, IceRunRequest, IceShim, ReceiveInfo, ReceiveOutcome,
+  RegisteredReceiver, RegisteredShim, ShimTools
+} from '../ice/types.js';
 
 /**
  * Options for import operations
@@ -301,6 +310,25 @@ export type TakeoutImportReport = {
   reportPage?: string;
 };
 
+/** The background job that drains queued ICE runs (#1979). */
+const ICE_JOB_ID = 'import.engine-run';
+
+/** What the noise filter drops when configuration names nothing else (`ngdpbase.import.engine.noise`). */
+const DEFAULT_NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._*'];
+
+/** Shim and receiver names: lower-case letters, numbers and dashes. */
+const ICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
+
+/** A page title from a file name: the base name, JSPWiki's encoding undone (as the folder import does). */
+function titleFromFileName(name: string): string {
+  const baseName = path.basename(name, path.extname(name));
+  try {
+    return decodeURIComponent(baseName.replace(/\+/g, ' '));
+  } catch {
+    return baseName.replace(/\+/g, ' ');
+  }
+}
+
 /**
  * Import Manager class
  *
@@ -309,6 +337,20 @@ export type TakeoutImportReport = {
 class ImportManager extends BaseManager {
   /** Registry of format converters */
   private converterRegistry: Map<string, IContentConverter>;
+
+  /** ICE (#1979): shims by id (`<owner>.<name>`), in registration order. */
+  private readonly shimRegistry = new Map<string, RegisteredShim>();
+  /** ICE: receivers by id. */
+  private readonly receiverRegistry = new Map<string, RegisteredReceiver>();
+  /** ICE: runs this process knows about, oldest first. */
+  private readonly iceRuns = new Map<string, IceRunReport>();
+  /** ICE: runs waiting for the background job, each with its own context. */
+  private readonly iceQueue: Array<{ request: IceRunRequest; ctx: JobContext; report: IceRunReport }> = [];
+  /** ICE: true while a background job is draining the queue. */
+  private iceDraining = false;
+  /** ICE: the last background run id the queue was handed to. */
+  private iceLastJobRunId: string | null = null;
+  private iceLedger: IceLedger | null = null;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -321,6 +363,10 @@ class ImportManager extends BaseManager {
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
 
+    // ICE's core receivers (#1979, D4): pages and files, each through its own door.
+    this.registerReceiver('core', this.pagesReceiver());
+    this.registerReceiver('core', this.filesReceiver());
+
     // Register built-in converters
     this.registerConverter(new JSPWikiConverter());
     this.registerConverter(new HtmlConverter());
@@ -331,7 +377,9 @@ class ImportManager extends BaseManager {
   }
 
   /**
-   * Register a content converter
+   * Register a content converter. Since #1979 (D8) it is also the ICE shim
+   * `core.<formatId>`, producing NCM for the pages receiver, so the folder
+   * import and the engine run the same conversion.
    *
    * @param converter - Converter instance implementing IContentConverter
    */
@@ -340,6 +388,342 @@ class ImportManager extends BaseManager {
       logger.warn(`[ImportManager] Overwriting existing converter: ${converter.formatId}`);
     }
     this.converterRegistry.set(converter.formatId, converter);
+    this.shimRegistry.delete(`core.${converter.formatId}`);
+    this.registerShim('core', converterShim(converter, () => this.ncmTableClasses()));
+  }
+
+  // ── ICE: the shim and receiver registry (#1979) ──────────────────────────
+
+  /**
+   * Register a shim (D6, D7). Core registers its own as owner `core`; an
+   * add-on registers through `host.registerShim`, which names the add-on as
+   * the owner and refuses a shim its manifest does not declare.
+   *
+   * @returns The shim's id, `<owner>.<name>`
+   * @throws Error when the shim is malformed or its id is taken
+   */
+  registerShim(owner: string, shim: IceShim): string {
+    const id = `${owner}.${shim?.name}`;
+    if (!shim || !ICE_NAME.test(shim.name)) throw new Error(`ICE shim '${id}': a name is lower-case letters, numbers and dashes`);
+    if (this.shimRegistry.has(id)) throw new Error(`ICE shim '${id}' is already registered`);
+    if (!['in', 'out', 'both'].includes(shim.direction)) throw new Error(`ICE shim '${id}': direction is in, out or both`);
+    if (shim.direction !== 'out' && typeof shim.read !== 'function') throw new Error(`ICE shim '${id}': an inbound shim has read()`);
+    if (shim.direction !== 'in' && typeof shim.write !== 'function') throw new Error(`ICE shim '${id}': an outbound shim has write()`);
+    if (!shim.produces || !Array.isArray(shim.receivers) || !shim.accepts) {
+      throw new Error(`ICE shim '${id}': declare what it accepts, what it produces, and its receivers`);
+    }
+    this.shimRegistry.set(id, { ...shim, id, owner });
+    return id;
+  }
+
+  /**
+   * Register a receiver (D4): a door that already exists. Core's are
+   * `core.pages` and `core.files`; an add-on registers its own manager's door
+   * through `host.registerReceiver`.
+   *
+   * @returns The receiver's id, `<owner>.<name>`
+   */
+  registerReceiver(owner: string, receiver: IceReceiver): string {
+    const id = `${owner}.${receiver?.name}`;
+    if (!receiver || !ICE_NAME.test(receiver.name)) throw new Error(`ICE receiver '${id}': a name is lower-case letters, numbers and dashes`);
+    if (this.receiverRegistry.has(id)) throw new Error(`ICE receiver '${id}' is already registered`);
+    if (typeof receiver.receive !== 'function' || typeof receiver.mayUse !== 'function' || !Array.isArray(receiver.accepts)) {
+      throw new Error(`ICE receiver '${id}': declare accepts, mayUse() and receive()`);
+    }
+    this.receiverRegistry.set(id, { ...receiver, id, owner });
+    return id;
+  }
+
+  /** Is this shim switched on (D6)? `ngdpbase.import.shims.<id>.enabled`, default on. */
+  isShimEnabled(id: string): boolean {
+    return this.setting<unknown>(`ngdpbase.import.shims.${id}.enabled`, true) !== false;
+  }
+
+  /** Every registered shim, and whether it is on. */
+  listShims(): Array<Pick<RegisteredShim, 'id' | 'owner' | 'label' | 'direction' | 'produces' | 'receivers'> & { enabled: boolean }> {
+    return [...this.shimRegistry.values()].map(s => ({
+      id: s.id, owner: s.owner, label: s.label, direction: s.direction, produces: s.produces, receivers: s.receivers,
+      enabled: this.isShimEnabled(s.id)
+    }));
+  }
+
+  /** The receivers this context may use (D5): each answers with its own existing permission. */
+  async receiversFor(ctx: ActorContext): Promise<Array<{ id: string; label?: string }>> {
+    const out: Array<{ id: string; label?: string }> = [];
+    for (const r of this.receiverRegistry.values()) {
+      if (await r.mayUse(ctx).catch(() => false)) out.push({ id: r.id, label: r.label });
+    }
+    return out;
+  }
+
+  // ── ICE: running imports (#1979) ─────────────────────────────────────────
+
+  /**
+   * Run one import now and wait for it. For code already off the request
+   * path: an add-on's own background job, a test. A route uses
+   * {@link enqueueImport}, so the work runs off the request path.
+   *
+   * @param ctx - Who it runs as: the person's context, or a job's (P1)
+   */
+  async runImport(request: IceRunRequest, ctx: ActorContext): Promise<IceRunReport> {
+    if (!ctx?.username) throw new Error('ImportManager.runImport requires an ActorContext');
+    const report = this.newRunReport(request, ctx);
+    return this.executeRun(request, ctx, report);
+  }
+
+  /**
+   * Queue an import as background work and return its run id at once. The
+   * run carries `ctx` — the person who asked (`jobContextFromRequest`), or a
+   * job's context with its reason — and each receiver checks its own
+   * permission with it when the run reaches it (D5).
+   */
+  async enqueueImport(request: IceRunRequest, ctx: JobContext): Promise<string> {
+    if (!ctx?.username) throw new Error('ImportManager.enqueueImport requires a JobContext');
+    const report = this.newRunReport(request, ctx);
+    this.iceQueue.push({ request, ctx, report });
+    await this.kickIceQueue(ctx);
+    return report.runId;
+  }
+
+  /** A run's report, to the person it runs as; null to anyone else. */
+  getImportRun(runId: string, ctx: ActorContext): IceRunReport | null {
+    const report = this.iceRuns.get(runId);
+    return report && ctx?.username && report.username === ctx.username ? report : null;
+  }
+
+  /** Use this ledger instead of the file one: a test's, or a database table's. */
+  setImportLedger(ledger: IceLedger): void {
+    this.iceLedger = ledger;
+  }
+
+  private newRunReport(request: IceRunRequest, ctx: ActorContext): IceRunReport {
+    const report: IceRunReport = {
+      runId: uuidv4(),
+      receiver: request.receiver,
+      scope: request.scope ?? defaultScope(request.receiver, ctx),
+      username: ctx.username,
+      state: 'queued',
+      files: []
+    };
+    this.iceRuns.set(report.runId, report);
+    const keep = this.numberSetting('ngdpbase.import.engine.max-kept-runs', 100);
+    for (const oldest of this.iceRuns.keys()) {
+      if (this.iceRuns.size <= keep) break;
+      this.iceRuns.delete(oldest);
+    }
+    return report;
+  }
+
+  private async executeRun(request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
+    try {
+      return await runImport({
+        shims: this.enabledShims(),
+        receivers: this.receiverRegistry,
+        ledger: this.ledger(),
+        settings: this.engineSettings(),
+        tools: (shim) => this.shimTools(shim)
+      }, request, ctx, report);
+    } catch (err) {
+      report.state = 'failed';
+      report.error = err instanceof Error ? err.message : String(err);
+      report.finishedAt = new Date().toISOString();
+      logger.error(`[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
+      return report;
+    }
+  }
+
+  private enabledShims(): RegisteredShim[] {
+    return [...this.shimRegistry.values()].filter(s => this.isShimEnabled(s.id));
+  }
+
+  /**
+   * Hand the queue to the background job. One job run drains every queued
+   * import, each under its own context. A job run that has finished draining
+   * but is not yet marked done answers `enqueue` with its old run id; then
+   * try again shortly, so nothing queued is stranded.
+   */
+  private async kickIceQueue(ctx: JobContext): Promise<void> {
+    if (this.iceDraining) return;
+    const jobs = this.engine.getManager<BackgroundJobManager>('BackgroundJobManager');
+    if (typeof jobs?.enqueue !== 'function' || typeof jobs.registerJob !== 'function') {
+      throw new Error('ImportManager.enqueueImport: BackgroundJobManager unavailable');
+    }
+    if (!jobs.getRegisteredJobIds().includes(ICE_JOB_ID)) {
+      jobs.registerJob({
+        id: ICE_JOB_ID,
+        displayName: 'Import (ICE engine)',
+        // An import must not be repeated unchecked after a restart (#1746).
+        persist: false,
+        // Each job run takes only the imports of the person it runs as, so its
+        // record names who the work was for (P1); the next person's get a job
+        // run of their own.
+        run: async (_progress, jobCtx) => {
+          let done = 0;
+          for (;;) {
+            const at = this.iceQueue.findIndex(q => q.ctx.username === jobCtx.username);
+            if (at < 0) {
+              this.iceDraining = false;
+              break;
+            }
+            const [next] = this.iceQueue.splice(at, 1);
+            await this.executeRun(next.request, next.ctx, next.report);
+            done++;
+          }
+          const waiting = this.iceQueue[0];
+          if (waiting) {
+            setTimeout(() => {
+              this.kickIceQueue(waiting.ctx).catch((err: unknown) => logger.error('[ImportManager] ICE queue could not be handed to its job:', err));
+            }, 0).unref();
+          }
+          return { success: true, summary: `${done} import run(s)` };
+        }
+      });
+    }
+    this.iceDraining = true;
+    const runId = await jobs.enqueue(ICE_JOB_ID, ctx);
+    if (runId === this.iceLastJobRunId) {
+      this.iceDraining = false;
+      setTimeout(() => {
+        this.kickIceQueue(ctx).catch((err: unknown) => logger.error('[ImportManager] ICE queue could not be handed to its job:', err));
+      }, 50).unref();
+      return;
+    }
+    this.iceLastJobRunId = runId;
+  }
+
+  private setting<T>(key: string, fallback: T): T {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const value = configManager?.getProperty?.(key, fallback) as T | undefined | null;
+    return value === undefined || value === null ? fallback : value;
+  }
+
+  private numberSetting(key: string, fallback: number): number {
+    const n = Number(this.setting<unknown>(key, fallback));
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  /** `ngdpbase.import.engine.*`: every limit the engine applies is configuration. */
+  private engineSettings(): IceEngineSettings {
+    const noise = this.setting<unknown>('ngdpbase.import.engine.noise', DEFAULT_NOISE);
+    const original = this.setting<unknown>('ngdpbase.import.engine.default-original', 'none');
+    return {
+      noise: Array.isArray(noise) ? noise.map(String) : DEFAULT_NOISE,
+      zip: {
+        maxEntries: this.numberSetting('ngdpbase.import.engine.zip-max-entries', 10_000),
+        maxTotalBytes: this.numberSetting('ngdpbase.import.engine.zip-max-bytes', 268_435_456)
+      },
+      maxZipDepth: this.numberSetting('ngdpbase.import.engine.zip-max-depth', 3),
+      maxFileBytes: this.numberSetting('ngdpbase.import.engine.max-file-bytes', 104_857_600),
+      maxChainDepth: this.numberSetting('ngdpbase.import.engine.max-chain-depth', 5),
+      defaultOriginal: original === 'cite' || original === 'keep' ? original : 'none'
+    };
+  }
+
+  /** The engine's ledger (fingerprints, per-file status, item keys), opened on first use. */
+  private ledger(): IceLedger {
+    if (!this.iceLedger) {
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const dir = configManager?.getResolvedDataPath?.('ngdpbase.import.engine.ledger-dir', './data/import-ledger')
+        ?? path.resolve('./data/import-ledger');
+      this.iceLedger = new FileIceLedger(dir, this.numberSetting('ngdpbase.import.engine.ledger-max-entries', 10_000));
+    }
+    return this.iceLedger;
+  }
+
+  /** What a shim is handed: the engine's guarded fetch (design rule) and its own options (D6). */
+  private shimTools(shim: RegisteredShim): ShimTools {
+    const options = this.setting<unknown>(`ngdpbase.import.shims.${shim.id}.options`, {});
+    return {
+      options: options && typeof options === 'object' && !Array.isArray(options) ? options as Record<string, unknown> : {},
+      fetch: (url, opts = {}) => {
+        const egress = resolveEgressPolicy((key, fallback) => this.setting(key, fallback));
+        const timeoutMs = this.numberSetting('ngdpbase.fetch-timeout-ms', 30_000);
+        return guardedFetch(url, { timeoutMs, ...opts, policy: egress.policy });
+      }
+    };
+  }
+
+  /** A receiver's existing permission, asked of the PDP with the run's context (D5, P2). */
+  private async permits(ctx: ActorContext, permission: string): Promise<boolean> {
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (typeof pdp?.permits !== 'function') return false;
+    return pdp.permits(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, permission);
+  }
+
+  /**
+   * `core.pages` (D4): NCM into pages, through PageManager's save door, as the
+   * folder import saves. It checks `page-create` itself (D5). A title that
+   * already exists is a duplicate, as it is for the folder import by default.
+   */
+  private pagesReceiver(): IceReceiver {
+    return {
+      name: 'pages',
+      label: 'Pages',
+      accepts: ['ncm'],
+      mayUse: (ctx) => this.permits(ctx, 'page-create'),
+      receive: async (item: IceItem, ctx: ActorContext, info: ReceiveInfo): Promise<ReceiveOutcome> => {
+        if (!(await this.permits(ctx, 'page-create'))) {
+          return { status: 'refused', message: 'You do not have permission to create pages' };
+        }
+        const pageManager = this.engine.getManager<PageManager>('PageManager');
+        if (!pageManager) throw new Error('PageManager unavailable — cannot import a page');
+        const metadata: Record<string, unknown> = { ...(item.metadata ?? {}) };
+        if (!metadata['title']) metadata['title'] = titleFromFileName(item.name);
+        const title = String(metadata['title']);
+        if (await pageManager.getPageMetadata(title, ctx)) {
+          return { status: 'duplicate', ref: title, message: `Page "${title}" already exists` };
+        }
+
+        const warnings = [...(item.warnings ?? [])];
+        let body = item.text ?? '';
+        if (info.citation) {
+          // D11: a citation to the origin, as a footnote, the way the URL import cites its page.
+          body += `\n\n----\n- [#1] - Imported from ${info.citation.name} on ${info.citation.importedAt.split('T')[0]} (SHA-256 ${info.citation.sha256.slice(0, 16)})\n`;
+        }
+        if (info.original) metadata['importedOriginal'] = info.original.ref;
+        body = this.applyFixSteps(body, warnings);
+        const uuid = (typeof metadata['uuid'] === 'string' && metadata['uuid']) || uuidv4();
+        if (typeof pageManager.completeNcmConversion === 'function') {
+          body = (await pageManager.completeNcmConversion(body, { pageName: title, uuid }, ctx, { dryRun: false })).content;
+        }
+        const saved = await this.createPageThroughPipeline(title, { content: body, metadata, warnings }, uuid, { actorContext: ctx });
+        return { status: 'stored', ref: saved.name };
+      }
+    };
+  }
+
+  /**
+   * `core.files` (D4): a file through AttachmentManager's upload door, which
+   * checks `asset-upload` itself. Also where a kept original goes (D11) when
+   * the chosen receiver does not keep its own. It becomes FileManager's write
+   * door once the files layer has one (#1851).
+   */
+  private filesReceiver(): IceReceiver {
+    return {
+      name: 'files',
+      label: 'Files',
+      accepts: ['file'],
+      mayUse: (ctx) => this.permits(ctx, 'asset-upload'),
+      receive: async (item: IceItem, ctx: ActorContext): Promise<ReceiveOutcome> => {
+        const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
+        if (!attachmentManager) throw new Error('AttachmentManager unavailable — cannot store a file');
+        const bytes = item.bytes ?? Buffer.from(item.text ?? '', 'utf8');
+        const originalName = path.basename(item.name);
+        try {
+          const stored = await attachmentManager.uploadAttachment(
+            bytes,
+            { originalName, mimeType: item.mediaType || this.getMimeType(originalName), size: bytes.length },
+            ctx,
+            { description: `Imported ${item.name}` }
+          );
+          return { status: 'stored', ref: stored.identifier };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (/permission denied/i.test(message)) return { status: 'refused', message };
+          throw err;
+        }
+      }
+    };
   }
 
   /**
@@ -694,40 +1078,36 @@ class ImportManager extends BaseManager {
 
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
 
-    // Convert content. #728: HTML/JSPWiki/Markdown imports route through the
-    // NCM normalizer (NCM extends the registry — it delegates to these same
-    // converters internally, then applies §2.4 links, the §2.1 table
-    // up-convert, and stamps ncmVersion), bridged back to ConversionResult.
-    // Any other format (e.g. test mocks) keeps the direct converter path.
-    // Table style classes are operator-configurable (§2.1, NCM v2).
-    const tableClasses = this.ncmTableClasses();
-    let conversionResult: ConversionResult;
-    if (converter.convertBuffer) {
-      // #1131: a binary source (docx). The utf-8 read above was zip garbage —
-      // re-read as a Buffer, let the converter produce intermediate HTML, and
-      // route THAT through the same html→NCM path every HTML import takes, so
-      // links, tables, images and footnotes all come from the funnel.
-      const buffer = await fs.readFile(filePath);
-      const intermediate = await converter.convertBuffer(buffer);
-      conversionResult = ncmToConversionResult(normalizeToNcm(intermediate.content, 'html', { tableClasses }));
-      conversionResult.warnings.unshift(...intermediate.warnings);
-      conversionResult.metadata = { ...intermediate.metadata, ...conversionResult.metadata };
-    } else if (formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown') {
-      conversionResult = ncmToConversionResult(normalizeToNcm(content, formatId, { tableClasses }));
-    } else {
-      conversionResult = converter.convert(content);
+    // Convert content through the converter's ICE shim, `core.<formatId>`
+    // (#1979, D8) — the same code the engine runs. #728: HTML/JSPWiki/Markdown
+    // route through the NCM normalizer; #1131: a binary source (docx) is read
+    // as a Buffer, produces intermediate HTML, and chains (D9) into the html
+    // shim, so links, tables, images and footnotes all come from the funnel.
+    // Any other format keeps its converter's own output. A shim the site has
+    // switched off (D6) takes no files.
+    const shim = this.shimRegistry.get(`core.${formatId}`);
+    if (!shim || !this.isShimEnabled(shim.id)) {
+      return null;
     }
+    const input: IceItem = converter.convertBuffer
+      ? { kind: 'file', name: filename, bytes: await fs.readFile(filePath) }
+      : { kind: 'file', name: filename, text: content };
+    const [leaf] = await convertChain(shim, input, [], {
+      shims: this.enabledShims(),
+      tools: (s) => this.shimTools(s),
+      maxChainDepth: this.engineSettings().maxChainDepth,
+      done: (_from, item) => item.kind === 'ncm',
+      target: 'ncm'
+    }, []);
+    const conversionResult: ConversionResult = {
+      content: leaf?.item.text ?? '',
+      metadata: leaf?.item.metadata ?? {},
+      warnings: leaf?.item.warnings ?? []
+    };
     // #1332: an imported page gets every Markdown fix step, the same as
     // Convert to NCM. Only the NCM formats: the fix steps read Markdown.
     if (converter.convertBuffer || formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown') {
       conversionResult.content = this.applyFixSteps(conversionResult.content, conversionResult.warnings);
-    }
-
-    // The NCM markdown path does not stamp provenance the way MarkdownConverter
-    // does; preserve `importedFrom: markdown` for parity with the JSPWiki/HTML
-    // converters (which set it internally).
-    if (formatId === 'markdown' && !conversionResult.metadata['importedFrom']) {
-      conversionResult.metadata['importedFrom'] = 'markdown';
     }
 
     // Register any extracted user-keywords (e.g., from JSPWiki %%category%% blocks) to config
@@ -1916,6 +2296,9 @@ class ImportManager extends BaseManager {
    */
   async shutdown(): Promise<void> {
     this.converterRegistry.clear();
+    this.shimRegistry.clear();
+    this.receiverRegistry.clear();
+    this.iceQueue.length = 0;
     await super.shutdown();
   }
 }
