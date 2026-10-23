@@ -76,6 +76,117 @@ export interface ManagerBackupOptions {
    * failed: the restore keeps its file beside the restored one instead.
    */
   safetyBackup?: boolean;
+  /**
+   * One more archive beside the document, named and keyed by BackupManager
+   * (#1985), for a manager whose files are not a declared folder. A declared
+   * folder or file (`backupFolders()`) needs none of this.
+   */
+  archive?: (part: string) => BackupArchiveTarget;
+}
+
+/**
+ * A folder or file part's record in a manager's entry of the backup document
+ * (#1876, #1985): the archive beside the document and what it holds. The
+ * shape every backup since v5.21 writes; a restore reads it as it is.
+ */
+export interface BackupPartRecord {
+  format: 1;
+  /** The archive beside the document: `<stem>.<part>.tar`, or `.tar.enc` when encrypted. */
+  archive: string;
+  files: number;
+  bytes: number;
+  /** `backupKeyFingerprint()` of the key the archive is encrypted under; absent when it is not encrypted. */
+  keyFingerprint?: string;
+}
+
+/**
+ * A folder a manager keeps its data in (#1985): BackupManager archives it
+ * beside the backup document, stages it in a site restore, and puts the
+ * staged copy in place at the next start before the manager reads it.
+ */
+export interface BackupFolderPart {
+  /** The archive's name: `<stem>.<part>.tar` (`.tar.enc` under the backup key). Never change it: old backups are matched by it. */
+  part: string;
+  /** The folder, resolved; null when this site has none configured. */
+  folder: string | null;
+  /** Leave out a path relative to the folder, in posix form (job state's slot locks). */
+  exclude?: (relative: string) => boolean;
+  /**
+   * A backup with no record of this part stages nothing for it, and the
+   * restore names it as not restored. Without it such a backup refuses the
+   * whole site restore (one taken before the part was backed up).
+   */
+  optional?: boolean;
+}
+
+/**
+ * One file a manager keeps its data in (#1985): the credentials store. As a
+ * folder, but the archive holds the one file.
+ */
+export interface BackupFilePart {
+  part: string;
+  /** The file, resolved; null when this site has none configured. */
+  file: string | null;
+  /** How the backup and the log name it ("credentials store"). */
+  what: string;
+  /** Only ever backed up encrypted: without the backup key it is left out, with a warning (#1876). */
+  requireKey?: boolean;
+  /** Staged in its place when the file was absent at backup time, so the restore still puts the site back as it was. */
+  whenAbsent: string;
+  optional?: boolean;
+}
+
+/** What a manager declares as its data (#1985). */
+export type BackupFolder = BackupFolderPart | BackupFilePart;
+
+/**
+ * One more archive beside the backup document, named and keyed by
+ * BackupManager (#1985): for a manager whose files are not one declared
+ * folder (the attachment pool and vaults, the audit log among the
+ * application logs). Encrypted under the backup key when it is set.
+ */
+export interface BackupArchiveTarget {
+  /** Its file name, `<stem>.<part>.tar` or `.tar.enc`: what the entry records. */
+  archive: string;
+  /** Where to write it. */
+  path: string;
+  backupKey?: string;
+  keyFingerprint?: string;
+}
+
+/** One live path and the staged copy that replaces it at the next start (#1876). */
+export interface StagedSwap {
+  live: string;
+  staged: string;
+}
+
+/**
+ * A whole-site restore being staged (#1876), handed to a manager's
+ * `restore()` by BackupManager, which keeps the record that binds the parts
+ * together (#1986). A manager whose restore is staged
+ * (`restoreIsStaged()`) stages its files beside its live ones and records
+ * its part here; nothing else writes that record.
+ */
+export interface SiteRestoreStaging {
+  /** Where the staged copy of a live path goes: beside it, `<live>.staged`. The next start applies nothing named otherwise. */
+  stagedPathFor(live: string): string;
+  /**
+   * Record this manager's part: the pairs the next start swaps in, all
+   * together with every other part or not at all. `discard` names further
+   * files to remove if the restore is thrown away (DatabaseManager's own
+   * manifest).
+   */
+  record(swaps: StagedSwap[], options?: { discard?: string[] }): void;
+}
+
+/** What a staged restore of a manager's part did at this start (#1985, #1986). */
+export interface StagedRestoreAtStart {
+  /** Each live path now restored, with where its previous content was kept. */
+  applied: Array<{ live: string; kept: string }>;
+  /** Why nothing (or, after a failed rename, not everything) was applied. */
+  refused?: string;
+  /** When the backup it came from was taken. */
+  backupTakenAt?: string;
 }
 
 /** What BackupManager hands each manager's `restore()` (#1723): who asked, and the directory the backup document was read from. */
@@ -93,12 +204,20 @@ export interface ManagerRestoreOptions {
   /** The backup of the live data BackupManager took just before this restore (#1723, D6), by filename. */
   safetyBackup?: string;
   /**
-   * The site restore manifest this restore is staged under (#1876). A
-   * manager whose restore is staged (`restoreIsStaged()`) stages its files
-   * beside its live ones and records its part there; the next start applies
-   * every part or none (`src/utils/siteRestore.ts`).
+   * Present when this restore is staged as part of a whole-site restore
+   * (#1876): a manager whose restore is staged (`restoreIsStaged()`) stages
+   * its files beside its live ones and records its part through it; the
+   * next start applies every part or none. BackupManager keeps the record
+   * (#1986).
    */
-  siteRestore?: string;
+  siteRestore?: SiteRestoreStaging;
+  /**
+   * An archive the backup names, checked by BackupManager (#1985): a bare
+   * file name in the backup directory, read under the key its fingerprint
+   * names. Throws, naming `manager`, for anything else. For a manager that
+   * stages its own files (attachments, the audit log).
+   */
+  readArchive?: (manager: string, archive: unknown, keyFingerprint: string | undefined) => { path: string; backupKey?: string };
 }
 
 /**
@@ -239,7 +358,65 @@ abstract class BaseManager {
 
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     this.config = config;
+    // #1985: before anything is read, and before the manager counts as started.
+    await this.applyStagedBackupParts();
     this.initialized = true;
+  }
+
+  /**
+   * Where this manager keeps its data as folders or files (#1985): declared,
+   * never backed up by hand. BackupManager archives each beside the backup
+   * document (`<stem>.<part>.tar`), stages it in a site restore, and puts the
+   * staged copy in place at the next start, in `initialize()` above, before
+   * the subclass reads it. Resolved from the configuration, so it can be
+   * answered before the subclass's own `initialize()` has run. Default none.
+   *
+   * A manager with data in the document as well keeps its `backup()`; a
+   * declared part's record goes beside that data (`data[part]`), or is the
+   * entry's `data` when the manager has none and declares one part.
+   */
+  backupFolders(): BackupFolder[] {
+    return [];
+  }
+
+  /** What putting a staged restore of the declared parts in place did at this start, or null (#1985). */
+  private stagedRestore: StagedRestoreAtStart | null = null;
+
+  /** What this start did with a staged restore of this manager's declared parts (#1985): null when there was none. */
+  protected stagedRestoreAtStart(): StagedRestoreAtStart | null {
+    return this.stagedRestore;
+  }
+
+  /**
+   * The name this manager is registered under: a staged part is recorded by
+   * it. Its class name when it is not registered (a test).
+   */
+  private registeredName(): string {
+    const engine = this.engine as { getRegisteredManagers?(): string[]; getManager?(name: string): unknown } | undefined;
+    const names = typeof engine?.getRegisteredManagers === 'function' ? engine.getRegisteredManagers() : [];
+    return names.find((n) => engine?.getManager?.(n) === this) ?? this.constructor.name;
+  }
+
+  /**
+   * #1985: a staged site restore of the declared parts goes in before the
+   * subclass reads them. BackupManager's own step, reached through its
+   * module (BackupManager starts after most managers); loaded only when there
+   * is something declared. A part not applied is said on the dashboard.
+   */
+  private async applyStagedBackupParts(): Promise<void> {
+    let declared: BackupFolder[];
+    try {
+      declared = this.backupFolders();
+    } catch (err) {
+      logger.error(`[${this.constructor.name}] Its backup folders could not be read, so a staged restore of them was not checked: ${(err as Error).message}`);
+      return;
+    }
+    if (declared.length === 0) return;
+    const { applyStagedPartsAtStart } = await import('./BackupManager.js');
+    this.stagedRestore = applyStagedPartsAtStart(this.engine, this.registeredName(), declared);
+    if (this.stagedRestore?.refused) {
+      this.markNeedsAttention(`A staged restore of ${declared.map((d) => d.part).join(', ')} was not applied: ${this.stagedRestore.refused}`);
+    }
   }
 
   /**
@@ -508,10 +685,16 @@ abstract class BaseManager {
    * Whether this manager's `restore()` stages for the next start instead of
    * writing into the running site (#1723, #1876). BackupManager stages every
    * such manager in a site restore together, all or nothing, after a backup
-   * of the live data. The default is false: the restore writes live.
+   * of the live data. The default: true when it declares folders or files
+   * (#1985), which BackupManager stages; otherwise false, the restore writes
+   * live.
    */
   restoreIsStaged(): boolean {
-    return false;
+    try {
+      return this.backupFolders().length > 0;
+    } catch {
+      return false;
+    }
   }
 
   /**

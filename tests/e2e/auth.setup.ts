@@ -1,5 +1,5 @@
 import { test as setup, type Page } from '@playwright/test';
-import { waitForServerReady, TEST_PAGE_PREFIX } from './fixtures/helpers';
+import { waitForServerReady, TEST_PAGE_PREFIX, acceptTermsIfAsked } from './fixtures/helpers';
 
 const STORAGE_STATE = './tests/e2e/.auth/user.json';
 
@@ -39,6 +39,8 @@ setup('authenticate', async ({ page }) => {
   // Use domcontentloaded — networkidle never fires because admin dashboard
   // keeps persistent polling connections open (#460)
   await page.waitForLoadState('domcontentloaded');
+  // #1603: an admin who has not accepted the site's terms at their current version is asked first.
+  await acceptTermsIfAsked(page);
 
   // #1895: the URL is not the signal. `/login?error=…` slipped past a
   // `/login$` check, and every signed-in spec then failed with a 401.
@@ -172,6 +174,7 @@ async function upgradeToPasskeySession(page: Page, adminUser: string): Promise<v
     await page.locator('[data-passkey-signin]').click();
     await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 15000 }).catch(() => undefined);
     await page.waitForLoadState('domcontentloaded');
+    await acceptTermsIfAsked(page); // #1603
     await assertSignedIn(page, adminUser, 'passkey sign-in');
 
     await removeE2EPasskeys(page);

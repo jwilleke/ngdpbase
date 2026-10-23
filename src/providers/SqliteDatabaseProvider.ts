@@ -8,14 +8,27 @@
  * shared memory, which network filesystems do not provide, so the file's
  * location is checked first (`refuseNetworkFilesystem`).
  */
-import Database from 'better-sqlite3-multiple-ciphers';
+import type DatabaseDriver from 'better-sqlite3-multiple-ciphers';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import BaseDatabaseProvider from './BaseDatabaseProvider.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import { runMigrations, type Migration, type MigrationReport } from './sqliteMigrations.js';
 import { refuseNetworkFilesystem } from './sqliteLocation.js';
 
-export type SqliteHandle = InstanceType<typeof Database>;
+/**
+ * The driver, loaded from the entry its package.json names (#1537). Run from
+ * source by tsx — the operator scripts, `npm run audit:verify -- --database` —
+ * the bare package name follows tsconfig's `paths`, which maps it to the type
+ * declarations, for `import`, `require` and `require.resolve` alike; its
+ * `package.json` is not mapped.
+ */
+const requireHere = createRequire(import.meta.url);
+const driverPackage = requireHere.resolve('better-sqlite3-multiple-ciphers/package.json');
+const Database = requireHere(path.join(path.dirname(driverPackage), (requireHere(driverPackage) as { main: string }).main)) as typeof DatabaseDriver;
+
+export type SqliteHandle = InstanceType<typeof DatabaseDriver>;
 
 /** The lock wait when none is configured: the driver's own default, stated (#1710). */
 export const DEFAULT_BUSY_TIMEOUT_MS = 5000;

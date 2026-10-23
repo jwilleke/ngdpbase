@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-20'
+dateModified: '2026-10-22'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -116,9 +116,9 @@ The files are in every backup, beside the document, never in it ([#1876](https:/
 
 - `<stem>.attachments.tar` — the shared pool folder, without `.thumbs` (made again on demand) and without the metadata file; the metadata is in the document (`providerBackup`).
 - `<stem>.vault-attachments.tar` — each vault's `attachments/` folder and `files-index.json`, the bytes as stored: a sealed vault's files stay sealed, nothing is decrypted. PageManager's backup of the vaults leaves these out.
-- Both are streamed, file by file. `backup()` throws outside BackupManager, and for a provider without `backupFiles`.
+- Both are streamed, file by file. BackupManager names and keys each archive (`options.archive`), and checks each one a restore reads (`options.readArchive`) ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)): the pool and the vaults are not one folder, so this is special handling, not a declared folder. `backup()` throws outside BackupManager, and for a provider without `backupFiles`.
 
-`restore()` is staged (`restoreIsStaged()`), as part of a site restore only: the pool is extracted to `<pool>.staged` with the metadata file written from the document, and each vault's files to `attachments.staged` and `files-index.json.staged` beside the live ones. A vault that must be sealed on this site whose files in the backup aren't all sealed bytes refuses the whole staging (#1836). A vault the site no longer has is not staged, and admins are told. A backup from another provider, or one taken before #1876, refuses. At the next start, before the metadata is read, the provider swaps the staged paths in when the whole site restore goes in, and only paths that are its own. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
+`restore()` is staged (`restoreIsStaged()`), as part of a site restore only: the pool is extracted to `<pool>.staged` with the metadata file written from the document, and each vault's files to `attachments.staged` and `files-index.json.staged` beside the live ones. A vault that must be sealed on this site whose files in the backup aren't all sealed bytes refuses the whole staging (#1836). A vault the site no longer has is not staged, and admins are told. A backup from another provider, or one taken before #1876, refuses. The part is recorded through the `siteRestore` restore option, at the paths it names (`stagedPathFor`). At the next start, before the metadata is read, the provider swaps the staged paths in when the whole site restore goes in, and only paths that are its own, through BackupManager's `applyStagedPartAtStart` ([#1986](https://github.com/jwilleke/ngdpbase/issues/1986)). Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
 
 ## Configuration
 

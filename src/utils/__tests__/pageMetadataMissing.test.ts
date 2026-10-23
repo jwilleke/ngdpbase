@@ -32,8 +32,8 @@ function makeEngine(opts: {
   };
   // #1431 step 14: decisions are the PDP's.
   const pdp = {
-    userHoldsPermission: async (u: string, a: string) =>
-      a === 'admin-system' && (opts.holders ?? ['root']).includes(u)
+    usersHolding: async (a: string) =>
+      a === 'admin-system' ? (await users.getUsers()).map((u) => u.username).filter((u) => (opts.holders ?? ['root']).includes(u)) : []
   };
   const managers: Record<string, unknown> = { NotificationManager: notifications, UserManager: users, PolicyDecisionPoint: pdp };
   const engine = {

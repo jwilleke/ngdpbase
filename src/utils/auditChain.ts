@@ -82,19 +82,33 @@ export interface ChainVerdict {
 }
 
 /**
+ * Where a chain that does not begin at genesis begins (#1537): the sequence
+ * and hash of the last record before the first one present. A retention
+ * checkpoint holds exactly this for the records it removed, so what remains
+ * verifies from it rather than from genesis.
+ */
+export interface ChainStart {
+  seq: number;
+  hash: string;
+}
+
+/**
  * Walk a chain in order and report the first break.
  *
  * @param records - Audit records, oldest first
  * @param options.expectedHead - Hash the last record must have. Supplying it is
  *   the only way to detect truncation: removing records from the end breaks no
  *   link, so the chain alone cannot see it.
+ * @param options.start - The checkpoint the chain continues from (#1537). The
+ *   first record must then carry `start.seq + 1` and link to `start.hash`;
+ *   without it the first record must link to genesis.
  */
 export function verifyChain(
   records: readonly Record<string, unknown>[],
-  options: { expectedHead?: string } = {}
+  options: { expectedHead?: string; start?: ChainStart } = {}
 ): ChainVerdict {
-  let prev = GENESIS_HASH;
-  let lastSeq: number | null = null;
+  let prev = options.start?.hash ?? GENESIS_HASH;
+  let lastSeq: number | null = options.start?.seq ?? null;
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -189,7 +203,10 @@ function isRestart(record: Record<string, unknown>): boolean {
  * follows. A marker asserting a history that did not happen is itself a
  * finding — otherwise a restart could claim anything.
  */
-export function verifyLog(records: readonly Record<string, unknown>[]): LogVerdict {
+export function verifyLog(
+  records: readonly Record<string, unknown>[],
+  options: { start?: ChainStart } = {}
+): LogVerdict {
   const segments: ChainSegment[] = [];
   let start = 0;
 
@@ -199,16 +216,20 @@ export function verifyLog(records: readonly Record<string, unknown>[]): LogVerdi
 
     const slice = records.slice(start, end);
     const marker = isRestart(slice[0]) ? slice[0] : undefined;
-    const verdict = verifyChain(slice);
+    // #1537: the first segment continues from the checkpoint, unless it opens
+    // with a restart marker — a marker begins at genesis by definition.
+    const verdict = verifyChain(slice, start === 0 && !marker && options.start ? { start: options.start } : {});
 
     // A marker may name the head it abandoned. Null is legitimate — when the
     // previous chain is unreadable, admitting ignorance beats an unverifiable
-    // claim about what came before.
+    // claim about what came before. The head before the first record present
+    // is the checkpoint's, when there is one (#1537).
     let mismatchedPrevious = false;
-    if (marker && start > 0) {
+    const before = start > 0 ? records[start - 1].hash : options.start?.hash;
+    if (marker && before !== undefined) {
       const claimed = (marker.metadata as Record<string, unknown> | undefined)?.previousHash;
       if (claimed !== null && claimed !== undefined) {
-        mismatchedPrevious = claimed !== records[start - 1].hash;
+        mismatchedPrevious = claimed !== before;
       }
     }
 

@@ -1,5 +1,4 @@
-import BaseManager, { type BackupData, type ManagerBackupOptions, type ManagerRestoreOptions } from './BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../utils/directoryBackup.js';
+import BaseManager, { type BackupFolder } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -70,14 +69,8 @@ class RoleManager extends BaseManager {
       throw new Error('RoleManager requires ConfigurationManager');
     }
 
-    const storageDir = configManager.getResolvedDataPath(
-      'ngdpbase.application.roles.storagedir',
-      './data/roles'
-    );
+    const storageDir = this.configuredStorageDir(configManager)!;
     this.storageDir = storageDir;
-    // #1876: a staged site restore goes in before the records are read.
-    const restored = applyDirectoryPartAtStart('RoleManager', storageDir, configManager);
-    if (restored?.refused) this.markNeedsAttention(`A staged restore of role membership was not applied: ${restored.refused}`);
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.application.roles.storagedir',
       storageDir
@@ -149,23 +142,17 @@ class RoleManager extends BaseManager {
     }
   }
 
+  /** `ngdpbase.application.roles.storagedir`, resolved: where the records are. */
+  private configuredStorageDir(configManager: ConfigurationManager | null | undefined = this.engine.getManager<ConfigurationManager>('ConfigurationManager')): string | null {
+    return configManager?.getResolvedDataPath('ngdpbase.application.roles.storagedir', './data/roles') ?? null;
+  }
+
   /**
-   * Role membership is in the backup (#1876): the role records folder, as
-   * `<stem>.roles.tar` beside the document. Without it restored users would
-   * have no roles.
+   * Role membership is in the backup (#1876): the role records folder, as `<stem>.roles.tar` beside the document. Without it restored users would have no roles. BackupManager backs it up, stages it in a site restore and puts it
+   * in place at the next start, before the records are read (#1985).
    */
-  override async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('RoleManager', 'roles', this.storageDir, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore (#1876); the live records are untouched. */
-  override async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await super.restore(backupData);
-    await stageDirectoryPart('RoleManager', this.storageDir, backupData, options);
-  }
-
-  override restoreIsStaged(): boolean {
-    return true;
+  override backupFolders(): BackupFolder[] {
+    return [{ part: 'roles', folder: this.storageDir ?? this.configuredStorageDir() }];
   }
 
   /** Provider accessor, mainly for tests. */

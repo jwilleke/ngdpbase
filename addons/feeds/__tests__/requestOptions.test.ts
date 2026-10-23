@@ -56,7 +56,7 @@ describe('per-source request options reach guardedFetch (#1947, #1955)', () => {
   for (const name of Object.keys(BODY)) {
     it(`${name}: passes headers and timeoutMs on every fetch`, async () => {
       const headers = { 'User-Agent': 'geohazardwatch.com (ops@example.com)', Accept: 'application/geo+json' };
-      await getAdapter(name)!.fetch(cfgFor(name, { headers, timeoutMs: 90_000 }), POLICY);
+      await getAdapter(name)!.fetch(cfgFor(name, { headers, timeoutMs: 90_000 }), POLICY, guardedFetch);
 
       const calls = mockGuardedFetch.mock.calls;
       expect(calls.length).toBe(name === 'xml-index' ? 2 : 1);
@@ -67,7 +67,7 @@ describe('per-source request options reach guardedFetch (#1947, #1955)', () => {
     });
 
     it(`${name}: sends only the policy when the source sets neither`, async () => {
-      await getAdapter(name)!.fetch(cfgFor(name), POLICY);
+      await getAdapter(name)!.fetch(cfgFor(name), POLICY, guardedFetch);
       for (const [, options] of mockGuardedFetch.mock.calls) {
         expect(options).toEqual({ policy: POLICY });
       }

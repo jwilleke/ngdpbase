@@ -304,8 +304,7 @@ function indexSource(o: ScaffoldOptions): string {
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { Router } from 'express';
-import { guardedFetch } from '../../dist/src/http/guardedFetch.js';
-import { resolveEgressPolicy } from '../../dist/src/http/egressPolicy.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import apiRoutes from './routes/api.js';
 ${managerImports}
 ${pluginImports}
@@ -335,7 +334,9 @@ const ${toPascalCase(o.id)}Addon = {
   author: 'ngdpbase',
   dependencies: [] as string[],
 
-  async register(engine: Engine, config: Record<string, unknown>): Promise<void> {
+  // host: what core hands this addon (#1813). Core's values come from it, never
+  // from an import of ../../dist, which an installed addon does not have.
+  async register(engine: Engine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
     const cm = engine.getManager<{
       resolveDataPath(n: string): string;
       getProperty?(k: string, f?: unknown): unknown;
@@ -346,8 +347,8 @@ const ${toPascalCase(o.id)}Addon = {
     // tightening it is honoured without a restart. ${managerDoor}
     const readConfig = (key: string, fallback?: unknown): unknown => cm?.getProperty?.(key, fallback) ?? fallback;
     const fetchJson = async (url: string): Promise<unknown> => {
-      const { policy } = resolveEgressPolicy(readConfig);
-      const res = await guardedFetch(url, { policy });
+      const { policy } = host.resolveEgressPolicy(readConfig);
+      const res = await host.guardedFetch(url, { policy });
       if (res.status < 200 || res.status >= 300) throw new Error(\`\${url}: HTTP \${res.status}\`);
       return JSON.parse(res.body.toString('utf8')) as unknown;
     };
@@ -370,7 +371,7 @@ ${pluginWiring}
     // own templates — header and footer included — resolvable.
     const views = (engine.app?.get('views') as string | string[] | undefined) ?? [];
     engine.app?.set('views', [...[views].flat(), path.join(__dirname, 'views')]);
-    engine.app?.use('/api/${o.id}', apiRoutes(engine));
+    engine.app?.use('/api/${o.id}', apiRoutes(engine, host));
 
     // Static assets, if this addon ships any under public/.
     // engine.app?.use('/addons/${o.id}', engine.serveStatic(path.join(__dirname, 'public')));
@@ -471,17 +472,17 @@ function routesSource(o: ScaffoldOptions): string {
  * policy (#1198), and this addon's config/default-config.json is where the
  * permission and the policy that grants it are declared.
  *
- * The host is imported through \`dist/\`, never \`src/\`. A value import of host
- * source pulls it into this addon's compilation and emits a \`.js\` beside it —
- * which exists on a developer's machine and does not exist in the container,
- * where the image carries \`dist/\` and \`addons/\` but no \`src/\` (#1192).
+ * ApiContext and ApiError come from \`host\`, the third argument core hands
+ * register() (#1813). An addon never value-imports core: \`../../dist\` does not
+ * exist for an addon installed into the data folder, and \`src/\` is not in the
+ * container at all (#1192). Types are fine: \`import type\` is erased.
  *
  * The router comes from core: \`engine.createRouter()\`. Express is imported
  * for its types only — an installed addon has no express of its own to load,
  * and \`npm run lint:addons\` refuses a value import of it (#1861).
  */
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 ${manager ? `import type ${manager}Manager from '../managers/${manager}Manager.js';\n` : ''}
 interface Engine {
   getManager<T = unknown>(name: string): T | null;
@@ -489,7 +490,8 @@ interface Engine {
   createRouter(): Router;
 }
 
-export default function apiRoutes(engine: Engine): Router {
+export default function apiRoutes(engine: Engine, host: AddonHost): Router {
+  const { ApiContext, ApiError } = host;
   const router = engine.createRouter();
 
   /** Status, for the addon dashboard and the admin view. */
@@ -618,9 +620,11 @@ four that bite:
   \`(window.csrfFetch || fetch)\`; a bare \`fetch\` is refused by the host.
 - __An acting call takes a context__, never a bare username.
 
-The host is imported through \`dist/\`, never \`src/\`: a value import of host
-source compiles it into this addon and emits a \`.js\` beside it, which exists on
-a developer's machine and does not exist in the container.
+Core's values come from \`host\`, the third argument to \`register()\`, and a
+manager's from \`engine.getManager\`; this addon never value-imports core
+(#1813). \`../../dist\` does not exist for an addon installed into the data
+folder, and \`src/\` is not in the container. Types are fine: \`import type\`
+is erased.
 
 The host's guards run over this directory: \`lint:code\`, \`lint:csrf\`,
 \`lint:http\`, \`lint:permission-subject\`, \`lint:gates\`, \`lint:addons\`,
@@ -676,9 +680,9 @@ jobs:
 
       # Typechecked INSIDE the ngdpbase image rather than standalone.
       #
-      # A guarded addon imports the host — ApiContext, guardedFetch,
-      # resolveEgressPolicy — through \`dist/\`, and takes express from the
-      # instance. None of that exists in a bare checkout, so a standalone
+      # A guarded addon imports core's types — AddonHost, ApiContext —
+      # through \`dist/\` (its values come from \`host\`), and takes express
+      # from the instance. None of that exists in a bare checkout, so a standalone
       # \`npm install typescript @types/node && tsc\` could only ever check an
       # addon that reached for nothing.
       #
@@ -757,7 +761,7 @@ jobs:
  * marker line, so `--update-publish` can tell an older generated file from the
  * current one and rewrite it.
  */
-export const PUBLISH_WORKFLOW_VERSION = 3;
+export const PUBLISH_WORKFLOW_VERSION = 4;
 
 const PUBLISH_MARKER = /^# ngdpbase-publish-workflow: (\d+)$/m;
 const PLAIN_TAGS_SETTING = /^ {2}NGDPBASE_PLAIN_TAGS: '(true|false)'$/m;
@@ -1006,7 +1010,7 @@ jobs:
       - name: npm serves the published tarball
         env:
           SPEC: @{{ needs.publish.outputs.name }}@@{{ needs.publish.outputs.version }}
-          NPM_WAIT_SECONDS: '300'
+          NPM_WAIT_SECONDS: '900'
           NPM_FIRST_DELAY_SECONDS: '5'
           NPM_MAX_DELAY_SECONDS: '60'
         run: |
@@ -1029,7 +1033,7 @@ jobs:
             served=$(npm view "$SPEC" dist.integrity --prefer-online 2>/dev/null || true)
             [ -n "$served" ] && break
             if [ "$waited" -ge "$NPM_WAIT_SECONDS" ]; then
-              echo "::error::npm did not serve $SPEC within $NPM_WAIT_SECONDS seconds, so the release was not made. The package is published: once npm view $SPEC shows it, re-run this job"
+              echo "::error::npm did not serve $SPEC within $NPM_WAIT_SECONDS seconds, so the release was not made. The package is published; re-run the failed jobs once 'npm view $SPEC' shows it."
               exit 1
             fi
             echo "npm does not serve $SPEC yet; waiting $delay seconds"

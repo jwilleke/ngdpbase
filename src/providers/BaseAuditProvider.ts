@@ -1,6 +1,11 @@
 import { AuditEvent } from '../types/index.js';
 import type { ProviderInfo } from '../types/Provider.js';
+import path from 'path';
+import fs from 'fs-extra';
+import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
+import type ExportManager from '../managers/ExportManager.js';
 import { stampRecord, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import BaseProvider, { type ProviderDurability } from './BaseProvider.js';
@@ -100,6 +105,112 @@ export interface AuditStats {
 }
 
 /**
+ * Paging for the entries about one person (#1537): the newest first.
+ */
+export interface PersonEntriesOptions {
+  limit?: number;
+  offset?: number;
+}
+
+/** Where the chain head is published (#1138), shared by every storing provider. */
+export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
+export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
+
+/** #1122, #1537: how often retention runs after boot. Hourly is far finer than a day-scale window. */
+export const AUDIT_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
+
+/** A config value is `unknown`; anything that is not a string is not a path. */
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * The shape every storing provider writes (#1119, #1537): one shape, so a
+ * record reads, exports and verifies the same whichever provider wrote it.
+ */
+export interface StoredAuditRecord {
+  id: string;
+  timestamp: string;
+  level?: string;
+  eventType: string;
+  user?: string;
+  /** Who actually did it when that is not `user` — under a proxy grant (#1762). */
+  actor?: string;
+  userId?: string;
+  sessionId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  resource?: string;
+  resourceType?: string;
+  action?: string;
+  result?: string;
+  reason?: string;
+  policyId?: string;
+  policyName?: string;
+  context?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  duration?: number;
+  severity?: string;
+}
+
+/**
+ * Normalise an incoming event into the stored record shape (#1119). Runs
+ * BEFORE the base stamps the chain: the id and timestamp assigned here are
+ * part of what gets hashed, and assigning them afterwards would mean the hash
+ * covered a record different from the one written.
+ */
+export function toStoredAuditRecord(auditEvent: Record<string, unknown>): StoredAuditRecord {
+  // AuditEvent may come in different shapes - need flexible property access
+  const evt = auditEvent;
+  const legacy = auditEvent as unknown as { type?: string; actor?: string; target?: string; action?: string; result?: string; error?: string; data?: Record<string, unknown>; ipAddress?: string; userAgent?: string };
+  return {
+    id: uuidv4(),
+    timestamp: new Date().toISOString(),
+    level: (evt.level as string) || 'info',
+    eventType: (evt.eventType as string) || legacy.type || 'unknown',
+    user: (evt.user as string) || legacy.actor || 'anonymous',
+    // #1762: who actually did it, beside the account acted on. Kept only
+    // alongside a `user` — a legacy record's `actor` IS its user (above).
+    ...(evt.user && typeof evt.actor === 'string' && evt.actor ? { actor: evt.actor } : {}),
+    userId: evt.userId as string | undefined,
+    sessionId: evt.sessionId as string | undefined,
+    ipAddress: legacy.ipAddress,
+    userAgent: legacy.userAgent,
+    resource: (evt.resource as string) || legacy.target,
+    resourceType: evt.resourceType as string | undefined,
+    action: legacy.action,
+    result: (evt.result as string) || (legacy.result === 'success' ? 'allow' : 'deny'),
+    reason: (evt.reason as string) || legacy.error,
+    policyId: evt.policyId as string | undefined,
+    policyName: evt.policyName as string | undefined,
+    context: (evt.context as Record<string, unknown>) || {},
+    metadata: (evt.metadata as Record<string, unknown>) || legacy.data || {},
+    duration: evt.duration as number | undefined,
+    severity: (evt.severity as string) || 'low'
+  };
+}
+
+/**
+ * The owner of the resource a record is about (#1537, #1825): `metadata.owner`,
+ * where token, private-store and share records carry it today. Null when the
+ * record names none.
+ */
+export function recordOwner(record: Record<string, unknown>): string | null {
+  const owner = (record.metadata as Record<string, unknown> | undefined)?.owner;
+  return typeof owner === 'string' && owner ? owner : null;
+}
+
+/**
+ * Whether a record is about `person` (#1537): the person is its `user` (the
+ * account acted on, or the person represented under a proxy grant), its
+ * `actor` (who actually did it, under a proxy grant), or the owner of the
+ * resource it names ({@link recordOwner}).
+ */
+export function recordIsAbout(record: Record<string, unknown>, person: string): boolean {
+  return record.user === person || record.actor === person || recordOwner(record) === person;
+}
+
+/**
  * Audit backup data
  */
 export interface AuditBackupData {
@@ -173,6 +284,12 @@ export interface AuditReport {
     lastPublishedAt: string | null;
     lastSeq: number | null;
   } | null;
+  /**
+   * Whether the records are encrypted where they are stored (#1537). Stated
+   * only by a provider that knows: the database provider reports whether the
+   * application database is SQLCipher-encrypted. Absent means not stated.
+   */
+  encryptedAtRest?: boolean;
 }
 
 abstract class BaseAuditProvider extends BaseProvider {
@@ -412,6 +529,127 @@ abstract class BaseAuditProvider extends BaseProvider {
     );
 
     return id;
+  }
+
+  /** #1138: when the chain head was last published, and what was published. */
+  private witnessPublishedAtMs: number | null = null;
+  private witnessLast: ChainWitness | null = null;
+
+  /**
+   * Publish the chain head to the configured destination (#1138), after the
+   * records it names are stored — never before, or the next verification
+   * would report truncation.
+   *
+   * The chain cannot detect truncation of its own tail — removing records from
+   * the end breaks no link — and it cannot be fixed locally, because an
+   * attacker who owns the machine owns anything the machine wrote locally. So
+   * the head goes to wherever the operator points it, and this code takes no
+   * view on whether that is genuinely off-box (D13): it reports the
+   * destination and never claims what the destination is (D21).
+   *
+   * Failure to publish is logged and swallowed. An instance that refuses to
+   * serve because it could not write a witness would be trading a working
+   * system for a detection property, which is the wrong way round — and the
+   * absence of a fresh witness is itself visible in getGuarantees().
+   */
+  protected async publishChainHead(): Promise<void> {
+    const cm = this.engine?.getManager?.('ConfigurationManager') as {
+      getProperty?: (k: string, d: unknown) => unknown;
+    } | null;
+    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
+    if (destination === '') return;
+
+    const intervalMinutes = Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60);
+    const intervalMs = intervalMinutes * 60_000;
+    const now = Date.now();
+    if (!shouldPublish(this.witnessPublishedAtMs, now, intervalMs)) return;
+    // Nothing to witness yet — publishing a genesis head would assert that an
+    // empty log is complete.
+    if (this.chainSeq <= 0) return;
+
+    // The key is `application-name`, hyphenated, as every other reader spells
+    // it (WikiEngine.ts, MetricsManager.ts, and the Config type). #1138 asked
+    // for `applicationname`, which matches nothing — and this field exists
+    // precisely so one witness store can hold heads from several instances.
+    const instance = asString(cm?.getProperty?.('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
+    const witness = buildWitness({
+      seq: this.chainSeq,
+      hash: this.chainPrevHash,
+      instance,
+      at: new Date(now)
+    });
+
+    try {
+      await fs.ensureDir(path.dirname(destination));
+      // Appended, never overwritten: a witness store that can be rewritten
+      // reproduces the original problem one hop away, and the history of heads
+      // is itself the evidence.
+      await fs.appendFile(destination, `${JSON.stringify(witness)}\n`, 'utf8');
+      this.witnessPublishedAtMs = now;
+      this.witnessLast = witness;
+    } catch (err) {
+      logger.error(
+        `[${this.constructor.name}] Could not publish the audit chain head to "${destination}": ` +
+        `${err instanceof Error ? err.message : String(err)}. Truncation of the log tail is undetectable ` +
+        'while no witness is being written.'
+      );
+    }
+  }
+
+  /**
+   * Where the chain head is published, or null when nothing publishes it
+   * (#1138). Facts, not a claim — see the note on AuditReport.headWitness.
+   */
+  protected headWitnessReport(): AuditReport['headWitness'] {
+    const cm = this.engine?.getManager?.('ConfigurationManager') as {
+      getProperty?: (k: string, d: unknown) => unknown;
+    } | null;
+    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
+    return destination === ''
+      ? null
+      : {
+        destination,
+        intervalMinutes: Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60),
+        lastPublishedAt: this.witnessLast?.publishedAt ?? null,
+        lastSeq: this.witnessLast?.seq ?? null
+      };
+  }
+
+  /**
+   * One export format for every provider: JSON as stored, or CSV through
+   * ExportManager's writer — quoting, and no cell a spreadsheet would run as a
+   * formula.
+   */
+  protected formatExport(results: readonly AuditEvent[], format: 'json' | 'csv'): string {
+    if (format === 'csv') {
+      const exportManager = this.engine.getManager<ExportManager>('ExportManager');
+      if (!exportManager) throw new Error(`${this.constructor.name}: CSV export needs ExportManager, which is not registered`);
+      const rows = results.map((logEntry) => {
+        const log = logEntry as unknown as Record<string, unknown>;
+        return [
+          log.timestamp,
+          log.eventType || log.type,
+          log.user || log.actor,
+          log.resource || log.target,
+          log.action,
+          log.result,
+          log.severity || 'low',
+          log.reason || log.error || ''
+        ];
+      });
+      return exportManager.toCsv(['timestamp', 'eventType', 'user', 'resource', 'action', 'result', 'severity', 'reason'], rows);
+    }
+    return JSON.stringify(results, null, 2);
+  }
+
+  /**
+   * The entries about one person, newest first, a page at a time (#1537):
+   * those where the person is the `user`, the `actor`, or the resource's
+   * owner ({@link recordIsAbout}). A provider that cannot answer says so,
+   * rather than returning an empty page that reads as "nothing happened".
+   */
+  searchEntriesAbout(_person: string, _options: PersonEntriesOptions = {}): Promise<AuditSearchResults> {
+    return Promise.reject(new Error(`${this.constructor.name} cannot list the entries about one person`));
   }
 
   /**

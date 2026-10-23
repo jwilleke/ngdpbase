@@ -39,6 +39,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type { default as FormsAddon } from '../forms/index.js';
+import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import CalendarDataManager from './managers/CalendarDataManager.js';
 import CalendarPlugin from './plugins/CalendarPlugin.js';
 import apiRoutes from './routes/api.js';
@@ -61,13 +62,13 @@ const calendarAddon = {
   /**
    * Called at startup when the add-on is enabled.
    */
-  async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
+  async register(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Promise<void> {
     // ── 1. Initialize data manager ───────────────────────────────────────────
     const cm = engine.getManager<{ resolveDataPath(name: string): string }>('ConfigurationManager');
     const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
       ? config['dataPath']
       : (cm?.resolveDataPath('calendar') ?? './data/calendar');
-    dataManager = new CalendarDataManager(engine, dataPath);
+    dataManager = new CalendarDataManager(dataPath);
     await dataManager.load();
     engine.registerManager('CalendarDataManager', dataManager);
 
@@ -96,9 +97,9 @@ const calendarAddon = {
     }
 
     // ── 5. Mount API routes ──────────────────────────────────────────────────
-    engine.app?.use('/api/calendar', apiRoutes(engine, config));
-    engine.app?.use('/api/calendar', reservationRoutes(engine, config));
-    engine.app?.use('/addons/calendar', adminRoutes(engine, config));
+    engine.app?.use('/api/calendar', apiRoutes(engine, config, host));
+    engine.app?.use('/api/calendar', reservationRoutes(engine, config, host));
+    engine.app?.use('/addons/calendar', adminRoutes(engine, config, host));
 
     // ── 6. Announce capability ───────────────────────────────────────────────
     engine.setCapability('calendar', true);

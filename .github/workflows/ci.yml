@@ -435,6 +435,8 @@ jobs:
           # #631: the system principal is a name from the environment and the
           # app refuses to boot without one. The webServer inherits this too.
           NGDPBASE_SYSTEM_USER: ci-system
+          # #1603: CI's instance is throwaway, so consent.spec.ts may raise the terms version.
+          E2E_CONSENT_BUMP: '1'
           CI: true
 
       - name: Upload E2E test results

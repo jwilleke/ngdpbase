@@ -19,16 +19,15 @@
  */
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
-import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
-import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
-import { findJournalEntryName, createJournalEntry, journalPrivacy, mayOnEntry } from './helpers.js';
+import { findJournalEntryName, createJournalEntry, entryUrl, journalPrivacy, mayOnEntry } from './helpers.js';
 
-export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
+export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError, jobContextFromRequest } = host;
   const router = engine.createRouter();
 
   function jdm(): JournalDataManager | undefined {
@@ -148,8 +147,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
         // If there is an entry for the date already, go straight to its editor.
         const name = await findJournalEntryName(engine, date, username, req.userContext)
-          ?? await createJournalEntry(engine, config, req.userContext, date, ctx);
-        res.redirect(pageUrl(name, 'edit'));
+          ?? await createJournalEntry(engine, config, req.userContext, date, ctx, host);
+        res.redirect(entryUrl(engine, name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }
@@ -178,7 +177,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         // #1539: the page door, not the author-or-admin-role check (P2).
         if (!(await mayOnEntry(engine, req.userContext, entry.name, 'edit'))) { res.status(403).send('Access denied.'); return; }
 
-        res.redirect(pageUrl(entry.name, 'edit'));
+        res.redirect(entryUrl(engine, entry.name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }

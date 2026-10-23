@@ -8,7 +8,7 @@
  */
 
 import { validateHeaderName, validateHeaderValue } from 'node:http';
-import logger from '../../../dist/src/utils/logger.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import { SUPPORTED_SCHEMA_TYPES } from './normalize.js';
 import type { FeedSourceConfig } from './types.js';
 
@@ -31,10 +31,13 @@ export const FEED_SETTING_DEFAULTS: Readonly<FeedSettings> = Object.freeze({
   timeoutMaxMs: 300_000
 });
 
+/** Where a refused setting is reported: the host's logger (#1813). */
+export type FeedLog = Pick<AddonHost['logger'], 'warn'>;
+
 const positiveInteger = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
 
 /** Read the addon-wide settings from the `config` handed to `register()`. */
-export function readFeedSettings(config: Record<string, unknown>): FeedSettings {
+export function readFeedSettings(config: Record<string, unknown>, logger: FeedLog): FeedSettings {
   const out: FeedSettings = { ...FEED_SETTING_DEFAULTS };
   const read = (key: string, field: keyof FeedSettings): void => {
     const v = config[key];
@@ -66,7 +69,7 @@ const REFUSED_HEADERS = new Set([
 ]);
 
 /** A source's `headers` map plus its `userAgent`, each entry checked; a bad one is refused with a warning. */
-function parseHeaders(sourceId: string, raw: unknown, userAgent: unknown): Record<string, string> | undefined {
+function parseHeaders(logger: FeedLog, sourceId: string, raw: unknown, userAgent: unknown): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   const add = (name: string, value: unknown): void => {
     const refuse = (why: string): void => {
@@ -99,7 +102,7 @@ function parseHeaders(sourceId: string, raw: unknown, userAgent: unknown): Recor
 }
 
 /** Returns the valid source configs; ignores anything missing the required adapter+url. */
-export function parseSourceConfigs(raw: unknown, settings: FeedSettings = FEED_SETTING_DEFAULTS): FeedSourceConfig[] {
+export function parseSourceConfigs(raw: unknown, logger: FeedLog, settings: FeedSettings = FEED_SETTING_DEFAULTS): FeedSourceConfig[] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
 
   const out: FeedSourceConfig[] = [];
@@ -153,7 +156,7 @@ export function parseSourceConfigs(raw: unknown, settings: FeedSettings = FEED_S
       }
     }
     // Request options (#1947, #1955), handed to guardedFetch by every adapter.
-    const headers = parseHeaders(sourceId, v.headers, v.userAgent);
+    const headers = parseHeaders(logger, sourceId, v.headers, v.userAgent);
     if (headers) cfg.headers = headers;
     if (v.timeoutMs !== undefined) {
       const { timeoutMinMs: min, timeoutMaxMs: max } = settings;

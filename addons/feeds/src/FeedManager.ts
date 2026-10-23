@@ -1,4 +1,5 @@
-import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/egressPolicy.js';
+import type { ConfigReader } from '../../../dist/src/http/egressPolicy.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 /**
  * FeedManager — the feeds addon's runtime (#685).
  *
@@ -12,9 +13,6 @@ import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/e
  * (BackupManager pattern) lands in slice 6.
  */
 
-import logger from '../../../dist/src/utils/logger.js';
-import type { BackupData, ManagerBackupOptions, ManagerRestoreOptions } from '../../../dist/src/managers/BaseManager.js';
-import { applyDirectoryPartAtStart, backupDirectoryPart, stageDirectoryPart } from '../../../dist/src/utils/directoryBackup.js';
 import { FeedCatalogSource } from './FeedCatalogSource.js';
 import { RecordStore } from './RecordStore.js';
 import { shapeRecords } from './dedupe.js';
@@ -44,6 +42,9 @@ export class FeedManager {
   private scheduler: FeedScheduler | null = null;
 
   /**
+   * @param host        What core handed the feeds add-on (#1813): the egress
+   *                    policy, `guardedFetch` it hands each adapter, and the
+   *                    logger. Positional and first, so there is no ungated path.
    * @param readConfig  How to read the egress policy (#1133). __Mandatory and
    *                    positional__, before the optional resolver, so it cannot
    *                    be forgotten. Until #1139 widened the boundary check to
@@ -56,8 +57,9 @@ export class FeedManager {
    *                    construction would ignore an operator tightening it.
    */
   constructor(
+    private readonly host: Pick<AddonHost, 'resolveEgressPolicy' | 'guardedFetch' | 'logger'>,
     sourceConfigs: FeedSourceConfig[],
-    private readonly baseDir: string,
+    baseDir: string,
     private readonly readConfig: ConfigReader,
     private readonly resolveAdapter: AdapterResolver = getAdapter
   ) {
@@ -65,28 +67,6 @@ export class FeedManager {
       const store = new RecordStore(baseDir, config.sourceId);
       this.feeds.set(config.sourceId, { config, store, source: new FeedCatalogSource(config, store) });
     }
-  }
-
-  /**
-   * Put a staged site restore of the record stores in place (#1876). Called
-   * once at start, right after construction, before any store is read.
-   */
-  applyRestoreAtStart(configManager: { getResolvedDataPath(key: string, def: string): string }): void {
-    applyDirectoryPartAtStart('FeedManager', this.baseDir, configManager);
-  }
-
-  /** The record stores under `dataPath` as `<stem>.feeds.tar` beside the backup document (`.tar.enc` under the backup key). */
-  async backup(options?: ManagerBackupOptions): Promise<BackupData> {
-    return backupDirectoryPart('FeedManager', 'feeds', this.baseDir, options);
-  }
-
-  /** Staged for the next start with the rest of a site restore; the live stores are untouched until then. */
-  async restore(backupData: BackupData, options?: ManagerRestoreOptions): Promise<void> {
-    await stageDirectoryPart('FeedManager', this.baseDir, backupData, options);
-  }
-
-  restoreIsStaged(): boolean {
-    return true;
   }
 
   /** Register every configured feed as a CatalogSource. Returns the count. */
@@ -110,7 +90,7 @@ export class FeedManager {
   startScheduler(opts: FeedSchedulerOptions = {}): void {
     this.stopScheduler();
     const configs = [...this.feeds.values()].map(e => e.config);
-    this.scheduler = new FeedScheduler(configs, id => this.ingest(id), opts);
+    this.scheduler = new FeedScheduler(configs, id => this.ingest(id), this.host.logger, opts);
     this.scheduler.start();
   }
 
@@ -155,8 +135,8 @@ export class FeedManager {
     const adapter = this.resolveAdapter(entry.config.adapter);
     if (!adapter) throw new Error(`feeds: unknown adapter '${entry.config.adapter}' for source '${sourceId}'`);
 
-    const { policy } = resolveEgressPolicy(this.readConfig);
-    const raw = await adapter.fetch(entry.config, policy);
+    const { policy } = this.host.resolveEgressPolicy(this.readConfig);
+    const raw = await adapter.fetch(entry.config, policy, this.host.guardedFetch);
     const normalized = raw
       .map(r => adapter.parse(r, entry.config))
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -165,7 +145,7 @@ export class FeedManager {
     // unless the source configures it.
     const shaped = shapeRecords(normalized, entry.config);
     if (shaped.droppedDuplicates || shaped.droppedStale) {
-      logger.debug(
+      this.host.logger.debug(
         `[feeds] ${sourceId}: shaped ${normalized.length} → ${shaped.records.length} records ` +
         `(${shaped.droppedDuplicates} older-in-group, ${shaped.droppedStale} stale)`
       );
@@ -174,7 +154,7 @@ export class FeedManager {
     // source. Legitimate for a genuinely stale feed, but indistinguishable from
     // a misconfigured dedupeBy/maxAgeHours — say so rather than silently wiping.
     if (normalized.length > 0 && shaped.records.length === 0) {
-      logger.warn(
+      this.host.logger.warn(
         `[feeds] ${sourceId}: shaping discarded all ${normalized.length} records — ` +
         'the store will be emptied. Check dedupeBy/maxAgeHours for this source.'
       );

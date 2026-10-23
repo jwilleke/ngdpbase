@@ -56,26 +56,26 @@ const ATOM = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
 describe('rssAtomAdapter (#913)', () => {
   it('fetch() locates RSS items at rss.channel.item', async () => {
     const policy = stubText(RSS);
-    const items = await rssAtomAdapter.fetch(base, policy);
+    const items = await rssAtomAdapter.fetch(base, policy, guardedFetch);
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({ title: 'Etna erupts' });
   });
 
   it('fetch() locates Atom entries at feed.entry', async () => {
     const policy = stubText(ATOM);
-    const items = await rssAtomAdapter.fetch(base, policy);
+    const items = await rssAtomAdapter.fetch(base, policy, guardedFetch);
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ title: 'M5.2' });
   });
 
   it('fetch() coerces a single RSS item to a 1-element array', async () => {
     const policy = stubText('<rss><channel><item><title>only</title><guid>g1</guid></item></channel></rss>');
-    expect(await rssAtomAdapter.fetch(base, policy)).toHaveLength(1);
+    expect(await rssAtomAdapter.fetch(base, policy, guardedFetch)).toHaveLength(1);
   });
 
   it('fetch() throws on non-ok', async () => {
     const policy = stubText('', false, 502);
-    await expect(rssAtomAdapter.fetch(base, policy)).rejects.toThrow(/502/);
+    await expect(rssAtomAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/502/);
   });
 
   it('parse() derives id from RSS guid (unwrapping the attribute object)', () => {

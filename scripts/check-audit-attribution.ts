@@ -53,12 +53,16 @@ const ALLOWED: Record<string, string> = {
     'logAccessDecision / logPolicyEvaluation take a legacy AccessContext with an AuditUser, not a subject. Nothing in src calls either: the PDP records its own decisions through PolicyInformationPoint.auditDenial, which reads the subject',
   'src/managers/AuditManager.ts::context.username || \'unknown\'':
     'logAuthentication records a sign-in attempt: the person signing in, before any proxy choice exists: whom to act for is chosen after sign-in (slice 4), and a choice is recorded as proxy-switch',
-  'src/providers/FileAuditProvider.ts::(evt.user as string) || legacy.actor || \'anonymous\'':
-    'prepareRecord normalises an incoming row into the stored shape — not an emitter. It keeps `actor` beside `user` (#1762)',
+  'src/providers/BaseAuditProvider.ts::(evt.user as string) || legacy.actor || \'anonymous\'':
+    'toStoredAuditRecord normalises an incoming row into the stored shape every storing provider writes — not an emitter. It keeps `actor` beside `user` (#1762, #1537)',
+  'src/providers/DatabaseAuditProvider.ts::text(r.user)':
+    'flush copies a stored, already-stamped record\'s `user` into its indexed column — not an emitter; `actor` is copied beside it (#1537)',
   'src/managers/AuthManager.ts::grant.owner':
     'proxy-grant / proxy-revoke (slice 1): `user` is the account the grant is ON, and `actor` is set explicitly from actorOf (the proxy, when a proxy re-delegates)',
   'src/managers/AuthManager.ts::typeof req.session?.username === \'string\' ? req.session.username : \'anonymous\'':
     'step-up (reauth) records the SIGNED-IN person\'s own fresh sign-in; under a proxy that is the actor, which is what session.username names (slice 4: session.username stays the actor; the grant acted under is session.actingFor)',
+  'src/managers/AuthManager.ts::p.username':
+    'signinapproval-* (#1532): the account a waiting sign-in is for, before any session exists. Whom to act for is chosen after sign-in (slice 4), so there is no proxy to name; who took each step is the record\'s ipAddress and browser',
   'src/utils/auditLifecycle.ts::input.principal ?? \'system\'':
     'system-start / system-shutdown: the configured system principal at boot, with no request and no person'
 };

@@ -13,14 +13,14 @@
  */
 
 import type { Router, Request, Response } from 'express';
-import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
-import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
-import { findJournalEntryName, createJournalEntry } from './helpers.js';
+import { findJournalEntryName, createJournalEntry, entryUrl } from './helpers.js';
 
-export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
+export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Router {
+  const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function pm(): PageManager | undefined {
@@ -58,8 +58,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
         // The entry for the date if there is one, else a new one — then its editor.
         const name = await findJournalEntryName(engine, date, username, req.userContext)
-          ?? await createJournalEntry(engine, config, req.userContext, date, ctx);
-        res.redirect(pageUrl(name, 'edit'));
+          ?? await createJournalEntry(engine, config, req.userContext, date, ctx, host);
+        res.redirect(entryUrl(engine, name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }

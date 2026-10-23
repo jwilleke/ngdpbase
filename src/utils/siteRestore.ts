@@ -36,20 +36,23 @@
  *
  * Everything here is synchronous file renames on the owner's own paths: it
  * runs once at start, before the owner serves anything.
+ *
+ * __BackupManager's own__ (#1986): only BackupManager and the backup
+ * internals (`directoryBackup.ts`, and `instanceEnvBackup.ts`, which applies
+ * the staged `.env` at the very start of the process, before BackupManager
+ * can be loaded) import this module, enforced by `npm run lint:backup`. A
+ * manager or provider records its part through the `siteRestore` restore
+ * option and applies it at start through BackupManager's
+ * `applyStagedPartAtStart` / `siteRestorePartAtStart`.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { SiteRestoreStaging, StagedRestoreAtStart, StagedSwap } from '../managers/BaseManager.js';
 
 /** The config key naming the site restore manifest. */
 export const SITE_RESTORE_MANIFEST_KEY = 'ngdpbase.backup.restore-manifest';
 /** Its default: beside the other instance data in FAST_STORAGE. */
 export const SITE_RESTORE_MANIFEST_DEFAULT = './data/site-restore.json';
-
-/** One live path and the staged copy that replaces it at the next start. */
-export interface StagedSwap {
-  live: string;
-  staged: string;
-}
 
 /** One manager's share of a site restore. */
 export interface SiteRestorePart {
@@ -127,6 +130,18 @@ export function recordStagedPart(file: string, part: SiteRestorePart): void {
   if (!manifest || manifest.state !== 'staging') throw new Error('No site restore is being staged');
   manifest.parts = [...manifest.parts.filter((p) => p.manager !== part.manager), { manager: part.manager, swaps: part.swaps, ...(part.discard ? { discard: part.discard } : {}) }];
   writeSiteRestore(file, manifest);
+}
+
+/**
+ * The site restore being staged, as one manager's `restore()` gets it
+ * (`ManagerRestoreOptions.siteRestore`, #1986): its part is recorded under
+ * that manager's name, so a manager records its own part and no other.
+ */
+export function stagingFor(file: string, manager: string): SiteRestoreStaging {
+  return {
+    stagedPathFor,
+    record: (swaps, options) => recordStagedPart(file, { manager, swaps, ...(options?.discard ? { discard: options.discard } : {}) })
+  };
 }
 
 /** The commit: every part is staged. */
@@ -247,26 +262,22 @@ export function markPart(file: string, manager: string, status: 'applied' | 'set
   }
 }
 
-export interface PartOutcome {
-  /** Each live path now restored, with where its previous content was kept. */
-  applied: Array<{ live: string; kept: string }>;
-  /** Why nothing (or, after a failed rename, not everything) was applied. */
-  refused?: string;
-}
-
 /**
  * Apply `manager`'s part of a staged site restore, at start, before the
  * manager reads its data. `allowed` says which live paths this manager may
  * replace, so a tampered manifest cannot rename an arbitrary file.
  * `strays` lists staged paths of this manager's that exist on disk, found by
  * the manager: with no committed restore naming them they are set aside.
- * Returns null when there was nothing to do.
+ * `put` puts one swap in place instead of the rename, for a part whose live
+ * path is not one file or folder of its own (the audit files share the log
+ * folder): it moves the live content to `kept` and the staged one in, and
+ * throws to refuse. Returns null when there was nothing to do.
  */
 export function applyPartAtStart(
   file: string,
   manager: string,
-  options: { allowed: (swap: StagedSwap) => boolean; strays?: () => string[] }
-): PartOutcome | null {
+  options: { allowed: (swap: StagedSwap) => boolean; strays?: () => string[]; put?: (swap: StagedSwap, kept: string) => void }
+): StagedRestoreAtStart | null {
   const gate = gatePart(file, manager);
   if (gate.decision === 'none') {
     const strays = options.strays?.() ?? [];
@@ -287,14 +298,18 @@ export function applyPartAtStart(
     markPart(file, manager, 'set-aside', reason);
     return { applied: [], refused: reason };
   }
-  const applied: PartOutcome['applied'] = [];
+  const applied: StagedRestoreAtStart['applied'] = [];
   try {
     for (const swap of gate.part.swaps) {
       const kept = keptPathFor(swap.live);
-      rmSync(kept, { recursive: true, force: true });
-      if (existsSync(swap.live)) renameSync(swap.live, kept);
-      mkdirSync(path.dirname(swap.live), { recursive: true });
-      renameSync(swap.staged, swap.live);
+      if (options.put) {
+        options.put(swap, kept);
+      } else {
+        rmSync(kept, { recursive: true, force: true });
+        if (existsSync(swap.live)) renameSync(swap.live, kept);
+        mkdirSync(path.dirname(swap.live), { recursive: true });
+        renameSync(swap.staged, swap.live);
+      }
       applied.push({ live: swap.live, kept });
     }
   } catch (err) {

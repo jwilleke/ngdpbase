@@ -1,7 +1,9 @@
 import path from 'path';
 import type { Readable } from 'stream';
 import { create as createTar } from 'tar';
-import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
+import BaseManager, {
+  type BackupData as BaseBackupData, type BackupFolder, type StagedRestoreAtStart, type StagedSwap
+} from './BaseManager.js';
 import type DatabaseManager from './DatabaseManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
@@ -16,13 +18,17 @@ import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
-  beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, readSiteRestore, siteRestoreFile,
+  applyPartAtStart, beginSiteRestore, commitSiteRestore, discardSiteRestore, finishSiteRestoreAtBoot, gatePart, markPart, readSiteRestore, siteRestoreFile,
+  stagedPathFor, stagingFor,
   type SiteRestoreManifest
 } from '../utils/siteRestore.js';
 import { encryptBuffer, ENCRYPTED_SUFFIX } from '../utils/backupCrypto.js';
 import { readBackupDocument, verifyBackupOffThread, type BackupDocument } from '../utils/backupDocument.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, isLeftOutForNoKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
-import { archiveTarget, stageFilePart, type DirectoryBackupData } from '../utils/directoryBackup.js';
+import {
+  applyDeclaredPartsAtStart, archiveReader, archiveTarget, archiveWriter, backupDeclaredParts, placePartRecords, stageDeclaredParts, stageFilePart,
+  type DirectoryBackupData
+} from '../utils/directoryBackup.js';
 import { writeTreeArchive } from '../utils/treeArchive.js';
 import { envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
 import { readEnvLine } from '../utils/instanceEnvSecret.js';
@@ -196,6 +202,107 @@ const RESTORE_LABELS: Record<string, string> = {
   FeedManager: 'feed records'
 };
 
+/**
+ * The entry an add-on's files go under in the backup document (#1985). The
+ * bundled add-ons keep the name their manager wrote before the declaration
+ * (v5.21 to v5.25), so an old backup restores and a v5.25.0 site can
+ * restore a new one; any other add-on's is `addon:<slug>`, which no manager
+ * name can be.
+ */
+const ADDON_ENTRY_NAMES: Readonly<Record<string, string>> = {
+  forms: 'FormsDataManager',
+  calendar: 'CalendarDataManager',
+  feeds: 'FeedManager'
+};
+
+/** The backup document entry, and the site restore part, an add-on's files are recorded under (#1985). */
+export function addonEntryName(slug: string): string {
+  return ADDON_ENTRY_NAMES[slug] ?? `addon:${slug}`;
+}
+
+/**
+ * Put a staged restore of a manager's declared folders and files in place,
+ * at start, before it reads them (#1985). BackupManager's step: a manager
+ * reaches it through `BaseManager.initialize()`, an add-on's folders through
+ * AddonsManager before the add-on's `register()`. A module function, not a
+ * method, because most managers start before BackupManager does; it needs
+ * only the configuration, for the site restore manifest.
+ */
+export function applyStagedPartsAtStart(engine: WikiEngine, manager: string, declared: BackupFolder[]): StagedRestoreAtStart | null {
+  const configManager = engine?.getManager?.<ConfigurationManager>('ConfigurationManager');
+  if (!configManager) return null;
+  return applyDeclaredPartsAtStart(manager, declared, configManager);
+}
+
+/** The site restore manifest's file, as configured; a module function for the start, before BackupManager exists (#1986). */
+function manifestFileOf(engine: WikiEngine): string {
+  return siteRestoreFile(engine?.getManager?.<ConfigurationManager>('ConfigurationManager'));
+}
+
+/** How a manager whose restore is staged (`restoreIsStaged()`) puts its part in place at start (#1986). */
+export interface StagedPartAtStartOptions {
+  /** Whether this manager may replace that live path: a manifest naming any other is refused, whatever it says. */
+  allowed: (swap: StagedSwap) => boolean;
+  /** The live paths of this manager's that may have a staged copy beside them: one no committed restore names (an interrupted staging) is set aside. */
+  mayBeStaged?: () => string[];
+  /**
+   * Put one swap in place yourself, instead of the rename: for a part whose
+   * live path is not a file or folder of its own (the audit files share the
+   * log folder). Move the live content to `kept` and the staged one in;
+   * throw to refuse.
+   */
+  put?: (swap: StagedSwap, kept: string) => void;
+}
+
+/**
+ * Put `manager`'s part of a staged site restore in place, at start, before
+ * it reads its data (#1876, #1986): when the whole restore is there to
+ * apply, each live path steps aside as `<live>.pre-restore` and the staged
+ * copy takes its name; otherwise its staged files are set aside as
+ * `*.incomplete`. The part is marked in BackupManager's record either way.
+ * For a manager whose restore is staged by its own `restore()` (the
+ * attachments, the audit log); declared folders and files go through
+ * `applyStagedPartsAtStart`. A module function: most managers start before
+ * BackupManager. Null when there was nothing to do.
+ */
+export function applyStagedPartAtStart(engine: WikiEngine, manager: string, options: StagedPartAtStartOptions): StagedRestoreAtStart | null {
+  return applyPartAtStart(manifestFileOf(engine), manager, {
+    allowed: options.allowed,
+    strays: () => (options.mayBeStaged?.() ?? []).map(stagedPathFor).filter((p) => existsSync(p)),
+    ...(options.put ? { put: options.put } : {})
+  });
+}
+
+/**
+ * BackupManager's answer, at start, for a manager that applies a staged
+ * restore of its own kind (the databases, #1723): whether its part of a
+ * staged site restore is to go in now (#1876, #1986).
+ *
+ * - `none` — no site restore names it: the manager does as it would alone.
+ * - `apply` — the whole restore is there: put it in, then `settle` it.
+ * - `set-aside` — it isn't (`reason`): set the staged files aside, then `settle` it.
+ */
+export interface SiteRestorePartAtStart {
+  decision: 'none' | 'apply' | 'set-aside';
+  reason?: string;
+  /** Record what became of the part. Nothing to record for `none`, or a set-aside with no part of this manager's. */
+  settle(status: 'applied' | 'set-aside', note?: string): void;
+}
+
+/** BackupManager's start-time gate on `manager`'s part of a staged site restore (#1986): see {@link SiteRestorePartAtStart}. */
+export function siteRestorePartAtStart(engine: WikiEngine, manager: string): SiteRestorePartAtStart {
+  const file = manifestFileOf(engine);
+  const gate = gatePart(file, manager);
+  const named = gate.decision === 'apply' || (gate.decision === 'set-aside' && Boolean(gate.part));
+  return {
+    decision: gate.decision,
+    ...(gate.decision === 'set-aside' ? { reason: gate.reason } : {}),
+    settle: (status, note) => {
+      if (named) markPart(file, manager, status, note);
+    }
+  };
+}
+
 /** Managers whose backup entry holds nothing of the site's own: never named as not restored. */
 const NO_SITE_DATA: ReadonlySet<string> = new Set(['ImportManager']);
 
@@ -208,6 +315,7 @@ function slotHoldsData(slot: unknown): boolean {
 
 /** A manager's data as the "not restored" notification names it. */
 export function restoreLabel(manager: string): string {
+  if (manager.startsWith('addon:')) return `the ${manager.slice('addon:'.length)} add-on's files`;
   return RESTORE_LABELS[manager] ?? manager;
 }
 
@@ -723,16 +831,24 @@ class BackupManager extends BaseManager {
 
       // #1723: a manager may write its own files (the databases) beside the
       // document; they share its stem and are pruned with it.
-      const managerOptions = { ctx, directory: this.backupDirectory, stem: backupStem(filename), ...(options.safetyBackup ? { safetyBackup: true } : {}) };
+      const stem = backupStem(filename);
+      const managerOptions = {
+        ctx, directory: this.backupDirectory, stem, archive: archiveWriter(this.backupDirectory, stem),
+        ...(options.safetyBackup ? { safetyBackup: true } : {})
+      };
       const failures: string[] = [];
       // #1912: parts left out only because there is no backup key — said by
       // the banner and the one-time notice (checkBackupKey), not per backup.
       const leftOutForNoKey: string[] = [];
       pending = { filename, existing: new Set(await this.companionsOf(filename)) };
 
-      // Call backup() on each manager
+      // #1985: the folders and files each manager and add-on declares, by entry.
+      const declared = this.declaredParts({ forBackup: true });
+      const entries = [...managerNames, ...[...declared.keys()].filter((name) => !managerNames.includes(name))];
 
-      for (const managerName of managerNames) {
+      // Call backup() on each manager, and write its declared parts beside the document
+
+      for (const managerName of entries) {
         // Skip BackupManager itself
         if (managerName === 'BackupManager') {
           continue;
@@ -740,19 +856,23 @@ class BackupManager extends BaseManager {
 
         try {
           const manager = this.engine.getManager<BaseManager>(managerName);
-          if (!manager) {
+          const parts = declared.get(managerName) ?? [];
+          if (!manager && parts.length === 0) {
             logger.warn(`⚠️  Manager not found: ${managerName}`);
             continue;
           }
           // #1943: an add-on manager (engine.registerManager) has no backup();
           // its data is in its declared databases and add-on files.
-          if (typeof manager.backup !== 'function') {
+          if (typeof manager?.backup !== 'function' && parts.length === 0) {
             logger.debug(`${managerName} has no backup part (no backup()); skipped`);
             continue;
           }
 
           logger.info(`📦 Backing up ${managerName}...`);
-          const managerBackup = await manager.backup(managerOptions);
+          let managerBackup: BaseBackupData = typeof manager?.backup === 'function'
+            ? await manager.backup(managerOptions)
+            : { managerName, timestamp: new Date().toISOString(), data: null };
+          if (parts.length > 0) managerBackup = placePartRecords(managerBackup, parts, await backupDeclaredParts(managerName, parts, managerOptions));
 
           backupData.managers[managerName] = managerBackup;
           for (const warning of managerBackup?.warnings ?? []) {
@@ -1496,6 +1616,16 @@ class BackupManager extends BaseManager {
             results.skipped.push(managerName);
             continue;
           }
+          // #1943, #1813: an add-on manager (engine.registerManager) has no
+          // restore(), as it has no backup(); its data comes back through its
+          // declared databases and add-on files. An older backup may still name
+          // it (calendar and journal managers once extended BaseManager, whose
+          // backup() wrote an empty entry), so it is skipped, not failed.
+          if (typeof manager.restore !== 'function') {
+            logger.debug(`${managerName} has no restore(); skipped`);
+            results.skipped.push(managerName);
+            continue;
+          }
 
           const managerBackupData = backupData.managers[managerName] as BaseBackupData | { error?: string };
 
@@ -1528,10 +1658,59 @@ class BackupManager extends BaseManager {
     }
   }
 
-  /** Whether this site's manager of that name stages its restore (#1876). */
+  /** Whether this site's manager of that name stages its restore (#1876), or its entry is declared folders (#1985). */
   private restoresStaged(name: string): boolean {
+    if (this.declaredFor(name).length > 0) return true;
     const manager = this.engine.getManager<BaseManager>(name);
     return typeof manager?.restoreIsStaged === 'function' && manager.restoreIsStaged();
+  }
+
+  /**
+   * Each loaded add-on's folders (#1985): its `dataPath`, which counts for it
+   * whatever it declares, and any further folders its module declares; under
+   * the entry its files have always had (`addonEntryName`). For a backup, a
+   * `dataPath` that does not exist is left out: that add-on keeps no files.
+   */
+  private addonParts(forBackup = false): Array<{ entry: string; folders: BackupFolder[] }> {
+    const addons = this.engine.getManager<{ addonBackupFolders?(): Array<{ slug: string; dataPath: string | null; folders: BackupFolder[] }> }>('AddonsManager');
+    const declared = typeof addons?.addonBackupFolders === 'function' ? addons.addonBackupFolders() : [];
+    return declared.map(({ slug, dataPath, folders }) => ({
+      entry: addonEntryName(slug),
+      folders: forBackup ? folders.filter((f) => !('folder' in f) || f.folder !== dataPath || (dataPath !== null && existsSync(dataPath))) : folders
+    }));
+  }
+
+  /** What a manager declares, and an add-on's folders recorded under the same entry (#1985). */
+  private declaredFor(name: string, forBackup = false): BackupFolder[] {
+    const manager = this.engine.getManager<BaseManager>(name);
+    let own: BackupFolder[] = [];
+    try {
+      own = typeof manager?.backupFolders === 'function' ? manager.backupFolders() : [];
+    } catch (err) {
+      logger.error(`[BackupManager] ${name}'s backup folders could not be read: ${(err as Error).message}`);
+    }
+    return [...own, ...this.addonParts(forBackup).filter((a) => a.entry === name).flatMap((a) => a.folders)];
+  }
+
+  /** Every entry with declared folders or files, in registration order, add-ons' after (#1985). */
+  private declaredParts(options: { forBackup?: boolean } = {}): Map<string, BackupFolder[]> {
+    const names = [...this.engine.getRegisteredManagers(), ...this.addonParts().map((a) => a.entry)];
+    const out = new Map<string, BackupFolder[]>();
+    for (const name of names) {
+      if (out.has(name) || name === 'BackupManager') continue;
+      const declared = this.declaredFor(name, options.forBackup);
+      if (declared.length > 0) out.set(name, declared);
+    }
+    return out;
+  }
+
+  /**
+   * Put a staged restore of an add-on's folders in place before its
+   * `register()` runs, so before any of its managers reads them (#1985).
+   * AddonsManager calls it as it loads each add-on.
+   */
+  applyAddonPartsAtStart(slug: string, folders: BackupFolder[]): StagedRestoreAtStart | null {
+    return applyStagedPartsAtStart(this.engine, addonEntryName(slug), folders);
   }
 
   /** The site restore manifest, as configured (#1876). */
@@ -1600,19 +1779,25 @@ class BackupManager extends BaseManager {
     const ordered = [...names].sort((a, b) => Number(b === 'DatabaseManager') - Number(a === 'DatabaseManager'));
     try {
       for (const name of ordered) {
-        const manager = this.engine.getManager<BaseManager>(name)!;
         logger.info(`📦 Staging ${name}...`);
-        await manager.restore(backupData.managers[name] as BaseBackupData, {
-          ctx, directory, source: path.basename(backupPath), safetyBackup: before, siteRestore: siteFile,
-          replaceStaged: options.replaceStaged || Boolean(databaseStaged)
-        });
+        const restoreOptions = {
+          ctx, directory, source: path.basename(backupPath), safetyBackup: before, siteRestore: stagingFor(siteFile, name),
+          replaceStaged: options.replaceStaged || Boolean(databaseStaged), readArchive: archiveReader(directory)
+        };
+        // #1985: declared folders and files are staged here; the manager writes no restore code for them.
+        const declared = this.declaredFor(name);
+        if (declared.length > 0) {
+          await stageDeclaredParts(name, declared, backupData.managers[name] as BaseBackupData, restoreOptions);
+          continue;
+        }
+        await this.engine.getManager<BaseManager>(name)!.restore(backupData.managers[name] as BaseBackupData, restoreOptions);
       }
       // #1876: the instance .env, BackupManager's own part; applied at the very start of the process.
       const env = (backupData.managers.BackupManager as { data?: { env?: DirectoryBackupData | null } } | undefined)?.data?.env;
       const envFile = this.instanceEnvFile();
       if (env && envFile) {
         logger.info('📦 Staging the instance .env...');
-        await stageFilePart(INSTANCE_ENV_PART, envFile, env, { ctx, directory, siteRestore: siteFile }, { whenAbsent: '' });
+        await stageFilePart(INSTANCE_ENV_PART, envFile, env, { ctx, directory, siteRestore: stagingFor(siteFile, INSTANCE_ENV_PART) }, { whenAbsent: '' });
       }
       const committed = commitSiteRestore(siteFile);
       // #1876: every part of the backup that is not in the restore — no staged
@@ -1845,7 +2030,10 @@ class BackupManager extends BaseManager {
 
   /** The managers on this site whose restore is staged (#1876), in registration order: what a site restore stages. */
   private stagedManagerNames(): string[] {
-    return this.engine.getRegisteredManagers().filter((name) => this.restoresStaged(name));
+    const names = this.engine.getRegisteredManagers().filter((name) => this.restoresStaged(name));
+    // #1985: an add-on's files under an entry no manager of that name has (`addon:<slug>`).
+    for (const { entry } of this.addonParts()) if (!names.includes(entry)) names.push(entry);
+    return names;
   }
 
   /**

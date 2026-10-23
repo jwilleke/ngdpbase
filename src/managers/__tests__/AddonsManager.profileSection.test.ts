@@ -272,7 +272,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['plain'])));
       await mgr.initialize();
 
-      await expect(mgr.saveProfileSections(ALICE, { foo: 'bar' })).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, { foo: 'bar' })).resolves.toEqual({ consentRequired: [] }); // #1603: nothing refused for consent
     });
 
     it('fans the same body out to every addon with a saveProfileSection handler', async () => {
@@ -341,7 +341,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Must not throw out of saveProfileSections
-      await expect(mgr.saveProfileSections(ALICE, { x: '1' })).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, { x: '1' })).resolves.toEqual({ consentRequired: [] });
 
       // The downstream addon still saw the body
       const mark = JSON.parse(await fs.readFile(path.join(markerDir, 'survives.json'), 'utf8'));
@@ -382,7 +382,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Calling saveProfileSections must not invoke the failed addon
-      await expect(mgr.saveProfileSections(ALICE, {})).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, {})).resolves.toEqual({ consentRequired: [] });
     });
   });
 });

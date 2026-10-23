@@ -57,6 +57,9 @@ import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
+import type ConsentManager from '../managers/ConsentManager.js';
+import { ConsentChangedError, ConsentRefusedError } from '../managers/ConsentManager.js';
+import { CONSENT_PATH, CORE_CONSENT_SCOPE, type ConsentSeen } from '../types/Consent.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
@@ -564,6 +567,7 @@ interface WikiEngine {
   getManager(name: 'CacheManager'): CacheManager;
   getManager(name: 'CatalogManager'): CatalogManager;
   getManager(name: 'CommentManager'): CommentManager;
+  getManager(name: 'ConsentManager'): ConsentManager | undefined;
   getManager(name: 'FootnoteManager'): FootnoteManager;
   getManager(name: 'ExportManager'): ExportManager;
   getManager(name: 'ImportManager'): ImportManager;
@@ -6806,6 +6810,19 @@ ${panes}
     return this.authManagerFor2Step().pendingSignIn(req.session?.pendingSignIn, binding);
   }
 
+  /**
+   * Send the browser to the second step (#1523, #1532): bind it with the
+   * HTTP-only cookie, keep the pending sign-in's handle and where it was
+   * going in the session. Not yet a sign-in (#1758): that is recorded when
+   * the second factor completes it.
+   */
+  private holdForSecondStep(req: Request, res: Response, handle: string, binding: string, redirect: string): void {
+    res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
+    req.session.pendingSignIn = handle;
+    req.session.pendingRedirect = redirect;
+    req.session.save(() => res.redirect('/login/second-factor'));
+  }
+
   private expiredSignIn(res: Response): void {
     res.redirect('/login?error=' + encodeURIComponent('That sign-in expired. Sign in again.'));
   }
@@ -6856,7 +6873,8 @@ ${panes}
     if (!done) { res.redirect('/login/second-factor'); return; }
     const redirect = safeRedirect(req.session.pendingRedirect);
     // #1758: the one completion step; the stores were unlocked at the password.
-    const completed = await authManager.completeSignIn(req, done.result, { method: 'password and email link', privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
+    // #1532: the first step was a password here or an outside provider at AAL1.
+    const completed = await authManager.completeSignIn(req, done.result, { method: `${done.result.provider ?? 'password'} and email link`, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
     logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     req.session.save((err) => {
@@ -6866,9 +6884,9 @@ ${panes}
   }
 
   /** POST /login/second-factor/cancel — abandon the waiting sign-in. */
-  secondFactorCancel(req: Request, res: Response): void {
+  async secondFactorCancel(req: Request, res: Response): Promise<void> {
     const pending = this.pendingFor(req);
-    if (pending) this.authManagerFor2Step().dropPending(pending.handle);
+    if (pending) await this.authManagerFor2Step().abandonTwoStep(pending.handle, pending.binding, { ip: req.ip, userAgent: req.get('user-agent') });
     delete req.session.pendingSignIn;
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     res.redirect('/login');
@@ -6880,24 +6898,25 @@ ${panes}
    */
   async approvePage(req: Request, res: Response): Promise<void> {
     const token = typeof req.query.t === 'string' ? req.query.t : '';
-    const details = token ? this.authManagerFor2Step().approvalDetails(token) : null;
+    const details = token ? await this.authManagerFor2Step().approvalDetails(token, { ip: req.ip, userAgent: req.get('user-agent') }) : null;
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.render('login-approve', { ...commonData, title: 'Approve a sign-in', token, details, outcome: '' });
   }
 
-  /** POST /login/approve — Approve, or "This wasn't me". */
+  /** POST /login/approve — Approve, or Deny. */
   async approveDecision(req: Request, res: Response): Promise<void> {
     const body = req.body as { t?: unknown; decision?: unknown };
     const token = typeof body.t === 'string' ? body.t : '';
     const authManager = this.authManagerFor2Step();
     let outcome: 'approved' | 'refused' | 'expired';
+    const presser = { ip: req.ip, userAgent: req.get('user-agent') };
     if (body.decision === 'approve') {
-      const who = authManager.approveByToken(token);
+      const who = await authManager.approveByToken(token, presser);
       outcome = who ? 'approved' : 'expired';
       if (who) await this.auditAuthentication(req, who, 'success', 'second factor approved by email link');
     } else {
-      const who = authManager.denyByToken(token);
+      const who = await authManager.denyByToken(token, presser);
       outcome = who ? 'refused' : 'expired';
       if (who) {
         // A failed factor is a failed sign-in (#1523): counted, and recorded as one.
@@ -7023,19 +7042,16 @@ ${panes}
       // with the pending sign-in until the second factor completes it.
       // #1882: the stored username AuthManager returned, never the typed one.
       const signedInAs = result.username;
-      if (authManager?.secondFactorsFor?.(signedInAs).length) {
+      if (authManager?.needsSecondStep?.(result)) {
         const binding = randomBytes(24).toString('base64url');
         const handle = await authManager.beginTwoStep(result, {
           binding,
           ip: req.ip,
           userAgent: req.get('user-agent'),
+          location: await authManager.approximateLocation(req),
           privateStoreHandle: typeof password === 'string' && password ? await authManager.unlockVaults(signedInAs, password) : undefined
         });
-        // #1758: not yet a sign-in — it is recorded when the second factor completes it.
-        res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
-        req.session.pendingSignIn = handle;
-        req.session.pendingRedirect = redirect;
-        req.session.save(() => res.redirect('/login/second-factor'));
+        this.holdForSecondStep(req, res, handle, binding, redirect);
         return;
       }
 
@@ -7408,6 +7424,88 @@ ${panes}
     req.session.save(() => res.redirect(returnTo));
   }
 
+  /**
+   * GET /consent — what the signed-in person is asked to accept (#1603):
+   * core's terms (`scope` absent), or an add-on's documents (`?scope=<slug>`).
+   * Shown after a sign-in that set `consentPending`, and by the consent gate
+   * on an add-on's paths. With nothing left to accept it goes straight on to
+   * `returnTo`. Only the person themselves, signed in: never under a proxy.
+   */
+  async consentPage(req: Request, res: Response): Promise<void> {
+    // Your own consents: profile-manage, the permission for managing your own account.
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'page'))) return;
+    const consent = this.engine.getManager('ConsentManager');
+    const scope = typeof req.query.scope === 'string' && req.query.scope ? req.query.scope : CORE_CONSENT_SCOPE;
+    const returnTo = safeRedirect(req.query.returnTo);
+    // The signed-in person, never the one a proxy acts for: only they can accept their own.
+    const signedIn = typeof req.session?.username === 'string' ? req.session.username : '';
+    const pending = (consent && signedIn ? await consent.pendingFor?.(signedIn, scope) : []) ?? [];
+    if (pending.length === 0) {
+      if (scope === CORE_CONSENT_SCOPE && req.session.consentPending) {
+        delete req.session.consentPending;
+        req.session.save(() => res.redirect(returnTo));
+        return;
+      }
+      res.redirect(returnTo);
+      return;
+    }
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('consent', {
+      ...commonData,
+      title: 'Please accept',
+      scope,
+      documents: pending,
+      // An add-on's prompt can be put off: its switch stays as it is. Core's terms cannot; signing out is the other way.
+      canPutOff: scope !== CORE_CONSENT_SCOPE,
+      actingFor: Boolean((req.userContext as { viaProxy?: unknown } | undefined)?.viaProxy),
+      returnTo,
+      error: typeof req.query.error === 'string' ? req.query.error : null,
+      csrfToken: req.session.csrfToken || ''
+    });
+  }
+
+  /**
+   * POST /consent — the person accepts what they were shown (#1603). The
+   * acceptance is ConsentManager's (`accept`), which records `consent-grant`
+   * first and refuses a token, share or proxy. A document that changed while
+   * they read is shown again. Accepting core's terms clears `consentPending`.
+   */
+  async acceptConsent(req: Request, res: Response): Promise<void> {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const scope = typeof body.scope === 'string' && body.scope ? body.scope : CORE_CONSENT_SCOPE;
+    const returnTo = safeRedirect(body.returnTo);
+    const again = (error: string): void => res.redirect(`${CONSENT_PATH}?${new URLSearchParams({ ...(scope !== CORE_CONSENT_SCOPE ? { scope } : {}), returnTo, error }).toString()}`);
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    if (body.accept !== 'on') { again('Tick the box to accept, or sign out.'); return; }
+    const consent = this.engine.getManager('ConsentManager');
+    if (!consent) { again('Consent cannot be recorded on this site right now.'); return; }
+    try {
+      // The request's own subject, forwarded: ConsentManager refuses a token, share or proxy.
+      await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), scope === CORE_CONSENT_SCOPE ? 'sign-in' : 'add-on');
+    } catch (err) {
+      if (err instanceof ConsentChangedError) { again(err.message); return; }
+      if (err instanceof ConsentRefusedError) {
+        await this.renderError(req, res, 403, 'Not Accepted', err.message);
+        return;
+      }
+      logger.error('[consent] the acceptance could not be recorded:', err);
+      again('Your acceptance could not be recorded, so it was not taken. Try again, or ask the site administrator.');
+      return;
+    }
+    if (scope === CORE_CONSENT_SCOPE) delete req.session.consentPending;
+    req.session.save(() => res.redirect(returnTo));
+  }
+
+  /** What a consent form showed: parallel `document` / `version` fields, one pair per document (#1603). */
+  static consentSeen(body: Record<string, unknown>, prefix = ''): ConsentSeen[] {
+    const list = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).map((x) => String(x));
+    const ids = list(body[`${prefix}document`]);
+    const versions = list(body[`${prefix}version`]);
+    return ids.map((id, i) => ({ id, version: versions[i] ?? '' }));
+  }
+
   /** AuthManager while proxy access is on; otherwise answers Not Found and returns null (#1762: every proxy screen is hidden while off). */
   private async proxyAccessOn(req: Request, res: Response): Promise<AuthManager | null> {
     const authManager = this.engine.getManager<AuthManager>('AuthManager');
@@ -7586,6 +7684,8 @@ ${panes}
         logger.warn('🔁 Outside sign-in state already used by a concurrent request — refusing a duplicate session');
         return res.redirect('/login?error=' + encodeURIComponent('Sign-in link already used'));
       }
+      // #1532: an outside sign-in at AAL1 takes the second step, as a password does.
+      if (done.outcome === 'second-step') return this.holdForSecondStep(req, res, done.handle, done.binding, done.next);
       const target = done.outcome === 'connect-first'
         ? '/login' + (done.error ? '?error=' + encodeURIComponent(done.error) : '')
         : done.next;
@@ -8214,6 +8314,8 @@ ${panes}
       res.render('register', {
         ...commonData,
         title: 'Register',
+        // #1603: the terms a new account accepts, at the versions shown here.
+        consentDocuments: (await this.engine.getManager('ConsentManager')?.documents?.(CORE_CONSENT_SCOPE)) ?? [],
         error: req.query.error,
         csrfToken: req.session.csrfToken
       });
@@ -8264,6 +8366,13 @@ ${panes}
         );
       }
 
+      // #1603: an account is made only by someone who accepted the site's terms.
+      const consentManager = this.engine.getManager('ConsentManager');
+      const terms = (await consentManager?.documents?.(CORE_CONSENT_SCOPE)) ?? [];
+      if (terms.length > 0 && (req.body as Record<string, unknown>).acceptTerms !== 'on') {
+        return res.redirect(`/register?error=${encodeURIComponent(`Please read and accept the ${terms.map((d) => d.title).join(' and ')}`)}`);
+      }
+
       await userManager.createUser({
         username,
         email,
@@ -8275,6 +8384,21 @@ ${panes}
       }, jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'self-registration')); // #1204: the new account is the actor; #1179: as a context that says so
 
       logger.debug(`👤 User registered: ${username}`);
+
+      // #1603: record the acceptance on the new account, the new account as the
+      // actor. If it cannot be recorded the account stays without one, and they
+      // are asked again at their first sign-in: no record means no acceptance.
+      if (consentManager && terms.length > 0) {
+        try {
+          const stored = (await userManager.getUser(username))?.username ?? username;
+          await consentManager.accept(
+            jobContextFromRequestWithReason({ username: stored, ipAddress: req.ip }, 'accepted the terms at sign-up'),
+            CORE_CONSENT_SCOPE, WikiRoutes.consentSeen(req.body as Record<string, unknown>), 'sign-up'
+          );
+        } catch (err) {
+          logger.warn(`[register] the terms acceptance of ${username} was not recorded; they will be asked at sign-in: ${(err as Error).message}`);
+        }
+      }
       res.redirect('/login?success=Registration successful');
     } catch (err: unknown) {
       // #1086: the full error goes to the log; the visitor gets a message from
@@ -8429,9 +8553,30 @@ ${panes}
         ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
         : false;
 
+      // #1603: "Your consents" — what this person accepted, core's and each
+      // add-on's, from ConsentManager; and what each add-on still asks before it
+      // turns on, shown on that add-on's card. Best-effort: a failure leaves
+      // the card out rather than the profile.
+      const consentManager = this.engine.getManager('ConsentManager');
+      let consents: Awaited<ReturnType<ConsentManager['statusFor']>> | null = null;
+      const addonConsentPending: Record<string, Awaited<ReturnType<ConsentManager['pendingFor']>>> = {};
+      if (consentManager && currentUser?.username) {
+        try {
+          consents = await consentManager.statusFor(currentUser);
+          for (const slug of consentManager.registeredAddons()) {
+            const pending = await consentManager.pendingFor(currentUser.username, slug);
+            if (pending.length > 0) addonConsentPending[slug] = pending;
+          }
+        } catch (err) {
+          logger.warn(`[profile] Could not read the consents of ${currentUser.username}: ${(err as Error).message}`);
+        }
+      }
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        consents, // #1603
+        addonConsentPending, // #1603
         credentials, // #1524
         credentialsUnavailable, // #1738
         connectedIdentities, // #1743
@@ -10164,6 +10309,23 @@ ${panes}
       // Update user with new preferences
       await userManager.updateUser(currentUser.username, { preferences }, currentUser);
 
+      // #1603: an add-on's documents accepted on its card are recorded before
+      // the add-ons save, so a switch turned on in the same save finds them.
+      const consentProblems: string[] = [];
+      const consentForAddons = this.engine.getManager('ConsentManager');
+      for (const slug of consentForAddons?.registeredAddons?.() ?? []) {
+        const body = req.body as Record<string, unknown>;
+        if (body[`consent.${slug}.accept`] !== 'on') continue;
+        try {
+          await consentForAddons!.accept(currentUser, slug, WikiRoutes.consentSeen(body, `consent.${slug}.`), 'add-on');
+        } catch (err) {
+          consentProblems.push(err instanceof ConsentChangedError || err instanceof ConsentRefusedError
+            ? err.message
+            : `Your acceptance for ${slug} could not be recorded, so it was not taken`);
+          if (!(err instanceof ConsentChangedError || err instanceof ConsentRefusedError)) logger.error(`[/preferences] ${slug} acceptance failed:`, err);
+        }
+      }
+
       // #534: fan out the same body to every addon that registered a
       // saveProfileSection() handler. Wrapped in its OWN try/catch so a
       // failure here does NOT fall through to the outer catch and mislead
@@ -10180,14 +10342,22 @@ ${panes}
         ) {
           const bodyClone = { ...(req.body as Record<string, unknown>) };
           // #1234: the subject itself, forwarded — the addons write on its behalf.
-          await (addonsManager as { saveProfileSections: (ctx: ActorContext, b: Record<string, unknown>) => Promise<void> })
+          const saved = await (addonsManager as { saveProfileSections: (ctx: ActorContext, b: Record<string, unknown>) => Promise<{ consentRequired?: Array<{ scope: string }> } | void> })
             .saveProfileSections(currentUser, bodyClone);
+          // #1603: an add-on left off because its documents are not accepted yet: say so.
+          for (const refused of saved?.consentRequired ?? []) {
+            consentProblems.push(`${refused.scope} was not turned on: tick "I accept" for its terms on its card first`);
+          }
         }
       } catch (addonErr) {
         logger.warn('[/preferences] addon saveProfileSections threw — core preferences saved successfully, fan-out failed', addonErr);
       }
 
       logger.debug('DEBUG: updatePreferences - preferences saved successfully');
+      if (consentProblems.length > 0) {
+        res.redirect(`/profile?error=${encodeURIComponent(`Preferences saved. ${consentProblems.join('. ')}.`)}`);
+        return;
+      }
       res.redirect('/profile?success=Preferences saved successfully');
     } catch (err: unknown) {
       logger.error('Error updating preferences:', err);
@@ -16230,7 +16400,7 @@ ${panes}
     app.post('/login/second-factor/email', (req: Request, res: Response) => { void this.secondFactorSendEmail(req, res); });
     app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
     app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
-    app.post('/login/second-factor/cancel', (req: Request, res: Response) => this.secondFactorCancel(req, res));
+    app.post('/login/second-factor/cancel', (req: Request, res: Response) => { void this.secondFactorCancel(req, res); });
     app.get('/login/approve', (req: Request, res: Response) => { void this.approvePage(req, res); });
     app.post('/login/approve', (req: Request, res: Response) => { void this.approveDecision(req, res); });
     app.post('/profile/second-factor/email', (req: Request, res: Response) => { void this.enrolEmailSecondFactor(req, res); });
@@ -16259,6 +16429,8 @@ ${panes}
     app.post('/login/connect/cancel', (req: Request, res: Response) => this.cancelPendingConnection(req, res));
     app.get('/login/connect/confirm', (req: Request, res: Response) => void this.confirmConnectionPage(req, res));
     app.post('/login/connect/confirm', (req: Request, res: Response) => void this.answerConnectionConfirm(req, res));
+    app.get(CONSENT_PATH, (req: Request, res: Response) => void this.consentPage(req, res));
+    app.post(CONSENT_PATH, (req: Request, res: Response) => void this.acceptConsent(req, res));
     app.get(ACTING_FOR_PATH, (req: Request, res: Response) => void this.actingForPage(req, res));
     app.post(ACTING_FOR_PATH, (req: Request, res: Response) => void this.switchActingFor(req, res));
     app.post('/profile/proxy-access', (req: Request, res: Response) => void this.giveProxyAccess(req, res));
