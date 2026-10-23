@@ -40,6 +40,7 @@ import { vanishedDuringBackup } from '../utils/treeArchive.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import { parsePageFrontmatter, namesAsText } from '../utils/pageFrontmatter.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
+import { isUuid } from '../types/guards.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -174,6 +175,13 @@ class FileSystemProvider extends BasePageProvider {
 
   /** Content cache (title -> parsed content without frontmatter) */
   protected contentCache: Map<string, string>;
+
+  /**
+   * How many {@link refreshPageList} runs are rebuilding the indexes. While one
+   * is, a miss is not fuzzy-matched: the indexes are part-built, so every
+   * lookup of a page not yet re-read would scan every title.
+   */
+  private refreshesInFlight = 0;
 
   /** Whether installation is complete (required-pages should not be used after install) */
   public installationComplete: boolean;
@@ -313,6 +321,15 @@ class FileSystemProvider extends BasePageProvider {
    * The required-pages directory is only used during installation to seed the wiki.
    */
   async refreshPageList(): Promise<void> {
+    this.refreshesInFlight++;
+    try {
+      await this.rebuildPageList();
+    } finally {
+      this.refreshesInFlight--;
+    }
+  }
+
+  private async rebuildPageList(): Promise<void> {
     this.pageCache.clear();
     this.titleIndex.clear();
     this.uuidIndex.clear();
@@ -487,8 +504,12 @@ class FileSystemProvider extends BasePageProvider {
       return this.pageCache.get(canonicalKey) || null;
     }
 
-    // 4. Try fuzzy matching with plurals if enabled
-    if (this.pageNameMatcher) {
+    // 4. Try fuzzy matching with plurals if enabled. It reads every title, so a
+    // UUID (never a title's plural) does not get it, and nor does any lookup
+    // while refreshPageList is rebuilding the indexes: a listing that looks up
+    // each page would then do work proportional to the page set per page.
+    // (`String()` keeps the guard from narrowing `identifier` to never below.)
+    if (this.pageNameMatcher && !isUuid(String(identifier)) && this.refreshesInFlight === 0) {
       const allTitles = Array.from(this.pageCache.values()).map(info => info.title);
       const matchedTitle = this.pageNameMatcher.findMatch(identifier, allTitles);
       if (matchedTitle) {

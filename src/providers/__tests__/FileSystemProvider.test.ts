@@ -299,6 +299,64 @@ describe('FileSystemProvider', () => {
     });
   });
 
+  // A lookup that misses the indexes fell through to fuzzy matching over every
+  // page title — O(pages) of synchronous work. getPagesSharedWith (the profile
+  // page) looks up every page by UUID, so while refreshPageList had emptied the
+  // indexes (an import ends with one) each profile view did O(pages²) work and
+  // froze the site for seconds on a large page set.
+  describe('Lookups never fuzzy-match the whole page set by UUID or mid-refresh', () => {
+    const uuidOf = (i: number): string => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+
+    test('a UUID that is not indexed is a miss, not a fuzzy match over every title', async () => {
+      await createTestPage(TEST_PAGES_DIR, uuidOf(1), 'Plugin');
+      const provider = new FileSystemProvider(createMockEngine());
+      await provider.initialize();
+      const findMatch = vi.spyOn(provider.pageNameMatcher, 'findMatch');
+
+      expect(await provider.getPageMetadata(uuidOf(999), TEST_ACTOR)).toBeNull();
+      expect(findMatch).not.toHaveBeenCalled();
+      // A title that misses still gets the plural match (the matcher itself is
+      // mocked suite-wide, so this asserts it is asked, not what it answers).
+      await provider.getPageMetadata('Plugins', TEST_ACTOR);
+      expect(findMatch).toHaveBeenCalledTimes(1);
+    });
+
+    test('while refreshPageList rebuilds the indexes, lookups do no work proportional to the page set', async () => {
+      const N = 40;
+      for (let i = 0; i < N; i++) await createTestPage(TEST_PAGES_DIR, uuidOf(i), `Page ${i}`);
+      const provider = new FileSystemProvider(createMockEngine());
+      await provider.initialize();
+      const findMatch = vi.spyOn(provider.pageNameMatcher, 'findMatch');
+
+      // Hold the refresh part-way through its file reads.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const realRead = fs.readFile.bind(fs);
+      let reads = 0;
+      const readSpy = vi.spyOn(fs, 'readFile').mockImplementation(async (...args: unknown[]) => {
+        if (++reads === N / 2) await gate;
+        return (realRead as (...a: unknown[]) => Promise<unknown>)(...args);
+      });
+      const refreshing = provider.refreshPageList();
+      await vi.waitFor(() => expect(reads).toBe(N / 2));
+
+      // Every page by UUID and by title, the way a listing loops — mid-refresh.
+      for (let i = 0; i < N; i++) {
+        await provider.getPageMetadata(uuidOf(i), TEST_ACTOR);
+        await provider.getPageMetadata(`Page ${i}s`, TEST_ACTOR);
+      }
+      expect(findMatch).not.toHaveBeenCalled();
+
+      release();
+      await refreshing;
+      readSpy.mockRestore();
+      // Once rebuilt, every page resolves again, and a title miss gets the plural match.
+      expect((await provider.getPageMetadata(uuidOf(N - 1), TEST_ACTOR))?.title).toBe(`Page ${N - 1}`);
+      await provider.getPageMetadata('Page 3s', TEST_ACTOR);
+      expect(findMatch).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Duplicate Prevention (#257)', () => {
     describe('titleExistsForDifferentPage', () => {
       test('should return false for nonexistent title', async () => {
