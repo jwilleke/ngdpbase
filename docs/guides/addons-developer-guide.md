@@ -677,34 +677,34 @@ A core job an addon needs is a method on the manager that owns it, for example:
 Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `PolicyDecisionPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
-`PersonManager`, `OrganizationManager` ([Contacts](#contacts-persons-and-organizations)),
+`PersonManager`, `OrganizationManager` ([Contacts](#contacts-and-identity-records)),
 `ExportManager`, `EmailManager` ([Make a PDF and email it](#make-a-pdf-and-email-it)),
 `MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
 
-### Contacts: persons and organizations
+### Contacts and identity records
 
-People and organizations an add-on keeps (donors, members, suppliers) are core's contacts, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). A donor is a person or an organization; a user is a person with an account. Store the contact's `@id` in your own records, and keep what your record needs to show (the name, say) there too: deleting an account deletes its person, even one your add-on made and that later joined an account, so the `@id` can come to name nobody (operator, 2026-10-20). Handle a `get` that returns `null`.
+Donors, members and suppliers an add-on keeps are core's identity records and organizations, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). User, contact, identity record and profile mean what the [glossary](../GLOSSARY.md#identities) says. A donor is a user, a contact or an organization. Store the `@id` in your own records, and keep what your record needs to show (the name, say) there too: deleting a user deletes its identity record, even one your add-on made for a contact that later signed up, so the `@id` can come to name nothing (operator, 2026-10-20). Handle a `get` that returns `null`.
 
 - __One door each.__ `PersonManager` and `OrganizationManager`. Every call takes the caller's context first: in a route, `ctx.getActor()` from the `ApiContext`; in a job, its `JobContext`. Never a username.
 - __Two permissions.__ __`contact-read`__ to `search`, `get`, `list` and `people`; __`contact-manage`__ to `create`, `update` and `delete`. As shipped, `contact-read` is held by admins and demo admins, `contact-manage` by admins alone. Grant what your roles need in your add-on's own policy, as in [Permissions](#permissions): an add-on never names `admin`, and never appends to a shipped policy. Accounting's donor picker needs `contact-read` to search, and `contact-manage` to add a new donor.
 - __Ask, then call.__ In the route, `await ctx.requirePermission('contact-read')` (or `'contact-manage'` for a change) first: it shapes the refusal and the step-up prompt. The door asks again. If it refuses anyway, it throws a `ContactRefusedError` (`err.name === 'ContactRefusedError'`) carrying `permission` and `decision`; hand them to `await ctx.enforceDeny(err.permission, err.decision)`. Never build the 401 or 403 yourself.
 - __Every change is recorded__ by the door as the `contact-manage` audit event, with your caller as the actor. Do not record it again.
-- __The signed-in user's own identity record__ ("your receipts", "your donations") needs no `contact-read`: a user may always read their own profile, including their own identity record, under `profile-manage`. A contact cannot sign in and never acts. Terms as in the [glossary](../GLOSSARY.md#identities) (operator, 2026-10-23, [#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). Do not grant `contact-read` to ordinary members for this. Do not call `PersonManager.getById`, `getByIdentifier`, `getByUserIdentifier` or `RoleManager.hasRole` without a context; see Known gaps.
-- __A person with no account__ gets the identifier `person:<uuid>`. No username can take that form, so a person you create never collides with an account. When they sign up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The person keeps its `@id`, so your stored references stay good.
-- __Affiliations__ are on the person: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
+- __The signed-in user's own identity record__ ("your receipts", "your donations") needs no `contact-read`: a user may always read their own profile, including their own identity record, under `profile-manage`. A contact cannot sign in and never acts (operator, 2026-10-23, [#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). Do not grant `contact-read` to ordinary members for this. Do not call `PersonManager.getById`, `getByIdentifier`, `getByUserIdentifier` or `RoleManager.hasRole` without a context; see Known gaps.
+- __A contact's identity record__ gets the identifier `person:<uuid>`. No username can take that form, so a contact you create never collides with a user. When the contact signs up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The identity record keeps its `@id`, so your stored references stay good.
+- __Affiliations__ are on the identity record: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
 
 | Call | Asks | What it does |
 | --- | --- | --- |
-| `persons.search(ctx, query, { limit?, accountless? })` | `contact-read` | Persons whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to persons with no account |
-| `persons.get(ctx, id)` / `persons.list(ctx)` | `contact-read` | One person by `@id`, or all |
-| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | `contact-manage` | A person with no account; returns the record with its `@id` |
+| `persons.search(ctx, query, { limit?, accountless? })` | `contact-read` | Identity records whose name, given or family name, or email contains `query` (ignoring case). `accountless: true` narrows to contacts |
+| `persons.get(ctx, id)` / `persons.list(ctx)` | `contact-read` | One identity record by `@id`, or all |
+| `persons.create(ctx, { name, email, givenName, familyName, affiliation, … })` | `contact-manage` | A contact's identity record; returns the record with its `@id` |
 | `persons.update(ctx, id, patch)` | `contact-manage` | Change fields, affiliations included. `@id` and `identifier` never change |
-| `persons.delete(ctx, id)` | `contact-manage` | Remove a person |
+| `persons.delete(ctx, id)` | `contact-manage` | Remove an identity record |
 | `organizations.search(ctx, query, { limit? })` | `contact-read` | Organizations whose name, legal name, email or a contact point's email contains `query` |
 | `organizations.get(ctx, id)` / `organizations.list(ctx)` | `contact-read` | One organization, or all |
 | `organizations.create(ctx, { name, url?, … })` | `contact-manage` | `@id` is the `url`, else a new `urn:uuid:` |
 | `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `contact-manage` | Change or remove |
-| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each person affiliated with it |
+| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each identity record affiliated with it |
 
 Linking an account by hand (`persons.linkAccount`) is an administrator's action: `contact-manage` and `user-edit`; an add-on does not call it.
 
@@ -1893,8 +1893,8 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
   - An addon whose `config/default-config.json` can't be parsed loads without its defaults, so its own `site-critical: true` isn't seen. A site that must not run without it sets the key in `app-custom-config.json` too.
   - An addon that catches `openAddonDatabase`'s error and returns from `register()` counts as loaded, so it never blocks the site. Let the error leave `register()`.
   - An enabled addon whose install failed ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)) sends two notifications: the install problem, and that it did not load.
-- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-persons-and-organizations): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
-- [#2018](https://github.com/jwilleke/ngdpbase/issues/2018) — [contacts](#contacts-persons-and-organizations): there is no checked call yet for the signed-in user to read their own identity record; accounting and donations use the context-free `PersonManager.getByUserIdentifier(username)` until it lands, and accommodation's role job uses the context-free `RoleManager.hasRole`. Add no new calls to either.
+- [#1930](https://github.com/jwilleke/ngdpbase/issues/1930) — [contacts](#contacts-and-identity-records): the shipped catalog grants `contact-read` to admins and demo admins and `contact-manage` to admins only, so an add-on's own policy must grant them before its people can use a picker. A door's refusal is not yet recorded as `authorization-deny` ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)). Deleting an organization leaves the affiliations that name it.
+- [#2018](https://github.com/jwilleke/ngdpbase/issues/2018) — [contacts](#contacts-and-identity-records): there is no checked call yet for the signed-in user to read their own identity record; accounting and donations use the context-free `PersonManager.getByUserIdentifier(username)` until it lands, and accommodation's role job uses the context-free `RoleManager.hasRole`. Add no new calls to either.
 - [#1951](https://github.com/jwilleke/ngdpbase/issues/1951) — [turning off Comments and Footnotes](#turning-off-comments-and-footnotes): a `comments:` or `footnotes:` flag added to a seed page that a site already holds does not reach it, because reseed and Required Pages Sync compare the body, not the frontmatter. Change the body in the same release, or declare the flag on the add-on's own system-category, which applies to its pages already seeded and which the site cannot override.
 - [#1957](https://github.com/jwilleke/ngdpbase/issues/1957) — [form notices](#ship-form-definitions): the "New form submission" notification is addressed to the holders of the form's `notifyRole`, but `/admin/notifications` and the admin dashboard list every notification (`getAllNotifications`), whatever its targets. Anyone who can view those admin pages sees a notice addressed to `treasurer`. No other page shows notifications by target yet.
 - [#1973](https://github.com/jwilleke/ngdpbase/issues/1973) — [forms an add-on provides](#ship-form-definitions):

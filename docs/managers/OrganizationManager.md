@@ -32,7 +32,7 @@ Two things it never does: __write the config key back__ (instance config is a re
 
 ## The contacts door
 
-OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `contact-read` to read and `contact-manage` to change, and record each change as the `contact-manage` audit event. `people(ctx, id)` reads each person's `affiliation`; the organization stores no copy. `getById`, `getByFile`, `getInstallOrg` and `seedFromConfig` stay context-free for core's own paths. The rules are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
+OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `contact-read` to read and `contact-manage` to change, and record each change as the `contact-manage` audit event. `people(ctx, id)` reads each person's `affiliation`; the organization stores no copy. `getById`, `getByFile`, `getInstallOrg` and `seedFromConfig` stay context-free for core's own paths. The rules are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
 

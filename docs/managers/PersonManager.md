@@ -8,19 +8,19 @@ code: src/managers/PersonManager.ts
 
 # PersonManager
 
-Canonical core record for Person entities (#617). A Person is a real-world individual; a `User` is an authentication identity. Many users have an associated person, but not every person has a user account (e.g. people referenced as authors, contacts, or members of organizations who don't log in).
+Keeps identity records (#617): one for every user and one for every contact. Terms as in the [glossary](../GLOSSARY.md#identities): a user is a digital identity the site holds credentials for; a contact has none, cannot sign in and never acts; an identity record is a record, never something that acts.
 
 ## Why this exists
 
-Pre-#617, person-shaped data was scattered: author names on pages, contact entries in some addons, organization members in others. Centralizing as first-class records lets addons (person-contacts, journal, calendar) share the identity without re-implementing person storage.
+Pre-#617, identity data was scattered: author names on pages, contact entries in some addons, organization members in others. Centralizing as first-class records lets addons (person-contacts, journal, calendar) share identity records without re-implementing their storage.
 
 ## The contacts door
 
-PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A user reading or changing their own identity record, part of their profile, is checked against `profile-manage` instead; a contact cannot sign in and never acts. Terms as in the [glossary](../GLOSSARY.md#identities) ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018), decided 2026-10-23). A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
+PersonManager is the door for identity records, of users and contacts alike ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A user reading or changing their own identity record, part of their profile, is checked against `profile-manage` instead; a contact cannot sign in and never acts ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018), decided 2026-10-23). A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
 
-`PersonProvider` is the storage abstraction. Default: [FilePersonProvider](../providers/FilePersonProvider.md) (one JSON file per person under `data/persons/`).
+`PersonProvider` is the storage abstraction. Default: [FilePersonProvider](../providers/FilePersonProvider.md) (one JSON file per identity record under `data/persons/`).
 
 ## Read-Hot Paths
 
