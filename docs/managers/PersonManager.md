@@ -1,7 +1,7 @@
 ---
 name: PersonManager
 description: Canonical Person records (#617) — decoupled from User authentication identity, shared across addons
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/PersonManager.ts
 ---
@@ -16,7 +16,7 @@ Pre-#617, person-shaped data was scattered: author names on pages, contact entri
 
 ## The contacts door
 
-PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
+PersonManager is the door for persons, with or without an account ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A signed-in user's own person is read and managed under `profile-manage` instead ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018), decided 2026-10-23). A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-persons-and-organizations).
 
 ## Provider Pattern
 
@@ -26,7 +26,7 @@ PersonManager is the door for persons, with or without an account ([#1930](https
 
 Per-request hot paths cache by-identifier and by-key lookups (#620):
 
-- `RoleManager.resolveUserRoles → getByIdentifier`
+- `RoleManager.resolveUserRoles → getByIdentifier` (context-free today; to take the system context, [#2018](https://github.com/jwilleke/ngdpbase/issues/2018))
 - Various consumer-side `personManager.getByEmail` / `getByUuid` calls
 
 ## Backup and restore
