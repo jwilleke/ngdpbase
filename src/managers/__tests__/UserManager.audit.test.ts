@@ -47,6 +47,8 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
       if (name === 'RoleManager') return roles;
       if (name === 'PolicyInformationPoint') return pip;
       if (name === 'UserManager') return um;
+      // #2018: searchUsers asks search-user; this caller (an admin) is let through.
+      if (name === 'PolicyDecisionPoint') return { decide: async () => ({ permit: true, applicable: true }) };
       return null;
     })
   } as unknown as WikiEngine;

@@ -74,6 +74,7 @@ None. A door asks its context (`ctx.hasPermission`, `ctx.canAccess`); the decisi
 | `deleteUser(username)` | `void` | Delete user |
 | `getUser(username)` | `User\|null` | Get user by username |
 | `getAllUsers()` | `User[]` | Get all users |
+| `searchUsers(query, { role?, limit?, activeOnly? }, ctx)` | `Omit<User, 'password'>[]` | Users whose username, display name or email contains `query`. Decides `search-user` itself with `ctx` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): every user holds it as shipped (through `vault-owner`, in `signed-in-self-service`), anonymous does not; a refusal throws `ContactRefusedError`. Core's own lookups (a notice's recipients, a role's holders) pass the system context with a reason and are allowed without a policy evaluation |
 
 ### One change at a time per account
 

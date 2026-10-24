@@ -306,7 +306,7 @@ Defined in `config/app-default-config.json` under `ngdpbase.permissions` and `ng
 | `admin-system` | admin | admin gates (`/admin/*`) — view __and__ change |
 | `admin-roles` | admin | role management |
 | `asset-upload` | editor, contributor, admin | upload media/attachments |
-| `search-user` | admin, user-admin | search users via API |
+| `search-user` | every signed-in user (`vault-owner`, in `signed-in-self-service`) | search users: `UserManager.searchUsers` decides it (#2018) |
 
 To add a permission:
 

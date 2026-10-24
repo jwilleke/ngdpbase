@@ -589,3 +589,56 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
     expect(decide).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #2018 — UserManager.searchUsers decides `search-user` itself, with the
+ * caller's context, over the shipped policies: every user holds it (granted to
+ * vault-owner, the role every account is given; operator, 2026-10-24), anonymous
+ * does not, and core's own lookups run under the system context with no policy
+ * question.
+ *
+ * Sabotaged (2026-10-24), and watched go red:
+ * - the PDP question removed from searchUsers → the anonymous and no-role refusals;
+ * - isSystemWork's shortcut removed → the system-context test (decide was called);
+ * - search-user taken out of signed-in-self-service → the holders and vault-owner tests.
+ */
+describe('searchUsers decides search-user (#2018)', () => {
+  let site: Awaited<ReturnType<typeof makeSite>>;
+
+  beforeEach(async () => {
+    site = await makeSite();
+    await site.signUp('pat', 'pat@example.org');
+    await site.signUp('sam', 'sam@example.org');
+  });
+
+  afterEach(async () => {
+    await fs.remove(site.tmp).catch(() => {});
+  });
+
+  test('as shipped: every signed-in role holds search-user, vault-owner included; anonymous does not', async () => {
+    const roleNames = Object.keys(shipped['ngdpbase.roles.definitions'] as Record<string, unknown>);
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const holders: string[] = [];
+    for (const role of roleNames) {
+      if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, 'search-user')) holders.push(role);
+    }
+    expect(holders.sort()).toEqual(['admin', 'contributor', 'demo-admin', 'editor', 'reader', 'user-admin', 'vault-owner']);
+  });
+
+  test('a vault-owner-only user may search (the people picker); anonymous and a subject with no role are refused', async () => {
+    const owner = { username: 'olive', roles: ['vault-owner'], isAuthenticated: true };
+    expect((await site.accounts.searchUsers('', {}, owner)).map((u) => u.username)).toEqual(expect.arrayContaining(['pat', 'sam']));
+
+    const anonymous = { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false };
+    await expect(site.accounts.searchUsers('pat', {}, anonymous)).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'search-user' });
+    await expect(site.accounts.searchUsers('pat', {}, { username: 'nobody', roles: [], isAuthenticated: true })).rejects.toBeInstanceOf(ContactRefusedError);
+  });
+
+  test('the system context is allowed without a policy question, a role filter included', async () => {
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const decide = vi.spyOn(pdp, 'decide');
+    const found = await site.accounts.searchUsers('', { role: 'reader', limit: 0 }, SYS);
+    expect(found.map((u) => u.username).sort()).toEqual(['pat', 'sam']);
+    expect(decide).not.toHaveBeenCalled();
+  });
+});

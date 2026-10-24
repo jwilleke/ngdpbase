@@ -2905,7 +2905,7 @@
     {
       "id": "signed-in-self-service",
       "name": "Signed-in Self-Service",
-      "description": "Every account manages its own profile and sign-in methods (#448). Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles), so a session whose site role has stepped down for its required-aal can still reach its profile to enrol a passkey. profile-manage and account-security (#1525) only.",
+      "description": "Every account manages its own profile and sign-in methods (#448). Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles), so a session whose site role has stepped down for its required-aal can still reach its profile to enrol a passkey. profile-manage, account-security (#1525), and search-user: every user may search for other users (operator, 2026-10-24, #2018), so the people pickers work for every account. Nothing else.",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -2922,7 +2922,8 @@
       ],
       "actions": [
         "profile-manage",
-        "account-security"
+        "account-security",
+        "search-user"
       ]
     },
     {

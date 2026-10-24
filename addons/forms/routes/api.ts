@@ -167,9 +167,12 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
             message: `Submitted by ${submittedBy}${onBehalfOf?.name ? ` on behalf of ${onBehalfOf.name}` : ''}`,
             level:   'info' as const
           };
-          // Core's role lookup (RoleManager membership, active accounts only),
-          // under the submitter's context; limit 0 is every holder.
-          void users.searchUsers('', { role: form.notifyRole, limit: 0 }, ctx.subject).then((holders) => {
+          // Core's role lookup (RoleManager membership, active accounts only);
+          // limit 0 is every holder. Finding the recipients is the add-on's own
+          // work, not the submitter searching for people, so it runs under the
+          // system context (#2018): an anonymous submitter still notifies.
+          const finder = host.systemContext(`forms: find the holders of '${form.notifyRole}' to notify of a submission to '${formId}'`);
+          void users.searchUsers('', { role: form.notifyRole, limit: 0 }, finder).then((holders) => {
             const targetUsers = holders.map((u) => u.username);
             if (targetUsers.length === 0) {
               logger.debug(`[forms] nobody holds '${form.notifyRole}'; no notice for a submission to '${formId}'`);

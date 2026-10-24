@@ -35,7 +35,7 @@ __Wiki syntax:__ `[{UserLookup ...}]`
 
 ## Permission Gating
 
-The plugin calls `UserManager.searchUsers()` directly via the engine. The route `GET /api/users/search` requires the `search-user` permission. Within a plugin context, access is subject to the same permission gates configured in `ngdpbase.roles.definitions`.
+The plugin calls `UserManager.searchUsers()` with the viewer's own context, and the search decides `search-user` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). Every signed-in user holds it as shipped; a viewer without it, anonymous included, sees nothing where the plugin is.
 
 Users with `user-read` permission receive all fields (`email`, `roles`, `lastLogin`, `isActive`). Others receive only `username` and `displayName`, regardless of the `fields` parameter.
 

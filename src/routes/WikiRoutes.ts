@@ -15043,11 +15043,11 @@ ${panes}
         if (!userManager?.searchUsers) {
           return res.status(503).json({ success: false, error: 'UserManager unavailable' });
         }
-        // Auth gate: any authenticated user can search; anonymous viewers
-        // silently get empty results (operator decision on #694 — the picker
-        // surface is intentionally more permissive than /api/users/search,
-        // which keeps its `search-user` permission gate for the dedicated
-        // user-management surface).
+        // Any signed-in user can search (#694); anonymous viewers silently get
+        // empty results. The decision is the door's: searchUsers asks
+        // `search-user`, which every user holds as shipped (vault-owner,
+        // #2018); a context refused it (a token without the scope) gets the
+        // same empty answer.
         const searcher = wikiContext.userContext;
         const username = searcher?.username;
         const canSearchUsers = Boolean(
@@ -15061,7 +15061,15 @@ ${panes}
         // UserManager.searchUsers caps at its own `limit` option; oversample
         // so the slice math below has enough rows to paginate through.
         const fetchLimit = Math.max(200, offset + pageSize);
-        const fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true }, searcher);
+        let fetched: Awaited<ReturnType<NonNullable<typeof userManager.searchUsers>>>;
+        try {
+          fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true }, searcher);
+        } catch (err) {
+          if (err instanceof ContactRefusedError) {
+            return res.json({ success: true, results: [], total: 0, hasMore: false, capped: false });
+          }
+          throw err;
+        }
         // #699: surface a `capped` flag when the cap may be hiding more matches.
         // We can't tell from a saturated result alone whether the true match
         // count is exactly fetchLimit or larger; conservatively treat saturation

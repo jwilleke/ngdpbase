@@ -3,6 +3,7 @@
 import UserLookupPluginModule from '../UserLookupPlugin';
 import { asExecuted } from '../../test-support/plugins';
 import { type MockInstance } from 'vitest';
+import { ContactRefusedError } from '../../utils/contactAccess';
 
 const UserLookupPlugin = asExecuted(UserLookupPluginModule);
 
@@ -71,35 +72,35 @@ describe('UserLookupPlugin', () => {
     const ctx = makeContext([alice]);
     await UserLookupPlugin.execute(ctx, { q: 'alice' });
     const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
-    expect(searchUsers).toHaveBeenCalledWith('alice', expect.any(Object));
+    expect(searchUsers).toHaveBeenCalledWith('alice', expect.any(Object), expect.anything());
   });
 
   test('resolves $currentUser token to logged-in username', async () => {
     const ctx = makeContext([alice], 'alice');
     await UserLookupPlugin.execute(ctx, { q: '$currentUser' });
     const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
-    expect(searchUsers).toHaveBeenCalledWith('alice', expect.any(Object));
+    expect(searchUsers).toHaveBeenCalledWith('alice', expect.any(Object), expect.anything());
   });
 
   test('passes role filter to searchUsers', async () => {
     const ctx = makeContext([alice]);
     await UserLookupPlugin.execute(ctx, { role: 'admin' });
     const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
-    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ role: 'admin' }));
+    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ role: 'admin' }), expect.anything());
   });
 
   test('passes max as limit to searchUsers', async () => {
     const ctx = makeContext([alice]);
     await UserLookupPlugin.execute(ctx, { max: '5' });
     const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
-    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ limit: 5 }));
+    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ limit: 5 }), expect.anything());
   });
 
   test('passes activeOnly=false when param set', async () => {
     const ctx = makeContext([alice, dave]);
     await UserLookupPlugin.execute(ctx, { activeOnly: 'false' });
     const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
-    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ activeOnly: false }));
+    expect(searchUsers).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ activeOnly: false }), expect.anything());
   });
 
   test('escapes HTML in user values', async () => {
@@ -107,6 +108,22 @@ describe('UserLookupPlugin', () => {
     const html = await UserLookupPlugin.execute(makeContext([evil]), {});
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  test('searches under the viewer\'s own context (#2018)', async () => {
+    const ctx = makeContext([alice]);
+    await UserLookupPlugin.execute(ctx, { q: 'alice' });
+    const searchUsers = (ctx.engine.getManager() as { searchUsers: MockInstance }).searchUsers;
+    expect(searchUsers).toHaveBeenCalledWith('alice', expect.any(Object), ctx.userContext);
+  });
+
+  test('a viewer refused search-user (anonymous) sees nothing', async () => {
+    const anonymous = { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false };
+    const ctx = {
+      pageName: 'TestPage', linkGraph: {}, userContext: anonymous,
+      engine: { getManager: vi.fn().mockReturnValue({ searchUsers: vi.fn().mockRejectedValue(new ContactRefusedError('search-user', { permit: false, applicable: true, reason: 'no_policy' })) }) }
+    };
+    expect(await UserLookupPlugin.execute(ctx, {})).toBe('');
   });
 
   test('returns error message when UserManager unavailable', async () => {

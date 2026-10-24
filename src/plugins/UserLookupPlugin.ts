@@ -1,11 +1,10 @@
 /**
  * UserLookupPlugin — [{UserLookup}]
  *
- * Searches users via GET /api/users/search and renders results as a
- * sortable table. Permission gating is handled entirely by the API:
- *   - search-user → can call the endpoint
- *   - user-read   → receives full profile fields
- *   - others      → username + displayName only
+ * Searches users through UserManager.searchUsers, under the viewer's own
+ * context, and renders results as a sortable table. The search decides
+ * `search-user` (#2018): every signed-in user holds it as shipped; a viewer
+ * without it (anonymous) sees nothing.
  *
  * Parameters:
  *   q          — search query (substring match on username/displayName/email)
@@ -25,6 +24,8 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
+import type UserManager from '../managers/UserManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /** All fields the API may return (permission-gated server-side) */
 const ALL_FIELDS = ['username', 'displayName', 'email', 'roles', 'lastLogin', 'isActive'] as const;
@@ -95,19 +96,24 @@ const UserLookupPlugin: SimplePlugin = {
       if (!activeOnly) qs.set('activeOnly', 'false');
 
       // Fetch from internal API via engine's HTTP layer or direct manager call
-      const userManager = context.engine?.getManager?.('UserManager') as {
-        searchUsers(q: string, opts?: { role?: string; limit?: number; activeOnly?: boolean }): Promise<UserRecord[]>;
-      } | undefined;
+      const userManager = context.engine?.getManager?.('UserManager') as Pick<UserManager, 'searchUsers'> | undefined;
 
       if (!userManager) {
         return '<p class="plugin-error">UserManager not available.</p>';
       }
 
-      const results: UserRecord[] = await userManager.searchUsers(q, {
-        role,
-        limit: max > 0 ? max : undefined,
-        activeOnly
-      });
+      let results: UserRecord[];
+      try {
+        results = await userManager.searchUsers(q, {
+          role,
+          limit: max > 0 ? max : undefined,
+          activeOnly
+        }, context.userContext as ActorContext);
+      } catch (err) {
+        // A viewer without search-user (anonymous) sees nothing (#2018).
+        if (err instanceof Error && err.name === 'ContactRefusedError') return '';
+        throw err;
+      }
 
       if (results.length === 0) {
         return '<p><em>No users found.</em></p>';

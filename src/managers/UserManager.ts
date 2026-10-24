@@ -30,6 +30,7 @@ import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.
 import { UserCreateError } from '../utils/userCreateError.js';
 import { setPassword } from '../utils/passwordChange.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { requireLookupPermission } from '../utils/contactAccess.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
@@ -1526,12 +1527,18 @@ class UserManager extends BaseManager {
   /**
    * Search users by username, displayName, or email (case-insensitive substring).
    * Optionally filter by role and active status.
+   *
+   * Decides `search-user` itself, with `ctx` (#2018): every user holds it as
+   * shipped, anonymous does not. A refusal throws `ContactRefusedError`. Core's
+   * own lookups (a notice's recipients, a role's holders) pass the system
+   * context with a reason, allowed without a policy evaluation.
    */
   async searchUsers(
     query: string,
     options: { role?: string; limit?: number; activeOnly?: boolean },
     ctx: ActorContext
   ): Promise<Omit<User, 'password'>[]> {
+    await requireLookupPermission(this.engine, ctx, 'search-user');
     const all = await this.getUsers();
     const q = query.trim().toLowerCase();
     const { role, limit = 50, activeOnly = true } = options;
