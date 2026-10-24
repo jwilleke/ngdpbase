@@ -21,7 +21,7 @@ creator - the username that created the page
 
 ## editor
 
-The person who last modified the document (<https://schema.org/editor>)
+The user who last modified the document (<https://schema.org/editor>)
 
 ## Keywords and system-category
 

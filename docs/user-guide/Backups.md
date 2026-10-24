@@ -25,7 +25,7 @@ Before writing, a backup checks there is room for it — free space at least the
 
 Admin → Backup and the dashboard show the last successful backup (when, in your local time, its size and where), the next automatic backup, and the free space at the backup folder.
 
-A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar.enc` (attachments, vault files, role membership, persons, organizations, footnotes, comments, the credentials store, the audit log, file-based job state, add-on files). With `NGDPBASE_BACKUP_KEY` set every one of them is encrypted under it; without it the names end `.json.gz` and `.tar`, and nothing is encrypted (below).
+A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the files beside it: each database as its own encrypted `.db` file, and each folder of files as a `.tar.enc` (attachments, vault files, role membership, identity records, organizations, footnotes, comments, the credentials store, the audit log, file-based job state, add-on files). With `NGDPBASE_BACKUP_KEY` set every one of them is encrypted under it; without it the names end `.json.gz` and `.tar`, and nothing is encrypted (below).
 
 ### What IS in a backup
 
@@ -38,7 +38,7 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 | Attachment metadata | the document |
 | Footnotes and comments on public pages | `<stem>.footnotes.tar`, `<stem>.comments.tar` |
 | Users (accounts, password hashes, preferences) | the document |
-| Role membership (who holds which role), persons, organizations | `<stem>.roles.tar`, `<stem>.persons.tar`, `<stem>.organizations.tar` |
+| Role membership (who holds which role), identity records (users and contacts), organizations | `<stem>.roles.tar`, `<stem>.persons.tar`, `<stem>.organizations.tar` |
 | Settings (`app-custom-config.json`, secrets included) | the document |
 | The search index and the keyword vocabulary | the document |
 | The application database and add-on databases (with `NGDPBASE_BACKUP_KEY` set) | `<stem>.<name>.db`, encrypted |
@@ -54,14 +54,14 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 | The backup key (`NGDPBASE_BACKUP_KEY`) | save it off the server: Admin → Backup → Show the key to copy it (see What to keep safe) |
 | TLS certificate files | reissue them on a new server |
 | Shares, notifications | copy `$FAST_STORAGE/` |
-| Sign-in sessions | not needed: people sign in again |
+| Sign-in sessions | not needed: users sign in again |
 | Media files and the media index | back up your media folders at the storage level; the index is rebuilt by a rescan |
 
 ### What to keep safe
 
 - __The operator: the backup key.__ Every site makes one at first start; every backup, including the `.env` copy (every line but the backup key's), is encrypted under it. Admin → Backup shows its fingerprint, and the dashboard asks for it to be saved off the server until an admin confirms (showing the key needs `config-manage` and a fresh sign-in). On a new server, put the saved key in `<FAST_STORAGE>/.env` before the first start, then restore.
 - __The operator, optionally: a copy of `.env`.__ Admin → Backup → __Download .env__ (`config-manage`, fresh sign-in). When the set of keys in `<FAST_STORAGE>/.env` changes — a key the site generates, or a hand edit — the dashboard lists Backup under "needs your attention" and admins get one notification naming the keys added or removed (names only, never values), until an admin downloads the file again and presses __I have saved .env off the server__. That press also records the backup key as saved when the file holds it. The first start with this feature records the keys already there without asking.
-- __Each person: their recovery words__, the only way into their private vaults after a forgotten password. Each person with a vault gets one reminder.
+- __Each user: their recovery words__, the only way into their private vaults after a forgotten password. Each user with a vault gets one reminder.
 
 ### Encryption
 
@@ -87,7 +87,7 @@ When `ngdpbase.database.provider` is `sqlite`, every backup also copies the appl
 
 __Admin → Backup → Restore the whole site__, on every site ([#1945](https://github.com/jwilleke/ngdpbase/issues/1945)): pick a backup stored on the server, type the site name, and restart when the notification says it is staged. It needs `config-manage` and a fresh sign-in, as the other backup actions do. The card lists what it puts back and what it does not, before you confirm.
 
-- It puts back the databases, attachment files, role membership, persons, organizations, footnotes and comments of public pages, the credentials store, the audit log, file-based job state and add-on files, all together or none of them.
+- It puts back the databases, attachment files, role membership, identity records, organizations, footnotes and comments of public pages, the credentials store, the audit log, file-based job state and add-on files, all together or none of them.
 - The instance `.env` (the site's keys and secrets) comes back only from an encrypted backup, and an encrypted backup needs the same backup key on this server.
 - A fresh backup of the current data is taken first; restoring it undoes the restore. Nothing changes until you restart the site, and the site never restarts by itself. The current data is kept beside the restored data as `*.pre-restore`.
 - A staged restore is shown there and can be cancelled or replaced (with the same typed confirmation); a second restore is never started over it silently.

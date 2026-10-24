@@ -49,7 +49,7 @@ A wrong SMTP password, an unreachable host or a relay that rejects mail no longe
 - __Admin dashboard__: EmailManager shows as degraded, "outbound email is failing". It returns to ready by itself as soon as an email goes out again.
 - __Notifications__: everyone who holds `admin-system` gets one notification, "Email could not be sent", with the latest error and a running count. During an outage the count goes up on that one notification; a new one is created only after `ngdpbase.mail.failure-notice.window-minutes`. This notification is never emailed, even when notification escalation is on.
 
-What people see:
+What users see:
 
 - A form submission or a calendar reservation still succeeds; only its confirmation email is missing.
 - Someone asking for a sign-in link while email is failing is told that no link is on its way, and to try again later or sign in another way.

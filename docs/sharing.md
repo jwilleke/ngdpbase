@@ -86,7 +86,7 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 | `ngdpbase.share.storagedir` | `${FAST_STORAGE}/shares` | One JSON file per link |
 | `ngdpbase.system-category.{entry}.shareMaxDays` | `15` | The longest a new link to that system-category's vault may last |
 
-Links shown to people are built from `ngdpbase.application.base-url`, falling back to the request's origin. That base URL must resolve and route for recipients, or every link made is dead. [#860](https://github.com/jwilleke/ngdpbase/issues/860) is the example: the fix was a path-filtered Cloudflare Tunnel exposing only `/share/*` publicly.
+Links the site shows or sends are built from `ngdpbase.application.base-url`, falling back to the request's origin. That base URL must resolve and route for recipients, or every link made is dead. [#860](https://github.com/jwilleke/ngdpbase/issues/860) is the example: the fix was a path-filtered Cloudflare Tunnel exposing only `/share/*` publicly.
 
 ## Where it lives
 

@@ -23,7 +23,7 @@ Use the title pattern that matches the page's __audience and purpose__:
 
 | Page type | Audience | Title pattern | Example |
 | --- | --- | --- | --- |
-| End-user guide | Residents, members, visitors — people who *use* the site | `Using <Feature>` | `Using Reservation Form`, `Using the Calendar` |
+| End-user guide | Residents, members, visitors — anyone who *uses* the site | `Using <Feature>` | `Using Reservation Form`, `Using the Calendar` |
 | Plugin end-user guide | Anyone using a built-in plugin | `Using <Name>Plugin` | `Using CalendarPlugin`, `Using AttachPlugin`, `Using FormPlugin` |
 | Editor/admin how-to | Page editors and site administrators | Descriptive verb phrase | `Embedding a Form`, `Managing Submissions` |
 | Admin/operator reference | Administrators | Descriptive noun phrase | `Form Definition Reference`, `Configuration Properties Reference` |
@@ -31,7 +31,7 @@ Use the title pattern that matches the page's __audience and purpose__:
 
 ### The "Using \<Feature\>" pattern — end-user only
 
-The `Using <Feature>` prefix is __reserved for true end-user documentation__ — pages written for the people who visit and use the site (residents, members, the general public). It is not used for pages aimed at editors embedding plugins, administrators configuring the system, or developers building addons.
+The `Using <Feature>` prefix is __reserved for true end-user documentation__ — pages written for those who visit and use the site (residents, members, the general public). It is not used for pages aimed at editors embedding plugins, administrators configuring the system, or developers building addons.
 
 A page titled "Using Reservation Form" answers the question a resident asks: *how do I make a reservation?* It covers what the form looks like, what to fill in, and what happens after submitting. It does not explain how the form was defined, how the plugin is embedded, or how the handler works.
 

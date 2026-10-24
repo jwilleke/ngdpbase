@@ -22,7 +22,7 @@ What is __not__ affected when the flag is `false`:
 
 - __Login__ — every login path works normally for accounts that already exist (password, magic-link, OIDC for known users).
 - __Admin-created users__ — admins can still create accounts manually via the admin UI / `UserManager` API.
-- __Connected outside identities__ — a person who connected a Google (or other outside) identity keeps signing in with it.
+- __Connected outside identities__ — a user who connected a Google (or other outside) identity keeps signing in with it.
 
 ---
 
@@ -147,7 +147,7 @@ To run an instance where an __email link is the only way to get an account__ —
 
 Behaviour worth knowing:
 
-- __The account is created on verify, not on request.__ An address nobody controls never becomes an account, and requests sprayed at other people's addresses leave nothing behind.
+- __The account is created on verify, not on request.__ An address nobody controls never becomes an account, and requests sprayed at addresses that belong to others leave nothing behind.
 - __These accounts have no password.__ They are created `isExternal`, which stores an empty password hash; `verifyPassword` compares a SHA-256 digest against it and a digest is never empty, so no password input can ever log them in.
 - __Unknown addresses stay unenumerable.__ A known and an unknown address get the same response, status and timing. Only the recipient sees the difference.
 - __`base-url` must be set explicitly__ or the magic-link provider refuses to register at all (#642) — a token in a URL is a credential and must not point at the localhost default.

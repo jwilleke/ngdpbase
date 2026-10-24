@@ -235,7 +235,7 @@ __Why a sibling block, not a `schema-type` field on `ngdpbase.system-category` e
 
 __Why is `user-profile` not in the shipped defaults?__
 
-Proper schema.org modeling for a profile page is a multi-node `@graph`: `ProfilePage` (page wrapper) + `Person` (`mainEntity` — the human the profile is about) + `BlogPosting` or `Article` (the body content). The `Person` data lives on the User record (`User.profilePage` pointer at `src/types/User.ts:127`), not on the page itself. That render path is a separate sub-issue keyed off the User→Page pointer, not the page's `system-category`. Until that lands, `user-profile` pages render as plain `Article` — same as today.
+Proper schema.org modeling for a profile page is a multi-node `@graph`: `ProfilePage` (page wrapper) + `Person` (`mainEntity` — the user the profile is about) + `BlogPosting` or `Article` (the body content). The `Person` data lives on the User record (`User.profilePage` pointer at `src/types/User.ts:127`), not on the page itself. That render path is a separate sub-issue keyed off the User→Page pointer, not the page's `system-category`. Until that lands, `user-profile` pages render as plain `Article` — same as today.
 
 __`DigitalDocument` is not affected.__ Per [#791](https://github.com/jwilleke/ngdpbase/issues/791): pages always render as Article (or an Article subtype); PDFs/docx attachments still render as `DigitalDocument` via AttachmentManager's own render path. The two type families stay separate per their separate storage pipelines.
 
