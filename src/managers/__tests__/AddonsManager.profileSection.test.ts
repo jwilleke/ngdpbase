@@ -91,13 +91,26 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
   };
 
   describe('getProfileSections()', () => {
+    it('hands each addon the signed-in user\'s own context (#2018)', async () => {
+      await writeAddon('ctxcheck',
+        'profileSection: (user, ctx) => ({ title: \'Ctx\', html: String(ctx && ctx.username) })');
+
+      const mgr = new AddonsManager(makeEngine(makeConfigManager(['ctxcheck'])));
+      await mgr.initialize();
+
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
+
+      expect(sections).toHaveLength(1);
+      expect((sections[0] as { html: string }).html).toBe(String(ALICE.username));
+    });
+
     it('returns empty array when no addons advertise profileSection', async () => {
       await writeAddon('plain', 'status: () => ({ healthy: true })');
 
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['plain'])));
       await mgr.initialize();
 
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(sections).toEqual([]);
     });
@@ -111,7 +124,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['alpha', 'beta'])));
       await mgr.initialize();
 
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(sections).toHaveLength(2);
       const byName = Object.fromEntries(sections.map((s: { addonName: string }) => [s.addonName, s]));
@@ -128,7 +141,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['opt-out', 'opt-in'])));
       await mgr.initialize();
 
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(sections).toHaveLength(1);
       expect(sections[0].addonName).toBe('opt-in');
@@ -144,7 +157,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Must not throw
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(sections).toHaveLength(1);
       expect(sections[0].addonName).toBe('healthy');
@@ -165,7 +178,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       )));
       await mgr.initialize();
 
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(sections).toHaveLength(1);
       expect(sections[0].addonName).toBe('valid');
@@ -181,7 +194,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['malformed'])));
       await mgr.initialize();
 
-      await mgr.getProfileSections(makeUser());
+      await mgr.getProfileSections(makeUser(), ALICE);
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('malformed shape')
@@ -198,7 +211,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['opt-out'])));
       await mgr.initialize();
 
-      await mgr.getProfileSections(makeUser());
+      await mgr.getProfileSections(makeUser(), ALICE);
 
       // No malformed-shape warning, no failed-call warning — opt-out is normal.
       const warnCalls = (logger.warn as ReturnType<typeof vi.fn>).mock.calls.filter(
@@ -221,7 +234,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       const start = Date.now();
-      const sections = await mgr.getProfileSections(makeUser());
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
       const elapsed = Date.now() - start;
 
       expect(sections).toHaveLength(2);

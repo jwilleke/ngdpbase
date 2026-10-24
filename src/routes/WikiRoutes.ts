@@ -8518,7 +8518,8 @@ ${panes}
         && freshUser
         && typeof (addonsManager as { getProfileSections?: unknown }).getProfileSections === 'function'
       )
-        ? await (addonsManager as { getProfileSections: (u: unknown) => Promise<unknown[]> }).getProfileSections(freshUser)
+        // #2018: the user's own context, forwarded — add-ons pass it to their doors.
+        ? await (addonsManager as { getProfileSections: (u: unknown, ctx: ActorContext) => Promise<unknown[]> }).getProfileSections(freshUser, currentUser)
         : [];
 
       // #842: "Share Links" profile section for users who may create shares.
