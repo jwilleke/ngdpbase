@@ -488,41 +488,67 @@ A per-page frontmatter flag (`author-lock: true`) that restricts the edit form t
 
 ## Identities
 
-Never assume an identity is human: it may be a person, an agent or a service. Never use "person" on its own for any of these terms (operator, 2026-10-23).
+The model and its reasons are in [docs/planning/identity-model.md](planning/identity-model.md) (operator-approved 2026-10-24). These terms are used exactly, everywhere: prose, screens, issues, code comments. Never use "person" on its own, and never assume an identity is human.
 
 ### Digital Identity
 
 Preferred: __Digital identity__
-Avoid: "person", "human", "people" for the general case
+Avoid: "person", "human", "people"
 
-Anything the site keeps a record of that can be named, contacted or given a role. Every digital identity is either a __User__ or a __Contact__.
+The representation of an identity. It may be a human, an agent or an API service; the site does not know and does not care. Every digital identity has one record and one id for life: its `@id`, a `urn:uuid`. Anything that refers to an identity stores that `@id`, never a username. A digital identity is either a __User__ or a __Contact__; an __Organization__ is one too.
+
+### Credentials
+
+Preferred: __Credentials__
+
+What lets a digital identity authenticate: a password, a passkey, or a link to an outside sign-in. A digital identity may or may not have them. Gaining credentials does not create a new identity: same record, same id.
 
 ### User
 
 Preferred: __User__
 Avoid: "person", "member", "account" for the identity itself
 
-A digital identity for which the site holds credentials: a password, a passkey, or a link to an outside sign-in. Only users sign in and act. Owned by `UserManager`.
+A digital identity that has credentials. Only users authenticate, act, and hold roles. The sign-in part (username, password, passkeys, outside sign-ins, preferences) is owned by `UserManager`; the username is only a sign-in name, never the identity's id.
 
 ### Contact
 
 Preferred: __Contact__
 Avoid: "person", "person without an account"
 
-A digital identity with no credentials. A contact cannot sign in and never acts. It becomes a user only when it is joined to a new account.
+A digital identity with no credentials. A contact never acts and holds no roles; it is only acted on. It becomes a user when it gains credentials, keeping its id.
 
 ### Identity Record
 
 Preferred: __Identity record__
 Avoid: "person", "person record"
 
-What `PersonManager` keeps about a user or a contact: name, email, address. A record, never something that acts. A user's identity record is part of their profile.
+What `IdentityManager` (today's `PersonManager`) keeps about every digital identity, user or contact: name, email, address, phones (`contactPoint`), affiliations. A record, never something that acts. Searching identities is `IdentityManager`'s.
+
+### Role
+
+Preferred: __Role__
+
+A set of permissions granted against resources. Only users hold roles, because only users act. Never a title or a group.
+
+### Affiliation
+
+Preferred: __Affiliation__
+Avoid: "relationship", "role" for this
+
+Puts digital identities into groups within an organization: all Owners, Occupants or Vendors of the association. Shape: schema.org `OrganizationRole` — `memberOf` an organization, a __title__, optional start and end dates. An affiliation with the site's own organization is a fact; with any other organization it is a claim. Users and contacts both have affiliations. An affiliation never grants a permission; a separate rule may give users with an affiliation a role.
+
+### Title
+
+Preferred: __Title__
+Avoid: "role" for this
+
+An affiliation's name within its organization (Owner, Treasurer, Vendor), stored as schema.org `roleName`. Free text. Never a Role.
 
 ### Profile
 
 Preferred: __Profile__
 
-What a user reads and manages about themselves, at `/profile`, under `profile-manage`, which every user holds. Reading or changing anyone else's identity record needs `contact-read` / `contact-manage`.
+What a user reads and manages about themselves, at `/profile`, under `profile-manage`, which every user holds; it includes their own identity record. Reading anyone else's identity record needs `identity-read` (today `contact-read`), changing one `identity-manage` (today `contact-manage`).
 
 ---
 
