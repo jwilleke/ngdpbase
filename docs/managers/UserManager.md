@@ -129,7 +129,7 @@ Defined by the `User` interface in `src/types/User.ts`, which is the authoritati
 }
 ```
 
-__Roles are not on the record.__ `User.roles[]` is deprecated as of #617 iteration 3b — membership is owned by `RoleManager` as `OrganizationRole` records. Read a user's roles with `resolveUserRoles(username)`; never from this object.
+__Roles are not on the record.__ `User.roles[]` is deprecated as of #617 iteration 3b — membership is owned by `RoleManager` as `OrganizationRole` records. Read a user's roles with `RoleManager.resolveUserRoles(ctx, username)` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)); never from this object.
 
 ### Account flags
 

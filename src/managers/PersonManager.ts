@@ -8,7 +8,7 @@ import type { PersonProvider } from '../types/PersonProvider.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { ACCOUNTLESS_PERSON_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
-import { recordContactChange, requireContactPermission } from '../utils/contactAccess.js';
+import { recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 
 interface PersonProviderConstructor {
   new (engine: WikiEngine): PersonProvider;
@@ -23,7 +23,7 @@ interface MetricsManagerLike {
 }
 
 interface OrganizationLookup {
-  getById(id: string): Promise<{ '@id': string } | null>;
+  getById(ctx: ActorContext, id: string): Promise<{ '@id': string } | null>;
 }
 
 interface RoleMembershipMover {
@@ -68,8 +68,13 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * `linkAccount` take the caller's context first and ask the PDP: `contact-read`
  * to list, search or get; `contact-manage` to change (`linkAccount` also `user-edit`). Each change is recorded as
  * the `contact-manage` audit event. A refusal throws `ContactRefusedError`.
- * `getById` / `getByIdentifier` stay as context-free lookups for core's own
- * hot paths (RoleManager resolves roles through them on every request).
+ *
+ * Every lookup takes the caller's context too (#2018): `getById`,
+ * `getByIdentifier` and `getByUserIdentifier`. A user reads their own identity
+ * record, and `update` changes it, under `profile-manage`; anyone else's needs
+ * `contact-read` / `contact-manage`. Core's own reads (RoleManager resolving
+ * roles on every request, UserManager's account lifecycle) pass the system
+ * context, allowed without a policy evaluation (`requireRecordAccess`).
  *
  * A later sign-up joins a person with no account in one of two ways: the new
  * account confirms an emailed link (`offerSignUpLink` → `confirmSignUpLink`),
@@ -77,8 +82,8 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * person keeps its `@id` and takes the account; the person made for the new
  * account is folded into it and removed, so there is never a second person.
  *
- * `getByUserIdentifier(username)` remains as a lazy-migration entry point
- * for legacy users that pre-date the sync wiring.
+ * `getByUserIdentifier(ctx, username)` remains as a lazy-migration entry
+ * point for legacy users that pre-date the sync wiring.
  */
 class PersonManager extends BaseManager {
   readonly description = 'Canonical Person records (#617)';
@@ -158,7 +163,27 @@ class PersonManager extends BaseManager {
     return this.provider;
   }
 
-  async getById(id: string): Promise<Person | null> {
+  /**
+   * One identity record by `@id` (#2018): the caller's own under
+   * `profile-manage`, anyone else's under `contact-read`, core's own work
+   * under the system context. A refusal throws `ContactRefusedError`.
+   */
+  async getById(ctx: ActorContext, id: string): Promise<Person | null> {
+    const person = await this.cachedById(id);
+    await requireRecordAccess(this.engine, ctx, 'read', person);
+    return person;
+  }
+
+  /**
+   * The identity record whose `identifier` is `identifier` (a username, or a
+   * contact's `person:<uuid>`), decided as {@link getById} before it is read.
+   */
+  async getByIdentifier(ctx: ActorContext, identifier: string): Promise<Person | null> {
+    await requireRecordAccess(this.engine, ctx, 'read', { identifier });
+    return this.cachedByIdentifier(identifier);
+  }
+
+  private async cachedById(id: string): Promise<Person | null> {
     if (this.byIdCache.has(id)) {
       this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
       return this.byIdCache.get(id) ?? null;
@@ -169,7 +194,7 @@ class PersonManager extends BaseManager {
     return person;
   }
 
-  async getByIdentifier(identifier: string): Promise<Person | null> {
+  private async cachedByIdentifier(identifier: string): Promise<Person | null> {
     if (this.byIdentifierCache.has(identifier)) {
       this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
       return this.byIdentifierCache.get(identifier) ?? null;
@@ -199,10 +224,9 @@ class PersonManager extends BaseManager {
     return this.requireProvider().list();
   }
 
-  /** One person by `@id`, for a caller who may read contacts (`contact-read`). */
+  /** One person by `@id`: {@link getById}, the caller's own under `profile-manage`, anyone else's under `contact-read`. */
   async get(ctx: ActorContext, id: string): Promise<Person | null> {
-    await requireContactPermission(this.engine, ctx, 'read');
-    return this.getById(id);
+    return this.getById(ctx, id);
   }
 
   /**
@@ -250,7 +274,7 @@ class PersonManager extends BaseManager {
       }
       identifier = requested;
     }
-    if ('affiliation' in fields) fields.affiliation = await this.checkedAffiliations(fields.affiliation);
+    if ('affiliation' in fields) fields.affiliation = await this.checkedAffiliations(ctx, fields.affiliation);
     const person: Person = {
       ...fields,
       '@context': 'https://schema.org',
@@ -264,12 +288,16 @@ class PersonManager extends BaseManager {
     return result;
   }
 
-  /** Change a person's fields, affiliations included. `@id` and `identifier` never change here. */
+  /**
+   * Change a person's fields, affiliations included. `@id` and `identifier`
+   * never change here. The caller's own identity record under
+   * `profile-manage`, anyone else's under `contact-manage` (#2018).
+   */
   async update(ctx: ActorContext, id: string, patch: PersonUpdate): Promise<Person | null> {
-    await requireContactPermission(this.engine, ctx, 'manage');
+    await requireRecordAccess(this.engine, ctx, 'manage', await this.cachedById(id));
     const clean: Record<string, unknown> = { ...(patch ?? {}) };
     for (const fixed of ['@context', '@type', '@id', 'identifier']) delete clean[fixed];
-    if ('affiliation' in clean) clean.affiliation = await this.checkedAffiliations(clean.affiliation);
+    if ('affiliation' in clean) clean.affiliation = await this.checkedAffiliations(ctx, clean.affiliation);
     const result = await this.requireProvider().update(id, clean);
     this.invalidateCache();
     if (result) await recordContactChange(this.engine, ctx, { kind: 'person', operation: 'update', id, fields: Object.keys(clean).sort() });
@@ -359,7 +387,7 @@ class PersonManager extends BaseManager {
   async signUpLinkOffer(ctx: ActorContext, token: string): Promise<LinkOfferDetails | null> {
     const offer = this.liveOffer(ctx, token);
     if (!offer) return null;
-    const person = await this.getById(offer.personId);
+    const person = await this.cachedById(offer.personId);
     if (!person || !PersonManager.isAccountless(person)) return null;
     return { personName: typeof person.name === 'string' ? person.name : null, email: offer.address };
   }
@@ -450,8 +478,11 @@ class PersonManager extends BaseManager {
     return joined;
   }
 
-  /** Each affiliation names an organization that exists; `role` is trimmed text. Throws on any other shape. */
-  private async checkedAffiliations(value: unknown): Promise<PersonAffiliation[]> {
+  /**
+   * Each affiliation names an organization that exists, looked up with the
+   * caller's context; `role` is trimmed text. Throws on any other shape.
+   */
+  private async checkedAffiliations(ctx: ActorContext, value: unknown): Promise<PersonAffiliation[]> {
     if (value === undefined || value === null) return [];
     if (!Array.isArray(value)) throw new Error('PersonManager: affiliation must be a list of { organization, role? }');
     const orgs = this.engine.getManager<OrganizationLookup>('OrganizationManager');
@@ -461,7 +492,7 @@ class PersonManager extends BaseManager {
       const role = (entry as { role?: unknown })?.role;
       if (typeof organization !== 'string' || !organization) throw new Error('PersonManager: each affiliation names an organization by its @id');
       if (role !== undefined && typeof role !== 'string') throw new Error('PersonManager: an affiliation\'s role is text');
-      if (!orgs || !(await orgs.getById(organization))) throw new Error(`PersonManager: no organization '${organization}'`);
+      if (!orgs || !(await orgs.getById(ctx, organization))) throw new Error(`PersonManager: no organization '${organization}'`);
       out.push({ organization, ...(role && role.trim() ? { role: role.trim() } : {}) });
     }
     return dedupeAffiliations(out);
@@ -486,9 +517,12 @@ class PersonManager extends BaseManager {
    *
    * Returns the Person paired to `username`. If none exists and a matching
    * User does, a Person is created from the User's email/displayName and
-   * persisted. Subsequent calls return the persisted record.
+   * persisted. Subsequent calls return the persisted record. Decided as
+   * {@link getByIdentifier} (#2018): a signed-in user's own under
+   * `profile-manage` ("your receipts"), anyone else's under `contact-read`.
    */
-  async getByUserIdentifier(username: string): Promise<Person | null> {
+  async getByUserIdentifier(ctx: ActorContext, username: string): Promise<Person | null> {
+    await requireRecordAccess(this.engine, ctx, 'read', { identifier: username });
     const provider = this.requireProvider();
     const existing = await provider.getByIdentifier(username);
     if (existing) return existing;

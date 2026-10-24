@@ -1,7 +1,7 @@
 ---
 name: RoleManager
 description: Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up)
-dateModified: '2026-10-23'
+dateModified: '2026-10-24'
 category: managers
 code: src/managers/RoleManager.ts
 ---
@@ -16,10 +16,13 @@ Which roles __exist__ is a declaration in configuration (`ngdpbase.roles.definit
 
 Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12. Callers hold usernames; `PersonManager` maps a username to the identity record's `@id` a role record lists.
 
+Who holds a role is read about a named account, so every read takes the caller's context first ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). `resolveUserRoles` and `hasRole` read the account's identity record through `PersonManager.getByIdentifier(ctx, username)`: a user about themselves under `profile-manage`, about anyone else under `contact-read`. A refusal is thrown as `ContactRefusedError`, never answered as "no roles". Core's own reads pass the system context (`systemContext(engine, reason)`), allowed without a policy evaluation: `PolicyInformationPoint.subjectFor` on every request, the idle-timeout check in `app.ts`, `UserManager`'s account lifecycle, its user search's role filter and the contact-form recipient, the user-management pages after their `user-read` decision, and the install reset. An add-on job passes its job context: on its schedule that is the system context; started from a request, it is the requester's.
+
 | Method | For |
 | --- | --- |
-| `resolveUserRoles(username)` | the user's role names, live; `[]` when there is no identity record or no role record |
-| `hasRole(username, roleName)` | the same question for one role — a lookup, not an access decision |
+| `resolveUserRoles(ctx, username)` | the user's role names, live; `[]` when there is no identity record or no role record |
+| `hasRole(ctx, username, roleName)` | the same question for one role — a lookup, not an access decision |
+| `getById(ctx, id)` | one role record; its members are identity records, so `contact-read`, or the system context |
 | `assignRole(username, roleName, ctx)` / `removeRole(…)` | one role, for an existing account and a declared role; recorded as `user-edit` |
 | `applyRoleDiff(username, oldRoles, newRoles)` | what `UserManager` calls when an account is created or edited; the account write records the audit event |
 | `removeAllMemberships(username)` | a deleted account's identity record leaves every role |

@@ -656,7 +656,7 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
         getProperty: (_key: string, def: unknown) => def,
         getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.notifications.dir' ? tempDir : def)
       },
-      PersonManager: { getByIdentifier: async (username: string) => ({ '@id': `urn:person:${username}`, identifier: username }) }
+      PersonManager: { getByIdentifier: async (_ctx: unknown, username: string) => ({ '@id': `urn:person:${username}`, identifier: username }) }
     };
     const engine = { getManager: (name: string) => managers[name], createRouter: () => express.Router() };
 

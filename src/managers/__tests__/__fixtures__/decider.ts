@@ -27,7 +27,7 @@ export function makeDecider(opts: {
   const managers: Record<string, unknown> = {
     PolicyEvaluator: { evaluateAccess: opts.evaluateAccess },
     UserManager: { getUser: (u: string) => Promise.resolve(opts.users?.(u) ?? undefined) },
-    RoleManager: { resolveUserRoles: (u: string) => Promise.resolve(opts.roles?.(u) ?? []) },
+    RoleManager: { resolveUserRoles: (_ctx: unknown, u: string) => Promise.resolve(opts.roles?.(u) ?? []) },
     // #631: resolving a subject first asks whether the name is the system principal.
     ConfigurationManager: {
       getProperty: (k: string, d: unknown) =>

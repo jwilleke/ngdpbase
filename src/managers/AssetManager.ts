@@ -20,6 +20,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AssetProvider, AssetRecord, AssetPage, AssetQuery, AssetAggregations, AssetFacet, ProviderHealthStatus, ProviderHealthReport } from '../types/Asset.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import logger from '../utils/logger.js';
 
 class AssetManager extends BaseManager {
@@ -234,12 +235,14 @@ class AssetManager extends BaseManager {
   /**
    * Return all AssetRecords referenced by the given page slug.
    *
-   * O(1) index lookup + one getById() call per referenced asset.
+   * O(1) index lookup + one provider lookup per referenced asset.
    * Stale entries (asset deleted or provider removed) are silently filtered out.
+   * Nothing for a caller who may not read assets (`asset-read`, #2018).
    */
-  async getAssetsForPage(slug: string): Promise<AssetRecord[]> {
+  async getAssetsForPage(ctx: ActorContext, slug: string): Promise<AssetRecord[]> {
     const composites = this.pageAssetsMap.get(slug);
     if (!composites || composites.size === 0) return [];
+    if (!(await subjectMayDo(this.engine, ctx, 'asset-read'))) return [];
 
     const results = await Promise.all(
       [...composites].map(async composite => {
@@ -248,7 +251,7 @@ class AssetManager extends BaseManager {
         const providerId = composite.slice(0, colon);
         const assetId = composite.slice(colon + 1);
         try {
-          return await this.getById(assetId, providerId);
+          return await this.lookup(assetId, providerId);
         } catch {
           return null;
         }
@@ -396,8 +399,15 @@ class AssetManager extends BaseManager {
   /**
    * Retrieve a single asset by id.  If providerId is given only that provider
    * is checked; otherwise all providers are tried in registration order.
+   * Null for a caller who may not read assets (`asset-read`, asked of the PDP
+   * with `ctx`, as FileManager asks for the public place; #2018).
    */
-  async getById(id: string, providerId?: string): Promise<AssetRecord | null> {
+  async getById(ctx: ActorContext, id: string, providerId?: string): Promise<AssetRecord | null> {
+    if (!(await subjectMayDo(this.engine, ctx, 'asset-read'))) return null;
+    return this.lookup(id, providerId);
+  }
+
+  private async lookup(id: string, providerId?: string): Promise<AssetRecord | null> {
     const providers = providerId
       ? (this.registry.has(providerId) ? [this.registry.get(providerId)!] : [])
       : [...this.registry.values()];

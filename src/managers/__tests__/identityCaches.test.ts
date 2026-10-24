@@ -22,6 +22,9 @@ describe('Identity manager caches (#620 Option B)', () => {
   // #1930: the person and organization doors take a context and ask the PDP.
   const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
   const PERMIT_ALL = { decide: vi.fn(async () => ({ permit: true, applicable: true, reason: 'test' })) };
+  // #2018: the lookups take a context too. These tests are about the caches, so
+  // they read as core does: the system context (no PIP here, so the principal is 'system').
+  const SYS = { username: 'system', origin: 'boot' as const, requestedAt: new Date(0).toISOString(), reason: 'test: identity caches' };
 
   const makeConfig = (overrides: Record<string, unknown> = {}) => ({
     getProperty: vi.fn((key: string, defaultValue: unknown) => {
@@ -246,9 +249,9 @@ describe('Identity manager caches (#620 Option B)', () => {
     test('getByIdentifier: repeated reads with same key hit the provider once', async () => {
       const { manager, provider } = await makeManager([mockPerson('alice')]);
 
-      await manager.getByIdentifier('alice');
-      await manager.getByIdentifier('alice');
-      await manager.getByIdentifier('alice');
+      await manager.getByIdentifier(SYS, 'alice');
+      await manager.getByIdentifier(SYS, 'alice');
+      await manager.getByIdentifier(SYS, 'alice');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(1);
     });
@@ -256,8 +259,8 @@ describe('Identity manager caches (#620 Option B)', () => {
     test('getByIdentifier: caches null results too', async () => {
       const { manager, provider } = await makeManager([]);
 
-      await manager.getByIdentifier('ghost');
-      await manager.getByIdentifier('ghost');
+      await manager.getByIdentifier(SYS, 'ghost');
+      await manager.getByIdentifier(SYS, 'ghost');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(1);
     });
@@ -265,11 +268,11 @@ describe('Identity manager caches (#620 Option B)', () => {
     test('create busts both caches', async () => {
       const { manager, provider } = await makeManager([mockPerson('alice')]);
 
-      await manager.getByIdentifier('alice');
-      await manager.getById(mockPerson('alice')['@id']);
+      await manager.getByIdentifier(SYS, 'alice');
+      await manager.getById(SYS, mockPerson('alice')['@id']);
       await manager.create(CTX, { name: 'Bob' });
-      await manager.getByIdentifier('alice');
-      await manager.getById(mockPerson('alice')['@id']);
+      await manager.getByIdentifier(SYS, 'alice');
+      await manager.getById(SYS, mockPerson('alice')['@id']);
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(2);
       expect(provider.getById).toHaveBeenCalledTimes(2);
@@ -279,9 +282,9 @@ describe('Identity manager caches (#620 Option B)', () => {
       const alice = mockPerson('alice');
       const { manager, provider } = await makeManager([alice]);
 
-      await manager.getByIdentifier('alice');
+      await manager.getByIdentifier(SYS, 'alice');
       await manager.update(CTX, alice['@id'], { name: 'Alice Smith' });
-      await manager.getByIdentifier('alice');
+      await manager.getByIdentifier(SYS, 'alice');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(2);
     });
@@ -290,9 +293,9 @@ describe('Identity manager caches (#620 Option B)', () => {
       const alice = mockPerson('alice');
       const { manager, provider } = await makeManager([alice]);
 
-      await manager.getByIdentifier('alice');
+      await manager.getByIdentifier(SYS, 'alice');
       await manager.delete(CTX, alice['@id']);
-      const after = await manager.getByIdentifier('alice');
+      const after = await manager.getByIdentifier(SYS, 'alice');
 
       expect(provider.getByIdentifier).toHaveBeenCalledTimes(2);
       expect(after).toBeNull();
@@ -384,12 +387,12 @@ describe('Identity manager caches (#620 Option B)', () => {
       const { manager, provider } = await makeManager([anchor], { 'anchor.json': anchor }, 'anchor.json');
 
       await manager.getInstallOrg();
-      await manager.getByFile('anchor.json');
-      await manager.getById(ORG_ID);
+      await manager.getByFile(SYS, 'anchor.json');
+      await manager.getById(SYS, ORG_ID);
       await manager.create(CTX, mockOrg('urn:other', 'Other'));
       await manager.getInstallOrg();
-      await manager.getByFile('anchor.json');
-      await manager.getById(ORG_ID);
+      await manager.getByFile(SYS, 'anchor.json');
+      await manager.getById(SYS, ORG_ID);
 
       expect(provider.getByFile).toHaveBeenCalledTimes(2 + 2);
       expect(provider.getById).toHaveBeenCalledTimes(2);
@@ -410,9 +413,9 @@ describe('Identity manager caches (#620 Option B)', () => {
       const anchor = mockOrg(ORG_ID, 'Anchor');
       const { manager, provider } = await makeManager([anchor], { 'anchor.json': anchor }, 'anchor.json');
 
-      await manager.getById(ORG_ID);
+      await manager.getById(SYS, ORG_ID);
       await manager.delete(CTX, ORG_ID);
-      await manager.getById(ORG_ID);
+      await manager.getById(SYS, ORG_ID);
 
       expect(provider.getById).toHaveBeenCalledTimes(2);
     });
@@ -502,8 +505,8 @@ describe('Identity manager caches (#620 Option B)', () => {
         list: vi.fn(async () => [])
       };
 
-      await manager.getByIdentifier('alice'); // miss
-      await manager.getByIdentifier('alice'); // hit
+      await manager.getByIdentifier(SYS, 'alice'); // miss
+      await manager.getByIdentifier(SYS, 'alice'); // hit
 
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'miss' });
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
@@ -529,8 +532,8 @@ describe('Identity manager caches (#620 Option B)', () => {
         list: vi.fn(async () => [])
       };
 
-      await manager.getById(PERSON_A); // miss
-      await manager.getById(PERSON_A); // hit
+      await manager.getById(SYS, PERSON_A); // miss
+      await manager.getById(SYS, PERSON_A); // hit
 
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'miss' });
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
@@ -584,8 +587,8 @@ describe('Identity manager caches (#620 Option B)', () => {
         list: vi.fn(async () => [])
       };
 
-      await manager.getById(ORG_ID); // miss
-      await manager.getById(ORG_ID); // hit
+      await manager.getById(SYS, ORG_ID); // miss
+      await manager.getById(SYS, ORG_ID); // hit
 
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byId', result: 'miss' });
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byId', result: 'hit' });
@@ -611,8 +614,8 @@ describe('Identity manager caches (#620 Option B)', () => {
         list: vi.fn(async () => [])
       };
 
-      await manager.getByFile('anchor.json'); // miss
-      await manager.getByFile('anchor.json'); // hit
+      await manager.getByFile(SYS, 'anchor.json'); // miss
+      await manager.getByFile(SYS, 'anchor.json'); // hit
 
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byFile', result: 'miss' });
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byFile', result: 'hit' });
@@ -634,8 +637,8 @@ describe('Identity manager caches (#620 Option B)', () => {
       };
 
       // Should not throw — getMetrics() resolves to null and the optional chain no-ops.
-      await expect(manager.getByIdentifier('alice')).resolves.toBeNull();
-      await expect(manager.getByIdentifier('alice')).resolves.toBeNull();
+      await expect(manager.getByIdentifier(SYS, 'alice')).resolves.toBeNull();
+      await expect(manager.getByIdentifier(SYS, 'alice')).resolves.toBeNull();
     });
   });
 });

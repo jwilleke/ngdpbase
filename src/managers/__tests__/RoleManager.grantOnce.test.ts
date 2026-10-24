@@ -33,7 +33,7 @@ describe('RoleManager.grantToEveryAccountOnce (#1539)', () => {
         getProperty: (_k: string, d: unknown) => d,
         getResolvedDataPath: () => path.join(tmpDir, 'roles')
       },
-      PersonManager: { getByIdentifier: (u: string) => Promise.resolve(u === 'ghost' ? null : { '@id': personId(u) }) },
+      PersonManager: { getByIdentifier: (_ctx: unknown, u: string) => Promise.resolve(u === 'ghost' ? null : { '@id': personId(u) }) },
       OrganizationManager: { getInstallOrg: () => Promise.resolve(ORG) },
       NotificationManager: { addNotification: (n: Record<string, unknown>) => { notifications.push(n); return Promise.resolve('n'); } }
     };

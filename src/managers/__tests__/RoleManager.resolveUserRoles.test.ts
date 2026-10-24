@@ -7,6 +7,11 @@
  * record, or when the lookup fails. There is no fallback to `User.roles[]`.
  */
 import { roleManagerOver } from './__fixtures__/roleManagerOver';
+import { jobContextFromSystem } from '../../context/JobContext';
+import { ContactRefusedError } from '../../utils/contactAccess';
+
+/** Core's own read (#2018): the system context; the fixture engine has no PIP, so the principal is 'system'. */
+const SYSTEM = jobContextFromSystem('system', 'test: resolve roles');
 
 const PERSON_ID = 'urn:uuid:11111111-1111-1111-1111-111111111111';
 
@@ -24,13 +29,13 @@ function makeRoleManager(opts: {
   listByMember?: ReturnType<typeof vi.fn>;
 }) {
   const personManager = opts.registerPersonManager === false ? null : {
-    getByIdentifier: vi.fn(async () => opts.person ?? null)
+    getByIdentifier: vi.fn(async (_ctx: unknown, _identifier: string) => opts.person ?? null)
   };
   const listByMember = opts.listByMember ?? vi.fn(async () => opts.roles ?? []);
   const engine = {
     getManager: vi.fn((name: string) => (name === 'PersonManager' ? personManager : null))
   };
-  return { roleManager: roleManagerOver(engine, { listByMember }), listByMember };
+  return { roleManager: roleManagerOver(engine, { listByMember }), listByMember, personManager };
 }
 
 describe('RoleManager.resolveUserRoles (#617)', () => {
@@ -43,13 +48,13 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       ]
     });
 
-    expect((await roleManager.resolveUserRoles('alice')).sort()).toEqual(['admin', 'editor']);
+    expect((await roleManager.resolveUserRoles(SYSTEM, 'alice')).sort()).toEqual(['admin', 'editor']);
     expect(listByMember).toHaveBeenCalledWith(PERSON_ID);
   });
 
   test('returns [] when no record lists the Person', async () => {
     const { roleManager } = makeRoleManager({ person: { '@id': PERSON_ID, identifier: 'alice' }, roles: [] });
-    expect(await roleManager.resolveUserRoles('alice')).toEqual([]);
+    expect(await roleManager.resolveUserRoles(SYSTEM, 'alice')).toEqual([]);
   });
 
   test('returns [] when the user has no paired Person record', async () => {
@@ -57,7 +62,7 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       person: null,
       roles: [{ '@id': 'r', namedPosition: 'admin', organization: { '@id': 'o' } }]
     });
-    expect(await roleManager.resolveUserRoles('alice')).toEqual([]);
+    expect(await roleManager.resolveUserRoles(SYSTEM, 'alice')).toEqual([]);
     expect(listByMember).not.toHaveBeenCalled();
   });
 
@@ -66,7 +71,7 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       registerPersonManager: false,
       roles: [{ '@id': 'r', namedPosition: 'admin', organization: { '@id': 'o' } }]
     });
-    expect(await roleManager.resolveUserRoles('alice')).toEqual([]);
+    expect(await roleManager.resolveUserRoles(SYSTEM, 'alice')).toEqual([]);
   });
 
   test('returns [] when the record lookup throws', async () => {
@@ -74,7 +79,7 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       person: { '@id': PERSON_ID, identifier: 'alice' },
       listByMember: vi.fn().mockRejectedValue(new Error('disk corrupt'))
     });
-    expect(await roleManager.resolveUserRoles('alice')).toEqual([]);
+    expect(await roleManager.resolveUserRoles(SYSTEM, 'alice')).toEqual([]);
   });
 
   test('does NOT inject pseudo-roles (Authenticated, All) — the caller does that', async () => {
@@ -82,7 +87,7 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       person: { '@id': PERSON_ID, identifier: 'alice' },
       roles: [{ '@id': 'r', namedPosition: 'admin', organization: { '@id': 'o' } }]
     });
-    const result = await roleManager.resolveUserRoles('alice');
+    const result = await roleManager.resolveUserRoles(SYSTEM, 'alice');
     expect(result).toEqual(['admin']);
     expect(result).not.toContain('Authenticated');
     expect(result).not.toContain('All');
@@ -93,7 +98,16 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
       person: { '@id': PERSON_ID, identifier: 'alice' },
       roles: [{ '@id': 'r', namedPosition: 'editor', organization: { '@id': 'o' } }]
     });
-    expect(await roleManager.hasRole('alice', 'editor')).toBe(true);
-    expect(await roleManager.hasRole('alice', 'admin')).toBe(false);
+    expect(await roleManager.hasRole(SYSTEM, 'alice', 'editor')).toBe(true);
+    expect(await roleManager.hasRole(SYSTEM, 'alice', 'admin')).toBe(false);
+  });
+
+  test('#2018: the caller\'s context goes to PersonManager\'s door, and its refusal is thrown, never "no roles"', async () => {
+    const refusal = new ContactRefusedError('contact-read', { permit: false, applicable: true, reason: 'test' });
+    const { roleManager, personManager } = makeRoleManager({ person: { '@id': PERSON_ID, identifier: 'alice' } });
+    personManager?.getByIdentifier.mockRejectedValueOnce(refusal);
+    const asker = { username: 'bob', roles: ['reader'], isAuthenticated: true };
+    await expect(roleManager.resolveUserRoles(asker, 'alice')).rejects.toBe(refusal);
+    expect(personManager?.getByIdentifier).toHaveBeenCalledWith(asker, 'alice');
   });
 });

@@ -1163,7 +1163,7 @@ class UserManager extends BaseManager {
     const wasTest = user.isTest === true;
     const testChange = updates.isTest !== undefined && (updates.isTest === true) !== wasTest
       ? { from: wasTest, to: updates.isTest === true } : undefined;
-    const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
+    const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(this.lifecycleContext(`read the current roles of account ${username}`, ctx), username) : [];
     const disabling = user.isActive !== false && updates.isActive === false;
     // #1204: only a change that alters what the account may do or who holds
     // it is recorded. Preferences, last-login and login-count updates arrive
@@ -1257,7 +1257,7 @@ class UserManager extends BaseManager {
     }
 
     const who = actorOf(ctx);
-    const roles = await this.roleManager().resolveUserRoles(username);
+    const roles = await this.roleManager().resolveUserRoles(this.lifecycleContext(`read the roles of account ${username} for the delete record`, ctx), username);
     const recordDelete = (result: 'success' | 'failure', reason?: string): Promise<unknown> => recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.USER_DELETE,
       ...who,
@@ -1391,9 +1391,10 @@ class UserManager extends BaseManager {
     if (trimmed) return trimmed;
 
     const all = await this.getUsers();
+    const finder = systemContext(this.engine, 'find the contact form\'s recipient: the first administrator with an email address');
     for (const u of all) {
       if (!u.email || u.email === 'admin@localhost') continue;
-      if (await this.roleManager().hasRole(u.username, 'admin')) return u.email;
+      if (await this.roleManager().hasRole(finder, u.username, 'admin')) return u.email;
     }
     return null;
   }
@@ -1415,6 +1416,9 @@ class UserManager extends BaseManager {
     // (User.roles[] is deprecated). Sync filters run first; the async
     // hasRole call only fires for candidates that already pass them.
     const results: Omit<User, 'password'>[] = [];
+    // #2018: the role filter is this search's own work, so it reads membership
+    // under the system context; the search itself was asked for by `ctx`.
+    const roleFilter = role ? systemContext(this.engine, `filter a user search by the role ${role} (search by ${actorOf(ctx).user})`) : null;
     for (const u of all) {
       if (activeOnly && u.isActive === false) continue;
       if (q) {
@@ -1425,7 +1429,7 @@ class UserManager extends BaseManager {
         );
         if (!matchesQuery) continue;
       }
-      if (role && !(await this.roleManager().hasRole(u.username, role))) continue;
+      if (role && roleFilter && !(await this.roleManager().hasRole(roleFilter, u.username, role))) continue;
       results.push(u);
       if (limit > 0 && results.length >= limit) break;
     }
@@ -1456,7 +1460,12 @@ class UserManager extends BaseManager {
    * who changed it, so the record says why.
    */
   private personSyncContext(what: string, username: string, ctx: ActorContext): JobContext {
-    return systemContext(this.engine, `account lifecycle: ${what} the person for account ${username} (account changed by ${actorOf(ctx).user})`);
+    return this.lifecycleContext(`${what} the person for account ${username}`, ctx);
+  }
+
+  /** Core's bookkeeping for an account write, the read of its roles included (#2018): the system context, saying what and who changed the account. */
+  private lifecycleContext(what: string, ctx: ActorContext): JobContext {
+    return systemContext(this.engine, `account lifecycle: ${what} (account changed by ${actorOf(ctx).user})`);
   }
 
   /**
@@ -1502,7 +1511,7 @@ class UserManager extends BaseManager {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
-      const person = await personManager.getByIdentifier(username);
+      const person = await personManager.getByIdentifier(this.personSyncContext('update', username, ctx), username);
       if (!person) return;
       const patch: PersonUpdate = {};
       if (updates.displayName !== undefined) patch.name = updates.displayName;
@@ -1518,7 +1527,7 @@ class UserManager extends BaseManager {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return;
     try {
-      const person = await personManager.getByIdentifier(username);
+      const person = await personManager.getByIdentifier(this.personSyncContext('delete', username, ctx), username);
       if (!person) return;
       await personManager.delete(this.personSyncContext('delete', username, ctx), person['@id']);
     } catch (error) {

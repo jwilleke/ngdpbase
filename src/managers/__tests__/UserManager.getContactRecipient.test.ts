@@ -34,7 +34,7 @@ describe('UserManager#getContactRecipient()', () => {
 
   const makeEngine = (allUsers: any[]) => {
     const personManager = {
-      getByIdentifier: vi.fn(async (username: string) => {
+      getByIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
         const u = allUsers.find((x) => x.username === username);
         return u ? { '@id': personIdFor(username), identifier: username } : null;
       })

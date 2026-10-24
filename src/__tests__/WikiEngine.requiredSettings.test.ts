@@ -15,6 +15,7 @@ import type PersonManager from '../managers/PersonManager';
 import { systemPrincipalFromConfig } from '../security/PolicyInformationPoint';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword';
 import { becomeRunAsUser } from '../utils/runAsUser';
+import { systemContext } from '../context/bootActions';
 
 // The real user store, so the first boot creates the bootstrap admin (the
 // shared mock reports no store, and the admin is never made).
@@ -64,7 +65,7 @@ describe('required settings refuse before anything is written (#1953)', () => {
     const users = engine.getManager<UserManager>('UserManager');
     const persons = engine.getManager<PersonManager>('PersonManager');
     expect(await users?.getUser('admin')).toBeTruthy();
-    expect(await persons?.getByIdentifier('admin')).toBeTruthy();
+    expect(await persons?.getByIdentifier(systemContext(engine, 'test: the bootstrap admin has its person'), 'admin')).toBeTruthy();
   }, 60_000);
 
   test('every required-setting refusal points to SETUP.md', () => {

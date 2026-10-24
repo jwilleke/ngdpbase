@@ -7,6 +7,7 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
+import { systemContext } from '../context/bootActions.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -287,7 +288,12 @@ class PolicyInformationPoint extends BaseManager {
   async subjectFor(username: string): Promise<UserContext | null> {
     const user = await this.userManager().getUser(username);
     if (!user?.isActive) return null;
-    const roles = await this.roleManager().resolveUserRoles(username);
+    // #2018: core's own read, on every request — the system context, which the
+    // identity-record door allows without a policy evaluation.
+    const roles = await this.roleManager().resolveUserRoles(
+      systemContext(this.engine, `resolve the roles of account ${username} for a decision`),
+      username
+    );
     // permission-subject-ignore: THE resolution site — roles come from the store, now.
     return { ...user, username, roles: [...roles], isAuthenticated: true, authenticated: true };
   }

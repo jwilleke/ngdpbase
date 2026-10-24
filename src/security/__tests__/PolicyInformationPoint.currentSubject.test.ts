@@ -28,7 +28,7 @@ type Req = Record<string, unknown>;
 function makeManager(users: Record<string, { username: string; isActive: boolean; roles?: string[] }>) {
   const managers: Record<string, unknown> = {
     UserManager: { getUser: (username: string) => Promise.resolve(users[username]) },
-    RoleManager: { resolveUserRoles: (username: string) => Promise.resolve(users[username]?.roles ?? []) }
+    RoleManager: { resolveUserRoles: (_ctx: unknown, username: string) => Promise.resolve(users[username]?.roles ?? []) }
   };
   return new PolicyInformationPoint({ getManager: (name: string) => managers[name] ?? null });
 }

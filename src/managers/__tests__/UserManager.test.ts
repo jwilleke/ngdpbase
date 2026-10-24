@@ -427,7 +427,8 @@ describe('UserManager', () => {
 
       await pdp.permits({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
-      expect(mockRoles.resolveUserRoles).toHaveBeenCalledWith('jim');
+      // #2018: core's own read, under the system context.
+      expect(mockRoles.resolveUserRoles).toHaveBeenCalledWith(expect.objectContaining({ origin: 'boot' }), 'jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({ username: 'jim', roles: ['editor'], isAuthenticated: true })

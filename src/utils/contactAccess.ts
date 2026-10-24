@@ -12,10 +12,17 @@
  * A route turns it into the answer with `ApiContext.enforceDeny(err.permission,
  * err.decision)`, the one place a refusal is shaped (#1431); the door never
  * builds an HTTP answer itself.
+ *
+ * Every lookup takes a context too (#2018, operator 2026-10-23), through
+ * {@link requireRecordAccess}: a user's own identity record under
+ * `profile-manage`, anyone else's under `contact-read` / `contact-manage`, and
+ * core's own reads under the system context without a policy evaluation, so
+ * resolving roles on every request stays cheap.
  */
 
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { recordSystemAction } from '../context/bootActions.js';
+import { recordSystemAction, systemPrincipalOf } from '../context/bootActions.js';
+import { sameUsername } from './username.js';
 import { recordAuditEvent, type AuditEventSink } from './auditEvents.js';
 import { AUDIT_EVENT } from './auditEventNames.js';
 import type { CorePermission } from '../security/permissions.generated.js';
@@ -51,8 +58,54 @@ export async function requireContactPermission(
   kind: keyof typeof CONTACT_PERMISSION,
   also: readonly CorePermission[] = []
 ): Promise<void> {
+  await requireEach(engine, ctx, [CONTACT_PERMISSION[kind], ...also]);
+}
+
+/** The permission a user holds over their own profile, their own identity record included (#2018). */
+const OWN_PROFILE_PERMISSION: CorePermission = 'profile-manage';
+
+/**
+ * Core's own work (#2018): a boot or schedule context naming the system
+ * principal, with no token, share or proxy claim. Recognised by its fields
+ * alone, with no policy evaluation, because RoleManager resolves roles
+ * through these lookups on every request. A request never carries this
+ * context: the system principal's name is reserved, so no account holds it.
+ */
+export function isSystemWork(engine: EngineLike, ctx: ActorContext | null | undefined): boolean {
+  if (!ctx || typeof ctx !== 'object' || !isJobContext(ctx)) return false;
+  if (ctx.origin !== 'boot' && ctx.origin !== 'schedule') return false;
+  if (ctx.viaToken || ctx.viaShare || ctx.viaProxy) return false;
+  return sameUsername(ctx.username, systemPrincipalOf(engine));
+}
+
+/**
+ * A lookup or change of one record at a contacts door (#2018). Throws
+ * {@link ContactRefusedError} unless `ctx` may:
+ *
+ * - read it as core's own work ({@link isSystemWork}): allowed, not evaluated;
+ * - read or change its own identity record (the context's username is the
+ *   record's `identifier`): `profile-manage`, which every user holds;
+ * - read or change any other record: `contact-read` / `contact-manage`.
+ *
+ * `record` is the identity record (or what names it, `{ identifier }`); left
+ * out for a record that is never anyone's own (an organization, a role).
+ * "Own" is decided by comparing usernames, never by a role.
+ */
+export async function requireRecordAccess(
+  engine: EngineLike,
+  ctx: ActorContext,
+  kind: keyof typeof CONTACT_PERMISSION,
+  record?: { identifier?: unknown } | null
+): Promise<void> {
+  if (kind === 'read' && isSystemWork(engine, ctx)) return;
+  const own = Boolean(ctx && typeof ctx === 'object' && record && sameUsername(ctx.username, record.identifier));
+  await requireEach(engine, ctx, [own ? OWN_PROFILE_PERMISSION : CONTACT_PERMISSION[kind]]);
+}
+
+/** Ask the PDP each action in turn; the first refusal is thrown. No context or no PDP refuses. */
+async function requireEach(engine: EngineLike, ctx: ActorContext, actions: readonly string[]): Promise<void> {
   const pdp = engine.getManager<DeciderLike>('PolicyDecisionPoint');
-  for (const action of [CONTACT_PERMISSION[kind], ...also]) {
+  for (const action of actions) {
     if (!ctx || !pdp) throw new ContactRefusedError(action, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context' });
     const decision = await pdp.decide(ctx, { action });
     if (!decision.permit) throw new ContactRefusedError(action, decision);

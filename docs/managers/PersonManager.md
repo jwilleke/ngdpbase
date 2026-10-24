@@ -1,7 +1,7 @@
 ---
 name: PersonManager
 description: Canonical Person records (#617) — decoupled from User authentication identity, shared across addons
-dateModified: '2026-10-23'
+dateModified: '2026-10-24'
 category: managers
 code: src/managers/PersonManager.ts
 ---
@@ -16,7 +16,15 @@ Pre-#617, identity data was scattered: author names on pages, contact entries in
 
 ## The contacts door
 
-PersonManager is the door for identity records, of users and contacts alike ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A user reading or changing their own identity record, part of their profile, is checked against `profile-manage` instead; a contact cannot sign in and never acts ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018), decided 2026-10-23). A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
+PersonManager is the door for identity records, of users and contacts alike ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `linkAccount` take the caller's context first, ask `contact-read` to read and `contact-manage` to change (`linkAccount` also `user-edit`), and record each change as the `contact-manage` audit event. A user reading or changing their own identity record, part of their profile, is checked against `profile-manage` instead; a contact cannot sign in and never acts ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)).
+
+Every lookup takes the caller's context first too ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): `getById(ctx, id)`, `getByIdentifier(ctx, identifier)` and `getByUserIdentifier(ctx, username)`. The decision is `requireRecordAccess` in `src/utils/contactAccess.ts`, the one rule for the contacts doors:
+
+- the caller's own identity record (the context's username is the record's `identifier`): `profile-manage`, which every user holds;
+- anyone else's, a contact's included: `contact-read` to read, `contact-manage` to change;
+- core's own reads: the system context (`systemContext(engine, reason)`, origin boot or schedule, naming the system principal, with no token, share or proxy), allowed without a policy evaluation, so resolving roles on every request stays cheap.
+
+"Own" is decided by comparing the context's username with the record, never from a role. A refusal throws `ContactRefusedError`. Reads are not recorded; changes are, as `contact-manage`. `update` follows the same rule: a user changes their own identity record under `profile-manage`; `delete` always asks `contact-manage`. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
 
@@ -26,7 +34,7 @@ PersonManager is the door for identity records, of users and contacts alike ([#1
 
 Per-request hot paths cache by-identifier and by-key lookups (#620):
 
-- `RoleManager.resolveUserRoles → getByIdentifier` (context-free today; to take the system context, [#2018](https://github.com/jwilleke/ngdpbase/issues/2018))
+- `RoleManager.resolveUserRoles → getByIdentifier`, under the system context from `PolicyInformationPoint.subjectFor` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): recognised by its fields, no policy evaluation
 - Various consumer-side `personManager.getByEmail` / `getByUuid` calls
 
 ## Backup and restore
@@ -38,6 +46,6 @@ Person records are in every backup ([#1876](https://github.com/jwilleke/ngdpbase
 - [FilePersonProvider](../providers/FilePersonProvider.md)
 - [OrganizationManager](OrganizationManager.md), [RoleManager](RoleManager.md)
 - `src/types/Person.ts` — `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`
-- `src/utils/contactAccess.ts` — the `contact-read` / `contact-manage` decision and the record, `ContactRefusedError`
+- `src/utils/contactAccess.ts` — the `contact-read` / `contact-manage` decision, the own-record and system-context rule (`requireRecordAccess`, `isSystemWork`), the record, `ContactRefusedError`
 - Issue #617 — canonical-records design
 - Issue #602 — `person-contacts` addon proposal

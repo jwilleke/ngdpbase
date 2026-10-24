@@ -61,7 +61,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   // #1431 step 13: the reserved system-principal name is the PIP's.
   const pip = new PolicyInformationPoint(engine);
   Object.assign(roles, {
-    resolveUserRoles: async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
+    resolveUserRoles: async (_ctx: unknown, n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
     applyRoleDiff: async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); },
     removeAllMemberships: async () => async () => undefined,
     addMember: async () => undefined,
