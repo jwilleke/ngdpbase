@@ -314,6 +314,20 @@ class PolicyInformationPoint extends BaseManager {
   }
 
   /**
+   * The subject as a page's own rules match it (#2022): for a job's subject
+   * (`resolveRolesNow`, #1212), its username with the roles its account
+   * holds NOW, read through {@link resolveSubjectNow} — the path the PDP
+   * takes for the same subject; anyone else as carried. A job carries no
+   * roles, so matching it without this matched none, and an audience naming
+   * a role its user holds left the job out.
+   */
+  private async matchableNow(userContext: UserContext | null | undefined): Promise<UserContext | null | undefined> {
+    if (!(userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow || !userContext) return userContext;
+    // permission-subject-ignore: matching only — the roles are resolved now, from the store.
+    return { username: userContext.username, roles: (await this.resolveSubjectNow(userContext.username)).roles ?? [] } as UserContext;
+  }
+
+  /**
    * Who is making this request: the subject the session middleware resolved,
    * else the session's account resolved now, else the anonymous visitor.
    * It was `UserManager.getCurrentUser` until #1431 step 13.
@@ -625,6 +639,7 @@ class PolicyInformationPoint extends BaseManager {
       // them out (#1964).
       holdsAdminSystem: () => subjectMayDo(this.engine, userContext, 'admin-system'),
       enabledAddons: () => this.enabledAddonsOf(userContext),
+      matchable: () => this.matchableNow(userContext),
       policy: async (extra) => {
         // An evaluator fault denies; it never opens the page. There is no tier
         // below this one to fall through to (Tier 3 was removed in #1431 7a).
@@ -710,6 +725,8 @@ class PolicyInformationPoint extends BaseManager {
     holdsAdminSystem: () => Promise<boolean>;
     /** The subject's enabled per-person add-ons (#1964); asked only for a page that names one. */
     enabledAddons: () => Promise<readonly string[]>;
+    /** The subject as Tier 1 matches it ({@link matchableNow}); asked only for a page with frontmatter rules. */
+    matchable: () => Promise<UserContext | null | undefined>;
     policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
   }): Promise<{ allowed: boolean; reason: string }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
@@ -750,7 +767,7 @@ class PolicyInformationPoint extends BaseManager {
       // asked only when this page names one, and by the caller's own means
       // (once per batch for a list).
       const enabledAddons = namesAddonPrincipal(metadata, action) ? await args.enabledAddons() : [];
-      const fm = await this.checkFrontmatterAccess(metadata, userContext, action, enabledAddons, args.holdsAdminSystem);
+      const fm = await this.checkFrontmatterAccess(metadata, await args.matchable(), action, enabledAddons, args.holdsAdminSystem);
       if (fm.decided) return { allowed: fm.allowed, reason: fm.reason };
     }
 
@@ -964,7 +981,14 @@ class PolicyInformationPoint extends BaseManager {
     const pageManager = this.engine.getManager<PrivateAccessCheck>('PageManager');
     // Tier 0 reads only the subject: owner or delegate, never a role.
     const privateCtx = { userContext: userContext ?? null } as unknown as WikiContext;
-    const decidePolicy = this.policyEvaluator?.compile(userContext ?? undefined, policyAction);
+    // #2022: a job's roles are its account's NOW, for the policy compiled
+    // once here as the PDP resolves them for one page — so the list and the
+    // single-page answer agree for a job too — and for Tier 1's matching.
+    const subjectNow = (userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow
+      ? await this.resolveSubjectNow(userContext?.username)
+      : userContext;
+    const decidePolicy = this.policyEvaluator?.compile(subjectNow ?? undefined, policyAction);
+    const matchable = await this.matchableNow(userContext);
     // #1964: the subject's add-ons, resolved once for the whole batch and only
     // if some page names one.
     let enabledAddons: Promise<readonly string[]> | undefined;
@@ -990,6 +1014,7 @@ class PolicyInformationPoint extends BaseManager {
         pageManager,
         holdsAdminSystem: adminSystemOnce,
         enabledAddons: enabledAddonsOnce,
+        matchable: () => Promise.resolve(matchable),
         policy: async (extra) => {
           const p = decidePolicy?.(title, { 'system-category': metadata['system-category'], ...extra });
           return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
@@ -1097,13 +1122,9 @@ class PolicyInformationPoint extends BaseManager {
     // A job's subject carries no roles, only the instruction to resolve them
     // now (#1212): an audience naming a role is matched against what its
     // principal holds at this moment.
-    const roles = (userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow
-      ? (await this.resolveSubjectNow(userContext?.username)).roles ?? []
-      : userContext?.roles ?? [];
-    // permission-subject-ignore: matching only — the roles were resolved above, from the store.
-    const matchable = userContext ? { username: userContext.username, roles } : null;
+    const matchable = await this.matchableNow(userContext);
     const enabledAddons = namesAddonPrincipal(metadata, 'view') ? await this.enabledAddonsOf(userContext) : [];
-    if (!audienceExcludes(metadata, principalsOf(matchable as UserContext | null), enabledAddons)) return true;
+    if (!audienceExcludes(metadata, principalsOf(matchable), enabledAddons)) return true;
     return subjectMayDo(this.engine, userContext, 'admin-system');
   }
 

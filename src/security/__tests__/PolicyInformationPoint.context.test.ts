@@ -9,9 +9,13 @@
  * are real; policy allows only a subject that arrives with the roles the
  * store gives that account now, keyed by username (never a role name).
  *
- * Sabotaged once (then restored): `asSubject` in PolicyInformationPoint
- * returned the caller unconverted. Which cases went red is recorded in the
- * PR for #2022.
+ * Sabotaged (then restored): `asSubject` returning the caller unconverted
+ * turned the audienceAdmits cases red (the other questions forward to the
+ * PDP, which converts, so here they hold equality only). The pre-fix PIP,
+ * whose page door and list matched a job with no roles, turned the
+ * "holds the audience's role NOW" case and both list-agrees-with-door cases
+ * red; so did the page door's Tier 1 alone, and the list's compiled policy
+ * alone, each reverted to the job's carried (absent) roles.
  */
 import PolicyInformationPoint from '../PolicyInformationPoint';
 import PolicyDecisionPoint from '../PolicyDecisionPoint';
@@ -125,6 +129,36 @@ describe('the PIP\'s page questions take a JobContext and convert it themselves 
     }
     for (const owner of ['jim', 'mom']) {
       expect(pip.canAccessPrivateContainer(job, owner, 'attachment:a', 'view')).toBe(pip.canAccessPrivateContainer(converted, owner, 'attachment:a', 'view'));
+    }
+  });
+
+  test('a job whose user holds the audience\'s role NOW is admitted by the page door and kept by the list; one whose user does not is refused', async () => {
+    const all = Object.keys(PAGES).map((title) => ({ title, metadata: PAGES[title] as never }));
+    const jim = jobContextFromRequest({ username: 'jim' });
+    const mom = jobContextFromRequest({ username: 'mom' });
+    // jim holds `editor` in the store; nothing in his context says so.
+    expect(await pip.canUserAccessPage(jim, 'EditorsOnly', 'view')).toBe(true);
+    expect(await pip.pageAffordanceFor(jim, 'EditorsOnly', 'view')).toBe(true);
+    expect(await pip.filterAccessiblePages(jim, 'view', all)).toContain('EditorsOnly');
+    // mom does not.
+    expect(await pip.canUserAccessPage(mom, 'EditorsOnly', 'view')).toBe(false);
+    expect(await pip.filterAccessiblePages(mom, 'view', all)).not.toContain('EditorsOnly');
+    // Take the role away and jim's next job is refused: looked up, not remembered.
+    const saved = ROLES.jim;
+    try {
+      ROLES.jim = [];
+      expect(await pip.canUserAccessPage(jim, 'EditorsOnly', 'view')).toBe(false);
+      expect(await pip.filterAccessiblePages(jim, 'view', all)).not.toContain('EditorsOnly');
+    } finally {
+      ROLES.jim = saved;
+    }
+  });
+
+  test.each([['jim'], ['mom']])('%s\'s job: the list agrees with the page door, page by page (#1219)', async (user) => {
+    const job = jobContextFromRequest({ username: user });
+    const listed = new Set(await pip.filterAccessiblePages(job, 'view', Object.keys(PAGES).map((title) => ({ title, metadata: PAGES[title] as never }))));
+    for (const page of Object.keys(PAGES)) {
+      expect(listed.has(page), page).toBe(await pip.canUserAccessPage(job, page, 'view'));
     }
   });
 

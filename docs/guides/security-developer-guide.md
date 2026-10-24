@@ -59,7 +59,7 @@ Rules:
 - The exception is a permission, `admin-system`, asked of the PDP (`subjectMayDo(engine, subject, 'admin-system')`), never `roles.includes('admin')`. It is asked only when an audience leaves the subject out, and once per list.
 - `access.<action>` has no exception: it binds administrators too. Private stores are decided by their container; the exception never reaches into a vault.
 - A write meets the audience at `PageManager`'s write door too: `savePage`, `deletePage` and `getRawPageContent` ask `PolicyInformationPoint.audienceAdmits(subject, metadata)` with the caller's context and throw `PageAudienceRefusedError`, which a route answers with 403. A route still asks the full page decision (`canAccess('edit')`, `writeRefusal`) first; the door is the floor, not the decision.
-- A job's subject (`resolveRolesNow`) is matched against the roles its principal holds now; the system principal holds `admin-system` by default (`ngdpbase.system.roles`).
+- A job's subject (`resolveRolesNow`) is matched against the roles its principal holds now, by every page question: the page door (`canUserAccessPage`, `pageAffordanceFor`), the list (`filterAccessiblePages`, for its audience and its global policy alike) and the write door (`audienceAdmits`), all through `PolicyInformationPoint.resolveSubjectNow`, the lookup the PDP uses ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)). The system principal holds `admin-system` by default (`ngdpbase.system.roles`).
 
 ## Every security-relevant call carries a context
 
