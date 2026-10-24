@@ -37,7 +37,7 @@ __Wiki syntax:__ `[{UserLookup ...}]`
 
 The plugin calls `UserManager.searchUsers()` with the viewer's own context, and the search decides `search-user` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). Every signed-in user holds it as shipped; a viewer without it, anonymous included, sees nothing where the plugin is.
 
-Users with `user-read` permission receive all fields (`email`, `roles`, `lastLogin`, `isActive`). Others receive only `username` and `displayName`, regardless of the `fields` parameter.
+A viewer holding `user-read`, asked of the decision point with the viewer's own context, sees the fields asked for (`email`, `roles`, `lastLogin`, `isActive`). Everyone else sees only `username` and `displayName`, whatever `fields` asks ([#2033](https://github.com/jwilleke/ngdpbase/pull/2033)): every user may search, so the other fields are not theirs to see. No password or credential is ever shown.
 
 ## `$currentUser` Token
 

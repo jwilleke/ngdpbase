@@ -623,6 +623,13 @@ describe('searchUsers decides search-user (#2018)', () => {
       if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, 'search-user')) holders.push(role);
     }
     expect(holders.sort()).toEqual(['admin', 'contributor', 'demo-admin', 'editor', 'reader', 'user-admin', 'vault-owner']);
+
+    // #2033: what a search shows beyond username and display name needs
+    // user-read (UserLookupPlugin, /api/users/search); every user may search,
+    // so an ordinary user must not hold it.
+    for (const ordinary of ['vault-owner', 'reader', 'contributor', 'anonymous']) {
+      expect(await pdp.permits({ username: 'u', roles: [ordinary], isAuthenticated: ordinary !== 'anonymous' }, 'user-read')).toBe(false);
+    }
   });
 
   test('a vault-owner-only user may search (the people picker); anonymous and a subject with no role are refused', async () => {

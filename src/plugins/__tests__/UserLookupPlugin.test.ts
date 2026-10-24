@@ -11,15 +11,24 @@ const alice = { username: 'alice', displayName: 'Alice Smith', email: 'alice@exa
 const bob   = { username: 'bob',   displayName: 'Bob Jones',   email: 'bob@example.com',   roles: ['editor'], lastLogin: '2026-04-17', isActive: true  };
 const dave  = { username: 'dave',  displayName: 'Dave Brown',  email: 'dave@corp.com',     roles: ['reader'], lastLogin: null,         isActive: false };
 
-function makeContext(users: object[], username = 'admin') {
+/**
+ * The viewer, and a decision point that grants `user-read` to the roles named
+ * in `readers` (#2033: full fields only with user-read). The admin viewer
+ * holds it, so the column tests below see every field.
+ */
+function makeContext(users: object[], username = 'admin', roles: string[] = ['admin'], readers: string[] = ['admin']) {
+  const userManager = { searchUsers: vi.fn().mockResolvedValue(users) };
+  const pdp = {
+    permits: vi.fn(async (subject: { roles?: string[] }, action: string) =>
+      action === 'user-read' && (subject?.roles ?? []).some((r) => readers.includes(r)))
+  };
   return {
     pageName: 'TestPage',
     linkGraph: {},
-    userContext: { username, isAuthenticated: true, roles: ['admin'] },
+    userContext: { username, isAuthenticated: true, roles },
+    pdp,
     engine: {
-      getManager: vi.fn().mockReturnValue({
-        searchUsers: vi.fn().mockResolvedValue(users)
-      })
+      getManager: vi.fn((name?: string) => (name === 'PolicyDecisionPoint' ? pdp : userManager))
     }
   };
 }
@@ -124,6 +133,42 @@ describe('UserLookupPlugin', () => {
       engine: { getManager: vi.fn().mockReturnValue({ searchUsers: vi.fn().mockRejectedValue(new ContactRefusedError('search-user', { permit: false, applicable: true, reason: 'no_policy' })) }) }
     };
     expect(await UserLookupPlugin.execute(ctx, {})).toBe('');
+  });
+
+  test('without user-read (a vault-owner-only viewer), fields=all shows only username and display name (#2033)', async () => {
+    const ctx = makeContext([alice, bob], 'olive', ['vault-owner']);
+    const html = await UserLookupPlugin.execute(ctx, { fields: 'all' });
+    expect(html).toContain('alice');
+    expect(html).toContain('Alice Smith');
+    for (const hidden of ['alice@example.com', 'Email', 'Roles', 'Last Login', 'Active', '2026-04-18']) expect(html).not.toContain(hidden);
+    // Asked of the decision point, with the viewer's own context.
+    expect(ctx.pdp.permits).toHaveBeenCalledWith(ctx.userContext, 'user-read');
+  });
+
+  test('without user-read, an explicit fields list is cut to username and display name (#2033)', async () => {
+    const html = await UserLookupPlugin.execute(makeContext([alice], 'olive', ['vault-owner']), { fields: 'email,roles' });
+    expect(html).not.toContain('alice@example.com');
+    expect(html).not.toContain('Roles');
+    expect(html).toContain('alice');
+  });
+
+  test('a user-read holder sees the email they asked for (#2033)', async () => {
+    const html = await UserLookupPlugin.execute(makeContext([alice], 'ua', ['user-admin'], ['user-admin']), { fields: 'username,email' });
+    expect(html).toContain('alice@example.com');
+  });
+
+  test('no decision point: the restricted view, never the full one (#2033)', async () => {
+    const userManager = { searchUsers: vi.fn().mockResolvedValue([alice]) };
+    const ctx = { pageName: 'T', linkGraph: {}, userContext: { username: 'admin', isAuthenticated: true, roles: ['admin'] }, engine: { getManager: vi.fn((name?: string) => (name === 'PolicyDecisionPoint' ? null : userManager)) } };
+    const html = await UserLookupPlugin.execute(ctx, { fields: 'all' });
+    expect(html).not.toContain('alice@example.com');
+  });
+
+  test('never a password hash or credential, even for a user-read holder with fields=all', async () => {
+    const leaky = { ...alice, password: 'hashed:secret', credentials: [{ id: 'pk' }], passkeys: ['pk'] };
+    const html = await UserLookupPlugin.execute(makeContext([leaky]), { fields: 'all' });
+    expect(html).not.toContain('hashed:secret');
+    expect(html).not.toMatch(/password|credential|passkey/i);
   });
 
   test('returns error message when UserManager unavailable', async () => {

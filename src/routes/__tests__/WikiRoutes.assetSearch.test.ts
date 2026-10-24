@@ -64,8 +64,8 @@ function policyFor(userContext: { roles?: string[] } | null | undefined) {
     // behave as before.
     permits: (_u: string, action: string) => {
       if (action === 'asset-upload') return (userContext?.roles ?? []).some((r) => ASSET_ROLES.has(r));
-      // #1198 / #694: search-user is granted on the Authenticated policy —
-      // any signed-in account holds it, anonymous does not.
+      // #1198 / #694 / #2018: search-user is granted to vault-owner, the role
+      // every account is given — any signed-in account holds it, anonymous does not.
       if (action === 'search-user') {
         const name = userContext?.username;
         return Boolean(userContext?.authenticated && name && name !== 'anonymous' && name !== 'asserted');
@@ -766,8 +766,8 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     }
 
     // Operator decision on #694: any authenticated user can search users via
-    // the picker surface. Since #1198 that is a GRANT — `search-user` on the
-    // Authenticated policy — asked of policy, not read off the session flag.
+    // the picker surface. Since #1198 that is a GRANT — `search-user`, held by
+    // every account through vault-owner (#2018) — asked of policy, not read off the session flag.
     // The fixture below is the default for tests that expect results back.
     const authedUser = { authenticated: true, username: 'molly', roles: ['reader'] };
     function makeAuthedReq(overrides = {}) {
@@ -812,9 +812,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(userManager.searchUsers).not.toHaveBeenCalled();
     });
 
-    it('returns results for a signed-in reader (the molly case — search-user through the Authenticated policy)', async () => {
+    it('returns results for a signed-in reader (the molly case — search-user held by every account)', async () => {
       // Operator's smoke-test scenario: molly is a regular reader-role user.
-      // Since #1198 she holds `search-user` through the Authenticated policy
+      // Since #1198 she holds `search-user` as every account does (vault-owner, #2018)
       // rather than being let through on the session flag; same result.
       const userManager = makeUserManager([{ username: 'jim', displayName: 'Jim' }]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);

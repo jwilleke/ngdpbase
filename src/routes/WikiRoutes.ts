@@ -14751,8 +14751,8 @@ ${panes}
         // the types=user auth gate). Anonymous viewers simply get no users.
         {
           // #694 / #1198: any signed-in account may find people. That is a
-          // grant — `search-user` on the Authenticated policy — not a session
-          // flag, so the same door answers here and at /api/users/search, and
+          // grant — `search-user` to vault-owner, the role every account is
+          // given, in signed-in-self-service (#2018) — not a session flag, so the same door answers here and at /api/users/search, and
           // anonymous or a token without the scope is refused by policy.
           const canSearchUsers = await wikiContext.hasPermission('search-user');
           const userManager = this.engine.getManager('UserManager') as {
