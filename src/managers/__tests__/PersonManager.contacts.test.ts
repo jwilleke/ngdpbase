@@ -24,6 +24,8 @@
  *   read test went red; every write asking contact-read → its write refusals went red;
  * - PolicyEvaluator registered after UserManager again (the shipped order
  *   before this change) → the boot-order test went red.
+ * - PersonManager.update keeping only '@type': 'ContactPoint' entries (2026-10-24)
+ *   → the contact points round-trip test went red.
  */
 vi.unmock('../PolicyEvaluator');
 
@@ -290,6 +292,35 @@ describe('contacts in core (#1930)', () => {
       ['root', 'organization-update', ['description']]
     ]);
     expect(site.contacts()[0].metadata).toMatchObject({ origin: 'request' });
+  });
+
+  test('contact points: ContactPoint and PostalAddress entries both round-trip, and existing entries are unchanged', async () => {
+    // The occupancy form's shape (ngdpbase-addons#33): the home address in `address`, everything else in contactPoint[].
+    const phone = { '@type': 'ContactPoint' as const, contactType: 'home', telephone: '+1 555 0100' };
+    const p = await site.persons.create(ADMIN, { name: 'Dana', address: { '@type': 'PostalAddress', streetAddress: '1 Home St', addressLocality: 'Town' }, contactPoint: [phone] });
+    expect(p.contactPoint).toEqual([phone]);
+
+    const entries = [
+      phone,
+      { '@type': 'PostalAddress' as const, contactType: 'mailing', name: 'Dana Donor', streetAddress: 'PO Box 9', addressLocality: 'Town', postalCode: '12345', telephone: '+1 555 0101' },
+      { '@type': 'ContactPoint' as const, contactType: 'agent', name: 'Rental Agent Co', telephone: '+1 555 0102', email: 'agent@example.org' },
+      { '@type': 'ContactPoint' as const, contactType: 'emergency', name: 'Sam Sibling', telephone: '+1 555 0103' }
+    ];
+    const updated = await site.persons.update(ADMIN, p['@id'], { contactPoint: entries });
+    expect(updated?.contactPoint).toEqual(entries);
+
+    site.persons.invalidateCache();
+    const back = await site.persons.getById(ADMIN, p['@id']);
+    expect(back?.contactPoint).toEqual(entries);
+    expect(back?.address).toEqual({ '@type': 'PostalAddress', streetAddress: '1 Home St', addressLocality: 'Town' });
+    const stored = JSON.parse(await fs.readFile(path.join(site.tmp, 'persons', `${p['@id'].replace('urn:uuid:', '')}.json`), 'utf8')) as { contactPoint: unknown };
+    expect(stored.contactPoint).toEqual(entries);
+
+    const org = await site.organizations.create(ADMIN, { name: 'Acme Trust', contactPoint: [{ '@type': 'ContactPoint', contactType: 'sales', email: 'sales@acme.example' }] });
+    const orgEntries = [...(org.contactPoint ?? []), { '@type': 'PostalAddress' as const, contactType: 'business', streetAddress: '2 Works Rd' }];
+    await site.organizations.update(ADMIN, org['@id'], { contactPoint: orgEntries });
+    site.organizations.invalidateCache();
+    expect((await site.organizations.getById(ADMIN, org['@id']))?.contactPoint).toEqual(orgEntries);
   });
 
   test('affiliations: set on the person, read back from the organization, never stored twice', async () => {

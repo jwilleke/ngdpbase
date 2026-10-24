@@ -46,6 +46,6 @@ Organization records are in every backup ([#1876](https://github.com/jwilleke/ng
 
 - [FileOrganizationProvider](../providers/FileOrganizationProvider.md)
 - [PersonManager](PersonManager.md), [RoleManager](RoleManager.md) — sibling canonical-record managers
-- `src/types/Organization.ts` — `Organization`, `OrganizationUpdate`, `PostalAddress`, `ContactPoint`
+- `src/types/Organization.ts` — `Organization`, `OrganizationUpdate`, `PostalAddress`, `ContactPoint`, `ContactPointEntry` (a `contactPoint[]` entry: a ContactPoint or a PostalAddress)
 - Issue #617 — original canonical-records design
 - Issue #620 — caching hot-path lookups

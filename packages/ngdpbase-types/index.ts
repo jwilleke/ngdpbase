@@ -72,7 +72,7 @@ export type { User, UserPreferences } from '../../src/types/User.js';
 export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';
 export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';
 export type { Person, PersonAffiliation, PersonInput, PersonUpdate } from '../../src/types/Person.js';
-export type { Organization, OrganizationInput, OrganizationUpdate } from '../../src/types/Organization.js';
+export type { Organization, OrganizationInput, OrganizationUpdate, ContactPoint, ContactPointEntry, PostalAddress } from '../../src/types/Organization.js';
 export type { ContactRefusedError } from '../../src/utils/contactAccess.js';
 // Who holds which role (#2018): every read takes the caller's context first, a job's included.
 export type { default as RoleManager } from '../../src/managers/RoleManager.js';

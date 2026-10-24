@@ -16,7 +16,7 @@
  * @see https://schema.org/Person
  */
 
-import type { PostalAddress, ContactPoint } from './Organization.js';
+import type { PostalAddress, ContactPointEntry } from './Organization.js';
 
 /**
  * One organization a person is affiliated with (#1930): schema.org
@@ -54,8 +54,8 @@ export interface Person {
   email?: string;
   /** Postal address */
   address?: PostalAddress;
-  /** Contact points (work phone, mobile, etc.) */
-  contactPoint?: ContactPoint[];
+  /** Everything but the home address: phones, a mailing or business address (a PostalAddress), an agent, an emergency contact; each typed by `contactType`. */
+  contactPoint?: ContactPointEntry[];
   /** ISO language tags this person knows */
   knowsLanguage?: string[];
   /** Profile/avatar image URL */
