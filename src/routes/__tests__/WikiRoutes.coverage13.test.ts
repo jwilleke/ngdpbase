@@ -587,6 +587,13 @@ describe('WikiRoutes — coverage batch 13', () => {
   });
 
   describe('GET /download/:filename (downloadExport)', () => {
+    test('returns 403 without admin-system, before looking for the file', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).get('/download/export-1.zip');
+      expect(res.status).toBe(403);
+      expect(mockExportManager.getExports).not.toHaveBeenCalled();
+    });
+
     test('returns 404 when export not found', async () => {
       const res = await request(app).get('/download/nonexistent.zip');
       expect(res.status).toBe(404);
@@ -602,6 +609,15 @@ describe('WikiRoutes — coverage batch 13', () => {
   });
 
   describe('DELETE /deleteExport/:filename (deleteExport)', () => {
+    test('returns 403 without admin-system and deletes nothing', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app)
+        .delete('/deleteExport/export-1.zip')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(403);
+      expect(mockExportManager.deleteExport).not.toHaveBeenCalled();
+    });
+
     test('returns 204 when export deleted', async () => {
       const res = await request(app)
         .delete('/deleteExport/export-1.zip')

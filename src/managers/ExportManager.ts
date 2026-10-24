@@ -645,6 +645,11 @@ class ExportManager extends BaseManager {
    * @returns {Promise<void>}
    */
   async deleteExport(filename: string): Promise<void> {
+    // Only a plain file name inside the export folder: never a path that
+    // reaches another folder.
+    if (!filename || filename !== path.basename(filename) || filename === '.' || filename === '..') {
+      throw new Error(`Not an export file name: ${filename}`);
+    }
     const filePath = path.join(this.exportDirectory, filename);
     await fs.unlink(filePath);
     logger.info(`Deleted export: ${filename}`);

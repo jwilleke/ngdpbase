@@ -6297,6 +6297,10 @@ ${panes}
    */
   async downloadExport(req: Request, res: Response) {
     try {
+      // #1060: the export folder holds every user's exports; admin-only, like /exports.
+      if (!(await this.createWikiContext(req).hasPermission('admin-system'))) {
+        return res.status(403).send('Access Denied');
+      }
       const { filename } = req.params;
       const exportManager = this.engine.getManager('ExportManager');
       const exports = await exportManager.getExports();
@@ -6318,6 +6322,11 @@ ${panes}
    */
   async deleteExport(req: Request, res: Response) {
     try {
+      // #1060: admin-only, like /exports.
+      if (!(await this.createWikiContext(req).hasPermission('admin-system'))) {
+        res.status(403).json({ message: 'Access Denied' });
+        return;
+      }
       const { filename } = req.params;
       const exportManager = this.engine.getManager('ExportManager');
       

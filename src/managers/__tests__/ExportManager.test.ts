@@ -296,12 +296,22 @@ describe('ExportManager', () => {
       await expect(exportManager.deleteExport('missing.html')).rejects.toThrow('File not found');
     });
 
-    it('should handle filename with special chars', async () => {
+    it('should delete a plain name with special chars', async () => {
       fs.unlink.mockResolvedValue();
       exportManager.exportDirectory = './exports';
-      await exportManager.deleteExport('my/file?name.html');
-      expect(fs.unlink).toHaveBeenCalledWith(path.join('./exports', 'my/file?name.html'));
+      await exportManager.deleteExport('file?name.html');
+      expect(fs.unlink).toHaveBeenCalledWith(path.join('./exports', 'file?name.html'));
     });
+
+    it.each(['my/file.html', '../outside.html', '../../config/app-custom-config.json', '..', '.', ''])(
+      'refuses %j, which is not a plain file name in the export folder',
+      async (name) => {
+        fs.unlink.mockResolvedValue();
+        exportManager.exportDirectory = './exports';
+        await expect(exportManager.deleteExport(name)).rejects.toThrow('Not an export file name');
+        expect(fs.unlink).not.toHaveBeenCalled();
+      }
+    );
   });
 
   // Tests for generating formatted timestamp
