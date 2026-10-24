@@ -6,7 +6,7 @@ import path from 'node:path';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { describeJobContext, toPermissionSubject, type JobContext } from '../context/JobContext.js';
+import { describeJobContext, type JobContext } from '../context/JobContext.js';
 import { scheduleContext } from '../context/bootActions.js';
 import { actorOf } from '../context/ActorContext.js';
 import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
@@ -1324,7 +1324,7 @@ class BackgroundJobManager extends BaseManager {
     const pdp = this.engine?.getManager?.<{ holds(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
     if (!pdp) return false;
     try {
-      return await pdp.holds(toPermissionSubject(ctx), permission);
+      return await pdp.holds(ctx, permission);
     } catch {
       return false;
     }

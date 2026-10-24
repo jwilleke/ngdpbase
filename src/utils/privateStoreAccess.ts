@@ -25,7 +25,6 @@
  * slice 4).
  */
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import { shareNamesVault } from '../types/Share.js';
 import { mixesProxyWithDelegation, proxyCarries } from './proxyClaim.js';
 
@@ -75,6 +74,5 @@ export async function permitsInVault(
   where: { owner: string; vault: string; resource: string }
 ): Promise<boolean> {
   if (!pdp || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
-  const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-  return (await pdp.decide(subject, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
+  return (await pdp.decide(ctx, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
 }

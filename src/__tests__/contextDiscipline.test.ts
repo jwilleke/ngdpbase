@@ -11,6 +11,9 @@
  * rename one to `_ctx` and stop forwarding it, and this goes red — which is
  * exactly how `FileSystemProvider.deletePage` came to resolve a page without
  * the context it had been handed, so a sealed page could not be deleted.
+ *
+ * #2022 (rule 5): put `isJobContext(ctx) ? toPermissionSubject(ctx) : ctx`
+ * back in front of a PDP call (FileManager.mayReadPublic) and this goes red.
  */
 import { scan } from '../../scripts/check-context-discipline';
 

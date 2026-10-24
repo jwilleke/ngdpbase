@@ -4310,8 +4310,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private async adminSystem(ctx: ActorContext, ask: 'permits' | 'holds'): Promise<boolean> {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-    return ask === 'permits' ? pdp.permits(subject, 'admin-system') : pdp.holds(subject, 'admin-system');
+    return ask === 'permits' ? pdp.permits(ctx, 'admin-system') : pdp.holds(ctx, 'admin-system');
   }
 
   /**

@@ -15,7 +15,6 @@
  */
 
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import { recordSystemAction } from '../context/bootActions.js';
 import { recordAuditEvent, type AuditEventSink } from './auditEvents.js';
 import { AUDIT_EVENT } from './auditEventNames.js';
@@ -55,7 +54,7 @@ export async function requireContactPermission(
   const pdp = engine.getManager<DeciderLike>('PolicyDecisionPoint');
   for (const action of [CONTACT_PERMISSION[kind], ...also]) {
     if (!ctx || !pdp) throw new ContactRefusedError(action, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context' });
-    const decision = await pdp.decide(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, { action });
+    const decision = await pdp.decide(ctx, { action });
     if (!decision.permit) throw new ContactRefusedError(action, decision);
   }
 }

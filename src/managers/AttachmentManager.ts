@@ -538,9 +538,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     //
     // Forwarding the caller's own context keeps the role fast-path (roles ride
     // along when present) and carries the token when there is one.
-    // A JobContext carries identity and provenance, not authority: it is
-    // handed over as a JobSubject whose roles policy resolves now (#631).
-    const allowed = await pdp.permits(isJobContext(userContext) ? toPermissionSubject(userContext) : userContext, permission);
+    // A JobContext carries identity and provenance, not authority: the PDP
+    // turns it into a subject whose roles policy resolves now (#631, #2022).
+    const allowed = await pdp.permits(userContext, permission);
     if (!allowed) {
       logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
     }

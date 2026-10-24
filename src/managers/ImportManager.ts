@@ -647,7 +647,7 @@ class ImportManager extends BaseManager {
   private async permits(ctx: ActorContext, permission: string): Promise<boolean> {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (typeof pdp?.permits !== 'function') return false;
-    return pdp.permits(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, permission);
+    return pdp.permits(ctx, permission);
   }
 
   /**

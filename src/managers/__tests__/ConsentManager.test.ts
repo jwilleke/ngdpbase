@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import ConsentManager, { ConsentChangedError, ConsentRefusedError } from '../ConsentManager';
 import type { ConsentDocument } from '../../types/Consent';
+import { isJobContext } from '../../context/ActorContext';
 
 interface Subj { username: string; isAuthenticated: boolean; roles: string[]; ipAddress?: string; viaProxy?: unknown; viaToken?: unknown; viaShare?: unknown }
 const person = (username: string, over: Partial<Subj> = {}): never =>
@@ -46,7 +47,8 @@ describe('ConsentManager (#1603)', () => {
       },
       PageManager: { getPageMetadata: (id: string) => Promise.resolve(pages[id] ?? null) },
       UserManager: { getUser: (u: string) => Promise.resolve(users[u]) },
-      PolicyDecisionPoint: { permits: (s: Subj, a: string) => Promise.resolve(a === 'profile-manage' && s.isAuthenticated && holdsProfileManage.has(s.username)) },
+      // The PDP takes the caller's context, a job's included, and converts it itself (#2022).
+      PolicyDecisionPoint: { permits: (s: Subj, a: string) => Promise.resolve(a === 'profile-manage' && (isJobContext(s as never) || s.isAuthenticated) && holdsProfileManage.has(s.username)) },
       AddonsManager: { isPerPerson: (slug: string) => perPerson.has(slug) },
       AuditManager: {
         logAuditEvent: (e: Record<string, unknown>) => {

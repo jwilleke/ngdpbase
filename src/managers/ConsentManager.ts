@@ -29,7 +29,6 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import FileConsentProvider from '../providers/FileConsentProvider.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -327,9 +326,8 @@ class ConsentManager extends BaseManager {
     if (isJobContext(ctx) && ctx.origin !== 'request') {
       throw new ConsentRefusedError('An acceptance comes from the person, in a request; not from a job');
     }
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
     const pdp = this.engine.getManager<{ permits(s: unknown, a: string): Promise<boolean> }>('PolicyDecisionPoint');
-    if (!subject.isAuthenticated || !pdp || !(await pdp.permits(subject, 'profile-manage'))) {
+    if ((!isJobContext(ctx) && !ctx.isAuthenticated) || !pdp || !(await pdp.permits(ctx, 'profile-manage'))) {
       throw new ConsentRefusedError(`${ctx.username} may not manage their own consents (needs profile-manage)`);
     }
     const account = await this.accountOf(ctx.username);

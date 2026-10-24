@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-23
+dateModified: 2026-10-24
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -64,6 +64,8 @@ Rules:
 ## Every security-relevant call carries a context
 
 A manager method that decides access, writes an audit record, or acts on someone's behalf takes the context it was given, positionally. Forward it; never rebuild `{ username, roles, isAuthenticated }` from parts, because the rebuild drops `viaToken` and with it the agent-token scope ceiling. `scripts/check-permission-subject.ts` fails the commit on a rebuild in route code. A job or timer uses `JobContext`; boot paths that act use the system principal. An omitted actor is not "the system"; it is nobody, and the record is wrong.
+
+Hand the PDP the context as you were given it. `pdp.decide`, `pdp.permits` and `pdp.holds` take an `ActorContext` (a request's subject or a job's `JobContext`) and turn it into the subject they decide on themselves, so a job's roles are resolved at decision time and its `viaToken`, `viaShare` and `viaProxy` keep their ceilings ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)). Never convert a context before asking: `toPermissionSubject` is called by the PDP and nowhere else, and `npm run lint:context` fails the commit on a conversion anywhere else. This binds add-ons too.
 
 ## A closed account holds nothing
 

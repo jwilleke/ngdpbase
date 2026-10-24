@@ -45,6 +45,37 @@ describe('@jwilleke/ngdpbase-types main entry (#1865)', () => {
   });
 });
 
+describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', () => {
+  /** Type-check an add-on source against the public entry; returns its errors. */
+  function compileAgainstEntry(consumer: string): string[] {
+    const configPath = path.join(PKG, 'tsconfig.json');
+    const parsed = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, (f) => ts.sys.readFile(f)).config, ts.sys, PKG);
+    const file = path.join(PKG, '__consumer__.ts');
+    const options = { ...parsed.options, noEmit: true, emitDeclarationOnly: false, declaration: false };
+    const host = ts.createCompilerHost(options);
+    const { getSourceFile, fileExists, readFile } = host;
+    host.fileExists = (f) => f === file || fileExists(f);
+    host.readFile = (f) => (f === file ? consumer : readFile(f));
+    host.getSourceFile = (f, lang, ...rest) => (f === file ? ts.createSourceFile(f, consumer, lang) : getSourceFile(f, lang, ...rest));
+    const program = ts.createProgram([file], options, host);
+    return ts.getPreEmitDiagnostics(program, program.getSourceFile(file))
+      .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+  }
+
+  test('a receiver passes its context, a job\'s included, straight to the PDP, with no cast', () => {
+    const errors = compileAgainstEntry(`
+      import type { ActorContext, AddonHost, PolicyDecisionPoint, Decision } from './index.js';
+      export async function door(pdp: PolicyDecisionPoint, ctx: ActorContext, host: AddonHost): Promise<boolean> {
+        const job = host.systemContext('phr: import');
+        const a: Decision = await pdp.decide(ctx, { action: 'phr-write' });
+        const b: Decision = await pdp.decide(job, { action: 'phr-write' });
+        return a.permit && b.permit && (await pdp.permits(job, 'phr-write')) && (await pdp.holds(ctx, 'phr-write'));
+      }
+    `);
+    expect(errors).toEqual([]);
+  }, 60_000);
+});
+
 describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {
   const defaults = {
     'ngdpbase.permissions.definitions': {
