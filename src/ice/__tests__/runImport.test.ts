@@ -26,7 +26,7 @@ const SETTINGS: IceEngineSettings = {
 type Received = { item: IceItem; ctx: ActorContext; info: ReceiveInfo };
 
 /** A receiver that records what its door was handed, and refuses whom it is told to. */
-function recordingReceiver(id: string, accepts: string[], opts: { refuse?: (ctx: ActorContext) => boolean; keeps?: boolean } = {}) {
+function recordingReceiver(id: string, accepts: string[], opts: { refuse?: (ctx: ActorContext) => boolean; keeps?: boolean; says?: (n: number) => string | undefined } = {}) {
   const received: Received[] = [];
   const kept: Array<{ item: IceItem; ctx: ActorContext }> = [];
   let n = 0;
@@ -37,7 +37,9 @@ function recordingReceiver(id: string, accepts: string[], opts: { refuse?: (ctx:
     receive: async (item, ctx, info): Promise<ReceiveOutcome> => {
       if (opts.refuse?.(ctx)) return { status: 'refused', message: `${ctx.username} may not` };
       received.push({ item, ctx, info });
-      return { status: 'stored', ref: `${name}-${++n}` };
+      n++;
+      const message = opts.says?.(n);
+      return { status: 'stored', ref: `${name}-${n}`, ...(message ? { message } : {}) };
     },
     ...(opts.keeps ? {
       keepOriginal: async (item: IceItem, ctx: ActorContext): Promise<ReceiveOutcome> => {
@@ -260,6 +262,37 @@ describe('runImport', () => {
     const shim = recordShim({ read: async (input) => ({ items: [{ kind: 'test.record', name: input.name, data: 1 }], partial: '2 sections not read' }) });
     const result = await run(deps([shim], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
     expect(result.files[0]).toMatchObject({ status: 'partial', stored: 1, message: '2 sections not read' });
+  });
+
+  test('the receiver\'s own message on a stored item reaches the file\'s status', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record'], { says: () => '12 new, 0 updated, 0 unchanged' });
+    const result = await run(deps([recordShim()], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
+    expect(result.files[0]).toMatchObject({ status: 'imported', stored: 1, message: '12 new, 0 updated, 0 unchanged' });
+  });
+
+  test('several items\' messages stay short: the same message once, different ones as the first and a count', async () => {
+    const same = recordingReceiver('test.records', ['test.record'], { says: () => 'saved' });
+    const once = await run(deps([recordShim()], [same.receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1\nhr=2\nrr=3')] }, receiver: 'test.records' });
+    expect(once.files[0]).toMatchObject({ status: 'imported', stored: 3, message: 'saved' });
+
+    const differ = recordingReceiver('test.records', ['test.record'], { says: (n) => (n === 2 ? undefined : `item ${n} saved`) });
+    const counted = await run(deps([recordShim()], [differ.receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1\nhr=2\nrr=3')] }, receiver: 'test.records' });
+    expect(counted.files[0]).toMatchObject({ status: 'imported', stored: 3, message: 'item 1 saved (+1 more)' });
+  });
+
+  test('a receiver message and a partial note both reach a partial file; a refusal still names itself', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record'], { says: () => '1 new' });
+    const shim = recordShim({ read: async (input) => ({ items: [{ kind: 'test.record', name: input.name, data: 1 }], partial: '2 sections not read' }) });
+    const result = await run(deps([shim], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
+    expect(result.files[0]).toMatchObject({ status: 'partial', stored: 1, message: '1 new; 2 sections not read' });
+
+    let calls = 0;
+    const mixed: RegisteredReceiver = {
+      id: 'test.records', owner: 'test', name: 'records', accepts: ['test.record'], mayUse: async () => true,
+      receive: async (): Promise<ReceiveOutcome> => (++calls === 1 ? { status: 'stored', ref: 'r-1', message: '1 new' } : { status: 'refused', message: 'too old' })
+    };
+    const both = await run(deps([recordShim()], [mixed]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1\nhr=2')] }, receiver: 'test.records' });
+    expect(both.files[0]).toMatchObject({ status: 'partial', stored: 1, message: '1 new; refused: too old' });
   });
 
   test('a shim that throws fails only its file', async () => {
