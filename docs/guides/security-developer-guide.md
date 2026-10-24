@@ -80,6 +80,7 @@ What a user accepted (the site's terms, an add-on's documents) is `ConsentManage
 - `seen` is what the user was shown, each document with its version. Never fill it from the current documents on the server: a version that changed while they read must be refused, not recorded.
 - `consent-grant` is on-failure refuse and is recorded before the record is stored. No record means no acceptance; never treat a failed acceptance as given.
 - The terms prompt is part of sign-in completion (`AuthManager.completeSignIn`), and the consent gate holds the session to it. A new way to sign in that does not end in `completeSignIn` skips the prompt.
+- A user with documents to accept learns it from the consent gate, never from a mechanism of your own ([#2027](https://github.com/jwilleke/ngdpbase/issues/2027)): it sets `res.locals.consentNotice` on every page read and the header shows the banner; a held request is refused with `sendApiError` and an `ApiError` carrying `consent` (the prompt's link), so a page or a form POST is redirected to `/consent` and anything else gets the same words and the link as JSON. Throw that `ApiError` the same way if a route ever refuses for consent.
 - A delegated credential (agent token, approved app, proxy) is never held by a terms change; only an interactive sign-in asks.
 - Per-use consents stay with their owners (`OidcManager` for approved apps, `ShareManager` for share links). Read them from there; never copy them into consent records.
 

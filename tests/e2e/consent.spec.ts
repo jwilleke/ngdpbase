@@ -6,7 +6,9 @@ import { deletePage, markTestArtifact, signInWithPassword } from './fixtures/hel
 /**
  * #1603 — the site's terms: accepted at sign-up, asked at the first sign-in
  * of an account that has not accepted them, and asked again at sign-in after
- * the version changes. The profile's "Your consents" shows each acceptance.
+ * the version changes. A user signed in when it changes sees a banner on
+ * every page until they accept (#2027). The profile's "Your consents" shows
+ * each acceptance.
  *
  * Its own project, last in the run (playwright.config.ts): raising the terms
  * version asks every account again at its next sign-in. That step runs only
@@ -136,7 +138,7 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
     }
   });
 
-  test('a version change asks again at the next sign-in, for the changed document only', async ({ page: admin, browser }) => {
+  test('a version change asks again at the next sign-in, for the changed document only; a user already signed in sees the banner (#2027)', async ({ page: admin, browser }) => {
     test.skip(process.env.E2E_CONSENT_BUMP !== '1', 'raises the terms version, asking every account again: set E2E_CONSENT_BUMP=1 on a throwaway instance');
     const username = `e2e-bump-${RUN}`;
     const password = `pw-${randomUUID()}`;
@@ -144,12 +146,25 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
       form: { _csrf: await csrfFrom(admin), username, email: `${username}@example.test`, displayName: username, password, roles: 'reader', isTest: 'true' }
     });
     expect(made.url()).not.toContain('error=');
+    // #2027: a second account, signed in before the change and still signed in after it.
+    const early = `e2e-early-${RUN}`;
+    const earlyPassword = `pw-${randomUUID()}`;
+    const madeEarly = await admin.request.post('/admin/users', {
+      form: { _csrf: await csrfFrom(admin), username: early, email: `${early}@example.test`, displayName: early, password: earlyPassword, roles: 'reader', isTest: 'true' }
+    });
+    expect(madeEarly.url()).not.toContain('error=');
+    let earlySession: { context: BrowserContext; page: Page } | null = null;
     try {
       const first = await freshContext(browser);
       await signInWithPassword(first.page, username, password);
       const before = await consentStatus(first.page, 'terms-of-service');
       expect(before.accepted).toBe('yes');
       await first.context.close();
+
+      earlySession = await freshContext(browser);
+      await signInWithPassword(earlySession.page, early, earlyPassword);
+      await earlySession.page.goto('/profile');
+      await expect(earlySession.page.locator('[data-consent-banner]')).toHaveCount(0);
 
       // An administrator raises the version with the raw editor (an ordinary edit would not).
       await admin.goto('/admin/edit-raw/terms-of-service');
@@ -163,6 +178,12 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
       try {
         expect((await signInOnly(second.page, username, password)).pathname).toBe('/consent');
         await expect(second.page.locator('[data-consent-document="terms-of-service"]')).toContainText(`Version ${current + 1}`);
+        // #2027: held, a request that is not a page is told what to accept and where.
+        const refused = await second.page.request.get('/profile', { headers: { Accept: 'application/json' } });
+        expect(refused.status()).toBe(403);
+        const said = await refused.json() as { error: string; consent: string };
+        expect(said.error).toBe(`You have terms to accept: Terms of Service, version ${current + 1}.`);
+        expect(said.consent).toMatch(/^\/consent\?returnTo=/);
         await expect(second.page.locator('[data-consent-document="privacy-policy"]')).toHaveCount(0);
         await second.page.check('#consent-accept');
         await Promise.all([second.page.waitForURL((u) => u.pathname !== '/consent'), second.page.getByRole('button', { name: 'Accept and continue' }).click()]);
@@ -172,8 +193,25 @@ test.describe('Terms of service and privacy policy (#1603)', () => {
       } finally {
         await second.context.close();
       }
+
+      // #2027: still signed in from before the change, the banner says what changed on every page, and its link accepts and comes back.
+      const { page } = earlySession;
+      await page.goto('/profile');
+      expect(new URL(page.url()).pathname).toBe('/profile');
+      const banner = page.locator('[data-consent-banner]');
+      await expect(banner).toContainText(`Terms of Service, version ${current + 1}`);
+      await expect(banner.getByRole('link', { name: 'Read and accept' })).toHaveAttribute('href', '/consent?returnTo=%2Fprofile');
+      await page.goto('/');
+      await expect(page.locator('[data-consent-banner]')).toBeVisible();
+      await page.goto('/profile');
+      await Promise.all([page.waitForURL(/\/consent\?/), page.locator('[data-consent-banner]').getByRole('link', { name: 'Read and accept' }).click()]);
+      await page.check('#consent-accept');
+      await Promise.all([page.waitForURL((u) => u.pathname === '/profile'), page.getByRole('button', { name: 'Accept and continue' }).click()]);
+      await expect(page.locator('[data-consent-banner]')).toHaveCount(0);
     } finally {
+      await earlySession?.context.close();
       await deleteAccount(admin, username);
+      await deleteAccount(admin, early);
     }
   });
 });

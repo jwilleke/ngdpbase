@@ -639,6 +639,15 @@
                     <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add a passkey now</a>
                 </div>
                 <% } %>
+                <% if (typeof consentNotice !== 'undefined' && consentNotice) { %>
+                <%# #2027: documents this user has not accepted at their current version (the consent gate sets it).
+                    Shown on every page, never dismissible, until they accept (operator, 2026-10-24). %>
+                <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-consent-banner>
+                    <i class="fas fa-file-signature" aria-hidden="true"></i>
+                    <span><%= consentNotice.message %></span>
+                    <a class="btn btn-sm btn-danger ms-auto" href="<%= consentNotice.link %>">Read and accept</a>
+                </div>
+                <% } %>
                 <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.isTest === true) { %>
                 <%# #1805: an administrator marked this account as holding test data. On every page, never dismissible. %>
                 <div class="alert alert-info d-flex align-items-center gap-2 mt-2 py-2" role="status" data-test-account-banner>

@@ -1,7 +1,7 @@
 ---
 name: ConsentManager
 description: What each user has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603)
-dateModified: '2026-10-23'
+dateModified: '2026-10-24'
 category: managers
 code: src/managers/ConsentManager.ts
 ---
@@ -56,7 +56,8 @@ A page that is missing, or has no `version:`, is not asked for and blocks nothin
 
 - __Sign-up:__ the registration form shows core's documents with a required "I accept" box and the versions shown. The new account's acceptance is recorded as it is created (`how: sign-up`). If that cannot be recorded, the account stays without one and is asked at its first sign-in. An account created from an outside sign-in is asked at once.
 - __Sign-in:__ `AuthManager.completeSignIn`, the one sign-in completion step, asks `pendingFor`. With something pending it sets `session.consentPending` and returns `next: /consent?returnTo=…`, after any other step it would have taken (a pending outside identity, choosing whom to act for). Accounts that existed before this shipped have no records, so they are asked too: no grandfathering.
-- __The consent gate__ (`src/middleware/consentGate.ts`, mounted after CSRF and before the add-ons) holds a session with `consentPending` to the prompt: a page is redirected there, anything else gets a 403 naming it. The prompt, signing in and out, re-authentication and the documents' own pages stay reachable. Accepting clears the flag. Not accepting means signing out.
+- __The consent gate__ (`src/middleware/consentGate.ts`, mounted after CSRF and before the add-ons) holds a session with `consentPending` to the prompt: a page, or a form sent from one, is redirected there; anything else gets a 403 through `sendApiError`, `{ success: false, error, consent }`, where `error` says what to accept ("You have terms to accept: Terms of Service, version 2.") and `consent` is the prompt's link ([#2027](https://github.com/jwilleke/ngdpbase/issues/2027)). The prompt, signing in and out, re-authentication and the documents' own pages stay reachable. Accepting clears the flag; so does finding nothing left to accept (accepted in another session). Not accepting means signing out.
+- __The banner__ ([#2027](https://github.com/jwilleke/ngdpbase/issues/2027)): on every page read, the gate asks `pendingFor` for the signed-in user (core's documents, then each registered add-on they have on) and sets `res.locals.consentNotice` (`message`, `link`); the header shows it beside the passkey banner, with "Read and accept" linking to `/consent?returnTo=<this page>` (with `scope=` for an add-on). It cannot be dismissed; it goes when they accept. A user signed in when a version changed is not held, but sees it on every page and is held at their next sign-in. Not on the prompt itself, and never for an agent or app token, a proxy or a share link. Only page reads ask, and `pendingFor` reads only memory after the first time (the records are cached per user, the documents come from the page index), so the banner adds no disk reads per page.
 - __Tokens keep working.__ Agent tokens, approved apps and a proxy acting for someone are never held by the gate after a terms change; only an interactive sign-in asks. A store that cannot be read asks nothing that time, with an error in the log, so a broken consent folder never locks everyone out.
 
 ## Add-ons

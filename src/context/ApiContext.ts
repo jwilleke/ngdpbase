@@ -33,6 +33,7 @@ import type { AgentTokenGrant, PermissionSubject, ProxyClaim } from '../managers
 import type { ShareGrant } from '../types/Share.js';
 import type { ReauthMode, FreshSignInAnswer } from '../managers/AuthManager.js';
 import { STEP_UP_REASON, type Decision } from '../types/Policy.js';
+import { CONSENT_PATH } from '../types/Consent.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,13 @@ export class ApiError extends Error {
      * returning to the page they were on. Send it with the 403 so the page can
      * offer the way forward, as core routes do (`{ error, reauth }`).
      */
-    public readonly reauth?: string
+    public readonly reauth?: string,
+    /**
+     * For a refusal because the user has documents to accept (#2027): this
+     * site's consent prompt, returning to the page they were on. Sent with
+     * the 403 as `consent`; a page is redirected there.
+     */
+    public readonly consent?: string
   ) {
     super(message);
     this.name = 'ApiError';
@@ -60,25 +67,29 @@ export class ApiError extends Error {
  * Send a refusal — the one way it reaches the client, from core routes and
  * every add-on route alike (#1749). JSON is `{ success: false, error, reauth? }`;
  * text is the message, then where to sign in again for a step-up refusal.
- * `page` is for a link the person followed in the browser: a step-up refusal
- * redirects to the re-authenticate page, a 401 to sign-in (returning here),
- * anything else is the message as text. A route never writes its own refusal:
+ * `page` is for a link the user followed or a form they sent in the browser:
+ * a step-up refusal redirects to the re-authenticate page, a consent refusal
+ * to the consent prompt (#2027), a 401 to sign-in (returning here), anything
+ * else is the message as text. JSON carries the consent link as `consent`. A route never writes its own refusal:
  * the step-up `reauth` is easy to drop.
  */
 export function sendApiError(res: Response, err: ApiError, mode: ReauthMode = 'json'): void {
   // Only this site's re-authenticate page: an add-on's ApiError cannot send the person elsewhere.
   const reauth = typeof err.reauth === 'string' && err.reauth.startsWith('/auth/reauth?') ? err.reauth : undefined;
+  // Likewise only this site's consent prompt.
+  const consent = typeof err.consent === 'string' && (err.consent === CONSENT_PATH || err.consent.startsWith(`${CONSENT_PATH}?`)) ? err.consent : undefined;
   if (mode === 'page') {
     if (reauth) { res.redirect(reauth); return; }
+    if (consent) { res.redirect(consent); return; }
     if (err.status === 401) { res.redirect('/login?redirect=' + encodeURIComponent(res.req?.originalUrl || '/')); return; }
     res.status(err.status).send(err.message);
     return;
   }
   if (mode === 'text') {
-    res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : err.message);
+    res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : consent ? `${err.message} Read and accept them at ${consent}` : err.message);
     return;
   }
-  res.status(err.status).json({ success: false, error: err.message, ...(reauth ? { reauth } : {}) });
+  res.status(err.status).json({ success: false, error: err.message, ...(reauth ? { reauth } : {}), ...(consent ? { consent } : {}) });
 }
 
 /**
