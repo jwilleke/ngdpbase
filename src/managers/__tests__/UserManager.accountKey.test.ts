@@ -89,6 +89,22 @@ describe('one change at a time per account (#2025)', () => {
     expect(result.username).toBe('pat');
   });
 
+  test('updateUser never hands the password hash back, in either form or when nothing changes', async () => {
+    const { manager, store } = makeManager();
+    const hash = String(store.get('pat').password);
+    const results = [
+      await manager.updateUser('pat', { displayName: 'Patricia' }, ADMIN),
+      await manager.updateUser('pat', () => ({ displayName: 'Pat' }), ADMIN),
+      await manager.updateUser('pat', () => undefined, ADMIN)
+    ];
+    for (const result of results) {
+      expect(result).not.toHaveProperty('password');
+      expect(JSON.stringify(result)).not.toContain(hash);
+      expect(result.username).toBe('pat');
+    }
+    expect(store.get('pat').password).toBe(hash);
+  });
+
   test('the function is handed a copy without the password hash', async () => {
     const { manager, store } = makeManager();
     const hash = store.get('pat').password;

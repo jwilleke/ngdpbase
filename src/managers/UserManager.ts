@@ -1183,8 +1183,12 @@ class UserManager extends BaseManager {
    * `undefined` to change nothing (nothing is written or recorded). It must not
    * call `updateUser` for the same account: the key is not re-entrant.
    * Either form is checked, applied and recorded the same way.
+   *
+   * Returns the account as written (as read, when nothing changed), without
+   * the password hash: the hash never leaves UserManager except to the
+   * password check (`storedPasswordHash`).
    */
-  async updateUser(username: string, updates: UserUpdateInput | UserUpdateFn, ctx: ActorContext): Promise<User> {
+  async updateUser(username: string, updates: UserUpdateInput | UserUpdateFn, ctx: ActorContext): Promise<Omit<User, 'password'>> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1197,8 +1201,8 @@ class UserManager extends BaseManager {
    * account's key: they reach other managers, which may change the account
    * themselves.
    */
-  private async finishEdit(username: string, edit: AccountEdit, ctx: ActorContext): Promise<User> {
-    if (!edit.updates) return edit.user;
+  private async finishEdit(username: string, edit: AccountEdit, ctx: ActorContext): Promise<Omit<User, 'password'>> {
+    if (!edit.updates) return publicRecord(edit.user);
     // #1765: turning an account off goes through the one deactivation step.
     if (edit.disabling) await this.closeAccess(username, 'disable', ctx);
 
@@ -1206,7 +1210,7 @@ class UserManager extends BaseManager {
 
     logger.info(`👤 Updated user: ${username}`);
     await edit.recordEdit('success');
-    return edit.user;
+    return publicRecord(edit.user);
   }
 
   /** Read, check and write one account change. Runs inside the account's key (#2025). */

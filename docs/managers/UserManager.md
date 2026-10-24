@@ -70,7 +70,7 @@ None. A door asks its context (`ctx.hasPermission`, `ctx.canAccess`); the decisi
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
 | `createUser(userData)` | `User` | Create new user |
-| `updateUser(username, updates, ctx)` | `User` | Change an account. `updates` is the fields to merge, or a function `(current) => updates` (below) |
+| `updateUser(username, updates, ctx)` | `Omit<User, 'password'>` | Change an account. `updates` is the fields to merge, or a function `(current) => updates` (below). Returns the account as written, never the password hash: the hash leaves UserManager only through `storedPasswordHash`, for the password check |
 | `deleteUser(username)` | `void` | Delete user |
 | `getUser(username)` | `User\|null` | Get user by username |
 | `getAllUsers()` | `User[]` | Get all users |
