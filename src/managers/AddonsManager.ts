@@ -194,8 +194,12 @@ export interface AddonModule {
    * "section was not rendered at all" (addon disabled mid-session, cached
    * form). Without it, absent checkbox fields look identical to "user
    * submitted no such field" and you may silently clobber stored values.
+   *
+   * `ctx` is the signed-in user's own context, forwarded from the request:
+   * pass it to your manager's door (and to the PDP) instead of rebuilding a
+   * subject from `user` (#2018).
    */
-  profileSection?(user: AddonProfileUser): Promise<AddonProfileSection | null> | AddonProfileSection | null;
+  profileSection?(user: AddonProfileUser, ctx: ActorContext): Promise<AddonProfileSection | null> | AddonProfileSection | null;
 
   /**
    * Optional save handler paired with `profileSection()` (#534).
@@ -2031,7 +2035,7 @@ class AddonsManager extends BaseManager {
    * Result order follows registration order of the addons map so the
    * displayed section order is stable across renders.
    */
-  async getProfileSections(user: AddonProfileUser): Promise<AddonProfileSectionEntry[]> {
+  async getProfileSections(user: AddonProfileUser, ctx: ActorContext): Promise<AddonProfileSectionEntry[]> {
     const candidates = [...this.addons.entries()].filter(
       ([, addon]) => addon.loaded && typeof addon.module.profileSection === 'function'
     );
@@ -2040,7 +2044,7 @@ class AddonsManager extends BaseManager {
     // becomes a rejected promise, not an escaped throw out of the .map().
     // (Promise.resolve(fn()) would not catch the sync throw.)
     const settled = await Promise.allSettled(
-      candidates.map(([, addon]) => (async () => addon.module.profileSection!(user))())
+      candidates.map(([, addon]) => (async () => addon.module.profileSection!(user, ctx))())
     );
 
     const sections: AddonProfileSectionEntry[] = [];
