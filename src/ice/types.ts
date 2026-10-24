@@ -132,6 +132,17 @@ export interface RegisteredShim extends IceShim {
 /** D11: what the person importing chose to do with the original file. */
 export type OriginalChoice = 'cite' | 'keep' | 'none';
 
+/**
+ * D11: the original-file choices a receiver offers, and which one is chosen
+ * when the user picks none (#2021). The import screen offers only `allowed`,
+ * and the engine refuses a run asking for any other.
+ */
+export interface IceOriginalChoices {
+  allowed: OriginalChoice[];
+  /** One of `allowed`. Default: `ngdpbase.import.engine.default-original` when allowed, else the first allowed. */
+  default?: OriginalChoice;
+}
+
 /** A citation to the origin (D11): the receiver renders it, as a footnote on a page. */
 export interface IceCitation {
   name: string;
@@ -184,6 +195,8 @@ export interface IceReceiver {
    * store). Without this, `keep` hands the original to the files receiver.
    */
   keepOriginal?(original: IceItem, ctx: ActorContext): Promise<ReceiveOutcome>;
+  /** The original-file choices this receiver offers (D11). Without it: all three. */
+  originals?: IceOriginalChoices;
 }
 
 export interface RegisteredReceiver extends IceReceiver {

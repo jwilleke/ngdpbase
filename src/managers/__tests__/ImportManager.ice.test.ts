@@ -72,7 +72,10 @@ describe('ImportManager — ICE registry', () => {
     expect(shims.find(s => s.id === 'core.markdown')).toMatchObject({ owner: 'core', direction: 'in', produces: 'ncm', receivers: ['core.pages'], enabled: true });
     // DOCX produces HTML, which chains into the html shim (D9).
     expect(shims.find(s => s.id === 'core.docx')).toMatchObject({ produces: 'html', receivers: [] });
-    expect(await im.receiversFor(EDITOR)).toEqual([{ id: 'core.pages', label: 'Pages' }, { id: 'core.files', label: 'Files' }]);
+    expect(await im.receiversFor(EDITOR)).toEqual([
+      { id: 'core.pages', label: 'Pages', originals: { allowed: ['none', 'cite', 'keep'], default: 'none' } },
+      { id: 'core.files', label: 'Files', originals: { allowed: ['none'], default: 'none' } }
+    ]);
   });
 
   test('the receivers a person may use are the ones whose permission they hold (D5)', async () => {
@@ -106,6 +109,56 @@ describe('ImportManager — ICE registry', () => {
     } finally {
       await fs.remove(dir);
     }
+  });
+});
+
+describe('ImportManager — the original-file choices a receiver offers (D11, #2021)', () => {
+  const ledger = (originals?: { allowed: Array<'cite' | 'keep' | 'none'>; default?: 'cite' | 'keep' | 'none' }) => ({
+    name: 'ledger', accepts: ['ncm'], ...(originals ? { originals } : {}),
+    mayUse: async () => true,
+    receive: async () => ({ status: 'stored' as const, ref: 'r1' })
+  });
+
+  test('a receiver that declares nothing offers all three, defaulting to the site\'s default-original', async () => {
+    const { im } = await makeImportManager({ 'ngdpbase.import.engine.default-original': 'cite' });
+    im.registerReceiver('acct', ledger());
+    const acct = (await im.receiversFor(EDITOR)).find(r => r.id === 'acct.ledger');
+    expect(acct?.originals).toEqual({ allowed: ['none', 'cite', 'keep'], default: 'cite' });
+  });
+
+  test('a receiver\'s own default wins; one it does not allow falls back to the site\'s, then its first', async () => {
+    const { im } = await makeImportManager({ 'ngdpbase.import.engine.default-original': 'cite' });
+    im.registerReceiver('a', ledger({ allowed: ['keep', 'none'], default: 'keep' }));
+    im.registerReceiver('b', ledger({ allowed: ['keep', 'cite'], default: 'none' }));
+    im.registerReceiver('c', ledger({ allowed: ['keep'] }));
+    const byId = Object.fromEntries((await im.receiversFor(EDITOR)).map(r => [r.id, r.originals]));
+    expect(byId['a.ledger']).toEqual({ allowed: ['none', 'keep'], default: 'keep' });
+    expect(byId['b.ledger']).toEqual({ allowed: ['cite', 'keep'], default: 'cite' });
+    expect(byId['c.ledger']).toEqual({ allowed: ['keep'], default: 'keep' });
+  });
+
+  test('a run asking for a choice the receiver does not offer is refused, queued or not', async () => {
+    const { im, uploads } = await makeImportManager();
+    const files = { type: 'upload' as const, files: [md('photo.png', 'PNG')] };
+    await expect(im.runImport({ source: files, receiver: 'core.files', original: 'keep' }, EDITOR)).rejects.toThrow(/does not offer 'keep'/);
+    await expect(im.enqueueImport({ source: files, receiver: 'core.files', original: 'cite' }, jobContextFromRequest(EDITOR as never))).rejects.toThrow(/does not offer 'cite'/);
+    expect(uploads).toEqual([]);
+  });
+
+  test('a run that chooses nothing gets the receiver\'s default', async () => {
+    const { im } = await makeImportManager();
+    const cited: boolean[] = [];
+    im.registerReceiver('acct', {
+      ...ledger({ allowed: ['cite', 'none'], default: 'cite' }),
+      receive: async (_item, _ctx, info) => { cited.push(!!info.citation); return { status: 'stored' as const, ref: 'r1' }; }
+    });
+    im.registerShim('acct', {
+      name: 'txt', direction: 'in', accepts: { extensions: ['.txt'] }, produces: 'ncm', receivers: ['acct.ledger'],
+      read: async (input) => ({ items: [{ kind: 'ncm', name: input.name, text: 'x' }] })
+    });
+    const run = await im.runImport({ source: { type: 'upload', files: [md('note.txt', 'x')] }, receiver: 'acct.ledger' }, EDITOR);
+    expect(run.files[0].status).toBe('imported');
+    expect(cited).toEqual([true]);
   });
 });
 
@@ -234,6 +287,15 @@ describe('ImportManager — background runs', () => {
     // Each job run was started for one person: the job's record names who the work was for.
     const started = enqueueSpy.mock.calls.filter(([jobId]) => jobId === 'import.engine-run').map(([, ctx]) => ctx.username);
     expect([...new Set(started)]).toEqual(['editor1', 'editor2']);
+  });
+
+  test('importRunsFor lists only the asking user\'s runs, newest first (#2021)', async () => {
+    const { im } = await makeImportManager();
+    const a = await im.runImport({ source: { type: 'upload', files: [md('A.md', '# A')] }, receiver: 'core.pages' }, EDITOR);
+    await im.runImport({ source: { type: 'upload', files: [md('R.md', '# R')] }, receiver: 'core.pages' }, READER);
+    const b = await im.runImport({ source: { type: 'upload', files: [md('B.md', '# B')] }, receiver: 'core.pages' }, EDITOR);
+    expect(im.importRunsFor(EDITOR).map(r => r.runId)).toEqual([b.runId, a.runId]);
+    expect(im.importRunsFor(READER).map(r => r.username)).toEqual(['reader1']);
   });
 
   test('a run carrying a job context is decided against that person\'s permissions, not the job\'s', async () => {

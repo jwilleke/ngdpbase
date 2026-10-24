@@ -9884,6 +9884,147 @@ ${panes}
   }
 
   /**
+   * What one upload on the import screen may hold (#2021): files and total
+   * bytes, `ngdpbase.import.engine.upload-max-*`. The upload is held in
+   * memory until the run takes it.
+   */
+  private importUploadLimits(): { maxFiles: number; maxBytes: number } {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const positive = (key: string, fallback: number): number => {
+      const n = Number(configManager?.getProperty(key, fallback));
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    return {
+      maxFiles: positive('ngdpbase.import.engine.upload-max-files', 20),
+      maxBytes: positive('ngdpbase.import.engine.upload-max-bytes', 268435456)
+    };
+  }
+
+  /**
+   * GET /import — the import screen (#2021, ICE #1979). Any user: there is no
+   * import permission (D5). The page offers only the receivers
+   * `receiversFor` returns for this user, each having asked its own
+   * permission, and lists this user's own runs. `?receiver=<id>` preselects
+   * one, only when it is among those.
+   */
+  async importPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const importManager = this.engine.getManager<ImportManager>('ImportManager');
+      const receivers = importManager ? await importManager.receiversFor(currentUser) : [];
+      const asked = typeof req.query.receiver === 'string' ? req.query.receiver : '';
+      const preselected = receivers.find(r => r.id === asked)?.id ?? (receivers.length === 1 ? receivers[0].id : '');
+      const runs = importManager ? importManager.importRunsFor(currentUser) : [];
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('import', {
+        ...commonData,
+        title: 'Import',
+        receivers,
+        preselected,
+        runs,
+        limits: this.importUploadLimits()
+      });
+    } catch (err) {
+      logger.error('[import] screen failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The import screen could not be shown.');
+    }
+  }
+
+  /**
+   * POST /import — start an import (#2021). Multipart: `files` (one or more,
+   * a zip among them if wanted), `receiver`, and `original` (D11). Answers at
+   * once with the run id; the engine unpacks, filters, fingerprints and
+   * converts in a background job (`enqueueImport`).
+   *
+   * The run carries this user's own job context. The request is built here
+   * from the fields named above only, so a client cannot name a `scope` or a
+   * `shim` (#2013). The receiver must be one `receiversFor` gives this user,
+   * and the original choice one it offers. Posted with `csrfFetch`: the CSRF
+   * check runs before a multipart body is parsed.
+   */
+  async importUpload(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    if (!importManager) return res.status(503).json({ success: false, error: 'Import is not available.' });
+
+    const { maxFiles, maxBytes } = this.importUploadLimits();
+    const tooBig = { success: false, error: `An upload can hold up to ${Math.round(maxBytes / 1024 / 1024)} MB in all.` };
+    // Refused before a byte is read when the request says it is too large
+    // (one megabyte over, for the multipart framing).
+    if (Number(req.headers['content-length'] ?? 0) > maxBytes + 1024 * 1024) return res.status(413).json(tooBig);
+
+    const upload = multer({
+      storage: multer.memoryStorage(),
+      defParamCharset: 'utf8',
+      limits: { fileSize: maxBytes, files: maxFiles }
+    }).array('files', maxFiles);
+    try {
+      await new Promise<void>((resolve, reject) => upload(req, res, (err: unknown) => {
+        if (err) reject(err instanceof Error ? err : new Error(getErrorMessage(err)));
+        else resolve();
+      }));
+    } catch (err) {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json(tooBig);
+      if (err instanceof multer.MulterError && (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE')) {
+        return res.status(413).json({ success: false, error: `An upload can hold up to ${maxFiles} files. Put more in a zip.` });
+      }
+      return res.status(400).json({ success: false, error: `The upload could not be read: ${getErrorMessage(err)}` });
+    }
+
+    const uploaded = (req as Request & { files?: Express.Multer.File[] }).files ?? [];
+    if (uploaded.length === 0) return res.status(400).json({ success: false, error: 'Choose at least one file.' });
+    if (uploaded.reduce((sum, f) => sum + f.size, 0) > maxBytes) return res.status(413).json(tooBig);
+
+    const receiverId = typeof req.body?.receiver === 'string' ? req.body.receiver : '';
+    const receiver = (await importManager.receiversFor(currentUser)).find(r => r.id === receiverId);
+    if (!receiver) return res.status(403).json({ success: false, error: 'You cannot import into that.' });
+    const asked = typeof req.body?.original === 'string' && req.body.original ? req.body.original : undefined;
+    const original = receiver.originals.allowed.find(c => c === asked);
+    if (asked !== undefined && !original) {
+      return res.status(400).json({ success: false, error: 'That choice for the original file is not offered here.' });
+    }
+
+    try {
+      const runId = await importManager.enqueueImport({
+        source: { type: 'upload', files: uploaded.map(f => ({ name: f.originalname, bytes: f.buffer, ...(f.mimetype ? { mediaType: f.mimetype } : {}) })) },
+        receiver: receiver.id,
+        ...(original ? { original } : {})
+      }, jobContextFromRequest(currentUser));
+      return res.status(202).json({ success: true, runId });
+    } catch (err) {
+      logger.error(`[import] could not queue an import for ${currentUser.username}:`, err);
+      return res.status(500).json({ success: false, error: 'The import could not be started.' });
+    }
+  }
+
+  /**
+   * GET /import/runs/:runId — one run's per-file status (#2021), to the user
+   * it ran as. Anyone else's run, or one this process no longer holds, is a
+   * 404: whether it exists is not theirs to know.
+   */
+  async importRunStatus(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    const run = importManager?.getImportRun(String(req.params.runId ?? ''), currentUser) ?? null;
+    res.setHeader('Cache-Control', 'no-store');
+    if (!run) return res.status(404).json({ success: false, error: 'No such import.' });
+    return res.json({ success: true, run });
+  }
+
+  /**
    * GET /my/edits — pages most recently edited by the current user (#640 Phase 2).
    */
   async myEditsPage(req: Request, res: Response) {
@@ -16544,6 +16685,10 @@ ${panes}
     app.get('/my/takeout', (req: Request, res: Response) => this.myTakeoutPage(req, res));
     app.post('/my/takeout', (req: Request, res: Response) => void this.myTakeoutDownload(req, res));
     app.post('/my/takeout/import', (req: Request, res: Response) => void this.myTakeoutImport(req, res));
+    // #2021 — the import screen (ICE #1979): any user, into the receivers they may use.
+    app.get('/import', (req: Request, res: Response) => void this.importPage(req, res));
+    app.post('/import', (req: Request, res: Response) => void this.importUpload(req, res));
+    app.get('/import/runs/:runId', (req: Request, res: Response) => void this.importRunStatus(req, res));
     app.get('/my/trash', (req: Request, res: Response) => this.myTrashPage(req, res));
     app.post('/my/trash/restore', (req: Request, res: Response) => this.myTrashRestore(req, res));
     app.post('/my/trash/purge', (req: Request, res: Response) => this.myTrashPurge(req, res));
