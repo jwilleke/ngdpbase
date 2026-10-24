@@ -47,7 +47,7 @@ describe('ICE fixture add-on (phr-shaped)', () => {
     const { im, manifest } = await loadFixture();
     expect(manifest).toMatchObject({ slug: 'ice-fixture', shims: ['ccda', 'fhir'], receivers: ['health-records'] });
     expect(im.listShims().filter(s => s.owner === 'ice-fixture').map(s => s.id)).toEqual(['ice-fixture.ccda', 'ice-fixture.fhir']);
-    expect(await im.receiversFor(ALICE)).toContainEqual({ id: 'ice-fixture.health-records', label: 'Health records' });
+    expect(await im.receiversFor(ALICE)).toContainEqual(expect.objectContaining({ id: 'ice-fixture.health-records', label: 'Health records' }));
   });
 
   test('a C-CDA file goes through the ccda shim into the manager\'s door, as the person', async () => {

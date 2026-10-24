@@ -1,0 +1,203 @@
+<%- include('header', { pageName: 'Import' }) %>
+
+<%# #2021: the import screen for the ICE engine (#1979). Any user; only the
+    receivers they may use (receiversFor), only their own runs. Locals:
+    receivers [{ id, label, originals: { allowed, default } }], preselected,
+    runs (IceRunReport[], newest first), limits { maxFiles, maxBytes }.
+    The upload is posted with csrfFetch (the CSRF check runs before a
+    multipart body is parsed); times go out as <time datetime data-local-time>. %>
+<div class="container mt-4" id="importScreen">
+    <h1><i class="fas fa-file-import"></i> Import <%- include('_help-icon', { slug: 'importing-files', label: 'Importing Files' }) %></h1>
+
+    <% if (receivers.length === 0) { %>
+        <div class="alert alert-info" id="importNothing">
+            <i class="fas fa-info-circle"></i> There is nothing you can import into on this site. Importing adds pages, files or records, and your account cannot add any of them here. Ask an administrator if you think it should.
+        </div>
+    <% } else { %>
+        <p class="text-muted">Choose one or more files, or a zip of them. The import runs in the background: you can leave this page, and come back to see how each file went.</p>
+
+        <form id="importForm" class="card mb-4">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="importReceiver" class="form-label">Import into</label>
+                    <select id="importReceiver" name="receiver" class="form-select" required>
+                        <% if (!preselected) { %><option value="">Choose…</option><% } %>
+                        <% receivers.forEach(function(r) { %>
+                            <option value="<%= r.id %>" <%= r.id === preselected ? 'selected' : '' %>><%= r.label || r.id %></option>
+                        <% }); %>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="importFiles" class="form-label">Files</label>
+                    <input id="importFiles" name="files" type="file" multiple class="form-control" required>
+                    <div class="form-text">Up to <%= limits.maxFiles %> files and <%= Math.round(limits.maxBytes / 1024 / 1024) %> MB at a time. A zip is unpacked for you.</div>
+                </div>
+
+                <fieldset class="mb-3" id="importOriginal" hidden>
+                    <legend class="form-label fs-6">The original file</legend>
+                    <div class="form-check" data-choice="none">
+                        <input class="form-check-input" type="radio" name="original" value="none" id="original-none">
+                        <label class="form-check-label" for="original-none">Do not keep it</label>
+                    </div>
+                    <div class="form-check" data-choice="cite">
+                        <input class="form-check-input" type="radio" name="original" value="cite" id="original-cite">
+                        <label class="form-check-label" for="original-cite">Note where it came from</label>
+                    </div>
+                    <div class="form-check" data-choice="keep">
+                        <input class="form-check-input" type="radio" name="original" value="keep" id="original-keep">
+                        <label class="form-check-label" for="original-keep">Keep a copy of the original</label>
+                    </div>
+                </fieldset>
+
+                <button type="submit" class="btn btn-primary" id="importStart"><i class="fas fa-upload"></i> Import</button>
+                <div id="importError" class="alert alert-danger mt-3 d-none" role="alert"></div>
+            </div>
+        </form>
+    <% } %>
+
+    <h2 class="h5">Your imports</h2>
+    <p class="text-muted small" id="importNoRuns" <%= runs.length ? 'hidden' : '' %>>You have no recent imports. Imports are listed here until the site restarts.</p>
+    <div id="importRuns" aria-live="polite"></div>
+</div>
+
+<script type="application/json" id="importData"><%- jsonForScript({ receivers: receivers, runs: runs }) %></script>
+<script nonce="<%= locals.cspNonce %>">
+(function () {
+    var data = JSON.parse(document.getElementById('importData').textContent);
+    var LABELS = {};
+    data.receivers.forEach(function (r) { LABELS[r.id] = r.label || r.id; });
+    var STATUS = {
+        imported: 'Imported',
+        partial: 'Partly imported',
+        unchanged: 'Already imported, unchanged',
+        duplicate: 'Already here',
+        noise: 'Skipped (not content)',
+        unreadable: 'Could not be read',
+        refused: 'Not allowed',
+        failed: 'Failed'
+    };
+    var STATE = { queued: 'Waiting to start', running: 'Running', done: 'Finished', failed: 'Failed' };
+    var runsBox = document.getElementById('importRuns');
+
+    function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text !== undefined) e.textContent = text;
+        return e;
+    }
+
+    function localTime(iso) {
+        var t = el('time', '', iso.slice(0, 16).replace('T', ' ') + ' UTC');
+        t.setAttribute('datetime', iso);
+        t.setAttribute('data-local-time', '');
+        return t;
+    }
+
+    function renderRun(run) {
+        var card = el('div', 'card mb-3');
+        card.id = 'run-' + run.runId;
+        card.setAttribute('data-run-state', run.state);
+        var head = el('div', 'card-header d-flex justify-content-between align-items-center');
+        var title = el('span', '', 'Into ' + (LABELS[run.receiver] || run.receiver));
+        if (run.startedAt) {
+            title.appendChild(document.createTextNode(' · '));
+            title.appendChild(localTime(run.startedAt));
+        }
+        head.appendChild(title);
+        head.appendChild(el('span', 'badge ' + (run.state === 'done' ? 'bg-success' : run.state === 'failed' ? 'bg-danger' : 'bg-secondary'), STATE[run.state] || run.state));
+        card.appendChild(head);
+        var body = el('div', 'card-body');
+        if (run.error) body.appendChild(el('div', 'alert alert-danger', run.error));
+        if (run.files.length === 0) {
+            body.appendChild(el('p', 'text-muted mb-0', run.state === 'done' ? 'Nothing was in the upload.' : 'Working…'));
+        } else {
+            var list = el('ul', 'list-unstyled mb-0 small');
+            run.files.forEach(function (f) {
+                var li = el('li', 'mb-1');
+                li.setAttribute('data-file-status', f.status);
+                li.appendChild(el('strong', '', f.name));
+                li.appendChild(document.createTextNode(' — ' + (STATUS[f.status] || f.status)));
+                if (f.message) li.appendChild(document.createTextNode(': ' + f.message));
+                list.appendChild(li);
+            });
+            body.appendChild(list);
+        }
+        card.appendChild(body);
+        var old = document.getElementById(card.id);
+        if (old) old.replaceWith(card); else runsBox.appendChild(card);
+        if (window.localizeTimes) window.localizeTimes(card);
+        document.getElementById('importNoRuns').hidden = true;
+        return card;
+    }
+
+    function watch(runId) {
+        var tries = 0;
+        function poll() {
+            fetch('/import/runs/' + encodeURIComponent(runId), { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                .then(function (res) { return res.json(); })
+                .then(function (body) {
+                    if (!body.success) return;
+                    renderRun(body.run);
+                    if (body.run.state !== 'done' && body.run.state !== 'failed' && ++tries < 600) setTimeout(poll, 1500);
+                })
+                .catch(function () { if (++tries < 600) setTimeout(poll, 3000); });
+        }
+        poll();
+    }
+
+    data.runs.forEach(function (run) {
+        renderRun(run);
+        if (run.state === 'queued' || run.state === 'running') watch(run.runId);
+    });
+
+    var form = document.getElementById('importForm');
+    if (!form) return;
+    var select = document.getElementById('importReceiver');
+    var originals = document.getElementById('importOriginal');
+    var errorBox = document.getElementById('importError');
+
+    // D11: offer only the choices the chosen receiver allows, its default checked.
+    function showOriginals() {
+        var r = data.receivers.find(function (x) { return x.id === select.value; });
+        var allowed = r ? r.originals.allowed : [];
+        originals.hidden = allowed.length < 2;
+        originals.querySelectorAll('[data-choice]').forEach(function (row) {
+            var choice = row.getAttribute('data-choice');
+            var input = row.querySelector('input');
+            row.hidden = allowed.indexOf(choice) < 0;
+            input.disabled = row.hidden;
+            input.checked = !!r && choice === r.originals.default;
+        });
+    }
+    select.addEventListener('change', showOriginals);
+    showOriginals();
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var button = document.getElementById('importStart');
+        button.disabled = true;
+        errorBox.classList.add('d-none');
+        window.csrfFetch('/import', { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } })
+            .then(function (res) { return res.json(); })
+            .then(function (body) {
+                if (!body.success) {
+                    errorBox.textContent = body.error || 'The import could not be started.';
+                    errorBox.classList.remove('d-none');
+                    return;
+                }
+                var card = renderRun({ runId: body.runId, receiver: select.value, state: 'queued', files: [] });
+                runsBox.insertBefore(card, runsBox.firstChild);
+                document.getElementById('importFiles').value = '';
+                watch(body.runId);
+            })
+            .catch(function (err) {
+                errorBox.textContent = 'The import could not be started: ' + err.message;
+                errorBox.classList.remove('d-none');
+            })
+            .finally(function () { button.disabled = false; });
+    });
+})();
+</script>
+
+<%- include('footer') %>

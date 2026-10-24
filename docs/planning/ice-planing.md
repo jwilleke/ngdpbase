@@ -4,7 +4,7 @@ Epic: [#1979](https://github.com/jwilleke/ngdpbase/issues/1979)
 
 The source of truth for the ICE epic: one engine that brings data in, converts it, and sends it out, with add-ons supplying the format-specific pieces ("shims"). Decisions here are the operator's; development follows this page. Change it when a decision changes, in the same change that ships the code.
 
-Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). A plugin as a receiver and how export is picked stay open.
+Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The user-facing import screen, `/import`, is built ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), 2026-10-24). The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). A plugin as a receiver and how export is picked stay open.
 
 ## Where this came from
 
@@ -99,6 +99,16 @@ The smallest piece that proves the engine:
 - 3 __Today's converters are shims__ `core.jspwiki`, `core.html`, `core.markdown` and `core.docx` (DOCX → HTML → NCM chains), into the receiver `core.pages` (PageManager's save door, checking `page-create`). `core.files` (AttachmentManager's upload door, checking `asset-upload`) is the other core receiver. /admin/import runs the same shim code and works as before; `tests/e2e/admin-import.spec.ts` proves it.
 - __Host and manifest__: `host.registerShim(shim)` and `host.registerReceiver(receiver)` register as `<slug>.<name>`, only names the manifest's `shims` / `receivers` declare. Site configuration switches a shim with `ngdpbase.import.shims.<id>.enabled`.
 - Not built, as decided for this slice: feeds onto the engine, the takeout import, export (`out` shims are declared, not run) and PDF.
+
+### The import screen ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), built 2026-10-24)
+
+- `/import` is open to any user, not under `/admin` (operator, 2026-10-24). An anonymous visitor is sent to sign in; contacts never sign in. There is no new permission (D5): the screen offers each user only what `receiversFor` returns, and each receiver checks its own permission. A user who may use none is told so.
+- A receiver's owner links to it preselected: `/import?receiver=phr.health-records`. The preselection is ignored for a receiver the user may not use.
+- The upload (files or a zip) goes to `enqueueImport` with the user's own job context, never a client-supplied scope, and returns at once. The screen does no file handling.
+- D11 on the screen: a receiver states the original choices it offers, `originals: { allowed, default }` on `IceReceiver`; the engine refuses any other. `core.files` offers only `none`.
+- Status: each run's per-file report from `getImportRun`, refreshing until done, to its own user only; the screen lists the user's runs this process holds (`importRunsFor`).
+- Limits: `ngdpbase.import.engine.upload-max-files` (20) and `upload-max-bytes` (256 MB, equal to `zip-max-bytes`).
+- Still open from the issue: whether a receiver may hide file names from the status view, and a "your recent imports" list from the ledger across restarts.
 
 Later, once the engine has proven itself:
 

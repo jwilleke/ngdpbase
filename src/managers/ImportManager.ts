@@ -62,8 +62,8 @@ import { converterShim } from '../ice/converterShim.js';
 import { convertChain, defaultScope, runImport, type IceEngineSettings } from '../ice/runImport.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
-  IceItem, IceLedger, IceReceiver, IceRunReport, IceRunRequest, IceShim, ReceiveInfo, ReceiveOutcome,
-  RegisteredReceiver, RegisteredShim, ShimTools
+  IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
+  ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../ice/types.js';
 
 /**
@@ -316,6 +316,16 @@ const ICE_JOB_ID = 'import.engine-run';
 /** What the noise filter drops when configuration names nothing else (`ngdpbase.import.engine.noise`). */
 const DEFAULT_NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._*'];
 
+/** D11's three choices, in the order the import screen offers them. */
+const ORIGINAL_CHOICES: readonly OriginalChoice[] = ['none', 'cite', 'keep'];
+
+/** A receiver the import screen may offer this user (#2021): its id, label and original-file choices (D11). */
+export interface UsableReceiver {
+  id: string;
+  label?: string;
+  originals: Required<IceOriginalChoices>;
+}
+
 /** Shim and receiver names: lower-case letters, numbers and dashes. */
 const ICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -447,13 +457,45 @@ class ImportManager extends BaseManager {
     }));
   }
 
-  /** The receivers this context may use (D5): each answers with its own existing permission. */
-  async receiversFor(ctx: ActorContext): Promise<Array<{ id: string; label?: string }>> {
-    const out: Array<{ id: string; label?: string }> = [];
+  /**
+   * The receivers this context may use (D5): each answers with its own
+   * existing permission. Each comes with the original-file choices it offers
+   * (D11), for the import screen (#2021).
+   */
+  async receiversFor(ctx: ActorContext): Promise<UsableReceiver[]> {
+    const out: UsableReceiver[] = [];
     for (const r of this.receiverRegistry.values()) {
-      if (await r.mayUse(ctx).catch(() => false)) out.push({ id: r.id, label: r.label });
+      if (await r.mayUse(ctx).catch(() => false)) out.push({ id: r.id, label: r.label, originals: this.originalChoices(r) });
     }
     return out;
+  }
+
+  /**
+   * The original-file choices a receiver offers (D11, #2021): what it
+   * declares, else all three; its default when it names one it allows, else
+   * `ngdpbase.import.engine.default-original` when allowed, else the first.
+   */
+  private originalChoices(receiver: IceReceiver): Required<IceOriginalChoices> {
+    const declared = (receiver.originals?.allowed ?? []).filter(c => ORIGINAL_CHOICES.includes(c));
+    const allowed = declared.length > 0 ? ORIGINAL_CHOICES.filter(c => declared.includes(c)) : [...ORIGINAL_CHOICES];
+    const wanted = [receiver.originals?.default, this.engineSettings().defaultOriginal];
+    return { allowed, default: wanted.find((c): c is OriginalChoice => !!c && allowed.includes(c)) ?? allowed[0] };
+  }
+
+  /**
+   * The request as the engine runs it: the receiver's default original when
+   * none was chosen, and a refusal for a choice the receiver does not offer
+   * (D11, #2021). An unknown receiver is left for the run to report.
+   */
+  private withOriginal(request: IceRunRequest): IceRunRequest {
+    const receiver = this.receiverRegistry.get(request.receiver);
+    if (!receiver) return request;
+    const choices = this.originalChoices(receiver);
+    if (request.original === undefined) return { ...request, original: choices.default };
+    if (!choices.allowed.includes(request.original)) {
+      throw new Error(`ICE receiver '${receiver.id}' does not offer '${request.original}' for the original file`);
+    }
+    return request;
   }
 
   // ── ICE: running imports (#1979) ─────────────────────────────────────────
@@ -467,8 +509,9 @@ class ImportManager extends BaseManager {
    */
   async runImport(request: IceRunRequest, ctx: ActorContext): Promise<IceRunReport> {
     if (!ctx?.username) throw new Error('ImportManager.runImport requires an ActorContext');
-    const report = this.newRunReport(request, ctx);
-    return this.executeRun(request, ctx, report);
+    const resolved = this.withOriginal(request);
+    const report = this.newRunReport(resolved, ctx);
+    return this.executeRun(resolved, ctx, report);
   }
 
   /**
@@ -479,8 +522,9 @@ class ImportManager extends BaseManager {
    */
   async enqueueImport(request: IceRunRequest, ctx: JobContext): Promise<string> {
     if (!ctx?.username) throw new Error('ImportManager.enqueueImport requires a JobContext');
-    const report = this.newRunReport(request, ctx);
-    this.iceQueue.push({ request, ctx, report });
+    const resolved = this.withOriginal(request);
+    const report = this.newRunReport(resolved, ctx);
+    this.iceQueue.push({ request: resolved, ctx, report });
     await this.kickIceQueue(ctx);
     return report.runId;
   }
@@ -489,6 +533,12 @@ class ImportManager extends BaseManager {
   getImportRun(runId: string, ctx: ActorContext): IceRunReport | null {
     const report = this.iceRuns.get(runId);
     return report && ctx?.username && report.username === ctx.username ? report : null;
+  }
+
+  /** The runs this process holds for the user `ctx` names, newest first (#2021): their own, never anyone else's. */
+  importRunsFor(ctx: ActorContext): IceRunReport[] {
+    if (!ctx?.username) return [];
+    return [...this.iceRuns.values()].filter(r => r.username === ctx.username).reverse();
   }
 
   /** Use this ledger instead of the file one: a test's, or a database table's. */
@@ -703,6 +753,8 @@ class ImportManager extends BaseManager {
       name: 'files',
       label: 'Files',
       accepts: ['file'],
+      // The file stored is the original itself; keeping or citing it again adds nothing (D11).
+      originals: { allowed: ['none'] },
       mayUse: (ctx) => this.permits(ctx, 'asset-upload'),
       receive: async (item: IceItem, ctx: ActorContext): Promise<ReceiveOutcome> => {
         const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
