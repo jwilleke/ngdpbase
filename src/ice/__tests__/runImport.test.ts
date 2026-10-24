@@ -6,7 +6,7 @@
  */
 import { packZip } from '../../utils/zipArchive';
 import { MemoryIceLedger } from '../ledger';
-import { runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
+import { keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
 import type {
   IceItem, IceRunReport, IceRunRequest, ReceiveInfo, ReceiveOutcome, RegisteredReceiver, RegisteredShim
 } from '../types';
@@ -432,6 +432,100 @@ describe('runImport', () => {
         source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records'
       });
       expect(received[0].info.citation).toBeDefined();
+    });
+  });
+
+  describe('keeping at upload, into an encrypted store (#2034)', () => {
+    /** The request's context: it carries the session's key handle. A job's context never does. */
+    const LIVE = { ...ALICE, privateStoreHandle: 'alice-session' } as ActorContext;
+    const req = (files = [upload('a.rec', 'bp=120')]): IceRunRequest => ({ source: { type: 'upload', files }, receiver: 'test.records', original: 'keep' });
+
+    /** A receiver keeping into an encrypted store: like `dekFor`, only a context holding the key may write it. */
+    function sealedKeeper(opts: { refuse?: boolean } = {}) {
+      const r = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      const inner = r.receiver.keepOriginal!;
+      r.receiver.keepsEncrypted = true;
+      r.receiver.keepOriginal = async (item, ctx) => {
+        if (opts.refuse) return { status: 'refused', message: 'Your health record is locked. Unlock it and try again.' };
+        if (!(ctx as { privateStoreHandle?: string }).privateStoreHandle) return { status: 'refused', message: 'encrypted store is locked' };
+        return inner(item, ctx);
+      };
+      return r;
+    }
+
+    test('keeps each original with the request context, and the run reuses it without the key', async () => {
+      const { receiver, received, kept } = sealedKeeper();
+      const ledger = new MemoryIceLedger();
+      const d = deps([recordShim()], [receiver], ledger);
+
+      const atUpload = await keepOriginalsAtUpload(d, req(), LIVE, 'test.records/alice');
+      expect(atUpload).toEqual({ kept: 1 });
+      expect(kept).toHaveLength(1);
+      expect(kept[0].ctx).toBe(LIVE);
+
+      // The run carries a job context: no key handle. It keeps nothing more.
+      const result = await run(d, req());
+      expect(result.files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+      expect(kept).toHaveLength(1);
+      expect(received[0].ctx).toBe(ALICE);
+      expect(received[0].info.original).toEqual({ name: 'a.rec', sha256: expect.any(String), ref: 'original-1' });
+    });
+
+    test('without it, the run alone cannot keep: the store refuses a context with no key', async () => {
+      const { receiver, received } = sealedKeeper();
+      const result = await run(deps([recordShim()], [receiver]), req());
+      expect(result.files[0]).toMatchObject({ status: 'refused', message: expect.stringMatching(/encrypted store is locked/) });
+      expect(received).toEqual([]);
+    });
+
+    test('a refused keep names the file and records nothing kept', async () => {
+      const { receiver, kept } = sealedKeeper({ refuse: true });
+      const ledger = new MemoryIceLedger();
+      const atUpload = await keepOriginalsAtUpload(deps([recordShim()], [receiver], ledger), req(), LIVE, 'test.records/alice');
+      expect(atUpload).toEqual({ kept: 0, refused: { name: 'a.rec', message: 'Your health record is locked. Unlock it and try again.' } });
+      expect(kept).toEqual([]);
+      expect(await ledger.files('test.records/alice')).toEqual([]);
+    });
+
+    test('a keep that throws is a refusal, with its message', async () => {
+      const { receiver } = sealedKeeper();
+      receiver.keepOriginal = async () => { throw new Error('disk full'); };
+      const atUpload = await keepOriginalsAtUpload(deps([recordShim()], [receiver]), req(), LIVE, 'test.records/alice');
+      expect(atUpload.refused).toEqual({ name: 'a.rec', message: 'disk full' });
+    });
+
+    test('decides as the run does: zip members each, noise and unreadable files not, the same bytes once', async () => {
+      const { receiver, kept } = sealedKeeper();
+      const zip = await packZip([
+        { path: 'one.rec', bytes: Buffer.from('bp=1') },
+        { path: 'again.rec', bytes: Buffer.from('bp=1') },
+        { path: '.DS_Store', bytes: Buffer.from('x') },
+        { path: 'notes.txt', bytes: Buffer.from('no shim reads this') }
+      ]);
+      const d = deps([recordShim()], [receiver]);
+      const atUpload = await keepOriginalsAtUpload(d, req([{ name: 'export.zip', bytes: zip }]), LIVE, 'test.records/alice');
+      expect(atUpload).toEqual({ kept: 1 });
+      expect(kept.map(k => k.item.name)).toEqual(['export.zip/one.rec']);
+    });
+
+    test('a file the scope already imported is not kept again', async () => {
+      const { receiver, kept } = sealedKeeper();
+      const d = deps([recordShim()], [receiver]);
+      await keepOriginalsAtUpload(d, req(), LIVE, 'test.records/alice');
+      await run(d, req());
+      expect(await keepOriginalsAtUpload(d, req(), LIVE, 'test.records/alice')).toEqual({ kept: 0 });
+      expect(kept).toHaveLength(1);
+    });
+
+    test('nothing is kept at upload for a receiver that does not keep into an encrypted store, or a run not keeping', async () => {
+      const plain = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      expect(await keepOriginalsAtUpload(deps([recordShim()], [plain.receiver]), req(), LIVE, 'test.records/alice')).toEqual({ kept: 0 });
+      expect(plain.kept).toEqual([]);
+
+      const sealed = sealedKeeper();
+      const cite = { ...req(), original: 'cite' as const };
+      expect(await keepOriginalsAtUpload(deps([recordShim()], [sealed.receiver]), cite, LIVE, 'test.records/alice')).toEqual({ kept: 0 });
+      expect(sealed.kept).toEqual([]);
     });
   });
 });

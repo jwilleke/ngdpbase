@@ -184,7 +184,7 @@ import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
-import { TakeoutImportRefused } from '../managers/ImportManager.js';
+import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
@@ -9940,13 +9940,18 @@ ${panes}
    * POST /import — start an import (#2021). Multipart: `files` (one or more,
    * a zip among them if wanted), `receiver`, and `original` (D11). Answers at
    * once with the run id; the engine unpacks, filters, fingerprints and
-   * converts in a background job (`enqueueImport`).
+   * converts in a background job (`enqueueUpload`).
    *
-   * The run carries this user's own job context. The request is built here
-   * from the fields named above only, so a client cannot name a `scope` or a
-   * `shim` (#2013). The receiver must be one `receiversFor` gives this user,
+   * The run carries this user's own job context (`enqueueUpload` derives it
+   * from the request's). The request is built here from the fields named
+   * above only, so a client cannot name a `scope` or a `shim` (#2013). The receiver must be one `receiversFor` gives this user,
    * and the original choice one it offers. Posted with `csrfFetch`: the CSRF
    * check runs before a multipart body is parsed.
+   *
+   * The request's own context goes to `enqueueUpload` (#2034): an original
+   * the receiver keeps in an encrypted store is kept now, while the user's
+   * key is in this request. If that is refused, the upload is refused with
+   * why, and nothing is queued.
    */
   async importUpload(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
@@ -9995,13 +10000,14 @@ ${panes}
     }
 
     try {
-      const runId = await importManager.enqueueImport({
+      const runId = await importManager.enqueueUpload({
         source: { type: 'upload', files: uploaded.map(f => ({ name: f.originalname, bytes: f.buffer, ...(f.mimetype ? { mediaType: f.mimetype } : {}) })) },
         receiver: receiver.id,
         ...(original ? { original } : {})
-      }, jobContextFromRequest(currentUser));
+      }, currentUser);
       return res.status(202).json({ success: true, runId });
     } catch (err) {
+      if (err instanceof ImportUploadRefused) return res.status(403).json({ success: false, error: err.message });
       logger.error(`[import] could not queue an import for ${currentUser.username}:`, err);
       return res.status(500).json({ success: false, error: 'The import could not be started.' });
     }

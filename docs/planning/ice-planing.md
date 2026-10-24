@@ -104,11 +104,19 @@ The smallest piece that proves the engine:
 
 - `/import` is open to any user, not under `/admin` (operator, 2026-10-24). An anonymous visitor is sent to sign in; contacts never sign in. There is no new permission (D5): the screen offers each user only what `receiversFor` returns, and each receiver checks its own permission. A user who may use none is told so.
 - A receiver's owner links to it preselected: `/import?receiver=phr.health-records`. The preselection is ignored for a receiver the user may not use.
-- The upload (files or a zip) goes to `enqueueImport` with the user's own job context, never a client-supplied scope, and returns at once. The screen does no file handling.
+- The upload (files or a zip) goes to `enqueueUpload` with the request's context (since #2034; the run gets the user's own job context), never a client-supplied scope, and returns at once. The screen does no file handling.
 - D11 on the screen: a receiver states the original choices it offers, `originals: { allowed, default }` on `IceReceiver`; the engine refuses any other. `core.files` offers only `none`.
 - Status: each run's per-file report from `getImportRun`, refreshing until done, to its own user only; the screen lists the user's runs this process holds (`importRunsFor`).
 - Limits: `ngdpbase.import.engine.upload-max-files` (20) and `upload-max-bytes` (256 MB, equal to `zip-max-bytes`).
 - Still open from the issue: whether a receiver may hide file names from the status view, and a "your recent imports" list from the ledger across restarts.
+
+### Keeping an original in an encrypted vault ([#2034](https://github.com/jwilleke/ngdpbase/issues/2034), built 2026-10-24)
+
+- __Decided (operator, 2026-10-24): keep at upload.__ When the user chose to keep the original and the receiver keeps it in an encrypted store (yourPHR's vault), it is kept during the upload request, with the request's context, while the user's key is live. A file exists in a vault only through its entry in the store's sealed `files-index.json`, so that entry is written then too. Not chosen: a timed key copy for the run, or the job carrying the key; both keep a key on the server past the request.
+- A receiver says its keeps need the key with `keepsEncrypted: true` on `IceReceiver`. `POST /import` calls `enqueueUpload` with the request's context, which keeps each original (`keepOriginalsAtUpload`) and records it in the ledger as the keep-once record (#2011) before queuing. The run reuses each one and needs no key, so signing out right after the upload is fine.
+- A keep refused at upload refuses the upload, saying which file and why, and nothing is queued.
+- Keeps through `core.files`, and through a receiver without `keepsEncrypted`, stay in the run.
+- A zip is unpacked once for the keeps and again by the run: the same bounded work (`zip-max-*`), done twice only for these uploads.
 
 Later, once the engine has proven itself:
 
