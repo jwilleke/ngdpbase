@@ -6,7 +6,8 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
 import { emailDomain } from '../utils/emailForLog.js';
-import { isReservedUsername } from '../utils/username.js';
+import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -242,7 +243,7 @@ interface UserCreateInput {
 /**
  * User update input data
  */
-interface UserUpdateInput {
+export interface UserUpdateInput {
   email?: string;
   displayName?: string;
   password?: string;
@@ -254,6 +255,25 @@ interface UserUpdateInput {
   preferences?: Partial<UserPreferences>;
   profilePage?: string;
   [key: string]: unknown; // allow addon/extended fields
+}
+
+/**
+ * A change worked out from the account as it is now (#2025), the function form
+ * of `updateUser`. It runs inside the account's key, is handed a copy of the
+ * account without the password hash (an add-on's own fields included, as
+ * `UserUpdateInput` allows them), and returns the fields to merge, or
+ * `undefined` to change nothing.
+ */
+export type UserUpdateFn = (current: Omit<User, 'password'> & { [key: string]: unknown }) => UserUpdateInput | undefined | Promise<UserUpdateInput | undefined>;
+
+/** One account change, read and written inside the account's key; what is left to do after it (#2025). */
+interface AccountEdit {
+  /** The account as written (or as read, when nothing changed). */
+  user: User;
+  /** The fields merged; null when the function form changed nothing. */
+  updates: UserUpdateInput | null;
+  disabling: boolean;
+  recordEdit: (result: 'success' | 'failure', reason?: string) => Promise<void>;
 }
 
 /**
@@ -298,6 +318,8 @@ class UserManager extends BaseManager {
   private provider: UserProvider | null = null;
   private providerClass?: string;
   private passwordSalt?: string;
+  /** One read-merge-write at a time per account, keyed by the normalized username (#2025). */
+  private readonly accountWrites = new KeyedSerial();
 
   /**
    * Creates a new UserManager instance
@@ -758,21 +780,40 @@ class UserManager extends BaseManager {
    */
   async upgradePasswordHash(username: string, newHash: string, legacy: boolean): Promise<void> {
     if (!this.provider) throw new Error('Provider not initialized');
-    const user = await this.provider.getUser(username);
-    if (!user) return;
-    user.password = newHash;
-    await this.writeAccounts(this.provider.updateUser(username, user));
+    if (!(await this.patchAccount(username, (user) => { user.password = newHash; }))) return;
     logger.info(`🔐 Upgraded stored password hash for "${username}" (${legacy ? 'legacy SHA-256 → scrypt' : 'scrypt parameters raised'}) (#1042)`);
   }
 
   /** Count a completed sign-in on the account: last sign-in and sign-in count (#1758; AuthManager calls it for a sign-in, never a re-check). */
   async recordSignIn(username: string): Promise<void> {
     if (!this.provider) throw new Error('Provider not initialized');
-    const user = await this.provider.getUser(username);
-    if (!user) return;
-    user.lastLogin = new Date().toISOString();
-    user.loginCount = (user.loginCount || 0) + 1;
-    await this.writeAccounts(this.provider.updateUser(username, user));
+    await this.patchAccount(username, (user) => {
+      user.lastLogin = new Date().toISOString();
+      user.loginCount = (user.loginCount || 0) + 1;
+    });
+  }
+
+  /** Run `task` inside the account's key: one read-merge-write at a time per account (#2025). Not re-entrant. */
+  private inAccountKey<T>(username: string, task: () => Promise<T>): Promise<T> {
+    return this.accountWrites.run(normalizeUsername(username), task);
+  }
+
+  /**
+   * Read an account, change it and write it back, inside its key (#2025): for
+   * core's own bookkeeping (sign-in counters, the hash upgrade, the profile
+   * page), which is not an edit and is not recorded. False when there is no
+   * such account.
+   */
+  private patchAccount(username: string, change: (user: User) => void): Promise<boolean> {
+    const provider = this.provider;
+    if (!provider) throw new Error('Provider not initialized');
+    return this.inAccountKey(username, async () => {
+      const user = await provider.getUser(username);
+      if (!user) return false;
+      change(user);
+      await this.writeAccounts(provider.updateUser(username, user));
+      return true;
+    });
   }
 
 
@@ -1067,7 +1108,8 @@ class UserManager extends BaseManager {
       const pageCreated = await this.createUserPage(user, ctx);
       if (pageCreated) {
         user.profilePage = user.displayName;
-        await this.writeAccounts(this.provider.updateUser(username, user));
+        // #2025: read again inside the key, so a change made since the create is kept.
+        await this.patchAccount(username, (stored) => { stored.profilePage = user.displayName; });
       }
     } catch (error) {
       logger.warn(`⚠️  Failed to create user page for ${username}:`, error instanceof Error ? error.message : String(error));
@@ -1111,20 +1153,68 @@ class UserManager extends BaseManager {
    */
   async resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider || !username || !words || !newPassword) return false;
-    const user = await this.provider.getUser(username);
-    if (!user || user.isExternal || user.isActive === false) return false;
+    const provider = this.provider;
+    // #2025: the read, the key rewrap and the password write are one change to the account.
+    const edit = await this.inAccountKey(username, async () => {
+      const user = await provider.getUser(username);
+      if (!user || user.isExternal || user.isActive === false) return null;
 
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    if (!pagesDirectory) return false;
-    if (!(await resetPasswordWrapWithMnemonic({ pagesDirectory, username, words, newPassword }))) return false;
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+      if (!pagesDirectory) return null;
+      if (!(await resetPasswordWrapWithMnemonic({ pagesDirectory, username, words, newPassword }))) return null;
 
-    await this.updateUser(username, { password: newPassword }, ctx);
+      return this.editAccount(username, { password: newPassword }, ctx);
+    });
+    if (!edit) return false;
+    await this.finishEdit(username, edit, ctx);
     logger.info(`🔑 Password reset with recovery words for ${username}`);
     return true;
   }
 
-  async updateUser(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<User> {
+  /**
+   * Change an account (#2025: one change at a time per account).
+   *
+   * `updates` is the fields to merge, or a function that works them out from
+   * the account as it is now: `(current) => updates`. The function runs inside
+   * the account's `KeyedSerial` key, between the read and the write, so two
+   * changes to one account never read the same old record. It gets a copy of
+   * the account without the password hash, and returns the fields to merge, or
+   * `undefined` to change nothing (nothing is written or recorded). It must not
+   * call `updateUser` for the same account: the key is not re-entrant.
+   * Either form is checked, applied and recorded the same way.
+   *
+   * Returns the account as written (as read, when nothing changed), without
+   * the password hash: the hash never leaves UserManager except to the
+   * password check (`storedPasswordHash`).
+   */
+  async updateUser(username: string, updates: UserUpdateInput | UserUpdateFn, ctx: ActorContext): Promise<Omit<User, 'password'>> {
+    if (!this.provider) {
+      throw new Error('Provider not initialized');
+    }
+    const edit = await this.inAccountKey(username, () => this.editAccount(username, updates, ctx));
+    return this.finishEdit(username, edit, ctx);
+  }
+
+  /**
+   * The steps of an account change that come after the write, outside the
+   * account's key: they reach other managers, which may change the account
+   * themselves.
+   */
+  private async finishEdit(username: string, edit: AccountEdit, ctx: ActorContext): Promise<Omit<User, 'password'>> {
+    if (!edit.updates) return publicRecord(edit.user);
+    // #1765: turning an account off goes through the one deactivation step.
+    if (edit.disabling) await this.closeAccess(username, 'disable', ctx);
+
+    await this.syncPersonOnUpdate(username, edit.updates, ctx);
+
+    logger.info(`👤 Updated user: ${username}`);
+    await edit.recordEdit('success');
+    return publicRecord(edit.user);
+  }
+
+  /** Read, check and write one account change. Runs inside the account's key (#2025). */
+  private async editAccount(username: string, change: UserUpdateInput | UserUpdateFn, ctx: ActorContext): Promise<AccountEdit> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1132,6 +1222,10 @@ class UserManager extends BaseManager {
     const user = await this.provider.getUser(username);
     if (!user) {
       throw new Error('User not found');
+    }
+    const updates = typeof change === 'function' ? await change(structuredClone(publicRecord(user))) : change;
+    if (updates === undefined) {
+      return { user, updates: null, disabling: false, recordEdit: () => Promise.resolve() };
     }
 
     const currentPasswordPlain =
@@ -1230,14 +1324,7 @@ class UserManager extends BaseManager {
       if (incomingRoles) await this.roleManager().applyRoleDiff(username, incomingRoles, oldRoles).catch(() => undefined);
       throw error;
     }
-    // #1765: turning an account off goes through the one deactivation step.
-    if (disabling) await this.closeAccess(username, 'disable', ctx);
-
-    await this.syncPersonOnUpdate(username, updates, ctx);
-
-    logger.info(`👤 Updated user: ${username}`);
-    await recordEdit('success');
-    return user;
+    return { user, updates, disabling, recordEdit };
   }
 
   /**

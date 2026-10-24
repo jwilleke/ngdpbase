@@ -1,16 +1,18 @@
 /**
  * A forgotten password, reset with the 12 recovery words (#1452).
  *
- * The real key file and real crypto; the user provider and `updateUser` are
- * stand-ins, so what is asserted is the order and the refusals: the key's
- * password wrap is replaced first, then the sign-in password is set through
- * the one door that records it — and every "no" changes nothing.
+ * The real key file and real crypto; the user provider and `updateUser`'s own
+ * steps (`editAccount`, `finishEdit`) are stand-ins, so what is asserted is the
+ * order and the refusals: the key's password wrap is replaced first, then the
+ * sign-in password is set through the steps of the one door that records it,
+ * inside the account's key (#2025) — and every "no" changes nothing.
  */
 
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import UserManager from '../UserManager';
+import { KeyedSerial } from '../../utils/keyedSerial';
 import { TEST_PRIVATE_STORE_KDF, createUserKeys, unwrapKekWithPassword } from '../../utils/privateStoreCrypto';
 import { privateUserKeysPath } from '../../utils/privateStorePath';
 import type { ActorContext } from '../../context/ActorContext';
@@ -22,7 +24,7 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
   let pagesDir: string;
   let users: Record<string, Record<string, unknown>>;
   let manager: UserManager;
-  let updateUser: ReturnType<typeof vi.fn>;
+  let editAccount: ReturnType<typeof vi.fn>;
   let words: string;
   let kek: Buffer;
 
@@ -41,8 +43,10 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
     internals.engine = {
       getManager: (name: string) => (name === 'ConfigurationManager' ? { getResolvedDataPath: () => pagesDir } : null)
     };
-    updateUser = vi.fn(async () => ({}));
-    internals.updateUser = updateUser;
+    editAccount = vi.fn(async () => ({ user: {}, updates: {}, disabling: false, recordEdit: async () => undefined }));
+    internals.accountWrites = new KeyedSerial();
+    internals.editAccount = editAccount;
+    internals.finishEdit = vi.fn(async () => ({}));
   });
 
   afterEach(async () => {
@@ -55,7 +59,7 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
     expect(await manager.resetPasswordWithRecoveryWords('molly', words, 'brand-new', CTX)).toBe(true);
 
     expect(Buffer.compare(await unwrapKekWithPassword(await keysOnDisk(), 'brand-new'), kek)).toBe(0);
-    expect(updateUser).toHaveBeenCalledWith('molly', { password: 'brand-new' }, CTX);
+    expect(editAccount).toHaveBeenCalledWith('molly', { password: 'brand-new' }, CTX);
   });
 
   test.each([
@@ -68,7 +72,7 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
     expect(await manager.resetPasswordWithRecoveryWords(u, w, 'brand-new', CTX)).toBe(false);
 
     expect(await keysOnDisk()).toEqual(before);
-    expect(updateUser).not.toHaveBeenCalled();
+    expect(editAccount).not.toHaveBeenCalled();
   });
 
   test('an external (OAuth) or inactive account is refused, even with the right words', async () => {
@@ -77,6 +81,6 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
 
     users.molly = { username: 'molly', isActive: false };
     expect(await manager.resetPasswordWithRecoveryWords('molly', words, 'brand-new', CTX)).toBe(false);
-    expect(updateUser).not.toHaveBeenCalled();
+    expect(editAccount).not.toHaveBeenCalled();
   });
 });

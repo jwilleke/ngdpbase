@@ -103,26 +103,26 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const userManager = um();
         if (!userManager) { res.status(503).send('UserManager not available'); return; }
 
-        const freshUser = await userManager.getUser(ctx.username!);
-        const existing = (freshUser?.preferences ?? {}) as Record<string, unknown>;
-
         const body = req.body as Record<string, unknown>;
-        const updated: Record<string, unknown> = {
-          ...existing,
-          'journal.voiceToText':    body['voiceToText']    === 'on',
-          'journal.reminderEnabled': body['reminderEnabled'] === 'on',
-          'journal.reminderTime':   typeof body['reminderTime'] === 'string' && body['reminderTime'].trim()
-            ? body['reminderTime'].trim()
-            : '20:00',
-          'journal.streakVisible':  body['streakVisible']  === 'on'
-        };
-        // #1504: the preference is saved only where it is shown — a `choice`
-        // journal. Absence on the form then means the user unchecked it.
-        if (journalPrivacy(engine, existing).offer) {
-          updated['journal.defaultPrivate'] = body['defaultPrivate'] === 'on';
-        }
-
-        await userManager.updateUser(ctx.username!, { preferences: updated }, jobContextFromRequest(ctx));
+        // #2025: merged into the account as it is now, inside its key (updateUser's function form).
+        await userManager.updateUser(ctx.username!, (current) => {
+          const existing = (current.preferences ?? {}) as Record<string, unknown>;
+          const updated: Record<string, unknown> = {
+            ...existing,
+            'journal.voiceToText':    body['voiceToText']    === 'on',
+            'journal.reminderEnabled': body['reminderEnabled'] === 'on',
+            'journal.reminderTime':   typeof body['reminderTime'] === 'string' && body['reminderTime'].trim()
+              ? body['reminderTime'].trim()
+              : '20:00',
+            'journal.streakVisible':  body['streakVisible']  === 'on'
+          };
+          // #1504: the preference is saved only where it is shown — a `choice`
+          // journal. Absence on the form then means the user unchecked it.
+          if (journalPrivacy(engine, existing).offer) {
+            updated['journal.defaultPrivate'] = body['defaultPrivate'] === 'on';
+          }
+          return { preferences: updated };
+        }, jobContextFromRequest(ctx));
         res.redirect('/journal/settings?success=Settings+saved');
       } catch (err) {
         handleError(err, res);

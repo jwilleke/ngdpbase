@@ -12,6 +12,7 @@
  */
 
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
+import type UserManager from './UserManager.js';
 import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
@@ -2099,7 +2100,7 @@ class AddonsManager extends BaseManager {
    * `saveProfileSection()` handler (#534).
    *
    * Runs SEQUENTIALLY — each addon's read-modify-write of user preferences
-   * (typical implementation: `getUser → merge → updateUser`) must see the
+   * (`updateUser`'s function form, #2025) must see the
    * previous addon's writes. Parallel execution would create a same-snapshot
    * race where two addons read identical preferences, each merge their own
    * keys, and the second writer clobbers the first writer's changes.
@@ -2231,24 +2232,23 @@ class AddonsManager extends BaseManager {
     if ((!isJobContext(ctx) && !ctx.isAuthenticated) || !pdp || !(await pdp.permits(ctx, 'profile-manage'))) {
       throw new Error(`${ctx.username} may not change their add-on settings (needs profile-manage)`);
     }
-    const userManager = this.engine.getManager<{
-      getUser(u: string): Promise<AddonProfileUser | undefined>;
-      updateUser(u: string, updates: { preferences: Record<string, unknown> }, c: ActorContext): Promise<unknown>;
-        }>('UserManager');
+    const userManager = this.engine.getManager<Pick<UserManager, 'getUser' | 'updateUser'>>('UserManager');
     const user = await userManager?.getUser(ctx.username);
     if (!userManager || !user) throw new Error(`No account '${ctx.username}' to set the ${slug} switch on`);
-    // #1603: turning it on needs its documents accepted first, at their
-    // current versions. ConsentManager asks the person and records it; until
-    // then the switch stays off. Turning it off, or saving it on when it is
-    // already on, asks nothing: a changed version is asked when they next use it.
-    const preferences0 = (user.preferences ?? {}) as Record<string, unknown>;
-    if (on && preferences0[personSwitchKey(slug)] !== true) {
-      const pending = await this.engine.getManager<{ pendingFor(u: string, s: string): Promise<Array<{ id: string }>> }>('ConsentManager')
-        ?.pendingFor(ctx.username, slug) ?? [];
-      if (pending.length > 0) throw new ConsentRequiredError(slug, pending.map((d) => d.id));
-    }
-    const preferences = { ...(user.preferences ?? {}), [personSwitchKey(slug)]: on };
-    await userManager.updateUser(ctx.username, { preferences }, ctx);
+    // #2025: decided and written from the account as it is now, inside its key.
+    await userManager.updateUser(ctx.username, async (current) => {
+      // #1603: turning it on needs its documents accepted first, at their
+      // current versions. ConsentManager asks the person and records it; until
+      // then the switch stays off. Turning it off, or saving it on when it is
+      // already on, asks nothing: a changed version is asked when they next use it.
+      const preferences0 = (current.preferences ?? {}) as Record<string, unknown>;
+      if (on && preferences0[personSwitchKey(slug)] !== true) {
+        const pending = await this.engine.getManager<{ pendingFor(u: string, s: string): Promise<Array<{ id: string }>> }>('ConsentManager')
+          ?.pendingFor(ctx.username, slug) ?? [];
+        if (pending.length > 0) throw new ConsentRequiredError(slug, pending.map((d) => d.id));
+      }
+      return { preferences: { ...(current.preferences ?? {}), [personSwitchKey(slug)]: on } };
+    }, ctx);
   }
 
   /**

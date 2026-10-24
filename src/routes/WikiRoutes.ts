@@ -25,7 +25,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
-import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
+import { ANONYMOUS_SUBJECT, type PermissionSubject, type UserUpdateInput, type UserUpdateFn } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
@@ -321,7 +321,8 @@ interface IUserManager {
   // #1204: the actor is recorded at the manager door. Optional until #1179
   // makes the context positional and mandatory.
   createUser(data: unknown, ctx: ActorContext): Promise<unknown>;
-  updateUser(username: string, data: unknown, ctx: ActorContext): Promise<unknown>;
+  /** #2025: the fields to merge, or a function of the account as it is now, run inside the account's key. */
+  updateUser(username: string, data: UserUpdateInput | UserUpdateFn, ctx: ActorContext): Promise<unknown>;
   deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
   /** #1452: a forgotten password, reset with the recovery words. */
   resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean>;
@@ -10394,24 +10395,14 @@ ${panes}
         currentUser.username
       );
 
-      // Re-read fresh preferences from disk rather than spreading the
-      // session-cached `currentUser.preferences`. The session snapshot can
-      // miss keys written since login (by another tab, the standalone
-      // /journal/settings page, an admin tool, etc.), and the subsequent
-      // updateUser({ preferences }) call REPLACES the whole bag — any key
-      // not in our spread base is wiped. Re-reading per-request avoids
-      // that wholesale clobber. (Surfaced by #534 code review.)
-      const freshUserForPrefs = currentUser.username
-        ? await userManager.getUser(currentUser.username)
-        : null;
-      const currentPreferences = (freshUserForPrefs?.preferences ?? currentUser.preferences ?? {}) as Record<string, unknown>;
-      logger.debug(
-        'DEBUG: updatePreferences - current preferences:',
-        currentPreferences
-      );
-
-      // Extract preference values from form and merge with existing
-      const preferences: Record<string, string | boolean | undefined> = { ...(currentPreferences as Record<string, string | boolean | undefined>) };
+      // The preferences are merged into the account as it is now, not the
+      // session's copy: `updateUser({ preferences })` REPLACES the whole bag,
+      // so a key written since sign-in (another tab, /journal/settings, an
+      // admin tool) would be wiped (#534). #2025: the read and the write run in
+      // the account's key (the function form), so a save made at the same
+      // moment is not lost either.
+      // Extract preference values from the form; merged below.
+      const preferences: Record<string, string | boolean | undefined> = {};
 
       // Helper: resolve dotted field names defensively.
       //
@@ -10493,13 +10484,16 @@ ${panes}
         preferences
       );
 
-      // #1504: the capture preference is saved only where it is shown.
-      if (this.captureDefaultPrivatePreference(currentPreferences) !== null) {
-        preferences['capture.defaultPrivate'] = getBodyValue('capture.defaultPrivate') === 'on';
-      }
-
       // Update user with new preferences
-      await userManager.updateUser(currentUser.username, { preferences }, currentUser);
+      await userManager.updateUser(currentUser.username, (current) => {
+        const currentPreferences = (current.preferences ?? {}) as Record<string, unknown>;
+        const merged: Record<string, unknown> = { ...currentPreferences, ...preferences };
+        // #1504: the capture preference is saved only where it is shown.
+        if (this.captureDefaultPrivatePreference(currentPreferences) !== null) {
+          merged['capture.defaultPrivate'] = getBodyValue('capture.defaultPrivate') === 'on';
+        }
+        return { preferences: merged };
+      }, currentUser);
 
       // #1603: an add-on's documents accepted on its card are recorded before
       // the add-ons save, so a switch turned on in the same save finds them.
@@ -10572,8 +10566,10 @@ ${panes}
         return res.status(400).json({ error: 'Invalid theme value' });
       }
       const userManager = this.engine.getManager('UserManager');
-      const prefs = { ...(currentUser.preferences as Record<string, unknown> || {}), 'display.theme': theme };
-      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
+      // #2025: merged into the account as it is now, inside its key.
+      await userManager.updateUser(currentUser.username, (current) => ({
+        preferences: { ...(current.preferences ?? {}), 'display.theme': theme }
+      }), currentUser);
       return res.json({ ok: true });
     } catch (err: unknown) {
       logger.error('Error updating display theme:', err);
@@ -10606,20 +10602,26 @@ ${panes}
       if (!canonicalUrl) return res.status(400).json({ error: 'url or pageName required' });
       const title = rawTitle || rawPageName || canonicalUrl;
       const userManager = this.engine.getManager('UserManager');
-      const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const pinned: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
-      if (pinned.length >= 20) return res.status(400).json({ error: 'Maximum 20 pinned items reached' });
-      if (!pinned.find(p => p.url === canonicalUrl)) {
-        const entry: PinnedItem = {
-          url: canonicalUrl,
-          title,
-          ...(rawPageName ? { pageName: rawPageName } : {}),
-          pinnedAt: new Date().toISOString()
-        };
-        pinned.push(entry);
-      }
-      prefs['nav.pinnedPages'] = pinned;
-      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
+      // #2025: worked out from the account as it is now, inside its key.
+      let pinned: PinnedItem[] = [];
+      let full = false;
+      await userManager.updateUser(currentUser.username, (current) => {
+        const prefs: Record<string, unknown> = { ...(current.preferences ?? {}) };
+        pinned = normalizePinnedItems(prefs['nav.pinnedPages']);
+        if (pinned.length >= 20) { full = true; return undefined; }
+        if (!pinned.find(p => p.url === canonicalUrl)) {
+          const entry: PinnedItem = {
+            url: canonicalUrl,
+            title,
+            ...(rawPageName ? { pageName: rawPageName } : {}),
+            pinnedAt: new Date().toISOString()
+          };
+          pinned.push(entry);
+        }
+        prefs['nav.pinnedPages'] = pinned;
+        return { preferences: prefs };
+      }, currentUser);
+      if (full) return res.status(400).json({ error: 'Maximum 20 pinned items reached' });
       return res.json({ ok: true, pinnedPages: pinned });
     } catch (err) {
       logger.error('Error adding pinned page:', err);
@@ -10642,17 +10644,20 @@ ${panes}
       const ident = decodeURIComponent(req.params.pageName ?? '');
       if (!ident) return res.status(400).json({ error: 'identifier required' });
       const userManager = this.engine.getManager('UserManager');
-      const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const normalized: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
       // ident may be a URL (e.g. "/my/journal") or a legacy pageName ("Foo").
       // Compute the canonical URL we'd derive for "Foo" so legacy clients
       // sending pageName still find their entry.
       const identAsPageNameUrl = ident.startsWith('/') ? null : `/view/${encodeURIComponent(ident)}`;
-      const pinned = normalized.filter(p =>
-        p.url !== ident && p.url !== identAsPageNameUrl && p.pageName !== ident
-      );
-      prefs['nav.pinnedPages'] = pinned;
-      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
+      // #2025: worked out from the account as it is now, inside its key.
+      let pinned: PinnedItem[] = [];
+      await userManager.updateUser(currentUser.username, (current) => {
+        const prefs: Record<string, unknown> = { ...(current.preferences ?? {}) };
+        pinned = normalizePinnedItems(prefs['nav.pinnedPages']).filter(p =>
+          p.url !== ident && p.url !== identAsPageNameUrl && p.pageName !== ident
+        );
+        prefs['nav.pinnedPages'] = pinned;
+        return { preferences: prefs };
+      }, currentUser);
       return res.json({ ok: true, pinnedPages: pinned });
     } catch (err) {
       logger.error('Error removing pinned page:', err);
@@ -10676,13 +10681,15 @@ ${panes}
         ? req.body.order.filter((s: unknown): s is string => typeof s === 'string')
         : [];
       const userManager = this.engine.getManager('UserManager');
-      const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const pinned: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
-      const reordered = order
-        .map(ident => pinned.find(p => p.url === ident || p.pageName === ident))
-        .filter((p): p is PinnedItem => p !== undefined);
-      prefs['nav.pinnedPages'] = reordered;
-      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
+      // #2025: worked out from the account as it is now, inside its key.
+      await userManager.updateUser(currentUser.username, (current) => {
+        const prefs: Record<string, unknown> = { ...(current.preferences ?? {}) };
+        const pinned: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
+        prefs['nav.pinnedPages'] = order
+          .map(ident => pinned.find(p => p.url === ident || p.pageName === ident))
+          .filter((p): p is PinnedItem => p !== undefined);
+        return { preferences: prefs };
+      }, currentUser);
       return res.json({ ok: true });
     } catch (err) {
       logger.error('Error reordering pinned pages:', err);

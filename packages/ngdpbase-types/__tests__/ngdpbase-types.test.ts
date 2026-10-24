@@ -74,6 +74,23 @@ describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', ()
     `);
     expect(errors).toEqual([]);
   }, 60_000);
+
+  test('an add-on changes a user from the account as it is now: updateUser takes a function (#2025)', () => {
+    const errors = compileAgainstEntry(`
+      import type { ActorContext, UserManager, UserUpdateFn } from './index.js';
+      export async function addOwnership(users: UserManager, ctx: ActorContext, place: string): Promise<void> {
+        const change: UserUpdateFn = (current) => {
+          const ownership = Array.isArray(current.ownership) ? current.ownership as string[] : [];
+          if (ownership.includes(place)) return undefined;
+          return { ownership: [...ownership, place] };
+        };
+        await users.updateUser('pat', change, ctx);
+        await users.updateUser('pat', async (current) => ({ displayName: current.displayName ?? 'Pat' }), ctx);
+        await users.updateUser('pat', { displayName: 'Pat' }, ctx);
+      }
+    `);
+    expect(errors).toEqual([]);
+  }, 60_000);
 });
 
 describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {

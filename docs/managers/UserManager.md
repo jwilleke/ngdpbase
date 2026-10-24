@@ -1,7 +1,7 @@
 ---
 name: UserManager
 description: "User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution"
-dateModified: '2026-10-23'
+dateModified: '2026-10-24'
 category: managers
 code: src/managers/UserManager.ts
 ---
@@ -70,10 +70,39 @@ None. A door asks its context (`ctx.hasPermission`, `ctx.canAccess`); the decisi
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
 | `createUser(userData)` | `User` | Create new user |
-| `updateUser(username, updates)` | `User` | Update user info |
+| `updateUser(username, updates, ctx)` | `Omit<User, 'password'>` | Change an account. `updates` is the fields to merge, or a function `(current) => updates` (below). Returns the account as written, never the password hash: the hash leaves UserManager only through `storedPasswordHash`, for the password check |
 | `deleteUser(username)` | `void` | Delete user |
 | `getUser(username)` | `User\|null` | Get user by username |
 | `getAllUsers()` | `User[]` | Get all users |
+
+### One change at a time per account
+
+Every read-merge-write of an account runs inside one `KeyedSerial` (`src/utils/keyedSerial.ts`) held by UserManager, keyed by the normalized username (trimmed, lower case), from the read to the write ([#2025](https://github.com/jwilleke/ngdpbase/issues/2025), applying the managers guide's [#2015](https://github.com/jwilleke/ngdpbase/issues/2015) rule). Changes to one user run one after another, each reading what the last one wrote; changes to different users run side by side. What runs under the key:
+
+- `updateUser`, in both forms: the read, the checks, the role change and the write.
+- `recordSignIn` (last sign-in, sign-in count) and `upgradePasswordHash` (the hash raised at sign-in).
+- `resetPasswordWithRecoveryWords`: the read, the key rewrap and the password write.
+- `createUser`'s second write, which records the user's profile page.
+
+What comes after the write runs outside the key, because it reaches other managers: turning a disabled account's access off (`AuthManager.closeAccess`), keeping the user's identity record in step (`PersonManager`), and the `user-edit` audit record.
+
+__The function form.__ When the change depends on what the account holds now (append to a list, flip a preference), pass a function instead of the fields:
+
+```typescript
+await userManager.updateUser(username, (current) => {
+  const ownership = Array.isArray(current.ownership) ? current.ownership : [];
+  if (ownership.some((o) => o.place === place)) return undefined; // nothing to change
+  return { ownership: [...ownership, { place, since }] };
+}, ctx);
+```
+
+- It runs inside the account's key, between the read and the write, and may be `async`.
+- It is handed a copy of the account without the password hash (an add-on's own fields included). Changing the copy changes nothing; only what it returns is merged.
+- It returns the fields to merge, as the object form takes them, or `undefined` to change nothing: then nothing is written, recorded or kept in step, and `updateUser` returns the account as it is.
+- Everything else is as for the object form: the checks (a password on an external account, an email another account has), the role change, all or nothing ([#2015](https://github.com/jwilleke/ngdpbase/issues/2015)), and the `user-edit` record of the sensitive fields it returns.
+- It must not call `updateUser` for the same user, or anything that does: the key is not re-entrant, so the inner call would wait for the outer one forever. A function that throws writes nothing, and `updateUser` throws its error.
+
+Core's own preference saves use it: `POST /preferences`, the theme toggle, My Links (add, remove, reorder), an add-on's per-person switch (`AddonsManager`) and the journal's settings.
 
 ## Role Methods
 
