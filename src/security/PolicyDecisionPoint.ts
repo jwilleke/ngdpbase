@@ -46,8 +46,7 @@ import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
 import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
 import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
-import { isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
+import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 
 export const POLICIES_KEY = 'ngdpbase.access.policies';
 export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
@@ -58,20 +57,6 @@ export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
  * already in decision form (`JobSubject`). A caller passes what it was given.
  */
 type DecisionInput = ActorContext | JobSubject | null | undefined;
-
-/**
- * The one place a context becomes the subject a decision reads (#2022). A
- * `JobContext` carries identity, never authority, so it becomes a
- * `JobSubject` whose roles policy resolves now, keeping its token, share and
- * proxy claims (`toPermissionSubject`). Everything else is already a subject.
- * The object guard is #1173's: `'x' in 'jim'` throws.
- */
-function subjectOf(input: DecisionInput): PermissionSubject | JobSubject | null | undefined {
-  if (typeof input !== 'object' || input === null) return input;
-  // A JobSubject is not an ActorContext, and is not a job context either.
-  const ctx = input as ActorContext;
-  return isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-}
 
 function isPolicy(obj: unknown): obj is Policy {
   return typeof obj === 'object' && obj !== null && 'id' in obj && typeof (obj as Policy).id === 'string';
@@ -533,7 +518,7 @@ export class PolicyDecisionPoint extends BaseManager {
     applyStepUp: boolean
   ): Promise<Decision> {
     const { action } = request;
-    const subject = subjectOf(input);
+    const subject = decisionSubject(input);
 
     const ceiling = await this.ceiling(subject, request);
     if (ceiling && !ceiling.permit) return ceiling;

@@ -6,7 +6,7 @@ import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -94,6 +94,23 @@ interface UserContext {
 
 
 
+
+/**
+ * What the page questions take (#2022): the caller's context as given — a
+ * request's subject or a job's `JobContext` — or a subject already in decision
+ * form. They convert it themselves, through {@link asSubject}.
+ */
+type PageQuestionCaller = ActorContext | UserContext | null | undefined;
+
+/**
+ * The caller as the subject the tiers read: `decisionSubject`, the one
+ * conversion the PDP also uses. A job becomes a `JobSubject`, which carries
+ * `resolveRolesNow` and no roles; the tiers and the PDP already read it so
+ * (#1212), and the type below has always been a little wider than that.
+ */
+function asSubject(caller: PageQuestionCaller): UserContext | null | undefined {
+  return decisionSubject(caller) as UserContext | null | undefined;
+}
 
 /**
  * Access decision log entry
@@ -751,7 +768,7 @@ class PolicyInformationPoint extends BaseManager {
    * private page gets at Tier 0: the owner, or a delegate of the owner; never
    * a role. A refusal is recorded like any page refusal (`authorization-deny`).
    *
-   * @param userContext - the request's subject, as given (null = anonymous)
+   * @param caller - the caller's context, as given: a request's subject or a job's (#2022); null is anonymous
    * @param owner - the container's owner (a private file's `creator`)
    * @param resource - what is being reached, for the record (e.g. `attachment:<id>`)
    * @param action - the action asked for (e.g. `view`)
@@ -759,12 +776,13 @@ class PolicyInformationPoint extends BaseManager {
    *   a share link the owner issued gets in only for a vault it names (#1388)
    */
   canAccessPrivateContainer(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     owner: string,
     resource: string,
     action: string,
     vault?: string
   ): boolean {
+    const userContext = asSubject(caller);
     const allowed = Boolean(userContext && owner)
       && mayActInPrivateContainer(userContext as ActorContext, owner, vault === undefined ? {} : { vault });
     if (!allowed) {
@@ -801,7 +819,7 @@ class PolicyInformationPoint extends BaseManager {
    *     case.
    *   - any tier returns deny.
    *
-   * @param userContext - The user requesting access (may be null / anonymous).
+   * @param caller      - The caller's context, as given: a request's subject or a job's (#2022); null / undefined is anonymous.
    * @param pageName    - Target page to check.
    * @param action      - Action verb (e.g., `'view'`, `'edit'`, `'delete'`).
    * @param knownMetadata - The page's metadata when the caller has just
@@ -809,12 +827,12 @@ class PolicyInformationPoint extends BaseManager {
    *   resolution it decides on. Omitted, it is loaded here.
    */
   async canUserAccessPage(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     pageName: string,
     action: string,
     knownMetadata?: PageFrontmatter
   ): Promise<boolean> {
-    return this.crossPageDecision(userContext, pageName, action, knownMetadata, true);
+    return this.crossPageDecision(asSubject(caller), pageName, action, knownMetadata, true);
   }
 
   /**
@@ -828,12 +846,12 @@ class PolicyInformationPoint extends BaseManager {
    *   metadata when the caller has just resolved it (`PageManager.mayShowPage`).
    */
   async pageAffordanceFor(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     pageName: string,
     action: string,
     knownMetadata?: PageFrontmatter
   ): Promise<boolean> {
-    return this.crossPageDecision(userContext, pageName, action, knownMetadata, false);
+    return this.crossPageDecision(asSubject(caller), pageName, action, knownMetadata, false);
   }
 
   /** The cross-page check, for the door (`record`) or an affordance (#1668). */
@@ -919,10 +937,11 @@ class PolicyInformationPoint extends BaseManager {
    * preserved. Returns titles.
    */
   async filterAccessiblePages(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     action: string,
     candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
   ): Promise<string[]> {
+    const userContext = asSubject(caller);
     const policyAction = permissionForPageAction(action);
     // #1431 step 7b, #1964: `admin-system` — the exception to an author-lock
     // and to an audience — asked once for the subject, since it does not vary
@@ -998,9 +1017,10 @@ class PolicyInformationPoint extends BaseManager {
    * the share attribution when there is one.
    */
   async canUserAccessMediaItem(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     item: MediaItem
   ): Promise<boolean> {
+    const userContext = asSubject(caller);
     // #1431: the share ceiling is the PDP's — this was the fourth copy of it,
     // after the page door, the list filter and UserManager. The media half it
     // cannot know (does the share cover THIS item) is
@@ -1065,14 +1085,15 @@ class PolicyInformationPoint extends BaseManager {
    * write door, so a write cannot reach a page its writer is outside the
    * audience of — whatever route it came by. Records nothing; the door does.
    *
-   * @param userContext - the subject, as given
+   * @param caller - the caller's context, as given (a job's included, #2022)
    * @param metadata - the page's current frontmatter
    */
   async audienceAdmits(
-    userContext: UserContext | null | undefined,
+    caller: PageQuestionCaller,
     metadata: PageFrontmatter | null | undefined
   ): Promise<boolean> {
     if (!audiencePrincipals(metadata)) return true;
+    const userContext = asSubject(caller);
     // A job's subject carries no roles, only the instruction to resolve them
     // now (#1212): an audience naming a role is matched against what its
     // principal holds at this moment.

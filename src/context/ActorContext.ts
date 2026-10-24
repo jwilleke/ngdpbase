@@ -13,8 +13,8 @@
  * the call arrived under, and the address it came from. What does not: roles.
  * Authority is resolved at the moment of each decision, never carried.
  */
-import type { PermissionSubject } from '../managers/UserManager.js';
-import type { JobContext } from './JobContext.js';
+import type { PermissionSubject, JobSubject } from '../managers/UserManager.js';
+import { toPermissionSubject, type JobContext } from './JobContext.js';
 import { attributedTo } from './bootActions.js';
 import { proxyAttribution } from '../utils/proxyClaim.js';
 
@@ -41,6 +41,27 @@ export interface ActorAttribution {
 
 export function isJobContext(ctx: ActorContext): ctx is JobContext {
   return 'origin' in ctx && 'requestedAt' in ctx;
+}
+
+/**
+ * The one place a context becomes the subject a decision reads (#2022).
+ *
+ * Called by the deciders — `PolicyDecisionPoint` (`decide`, `permits`,
+ * `holds`) and `PolicyInformationPoint`'s page questions — and by nobody
+ * else: a caller hands them its context as given. A `JobContext` carries
+ * identity, never authority, so it becomes a `JobSubject` whose roles policy
+ * resolves now, keeping its token, share and proxy claims
+ * (`toPermissionSubject`). Anything else is already a subject and passes
+ * through. The object guard is #1173's: `'x' in 'jim'` throws. Not part of
+ * the add-on API; `npm run lint:context` holds callers to it.
+ */
+export function decisionSubject<S extends PermissionSubject | JobSubject>(
+  input: ActorContext | S | null | undefined
+): PermissionSubject | JobSubject | S | null | undefined {
+  if (typeof input !== 'object' || input === null) return input;
+  // A JobSubject is not an ActorContext, and is not a job context either.
+  const ctx = input as ActorContext;
+  return isJobContext(ctx) ? toPermissionSubject(ctx) : input as S | PermissionSubject;
 }
 
 /**

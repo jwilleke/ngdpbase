@@ -1,7 +1,7 @@
 ---
 name: PolicyInformationPoint
 description: What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager)
-dateModified: '2026-10-13'
+dateModified: '2026-10-24'
 category: managers
 code: src/security/PolicyInformationPoint.ts
 ---
@@ -44,11 +44,13 @@ A page decision without the page's metadata refuses, except for `create`. A page
 | `checkPagePermissionWithContext(ctx, action)` | one page, from a request that already holds it |
 | `evaluatePagePermission(ctx, action)` | the same, returning the reason (e.g. `author_lock_deny`) |
 | `pageAffordance(ctx, action)` | the same evaluator, asked only to decide whether to show a control or a block — the view's Edit button, `<wiki:If test="hasPermission:x">` (through `WikiContext.mayShow`). Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
-| `canUserAccessPage(subject, page, action)` | another page, loaded as this subject — inserts, includes, attachments |
-| `pageAffordanceFor(subject, page, action, metadata?)` | the cross-page check as an affordance — the journal entry view's Edit link, and `<wiki:If test="exists:Page">` (through `PageManager.mayShowPage`). Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
-| `filterAccessiblePages(subject, action, candidates)` | many pages over the index; no disk read, log line or audit record per page; agrees with the single-page answer in both directions ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
-| `canUserAccessMediaItem(subject, item)` | media, including a share's media cover |
-| `canAccessPrivateContainer(subject, owner, resource, action)` | a private store's files |
+| `canUserAccessPage(caller, page, action)` | another page, loaded as this subject — inserts, includes, attachments |
+| `pageAffordanceFor(caller, page, action, metadata?)` | the cross-page check as an affordance — the journal entry view's Edit link, and `<wiki:If test="exists:Page">` (through `PageManager.mayShowPage`). Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
+| `filterAccessiblePages(caller, action, candidates)` | many pages over the index; no disk read, log line or audit record per page; agrees with the single-page answer in both directions ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
+| `canUserAccessMediaItem(caller, item)` | media, including a share's media cover |
+| `canAccessPrivateContainer(caller, owner, resource, action)` | a private store's files |
+
+`caller` in these, and `audienceAdmits(caller, metadata)`, is the context the caller was given: a request's subject or a job's `JobContext`. The PIP turns it into a subject itself with `decisionSubject`, the conversion the PDP uses, so a caller never converts first ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)).
 
 Every single-page decision at a door is recorded by `logAccessDecision`, and a refusal reaches the audit log as `authorization-deny`, carrying the request's `ipAddress` from the subject (the session and bearer middleware put it there). One method, `auditDenial`, builds that record for page, media and private-container refusals alike.
 

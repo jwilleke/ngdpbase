@@ -2,9 +2,9 @@ import BaseManager, { BackupData, type BackupArchiveTarget, type ManagerBackupOp
 import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
-import { ANONYMOUS_USERNAME, toPermissionSubject } from '../context/JobContext.js';
+import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -789,8 +789,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const acl = this.engine.getManager<{
       canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
         }>('PolicyInformationPoint');
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-    if (!acl || !(await acl.canUserAccessPage(subject, pageName, 'edit'))) {
+    if (!acl || !(await acl.canUserAccessPage(ctx, pageName, 'edit'))) {
       throw new Error('Permission denied: you cannot upload to this page');
     }
   }

@@ -34,13 +34,15 @@
  *    the #1173 failure mode, and the compiler cannot be asked to catch it:
  *    `tsconfig.json` excludes every `__tests__` directory, so a type-level
  *    assertion written as a test is never checked at all.
- * 5. __The PDP converts a context, nobody else__ (#2022) — `decide`,
- *    `permits` and `holds` take the caller's context, a `JobContext`
- *    included, and turn it into a subject themselves. A caller writing
- *    `isJobContext(ctx) ? toPermissionSubject(ctx) : ctx` before asking is a
- *    second copy of that rule, and the copy is what drifts: one that forgot
- *    `viaShare` or `viaProxy` would let a job outrun its ceiling. So
- *    `toPermissionSubject(` is called in `PolicyDecisionPoint.ts` and nowhere
+ * 5. __The deciders convert a context, nobody else__ (#2022) — the PDP's
+ *    `decide`, `permits` and `holds` and the PIP's page questions take the
+ *    caller's context, a `JobContext` included, and turn it into a subject
+ *    themselves through `decisionSubject` (`src/context/ActorContext.ts`), the
+ *    one conversion. A caller writing `isJobContext(ctx) ?
+ *    toPermissionSubject(ctx) : ctx` before asking is a second copy of that
+ *    rule, and the copy is what drifts: one that forgot `viaShare` or
+ *    `viaProxy` would let a job outrun its ceiling. So each conversion
+ *    function appears exactly where {@link CONVERSIONS} says, and nowhere
  *    else outside tests.
  *
  * Each allowlist entry states why that site is not the defect. A stale entry
@@ -96,31 +98,28 @@ const DISCARDED_ALLOWED: Record<string, string> = {
     'KNOWN, tracked by #1399: isPageDeleted takes ctx and asks provider.isPageDeleted(uuid), which has no context parameter to forward it to. A sealed page\'s trash entry lives in the owner\'s own user-trash catalogue, so the provider door has to take a context before this one can pass it on'
 };
 
-/** The function a context becomes a subject through (#2022), and the files allowed to call it. */
-const CONVERSION = /\btoPermissionSubject\s*\(/;
-const CONVERSION_HOME: ReadonlySet<string> = new Set([
-  'src/context/JobContext.ts', // its declaration
-  'src/security/PolicyDecisionPoint.ts' // the one caller
-]);
-
 /**
- * `file` → how many conversions it still makes, and why each is not the
- * defect. More than the count is a new hand conversion; fewer is a stale entry.
+ * The functions a context becomes a subject through (#2022), and exactly how
+ * many times each file may name one with a call. More is a hand conversion;
+ * fewer means the list is stale.
  */
-const CONVERSION_ALLOWED: Record<string, { count: number; why: string }> = {
-  'src/managers/AttachmentManager.ts': {
-    count: 1,
-    why: 'KNOWN, #2022: assertMayEditPage asks PolicyInformationPoint.canUserAccessPage, not the PDP. The PIP\'s page questions take a subject, and a JobContext handed to them would be read as a request with no roles'
+const CONVERSIONS: ReadonlyArray<{ call: RegExp; allowed: Readonly<Record<string, number>> }> = [
+  {
+    call: /\btoPermissionSubject\s*\(/,
+    allowed: {
+      'src/context/JobContext.ts': 1, // its declaration
+      'src/context/ActorContext.ts': 1 // decisionSubject, the one conversion
+    }
   },
-  'src/managers/ImportManager.ts': {
-    count: 1,
-    why: 'KNOWN, #2022: the duplicate lookup asks PolicyInformationPoint.canUserAccessPage, not the PDP (as AttachmentManager)'
-  },
-  'src/managers/PageManager.ts': {
-    count: 1,
-    why: 'KNOWN, #2022: assertAudienceAdmits asks PolicyInformationPoint.audienceAdmits, not the PDP (as AttachmentManager)'
+  {
+    call: /\bdecisionSubject\s*(<[^>]*>\s*)?\(/,
+    allowed: {
+      'src/context/ActorContext.ts': 1, // its declaration
+      'src/security/PolicyDecisionPoint.ts': 1, // decide, permits, holds
+      'src/security/PolicyInformationPoint.ts': 1 // the page questions
+    }
   }
-};
+];
 
 export interface Violation {
   file: string;
@@ -179,6 +178,7 @@ export function scan(): Violation[] {
   const optionalHit = new Set<string>();
   const discardedHit = new Set<string>();
   const redeclaredHit = new Set<string>();
+  /** `call index|file` → the lines naming that conversion function. */
   const conversions = new Map<string, number[]>();
 
   for (const root of SCAN) {
@@ -190,9 +190,9 @@ export function scan(): Violation[] {
 
       lines.forEach((line, index) => {
         const at = index + 1;
-        if (CONVERSION.test(line) && !CONVERSION_HOME.has(rel)) {
-          conversions.set(rel, [...(conversions.get(rel) ?? []), at]);
-        }
+        CONVERSIONS.forEach(({ call }, i) => {
+          if (call.test(line)) conversions.set(`${i}|${rel}`, [...(conversions.get(`${i}|${rel}`) ?? []), at]);
+        });
         if (AMBIENT.test(line)) {
           violations.push({
             file: rel, line: at, rule: 'ambient-context',
@@ -234,25 +234,27 @@ export function scan(): Violation[] {
     }
   }
 
-  for (const [rel, at] of conversions) {
-    const allowed = CONVERSION_ALLOWED[rel]?.count ?? 0;
-    if (at.length > allowed) {
+  for (const [key, at] of conversions) {
+    const [i, rel] = key.split('|');
+    if (at.length > (CONVERSIONS[Number(i)].allowed[rel] ?? 0)) {
       for (const line of at) {
         violations.push({
           file: rel, line, rule: 'hand-conversion',
-          detail: 'a context converted by hand before asking the PDP — pass the context; decide, permits and holds convert it (#2022)'
+          detail: 'a context converted by hand before asking — pass the context; the PDP and the PIP convert it (#2022)'
         });
       }
     }
   }
-  for (const [rel, { count }] of Object.entries(CONVERSION_ALLOWED)) {
-    if ((conversions.get(rel)?.length ?? 0) < count) {
-      violations.push({
-        file: rel, line: 0, rule: 'stale-allowlist',
-        detail: `CONVERSION_ALLOWED entry allows ${count} conversion(s), and there are fewer — lower or remove it`
-      });
+  CONVERSIONS.forEach(({ call, allowed }, i) => {
+    for (const [rel, count] of Object.entries(allowed)) {
+      if ((conversions.get(`${i}|${rel}`)?.length ?? 0) < count) {
+        violations.push({
+          file: rel, line: 0, rule: 'stale-allowlist',
+          detail: `CONVERSIONS allows ${count} ${String(call)} here, and there are fewer — lower or remove it`
+        });
+      }
     }
-  }
+  });
   for (const rel of Object.keys(OPTIONAL_ALLOWED)) {
     if (!optionalHit.has(rel)) {
       violations.push({
