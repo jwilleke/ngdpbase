@@ -29,7 +29,7 @@ function makeRoleManager(opts: {
   listByMember?: ReturnType<typeof vi.fn>;
 }) {
   const personManager = opts.registerPersonManager === false ? null : {
-    getByIdentifier: vi.fn(async (_ctx: unknown, _identifier: string) => opts.person ?? null)
+    getByUserIdentifier: vi.fn(async (_ctx: unknown, _identifier: string) => opts.person ?? null)
   };
   const listByMember = opts.listByMember ?? vi.fn(async () => opts.roles ?? []);
   const engine = {
@@ -105,9 +105,9 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
   test('#2018: the caller\'s context goes to PersonManager\'s door, and its refusal is thrown, never "no roles"', async () => {
     const refusal = new ContactRefusedError('contact-read', { permit: false, applicable: true, reason: 'test' });
     const { roleManager, personManager } = makeRoleManager({ person: { '@id': PERSON_ID, identifier: 'alice' } });
-    personManager?.getByIdentifier.mockRejectedValueOnce(refusal);
+    personManager?.getByUserIdentifier.mockRejectedValueOnce(refusal);
     const asker = { username: 'bob', roles: ['reader'], isAuthenticated: true };
     await expect(roleManager.resolveUserRoles(asker, 'alice')).rejects.toBe(refusal);
-    expect(personManager?.getByIdentifier).toHaveBeenCalledWith(asker, 'alice');
+    expect(personManager?.getByUserIdentifier).toHaveBeenCalledWith(asker, 'alice');
   });
 });

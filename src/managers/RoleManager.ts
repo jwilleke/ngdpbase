@@ -264,8 +264,9 @@ class RoleManager extends BaseManager {
    * The pseudo-roles `'Authenticated'` and `'All'` are NOT added here — the
    * caller adds those when constructing `userContext.roles`.
    *
-   * Returns `[]` when PersonManager is unavailable, the user has no Person
-   * record, no record lists them, or the lookup throws.
+   * Returns `[]` when PersonManager is unavailable, there is no account by
+   * that username, no record lists them, or the lookup throws. An account
+   * missing its identity record gets it here (#2037).
    *
    * `ctx` is who is asking (#2018), decided by PersonManager's door: a user
    * about themselves under `profile-manage`, about anyone else under
@@ -277,7 +278,8 @@ class RoleManager extends BaseManager {
     if (!personManager) return [];
 
     try {
-      const person = await personManager.getByIdentifier(ctx, username);
+      // #2037: a user with no identity record gets it here; no account, no roles.
+      const person = await personManager.getByUserIdentifier(ctx, username);
       if (!person) return [];
       const roles = await this.listByMember(person['@id']);
       return roles.map((r) => r.namedPosition);
@@ -506,9 +508,10 @@ class RoleManager extends BaseManager {
     if (!personManager) {
       throw await this.roleFailure(username, labels, { reason: 'PersonManager is unavailable', notify });
     }
-    const person = await personManager.getByIdentifier(systemContext(this.engine, `role change for account ${username}: ${labels.join(', ')}`), username);
+    // #2037: an account missing its identity record gets it here, so its roles can change.
+    const person = await personManager.getByUserIdentifier(systemContext(this.engine, `role change for account ${username}: ${labels.join(', ')}`), username);
     if (!person) {
-      throw await this.roleFailure(username, labels, { reason: 'there is no Person record for that username', notify });
+      throw await this.roleFailure(username, labels, { reason: 'there is no account by that username', notify });
     }
     const installOrg = await this.engine.getManager<OrganizationManager>('OrganizationManager')?.getInstallOrg();
     if (!installOrg) {
