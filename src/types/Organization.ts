@@ -13,11 +13,15 @@
  */
 
 /**
- * Schema.org PostalAddress (subset used by Organization)
+ * Schema.org PostalAddress (subset used by Organization/Person).
+ *
+ * In schema.org a PostalAddress is a ContactPoint, so it carries the
+ * ContactPoint fields too: a `contactPoint[]` entry may be one (a mailing or
+ * business address, with its `contactType`, `name` and `telephone`).
  *
  * @see https://schema.org/PostalAddress
  */
-export interface PostalAddress {
+export interface PostalAddress extends Omit<ContactPoint, '@type'> {
   '@type': 'PostalAddress';
   streetAddress?: string | null;
   addressLocality?: string | null;
@@ -34,11 +38,20 @@ export interface PostalAddress {
 export interface ContactPoint {
   '@type': 'ContactPoint';
   contactType?: string;
+  /** Who or what this contact point reaches, e.g. an agent's or an emergency contact's name (schema.org Thing.name). */
+  name?: string;
   email?: string;
   telephone?: string;
   url?: string;
   availableLanguage?: string[];
 }
+
+/**
+ * One `contactPoint[]` entry: a ContactPoint, or a PostalAddress (schema.org's
+ * ContactPoint subtype). Typed by `contactType` (`mailing`, `business`,
+ * `agent`, `emergency`, …); the home address stays in `address`.
+ */
+export type ContactPointEntry = ContactPoint | PostalAddress;
 
 /**
  * Canonical Organization record.
@@ -65,8 +78,8 @@ export interface Organization {
   foundingDate?: string;
   /** Postal address */
   address?: PostalAddress;
-  /** Contact points (support, sales, etc.) */
-  contactPoint?: ContactPoint[];
+  /** Contact points (support, sales, a mailing address, etc.) */
+  contactPoint?: ContactPointEntry[];
   /** Other URLs that identify this org (LinkedIn, Twitter, etc.) */
   sameAs?: string[];
   /** Optional legacy slug or external identifier */

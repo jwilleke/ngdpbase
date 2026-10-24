@@ -47,7 +47,7 @@ Identity records are in every backup ([#1876](https://github.com/jwilleke/ngdpba
 
 - [FilePersonProvider](../providers/FilePersonProvider.md)
 - [OrganizationManager](OrganizationManager.md), [RoleManager](RoleManager.md)
-- `src/types/Person.ts` — `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`
+- `src/types/Person.ts` — `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`; `contactPoint[]` entries are `ContactPointEntry` (a `ContactPoint` or a `PostalAddress`), stored and returned as given — the shape is in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records)
 - `src/utils/contactAccess.ts` — the `contact-read` / `contact-manage` decision, the own-record and system-context rule (`requireRecordAccess`, `isSystemWork`), the record, `ContactRefusedError`
 - Issue #617 — canonical-records design
 - Issue #602 — `person-contacts` addon proposal
