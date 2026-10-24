@@ -46,9 +46,17 @@ import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
 import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
 import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
+import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 
 export const POLICIES_KEY = 'ngdpbase.access.policies';
 export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
+
+/**
+ * What `decide`, `permits` and `holds` take (#2022): the caller's own context
+ * — a request's `PermissionSubject` or a job's `JobContext` — or a subject
+ * already in decision form (`JobSubject`). A caller passes what it was given.
+ */
+type DecisionInput = ActorContext | JobSubject | null | undefined;
 
 function isPolicy(obj: unknown): obj is Policy {
   return typeof obj === 'object' && obj !== null && 'id' in obj && typeof (obj as Policy).id === 'string';
@@ -188,10 +196,11 @@ export class PolicyDecisionPoint extends BaseManager {
    * of {@link decide} for a capability. It was `UserManager.hasPermission`
    * until #1431 step 14; the decision was already here, only the door moved.
    *
-   * Takes a `PermissionSubject` — the request's own identity, forwarded from
-   * `req.userContext` (WikiContext, ApiContext, ParseContext) or a
-   * `JobContext` for work with no request (#631). Roles arrive already
-   * resolved; the session middleware did that once per request.
+   * Takes the caller's context as it was given (#2022): a `PermissionSubject`
+   * — the request's own identity, forwarded from `req.userContext`
+   * (WikiContext, ApiContext, ParseContext), roles already resolved by the
+   * session middleware — or a `JobContext` for work with no request (#631),
+   * which the PDP turns into a subject itself. Never convert one first.
    *
    * #1173 Part B: the username-string overload this method once accepted is
    * gone. A string cannot carry `viaToken`, so the agent-token ceiling below
@@ -202,12 +211,13 @@ export class PolicyDecisionPoint extends BaseManager {
    * separate question {@link userHoldsPermission} — "does the named user hold
    * this?" — which is a lookup about somebody else, not an authorisation.
    *
-   * @param subject - The identity being authorised, with `roles` resolved and
-   *                  `viaToken` present when a bearer token authenticated it.
+   * @param subject - The caller's context: the request's subject, with
+   *                  `viaToken` present when a bearer token authenticated it,
+   *                  or a job's context.
    * @param action - Action/permission to check (e.g., 'page-create', 'user-read')
    * @returns True if the subject may perform the action under current policy
    */
-  async permits(subject: PermissionSubject | JobSubject | null | undefined, action: string): Promise<boolean> {
+  async permits(subject: DecisionInput, action: string): Promise<boolean> {
     return (await this.decide(subject, { action })).permit;
   }
 
@@ -219,7 +229,7 @@ export class PolicyDecisionPoint extends BaseManager {
    * person whose sign-in is not fresh still sees the way to the prompt that
    * makes it fresh. A door never asks this.
    */
-  async holds(subject: PermissionSubject | JobSubject | null | undefined, action: string): Promise<boolean> {
+  async holds(subject: DecisionInput, action: string): Promise<boolean> {
     return (await this.evaluate(subject, { action }, false)).permit;
   }
 
@@ -495,7 +505,7 @@ export class PolicyDecisionPoint extends BaseManager {
    * 4. __The policies__, through `PolicyEvaluator`.
    */
   async decide(
-    subject: PermissionSubject | JobSubject | null | undefined,
+    subject: DecisionInput,
     request: DecisionRequest
   ): Promise<Decision> {
     return this.evaluate(subject, request, true);
@@ -503,11 +513,12 @@ export class PolicyDecisionPoint extends BaseManager {
 
   /** `decide`, with the step-up rule applied or not — {@link holds} is the only caller that leaves it out. */
   private async evaluate(
-    subject: PermissionSubject | JobSubject | null | undefined,
+    input: DecisionInput,
     request: DecisionRequest,
     applyStepUp: boolean
   ): Promise<Decision> {
     const { action } = request;
+    const subject = decisionSubject(input);
 
     const ceiling = await this.ceiling(subject, request);
     if (ceiling && !ceiling.permit) return ceiling;

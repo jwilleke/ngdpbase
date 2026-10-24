@@ -16,7 +16,6 @@ import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
@@ -2224,9 +2223,8 @@ class AddonsManager extends BaseManager {
       throw new Error(`Add-on '${slug}' is not per-person (set "perPerson": true in the "ngdpbase" block of its package.json), so it has no switch to set`);
     }
     if (typeof on !== 'boolean') throw new Error(`setEnabledForPerson takes true or false, not ${typeof on}`);
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!subject.isAuthenticated || !pdp || !(await pdp.permits(subject, 'profile-manage'))) {
+    if ((!isJobContext(ctx) && !ctx.isAuthenticated) || !pdp || !(await pdp.permits(ctx, 'profile-manage'))) {
       throw new Error(`${ctx.username} may not change their add-on settings (needs profile-manage)`);
     }
     const userManager = this.engine.getManager<{

@@ -296,8 +296,6 @@ import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
 import type ShareManager from './ShareManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { isJobContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
@@ -1776,8 +1774,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private async assertAudienceAdmits(pageName: string, metadata: PageFrontmatter | null | undefined, ctx: ActorContext): Promise<void> {
     if (!audiencePrincipals(metadata)) return;
     const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
-    const subject = (isJobContext(ctx) ? toPermissionSubject(ctx) : ctx) as unknown as Parameters<PolicyInformationPoint['audienceAdmits']>[0];
-    if (pip && await pip.audienceAdmits(subject, metadata)) return;
+    if (pip && await pip.audienceAdmits(ctx, metadata)) return;
     logger.warn(`[PageManager] write to '${pageName}' refused: ${actorOf(ctx).user} is outside its audience (#1964)`);
     throw new PageAudienceRefusedError(pageName);
   }
@@ -4310,8 +4307,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private async adminSystem(ctx: ActorContext, ask: 'permits' | 'holds'): Promise<boolean> {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-    return ask === 'permits' ? pdp.permits(subject, 'admin-system') : pdp.holds(subject, 'admin-system');
+    return ask === 'permits' ? pdp.permits(ctx, 'admin-system') : pdp.holds(ctx, 'admin-system');
   }
 
   /**

@@ -55,7 +55,7 @@ import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { toPermissionSubject, type JobContext } from '../context/JobContext.js';
+import type { JobContext } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import { converterShim } from '../ice/converterShim.js';
@@ -647,7 +647,7 @@ class ImportManager extends BaseManager {
   private async permits(ctx: ActorContext, permission: string): Promise<boolean> {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (typeof pdp?.permits !== 'function') return false;
-    return pdp.permits(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, permission);
+    return pdp.permits(ctx, permission);
   }
 
   /**
@@ -2265,8 +2265,7 @@ class ImportManager extends BaseManager {
     const pip = this.engine.getManager<{
       canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
         }>('PolicyInformationPoint');
-    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
-    const visible = !!pip && await pip.canUserAccessPage(subject, shared.title, 'view');
+    const visible = !!pip && await pip.canUserAccessPage(ctx, shared.title, 'view');
     return visible ? { where: shared.title } : {};
   }
 

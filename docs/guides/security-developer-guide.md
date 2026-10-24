@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-23
+dateModified: 2026-10-24
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -59,11 +59,13 @@ Rules:
 - The exception is a permission, `admin-system`, asked of the PDP (`subjectMayDo(engine, subject, 'admin-system')`), never `roles.includes('admin')`. It is asked only when an audience leaves the subject out, and once per list.
 - `access.<action>` has no exception: it binds administrators too. Private stores are decided by their container; the exception never reaches into a vault.
 - A write meets the audience at `PageManager`'s write door too: `savePage`, `deletePage` and `getRawPageContent` ask `PolicyInformationPoint.audienceAdmits(subject, metadata)` with the caller's context and throw `PageAudienceRefusedError`, which a route answers with 403. A route still asks the full page decision (`canAccess('edit')`, `writeRefusal`) first; the door is the floor, not the decision.
-- A job's subject (`resolveRolesNow`) is matched against the roles its principal holds now; the system principal holds `admin-system` by default (`ngdpbase.system.roles`).
+- A job's subject (`resolveRolesNow`) is matched against the roles its principal holds now, by every page question: the page door (`canUserAccessPage`, `pageAffordanceFor`), the list (`filterAccessiblePages`, for its audience and its global policy alike) and the write door (`audienceAdmits`), all through `PolicyInformationPoint.resolveSubjectNow`, the lookup the PDP uses ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)). The system principal holds `admin-system` by default (`ngdpbase.system.roles`).
 
 ## Every security-relevant call carries a context
 
 A manager method that decides access, writes an audit record, or acts on someone's behalf takes the context it was given, positionally. Forward it; never rebuild `{ username, roles, isAuthenticated }` from parts, because the rebuild drops `viaToken` and with it the agent-token scope ceiling. `scripts/check-permission-subject.ts` fails the commit on a rebuild in route code. A job or timer uses `JobContext`; boot paths that act use the system principal. An omitted actor is not "the system"; it is nobody, and the record is wrong.
+
+Hand the deciders the context as you were given it. `pdp.decide`, `pdp.permits` and `pdp.holds`, and `PolicyInformationPoint`'s page questions (`canUserAccessPage`, `pageAffordanceFor`, `filterAccessiblePages`, `audienceAdmits`, `canUserAccessMediaItem`, `canAccessPrivateContainer`), take an `ActorContext` (a request's subject or a job's `JobContext`) and turn it into the subject they decide on themselves, so a job's roles are resolved at decision time and its `viaToken`, `viaShare` and `viaProxy` keep their ceilings ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)). There is one conversion, `decisionSubject` in `src/context/ActorContext.ts`, called only by those two. Never convert a context before asking: `npm run lint:context` fails the commit on a call to `toPermissionSubject` or `decisionSubject` anywhere else. This binds add-ons too.
 
 ## A closed account holds nothing
 

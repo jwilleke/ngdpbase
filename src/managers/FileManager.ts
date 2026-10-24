@@ -23,7 +23,6 @@ import ConfigurationManager from './ConfigurationManager.js';
 import AttachmentManager from './AttachmentManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
-import { toPermissionSubject } from '../context/JobContext.js';
 import { UNKNOWN_UPLOADER, type AssetRecord } from '../types/Asset.js';
 import type { FileInventory, FilePlace, FileRecord } from '../types/File.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -118,7 +117,7 @@ class FileManager extends BaseManager {
   private async mayReadPublic(ctx: ActorContext): Promise<boolean> {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
-    return pdp.permits(isJobContext(ctx) ? toPermissionSubject(ctx) : ctx, 'asset-read');
+    return pdp.permits(ctx, 'asset-read');
   }
 
   // ── The operator's inventory (#1859) ─────────────────────────────────────
