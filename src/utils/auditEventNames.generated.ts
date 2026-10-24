@@ -59,9 +59,9 @@ export const AUDIT_EVENT = {
   CONFIG_CHANGE: 'config-change',
   /** Every custom configuration value discarded; recorded before the reset, which cannot proceed without it */
   CONFIG_RESET: 'config-reset',
-  /** A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable */
+  /** A user accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable */
   CONSENT_GRANT: 'consent-grant',
-  /** A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed */
+  /** A user's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed */
   CONSENT_WITHDRAW: 'consent-withdraw',
   /** Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values */
   CONTACT_MANAGE: 'contact-manage',
@@ -121,21 +121,21 @@ export const AUDIT_EVENT = {
   POLICY_EVALUATE: 'policy-evaluate',
   /** Security posture at startup, compared against the previous start */
   POSTURE_RECORDED: 'posture-recorded',
-  /** Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) */
+  /** Proxy grant made: someone may act for the user named in user; actor is who made it (#1762) */
   PROXY_GRANT: 'proxy-grant',
-  /** Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) */
+  /** Proxy grant ended: revoked, or the account closed; user is the user represented, actor who ended it (#1762) */
   PROXY_REVOKE: 'proxy-revoke',
-  /** A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762) */
+  /** A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762) */
   PROXY_SWITCH: 'proxy-switch',
-  /** Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) */
+  /** Step-up: a re-authentication failed (wrong password, another user's passkey, throttled) */
   REAUTH_FAILURE: 'reauth-failure',
   /** Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one */
   REAUTH_PROMPT: 'reauth-prompt',
-  /** Step-up: the person re-authenticated, with the factor used */
+  /** Step-up: the user re-authenticated, with the factor used */
   REAUTH_SUCCESS: 'reauth-success',
   /** Page search; not recorded, read volume */
   SEARCH_PAGE: 'search-page',
-  /** People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume */
+  /** Users searched for; enumerating users is disclosive in a way searching pages is not. Off by default as read volume */
   SEARCH_USER: 'search-user',
   /** A masked configuration value shown to an administrator; the key is recorded, never the value */
   SECRET_REVEAL: 'secret-reveal',
@@ -155,9 +155,9 @@ export const AUDIT_EVENT = {
   SHARE_REVOKE: 'share-revoke',
   /** Sign-in approval: the browser that was waiting gave up the sign-in (#1532) */
   SIGNINAPPROVAL_ABANDON: 'signinapproval-abandon',
-  /** Sign-in approval: the person pressed Approve (#1532) */
+  /** Sign-in approval: the user pressed Approve (#1532) */
   SIGNINAPPROVAL_APPROVE: 'signinapproval-approve',
-  /** Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) */
+  /** Sign-in approval: the user pressed Deny; that sign-in will not complete (#1532) */
   SIGNINAPPROVAL_DENY: 'signinapproval-deny',
   /** Sign-in approval: a waiting sign-in expired before it was completed (#1532) */
   SIGNINAPPROVAL_EXPIRE: 'signinapproval-expire',

@@ -482,12 +482,12 @@ audited.
 | `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
 | `token-extend` | Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) | refuse | yes |
-| `proxy-grant` | Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) | refuse | yes |
+| `proxy-grant` | Proxy grant made: someone may act for the user named in user; actor is who made it (#1762) | refuse | yes |
 | `vault-proxy` | Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant | continue | no |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `search-page` | Page search; not recorded, read volume | continue | no |
-| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
+| `search-user` | Users searched for; enumerating users is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
 | `user-read` | User profile read; not recorded, read volume | continue | no |
 | `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
 | `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
@@ -499,10 +499,10 @@ audited.
 | `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
-| `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
-| `consent-grant` | A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
-| `consent-withdraw` | A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
-| `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762) | continue | yes |
+| `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the user represented, actor who ended it (#1762) | refuse | yes |
+| `consent-grant` | A user accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
+| `consent-withdraw` | A user's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
+| `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
 | `authentication-logout` | User signed out | continue | yes |
@@ -549,12 +549,12 @@ audited.
 | `oidcuserinfo-error` | OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account) | continue | yes |
 | `oidcserver-error` | OpenID Connect: the provider failed while handling a request | continue | yes |
 | `reauth-prompt` | Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one | continue | yes |
-| `reauth-success` | Step-up: the person re-authenticated, with the factor used | continue | yes |
-| `reauth-failure` | Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) | continue | yes |
+| `reauth-success` | Step-up: the user re-authenticated, with the factor used | continue | yes |
+| `reauth-failure` | Step-up: a re-authentication failed (wrong password, another user's passkey, throttled) | continue | yes |
 | `signinapproval-request` | Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) | continue | yes |
 | `signinapproval-open` | Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) | continue | yes |
-| `signinapproval-approve` | Sign-in approval: the person pressed Approve (#1532) | continue | yes |
-| `signinapproval-deny` | Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) | continue | yes |
+| `signinapproval-approve` | Sign-in approval: the user pressed Approve (#1532) | continue | yes |
+| `signinapproval-deny` | Sign-in approval: the user pressed Deny; that sign-in will not complete (#1532) | continue | yes |
 | `signinapproval-expire` | Sign-in approval: a waiting sign-in expired before it was completed (#1532) | continue | yes |
 | `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
 | `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
