@@ -292,6 +292,24 @@ Declare the permission and grant it in the addon's own `config/default-config.js
 
 A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
 
+__A permission every user holds__ (own records, such as "your receipts"): name the role every account is given, never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
+
+```json
+{
+  "id": "my-addon-self-service",
+  "name": "My addon: every user's own records",
+  "priority": 90,
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "vault-owner" }],
+  "resources": [{ "type": "page", "pattern": "*" }],
+  "actions": ["my-addon-self"]
+}
+```
+
+- Never declare a core policy's `id` (such as `signed-in-self-service`) to add to it: policies merge by `id`, so that changes core's own policy, and the change outlives your add-on.
+- Never use `"type": "authenticated"` (or `user`, `group`, `attribute`, `admin`) as a subject: the validator accepts them, but a decision matches `role` subjects only, so such a policy grants nothing.
+- A list of every role by name misses any role added later; name the every-account role.
+
 A route asks `await ctx.requirePermission('my-addon-manage')` or `await ctx.hasPermission('my-addon-manage')` on an `ApiContext`. A page door asks `canAccess` or `hasPermissionOn`.
 
 An add-on's manager that guards its own records is the PEP for that resource type, and asks the PDP itself ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431)), with the context it was handed: `const d = await pdp.decide(ctx, { action, resource }); if (!d.permit) await ctx.enforceDeny(action, d);`. `decide`, `permits` and `holds` take an `ActorContext`, a job's included, and turn it into a subject themselves; never convert or rebuild it first ([#2022](https://github.com/jwilleke/ngdpbase/issues/2022)). `ctx.enforceDeny(permission, decision)` always throws the same `ApiError` that `requirePermission` throws after a "no": 401 for an anonymous caller, else 403; for a step-up deny on a request, 403 with the `reauth` link, the prompt recorded by `AuthManager`; a delegated credential (agent token, share, proxy ceiling) is never offered a `reauth`. Handed an allow, it throws a programming error. `ApiContext` reaches an add-on through `host.ApiContext`, so `enforceDeny` is there with it. Never rebuild refusal shaping in an add-on — no `new ApiError(403, …)` after a deny, no reading `decision.reason`: `enforceDeny` is the one implementation. Core records every refusal it makes as `authorization-deny` (decided 2026-10-17, not built yet); your manager records only what it allowed and did, with the record's `owner` ([audit-developer-guide.md](audit-developer-guide.md#who-records-what)). The route shape is [Writing Routes](#7-writing-routes). Deny policies, the token ceiling, and vault-owner are [security-developer-guide.md](security-developer-guide.md).
