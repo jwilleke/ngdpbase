@@ -261,28 +261,30 @@ const journalAddon = {
     const userManager = engineRef.getManager<UserManager>('UserManager');
     if (!userManager) return;
 
-    const freshUser = await userManager.getUser(ctx.username);
-    const existing = (freshUser?.preferences ?? {}) as Record<string, unknown>;
-    const updated: Record<string, unknown> = { ...existing };
-
-    // Per-field gating mirrors the partial's `<% if (...) %>` blocks.
-    if (voiceToTextEnabled) {
-      updated['journal.voiceToText'] = body['journal.voiceToText'] === 'on';
-    }
-
-    // Always-rendered fields — safe to read unconditionally now that the
-    // _rendered marker has guaranteed the partial was on the submitted form.
-    updated['journal.streakVisible']   = body['journal.streakVisible']   === 'on';
-    updated['journal.reminderEnabled'] = body['journal.reminderEnabled'] === 'on';
-    // #1504: only a `choice` journal shows (and so saves) the preference.
-    if (journalPrivacy(engineRef, existing).offer) {
-      updated['journal.defaultPrivate'] = body['journal.defaultPrivate'] === 'on';
-    }
-    const rt = body['journal.reminderTime'];
-    updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
-
+    const engine = engineRef;
+    // #2025: merged into the account as it is now, inside its key (updateUser's function form).
     // #1234: the caller's context, forwarded — never rebuilt from a name.
-    await userManager.updateUser(ctx.username, { preferences: updated }, ctx);
+    await userManager.updateUser(ctx.username, (current) => {
+      const existing = (current.preferences ?? {}) as Record<string, unknown>;
+      const updated: Record<string, unknown> = { ...existing };
+
+      // Per-field gating mirrors the partial's `<% if (...) %>` blocks.
+      if (voiceToTextEnabled) {
+        updated['journal.voiceToText'] = body['journal.voiceToText'] === 'on';
+      }
+
+      // Always-rendered fields — safe to read unconditionally now that the
+      // _rendered marker has guaranteed the partial was on the submitted form.
+      updated['journal.streakVisible']   = body['journal.streakVisible']   === 'on';
+      updated['journal.reminderEnabled'] = body['journal.reminderEnabled'] === 'on';
+      // #1504: only a `choice` journal shows (and so saves) the preference.
+      if (journalPrivacy(engine, existing).offer) {
+        updated['journal.defaultPrivate'] = body['journal.defaultPrivate'] === 'on';
+      }
+      const rt = body['journal.reminderTime'];
+      updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
+      return { preferences: updated };
+    }, ctx);
   },
 
 

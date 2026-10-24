@@ -559,7 +559,7 @@ async register(engine, config, host) {
 An addon that has per-user settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
 
 - `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this user. `user` is the user's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
-- `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write (`userManager.updateUser(ctx.username, updates, ctx)`), never build a new one from `ctx.username`. An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
+- `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write, never build a new one from `ctx.username`. Merge your fields into the user's preferences with `updateUser`'s function form, so the merge reads the account as it is now ([Change a user](#change-a-user-the-function-form)). An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
 
 What it is not: it is only the signed-in user's own `/profile`. There is one route, `/profile`, and it always shows the user who is signed in; there is no profile page for someone else. Showing data about anyone else belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
 
@@ -698,6 +698,29 @@ Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `Pol
 `PersonManager`, `OrganizationManager` ([Contacts](#contacts-and-identity-records)),
 `ExportManager`, `EmailManager` ([Make a PDF and email it](#make-a-pdf-and-email-it)),
 `MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
+
+### Change a user: the function form
+
+An add-on that keeps fields on a user's account (preferences, an `ownership` list) changes them through `UserManager.updateUser`, the one door for accounts. When the new value depends on what the account holds now (add to a list, end one entry, flip one preference), never read the user with `getUser` and write back what you worked out: two changes at once would both read the old record, and the later write would drop the earlier one. Pass a function instead ([#2025](https://github.com/jwilleke/ngdpbase/issues/2025)):
+
+```typescript
+import type { UserManager } from '@jwilleke/ngdpbase-types';
+
+const users = engine.getManager<UserManager>('UserManager')!;
+await users.updateUser(username, (current) => {
+  const ownership = Array.isArray(current.ownership) ? current.ownership as Ownership[] : [];
+  if (ownership.some((o) => o.place === place)) return undefined; // already there: change nothing
+  return { ownership: [...ownership, { place, since }] };
+}, ctx.getActor());
+```
+
+- Core runs the function inside that user's key, between the read and the write, so changes to one user happen one after another, each seeing the last. You cannot build this yourself: the key is not on `host`, and an add-on never writes its own per-key queue.
+- `current` is a copy of the user's account without the password hash, your own fields included. Return only the fields to merge; return `undefined` to change nothing (nothing is written or recorded).
+- It may be `async`, but must not call `updateUser` for the same user, directly or through another manager: it would wait for itself forever.
+- The checks, the role change and the `user-edit` record are the same as for the object form `updateUser(username, { field: value }, ctx)`, which is still right when the change does not depend on the current account.
+- The context is the caller's, as for every door: `ctx.getActor()` in a route, the `JobContext` in a job.
+
+The worked examples are the journal's settings saves (`addons/journal/index.ts`, `addons/journal/routes/editor.ts`). The rules are in [UserManager](../managers/UserManager.md#one-change-at-a-time-per-account).
 
 ### Contacts and identity records
 
@@ -1910,7 +1933,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
 - [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — [importing core](#importing-core--types-only): `lint:addons` reads `.ts` files only, so a plain-JavaScript addon's value import of `../../dist` is not refused (`check:addon-load` still imports it); and it resolves relative paths, so a bare `ngdpbase/…` specifier would not be seen (core has no `exports`, so one cannot load either).
-- [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `UserManager`, `PluginManager` and `AddonsManager` are not exported, and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
+- [#1865](https://github.com/jwilleke/ngdpbase/issues/1865) — `@jwilleke/ngdpbase-types` is on npm (first published at 5.18.0, released with each core version), but its public entry is incomplete: `PluginManager` and `AddonsManager` are not exported (`UserManager` is, with `UserUpdateInput` and `UserUpdateFn`, since [#2025](https://github.com/jwilleke/ngdpbase/issues/2025)), and core declares two `PluginContext` types (an annotated `execute(context: PluginContext)` does not type-check against `SimplePlugin`, and neither declares `userContext`). With the real logger type `host.logger.info()` returns the logger, so a `(m): void => host.logger.info(m)` arrow does not compile; use a block body. `create:addon --repo` still generates the build-against-core CI step, which an add-on using this package does not need. `openAddonTestDatabase` opens a new database per call, so a dependent addon's ledger cannot yet join an owner's test database as it joins the owner's file on a site.
 - [#1904](https://github.com/jwilleke/ngdpbase/issues/1904) — [checklists](#choices-from-your-manager-and-checklists): forms money is US dollars only. The running total is shown in USD, as the `amount` field shows "$" and parses two decimals; there is no currency setting. The browser cannot call `formatMoney` or the add-on's `parseAmount`, so `forms-submit.js` carries a copy of each, held to the originals by `formsSubmitJs.test.ts`. The form builder lists the `checklist` type and its inline options, but has no input for `optionsSource` or `totalField`; set those in the definition file. A builder save keeps them ([#1921](https://github.com/jwilleke/ngdpbase/issues/1921)).
 - [#1921](https://github.com/jwilleke/ngdpbase/issues/1921) — `views/header.ejs` shows the page editor's Save and Cancel for any view whose `title` starts with the word "Edit" and a space (`title.startsWith('Edit ')`), and those need a `pageName`. An add-on view with no page must not title itself `Edit …`: the form builder's edit page did, and every edit of a form answered 500. The builder is titled `Form Builder — Edit Form` now; the header still decides edit mode from the title.
 - [#1913](https://github.com/jwilleke/ngdpbase/issues/1913) — [lines](#lines-repeating-rows-of-fields): the form builder lists the `lines` type but cannot edit sub-fields, `minRows`, `maxRows`, `amountField` or `totalField`; write them in the definition file (the builder keeps them on save, and refuses a `lines` field with no sub-fields). A row cannot be removed below one even with `minRows: 0`, since an empty row is not sent. The submission detail page in the forms admin shows each row's raw values (amounts in cents), as it shows top-level amounts.
@@ -1938,4 +1961,4 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 ---
 
-Last updated: 2026-10-22
+Last updated: 2026-10-24

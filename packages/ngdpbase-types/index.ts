@@ -64,6 +64,10 @@ export type {
   IceRunReport, IceFileReport, IceFileStatus
 } from '../../src/ice/types.js';
 
+// Accounts (#2025): the account door, and the change `updateUser` takes (the fields, or a function of the account as it is now).
+export type { default as UserManager, UserUpdateInput, UserUpdateFn } from '../../src/managers/UserManager.js';
+export type { User, UserPreferences } from '../../src/types/User.js';
+
 // Contacts (#1930): the person and organization doors, their records, and their refusal.
 export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';
 export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';

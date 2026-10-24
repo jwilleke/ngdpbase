@@ -21,6 +21,7 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
   let hosts: Record<string, any>;
   let users: Record<string, any>;
   let updateUser: ReturnType<typeof vi.fn>;
+  let written: Array<{ preferences: Record<string, unknown> }>;
   let getUser: ReturnType<typeof vi.fn>;
   let permits: ReturnType<typeof vi.fn>;
 
@@ -73,7 +74,12 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
       gone: { username: 'gone', isActive: false, preferences: { 'phr.enabled': true } }
     };
     getUser = vi.fn(async (u: string) => users[u]);
-    updateUser = vi.fn(async (u: string, updates: { preferences: Record<string, unknown> }) => {
+    written = [];
+    // #2025: UserManager's function form — the change is worked out from the account as it is now.
+    updateUser = vi.fn(async (u: string, change: (current: any) => any) => {
+      const updates = await change(structuredClone(users[u]));
+      if (updates === undefined) return users[u];
+      written.push(updates);
       users[u] = { ...users[u], ...updates };
       return users[u];
     });
@@ -161,17 +167,17 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
       const manager = await load();
       await hosts['dormant-off'].setEnabledForPerson(ALICE, true);
       expect(updateUser).toHaveBeenCalledTimes(1);
-      const [username, updates, ctx] = updateUser.mock.calls[0];
+      const [username, , ctx] = updateUser.mock.calls[0];
       expect(username).toBe('alice');
       expect(ctx).toBe(ALICE);
-      expect(updates).toEqual({ preferences: { 'phr.enabled': true, 'ledger.enabled': true, timezone: 'UTC', 'dormant-off.enabled': true } });
+      expect(written[0]).toEqual({ preferences: { 'phr.enabled': true, 'ledger.enabled': true, timezone: 'UTC', 'dormant-off.enabled': true } });
       expect(await manager.enabledAddonsFor(ALICE)).toEqual(['dormant-off', 'ledger', 'phr']);
     });
 
     test('clears it with false', async () => {
       const manager = await load();
       await hosts.phr.setEnabledForPerson(ALICE, false);
-      expect(updateUser.mock.calls[0][1].preferences['phr.enabled']).toBe(false);
+      expect(written[0].preferences['phr.enabled']).toBe(false);
       expect(await manager.enabledAddonsFor(ALICE)).toEqual(['ledger']);
     });
 
@@ -179,9 +185,9 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
       const manager = await load();
       expect(hosts.ledger.setEnabledForPerson).toHaveLength(2);
       await hosts.ledger.setEnabledForPerson(ALICE, false);
-      const written = updateUser.mock.calls[0][1].preferences;
-      expect(written['ledger.enabled']).toBe(false);
-      expect(written['phr.enabled']).toBe(true);
+      const prefs = written[0].preferences;
+      expect(prefs['ledger.enabled']).toBe(false);
+      expect(prefs['phr.enabled']).toBe(true);
       // The writer is a true private method: not reachable through the manager.
       const names = [...Object.getOwnPropertyNames(Object.getPrototypeOf(manager)), ...Object.keys(manager)];
       expect(names.filter((n) => /switch|setenabled/i.test(n))).toEqual([]);
@@ -228,13 +234,13 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
       expect((refused as Error).name).toBe('ConsentRequiredError');
       expect(refused).toMatchObject({ scope: 'dormant-off', documents: ['dormant-off-terms'] });
       expect(ConsentManager.pendingFor).toHaveBeenCalledWith('alice', 'dormant-off');
-      expect(updateUser).not.toHaveBeenCalled();
+      expect(written).toEqual([]);
     });
 
     test('once accepted (nothing pending) it turns on', async () => {
       await load({ ConsentManager: consentFor({}) });
       await hosts['dormant-off'].setEnabledForPerson(ALICE, true);
-      expect(updateUser.mock.calls[0][1].preferences['dormant-off.enabled']).toBe(true);
+      expect(written[0].preferences['dormant-off.enabled']).toBe(true);
     });
 
     test('turning it off, or saving it on when it is already on, asks nothing', async () => {
@@ -254,7 +260,7 @@ describe('AddonsManager — per-person add-ons (#1963)', () => {
       const manager = await load({ ConsentManager: consentFor({ 'dormant-off': ['dormant-off-terms'] }) });
       const saved = await manager.saveProfileSections(ALICE, { 'dormant-off.enabled': 'on' });
       expect(saved.consentRequired.map((e: { scope: string }) => e.scope)).toEqual(['dormant-off']);
-      expect(updateUser).not.toHaveBeenCalled();
+      expect(written).toEqual([]);
     });
   });
 

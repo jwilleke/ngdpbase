@@ -274,7 +274,11 @@ function resetMocks() {
   mockUserManager.searchUsers.mockResolvedValue([]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
-  mockUserManager.updateUser.mockResolvedValue(true);
+  // #2025: a function-form change is worked out from the account as it is now (here, the signed-in user's record).
+  mockUserManager.updateUser.mockImplementation(async (_u: string, change: unknown) => {
+    if (typeof change === 'function') await change(structuredClone(mockUserContext ?? {}));
+    return true;
+  });
   mockUserManager.destroySession.mockResolvedValue(true);
 
   mockNotificationManager.getNotifications.mockReturnValue([]);
