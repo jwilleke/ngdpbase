@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [5.29.0] - 2026-10-24
+
+### Planned
+
+- Future enhancements
+
 ## [5.28.0] - 2026-10-24
 
 ### Planned

@@ -80,7 +80,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | OidcManager | ✅ [doc](managers/OidcManager.md) | The embedded OpenID Connect provider at the base URL's /oidc — off unless enabled, never loaded when off (#1570) |
 | OrganizationManager | ✅ [doc](managers/OrganizationManager.md) | Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider |
 | PageManager | 📘 [doc](managers/PageManager.md) + [guide](managers/PageManager-Complete-Guide.md) | Page CRUD and storage facade over the PageProvider registry |
-| PersonManager | ✅ [doc](managers/PersonManager.md) | Canonical Person records (#617) — decoupled from User authentication identity, shared across addons |
+| PersonManager | ✅ [doc](managers/PersonManager.md) | Identity records (#617) for every user and contact — kept apart from sign-in, shared across addons |
 | PluginManager | 📘 [doc](managers/PluginManager.md) + [guide](managers/PluginManager-Complete-Guide.md) | Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output |
 | PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of PolicyInformationPoint — evaluates role/permission policies against principals and resources |
 | PolicyInformationPoint | ✅ [doc](managers/PolicyInformationPoint.md) | What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager) |
@@ -186,7 +186,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
 | FileOidcAdapter | ✅ [doc](providers/FileOidcAdapter.md) | The embedded OpenID Connect provider's storage — node-oidc-provider's adapter on owner-only JSON files under FAST_STORAGE (#1571) |
 | FileOrganizationProvider | ✅ [doc](providers/FileOrganizationProvider.md) | File-backed Organization storage — one JSON file per organization under data/organizations/ |
-| FilePersonProvider | ✅ [doc](providers/FilePersonProvider.md) | File-backed Person storage — one JSON file per Person record under data/persons/ |
+| FilePersonProvider | ✅ [doc](providers/FilePersonProvider.md) | File-backed identity record storage — one JSON file per identity record under data/persons/ |
 | FileRoleProvider | ✅ [doc](providers/FileRoleProvider.md) | File-backed Role storage — one JSON file per (organization, namedPosition) pair under data/roles/ |
 | FileSystemMediaProvider | ✅ [doc](providers/FileSystemMediaProvider.md) | Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend |
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
@@ -201,8 +201,8 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | OidcAuthProvider-Authentik | ✅ [doc](providers/OidcAuthProvider-Authentik.md) | Sign in through a self-hosted authentik — an OidcAuthProvider entry with its own issuer (no preset), and how to set it up in authentik |
 | OidcAuthProvider-Google | ✅ [doc](providers/OidcAuthProvider-Google.md) | Sign in with Google — the google preset of OidcAuthProvider, and how to register the site with Google |
 | OidcAuthProvider-Microsoft | ✅ [doc](providers/OidcAuthProvider-Microsoft.md) | Sign in with a personal Microsoft account — the microsoft preset of OidcAuthProvider, and how to register the site in Microsoft Entra |
-| OidcBearerAuthProvider | ✅ [doc](providers/OidcBearerAuthProvider.md) | Accepts access tokens from this instance's own OpenID Connect provider on ngdpbase's API, as a delegation from the person (#1576) |
-| PasskeyAuthProvider | ✅ [doc](providers/PasskeyAuthProvider.md) | Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a person in at AAL2, phishing-resistant, tied to the base-url host (#448) |
+| OidcBearerAuthProvider | ✅ [doc](providers/OidcBearerAuthProvider.md) | Accepts access tokens from this instance's own OpenID Connect provider on ngdpbase's API, as a delegation from the user (#1576) |
+| PasskeyAuthProvider | ✅ [doc](providers/PasskeyAuthProvider.md) | Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a user in at AAL2, phishing-resistant, tied to the base-url host (#448) |
 | PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with scrypt-hashed passwords stored in the user record |
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
 | SqliteDatabaseProvider | ✅ [doc](providers/SqliteDatabaseProvider.md) | The application database as one SQLite file, SQLCipher-encrypted when NGDPBASE_DATABASE_KEY is set; WAL mode, fsynced, migrated at open (#1536) |
