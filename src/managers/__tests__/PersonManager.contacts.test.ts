@@ -24,6 +24,8 @@
  *   read test went red; every write asking contact-read → its write refusals went red;
  * - PolicyEvaluator registered after UserManager again (the shipped order
  *   before this change) → the boot-order test went red.
+ * - PersonManager.update keeping only '@type': 'ContactPoint' entries (2026-10-24)
+ *   → the contact points round-trip test went red.
  */
 vi.unmock('../PolicyEvaluator');
 
@@ -292,6 +294,35 @@ describe('contacts in core (#1930)', () => {
     expect(site.contacts()[0].metadata).toMatchObject({ origin: 'request' });
   });
 
+  test('contact points: ContactPoint and PostalAddress entries both round-trip, and existing entries are unchanged', async () => {
+    // The occupancy form's shape (ngdpbase-addons#33): the home address in `address`, everything else in contactPoint[].
+    const phone = { '@type': 'ContactPoint' as const, contactType: 'home', telephone: '+1 555 0100' };
+    const p = await site.persons.create(ADMIN, { name: 'Dana', address: { '@type': 'PostalAddress', streetAddress: '1 Home St', addressLocality: 'Town' }, contactPoint: [phone] });
+    expect(p.contactPoint).toEqual([phone]);
+
+    const entries = [
+      phone,
+      { '@type': 'PostalAddress' as const, contactType: 'mailing', name: 'Dana Donor', streetAddress: 'PO Box 9', addressLocality: 'Town', postalCode: '12345', telephone: '+1 555 0101' },
+      { '@type': 'ContactPoint' as const, contactType: 'agent', name: 'Rental Agent Co', telephone: '+1 555 0102', email: 'agent@example.org' },
+      { '@type': 'ContactPoint' as const, contactType: 'emergency', name: 'Sam Sibling', telephone: '+1 555 0103' }
+    ];
+    const updated = await site.persons.update(ADMIN, p['@id'], { contactPoint: entries });
+    expect(updated?.contactPoint).toEqual(entries);
+
+    site.persons.invalidateCache();
+    const back = await site.persons.getById(ADMIN, p['@id']);
+    expect(back?.contactPoint).toEqual(entries);
+    expect(back?.address).toEqual({ '@type': 'PostalAddress', streetAddress: '1 Home St', addressLocality: 'Town' });
+    const stored = JSON.parse(await fs.readFile(path.join(site.tmp, 'persons', `${p['@id'].replace('urn:uuid:', '')}.json`), 'utf8')) as { contactPoint: unknown };
+    expect(stored.contactPoint).toEqual(entries);
+
+    const org = await site.organizations.create(ADMIN, { name: 'Acme Trust', contactPoint: [{ '@type': 'ContactPoint', contactType: 'sales', email: 'sales@acme.example' }] });
+    const orgEntries = [...(org.contactPoint ?? []), { '@type': 'PostalAddress' as const, contactType: 'business', streetAddress: '2 Works Rd' }];
+    await site.organizations.update(ADMIN, org['@id'], { contactPoint: orgEntries });
+    site.organizations.invalidateCache();
+    expect((await site.organizations.getById(ADMIN, org['@id']))?.contactPoint).toEqual(orgEntries);
+  });
+
   test('affiliations: set on the person, read back from the organization, never stored twice', async () => {
     const acme = await site.organizations.create(ADMIN, { name: 'Acme Trust', url: 'https://acme.example/' });
     const club = await site.organizations.create(ADMIN, { name: 'Garden Club' });
@@ -555,6 +586,66 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
     const subject = await pip.subjectFor('sam');
     expect(subject).toMatchObject({ username: 'sam', isAuthenticated: true });
     expect(subject?.roles).toContain('reader');
+    expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #2018 — UserManager.searchUsers decides `search-user` itself, with the
+ * caller's context, over the shipped policies: every user holds it (granted to
+ * vault-owner, the role every account is given; operator, 2026-10-24), anonymous
+ * does not, and core's own lookups run under the system context with no policy
+ * question.
+ *
+ * Sabotaged (2026-10-24), and watched go red:
+ * - the PDP question removed from searchUsers → the anonymous and no-role refusals;
+ * - isSystemWork's shortcut removed → the system-context test (decide was called);
+ * - search-user taken out of signed-in-self-service → the holders and vault-owner tests.
+ */
+describe('searchUsers decides search-user (#2018)', () => {
+  let site: Awaited<ReturnType<typeof makeSite>>;
+
+  beforeEach(async () => {
+    site = await makeSite();
+    await site.signUp('pat', 'pat@example.org');
+    await site.signUp('sam', 'sam@example.org');
+  });
+
+  afterEach(async () => {
+    await fs.remove(site.tmp).catch(() => {});
+  });
+
+  test('as shipped: every signed-in role holds search-user, vault-owner included; anonymous does not', async () => {
+    const roleNames = Object.keys(shipped['ngdpbase.roles.definitions'] as Record<string, unknown>);
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const holders: string[] = [];
+    for (const role of roleNames) {
+      if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, 'search-user')) holders.push(role);
+    }
+    expect(holders.sort()).toEqual(['admin', 'contributor', 'demo-admin', 'editor', 'reader', 'user-admin', 'vault-owner']);
+
+    // #2033: what a search shows beyond username and display name needs
+    // user-read (UserLookupPlugin, /api/users/search); every user may search,
+    // so an ordinary user must not hold it.
+    for (const ordinary of ['vault-owner', 'reader', 'contributor', 'anonymous']) {
+      expect(await pdp.permits({ username: 'u', roles: [ordinary], isAuthenticated: ordinary !== 'anonymous' }, 'user-read')).toBe(false);
+    }
+  });
+
+  test('a vault-owner-only user may search (the people picker); anonymous and a subject with no role are refused', async () => {
+    const owner = { username: 'olive', roles: ['vault-owner'], isAuthenticated: true };
+    expect((await site.accounts.searchUsers('', {}, owner)).map((u) => u.username)).toEqual(expect.arrayContaining(['pat', 'sam']));
+
+    const anonymous = { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false };
+    await expect(site.accounts.searchUsers('pat', {}, anonymous)).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'search-user' });
+    await expect(site.accounts.searchUsers('pat', {}, { username: 'nobody', roles: [], isAuthenticated: true })).rejects.toBeInstanceOf(ContactRefusedError);
+  });
+
+  test('the system context is allowed without a policy question, a role filter included', async () => {
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const decide = vi.spyOn(pdp, 'decide');
+    const found = await site.accounts.searchUsers('', { role: 'reader', limit: 0 }, SYS);
+    expect(found.map((u) => u.username).sort()).toEqual(['pat', 'sam']);
     expect(decide).not.toHaveBeenCalled();
   });
 });

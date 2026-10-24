@@ -102,6 +102,17 @@ export async function requireRecordAccess(
   await requireEach(engine, ctx, [own ? OWN_PROFILE_PERMISSION : CONTACT_PERMISSION[kind]]);
 }
 
+/**
+ * A lookup of users (#2018): `UserManager.searchUsers` asks `permission`
+ * (`search-user`) with the caller's context, and throws
+ * {@link ContactRefusedError} on a refusal. Core's own work
+ * ({@link isSystemWork}) is allowed without a policy evaluation.
+ */
+export async function requireLookupPermission(engine: EngineLike, ctx: ActorContext, permission: CorePermission): Promise<void> {
+  if (isSystemWork(engine, ctx)) return;
+  await requireEach(engine, ctx, [permission]);
+}
+
 /** Ask the PDP each action in turn; the first refusal is thrown. No context or no PDP refuses. */
 async function requireEach(engine: EngineLike, ctx: ActorContext, actions: readonly string[]): Promise<void> {
   const pdp = engine.getManager<DeciderLike>('PolicyDecisionPoint');

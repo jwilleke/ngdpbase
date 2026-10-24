@@ -348,6 +348,8 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       fr.chain = leaves[0]?.chain ?? (shim ? [shim.id] : []);
 
       const refusals: string[] = [];
+      // What the receiver said of what it stored ("12 new, 0 updated"): shown on the file's status.
+      const said = new Set<string>();
       for (const { item, chain } of leaves) {
         fr.warnings.push(...(item.warnings ?? []));
         if (perItem && item.itemKey && await deps.ledger.hasItem(scope, item.itemKey)) {
@@ -361,6 +363,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         if (outcome.status === 'stored') {
           fr.stored++;
           if (outcome.ref) fr.refs.push(outcome.ref);
+          if (outcome.message) said.add(outcome.message);
           if (perItem && item.itemKey) await deps.ledger.recordItem(scope, item.itemKey);
         } else if (outcome.status === 'duplicate') {
           fr.duplicates++;
@@ -370,12 +373,15 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         }
       }
 
+      // Kept short: one message, or the first and how many more.
+      const notes = [...said];
+      const receiverNote = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0];
       if (refusals.length > 0 && fr.stored === 0) {
         fr.status = 'refused';
         fr.message = refusals[0];
       } else if (refusals.length > 0 || partial.length > 0) {
         fr.status = 'partial';
-        fr.message = [...partial, ...refusals.map(r => `refused: ${r}`)].join('; ');
+        fr.message = [...(receiverNote ? [receiverNote] : []), ...partial, ...refusals.map(r => `refused: ${r}`)].join('; ');
       } else if (leaves.length === 0) {
         fr.status = 'unreadable';
         fr.message = 'nothing in it could be read';
@@ -383,6 +389,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         fr.status = 'duplicate';
       } else {
         fr.status = 'imported';
+        if (receiverNote) fr.message = receiverNote;
       }
     } catch (err) {
       fr.status = 'failed';

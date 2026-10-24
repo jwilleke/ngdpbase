@@ -699,8 +699,12 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
     expect(titles('alice')).toEqual([]);
     expect(titles('tess')).toEqual([]);
     expect(notifications.getAllNotifications().map((n) => n.targetUsers)).toEqual([['root']]);
-    // The lookup carries the request's subject, forwarded as it came.
-    expect(searched).toEqual([['', { role: 'admin', limit: 0 }, SUBMITTER]]);
+    // Finding the recipients is core's own work (#2018): the system context
+    // with a reason, never the submitter's, so it needs no search-user of
+    // theirs. This site has no decision point at all, so a submitter's
+    // context would be refused and nobody told.
+    expect(searched).toEqual([['', { role: 'admin', limit: 0 }, expect.objectContaining({ origin: 'boot', reason: expect.stringMatching(/^forms: find the holders of 'admin'/) })]]);
+    expect(searched[0][2]).not.toBe(SUBMITTER);
   });
 
   test('a custom notifyRole is honoured: only its holders are told', async () => {

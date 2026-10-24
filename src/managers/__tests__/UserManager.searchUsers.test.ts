@@ -42,6 +42,8 @@ describe('UserManager#searchUsers()', () => {
   // form `urn:uuid:test:<username>`.
   const personIdFor = (username) => `urn:uuid:test:${username}`;
 
+  const pdp = { decide: vi.fn(async (_subject: unknown, _request: { action: string }) => ({ permit: true, applicable: true })) };
+
   const makeEngine = (allUsers) => {
     const personManager = {
       getByUserIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
@@ -61,6 +63,8 @@ describe('UserManager#searchUsers()', () => {
       getManager: vi.fn((name) => {
         if (name === 'PersonManager') return personManager;
         if (name === 'RoleManager') return roles;
+        // #2018: searchUsers decides search-user with the caller's context.
+        if (name === 'PolicyDecisionPoint') return pdp;
         return null;
       }),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
@@ -84,6 +88,19 @@ describe('UserManager#searchUsers()', () => {
 
     manager = new UserManager(makeEngine(users));
     manager.provider = mockProvider;
+  });
+
+  test('asks the PDP for search-user with the caller\'s context (#2018)', async () => {
+    pdp.decide.mockClear();
+    await manager.searchUsers('', {}, ACTOR);
+    expect(pdp.decide).toHaveBeenCalledWith(ACTOR, { action: 'search-user' });
+  });
+
+  test('refused without search-user: throws ContactRefusedError and reads no user (#2018)', async () => {
+    pdp.decide.mockResolvedValueOnce({ permit: false, applicable: true });
+    await expect(manager.searchUsers('alice', {}, { username: 'nobody', roles: [], isAuthenticated: true }))
+      .rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'search-user' });
+    expect(mockProvider.getAllUsers).not.toHaveBeenCalled();
   });
 
   test('returns all active users when query is empty', async () => {

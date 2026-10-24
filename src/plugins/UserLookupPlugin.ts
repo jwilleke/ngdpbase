@@ -1,11 +1,11 @@
 /**
  * UserLookupPlugin — [{UserLookup}]
  *
- * Searches users via GET /api/users/search and renders results as a
- * sortable table. Permission gating is handled entirely by the API:
- *   - search-user → can call the endpoint
- *   - user-read   → receives full profile fields
- *   - others      → username + displayName only
+ * Searches users through UserManager.searchUsers, under the viewer's own
+ * context, and renders results as a sortable table. The search decides
+ * `search-user` (#2018): every signed-in user holds it as shipped; a viewer
+ * without it (anonymous) sees nothing. Fields beyond username and display
+ * name need `user-read`, asked with the viewer's context (#2033).
  *
  * Parameters:
  *   q          — search query (substring match on username/displayName/email)
@@ -25,10 +25,15 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
+import type UserManager from '../managers/UserManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 /** All fields the API may return (permission-gated server-side) */
 const ALL_FIELDS = ['username', 'displayName', 'email', 'roles', 'lastLogin', 'isActive'] as const;
 type UserField = typeof ALL_FIELDS[number];
+/** What any viewer who may search sees; the rest needs user-read (#2033). */
+const PUBLIC_FIELDS: readonly UserField[] = ['username', 'displayName'];
 
 const FIELD_LABELS: Record<UserField, string> = {
   username:    'Username',
@@ -95,34 +100,49 @@ const UserLookupPlugin: SimplePlugin = {
       if (!activeOnly) qs.set('activeOnly', 'false');
 
       // Fetch from internal API via engine's HTTP layer or direct manager call
-      const userManager = context.engine?.getManager?.('UserManager') as {
-        searchUsers(q: string, opts?: { role?: string; limit?: number; activeOnly?: boolean }): Promise<UserRecord[]>;
-      } | undefined;
+      const userManager = context.engine?.getManager?.('UserManager') as Pick<UserManager, 'searchUsers'> | undefined;
 
       if (!userManager) {
         return '<p class="plugin-error">UserManager not available.</p>';
       }
 
-      const results: UserRecord[] = await userManager.searchUsers(q, {
-        role,
-        limit: max > 0 ? max : undefined,
-        activeOnly
-      });
+      let results: UserRecord[];
+      try {
+        results = await userManager.searchUsers(q, {
+          role,
+          limit: max > 0 ? max : undefined,
+          activeOnly
+        }, context.userContext as ActorContext);
+      } catch (err) {
+        // A viewer without search-user (anonymous) sees nothing (#2018).
+        if (err instanceof Error && err.name === 'ContactRefusedError') return '';
+        throw err;
+      }
 
       if (results.length === 0) {
         return '<p><em>No users found.</em></p>';
       }
 
+      // #2033: every user may search, so the other fields (email, roles, …)
+      // are shown only to a viewer holding user-read, asked of the decision
+      // point with the viewer's own context. Without it, or with no decision
+      // point, only the public fields. Never a password or credential: only
+      // ALL_FIELDS are ever rendered.
+      const pdp = context.engine?.getManager?.('PolicyDecisionPoint') as Pick<PolicyDecisionPoint, 'permits'> | null | undefined;
+      const canReadFull = Boolean(pdp && context.userContext && await pdp.permits(context.userContext as ActorContext, 'user-read').catch(() => false));
+      const allowed: readonly UserField[] = canReadFull ? ALL_FIELDS : PUBLIC_FIELDS;
+
       // Determine columns — 'all' uses whatever fields exist in first result
       let columns: UserField[];
       if (fieldSpec === 'all') {
         const firstKeys = new Set(Object.keys(results[0]));
-        columns = ALL_FIELDS.filter(f => firstKeys.has(f));
+        columns = allowed.filter(f => firstKeys.has(f));
       } else if (fieldSpec.length > 0) {
-        columns = fieldSpec;
+        columns = fieldSpec.filter(f => allowed.includes(f));
       } else {
-        columns = ['username', 'displayName'];
+        columns = [];
       }
+      if (columns.length === 0) columns = [...PUBLIC_FIELDS];
 
       const headers = columns.map(f => FIELD_LABELS[f] ?? f);
       const rows = results.map(u =>

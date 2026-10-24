@@ -53,7 +53,7 @@ Every registered converter is also a shim, `core.<formatId>`; `registerConverter
 | `getImportRun(runId, ctx)` | The run's report, to the user it ran as |
 | `importRunsFor(ctx)` | The runs this process holds for that user, newest first; never anyone else's |
 
-A request is `{ source: { type: 'upload', files }, receiver, shim?, original?, scope? }`. Each file's report has its status: `imported`, `partial` (a shim's partial note, or some items refused), `unchanged`, `duplicate`, `noise`, `unreadable` (no shim reads it for that receiver), `refused` (the receiver's permission said no), or `failed`.
+A request is `{ source: { type: 'upload', files }, receiver, shim?, original?, scope? }`. Each file's report has its status: `imported`, `partial` (a shim's partial note, or some items refused), `unchanged`, `duplicate`, `noise`, `unreadable` (no shim reads it for that receiver), `refused` (the receiver's permission said no), or `failed`. A file's `message` carries what the receiver said of what it stored (`ReceiveOutcome.message`, such as "12 new, 0 updated, 0 unchanged"), before any partial note and refusal; when several items say different things it shows the first and how many more, so the per-file status at /import stays short.
 
 ### Where fingerprints and status live
 
