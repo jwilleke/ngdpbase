@@ -8,17 +8,17 @@ The standing law it serves is [security-posture.md](security-posture.md): every 
 
 ## The model
 
-- __Permission__ (also called an action): a named thing a person may do, such as `page-edit` or `asset-upload`.
-- __Policy__: a rule that allows or denies some permissions to some people on some resources.
-- __Role__: a name a person holds. Policies grant to roles, never to individual users.
+- __Permission__ (also called an action): a named thing a user may do, such as `page-edit` or `asset-upload`.
+- __Policy__: a rule that allows or denies some permissions to some users on some resources.
+- __Role__: a name a user holds; the policies that name it make it a set of permissions. Only users hold roles, and a role is never a title or a group ([glossary](GLOSSARY.md#identities)). Policies grant to roles, never to individual users.
 
-Whether a person may do something is decided by the policies alone. No other setting allows or denies.
+Whether a user may do something is decided by the policies alone. No other setting allows or denies.
 
 ## Where it is configured
 
 | Key | Holds |
 |---|---|
-| `ngdpbase.permissions.definitions` | The catalogue of permissions: each name with its description, its `label` (the plain words a person reads, #1764), icon and colour, its `audit` block and `step-up` flag (#1638). An entry with `"grantable": false` is a recorded event, not a permission a policy grants. `src/security/permissions.generated.ts` is generated from the grantable entries (`npm run generate:permissions`) |
+| `ngdpbase.permissions.definitions` | The catalogue of permissions: each name with its description, its `label` (the plain words a user reads, #1764), icon and colour, its `audit` block and `step-up` flag (#1638). An entry with `"grantable": false` is a recorded event, not a permission a policy grants. `src/security/permissions.generated.ts` is generated from the grantable entries (`npm run generate:permissions`) |
 | `ngdpbase.access.policies` | The list of policies |
 | `ngdpbase.access.policies.enabled` | Must be `true`. When it is not, no policy applies and every check is denied |
 | `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator |
@@ -59,7 +59,7 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 
 - Policies are sorted by `priority`, highest first.
 - A policy matches when its subjects, its resources and its actions all match.
-- A subject matches when the person holds at least one of the listed roles. A person with no roles matches no policy that names roles. An unauthenticated caller holds the `anonymous` role.
+- A subject matches when the user holds at least one of the listed roles. A user with no roles matches no policy that names roles. An unauthenticated caller holds the `anonymous` role.
 - __The first matching policy decides__, allow or deny. Later policies are not consulted.
 - __No matching policy means deny.__
 
@@ -71,20 +71,20 @@ The role `All` no longer exists (#1429). A policy that names it matches nobody; 
 
 __A page's own audience (Tier 1).__ Before these policies, a page's frontmatter `audience` (who may act on the page at all) and `access.<action>` (who may do that action) decide when they list anyone. The rule is `decideFrontmatterAccess` in `src/utils/frontmatterAccess.ts`, run by `PolicyInformationPoint`. An entry is one of:
 
-- a role name, such as `editor` — people who hold the role;
+- a role name, such as `editor` — users who hold the role;
 - a username, such as `jim`;
-- `addon:<slug>`, such as `addon:phr` — people who turned on the per-person add-on `<slug>` for themselves ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The subject matches when `<slug>` is in `PolicyInformationPoint.subjectEnabledAddons(ctx)`, the list `AddonsManager.enabledAddonsFor` gives. It is matched only against that list, never against a role or username of the same spelling. An anonymous visitor (a share visitor included) has no add-ons, so never matches. A slug that is unknown, names an add-on that is not per-person, or names one that is not loaded matches nobody — the page is refused to everyone the entry would have let in, never opened to everyone — and a warning names the page and the slug, at startup once add-ons have loaded and whenever such a page is saved. The subject's add-ons are read only for a page that names one, and once for a whole list or search.
+- `addon:<slug>`, such as `addon:phr` — users who turned on the per-user add-on `<slug>` for themselves ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The subject matches when `<slug>` is in `PolicyInformationPoint.subjectEnabledAddons(ctx)`, the list `AddonsManager.enabledAddonsFor` gives. It is matched only against that list, never against a role or username of the same spelling. An anonymous visitor (a share visitor included) has no add-ons, so never matches. A slug that is unknown, names an add-on that is not per-user, or names one that is not loaded matches nobody — the page is refused to everyone the entry would have let in, never opened to everyone — and a warning names the page and the slug, at startup once add-ons have loaded and whenever such a page is saved. The subject's add-ons are read only for a page that names one, and once for a whole list or search.
 
-Any one entry matching allows, so `[addon:phr, admin]` is the people with phr on, and admins by role. How the two fields decide (operator, 2026-10-23, [#1964](https://github.com/jwilleke/ngdpbase/issues/1964)):
+Any one entry matching allows, so `[addon:phr, admin]` is the users with phr on, and admins by role. How the two fields decide (operator, 2026-10-23, [#1964](https://github.com/jwilleke/ngdpbase/issues/1964)):
 
 - __`audience` covers every action.__ Someone it leaves out can neither read nor edit the page: the view, lists and search, the editor (`/edit/<page>`), the raw editor, a save through the form or the API, a rename and a delete are all refused. For `view`, someone the audience admits is allowed; for any other action they go on to `access` and then the policies, so a reader in a page's audience still needs `page-edit` to edit it. This holds for every audience, `[treasurer]` and `[addon:phr]` alike.
-- __Administrators are the audience's one exception.__ Someone holding the permission `admin-system` (the one that marks a site administrator, asked of the policies, never a role name) can read and edit any audience-restricted page, and lists and search show them these pages too. It is asked only when an audience leaves the person out, and once for a whole list or search.
+- __Administrators are the audience's one exception.__ Someone holding the permission `admin-system` (the one that marks a site administrator, asked of the policies, never a role name) can read and edit any audience-restricted page, and lists and search show them these pages too. It is asked only when an audience leaves the user out, and once for a whole list or search.
 - __`access.<action>` has no exception.__ `access: { view: [editor] }` refuses an administrator who is not an editor, as it always has. A page with both is open only to someone who passes both.
 - __Vaults are separate.__ A page in a private store is decided by its container (owner or delegate); `audience` is not read there, and the administrator exception does not reach into a vault.
 
 Every write also meets the same audience rule at `PageManager`'s write door (`savePage`, `deletePage`, `getRawPageContent`, which ask `PolicyInformationPoint.audienceAdmits` with the caller's context), so a route that forgot to ask still cannot write to a page its writer is outside the audience of. Recent Changes, App Health and "shared with me" still read `audience` from a list of principals and know nothing of add-ons or the administrator exception: they can leave an audience page out for someone who may open it, never show it to someone who may not.
 
-__Where the page decision applies.__ Everywhere a person is shown a page: opening it, a list of pages, a search hit, a count. Lists and search hits are decided by the same `PolicyInformationPoint` tiers as a page view — audience and `access` first, then these policies, `system-category` included — so a policy that refuses `page-read` also keeps the page out of that person's search results ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)). The rule for code is in [the security guide](guides/security-developer-guide.md#every-page-a-viewer-is-shown-goes-through-the-page-list-door).
+__Where the page decision applies.__ Everywhere a page is shown: opening it, a list of pages, a search hit, a count. Lists and search hits are decided by the same `PolicyInformationPoint` tiers as a page view — audience and `access` first, then these policies, `system-category` included — so a policy that refuses `page-read` also keeps the page out of that user's search results ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)). The rule for code is in [the security guide](guides/security-developer-guide.md#every-page-a-viewer-is-shown-goes-through-the-page-list-door).
 
 The three levels of checking built on this (the global `PolicyDecisionPoint.permits`, the page-aware `PolicyInformationPoint`, and this evaluator at the bottom) are described in [architecture/Access-Control.md](architecture/Access-Control.md#two-evaluation-engines).
 

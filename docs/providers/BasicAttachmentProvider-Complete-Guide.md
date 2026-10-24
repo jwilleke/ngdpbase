@@ -137,7 +137,7 @@ These "json" files will include:
 
 - author - The author of this content or rating. Please note that author is special in that HTML 5 provides a special mechanism for indicating authorship via the rel tag. That is equivalent to this and may be used interchangeably.
 - dateCreated - The date on which the CreativeWork was created or the item was added to a DataFeed.
-- editor - Specifies the Person who edited or upladed the CreativeWork. (may be same as author)
+- editor - Specifies the user (a schema.org `Person`) who edited or uploaded the CreativeWork. (may be same as author)
 - dateModified - The date on which the CreativeWork was most recently modified or when the item's entry was modified within a DataFeed.
 - encodingFormat - <https://schema.org/encodingFormat>  MUST be MIME format (see [IANA site](https://www.iana.org/assignments/media-types/media-types.xhtml) and [MDN reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types))
 - isBasedOn - OPTIONAL - A resource from which this work is derived or from which it is a modification or adaptation. Supersedes isBasedOnUrl.

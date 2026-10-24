@@ -182,7 +182,7 @@ kubectl logs -n <your-namespace> -l app=ngdpbase -f
 A clean boot log shows, in order:
 
 1. `OrganizationManager initialized (1 orgs)` — anchor org loaded.
-2. `Created Person record for admin` — Person/Role records seeded.
+2. `Created Person record for admin` — the admin's identity record and role records seeded.
 3. `Created default admin user` — admin user created.
 4. `Add-on loaded: <name>` — each addon discovered.
 

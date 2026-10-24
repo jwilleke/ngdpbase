@@ -17,7 +17,7 @@ Default storage backend for [RoleManager](../managers/RoleManager.md). One JSON 
 
 ## Distinction
 
-This is for __business roles__ (RoleManager domain — e.g. "Board President at Acme Corp"). Distinct from the platform's __system roles__ (`admin`, `editor`, `contributor`, …) which live in `app-default-config.json` under `ngdpbase.roles.definitions` and are read by the ACL evaluator.
+This stores __who holds each role__ (RoleManager's job). Which roles exist (`admin`, `editor`, `contributor`, …) is declared in `app-default-config.json` under `ngdpbase.roles.definitions`, and what each permits is the access policies. A role is a set of permissions, held only by users; it is never a title. A title such as "Board President at Acme Corp" is an affiliation on the identity record, not a role record ([glossary](../GLOSSARY.md#identities)).
 
 ## See Also
 

@@ -1,6 +1,6 @@
 ---
 name: PasskeyAuthProvider
-description: Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a person in at AAL2, phishing-resistant, tied to the base-url host (#448)
+description: Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a user in at AAL2, phishing-resistant, tied to the base-url host (#448)
 dateModified: '2026-10-03'
 category: providers
 code: src/providers/PasskeyAuthProvider.ts
@@ -11,7 +11,7 @@ code: src/providers/PasskeyAuthProvider.ts
 __Module:__ `src/providers/PasskeyAuthProvider.ts`
 __Implements:__ [AuthProvider](BaseAuthProvider.md)
 
-Passkeys, on `@simplewebauthn/server` directly ([#448](https://github.com/jwilleke/ngdpbase/issues/448)). A passkey alone signs a person in: AAL2, phishing-resistant (`amr: ["swk", "user"]`, `acr: "phr"`).
+Passkeys, on `@simplewebauthn/server` directly ([#448](https://github.com/jwilleke/ngdpbase/issues/448)). A passkey alone signs a user in: AAL2, phishing-resistant (`amr: ["swk", "user"]`, `acr: "phr"`).
 
 - __Where it works:__ the relying party is the host of `ngdpbase.application.base-url`, never the request. [AuthManager](../managers/AuthManager.md) registers the provider only when that is set explicitly and is `https` (or `localhost`, where browsers allow WebAuthn), and `ngdpbase.auth.passkey.enabled` is not `false`. A passkey works only on that hostname, so a site answering on several hostnames should redirect the others to it.
 - __Where passkeys are kept:__ the credentials store ([FileCredentialsProvider](FileCredentialsProvider.md)), kind `passkey`. The subject is the credential id; the secret holds the public key, signature counter, transports, device type and whether it is backed up (synced). No private key ever reaches the server.

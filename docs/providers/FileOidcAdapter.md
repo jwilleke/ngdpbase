@@ -14,7 +14,7 @@ Storage for the OpenID Connect provider that [OidcManager](../managers/OidcManag
 
 `<FAST_STORAGE>/oidc/<Model>.json`, one per node-oidc-provider model, each a map of id to `{ payload, expiresAt }`. The directory is `700` and every file `600` ([#1560](https://github.com/jwilleke/ngdpbase/issues/1560)): token ids arrive SHA-256 hashed by the package, but session and interaction ids do not — the provider finds them by value — so the files hold presentable material for as long as a session lives.
 
-Writes are atomic (temp file, then rename) and serialised per model. Expired rows are dropped on load and on every write, so a file holds only what is live. A file that cannot be parsed starts that model empty and is logged: what is lost is short-lived state, and people sign in again.
+Writes are atomic (temp file, then rename) and serialised per model. Expired rows are dropped on load and on every write, so a file holds only what is live. A file that cannot be parsed starts that model empty and is logged: what is lost is short-lived state, and users sign in again.
 
 ## Contract
 
