@@ -292,7 +292,7 @@ Declare the permission and grant it in the addon's own `config/default-config.js
 
 A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
 
-__A permission every user holds__ (own records, such as "your receipts"): name the role every account is given, never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
+__A permission over a user's own records__ ("your receipts", "your health record", "your residency") is always granted to every user, the same way in every add-on (operator, 2026-10-24): name the role every account is given, never site roles and never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
 
 ```json
 {
