@@ -55,11 +55,11 @@ import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import type { JobContext } from '../context/JobContext.js';
+import { jobContextFromRequest, type JobContext } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import { converterShim } from '../ice/converterShim.js';
-import { convertChain, defaultScope, runImport, type IceEngineSettings } from '../ice/runImport.js';
+import { convertChain, defaultScope, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
   IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
@@ -276,6 +276,24 @@ export class TakeoutImportRefused extends Error {
   ) {
     super(message);
     this.name = 'TakeoutImportRefused';
+  }
+}
+
+/** A sentence without its final full stop, to be set inside another. */
+function withoutFinalStop(text: string): string {
+  const said = text.trim();
+  return said.endsWith('.') ? said.slice(0, -1) : said;
+}
+
+/**
+ * An import refused at upload, before anything was queued (#2034): keeping
+ * the original of `file` in the receiver's encrypted store was refused or
+ * failed. `message` is written for the user who uploaded.
+ */
+export class ImportUploadRefused extends Error {
+  constructor(readonly file: string, readonly reason: string) {
+    super(`The original of "${file}" could not be kept: ${withoutFinalStop(reason)}. Nothing was imported.`);
+    this.name = 'ImportUploadRefused';
   }
 }
 
@@ -516,15 +534,41 @@ class ImportManager extends BaseManager {
 
   /**
    * Queue an import as background work and return its run id at once. The
-   * run carries `ctx` — the person who asked (`jobContextFromRequest`), or a
+   * run carries `ctx` — the user who asked (`jobContextFromRequest`), or a
    * job's context with its reason — and each receiver checks its own
-   * permission with it when the run reaches it (D5).
+   * permission with it when the run reaches it (D5). A user's upload, from
+   * a request, goes through {@link enqueueUpload} instead.
    */
   async enqueueImport(request: IceRunRequest, ctx: JobContext): Promise<string> {
     if (!ctx?.username) throw new Error('ImportManager.enqueueImport requires a JobContext');
+    return this.enqueueResolved(this.withOriginal(request), ctx);
+  }
+
+  /**
+   * Queue a user's upload, from the request it arrived in (#2034). `ctx` is
+   * the REQUEST's context; the run carries the job context derived from it
+   * (`jobContextFromRequest`), as {@link enqueueImport} does.
+   *
+   * When the run keeps originals through a receiver that keeps into an
+   * encrypted store (`keepsEncrypted`), they are kept first, here, with
+   * `ctx`, while the user's key is in the request: the bytes are sealed and
+   * the store's sealed index entry written. Each is recorded in the ledger
+   * as the keep-once record (#2011), so the run reuses it and needs no key.
+   *
+   * @throws ImportUploadRefused when an original could not be kept; nothing is queued
+   */
+  async enqueueUpload(request: IceRunRequest, ctx: ActorContext): Promise<string> {
+    if (!ctx?.username) throw new Error('ImportManager.enqueueUpload requires an ActorContext');
+    const jobCtx = jobContextFromRequest(ctx);
     const resolved = this.withOriginal(request);
-    const report = this.newRunReport(resolved, ctx);
-    this.iceQueue.push({ request: resolved, ctx, report });
+    const kept = await keepOriginalsAtUpload(this.iceDeps(), resolved, ctx, resolved.scope ?? defaultScope(resolved.receiver, jobCtx));
+    if (kept.refused) throw new ImportUploadRefused(kept.refused.name, kept.refused.message);
+    return this.enqueueResolved(resolved, jobCtx);
+  }
+
+  private async enqueueResolved(request: IceRunRequest, ctx: JobContext): Promise<string> {
+    const report = this.newRunReport(request, ctx);
+    this.iceQueue.push({ request, ctx, report });
     await this.kickIceQueue(ctx);
     return report.runId;
   }
@@ -566,13 +610,7 @@ class ImportManager extends BaseManager {
 
   private async executeRun(request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
     try {
-      return await runImport({
-        shims: this.enabledShims(),
-        receivers: this.receiverRegistry,
-        ledger: this.ledger(),
-        settings: this.engineSettings(),
-        tools: (shim) => this.shimTools(shim)
-      }, request, ctx, report);
+      return await runImport(this.iceDeps(), request, ctx, report);
     } catch (err) {
       report.state = 'failed';
       report.error = err instanceof Error ? err.message : String(err);
@@ -580,6 +618,17 @@ class ImportManager extends BaseManager {
       logger.error(`[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
       return report;
     }
+  }
+
+  /** What a run, or keeping at upload, works with. */
+  private iceDeps(): IceRunDeps {
+    return {
+      shims: this.enabledShims(),
+      receivers: this.receiverRegistry,
+      ledger: this.ledger(),
+      settings: this.engineSettings(),
+      tools: (shim) => this.shimTools(shim)
+    };
   }
 
   private enabledShims(): RegisteredShim[] {

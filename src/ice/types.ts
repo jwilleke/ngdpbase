@@ -195,6 +195,13 @@ export interface IceReceiver {
    * store). Without this, `keep` hands the original to the files receiver.
    */
   keepOriginal?(original: IceItem, ctx: ActorContext): Promise<ReceiveOutcome>;
+  /**
+   * `keepOriginal` writes into an encrypted store (phr's vault), which only a
+   * request holding the user's unlocked key can write (#2034). The engine then
+   * keeps each original during the upload, with the request's own context,
+   * before the run is queued; the run reuses what was kept and needs no key.
+   */
+  keepsEncrypted?: boolean;
   /** The original-file choices this receiver offers (D11). Without it: all three. */
   originals?: IceOriginalChoices;
 }

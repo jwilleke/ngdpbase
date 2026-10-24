@@ -87,7 +87,10 @@ async function makeApp(config: Record<string, unknown> = {}) {
 
   const app = express();
   app.use((req, res, next) => {
-    (req as unknown as { userContext: unknown }).userContext = USERS[String(req.headers['x-user'] ?? 'Anonymous')];
+    const user = USERS[String(req.headers['x-user'] ?? 'Anonymous')];
+    // A password session's subject carries its key handle (#2034).
+    const handle = req.headers['x-key-handle'];
+    (req as unknown as { userContext: unknown }).userContext = typeof handle === 'string' ? { ...user, privateStoreHandle: handle } : user;
     // The view's data, instead of rendering it.
     (res as unknown as { render: unknown }).render = (view: string, data: unknown) => res.json({ view, data });
     next();
@@ -150,7 +153,7 @@ describe('GET /import (#2021)', () => {
 describe('POST /import (#2021)', () => {
   test('an anonymous upload is refused with 401, and nothing is queued', async () => {
     const { app, importManager } = await makeApp();
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
     const res = await request(app).post('/import').field('receiver', 'core.pages').attach('files', MD, 'Garden.md');
     expect(res.status).toBe(401);
     expect(enqueue).not.toHaveBeenCalled();
@@ -158,7 +161,8 @@ describe('POST /import (#2021)', () => {
 
   test('queues the files as the user, with their job context and no client-named scope or shim (#2013)', async () => {
     const { app, importManager, jobs, saved } = await makeApp();
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
+    const job = vi.spyOn(jobs, 'enqueue');
     const res = await request(app).post('/import').set('x-user', 'molly')
       .field('receiver', 'core.pages')
       .field('scope', 'core.pages/bob')
@@ -172,7 +176,9 @@ describe('POST /import (#2021)', () => {
     expect(asked).not.toHaveProperty('shim');
     expect(asked.receiver).toBe('core.pages');
     expect(asked.source.files).toEqual([expect.objectContaining({ name: 'Garden.md', bytes: MD })]);
-    expect(ctx).toMatchObject({ username: 'molly', origin: 'request' });
+    // The request's own context; the run gets the job context derived from it.
+    expect(ctx).toBe(USERS.molly);
+    expect(job.mock.calls[0][1]).toMatchObject({ username: 'molly', origin: 'request' });
 
     await jobs.whenIdle();
     await vi.waitFor(() => expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.state).toBe('done'));
@@ -184,7 +190,7 @@ describe('POST /import (#2021)', () => {
 
   test('a receiver the user may not use is refused, and nothing is queued', async () => {
     const { app, importManager } = await makeApp();
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
     for (const receiver of ['core.files', 'acct.ledger', 'no.such']) {
       const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', receiver).attach('files', MD, 'Garden.md');
       expect(res.status, receiver).toBe(403);
@@ -194,7 +200,7 @@ describe('POST /import (#2021)', () => {
 
   test('an original-file choice the receiver does not offer is refused (D11)', async () => {
     const { app, importManager } = await makeApp();
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
     const res = await request(app).post('/import').set('x-user', 'bob')
       .field('receiver', 'core.files').field('original', 'keep').attach('files', MD, 'photo.png');
     expect(res.status).toBe(400);
@@ -208,7 +214,7 @@ describe('POST /import (#2021)', () => {
 
   test('more files than ngdpbase.import.engine.upload-max-files is a 413, and nothing is queued', async () => {
     const { app, importManager } = await makeApp({ 'ngdpbase.import.engine.upload-max-files': 2 });
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
     const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages')
       .attach('files', MD, 'One.md').attach('files', MD, 'Two.md').attach('files', MD, 'Three.md');
     expect(res.status).toBe(413);
@@ -218,7 +224,7 @@ describe('POST /import (#2021)', () => {
 
   test('more bytes than ngdpbase.import.engine.upload-max-bytes is a 413, and nothing is queued', async () => {
     const { app, importManager } = await makeApp({ 'ngdpbase.import.engine.upload-max-bytes': 30 });
-    const enqueue = vi.spyOn(importManager, 'enqueueImport');
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
     // Each file is under the limit; together they are over it.
     const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages')
       .attach('files', MD, 'One.md').attach('files', MD, 'Two.md');
@@ -264,3 +270,61 @@ describe('GET /import/runs/:runId (#2021)', () => {
     expect(res.body.data.runs.map((r: { username: string }) => r.username)).toEqual(['molly']);
   });
 });
+
+describe('POST /import: an original kept in an encrypted store (#2034)', () => {
+  /** phr's shape: keeps originals in the user's encrypted store, which only a context holding the key may write. */
+  function sealedReceiver(importManager: ImportManager) {
+    const keeps: Array<{ username: string; handle?: string }> = [];
+    importManager.registerReceiver('vaultrec', {
+      name: 'records', label: 'Records', accepts: ['file'],
+      keepsEncrypted: true,
+      originals: { allowed: ['keep', 'none'], default: 'keep' },
+      mayUse: async () => true,
+      receive: async () => ({ status: 'stored', ref: 'record-1' }),
+      keepOriginal: async (_item, ctx) => {
+        const handle = (ctx as { privateStoreHandle?: string }).privateStoreHandle;
+        if (!handle) return { status: 'refused', message: 'Your vault is locked. Unlock it and try again.' };
+        keeps.push({ username: ctx.username, handle });
+        return { status: 'stored', ref: `original-${keeps.length}` };
+      }
+    });
+    return keeps;
+  }
+
+  test('is kept during the upload with the request context, and the run reuses it', async () => {
+    const { app, importManager, jobs } = await makeApp();
+    const keeps = sealedReceiver(importManager);
+    const res = await request(app).post('/import').set('x-user', 'molly').set('x-key-handle', 'molly-sid')
+      .field('receiver', 'vaultrec.records').field('original', 'keep').attach('files', MD, 'labs.xml');
+    expect(res.status).toBe(202);
+    expect(keeps).toEqual([{ username: 'molly', handle: 'molly-sid' }]);
+
+    await jobs.whenIdle();
+    await vi.waitFor(() => expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.state).toBe('done'));
+    expect(importManager.getImportRun(res.body.runId, USERS.molly)?.files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+    expect(keeps).toHaveLength(1);
+  });
+
+  test('a refused keep refuses the upload with why, and nothing is queued', async () => {
+    const { app, importManager, jobs } = await makeApp();
+    sealedReceiver(importManager);
+    const enqueue = vi.spyOn(jobs, 'enqueue');
+    const res = await request(app).post('/import').set('x-user', 'molly')
+      .field('receiver', 'vaultrec.records').field('original', 'keep').attach('files', MD, 'labs.xml');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('The original of "labs.xml" could not be kept: Your vault is locked. Unlock it and try again. Nothing was imported.');
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(importManager.importRunsFor(USERS.molly)).toEqual([]);
+  });
+
+  test('an original that is not kept is not touched at upload', async () => {
+    const { app, importManager, jobs } = await makeApp();
+    const keeps = sealedReceiver(importManager);
+    const res = await request(app).post('/import').set('x-user', 'molly')
+      .field('receiver', 'vaultrec.records').field('original', 'none').attach('files', MD, 'labs.xml');
+    expect(res.status).toBe(202);
+    await jobs.whenIdle();
+    expect(keeps).toEqual([]);
+  });
+});
+
