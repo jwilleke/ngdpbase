@@ -4,7 +4,7 @@
 - Duration: 25–35 minutes
 - Server needed: The Fairways instance (the demo URL example below assumes `http://fairways.localhost:2121/`; substitute the production URL)
 
-This guide walks an operator through everything they need to run The Fairways day-to-day: managing members, posting content, controlling who sees what, reviewing contact submissions, and the operational tasks (backups, logs, restarts) that keep the site healthy. It is the operator counterpart to the [technical demo guide](./technical.md) — that one is for developers; this one is for the person who will actually run the site.
+This guide walks an operator through everything they need to run The Fairways day-to-day: managing members, posting content, controlling who sees what, reviewing contact submissions, and the operational tasks (backups, logs, restarts) that keep the site healthy. It is the operator counterpart to the [technical demo guide](./technical.md) — that one is for developers; this one is for the operator who will actually run the site.
 
 ---
 
@@ -58,12 +58,12 @@ Each row is one member. Columns include username, display name, email, roles, la
 ### Add a new member
 
 - Click Add user (or + New).
-- Fill in: username (a short handle — used in URLs), display name (the human name, e.g. "Molly Crotty"), email, initial password, and assign roles.
+- Fill in: username (a short handle — used in URLs), display name (the full name, e.g. "Molly Crotty"), email, initial password, and assign roles.
 - Roles cheat-sheet:
 
    | Role | What they can do |
    | --- | --- |
-   | `admin` | Full access. Reserve for site operators only — usually 1–2 people. |
+   | `admin` | Full access. Reserve for site operators only — usually 1–2 users. |
    | `editor` | Edit every page, but can't manage users or change settings. Useful for a board member who'll write the newsletter. |
    | `authenticated` | Default role for any logged-in member. View Members-Only pages, contact the board via the contact form, edit their own profile. |
    | `anonymous` | Anyone not logged in. Can see public pages only. |

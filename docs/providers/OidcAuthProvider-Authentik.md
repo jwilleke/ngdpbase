@@ -8,7 +8,7 @@ code: src/providers/OidcAuthProvider.ts
 
 # Sign in with authentik
 
-A self-hosted [authentik](https://goauthentik.io/) is an ordinary [OidcAuthProvider](OidcAuthProvider.md) entry ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). What an outside sign-in may do, and what every flow checks, is on [OidcAuthProvider](OidcAuthProvider.md). This is interactive sign-in for people; a headless client presenting an authentik token on the API is [AuthentikBearerAuthProvider](AuthentikBearerAuthProvider.md).
+A self-hosted [authentik](https://goauthentik.io/) is an ordinary [OidcAuthProvider](OidcAuthProvider.md) entry ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). What an outside sign-in may do, and what every flow checks, is on [OidcAuthProvider](OidcAuthProvider.md). This is interactive sign-in for users; a headless client presenting an authentik token on the API is [AuthentikBearerAuthProvider](AuthentikBearerAuthProvider.md).
 
 ## No preset
 
@@ -40,7 +40,7 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
 ```
 
 - The entry's name (`authentik` here) is the `<name>` in its URLs: lowercase letters, digits and hyphens.
-- `display-name` is the button's whole text, under the sign-in page's External provider heading: plain words people recognise, not a host name.
+- `display-name` is the button's whole text, under the sign-in page's External provider heading: plain words users recognise, not a host name.
 - `icon` is the picture left of it: here the authentik's own icon, by its `https://` address. A site path (`/…`) or a Font Awesome name (`fa-users`) also works; see [OidcAuthProvider](OidcAuthProvider.md#configuration).
 - `client-secret` must be an environment reference (`$NAME`); an entry with the secret written in literally is not registered.
 
@@ -50,7 +50,7 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
 - __On the local network, allow it.__ When authentik is on a private address, its range must be in `ngdpbase.security.egress.allowed-ranges`, or discovery, keys and the code exchange are refused by the outbound guard.
 - __Groups give no roles.__ authentik's groups and roles claims are never read: roles come from this site's own role assignments only.
 - __Verified email depends on the property mappings.__ Whether authentik marks an email verified depends on its scope mappings; without `email_verified: true` (a boolean) the address is not kept, the email step shows none, and no account is created, as for any provider.
-- __The issuer is part of every connection.__ A connected identity is recorded as issuer + subject, so changing the application's slug (and with it the issuer) means people connect again.
+- __The issuer is part of every connection.__ A connected identity is recorded as issuer + subject, so changing the application's slug (and with it the issuer) means users connect again.
 
 ## Counting authentik's second factor
 

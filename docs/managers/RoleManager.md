@@ -8,9 +8,9 @@ code: src/managers/RoleManager.ts
 
 # RoleManager
 
-Canonical store for `OrganizationRole` bindings. One file per `(organization, namedPosition)` pair. Members of a role are stored within the role record, so "who holds role X at org Y" is one read.
+Canonical store for role membership. A role is a set of permissions, and only users hold roles ([glossary](../GLOSSARY.md#identities)). Each record uses the schema.org `OrganizationRole` type, one file per `(organization, namedPosition)` pair. Members of a role are stored within the role record, so "who holds role X at org Y" is one read.
 
-Which roles __exist__ is a declaration in configuration (`ngdpbase.roles.definitions`), read through `ConfigurationManager`. What a role __permits__ is the access policies. RoleManager owns the third fact: __who holds which role__ — the system roles (`admin`, `editor`, …) on the install's anchor Organization, and business roles (e.g. "Board President at Acme Corp") alike.
+Which roles __exist__ is a declaration in configuration (`ngdpbase.roles.definitions`), read through `ConfigurationManager`. What a role __permits__ is the access policies. RoleManager owns the third fact: __who holds which role__ — the roles (`admin`, `editor`, …) on the install's anchor Organization. RoleManager holds nothing else: a title such as "Board President at Acme Corp" is not a role but an affiliation (a title within an organization) on the identity record, and it grants nothing. No title is kept as a role record.
 
 ## Membership
 
@@ -45,7 +45,7 @@ Identity (`@id`, `namedPosition`, `organization`) and `member` — nothing confi
 
 ## Why this exists
 
-Follow-up to #617. Once Organization and Person became first-class records, role bindings needed their own home so the role couldn't be lost if the user's account changed.
+Follow-up to #617. Once organizations and identity records became first-class records, role bindings needed their own home so the role couldn't be lost if the user's account changed.
 
 ## Provider Pattern
 

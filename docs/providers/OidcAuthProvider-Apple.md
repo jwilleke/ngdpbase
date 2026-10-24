@@ -53,9 +53,9 @@ In the Apple Developer account (Certificates, Identifiers & Profiles):
 - __The client secret is signed by the site.__ For each code exchange the provider signs a JWT with the key (ES256, header `kid` = the key id; `iss` = the team id, `sub` = the client id, `aud` = `https://appleid.apple.com`, valid 5 minutes) and sends it as `client_secret` in the form (`client_secret_post`, the only method Apple's discovery lists). Nothing long-lived leaves the server.
 - __The callback is POSTed__ (`response_mode=form_post`, which Apple requires when the email scope is asked for). The POST arrives without this site's cookies, so it is relayed to the ordinary GET callback before the session and CSRF middleware see it; [OidcAuthProvider](OidcAuthProvider.md#why-a-posted-callback-is-relayed-not-finished) says why and how.
 - __`email_verified` may be the string `"true"` or `"false"`__; only true, string or boolean, counts.
-- __Private relay addresses are real.__ A `…@privaterelay.appleid.com` address is verified and forwards to the person; it is treated like any other address. It will not match an address the person gave this site directly.
-- __The name is ignored.__ Apple sends the person's name only on the first sign-in, as an unsigned `user` field; the relay drops it.
-- __The subject is per developer team.__ Moving the Services ID to another team means people connect again.
+- __Private relay addresses are real.__ A `…@privaterelay.appleid.com` address is verified and forwards to the user; it is treated like any other address. It will not match an address the user gave this site directly.
+- __The name is ignored.__ Apple sends the user's name only on the first sign-in, as an unsigned `user` field; the relay drops it.
+- __The subject is per developer team.__ Moving the Services ID to another team means users connect again.
 - Apple is on the public internet, so the outbound guard allows it without configuration.
 
 ## Counting Apple's second factor

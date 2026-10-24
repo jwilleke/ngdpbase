@@ -85,14 +85,14 @@ The `ngdpbase` block in the addon's `package.json` is its manifest, read without
 | `type` | `domain` when the addon is the site, else `additive` | [`domainDefaults`](#domaindefaults) |
 | `domainDefaults` | Site defaults applied at load | [`domainDefaults`](#domaindefaults) |
 | `stores` | Private store kinds it owns | [Declare a Private Store](#declare-a-private-store-1414) |
-| `perPerson` | Each user turns it on for themselves | [Per-person add-ons](#per-person-add-ons-and-their-switch) |
+| `perPerson` | Each user turns it on for themselves | [Per-user add-ons](#per-user-add-ons-and-their-switch) |
 | `aboutPage` | The uuid or slug of a page the addon ships in `pages/` that says what it is | Listings link to it as "More about it". The site overrides it with `ngdpbase.addons.<slug>.about-page` in its configuration |
 | `family` | The heading the addon is listed under, shared by related add-ons | For example `"Accounting"` on accounting, accounting-donations and accounting-dues. Add-ons with no family are listed under "Other" when any add-on has one |
 | `listed` | `false` keeps the addon out of the listings | For plumbing other add-ons use, such as elasticsearch. It still loads |
 | `shims` | The names of the import shims it registers | [Import shims and receivers](#import-shims-and-receivers-ice-1979). The host refuses any other |
 | `receivers` | The names of the import receivers it registers | [Import shims and receivers](#import-shims-and-receivers-ice-1979). The host refuses any other |
 
-The listings are `[{ConfigAccessor type='addons'}]` (the site's enabled add-ons, with version and status shown only to viewers who hold `admin-read`) and `[{ConfigAccessor type='my-addons'}]` (the viewer's per-person add-ons). Both read `AddonsManager.listedAddons()`; the description shown is the module's `description`.
+The listings are `[{ConfigAccessor type='addons'}]` (the site's enabled add-ons, with version and status shown only to viewers who hold `admin-read`) and `[{ConfigAccessor type='my-addons'}]` (the viewer's per-user add-ons). Both read `AddonsManager.listedAddons()`; the description shown is the module's `description`.
 
 ## Where it is loaded
 
@@ -536,7 +536,7 @@ async register(engine, config) {
 | `systemContext(reason)` | The context your own start-up work runs under: core's system principal (`NGDPBASE_SYSTEM_USER`, never a name you choose), with `reason` for the record ([#1973](https://github.com/jwilleke/ngdpbase/issues/1973)) |
 | `logger` | Core's logger, every line tagged `addon=<slug>` |
 | `guardedFetch` | Outbound HTTP through the egress guard, with the site's default User-Agent when the request names none |
-| `setEnabledForPerson` | Turn this add-on on or off for a user, when it is [per-person](#per-person-add-ons-and-their-switch) |
+| `setEnabledForPerson` | Turn this add-on on or off for a user, when it is [per-user](#per-user-add-ons-and-their-switch) |
 | `registerShim`, `registerReceiver` | Register an import shim or receiver under this addon's slug, only the names its manifest declares ([Import shims and receivers](#import-shims-and-receivers-ice-1979)) |
 | `resolveEgressPolicy`, `validateUrl` | The site's egress policy, read through a `getProperty` reader at each call, and whether a URL may be fetched under it (before any socket) |
 | `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
@@ -583,19 +583,19 @@ The worked example is the journal addon: `profileSection` and `saveProfileSectio
 - 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
 - 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the user's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
 
-### Per-person add-ons and their switch
+### Per-user add-ons and their switch
 
 Some add-ons are something each user turns on for themselves, such as a personal health record ([#1963](https://github.com/jwilleke/ngdpbase/issues/1963)). The site enables the add-on; then each user decides whether they use it. Core keeps track of who turned it on, so page access and listings can use it.
 
-- __Declare it__ in the `ngdpbase` block of `package.json`: `"perPerson": true`. Nothing else makes an add-on per-person.
+- __Declare it__ in the `ngdpbase` block of `package.json`: `"perPerson": true`. Nothing else makes an add-on per-user.
 - __The switch__ is the user's preference `<slug>.enabled`, for example `phr.enabled`. It is on only when it is the boolean `true`.
 - __Set it only through `host.setEnabledForPerson(ctx, on)`__, normally from your `saveProfileSection(ctx, body)`: pass the `ctx` you were given and `true` or `false`. Do not write `<slug>.enabled` with `userManager.updateUser` yourself.
   - It sets the switch of the user `ctx` acts as, and keeps their other preferences.
   - The host is built for your add-on, so it sets only your own switch. There is no way to name another add-on's.
   - It is refused, with an error, when your manifest does not say `perPerson: true`, when the user is not signed in, or when they do not hold `profile-manage`, which is the permission `/profile` asks for.
-- __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-person add-ons this user has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
+- __Core reads it only through `AddonsManager.enabledAddonsFor(ctx)`__. That returns the slugs of the loaded per-user add-ons this user has turned on. It reads `<slug>.enabled` for those add-ons and no other preference, so no access check can come to depend on an arbitrary setting. An anonymous visitor, an inactive account and the system principal have none. `PolicyInformationPoint.subjectEnabledAddons(ctx)` supplies the same list to access decisions.
 - An add-on the site has not enabled, or one that did not load, is not in the list, whatever the user's switch says. Turning it back on brings back what each user chose.
-- __Pages for the users who turned it on__: give a page the audience `addon:<slug>`, for example `audience: [addon:phr]` in a page your add-on ships in `pages/` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The page view, every page list and search then show it only to users whose switch is on, and everyone else can neither read nor edit it (the editor, a save, a rename and a delete are refused too); anonymous visitors never see it. Add other entries to widen it, such as `[addon:phr, editor]`. Administrators (`admin-system`) are the one exception: they can read and edit every audience page, whether or not they turned your add-on on. An `access.<action>` list has no such exception, and a page in a user's vault is decided by the vault, not its audience. A slug that is not a loaded per-person add-on matches nobody and is warned about at startup, naming the page. The rule is in [access-policies.md](../access-policies.md), under "A page's own audience".
+- __Pages for the users who turned it on__: give a page the audience `addon:<slug>`, for example `audience: [addon:phr]` in a page your add-on ships in `pages/` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)). The page view, every page list and search then show it only to users whose switch is on, and everyone else can neither read nor edit it (the editor, a save, a rename and a delete are refused too); anonymous visitors never see it. Add other entries to widen it, such as `[addon:phr, editor]`. Administrators (`admin-system`) are the one exception: they can read and edit every audience page, whether or not they turned your add-on on. An `access.<action>` list has no such exception, and a page in a user's vault is decided by the vault, not its audience. A slug that is not a loaded per-user add-on matches nobody and is warned about at startup, naming the page. The rule is in [access-policies.md](../access-policies.md), under "A page's own audience".
 
 ```typescript
 async saveProfileSection(ctx, body) {
@@ -606,7 +606,7 @@ async saveProfileSection(ctx, body) {
 
 ### Terms an add-on asks users to accept
 
-A per-person add-on can have its own terms, such as a health record's terms of service and privacy policy ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Core asks each user to accept them before the add-on turns on for them, records the acceptance, and asks again when a document's version changes. The add-on writes no consent code of its own; [ConsentManager](../managers/ConsentManager.md) does it.
+A per-user add-on can have its own terms, such as a health record's terms of service and privacy policy ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Core asks each user to accept them before the add-on turns on for them, records the acceptance, and asks again when a document's version changes. The add-on writes no consent code of its own; [ConsentManager](../managers/ConsentManager.md) does it.
 
 - __Ship each document as a page__ in your `pages/` folder ([Seed Wiki Pages](#seed-wiki-pages)), with the slug `<slug>-<name>` (for example `phr-terms-of-service`) and front matter `version: 1` and `effective: 'YYYY-MM-DD'`. Raise `version` when users must accept again; an ordinary edit leaves it alone.
 - __Register them from `register()`__, through the engine:
@@ -620,7 +620,7 @@ A per-person add-on can have its own terms, such as a health record's terms of s
   }
   ```
 
-  The type is `ConsentManager` from `@jwilleke/ngdpbase-types`. Registering is refused (it throws) unless the add-on is per-person and every id starts `<slug>-`.
+  The type is `ConsentManager` from `@jwilleke/ngdpbase-types`. Registering is refused (it throws) unless the add-on is per-user (`perPerson: true`) and every id starts `<slug>-`.
 - __Turning it on asks first.__ While any document is not accepted at its current version, `host.setEnabledForPerson(ctx, true)` refuses with `ConsentRequiredError` (its `scope` is your slug, its `documents` what is still to accept) and the switch stays off. Let that error propagate from `saveProfileSection`: core shows the documents with an "I accept" box on your profile card, records the acceptance before your save runs, and tells the user when the switch was refused. Turning it off, or saving it on when it is already on, asks nothing.
 - __A changed version__ is asked when the user next uses the add-on: under a registered `path`, a user who has it on is sent to accept before going on. Without `paths` they are asked only when they next turn it on. Requests with an agent or app token, and someone acting for the user under a proxy grant, are never held.
 - Only the user accepts, signed in themselves. A missing page, or one with no `version:`, is not asked for and shows on the admin dashboard as needing attention.
@@ -733,7 +733,7 @@ Donors, members and suppliers an add-on keeps are core's identity records and or
 - __The signed-in user's own identity record__ ("your receipts", "your donations") needs no `contact-read`: a user may always read their own profile, including their own identity record, under `profile-manage`. A contact cannot sign in and never acts (operator, 2026-10-23, [#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). Do not grant `contact-read` to ordinary members for this. Read it with `persons.getByUserIdentifier(ctx.getActor(), username)`, where `username` is the signed-in user's own: the door compares the context's username with the record's `identifier`, so anyone else's asks `contact-read`.
 - __Every lookup takes a context__ ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): `persons.getById(ctx, id)`, `getByIdentifier(ctx, identifier)` and `getByUserIdentifier(ctx, username)`; `organizations.getById(ctx, id)`; `RoleManager.hasRole(ctx, username, roleName)` and `resolveUserRoles(ctx, username)`. Who holds a role is read about a named account, so it follows the same rule: about the caller, `profile-manage`; about anyone else, `contact-read`. A job passes the `JobContext` it was given: on its schedule that is the system context, which is allowed; started from a request, it is the requester's, so an administrator's change reads under their `contact-read`. `npm run lint:context` fails a call with the context left out.
 - __A contact's identity record__ gets the identifier `person:<uuid>`. No username can take that form, so a contact you create never collides with a user. When the contact signs up later with the same email, core offers to join them (an emailed "Is this you?" link); an administrator can also link them by hand on `/admin/contacts`. The identity record keeps its `@id`, so your stored references stay good.
-- __Affiliations__ are on the identity record: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
+- __Affiliations__ are on the identity record: `affiliation: [{ organization: '<org @id>', role?: 'Treasurer' }]`. The `role` field is the affiliation's title, not a role: it grants nothing, and only a role (a set of permissions, held by users) does ([glossary](../GLOSSARY.md#identities)). `OrganizationManager.people(ctx, orgId)` reads them back; the organization stores no copy.
 
 | Call | Asks | What it does |
 | --- | --- | --- |
@@ -747,7 +747,7 @@ Donors, members and suppliers an add-on keeps are core's identity records and or
 | `organizations.get(ctx, id)` / `organizations.list(ctx)` | `contact-read` | One organization, or all |
 | `organizations.create(ctx, { name, url?, … })` | `contact-manage` | `@id` is the `url`, else a new `urn:uuid:` |
 | `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `contact-manage` | Change or remove |
-| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each identity record affiliated with it |
+| `organizations.people(ctx, orgId)` | `contact-read` | `[{ person, role? }]` for each identity record affiliated with it; `role` is the affiliation's title |
 
 Linking an account by hand (`persons.linkAccount`) is an administrator's action: `contact-manage` and `user-edit`; an add-on does not call it.
 

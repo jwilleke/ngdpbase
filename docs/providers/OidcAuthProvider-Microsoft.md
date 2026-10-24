@@ -19,7 +19,7 @@ Microsoft is the `microsoft` preset of [OidcAuthProvider](OidcAuthProvider.md), 
 
 In the [Microsoft Entra admin center](https://entra.microsoft.com/) (or the Azure portal), under __App registrations__:
 
-- 1 __New registration__. Give it the name people will see when they sign in.
+- 1 __New registration__. Give it the name users will see when they sign in.
 - 2 Supported account types: __Personal Microsoft accounts only__. The preset's issuer is the personal-accounts tenant, so a registration for any other audience will not match it.
 - 3 Redirect URI: platform __Web__, address `<base-url>/auth/oauth/microsoft/callback`, where `<base-url>` is `ngdpbase.application.base-url` exactly. Not the Single-page application platform: the site exchanges the code from the server, with a secret.
 - 4 Copy the __Application (client) ID__ from the overview: it is the `client-id`.
@@ -47,8 +47,8 @@ In the [Microsoft Entra admin center](https://entra.microsoft.com/) (or the Azur
 
 ## Microsoft's particulars
 
-- __No verified email, so no account creation.__ Microsoft sends an `email` but no `email_verified`, and an address counts as verified only when the provider says so. So a Microsoft address is never kept on the connection: a Microsoft sign-in never creates an account, whatever `auto-provision` says, and the email step says "Sign in to connect your Microsoft account" with no address. People sign in another way once and confirm the connection, or connect Microsoft from their profile.
-- __The subject belongs to this registration.__ Microsoft gives each registered app a different subject for the same person, so a connection is tied to this site's registration: registering a new app means people connect again.
+- __No verified email, so no account creation.__ Microsoft sends an `email` but no `email_verified`, and an address counts as verified only when the provider says so. So a Microsoft address is never kept on the connection: a Microsoft sign-in never creates an account, whatever `auto-provision` says, and the email step says "Sign in to connect your Microsoft account" with no address. Users sign in another way once and confirm the connection, or connect Microsoft from their profile.
+- __The subject belongs to this registration.__ Microsoft gives each registered app a different subject for the same Microsoft account, so a connection is tied to this site's registration: registering a new app means users connect again.
 - __Client secrets expire.__ Entra sets an expiry on each secret (up to two years). When it lapses, the code exchange fails and nobody can sign in with Microsoft; add a new secret and update the environment before then.
 - Microsoft is on the public internet, so the outbound guard allows it without configuration.
 

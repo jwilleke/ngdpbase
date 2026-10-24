@@ -47,7 +47,7 @@ So:
 - A list of links is `formatAsList`, including one with icons, count badges or a
   per-item button.
 - Rows of data are `formatAsTable`.
-- A number shown to a person is `formatAsCount` — it carries the thousands
+- A number shown on screen is `formatAsCount` — it carries the thousands
   separators.
 - A list that can grow gets `applyPagination` + `formatPaginationLinks`, which
   emit the same control every other paginated surface uses.

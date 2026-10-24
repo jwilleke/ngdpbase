@@ -70,9 +70,9 @@ engine.getManager('ConsentManager')?.registerAddonDocuments('phr', {
 });
 ```
 
-- Each id starts `<slug>-`, so an add-on cannot register core's documents or another add-on's. Only a per-person add-on (`perPerson: true`) may register: its documents guard its switch.
+- Each id starts `<slug>-`, so an add-on cannot register core's documents or another add-on's. Only a per-user add-on (`perPerson: true`) may register: its documents guard its switch.
 - The pages are the add-on's own seeded pages, with the same `version:` / `effective:` front matter.
-- __Turning it on:__ `AddonsManager`'s per-person switch (`host.setEnabledForPerson`) refuses to go from off to on while any of the add-on's documents is pending, with `ConsentRequiredError`. The profile shows the documents on the add-on's card with an "I accept" box; `POST /preferences` records that acceptance first, then runs the add-ons' saves, so the switch flips only after the record exists. A switch refused for consent is reported back to the user.
+- __Turning it on:__ `AddonsManager`'s per-user switch (`host.setEnabledForPerson`) refuses to go from off to on while any of the add-on's documents is pending, with `ConsentRequiredError`. The profile shows the documents on the add-on's card with an "I accept" box; `POST /preferences` records that acceptance first, then runs the add-ons' saves, so the switch flips only after the record exists. A switch refused for consent is reported back to the user.
 - __A version change__ asks again when the user next uses the add-on, separately from core's terms: under a registered `path`, the consent gate sends a user who has the add-on on to `/consent?scope=<slug>`. Without `paths` they are asked when they next turn it on, and "Your consents" shows it as changed.
 - Turning the add-on off withdraws nothing; its acceptance stays recorded.
 

@@ -20,7 +20,7 @@ Google is the `google` preset of [OidcAuthProvider](OidcAuthProvider.md): the sa
 
 In the [Google Cloud console](https://console.cloud.google.com/), in a project of your own:
 
-- 1 Set up the __OAuth consent screen__ (in newer consoles, __Google Auth Platform__: Branding, Audience). User type __External__ unless every person is in your own Google Workspace. Give the app name and support email people will see when they sign in. The site asks only for `openid` and `email`, which need no verification by Google.
+- 1 Set up the __OAuth consent screen__ (in newer consoles, __Google Auth Platform__: Branding, Audience). User type __External__ unless every user is in your own Google Workspace. Give the app name and support email users will see when they sign in. The site asks only for `openid` and `email`, which need no verification by Google.
 - 2 While the app's publishing status is __Testing__, only the test users listed there can sign in. Publish it (In production) when everyone should be able to.
 - 3 Under __Credentials__ (or __Clients__), create an __OAuth client ID__ of type __Web application__.
 - 4 Add the __Authorized redirect URI__ `<base-url>/auth/oauth/google/callback`, where `<base-url>` is `ngdpbase.application.base-url` exactly (scheme, host, port; no trailing slash). Google compares it character for character. No JavaScript origin is needed.

@@ -1,6 +1,6 @@
 ---
 name: FilePersonProvider
-description: File-backed Person storage — one JSON file per Person record under data/persons/
+description: File-backed identity record storage — one JSON file per identity record under data/persons/
 dateModified: '2026-05-28'
 category: providers
 code: src/providers/FilePersonProvider.ts
@@ -8,7 +8,7 @@ code: src/providers/FilePersonProvider.ts
 
 # FilePersonProvider
 
-Default storage backend for [PersonManager](../managers/PersonManager.md). One JSON file per Person record under `data/persons/`.
+Default storage backend for [PersonManager](../managers/PersonManager.md). One JSON file per identity record (user or contact; the `Person` type) under `data/persons/`.
 
 ## Storage
 
