@@ -41,10 +41,12 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
     update: vi.fn(async () => null),
     list: vi.fn(async () => [])
   };
+  const lookup = vi.fn(async () =>
+    opts.person === null ? null : (opts.person ?? { '@id': PERSON_ID })
+  );
   const personManager = {
-    getByIdentifier: vi.fn(async () =>
-      opts.person === null ? null : (opts.person ?? { '@id': PERSON_ID })
-    ),
+    getByIdentifier: lookup,
+    getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),
     update: vi.fn(async () => null)
   };
@@ -103,10 +105,10 @@ describe('role assignment with no anchor Organization (#1027, #2015)', () => {
     expect(logged('error')).toContain('bob');
   });
 
-  test('is refused when there is no Person record for the username', async () => {
+  test('is refused when there is no account by that username (#2037: an account missing its identity record gets one)', async () => {
     const manager = makeEngine({ person: null });
-    await expect(manager.applyRoleDiff('ghost', [], ['admin'])).rejects.toThrow(/no Person record/i);
-    expect(logged('error')).toMatch(/no Person record/i);
+    await expect(manager.applyRoleDiff('ghost', [], ['admin'])).rejects.toThrow(/no account by that username/i);
+    expect(logged('error')).toMatch(/no account by that username/i);
   });
 
   test('admins get an error notification', async () => {

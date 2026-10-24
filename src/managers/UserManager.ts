@@ -431,6 +431,7 @@ class UserManager extends BaseManager {
         }
         await this.createDefaultAdmin();
       }
+      await this.giveIdentityRecordsToAccountsWithout();
       await this.grantAccountRolesToExistingAccounts();
     }
 
@@ -670,6 +671,42 @@ class UserManager extends BaseManager {
   private accountRoles(): string[] {
     const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.user.account-roles', []);
     return enabledEntries(configured);
+  }
+
+  /**
+   * Every account has exactly one identity record, made by `createUser`
+   * (#2037). One that has none (written straight into the user store, or
+   * whose record was lost) gets it at boot, once, through PersonManager's
+   * door under the system context, each creation recorded as
+   * `contact-manage`. The identity records are listed once and only the
+   * missing ones are made, so a large user store costs one read. A failure
+   * is logged and the boot goes on: the role paths make the record when the
+   * account is next used (`getByUserIdentifier`).
+   */
+  private async giveIdentityRecordsToAccountsWithout(): Promise<void> {
+    const personManager = this.engine.getManager<PersonManager>('PersonManager');
+    if (!this.provider || !personManager?.getProvider?.()) return;
+    const all = await this.provider.getAllUsers();
+    if (!(all instanceof Map) || all.size === 0) return;
+    const ctx = systemContext(this.engine, 'give every account that has none its identity record (#2037)');
+    let have: Set<unknown>;
+    try {
+      have = new Set((await personManager.list(ctx)).map((p) => p.identifier));
+    } catch (error) {
+      logger.error(`❌ Could not list identity records to find accounts without one: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const missing = [...all.keys()].filter((username) => !have.has(username));
+    if (missing.length === 0) return;
+    let made = 0;
+    for (const username of missing) {
+      try {
+        if (await personManager.getByUserIdentifier(ctx, username)) made++;
+      } catch (error) {
+        logger.error(`❌ Could not make the identity record of account ${username}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    logger.info(`👤 Gave ${made} of ${missing.length} account(s) without an identity record their record (#2037)`);
   }
 
   /**

@@ -116,8 +116,10 @@ function makeMocks(opts: {
   installOrg?: { '@id': string; url?: string } | null;
   roleManager?: ReturnType<typeof makeRoleManagerStub>;
 } = {}) {
+  const lookup = vi.fn(async () => opts.person ?? null);
   const personManager = {
-    getByIdentifier: vi.fn(async () => opts.person ?? null),
+    getByIdentifier: lookup,
+    getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),
     update: vi.fn(async () => null),
     delete: vi.fn(async () => true)

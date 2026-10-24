@@ -1,7 +1,7 @@
 ---
 name: Testing developer guide
 description: Non-negotiable rules for tests in this repo — teardown, proving a test can fail, reproducing the way the suite runs
-dateModified: 2026-10-23
+dateModified: 2026-10-24
 category: guides
 ---
 
@@ -16,6 +16,7 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 - Reproduce a failure the way the suite runs it. Do not skip fixture reset, reuse state, or run one spec alone when the suite runs it in a batch.
 - Do not invent a system principal to satisfy a mandatory context. Use `jobContextFromSystem(reason)` or the request subject you were given.
 - Test credentials are generated at run time (`pw-${randomUUID()}`), never written as literals, and no real secret is ever committed, in tests or anywhere else. GitGuardian skips test paths (`**/__tests__/**`, `tests/**`, in `.gitguardian.yaml` on master) because its username/password detector matches the shape of test code, not the value; that skip is only safe while this rule holds.
+- A test makes its accounts through `UserManager.createUser` or the admin screens, never by writing them into `users.json`: an account written by hand has no identity record until the next start-up repairs it ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)). The one exception is a test of that repair.
 - An E2E request sent with `maxRedirects: 0` goes to `instanceOrigin(page)` (`tests/e2e/fixtures/helpers.ts`), never to a bare `/path`. jimstest's base URL is https, so it answers plain-http requests with 308, and a spec written against an http throwaway instance then fails the release gate there.
 
 ## How to add a test
