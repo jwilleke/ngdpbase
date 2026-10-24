@@ -35,7 +35,7 @@ describe('RoleManager membership under concurrency (#2015)', () => {
           key === 'ngdpbase.roles.definitions' ? { reader: {}, editor: {} } : d,
         getResolvedDataPath: () => path.join(tmpDir, 'roles')
       },
-      PersonManager: { getByIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) }) },
+      PersonManager: { getByIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) }), getByUserIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) }) },
       OrganizationManager: { getInstallOrg: () => Promise.resolve(ORG) },
       UserManager: { getUser: (u: string) => Promise.resolve({ username: u }) }
     };

@@ -91,6 +91,7 @@ describe('PersonManager (#617)', () => {
     expect(await manager.getByIdentifier(CTX, 'alice')).toBeNull();
 
     const promoted = await manager.getByUserIdentifier(CTX, 'alice');
+    const userLookups = userManager.getUser.mock.calls.length;
     expect(promoted).not.toBeNull();
     expect(promoted!.identifier).toBe('alice');
     expect(promoted!.email).toBe('alice@example.com');
@@ -100,7 +101,52 @@ describe('PersonManager (#617)', () => {
     // Second call returns the persisted record without re-creating
     const second = await manager.getByUserIdentifier(CTX, 'alice');
     expect(second!['@id']).toBe(promoted!['@id']);
-    expect(userManager.getUser).toHaveBeenCalledTimes(1);
+    expect(userManager.getUser).toHaveBeenCalledTimes(userLookups);
+  });
+
+  // #2037: every user has exactly one identity record; one missing is made, recorded, never twice.
+  describe('a user missing its identity record (#2037)', () => {
+    const ALICE = { alice: { username: 'alice', email: 'alice@example.com', displayName: 'Alice' } };
+
+    test('is made through the door under the system context, naming the caller, and recorded as contact-manage', async () => {
+      const boot = await import('../../context/bootActions');
+      boot.resetBootActions();
+      const manager = new PersonManager(makeEngine(makeConfigManager(), makeUserManager(ALICE)));
+      await manager.initialize();
+
+      const made = await manager.getByUserIdentifier(CTX, 'alice');
+
+      expect(made?.identifier).toBe('alice');
+      const recorded = boot.pendingBootActions().filter((a) => a.event.eventType === 'contact-manage');
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0].event.action).toBe('person-create');
+      expect(recorded[0].event.resource).toBe(made!['@id']);
+      expect(recorded[0].context.origin).toBe('boot');
+      expect(recorded[0].context.reason).toMatch(/account alice.*asked by admin/);
+      boot.resetBootActions();
+    });
+
+    test('many lookups at once make one identity record', async () => {
+      const manager = new PersonManager(makeEngine(makeConfigManager(), makeUserManager(ALICE)));
+      await manager.initialize();
+
+      const all = await Promise.all(Array.from({ length: 8 }, () => manager.getByUserIdentifier(CTX, 'alice')));
+
+      expect(new Set(all.map((p) => p!['@id'])).size).toBe(1);
+      expect((await manager.list(CTX)).filter((p: { identifier: string }) => p.identifier === 'alice')).toHaveLength(1);
+    });
+
+    test('an existing identity record is returned, never a second one; a contact with the same email is left alone', async () => {
+      const manager = new PersonManager(makeEngine(makeConfigManager(), makeUserManager(ALICE)));
+      await manager.initialize();
+      const own = await manager.create(CTX, { identifier: 'alice', name: 'Alice' });
+      const contact = await manager.create(CTX, { name: 'Alice too', email: 'alice@example.com' });
+
+      expect((await manager.getByUserIdentifier(CTX, 'alice'))!['@id']).toBe(own['@id']);
+      const records = await manager.list(CTX);
+      expect(records).toHaveLength(2);
+      expect(records.find((p: { '@id': string }) => p['@id'] === contact['@id'])?.identifier).toMatch(/^person:/);
+    });
   });
 
   test('getByUserIdentifier returns null when neither Person nor User exists', async () => {

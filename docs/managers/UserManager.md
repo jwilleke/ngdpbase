@@ -104,6 +104,10 @@ await userManager.updateUser(username, (current) => {
 
 Core's own preference saves use it: `POST /preferences`, the theme toggle, My Links (add, remove, reorder), a per-user add-on's switch (`AddonsManager`) and the journal's settings.
 
+### Every user has an identity record
+
+`createUser` makes the user's identity record with the account. A user without one (an account written straight into `users.json`, or one whose identity record was lost) gets it at start-up ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)): after the bootstrap admin check and before the account roles are given, UserManager lists the identity records once and, for each user that has none, calls `PersonManager.getByUserIdentifier` under the system context, which makes it and records it as `contact-manage`. Only the missing ones cost a write. A failure is logged at error level and the start goes on: the role paths make the record when the account is next used. The rule is the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door)'s.
+
 ## Role Methods
 
 None. The role catalogue is read with `ConfigurationManager.getProperty('ngdpbase.roles.definitions', {})` (step 11), and who holds which role is [RoleManager](RoleManager.md)'s — `resolveUserRoles`, `hasRole`, `assignRole`, `removeRole` (step 12) — per [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
