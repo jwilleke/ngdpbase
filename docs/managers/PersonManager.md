@@ -24,6 +24,8 @@ Every lookup takes the caller's context first too ([#2018](https://github.com/jw
 - anyone else's, a contact's included: `contact-read` to read, `contact-manage` to change;
 - core's own reads: the system context (`systemContext(engine, reason)`, origin boot or schedule, naming the system principal, with no token, share or proxy), allowed without a policy evaluation, so resolving roles on every request stays cheap.
 
+__A user missing its identity record__ ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)). Every user has exactly one identity record, made when `UserManager.createUser` makes the account. `getByUserIdentifier(ctx, username)` returns it and, when the user has none, makes it: the caller's read is decided as above, then the record is made through `create` under the system context (the reason names the account and the caller), from the account's display name and email, and recorded as `contact-manage` (`person-create`). One at a time per username, so lookups at once make one record. Null when there is no account by that name. It never makes a second record: one is made only when no identity record has the username as its `identifier`, and a contact with the same email is left alone for an administrator to link (`linkAccount`). RoleManager's role reads and writes, and UserManager's start-up repair, use it.
+
 "Own" is decided by comparing the context's username with the record, never from a role. A refusal throws `ContactRefusedError`. Reads are not recorded; changes are, as `contact-manage`. `update` follows the same rule: a user changes their own identity record under `profile-manage`; `delete` always asks `contact-manage`. A person with no account has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
@@ -34,7 +36,7 @@ Every lookup takes the caller's context first too ([#2018](https://github.com/jw
 
 Per-request hot paths cache by-identifier and by-key lookups (#620):
 
-- `RoleManager.resolveUserRoles → getByIdentifier`, under the system context from `PolicyInformationPoint.subjectFor` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): recognised by its fields, no policy evaluation
+- `RoleManager.resolveUserRoles → getByUserIdentifier` (cached like `getByIdentifier`; it reaches UserManager only for a username that has no identity record), under the system context from `PolicyInformationPoint.subjectFor` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)): recognised by its fields, no policy evaluation
 - Various consumer-side `personManager.getByEmail` / `getByUuid` calls
 
 ## Backup and restore

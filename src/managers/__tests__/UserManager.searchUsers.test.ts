@@ -44,7 +44,7 @@ describe('UserManager#searchUsers()', () => {
 
   const makeEngine = (allUsers) => {
     const personManager = {
-      getByIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
+      getByUserIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
         const u = allUsers.find((x) => x.username === username);
         return u ? { '@id': personIdFor(username), identifier: username } : null;
       })

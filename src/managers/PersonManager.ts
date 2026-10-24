@@ -9,6 +9,8 @@ import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { ACCOUNTLESS_PERSON_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
 import { recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
+import { systemContext } from '../context/bootActions.js';
 
 interface PersonProviderConstructor {
   new (engine: WikiEngine): PersonProvider;
@@ -82,8 +84,8 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * person keeps its `@id` and takes the account; the person made for the new
  * account is folded into it and removed, so there is never a second person.
  *
- * `getByUserIdentifier(ctx, username)` remains as a lazy-migration entry
- * point for legacy users that pre-date the sync wiring.
+ * `getByUserIdentifier(ctx, username)` returns a user's identity record and
+ * makes it when the user has none (#2037): every user has exactly one.
  */
 class PersonManager extends BaseManager {
   readonly description = 'Canonical Person records (#617)';
@@ -104,6 +106,9 @@ class PersonManager extends BaseManager {
 
   /** Sign-up link offers by token (#1930). In memory: a restart drops them, and an administrator links by hand. */
   private linkOffers = new Map<string, LinkOffer>();
+
+  /** #2037: making a user's missing identity record, one at a time per username. */
+  private readonly accountRecords = new KeyedSerial();
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -513,27 +518,35 @@ class PersonManager extends BaseManager {
   }
 
   /**
-   * Lazy-migration entry point.
+   * The identity record of the user `username`, made when the user has none
+   * (#2037). Every user has exactly one identity record; one made outside
+   * `UserManager.createUser` (an account written straight into the user
+   * store) gets it here, from the account's display name and email.
    *
-   * Returns the Person paired to `username`. If none exists and a matching
-   * User does, a Person is created from the User's email/displayName and
-   * persisted. Subsequent calls return the persisted record. Decided as
-   * {@link getByIdentifier} (#2018): a signed-in user's own under
-   * `profile-manage` ("your receipts"), anyone else's under `contact-read`.
+   * The read is decided as {@link getByIdentifier} (#2018): a signed-in user's
+   * own under `profile-manage`, anyone else's under `contact-read`, core's own
+   * work under the system context. Making the missing record is core's
+   * bookkeeping, not the caller's contact management, so it goes through
+   * {@link create} under the system context, naming the caller, and is
+   * recorded as `contact-manage`. One at a time per username, so two lookups
+   * never make two records. Null when there is no account by that name.
+   * Never a second record: a contact with the same email is left alone
+   * (an administrator links it, {@link linkAccount}).
    */
   async getByUserIdentifier(ctx: ActorContext, username: string): Promise<Person | null> {
     await requireRecordAccess(this.engine, ctx, 'read', { identifier: username });
-    const provider = this.requireProvider();
-    const existing = await provider.getByIdentifier(username);
+    const existing = await this.cachedByIdentifier(username);
     if (existing) return existing;
-
-    const userManager = this.engine.getManager<UserManagerLike>('UserManager');
-    if (!userManager) return null;
-    const user = await userManager.getUser(username);
-    if (!user) return null;
-
-    const person = personFromUser(user);
-    return provider.create(person);
+    return this.accountRecords.run(username, async () => {
+      const made = await this.cachedByIdentifier(username);
+      if (made) return made;
+      const user = await this.engine.getManager<UserManagerLike>('UserManager')?.getUser(username);
+      if (!user) return null;
+      const repairCtx = systemContext(this.engine, `make the missing identity record of account ${user.username} (#2037; asked by ${actorOf(ctx).user})`);
+      const created = await this.create(repairCtx, accountRecordInput(user));
+      logger.info(`👤 Made the missing identity record of account ${user.username} (#2037)`);
+      return created;
+    });
   }
 
   private requireProvider(): PersonProvider {
@@ -578,12 +591,9 @@ function dedupeAffiliations(list: PersonAffiliation[]): PersonAffiliation[] {
   });
 }
 
-function personFromUser(user: Omit<User, 'password'>): Person {
-  const id = `urn:uuid:${crypto.randomUUID()}`;
+/** What an account's identity record is made from: its username, display name and email. */
+function accountRecordInput(user: Omit<User, 'password'>): PersonInput {
   return {
-    '@context': 'https://schema.org',
-    '@type': 'Person',
-    '@id': id,
     identifier: user.username,
     ...(user.displayName ? { name: user.displayName } : {}),
     ...(user.email ? { email: user.email } : {})
