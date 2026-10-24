@@ -276,6 +276,15 @@ export interface IceRunReport {
   files: IceFileReport[];
 }
 
+/**
+ * A kept original as the ledger remembers it, with the door that kept it
+ * (a receiver's own `keepOriginal`, or `core.files`). A later run of the same
+ * fingerprint through the same door reuses it instead of keeping another copy.
+ */
+export interface LedgerOriginal extends KeptOriginal {
+  door: string;
+}
+
 /** What the engine remembers about one file in a scope. */
 export interface LedgerFileEntry {
   name: string;
@@ -285,6 +294,8 @@ export interface LedgerFileEntry {
   message?: string;
   at: string;
   refs: string[];
+  /** The original kept for this fingerprint, whatever became of the conversion (D11). */
+  original?: LedgerOriginal;
 }
 
 /**

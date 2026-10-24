@@ -23,7 +23,7 @@ upload (zip or files)
 - __Receivers__ are doors that already exist (D4). The engine hands each result to the receiver's `receive(item, ctx, info)` and never writes content itself. The receiver checks its own existing permission with `ctx` (D5): there is no import permission.
 - __Chaining__ (D9): a shim's output goes to the next shim that accepts its kind, until the item is a kind the receiver takes, from a shim that lists that receiver. DOCX → HTML → NCM → pages is one.
 - __Duplicates__: a shim says which kind applies. `file` (the default): a file whose fingerprint its scope already imported is `unchanged` and skipped. `item`: the file is read again and each item whose `itemKey` the scope has seen is skipped.
-- __The original__ (D11): the run's `original` is `cite` (each item carries a citation the receiver renders; pages get a footnote), `keep` (the receiver's own `keepOriginal`, else the `core.files` upload door, both as the user; refused means nothing is imported), or `none`.
+- __The original__ (D11): the run's `original` is `cite` (each item carries a citation the receiver renders; pages get a footnote), `keep` (the receiver's own `keepOriginal`, else the `core.files` upload door, both as the user; refused means nothing is imported), or `none`. An original is kept once per fingerprint, scope and keeping door: the ledger records its reference as soon as it is kept, and a later run of the same bytes (a retry after a failed conversion or a refusal, or a per-item shim reading the file again) reuses it instead of keeping another copy.
 - __The original choices a receiver offers__ ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021)): a receiver may declare `originals: { allowed, default }`. Without it all three are offered. A run that chooses nothing gets the receiver's default (else `default-original` when allowed, else the first allowed); a run asking for one the receiver does not offer is refused.
 - __Off the request path__: `enqueueImport` queues the run for the background job `import.engine-run` and returns its id at once. `runImport` runs and waits, for code already off the request path.
 
@@ -55,7 +55,7 @@ A request is `{ source: { type: 'upload', files }, receiver, shim?, original?, s
 
 ### Where fingerprints and status live
 
-The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface: one JSON file per scope under `ngdpbase.import.engine.ledger-dir`, holding each file's name, fingerprint, size, status, message, time and the receiver's references, and the item keys seen. Never the content. A scope is `<receiver>/<username>` unless the caller names one. The application database is off by default, so this is the first store; a table implements the same interface when it is on.
+The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface: one JSON file per scope under `ngdpbase.import.engine.ledger-dir`, holding each file's name, fingerprint, size, status, message, time, the receiver's references and the kept original's reference with the door that kept it, and the item keys seen. Never the content. A scope is `<receiver>/<username>` unless the caller names one. The application database is off by default, so this is the first store; a table implements the same interface when it is on.
 
 ### Configuration
 
