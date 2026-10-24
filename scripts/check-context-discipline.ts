@@ -44,6 +44,15 @@
  *    `viaProxy` would let a job outrun its ceiling. So each conversion
  *    function appears exactly where {@link CONVERSIONS} says, and nowhere
  *    else outside tests.
+ * 6. __No context-free lookup__ (#2018) — PersonManager's `getById`,
+ *    `getByIdentifier` and `getByUserIdentifier`, RoleManager's `hasRole`,
+ *    `resolveUserRoles` and `getById`, OrganizationManager's `getById` and
+ *    `getByFile`, and AssetManager's `getById` take the caller's context first.
+ *    The compiler holds `src/` to that, but it does not check add-ons or
+ *    tests, and a local interface can still declare the old shape. So a call
+ *    with fewer arguments than {@link LOOKUPS} names is the old, context-free
+ *    call. A provider's own lookups (`provider.getByIdentifier(id)`) are below
+ *    the door and take none.
  *
  * Each allowlist entry states why that site is not the defect. A stale entry
  * fails the run (see `run()`), so the list cannot outlive what it excuses.
@@ -124,8 +133,88 @@ const CONVERSIONS: ReadonlyArray<{ call: RegExp; allowed: Readonly<Record<string
 export interface Violation {
   file: string;
   line: number;
-  rule: 'ambient-context' | 'optional-identity' | 'discarded-identity' | 'redeclared-identity' | 'hand-conversion' | 'stale-allowlist';
+  rule: 'ambient-context' | 'optional-identity' | 'discarded-identity' | 'redeclared-identity' | 'hand-conversion' | 'context-free-lookup' | 'stale-allowlist';
   detail: string;
+}
+
+/** The managers whose `getById` / `getByFile` are doors (#2018); another manager's `getById` is its own. */
+const DOOR_RECEIVER = /(Person|Role|Organization|Asset)Manager|\b(persons|personManager|orgs|organizations|organizationManager|roleManager|roles|assetManager|assets)\b/;
+
+/**
+ * The lookups that take the caller's context first (#2018), and how many
+ * arguments a call with the context has at least. `receiver`, when given,
+ * is what the text before the call must name for it to be the door.
+ */
+const LOOKUPS: ReadonlyArray<{ method: string; args: number; receiver?: RegExp }> = [
+  { method: 'getByIdentifier', args: 2 },
+  { method: 'getByUserIdentifier', args: 2 },
+  { method: 'resolveUserRoles', args: 2 },
+  { method: 'hasRole', args: 3 },
+  { method: 'getById', args: 2, receiver: DOOR_RECEIVER },
+  { method: 'getByFile', args: 2, receiver: DOOR_RECEIVER }
+];
+
+/** The files that hold those doors: their own `this.getById(…)` is the door too. */
+const DOOR_FILES = new Set(['src/managers/PersonManager.ts', 'src/managers/RoleManager.ts', 'src/managers/OrganizationManager.ts', 'src/managers/AssetManager.ts']);
+
+/** A provider's lookup, below the door: `provider.x(`, `this.provider.x(`, `requireProvider().x(`. */
+const PROVIDER_RECEIVER = /provider\s*(\(\s*\))?\s*!?\s*\??\s*$/i;
+
+/** How many top-level arguments the call whose `(` is at `open` has. Strings and nested brackets are skipped. */
+function argumentCount(text: string, open: number): number {
+  let depth = 0;
+  let count = 0;
+  let sawToken = false;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      const close = text.indexOf(ch, i + 1);
+      i = close === -1 ? text.length : close;
+      sawToken = true;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+      if (depth > 1) sawToken = true;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      depth--;
+      if (depth === 0) return sawToken ? count + 1 : 0;
+      continue;
+    }
+    if (depth === 1 && ch === ',') { count++; continue; }
+    if (depth >= 1 && !/\s/.test(ch)) sawToken = true;
+  }
+  return sawToken ? count + 1 : 0;
+}
+
+/**
+ * Rule 6 (#2018) over one file's source: each call of a {@link LOOKUPS}
+ * method with fewer arguments than its context-first signature.
+ */
+export function contextFreeLookups(rel: string, source: string): Violation[] {
+  const lines = strippedLines(source);
+  const text = lines.join('\n');
+  const out: Violation[] = [];
+  for (const { method, args, receiver } of LOOKUPS) {
+    const call = new RegExp(`\\??\\.\\s*${method}\\s*(<[^>()]*>\\s*)?\\(`, 'g');
+    for (const match of text.matchAll(call)) {
+      const at = match.index ?? 0;
+      const before = text.slice(Math.max(0, text.lastIndexOf('\n', at) + 1), at);
+      if (PROVIDER_RECEIVER.test(before)) continue;
+      if (receiver && !receiver.test(before) && !(DOOR_FILES.has(rel) && /\bthis\s*$/.test(before))) continue;
+      const given = argumentCount(text, at + match[0].length - 1);
+      if (given >= args) continue;
+      out.push({
+        file: rel,
+        line: text.slice(0, at).split('\n').length,
+        rule: 'context-free-lookup',
+        detail: `${method} called with ${given} argument(s) — it takes the caller's context first (#2018)`
+      });
+    }
+  }
+  return out;
 }
 
 /** Strip `//` line comments and block-comment bodies, keeping line numbering. */
@@ -186,7 +275,9 @@ export function scan(): Violation[] {
       const rel = path.relative(REPO, file);
       // This guard names the patterns it bans, so it would flag itself.
       if (rel === 'scripts/check-context-discipline.ts') continue;
-      const lines = strippedLines(readFileSync(file, 'utf8'));
+      const source = readFileSync(file, 'utf8');
+      const lines = strippedLines(source);
+      violations.push(...contextFreeLookups(rel, source));
 
       lines.forEach((line, index) => {
         const at = index + 1;
@@ -288,7 +379,7 @@ function run(): void {
   console.log('==========================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('No ambient context, no optional or discarded identity parameter, no redeclared identity shape, and no hand conversion of a context in src, addons.');
+    console.log('No ambient context, no optional or discarded identity parameter, no redeclared identity shape, no hand conversion of a context, and no context-free lookup in src, addons.');
     return;
   }
   for (const v of violations) {

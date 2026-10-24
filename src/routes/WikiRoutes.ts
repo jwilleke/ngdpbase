@@ -28,6 +28,7 @@ import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
+import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch } from 'diff';
@@ -512,8 +513,8 @@ interface IOrganizationRecord {
 // #1930: the door takes the caller's context first and asks contact-read to read and contact-manage to change.
 interface IOrganizationManager {
   list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
-  getById(id: string): Promise<IOrganizationRecord | null>;
-  getByFile(filename: string): Promise<IOrganizationRecord | null>;
+  getById(ctx: ActorContext, id: string): Promise<IOrganizationRecord | null>;
+  getByFile(ctx: ActorContext, filename: string): Promise<IOrganizationRecord | null>;
   create(ctx: ActorContext, org: IOrganizationRecord & { name: string }, filename?: string): Promise<IOrganizationRecord>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<IOrganizationRecord | null>;
   delete(ctx: ActorContext, id: string): Promise<boolean>;
@@ -8481,7 +8482,8 @@ ${panes}
       // #617 iteration 3b: attach RoleManager-resolved roles so profile.ejs
       // can render the role badges.
       if (freshUser && currentUser.username) {
-        (freshUser as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(currentUser.username);
+        // #2018: the user's own roles, read under their own context (profile-manage, asked above).
+        (freshUser as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(currentUser, currentUser.username);
       }
       logger.debug(
         'DEBUG: profilePage - fresh user preferences:',
@@ -11652,9 +11654,12 @@ ${panes}
       // #617 iteration 3b: User.roles[] is no longer persisted; resolve
       // each user's roles from RoleManager so admin-users.ejs can keep
       // reading `u.roles` directly (templates unchanged).
+      // #2018: the roles column is part of the account list user-read allowed above,
+      // read by core under the system context (user-read does not imply contact-read).
+      const listing = systemContext(this.engine, `list each account's roles on the user-management page for ${currentUser.username}, who holds user-read`);
       const users = await Promise.all(usersRaw.map(async (u: { username?: string; [key: string]: unknown }) => ({
         ...u,
-        roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(u.username) : []
+        roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(listing, u.username) : []
       })));
       const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
@@ -11725,7 +11730,11 @@ ${panes}
       // #617 iteration 3b: attach RoleManager-resolved roles so the
       // role-checkbox UI in admin-user-edit.ejs can pre-tick the user's
       // current memberships.
-      (user as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(username);
+      // #2018: as on the user list, the account's roles are part of what user-read allowed above.
+      (user as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(
+        systemContext(this.engine, `show account ${username}'s roles on its edit page to ${currentUser.username}, who holds user-read`),
+        username
+      );
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const coreFields: string[] = configManager.getProperty('ngdpbase.user.coreFields', [

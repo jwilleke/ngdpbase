@@ -393,7 +393,7 @@ The `User` interface in `src/types/User.ts` is authoritative; this is an illustr
 }
 ```
 
-`roles` is __not__ part of the record. It was removed in #617 iteration 3b — role membership is owned by `RoleManager` as `OrganizationRole` records. Call `resolveUserRoles(username)`.
+`roles` is __not__ part of the record. It was removed in #617 iteration 3b — role membership is owned by `RoleManager` as `OrganizationRole` records. Call `RoleManager.resolveUserRoles(ctx, username)`.
 
 #### Account flags
 
@@ -651,7 +651,7 @@ __Cause:__ No matching policy for user's roles
 
 __Solution:__
 
-1. Check the user's roles: `engine.getManager('RoleManager').resolveUserRoles(username)`
+1. Check the user's roles: `engine.getManager('RoleManager').resolveUserRoles(systemContext(engine, reason), username)` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018))
 2. Check the policies in force: `ngdpbase.access.policies` in Configuration (and `ngdpbase.access.policies.enabled`)
 3. Verify policy subjects match the user's roles
 4. Check policy priority order

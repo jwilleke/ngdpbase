@@ -844,7 +844,7 @@ void (async (): Promise<void> => {
   } | null;
   const roleManager = engine.getManager('RoleManager') as {
     roleIdleTimeouts?(): Record<string, number>;
-    resolveUserRoles(username: string): Promise<string[]>;
+    resolveUserRoles(ctx: ReturnType<typeof systemContext>, username: string): Promise<string[]>;
   } | null;
   const userManager = engine.getManager('UserManager') as {
     getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; sessionGeneration?: number; [key: string]: unknown } | null>;
@@ -905,7 +905,7 @@ void (async (): Promise<void> => {
         const roleTimeouts = roleManager?.roleIdleTimeouts?.() ?? {};
         const roleMinutes = Object.keys(roleTimeouts).length === 0
           ? []
-          : (await roleManager?.resolveUserRoles(req.session.username) ?? []).map(r => roleTimeouts[r]);
+          : (await roleManager?.resolveUserRoles(systemContext(engine, 'read the signed-in account\'s roles for its idle timeout (#1546)'), req.session.username) ?? []).map(r => roleTimeouts[r]);
         const timeoutMs = effectiveIdleTimeoutMs(configManager.getProperty('ngdpbase.session.idle-timeout-minutes', 0), roleMinutes);
         res.locals.idleTimeoutMs = timeoutMs;
         const now = Date.now();

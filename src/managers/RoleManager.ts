@@ -11,10 +11,11 @@ import type { Organization } from '../types/Organization.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import { recordSystemAction, type SystemActionEvent } from '../context/bootActions.js';
+import { recordSystemAction, systemContext, type SystemActionEvent } from '../context/bootActions.js';
 import type { JobContext } from '../context/JobContext.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { RoleChangeError } from '../utils/roleChangeError.js';
+import { ContactRefusedError, requireRecordAccess } from '../utils/contactAccess.js';
 
 interface RoleProviderConstructor {
   new (engine: WikiEngine): RoleProvider;
@@ -36,6 +37,13 @@ interface MetricsManagerLike {
  * adding and removing a member, and the audit record of an assignment.
  * `UserManager` owns the account, and asks here when an account's roles
  * change; it keeps no membership logic of its own.
+ *
+ * Who holds a role is read about a named account, so the reads take the
+ * caller's context (#2018): `resolveUserRoles` and `hasRole` read the
+ * account's identity record through PersonManager's door (own under
+ * `profile-manage`, anyone else's under `contact-read`), and `getById` asks
+ * `contact-read`. Core's own reads, the per-request role resolution among
+ * them, pass the system context, which is allowed without a policy evaluation.
  */
 /** The catalogue fields records written before #1431 step 1 carried (see stripCatalogueCopies). */
 const CATALOGUE_COPY_FIELDS = ['roleName', 'description', 'issystem', 'icon', 'color'] as const;
@@ -178,7 +186,9 @@ class RoleManager extends BaseManager {
     return this.provider;
   }
 
-  async getById(id: string): Promise<Role | null> {
+  /** One role record by `@id`: its members are identity records, so `contact-read`, or core's own work (#2018). */
+  async getById(ctx: ActorContext, id: string): Promise<Role | null> {
+    await requireRecordAccess(this.engine, ctx, 'read');
     return this.requireProvider().getById(id);
   }
 
@@ -256,17 +266,23 @@ class RoleManager extends BaseManager {
    *
    * Returns `[]` when PersonManager is unavailable, the user has no Person
    * record, no record lists them, or the lookup throws.
+   *
+   * `ctx` is who is asking (#2018), decided by PersonManager's door: a user
+   * about themselves under `profile-manage`, about anyone else under
+   * `contact-read`; core's own work passes the system context. A refusal is
+   * thrown as `ContactRefusedError`, never answered as "no roles".
    */
-  async resolveUserRoles(username: string): Promise<string[]> {
+  async resolveUserRoles(ctx: ActorContext, username: string): Promise<string[]> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
     if (!personManager) return [];
 
     try {
-      const person = await personManager.getByIdentifier(username);
+      const person = await personManager.getByIdentifier(ctx, username);
       if (!person) return [];
       const roles = await this.listByMember(person['@id']);
       return roles.map((r) => r.namedPosition);
     } catch (error) {
+      if (error instanceof ContactRefusedError) throw error;
       logger.warn(
         `[RoleManager.resolveUserRoles] lookup failed for ${username}: ` +
         (error instanceof Error ? error.message : String(error))
@@ -324,8 +340,9 @@ class RoleManager extends BaseManager {
     return out;
   }
 
-  async hasRole(username: string, roleName: string): Promise<boolean> {
-    return (await this.resolveUserRoles(username)).includes(roleName);
+  /** Whether `username` holds `roleName` now, asked by `ctx`; decided as {@link resolveUserRoles} (#2018). */
+  async hasRole(ctx: ActorContext, username: string, roleName: string): Promise<boolean> {
+    return (await this.resolveUserRoles(ctx, username)).includes(roleName);
   }
 
   /**
@@ -453,7 +470,7 @@ class RoleManager extends BaseManager {
     if (!personManager) {
       throw await this.roleFailure(username, ['remove every role'], { reason: 'PersonManager is unavailable', notify: true });
     }
-    const person = await personManager.getByIdentifier(username);
+    const person = await personManager.getByIdentifier(systemContext(this.engine, `account lifecycle: remove every role of the deleted account ${username}`), username);
     if (!person) return async () => { /* nothing was removed */ };
     const memberOf = await this.listByMember(person['@id']);
     const done = await this.allOrNothing(username, memberOf.map((role) => this.memberChange(role, person['@id'], 'remove')), true);
@@ -489,7 +506,7 @@ class RoleManager extends BaseManager {
     if (!personManager) {
       throw await this.roleFailure(username, labels, { reason: 'PersonManager is unavailable', notify });
     }
-    const person = await personManager.getByIdentifier(username);
+    const person = await personManager.getByIdentifier(systemContext(this.engine, `role change for account ${username}: ${labels.join(', ')}`), username);
     if (!person) {
       throw await this.roleFailure(username, labels, { reason: 'there is no Person record for that username', notify });
     }

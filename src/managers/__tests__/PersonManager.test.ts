@@ -65,7 +65,7 @@ describe('PersonManager (#617)', () => {
     const id = created['@id'];
     expect(id).toMatch(/^urn:uuid:/);
 
-    const fetched = await manager.getById(id);
+    const fetched = await manager.getById(CTX, id);
     expect(fetched?.email).toBe('jane@example.com');
 
     const updated = await manager.update(CTX, id, { name: 'Jane Renamed', identifier: 'someone' });
@@ -74,7 +74,7 @@ describe('PersonManager (#617)', () => {
 
     const removed = await manager.delete(CTX, id);
     expect(removed).toBe(true);
-    expect(await manager.getById(id)).toBeNull();
+    expect(await manager.getById(CTX, id)).toBeNull();
   });
 
   test('getByUserIdentifier lazy-migrates from a User on first call', async () => {
@@ -88,9 +88,9 @@ describe('PersonManager (#617)', () => {
     await manager.initialize();
 
     // No Person initially
-    expect(await manager.getByIdentifier('alice')).toBeNull();
+    expect(await manager.getByIdentifier(CTX, 'alice')).toBeNull();
 
-    const promoted = await manager.getByUserIdentifier('alice');
+    const promoted = await manager.getByUserIdentifier(CTX, 'alice');
     expect(promoted).not.toBeNull();
     expect(promoted!.identifier).toBe('alice');
     expect(promoted!.email).toBe('alice@example.com');
@@ -98,7 +98,7 @@ describe('PersonManager (#617)', () => {
     expect(promoted!['@id']).toMatch(/^urn:uuid:/);
 
     // Second call returns the persisted record without re-creating
-    const second = await manager.getByUserIdentifier('alice');
+    const second = await manager.getByUserIdentifier(CTX, 'alice');
     expect(second!['@id']).toBe(promoted!['@id']);
     expect(userManager.getUser).toHaveBeenCalledTimes(1);
   });
@@ -111,7 +111,7 @@ describe('PersonManager (#617)', () => {
     const manager = new PersonManager(engine);
     await manager.initialize();
 
-    const result = await manager.getByUserIdentifier('nobody');
+    const result = await manager.getByUserIdentifier(CTX, 'nobody');
     expect(result).toBeNull();
   });
 });

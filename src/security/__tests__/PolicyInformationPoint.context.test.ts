@@ -48,7 +48,7 @@ function makeEngine() {
     getManager: (name: string): unknown => {
       if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k === SYSTEM_PRINCIPAL_KEY ? 'svc' : d), getResolvedDataPath: () => '/tmp/ngdp-pip-context-test', isInitialized: () => true };
       if (name === 'UserManager') return { getUser: async (u: string) => (ROLES[u] ? { username: u, isActive: true } : null) };
-      if (name === 'RoleManager') return { resolveUserRoles: async (u: string) => live(u) };
+      if (name === 'RoleManager') return { resolveUserRoles: async (_ctx: unknown, u: string) => live(u) };
       if (name === 'PolicyEvaluator') {
         const decide = (s: { username: string; roles?: string[] }, pageName: string, action: string) =>
           ({ hasDecision: true, allowed: allowed(s, pageName, action), policyName: 'table', reason: 'test' });

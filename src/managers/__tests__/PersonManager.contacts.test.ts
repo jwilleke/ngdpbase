@@ -41,7 +41,7 @@ import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { ContactRefusedError } from '../../utils/contactAccess';
 import { isReservedUsername } from '../../utils/username';
-import { jobContextFromRequestWithReason } from '../../context/JobContext';
+import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 const shipped = JSON.parse(readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
@@ -52,6 +52,8 @@ const ADMIN = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAdd
 const EDITOR = { username: 'ed', roles: ['editor'], isAuthenticated: true };
 const USER_ADMIN = { username: 'ua', roles: ['user-admin'], isAuthenticated: true };
 const DEMO_ADMIN = { username: 'demo', roles: ['demo-admin'], isAuthenticated: true };
+/** Core's own read (#2018): the system context, for the site's principal 'svc'. */
+const SYS = jobContextFromSystem('svc', 'test: read as core');
 
 async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}) {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'contacts-1930-'));
@@ -126,7 +128,7 @@ async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}
 
 /** The account's own signed-in subject: its live roles, as the session middleware would give them. */
 async function subjectOf(site: Awaited<ReturnType<typeof makeSite>>, username: string) {
-  return { username, roles: await site.roles.resolveUserRoles(username), isAuthenticated: true };
+  return { username, roles: await site.roles.resolveUserRoles(SYS, username), isAuthenticated: true };
 }
 
 function linkToken(site: Awaited<ReturnType<typeof makeSite>>): string {
@@ -190,8 +192,8 @@ describe('contacts in core (#1930)', () => {
       site.organizations.delete(DEMO_ADMIN, acme['@id'])
     ];
     for (const w of writes) await expect(w).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-manage' });
-    expect(await site.persons.getById(dana['@id'])).toMatchObject({ name: 'Dana', identifier: dana.identifier });
-    expect(await site.organizations.getById(acme['@id'])).toMatchObject({ name: 'Acme Trust' });
+    expect(await site.persons.getById(SYS, dana['@id'])).toMatchObject({ name: 'Dana', identifier: dana.identifier });
+    expect(await site.organizations.getById(SYS, acme['@id'])).toMatchObject({ name: 'Acme Trust' });
     expect(site.contacts().length).toBe(before);
   });
 
@@ -216,7 +218,7 @@ describe('contacts in core (#1930)', () => {
     expect(p.identifier).toMatch(/^person:[0-9a-f-]{36}$/);
     expect(p['@id']).toBe(`urn:uuid:${p.identifier.slice('person:'.length)}`);
     expect(PersonManager.isAccountless(p)).toBe(true);
-    expect(await site.persons.getById(p['@id'])).toMatchObject({ name: 'Dana Donor' });
+    expect(await site.persons.getById(SYS, p['@id'])).toMatchObject({ name: 'Dana Donor' });
 
     const [rec] = site.contacts();
     expect(rec).toMatchObject({ user: 'root', action: 'person-create', resource: p['@id'] });
@@ -248,19 +250,20 @@ describe('contacts in core (#1930)', () => {
   test('without contact-manage every door refuses, and nothing is written', async () => {
     const existing = await site.persons.create(ADMIN, { name: 'Kept' });
     const before = site.contacts().length;
-    const refusals: Array<Promise<unknown>> = [
-      site.persons.create(EDITOR, { name: 'Sneaky' }),
-      site.persons.update(EDITOR, existing['@id'], { name: 'Changed' }),
-      site.persons.delete(EDITOR, existing['@id']),
-      site.persons.get(EDITOR, existing['@id']),
-      site.persons.list(EDITOR),
-      site.persons.search(EDITOR, 'kept'),
-      site.organizations.create(EDITOR, { name: 'Org' }),
-      site.organizations.list(EDITOR),
-      site.organizations.search(EDITOR, ''),
-      site.organizations.people(EDITOR, 'urn:x')
+    // Each started only when awaited, so no refusal is left unhandled while an earlier one is checked.
+    const refusals: Array<() => Promise<unknown>> = [
+      () => site.persons.create(EDITOR, { name: 'Sneaky' }),
+      () => site.persons.update(EDITOR, existing['@id'], { name: 'Changed' }),
+      () => site.persons.delete(EDITOR, existing['@id']),
+      () => site.persons.get(EDITOR, existing['@id']),
+      () => site.persons.list(EDITOR),
+      () => site.persons.search(EDITOR, 'kept'),
+      () => site.organizations.create(EDITOR, { name: 'Org' }),
+      () => site.organizations.list(EDITOR),
+      () => site.organizations.search(EDITOR, ''),
+      () => site.organizations.people(EDITOR, 'urn:x')
     ];
-    for (const r of refusals) await expect(r).rejects.toBeInstanceOf(ContactRefusedError);
+    for (const r of refusals) await expect(r()).rejects.toBeInstanceOf(ContactRefusedError);
     const err = await site.persons.create(EDITOR, { name: 'Sneaky' }).catch((e: ContactRefusedError) => e);
     expect(err).toMatchObject({ permission: 'contact-manage' });
     expect((err as ContactRefusedError).decision.permit).toBe(false);
@@ -303,7 +306,7 @@ describe('contacts in core (#1930)', () => {
     expect(people.map((x) => [x.person.name, x.role ?? null]).sort()).toEqual([['Dana', 'Treasurer'], ['Eli', null]]);
     expect((await site.organizations.people(ADMIN, club['@id'])).map((x) => x.role)).toEqual(['Chair']);
     // The organization record carries no copy of its people.
-    expect(JSON.stringify(await site.organizations.getById(acme['@id']))).not.toContain(dana['@id']);
+    expect(JSON.stringify(await site.organizations.getById(SYS, acme['@id']))).not.toContain(dana['@id']);
 
     await expect(site.persons.update(ADMIN, eli['@id'], { affiliation: [{ organization: 'urn:nope' }] })).rejects.toThrow(/no organization/);
     expect(site.contacts().filter((e) => e.action === 'person-update').at(-1)?.metadata.fields).toEqual(['affiliation']);
@@ -329,9 +332,9 @@ describe('contacts in core (#1930)', () => {
     expect(joined).toMatchObject({ '@id': dana['@id'], identifier: 'dana', name: 'Dana Donor' });
     const all = await site.persons.search(ADMIN, 'dana@example.org');
     expect(all.map((p) => p['@id'])).toEqual([dana['@id']]);
-    expect((await site.persons.getByIdentifier('dana'))?.['@id']).toBe(dana['@id']);
+    expect((await site.persons.getByIdentifier(SYS, 'dana'))?.['@id']).toBe(dana['@id']);
     // The account's roles came with it.
-    expect(await site.roles.resolveUserRoles('dana')).toContain('reader');
+    expect(await site.roles.resolveUserRoles(SYS, 'dana')).toContain('reader');
 
     const link = site.contacts().find((e) => e.action === 'person-link');
     expect(link).toMatchObject({ user: 'dana', resource: dana['@id'] });
@@ -379,7 +382,7 @@ describe('contacts in core (#1930)', () => {
     const acme = await site.organizations.create(ADMIN, { name: 'Acme Trust' });
     const donor = await site.persons.create(ADMIN, { name: 'Pat Donor', affiliation: [{ organization: acme['@id'], role: 'Patron' }] });
     await site.signUp('pat', 'pat.other@example.org');
-    const own = await site.persons.getByIdentifier('pat');
+    const own = await site.persons.getByIdentifier(SYS, 'pat');
     expect(own).not.toBeNull();
 
     // Refused without user-edit (user-admin holds user-edit but not contact-manage; editor neither).
@@ -392,7 +395,7 @@ describe('contacts in core (#1930)', () => {
       const p = await granted.persons.create(EDITOR, { name: 'Allowed' });
       await granted.signUp('pat', 'pat@example.org');
       await expect(granted.persons.linkAccount(EDITOR, p['@id'], 'pat')).rejects.toMatchObject({ permission: 'user-edit' });
-      expect(await granted.persons.getById(p['@id'])).toMatchObject({ identifier: p.identifier });
+      expect(await granted.persons.getById(SYS, p['@id'])).toMatchObject({ identifier: p.identifier });
     } finally {
       await fs.remove(granted.tmp).catch(() => {});
     }
@@ -400,9 +403,9 @@ describe('contacts in core (#1930)', () => {
     const joined = await site.persons.linkAccount(ADMIN, donor['@id'], 'pat');
     expect(joined).toMatchObject({ '@id': donor['@id'], identifier: 'pat', name: 'Pat Donor', email: 'pat.other@example.org' });
     expect(joined.affiliation).toEqual([{ organization: acme['@id'], role: 'Patron' }]);
-    expect(await site.persons.getById(own!['@id'])).toBeNull();
+    expect(await site.persons.getById(SYS, own!['@id'])).toBeNull();
     expect((await site.persons.list(ADMIN)).filter((p) => p.identifier === 'pat')).toHaveLength(1);
-    expect(await site.roles.resolveUserRoles('pat')).toContain('reader');
+    expect(await site.roles.resolveUserRoles(SYS, 'pat')).toContain('reader');
     expect(site.contacts().find((e) => e.action === 'person-link')?.metadata).toMatchObject({ account: 'pat', via: 'admin' });
 
     await expect(site.persons.linkAccount(ADMIN, donor['@id'], 'pat')).rejects.toThrow(/already has an account/);
@@ -413,15 +416,15 @@ describe('contacts in core (#1930)', () => {
   test('the account lifecycle still keeps the account\'s person in step, under a system context', async () => {
     // A self-registration holds no contact-manage, yet its person is made.
     await site.signUp('sam', 'sam@example.org');
-    const sam = await site.persons.getByIdentifier('sam');
+    const sam = await site.persons.getByIdentifier(SYS, 'sam');
     expect(sam).toMatchObject({ identifier: 'sam', email: 'sam@example.org', name: 'sam' });
     expect(sam?.memberOf).toBeTruthy();
 
     await site.accounts.updateUser('sam', { email: 'sam@new.example', displayName: 'Sam S' }, ADMIN);
-    expect(await site.persons.getByIdentifier('sam')).toMatchObject({ email: 'sam@new.example', name: 'Sam S' });
+    expect(await site.persons.getByIdentifier(SYS, 'sam')).toMatchObject({ email: 'sam@new.example', name: 'Sam S' });
 
     await site.accounts.deleteUser('sam', ADMIN);
-    expect(await site.persons.getByIdentifier('sam')).toBeNull();
+    expect(await site.persons.getByIdentifier(SYS, 'sam')).toBeNull();
 
     const recs = site.contacts().filter((e) => e.resource === sam!['@id']);
     expect(recs.map((e) => e.action)).toEqual(['person-create', 'person-update', 'person-delete']);
@@ -430,5 +433,128 @@ describe('contacts in core (#1930)', () => {
       expect(String(r.metadata.reason)).toMatch(/account lifecycle: \w+ the person for account sam/);
     }
     expect(String(recs[1].metadata.reason)).toContain('account changed by root');
+  });
+});
+
+/**
+ * #2018 — every lookup takes the caller's context: PersonManager's getById,
+ * getByIdentifier and getByUserIdentifier, and RoleManager's resolveUserRoles
+ * and hasRole. Own identity record under profile-manage; anyone else's under
+ * contact-read; core's own work under the system context, with no policy
+ * evaluation, so per-request role resolution stays cheap. Same real PDP over
+ * the shipped policies as above.
+ *
+ * Sabotaged once each (2026-10-24), and watched go red:
+ * - the own-record branch of requireRecordAccess removed → the own-record and job tests;
+ * - "own" decided from a role (`roles.includes('reader')`) instead of the username → the others' and job tests;
+ * - getByIdentifier's check removed → the others', system and job tests;
+ * - isSystemWork never true → the system and per-request tests;
+ * - resolveUserRoles answering a refusal as [] → the others' and job tests, and RoleManager.resolveUserRoles.test;
+ * - PolicyInformationPoint.subjectFor passing a request-origin context → the per-request test.
+ * Measured (2026-10-24, this fixture, 5 × 20 000 calls): subjectFor ≈ 1.3–1.5 µs a call against ≈ 0.55–0.67 µs for
+ * the same reads with no context; under a microsecond more per request.
+ */
+describe('every lookup takes the caller\'s context (#2018)', () => {
+  let site: Awaited<ReturnType<typeof makeSite>>;
+
+  beforeEach(async () => {
+    site = await makeSite();
+    await site.signUp('pat', 'pat@example.org');
+    await site.signUp('sam', 'sam@example.org');
+  });
+
+  afterEach(async () => {
+    await fs.remove(site.tmp).catch(() => {});
+  });
+
+  test('a user reads and changes their own identity record under profile-manage, with no contact-read', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    expect(await pdp.permits(pat, 'contact-read')).toBe(false);
+    expect(await pdp.permits(pat, 'profile-manage')).toBe(true);
+
+    const own = await site.persons.getByIdentifier(pat, 'pat');
+    expect(own).toMatchObject({ identifier: 'pat', email: 'pat@example.org' });
+    expect(await site.persons.getByUserIdentifier(pat, 'pat')).toMatchObject({ '@id': own!['@id'] });
+    expect(await site.persons.getById(pat, own!['@id'])).toMatchObject({ identifier: 'pat' });
+    expect(await site.persons.get(pat, own!['@id'])).toMatchObject({ identifier: 'pat' });
+    expect(await site.roles.resolveUserRoles(pat, 'pat')).toContain('reader');
+    expect(await site.roles.hasRole(pat, 'pat', 'reader')).toBe(true);
+
+    // Changing it: profile-manage, recorded as contact-manage with pat as the actor.
+    expect(await site.persons.update(pat, own!['@id'], { name: 'Pat P' })).toMatchObject({ name: 'Pat P' });
+    expect(site.contacts().at(-1)).toMatchObject({ action: 'person-update', user: 'pat', resource: own!['@id'] });
+    // Deleting it is not a profile change: contact-manage.
+    await expect(site.persons.delete(pat, own!['@id'])).rejects.toMatchObject({ permission: 'contact-manage' });
+  });
+
+  test('another user\'s or a contact\'s identity record is refused without contact-read, and allowed with it', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const sam = await site.persons.getByIdentifier(SYS, 'sam');
+    const donor = await site.persons.create(ADMIN, { name: 'Dana Donor', email: 'dana@example.org' });
+
+    const refusedReads: Array<() => Promise<unknown>> = [
+      () => site.persons.getByIdentifier(pat, 'sam'),
+      () => site.persons.getByUserIdentifier(pat, 'sam'),
+      () => site.persons.getById(pat, sam!['@id']),
+      () => site.persons.getById(pat, donor['@id']),
+      () => site.persons.getByIdentifier(pat, donor.identifier),
+      () => site.persons.get(pat, donor['@id']),
+      () => site.roles.resolveUserRoles(pat, 'sam'),
+      () => site.roles.hasRole(pat, 'sam', 'reader')
+    ];
+    for (const read of refusedReads) await expect(read()).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-read' });
+    await expect(site.persons.update(pat, sam!['@id'], { name: 'No' })).rejects.toMatchObject({ permission: 'contact-manage' });
+    // Reads stay unaudited, refused or not.
+    expect(site.contacts().filter((e) => e.user === 'pat')).toEqual([]);
+
+    // With contact-read (demo-admin, as shipped): allowed, and still no record.
+    const before = site.contacts().length;
+    expect(await site.persons.getByIdentifier(DEMO_ADMIN, 'sam')).toMatchObject({ identifier: 'sam' });
+    expect(await site.persons.getById(DEMO_ADMIN, donor['@id'])).toMatchObject({ name: 'Dana Donor' });
+    expect(await site.roles.resolveUserRoles(DEMO_ADMIN, 'sam')).toContain('reader');
+    expect(await site.roles.hasRole(DEMO_ADMIN, 'sam', 'admin')).toBe(false);
+    expect(site.contacts().length).toBe(before);
+  });
+
+  test('the system context is allowed without a policy evaluation', async () => {
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const decide = vi.spyOn(pdp, 'decide');
+    const sam = await site.persons.getByIdentifier(SYS, 'sam');
+    expect(sam).toMatchObject({ identifier: 'sam' });
+    expect(await site.persons.getById(SYS, sam!['@id'])).toMatchObject({ identifier: 'sam' });
+    expect(await site.roles.resolveUserRoles(SYS, 'sam')).toContain('reader');
+    expect(await site.organizations.getById(SYS, (sam!.memberOf as { '@id': string })['@id'])).toBeTruthy();
+    expect(decide).not.toHaveBeenCalled();
+
+    // Only the site's own principal from boot or schedule: the same name from a request, or under a token, is asked.
+    await site.persons.getByIdentifier({ ...SYS, origin: 'request' as const }, 'sam');
+    expect(decide).toHaveBeenCalledTimes(1);
+    await site.persons.getByIdentifier({ ...SYS, viaToken: { id: 't', name: 't', scopes: [] } } as never, 'sam').catch(() => undefined);
+    expect(decide).toHaveBeenCalledTimes(2);
+  });
+
+  test('a job context works: its user\'s own record under profile-manage, anyone else\'s under contact-read', async () => {
+    const patJob = jobContextFromRequestWithReason({ username: 'pat' }, 'test: a job pat started');
+    expect(await site.persons.getByIdentifier(patJob, 'pat')).toMatchObject({ identifier: 'pat' });
+    expect(await site.roles.hasRole(patJob, 'pat', 'reader')).toBe(true);
+    await expect(site.roles.hasRole(patJob, 'sam', 'reader')).rejects.toMatchObject({ permission: 'contact-read' });
+
+    // accommodation's role job: run from the admin page as the admin, or on its schedule as the system.
+    await site.accounts.createUser({ username: 'root', email: 'root@example.org', displayName: 'root', password: `pw-${randomUUID()}`, roles: ['admin'] }, SYS);
+    const adminJob = jobContextFromRequestWithReason({ username: 'root' }, 'test: roles job after an admin change');
+    expect(await site.roles.hasRole(adminJob, 'sam', 'reader')).toBe(true);
+    const scheduled = { ...jobContextFromSystem('svc', 'test: daily roles job'), origin: 'schedule' as const };
+    expect(await site.roles.hasRole(scheduled, 'sam', 'reader')).toBe(true);
+  });
+
+  test('per-request role resolution still works, and asks no policy question of its own', async () => {
+    const pip = site.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')!;
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    const decide = vi.spyOn(pdp, 'decide');
+    const subject = await pip.subjectFor('sam');
+    expect(subject).toMatchObject({ username: 'sam', isAuthenticated: true });
+    expect(subject?.roles).toContain('reader');
+    expect(decide).not.toHaveBeenCalled();
   });
 });

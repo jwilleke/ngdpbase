@@ -11,7 +11,7 @@ import type { OrganizationProvider } from '../types/OrganizationProvider.js';
 import type { Person } from '../types/Person.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { installCompletePath } from '../utils/configFiles.js';
-import { recordContactChange, requireContactPermission } from '../utils/contactAccess.js';
+import { recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 
 interface OrganizationProviderConstructor {
   new (engine: WikiEngine): OrganizationProvider;
@@ -303,7 +303,9 @@ class OrganizationManager extends BaseManager {
     return value;
   }
 
-  async getById(id: string): Promise<Organization | null> {
+  /** One organization by `@id`, for a caller who may read contacts (`contact-read`), or core's own work (#2018). */
+  async getById(ctx: ActorContext, id: string): Promise<Organization | null> {
+    await requireRecordAccess(this.engine, ctx, 'read');
     if (this.byIdCache.has(id)) {
       this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byId', result: 'hit' });
       return this.byIdCache.get(id) ?? null;
@@ -314,7 +316,9 @@ class OrganizationManager extends BaseManager {
     return org;
   }
 
-  async getByFile(filename: string): Promise<Organization | null> {
+  /** One organization by its file name, decided as {@link getById} (#2018). */
+  async getByFile(ctx: ActorContext, filename: string): Promise<Organization | null> {
+    await requireRecordAccess(this.engine, ctx, 'read');
     if (this.byFileCache.has(filename)) {
       this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byFile', result: 'hit' });
       return this.byFileCache.get(filename) ?? null;
@@ -335,8 +339,9 @@ class OrganizationManager extends BaseManager {
   //
   // Each call takes the caller's context first and asks the PDP: `contact-read` to read,
   // `contact-manage` to change; each change is recorded as the `contact-manage` audit
-  // event; a refusal throws ContactRefusedError. getById / getByFile /
-  // getInstallOrg stay context-free lookups for core's own paths.
+  // event; a refusal throws ContactRefusedError. getById and getByFile take the
+  // caller's context too (#2018); core's own reads pass the system context.
+  // getInstallOrg is the site's own anchor Organization, named in configuration.
 
   /** Every organization, for a caller who may read contacts (`contact-read`). */
   async list(ctx: ActorContext): Promise<Organization[]> {
@@ -344,10 +349,9 @@ class OrganizationManager extends BaseManager {
     return this.requireProvider().list();
   }
 
-  /** One organization by `@id`, for a caller who may read contacts (`contact-read`). */
+  /** One organization by `@id`: {@link getById}. */
   async get(ctx: ActorContext, id: string): Promise<Organization | null> {
-    await requireContactPermission(this.engine, ctx, 'read');
-    return this.getById(id);
+    return this.getById(ctx, id);
   }
 
   /**

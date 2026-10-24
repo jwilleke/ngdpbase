@@ -12,15 +12,16 @@
  * had somewhere to go that is not a second evaluator: a role name skips
  * PolicyEvaluator, deny policies and the token ceiling; this does not.
  */
-import type { PermissionSubject } from '../managers/UserManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import type { CorePermission } from '../security/permissions.generated.js';
 
 type EngineLike = { getManager: (name: string) => unknown } | null | undefined;
-type DecisionPointLike = { permits(subject: PermissionSubject, action: string): Promise<boolean> };
+type DecisionPointLike = { permits(subject: ActorContext, action: string): Promise<boolean> };
 
 export async function subjectMayDo(
   engine: EngineLike,
-  subject: PermissionSubject | null | undefined,
+  // A request's subject or a job's context (#2018): the PDP converts it (#2022).
+  subject: ActorContext | null | undefined,
   // #1431: a core caller asks for a core permission, checked by the compiler.
   action: CorePermission
 ): Promise<boolean> {

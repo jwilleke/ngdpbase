@@ -21,7 +21,7 @@ interface WikiEngine {
  * User manager interface
  */
 interface RoleManager {
-  hasRole(username: string, role: string): Promise<boolean>;
+  hasRole(ctx: ActorContext, username: string, role: string): Promise<boolean>;
 }
 
 interface UserManager {
@@ -359,7 +359,7 @@ class InstallService {
 
       // 3. Remove admin user
       const userManager = this.engine.getManager('UserManager') as UserManager;
-      const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
+      const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole(systemContext(this.engine, 'install reset: does the account admin still hold the admin role'), 'admin', 'admin');
       if (adminExists) {
         // Get the users file path
         const usersPath = path.join(usersDir, 'users.json');

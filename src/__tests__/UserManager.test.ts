@@ -282,7 +282,8 @@ describe('UserManager', () => {
       userManager.provider.updateUser = vi.fn(async () => undefined);
       mockRoleManager.resolveUserRoles.mockResolvedValue(['reader']);
       await userManager.updateUser('alice', { roles: ['editor'] }, ACTOR);
-      expect(mockRoleManager.resolveUserRoles).toHaveBeenCalledWith('alice');
+      // #2018: the account write's own read, under the system context.
+      expect(mockRoleManager.resolveUserRoles).toHaveBeenCalledWith(expect.objectContaining({ origin: 'boot' }), 'alice');
       expect(mockRoleManager.applyRoleDiff).toHaveBeenCalledWith('alice', ['reader'], ['editor']);
     });
 

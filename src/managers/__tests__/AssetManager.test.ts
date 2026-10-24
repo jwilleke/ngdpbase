@@ -60,6 +60,14 @@ function makeAssetRecord(overrides = {}) {
   };
 }
 
+// #2018: getById and getAssetsForPage take the caller's context and ask `asset-read`.
+// The PDP here permits it to everyone but REFUSED.
+const READER = { username: 'rita', roles: ['reader'], isAuthenticated: true };
+const REFUSED = { username: 'nobody', roles: [], isAuthenticated: false };
+const assetPdp = {
+  permits: vi.fn(async (subject: { username?: string }, action: string) => action === 'asset-read' && subject?.username !== REFUSED.username)
+};
+
 function makeEngine({
   attachmentProvider = undefined,
   mediaProvider = undefined,
@@ -89,6 +97,7 @@ function makeEngine({
       // ConfigurationManager — return null so pageAssetsIndexPath stays null
       // (prevents real disk I/O in unit tests)
       if (name === 'ConfigurationManager') return null;
+      if (name === 'PolicyDecisionPoint') return assetPdp;
       return undefined;
     })
   };
@@ -318,9 +327,19 @@ describe('AssetManager.search()', () => {
 // ---------------------------------------------------------------------------
 
 describe('AssetManager.getById()', () => {
+  it('#2018: nothing for a caller refused asset-read, and no provider is asked', async () => {
+    const { manager } = makeManager();
+    const p1 = makeProvider({ id: 'p1', getById: vi.fn().mockResolvedValue(makeAssetRecord({ id: 'a1', providerId: 'p1' })) });
+    manager.registerProvider(p1);
+    expect(await manager.getById(REFUSED, 'a1')).toBeNull();
+    expect(p1.getById).not.toHaveBeenCalled();
+    expect(await manager.getById(READER, 'a1')).not.toBeNull();
+    expect(assetPdp.permits).toHaveBeenCalledWith(READER, 'asset-read');
+  });
+
   it('returns null when no providers registered', async () => {
     const { manager } = makeManager();
-    expect(await manager.getById('nonexistent')).toBeNull();
+    expect(await manager.getById(READER, 'nonexistent')).toBeNull();
   });
 
   it('returns the first matching record across providers', async () => {
@@ -334,7 +353,7 @@ describe('AssetManager.getById()', () => {
     manager.registerProvider(p2);
     manager.registerProvider(p3);
 
-    const result = await manager.getById('found-1');
+    const result = await manager.getById(READER, 'found-1');
 
     expect(result).toBe(record);
     // Short-circuits — p3 should not be called once p2 returned a match
@@ -350,7 +369,7 @@ describe('AssetManager.getById()', () => {
     manager.registerProvider(p1);
     manager.registerProvider(p2);
 
-    const result = await manager.getById('a1', 'p2');
+    const result = await manager.getById(READER, 'a1', 'p2');
 
     expect(result).toBe(record);
     expect(p1.getById).not.toHaveBeenCalled();
@@ -360,7 +379,7 @@ describe('AssetManager.getById()', () => {
     const { manager } = makeManager();
     manager.registerProvider(makeProvider({ getById: vi.fn().mockRejectedValue(new Error('fail')) }));
 
-    expect(await manager.getById('any')).toBeNull();
+    expect(await manager.getById(READER, 'any')).toBeNull();
   });
 });
 
@@ -680,7 +699,7 @@ describe('degraded provider skipping', () => {
     manager.registerProvider(healthy);
     await manager.checkProviderHealth();
 
-    const result = await manager.getById('a1');
+    const result = await manager.getById(READER, 'a1');
 
     expect(degraded.getById).not.toHaveBeenCalled();
     expect(result).toBe(record);
@@ -733,7 +752,7 @@ describe('AssetManager.syncPageAssets()', () => {
       getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1', identifier: 'uuid-1' })
     });
     await manager.syncPageAssets('SomePage', "[{Image src='photo.jpg'}]");
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
     // getById returns null (no providers registered) but composite key was stored
     const map = manager._getPageAssetsMap?.() ?? null;
     // Access internal map indirectly via getAssetsForPage with a real provider
@@ -752,7 +771,7 @@ describe('AssetManager.syncPageAssets()', () => {
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('SomePage', "[{Image src='photo.jpg'}]");
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
 
     expect(assets).toHaveLength(1);
     expect(assets[0]).toBe(record);
@@ -772,12 +791,12 @@ describe('AssetManager.syncPageAssets()', () => {
     engine.getManager.mockImplementation((name: string) => (name === 'PageManager' ? pageManager : base?.(name)));
 
     await manager.syncPageAssets('Sealed Diary', "[{Image src='photo.jpg'}]");
-    expect(await manager.getAssetsForPage('Sealed Diary')).toHaveLength(1);
+    expect(await manager.getAssetsForPage(READER, 'Sealed Diary')).toHaveLength(1);
 
     sealed = true;
     await manager.syncPageAssets('Sealed Diary', "[{Image src='photo.jpg'}]");
     expect(pageManager.isSharedIndexable).toHaveBeenLastCalledWith('Sealed Diary');
-    expect(await manager.getAssetsForPage('Sealed Diary')).toHaveLength(0);
+    expect(await manager.getAssetsForPage(READER, 'Sealed Diary')).toHaveLength(0);
   });
 
   it('resolves media:// URI → media-library:<id> composite key', async () => {
@@ -792,7 +811,7 @@ describe('AssetManager.syncPageAssets()', () => {
     manager.registerProvider(mediaProvider);
 
     await manager.syncPageAssets('SomePage', "[{Image src='media://sunset.jpg'}]");
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
 
     expect(assets).toHaveLength(1);
     expect(assets[0]).toBe(record);
@@ -816,7 +835,7 @@ describe('AssetManager.syncPageAssets()', () => {
 
     const content = "[{Image src='photo.jpg'}] some text [{ATTACH src='doc.pdf'}]";
     await manager.syncPageAssets('SomePage', content);
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
 
     expect(assets.length).toBeGreaterThanOrEqual(1);
   });
@@ -828,7 +847,7 @@ describe('AssetManager.syncPageAssets()', () => {
     await manager.syncPageAssets('SomePage', "[{Image src='https://example.com/img.jpg'}]");
 
     expect(getSharedPoolAttachmentByFilename).not.toHaveBeenCalled();
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
     expect(assets).toHaveLength(0);
   });
 
@@ -856,7 +875,7 @@ describe('AssetManager.syncPageAssets()', () => {
     await manager.syncPageAssets('SomePage', "[{Image src='old.jpg'}]");
     await manager.syncPageAssets('SomePage', "[{Image src='new.jpg'}]");
 
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
     // After overwrite only att-new is in the index
     expect(localProvider.getById).toHaveBeenLastCalledWith('att-new');
     expect(assets).toHaveLength(1);
@@ -871,7 +890,7 @@ describe('AssetManager.syncPageAssets()', () => {
       manager.syncPageAssets('SomePage', "[{Image src='missing.jpg'}]")
     ).resolves.not.toThrow();
 
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
     expect(assets).toHaveLength(0);
   });
 
@@ -888,7 +907,7 @@ describe('AssetManager.syncPageAssets()', () => {
   it('stores nothing for a page with no asset refs', async () => {
     const { manager } = makeManager({});
     await manager.syncPageAssets('EmptyPage', 'Just some text with no asset refs.');
-    const assets = await manager.getAssetsForPage('EmptyPage');
+    const assets = await manager.getAssetsForPage(READER, 'EmptyPage');
     expect(assets).toHaveLength(0);
   });
 });
@@ -898,9 +917,19 @@ describe('AssetManager.syncPageAssets()', () => {
 // ---------------------------------------------------------------------------
 
 describe('AssetManager.getAssetsForPage()', () => {
+  it('#2018: nothing for a caller refused asset-read', async () => {
+    const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(makeAssetRecord({ id: 'uuid-1', providerId: 'local' })) });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' }) });
+    manager.registerProvider(localProvider);
+    await manager.syncPageAssets('SomePage', "[{Image src='photo.jpg'}]");
+    expect(await manager.getAssetsForPage(REFUSED, 'SomePage')).toEqual([]);
+    expect(localProvider.getById).not.toHaveBeenCalled();
+    expect(await manager.getAssetsForPage(READER, 'SomePage')).toHaveLength(1);
+  });
+
   it('returns empty array for an unknown page slug', async () => {
     const { manager } = makeManager();
-    expect(await manager.getAssetsForPage('NonExistentPage')).toEqual([]);
+    expect(await manager.getAssetsForPage(READER, 'NonExistentPage')).toEqual([]);
   });
 
   it('filters out stale composite keys where asset has been deleted', async () => {
@@ -914,7 +943,7 @@ describe('AssetManager.getAssetsForPage()', () => {
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('SomePage', "[{Image src='gone.jpg'}]");
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
 
     expect(assets).toHaveLength(0);
   });
@@ -954,7 +983,7 @@ describe('AssetManager.getAssetsForPage()', () => {
     await manager.syncPageAssets('SomePage',
       "[{Image src='img1.jpg'}] [{ATTACH src='doc.pdf'}]"
     );
-    const assets = await manager.getAssetsForPage('SomePage');
+    const assets = await manager.getAssetsForPage(READER, 'SomePage');
 
     expect(assets).toHaveLength(2);
   });
@@ -974,10 +1003,10 @@ describe('AssetManager.removePageAssets()', () => {
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('DeleteMe', "[{Image src='photo.jpg'}]");
-    expect(await manager.getAssetsForPage('DeleteMe')).toHaveLength(1);
+    expect(await manager.getAssetsForPage(READER, 'DeleteMe')).toHaveLength(1);
 
     manager.removePageAssets('DeleteMe');
-    expect(await manager.getAssetsForPage('DeleteMe')).toHaveLength(0);
+    expect(await manager.getAssetsForPage(READER, 'DeleteMe')).toHaveLength(0);
   });
 
   it('is a no-op for a page not in the index', () => {
@@ -997,7 +1026,7 @@ describe('AssetManager.removePageAssets()', () => {
 
     manager.removePageAssets('PageA');
 
-    expect(await manager.getAssetsForPage('PageA')).toHaveLength(0);
-    expect(await manager.getAssetsForPage('PageB')).toHaveLength(1);
+    expect(await manager.getAssetsForPage(READER, 'PageA')).toHaveLength(0);
+    expect(await manager.getAssetsForPage(READER, 'PageB')).toHaveLength(1);
   });
 });
