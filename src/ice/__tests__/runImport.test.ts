@@ -337,6 +337,95 @@ describe('runImport', () => {
       expect(received).toEqual([]);
     });
 
+    describe('a kept original is kept once per fingerprint (#2011)', () => {
+      /** A shim that throws until told not to: a conversion that fails after the original was kept. */
+      function flakyShim(): { shim: RegisteredShim; fix: () => void } {
+        let broken = true;
+        const ok = recordShim();
+        return {
+          shim: recordShim({ read: async (input, tools) => { if (broken) throw new Error('malformed'); return ok.read!(input, tools); } }),
+          fix: () => { broken = false; }
+        };
+      }
+
+      test('the receiver\'s own keepOriginal: a retry after a failed conversion reuses the kept original', async () => {
+        const { receiver, received, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+        const flaky = flakyShim();
+        const ledger = new MemoryIceLedger();
+        const d = deps([flaky.shim], [receiver], ledger);
+
+        const first = await run(d, req('keep'));
+        expect(first.files[0]).toMatchObject({ status: 'failed', message: 'malformed', original: { ref: 'original-1' } });
+        expect(kept).toHaveLength(1);
+
+        const failedAgain = await run(d, req('keep'));
+        expect(failedAgain.files[0]).toMatchObject({ status: 'failed', original: { ref: 'original-1' } });
+        expect(kept).toHaveLength(1);
+
+        flaky.fix();
+        const retried = await run(d, req('keep'));
+        expect(retried.files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+        expect(kept).toHaveLength(1);
+        expect(received[0].info.original).toEqual({ name: 'a.rec', sha256: expect.any(String), ref: 'original-1' });
+        expect((await ledger.lastFile('test.records/alice', retried.files[0].sha256 ?? ''))?.original).toMatchObject({ ref: 'original-1', door: 'test.records' });
+      });
+
+      test('the files receiver: a retry after a failed conversion reuses the kept attachment', async () => {
+        const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+        const files = recordingReceiver('core.files', ['file']);
+        const flaky = flakyShim();
+        const d = deps([flaky.shim], [receiver, files.receiver]);
+
+        expect((await run(d, req('keep'))).files[0]).toMatchObject({ status: 'failed', original: { ref: 'files-1' } });
+        flaky.fix();
+        expect((await run(d, req('keep'))).files[0]).toMatchObject({ status: 'imported', original: { ref: 'files-1' } });
+        expect(files.received).toHaveLength(1);
+        expect(received[0].info.original?.ref).toBe('files-1');
+      });
+
+      test('a retry after the receiver refused every item reuses the kept original', async () => {
+        let refuse = true;
+        const { receiver, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true, refuse: () => refuse });
+        receiver.mayUse = async () => true;
+        const d = deps([recordShim()], [receiver]);
+        expect((await run(d, req('keep'))).files[0].status).toBe('refused');
+        refuse = false;
+        expect((await run(d, req('keep'))).files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+        expect(kept).toHaveLength(1);
+      });
+
+      test('a different keeping door keeps its own copy', async () => {
+        const files = recordingReceiver('core.files', ['file']);
+        const plain = recordingReceiver('test.records', ['test.record']);
+        const keeper = recordingReceiver('test.records', ['test.record'], { keeps: true });
+        const flaky = flakyShim();
+        const ledger = new MemoryIceLedger();
+        // The same scope, first through core.files, then through a receiver that keeps its own.
+        await run(deps([flaky.shim], [plain.receiver, files.receiver], ledger), req('keep'));
+        flaky.fix();
+        const result = await run(deps([flaky.shim], [keeper.receiver, files.receiver], ledger), req('keep'));
+        expect(result.files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+        expect(files.received).toHaveLength(1);
+        expect(keeper.kept).toHaveLength(1);
+      });
+
+      test('a successful keep is unchanged: the same bytes again are skipped, and nothing more is kept', async () => {
+        const { receiver, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+        const d = deps([recordShim()], [receiver]);
+        expect((await run(d, req('keep'))).files[0]).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+        expect((await run(d, req('keep'))).files[0].status).toBe('unchanged');
+        expect(kept).toHaveLength(1);
+      });
+
+      test('a per-item shim reads the same bytes again but keeps the original once', async () => {
+        const { receiver, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+        const d = deps([recordShim({ duplicates: 'item' })], [receiver]);
+        await run(d, req('keep'));
+        expect((await run(d, req('keep'))).files[0]).toMatchObject({ status: 'duplicate', original: { ref: 'original-1' } });
+        expect(kept).toHaveLength(1);
+      });
+    });
+
     test('the default comes from configuration', async () => {
       const { receiver, received } = recordingReceiver('test.records', ['test.record']);
       await run(deps([recordShim()], [receiver], undefined, { defaultOriginal: 'cite' }), {

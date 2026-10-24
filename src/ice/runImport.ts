@@ -14,14 +14,16 @@
  *   content anywhere; it records only the engine's own ledger;
  * - the original is cited, kept, or neither, as the person chose (D11).
  *   Keeping goes through a door too: the receiver's `keepOriginal`, else the
- *   files receiver's upload door.
+ *   files receiver's upload door. A fingerprint's original is kept once per
+ *   scope and door: the ledger holds its reference, and a retry after a
+ *   failed or refused import reuses it.
  */
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import type {
-  IceCitation, IceFileReport, IceItem, IceLedger, IceRunReport, IceRunRequest, KeptOriginal, OriginalChoice,
+  IceCitation, IceFileReport, IceItem, IceLedger, IceRunReport, IceRunRequest, KeptOriginal, LedgerOriginal, OriginalChoice,
   ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from './types.js';
 
@@ -138,6 +140,11 @@ export async function convertChain(shim: RegisteredShim, input: IceItem, chain: 
   return leaves;
 }
 
+/** The door that keeps this receiver's originals (D11): its own, else the files receiver's. */
+function keepingDoor(receiver: RegisteredReceiver): string {
+  return receiver.keepOriginal ? receiver.id : FILES_RECEIVER;
+}
+
 /** Keep the original through a door (D11): the receiver's own, else the files receiver's upload. */
 async function keepOriginal(file: IceItem, sha256: string, receiver: RegisteredReceiver, ctx: ActorContext, deps: IceRunDeps, runId: string): Promise<ReceiveOutcome> {
   if (receiver.keepOriginal) return receiver.keepOriginal(file, ctx);
@@ -184,10 +191,14 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     }
     const sha256 = fingerprint(upload.bytes);
     fr.sha256 = sha256;
+    const last = await deps.ledger.lastFile(scope, sha256);
+    // The original kept for these bytes, carried forward in every entry so a retry never keeps another (#2011).
+    let keptOriginal: LedgerOriginal | undefined = last?.original;
     const record = async (): Promise<void> => {
       await deps.ledger.recordFile(scope, {
         name: fr.name, sha256, size: fr.size, status: fr.status, at: now().toISOString(), refs: fr.refs,
-        ...(fr.message ? { message: fr.message } : {})
+        ...(fr.message ? { message: fr.message } : {}),
+        ...(keptOriginal ? { original: keptOriginal } : {})
       });
     };
 
@@ -204,7 +215,6 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
 
     const perItem = shim?.duplicates === 'item';
     if (!perItem) {
-      const last = await deps.ledger.lastFile(scope, sha256);
       if (last && DONE.has(last.status)) {
         fr.status = 'unchanged';
         fr.refs = last.refs;
@@ -216,14 +226,22 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     try {
       let kept: KeptOriginal | undefined;
       if (original === 'keep') {
-        const outcome = await keepOriginal(file, sha256, receiver, ctx, deps, report.runId);
-        if (outcome.status === 'refused' || !outcome.ref) {
-          fr.status = 'refused';
-          fr.message = `keeping the original was refused${outcome.message ? `: ${outcome.message}` : ''}`;
+        const door = keepingDoor(receiver);
+        if (keptOriginal?.door === door) {
+          kept = { name: keptOriginal.name, sha256, ref: keptOriginal.ref };
+        } else {
+          const outcome = await keepOriginal(file, sha256, receiver, ctx, deps, report.runId);
+          if (outcome.status === 'refused' || !outcome.ref) {
+            fr.status = 'refused';
+            fr.message = `keeping the original was refused${outcome.message ? `: ${outcome.message}` : ''}`;
+            await record();
+            continue;
+          }
+          kept = { name: upload.name, sha256, ref: outcome.ref };
+          keptOriginal = { ...kept, door };
+          // Recorded at once: if the conversion below fails, or the run stops, a retry finds it.
           await record();
-          continue;
         }
-        kept = { name: upload.name, sha256, ref: outcome.ref };
         fr.original = kept;
       }
       const citation: IceCitation | undefined = original === 'cite' ? { name: upload.name, sha256, importedAt: now().toISOString() } : undefined;
