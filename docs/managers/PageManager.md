@@ -58,7 +58,7 @@ await pageManager.deletePage('My Page');
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `getPage(identifier, ctx)` | `Promise<Object\|null>` | Get page by title or UUID. Decides nothing: `ctx` only finds the page. A person's read goes through `readPage` |
+| `getPage(identifier, ctx)` | `Promise<Object\|null>` | Get page by title or UUID. Decides nothing: `ctx` only finds the page. A user's read goes through `readPage` |
 | `getPageContent(identifier, ctx)` | `Promise<string>` | Get content only. Decides nothing, like `getPage` |
 | `readPage(identifier, ctx)` | `Promise<PageRead<WikiPage>>` | The page-read door ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)). Resolves the identifier (uuid, slug, title or vault name), decides `page-read` on the page it resolved to through the PolicyInformationPoint, and only then reads that same page. Answers `{ ok: true, name, metadata, value }` or `{ ok: false, refusal }`, the refusal being `not-found`, `no-metadata` or `denied`. Refuses everything without a PolicyInformationPoint |
 | `readVersionHistory(identifier, ctx, limit?)` | `Promise<PageRead<VersionHistoryEntry[]>>` | The same door, for the version list |

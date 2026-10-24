@@ -1,7 +1,7 @@
 ---
 name: EmailManager
 description: Shared outbound email transport — pluggable provider (console / SMTP), with attachments
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/EmailManager.ts
 ---
@@ -44,7 +44,7 @@ await engine.getManager('EmailManager').sendTo(ctx, to, 'Your invoice', 'Attache
 ```
 
 - __Refused before sending__, with `AttachmentRefusedError` (`code: 'ATTACHMENT_REFUSED'`): a total over `ngdpbase.mail.attachments.max-bytes`; a filename that is empty or holds a path separator, a line break or a NUL; a `contentType` that is not a media type; `content` that is not a `Buffer`. This is the caller's error, so the manager is not degraded and administrators are not notified. `sendInBackground` logs the refusal (recipient domain and reason) and does not reject.
-- __Logged as counts only__: a send with attachments logs `attachments=<n> attachment-bytes=<total>` and who sent it (`by=<username>`). Never a file's name or content: a filename often names the person it is for.
+- __Logged as counts only__: a send with attachments logs `attachments=<n> attachment-bytes=<total>` and who sent it (`by=<username>`). Never a file's name or content: a filename often names whoever it is for.
 - The `console` provider prints the same count and size line instead of the files.
 
 ## Addresses in the server log
@@ -60,12 +60,12 @@ Every sender goes through `send()` (`sendTo()` and `sendInBackground()` call it)
 - __Administrators notified__: holders of `admin-system` get one `error` notification, "Email could not be sent", per window. Failures inside the window update its running count instead of sending another. With nobody holding `admin-system`, the log alone carries it.
 - __Never emailed__: the notice is created with `escalate: false`, so notification escalation does not try to email it. That email would fail and report another failure.
 - __Logged once__: callers do not log the error again. `MagicLinkAuthProvider`, notification escalation and the contact form handle a failed send without a log line of their own.
-- __Still rejects__: `send()` and `sendTo()` rethrow after reporting, so a caller with a person waiting can tell them. `sendInBackground()` never rejects; use it where nobody is waiting (a form's confirmation copy, a reservation notice).
+- __Still rejects__: `send()` and `sendTo()` rethrow after reporting, so a caller with a user waiting can tell them. `sendInBackground()` never rejects; use it where nobody is waiting (a form's confirmation copy, a reservation notice).
 - __The `console` provider is never a failure__: it prints and resolves.
 
 What the callers do:
 
-| Caller | Person waiting? | On failure |
+| Caller | User waiting? | On failure |
 |---|---|---|
 | Forms add-on, submission copy | no | `sendInBackground`; the submission still succeeds |
 | Calendar add-on, reservation emails | no | `sendInBackground`; the reservation still succeeds |

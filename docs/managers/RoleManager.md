@@ -14,24 +14,24 @@ Which roles __exist__ is a declaration in configuration (`ngdpbase.roles.definit
 
 ## Membership
 
-Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12. Callers hold usernames; `PersonManager` maps a username to the Person `@id` a record lists.
+Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12. Callers hold usernames; `PersonManager` maps a username to the identity record's `@id` a role record lists.
 
 | Method | For |
 | --- | --- |
-| `resolveUserRoles(username)` | the user's role names, live; `[]` when there is no Person or no record |
+| `resolveUserRoles(username)` | the user's role names, live; `[]` when there is no identity record or no role record |
 | `hasRole(username, roleName)` | the same question for one role — a lookup, not an access decision |
 | `assignRole(username, roleName, ctx)` / `removeRole(…)` | one role, for an existing account and a declared role; recorded as `user-edit` |
 | `applyRoleDiff(username, oldRoles, newRoles)` | what `UserManager` calls when an account is created or edited; the account write records the audit event |
-| `removeAllMemberships(username)` | a deleted account's Person leaves every role |
+| `removeAllMemberships(username)` | a deleted account's identity record leaves every role |
 | `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands; each grant recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
 
-A role change completes or it does not happen (operator, 2026-10-23, [#2015](https://github.com/jwilleke/ngdpbase/issues/2015)). One that cannot be made, whatever the cause (a failed save, no PersonManager, no Person record for the username, no anchor Organization), is always an error, never a warning: the changes of that request already made are undone, it is logged at error level, admins get an error notification, and a `RoleChangeError` (`src/utils/roleChangeError.ts`) is thrown, naming the change and, when an administrator can fix it, the reason. If an undo itself fails, the error names what is still in effect.
+A role change completes or it does not happen (operator, 2026-10-23, [#2015](https://github.com/jwilleke/ngdpbase/issues/2015)). One that cannot be made, whatever the cause (a failed save, no PersonManager, no identity record for the username, no anchor Organization), is always an error, never a warning: the changes of that request already made are undone, it is logged at error level, admins get an error notification, and a `RoleChangeError` (`src/utils/roleChangeError.ts`) is thrown, naming the change and, when an administrator can fix it, the reason. If an undo itself fails, the error names what is still in effect.
 
 - `assignRole` / `removeRole` record the attempt as a `user-edit` either way, with `result: failure` when it was refused.
-- `UserManager.createUser` (admin form, self-registration, outside sign-in) and `createDefaultAdmin`: the account and its Person are taken back, so a retry finds the username and email free, and the creation is recorded as a failed `user-create`. A bootstrap admin whose role cannot be given stops that boot; the store is empty again, so the next boot tries again.
+- `UserManager.createUser` (admin form, self-registration, outside sign-in) and `createDefaultAdmin`: the account and its identity record are taken back, so a retry finds the username and email free, and the creation is recorded as a failed `user-create`. A bootstrap admin whose role cannot be given stops that boot; the store is empty again, so the next boot tries again.
 - `UserManager.updateUser`: the role change is made first; refused, nothing of the edit is written and it is recorded as a failed `user-edit`. When the account write fails after it, the roles are put back.
-- `UserManager.deleteUser`: `removeAllMemberships` goes first; refused, the account is not deleted and the delete is recorded as failed. It returns an undo that gives every role back when the delete fails afterwards. An account with no Person holds no role, so there is nothing to remove.
-- `moveMemberships` (a contact join) is all or nothing and runs before the persons change, so a refused move refuses the join.
+- `UserManager.deleteUser`: `removeAllMemberships` goes first; refused, the account is not deleted and the delete is recorded as failed. It returns an undo that gives every role back when the delete fails afterwards. An account with no identity record holds no role, so there is nothing to remove.
+- `moveMemberships` (a contact join) is all or nothing and runs before the identity records change, so a refused move refuses the join.
 - `grantToEveryAccountOnce` (boot) gives the role to every account it can. Each one it cannot is recorded as a failed `user-edit`, and the misses are one error notification naming the accounts. Nobody asked, so the boot goes on, and the role is not tried again at the next start: an administrator assigns it by hand.
 
 Membership changes to one role record run one at a time, the read included (`KeyedSerial`, `src/utils/keyedSerial.ts`), so concurrent changes all land. The caches are not refilled by a read that started before a write.
@@ -42,7 +42,7 @@ Identity (`@id`, `namedPosition`, `organization`) and `member` — nothing confi
 
 ## Why this exists
 
-Follow-up to #617. Once Organization and Person became first-class records, role bindings needed their own home so the role couldn't be lost if the person's user account changed.
+Follow-up to #617. Once Organization and Person became first-class records, role bindings needed their own home so the role couldn't be lost if the user's account changed.
 
 ## Provider Pattern
 

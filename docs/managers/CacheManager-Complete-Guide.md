@@ -98,7 +98,7 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 
 `MarkupParser-ParseResults` is the only page cache. Its key covers the page text, page name, the viewer's username and roles, the query string and the viewer's date/locale preferences. Everything else a page renders is a data version: every render depends on `PageManager`, `ConfigurationManager` and `UserManager`, and each manager a plugin fetches is recorded as well. A plugin whose output drifts with time depends on `CLOCK_TOPIC`, whose version is the current minute, so its page re-renders at most once a minute; only a plugin whose output differs on every request (a clock showing seconds, a counter) is volatile and keeps its page out of the cache. The rules are in [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
-Before #1751 the key held the username but not the roles, and the view route kept a second `rendered-pages` cache in front of the parser. After a role was revoked, a cached `[{Index}]` or `<wiki:Include>` still showed pages the person could no longer open, for up to the TTL. That was confirmed on a live instance and is covered by `MarkupParser.readThrough.test.ts`.
+Before #1751 the key held the username but not the roles, and the view route kept a second `rendered-pages` cache in front of the parser. After a role was revoked, a cached `[{Index}]` or `<wiki:Include>` still showed pages the user could no longer open, for up to the TTL. That was confirmed on a live instance and is covered by `MarkupParser.readThrough.test.ts`.
 
 ---
 

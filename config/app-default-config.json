@@ -1919,7 +1919,7 @@
       "color": "#fd7e14",
       "audit": {
         "on-failure": "refuse",
-        "description": "Proxy grant made: someone may act for the person named in user; actor is who made it (#1762)"
+        "description": "Proxy grant made: someone may act for the user named in user; actor is who made it (#1762)"
       },
       "step-up": true
     },
@@ -1973,7 +1973,7 @@
       "audit": {
         "on-failure": "continue",
         "enabled": false,
-        "description": "People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume"
+        "description": "Users searched for; enumerating users is disclosive in a way searching pages is not. Off by default as read volume"
       }
     },
     "user-read": {
@@ -2092,28 +2092,28 @@
       }
     },
     "proxy-revoke": {
-      "description": "Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762)",
+      "description": "Proxy grant ended: revoked, or the account closed; user is the user represented, actor who ended it (#1762)",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
       }
     },
     "consent-grant": {
-      "description": "A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable",
+      "description": "A user accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
       }
     },
     "consent-withdraw": {
-      "description": "A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed",
+      "description": "A user's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
       }
     },
     "proxy-switch": {
-      "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762)",
+      "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
@@ -2452,14 +2452,14 @@
       }
     },
     "reauth-success": {
-      "description": "Step-up: the person re-authenticated, with the factor used",
+      "description": "Step-up: the user re-authenticated, with the factor used",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
       }
     },
     "reauth-failure": {
-      "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)",
+      "description": "Step-up: a re-authentication failed (wrong password, another user's passkey, throttled)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
@@ -2480,14 +2480,14 @@
       }
     },
     "signinapproval-approve": {
-      "description": "Sign-in approval: the person pressed Approve (#1532)",
+      "description": "Sign-in approval: the user pressed Approve (#1532)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
       }
     },
     "signinapproval-deny": {
-      "description": "Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532)",
+      "description": "Sign-in approval: the user pressed Deny; that sign-in will not complete (#1532)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

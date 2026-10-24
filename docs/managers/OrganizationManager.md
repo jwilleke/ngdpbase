@@ -1,7 +1,7 @@
 ---
 name: OrganizationManager
 description: Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/OrganizationManager.ts
 ---
@@ -16,7 +16,7 @@ Pre-#617, organization records were ad-hoc (sometimes a list in config, sometime
 
 ## The install anchor
 
-One organization is the __anchor__: `UserManager` resolves `Person.memberOf` and every Role membership through `getInstallOrg()`. Without an anchor, `syncRoleAdd` cannot attach a Person to a Role, so __no user can hold any role__ — including `admin` on the default admin account.
+One organization is the __anchor__: `UserManager` resolves `Person.memberOf` and every Role membership through `getInstallOrg()`. Without an anchor, `syncRoleAdd` cannot attach an identity record to a Role, so __no user can hold any role__ — including `admin` on the default admin account.
 
 `getInstallOrg()` resolves it in three tiers (#1027):
 
@@ -32,7 +32,7 @@ Two things it never does: __write the config key back__ (instance config is a re
 
 ## The contacts door
 
-OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `contact-read` to read and `contact-manage` to change, and record each change as the `contact-manage` audit event. `people(ctx, id)` reads each person's `affiliation`; the organization stores no copy. `getById`, `getByFile`, `getInstallOrg` and `seedFromConfig` stay context-free for core's own paths. The rules are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
+OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `contact-read` to read and `contact-manage` to change, and record each change as the `contact-manage` audit event. `people(ctx, id)` reads each identity record's `affiliation`; the organization stores no copy. `getById`, `getByFile`, `getInstallOrg` and `seedFromConfig` stay context-free for core's own paths. The rules are in the [managers guide](../guides/managers-developer-guide.md#contacts-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
 

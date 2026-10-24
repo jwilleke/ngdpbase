@@ -1,7 +1,7 @@
 ---
 name: OidcManager
 description: The embedded OpenID Connect provider at the base URL's /oidc — off unless enabled, never loaded when off (#1570)
-dateModified: '2026-10-12'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/OidcManager.ts
 ---
@@ -50,7 +50,7 @@ It returns nothing, which fails the request closed, when:
 
 The change time is written only by `setPassword()` (`src/utils/passwordChange.ts`), the one definition of a password change. `UserManager.updateUser` and `scripts/reset-admin-password.ts` both use it. An access token already issued, which an outside API checks by itself, stays valid until it expires (1 hour by default).
 
-The session that changed the password stays signed in, as #1482 intends, but its sign-in predates the change. Apps signing in through it are refused until the person signs in again.
+The session that changed the password stays signed in, as #1482 intends, but its sign-in predates the change. Apps signing in through it are refused until the user signs in again.
 
 ## Storage
 
@@ -58,7 +58,7 @@ The session that changed the password stays signed in, as #1482 intends, but its
 
 ## Backup and restore
 
-`backup()` carries the roster of live grants (account, client, issued, expires) for incident response, marked `restorable: false`. `restore()` refuses: sessions and grants are not restored, so people sign in again and clients re-consent. A restored grant could revive access somebody had ended.
+`backup()` carries the roster of live grants (account, client, issued, expires) for incident response, marked `restorable: false`. `restore()` refuses: sessions and grants are not restored, so users sign in again and clients re-consent. A restored grant could revive access somebody had ended.
 
 ## Sign-in bridge
 
@@ -68,7 +68,7 @@ The session that changed the password stays signed in, as #1482 intends, but its
 - Signed in: `finishLogin` with the username and the session's sign-in record (`amr`, `acr`, `at`). A session without a record gets `login_required`.
 - Consent: `views/oidc-consent.ejs`, under the session and CSRF. Allow is `finishConsent`, Deny is `access_denied`. Everyone sees consent once per app; the grant is remembered.
 - Consent belongs to the account the request was signed in as. Anyone else signed in on that browser gets `login_required`.
-- Acting for someone ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762) slice 6): the account is the person represented, and only a device may be approved; an app sign-in gets `access_denied` with "Switch back to yourself to sign in to an app." The device approval asks `account-security` of the proxy subject (so the grant must carry it, both people hold it, and the step-up is the person acting's), and `proxyApprovalRefusal(subject, scope)` refuses, in plain words, any API permission the device asks for that the grant, the person represented and the person acting do not all allow. Allow goes through `finishConsent(req, res, subject)`, which, acting for someone, writes a `ProxyApproval` row beside the provider's grant (`grantId`, `accountId`, `approvedBy`, `proxyGrantId`, expiring with the grant; the provider rewrites a grant from its own fields, so nothing is added to it) and records `oidcauthorize-allow`, reason `approved-by-proxy`, with `user` the person represented and `actor` the person acting.
+- Acting for someone ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762) slice 6): the account is the user represented, and only a device may be approved; an app sign-in gets `access_denied` with "Switch back to yourself to sign in to an app." The device approval asks `account-security` of the proxy subject (so the grant must carry it, both users hold it, and the step-up is the user acting's), and `proxyApprovalRefusal(subject, scope)` refuses, in plain words, any API permission the device asks for that the grant, the user represented and the user acting do not all allow. Allow goes through `finishConsent(req, res, subject)`, which, acting for someone, writes a `ProxyApproval` row beside the provider's grant (`grantId`, `accountId`, `approvedBy`, `proxyGrantId`, expiring with the grant; the provider rewrites a grant from its own fields, so nothing is added to it) and records `oidcauthorize-allow`, reason `approved-by-proxy`, with `user` the user represented and `actor` the user acting.
 - Sign-out (`/logout`) ends the account's provider sessions (`endSessionsFor`). Grants stay, and tokens already issued run to their expiry. A disabled or deleted account fails closed at the next refresh or UserInfo, because `findAccount` returns nothing for it.
 
 __Approving a device__ (RFC 8628, when `oidc-auth-server.device-flow.enabled` is true) gives long-lived access, so at every step it asks `account-security` through ngdpbase's own permission check: policy, then step-up ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525), [#1577](https://github.com/jwilleke/ngdpbase/issues/1577)). A session without a fresh factor goes to `/auth/reauth` and comes back to the same pending request. The consent page says it is a device, and that it stays connected until its access is revoked. The bridge gets this check as `permit` (`WikiRoutes.permitRequest`), not a copy.
@@ -86,14 +86,14 @@ Every event the provider reports is recorded in ngdpbase's audit log ([#1575](ht
 
 ## API access
 
-ngdpbase's own API is a resource server at `<base-url>/api`, derived like the issuer ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)). Its scopes are the permissions a delegation may carry. An app's token for it is verified in process by `verifyAccessToken()` and accepted by [OidcBearerAuthProvider](../providers/OidcBearerAuthProvider.md) as a delegation from the person. When no permission is delegable, the API is left out and sign-in still works. A token under a grant approved by someone acting for the person verifies only while that proxy grant is in force (`AuthManager.liveProxyGrant`).
+ngdpbase's own API is a resource server at `<base-url>/api`, derived like the issuer ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)). Its scopes are the permissions a delegation may carry. An app's token for it is verified in process by `verifyAccessToken()` and accepted by [OidcBearerAuthProvider](../providers/OidcBearerAuthProvider.md) as a delegation from the user. When no permission is delegable, the API is left out and sign-in still works. A token under a grant approved by someone acting for the user verifies only while that proxy grant is in force (`AuthManager.liveProxyGrant`).
 
 ## Approved apps and devices
 
-Each app or device a person approved through `/oidc` is a grant ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)). It lasts until it expires or is revoked, whichever comes first: its lifetime is the package's `oidc-auth-server.ttl.grant` (14 days by default), its refresh key's `oidc-auth-server.ttl.refresh-token` (also 14 days). When the grant ends, the app's access ends with it, refresh key or not, and the person approves it again.
+Each app or device a user approved through `/oidc` is a grant ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)). It lasts until it expires or is revoked, whichever comes first: its lifetime is the package's `oidc-auth-server.ttl.grant` (14 days by default), its refresh key's `oidc-auth-server.ttl.refresh-token` (also 14 days). When the grant ends, the app's access ends with it, refresh key or not, and the user approves it again.
 
-- `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed, when it was approved, whether it holds a refresh key (`refreshable`), when that key was last renewed (`renewedAt`, from the newest rotated refresh key), and who approved it while acting for the person (`approvedBy`, `proxyGrantId`; null otherwise). The list and the admin user page say "Approved by … (acting for …)" on such a row. Profile → __My tokens and devices__ lists your own beside your agent tokens, through `AuthManager.listDelegations` ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)); the admin user page lists that person's (`user-read`). Apps are listed only while the provider is on.
-- `revokeGrant(username, grantId, by)`: removes the grant, its proxy approval and every code and token under it from the store, recorded as `oidcgrant-revoke` by the subject `by`, naming the owner; under a proxy grant, naming the person acting too. Ending the proxy grant a device was approved under revokes it this way. It never touches another person's grant. Routes reach it only through `AuthManager.revokeDelegation`.
+- `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed, when it was approved, whether it holds a refresh key (`refreshable`), when that key was last renewed (`renewedAt`, from the newest rotated refresh key), and who approved it while acting for the user (`approvedBy`, `proxyGrantId`; null otherwise). The list and the admin user page say "Approved by … (acting for …)" on such a row. Profile → __My tokens and devices__ lists your own beside your agent tokens, through `AuthManager.listDelegations` ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)); the admin user page lists that user's (`user-read`). Apps are listed only while the provider is on.
+- `revokeGrant(username, grantId, by)`: removes the grant, its proxy approval and every code and token under it from the store, recorded as `oidcgrant-revoke` by the subject `by`, naming the owner; under a proxy grant, naming the user acting too. Ending the proxy grant a device was approved under revokes it this way. It never touches another user's grant. Routes reach it only through `AuthManager.revokeDelegation`.
   - From the profile, revoking asks `account-security`, so it needs step-up ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)).
   - From the admin page it asks `user-edit`.
   - A token can never revoke anything.

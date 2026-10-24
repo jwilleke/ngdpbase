@@ -1,7 +1,7 @@
 ---
 name: Manager source-of-truth plans
 description: "Where each fact lives and which manager owns it — the standing rule, the current violations, and the plan to fix them. Starts with the access-control subject"
-dateModified: '2026-09-21'
+dateModified: '2026-10-23'
 category: managers
 ---
 
@@ -52,7 +52,7 @@ Applied to managers, the rule splits three ways:
 | Kind of fact | Where it lives | Example |
 | --- | --- | --- |
 | __Declaration__ — what exists | the merged configuration, always through `ConfigurationManager` | which permissions exist; which roles exist; which policies grant what |
-| __Data__ — what is true right now | a provider, behind its manager | which person holds which role; who owns a page |
+| __Data__ — what is true right now | a provider, behind its manager | which user holds which role; who owns a page |
 | __Decision__ — the answer to a question | derived at the moment it is asked, never stored | may this identity open this door |
 
 A decision is never stored, because a stored decision is authority frozen at the moment it was
@@ -222,7 +222,7 @@ static assets that never reach a decision ([#1432](https://github.com/jwilleke/n
 | Which permissions exist | `ngdpbase.permissions.definitions`, through `ConfigurationManager` |
 | Which roles exist | `ngdpbase.roles.definitions`, through `ConfigurationManager` |
 | What a role permits | `ngdpbase.access.policies`, through `ConfigurationManager` — the only grant path |
-| Which person holds which role | `RoleManager` records (`data/roles/*.json`) |
+| Which user holds which role | `RoleManager` records (`data/roles/*.json`) |
 | A page's own rules (ACL markup, audience, private) | the page, read at evaluation time |
 | __May this identity open this door__ | __one gatekeeper__, deriving from the above every time |
 

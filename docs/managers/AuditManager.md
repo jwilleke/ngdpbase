@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-10-22'
+dateModified: '2026-10-23'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -135,7 +135,7 @@ All configuration keys use __lowercase__ format per Issue #102 refactoring.
 }
 ```
 
-The audit log in the application database ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), on `DatabaseManager`'s one connection, so it needs `ngdpbase.database.provider` `sqlite` and is encrypted when the database is (`NGDPBASE_DATABASE_KEY`). It shares `ngdpbase.audit.flushinterval`, `maxqueuesize` and `retentiondays` with the file provider. `max-results` is the largest page a search or the entries about one person returns, and the most rows an export holds. There is no connection string, table name or pool: the database is `DatabaseManager`'s. What it guarantees and how retention keeps the chain verifiable is in [audit-posture.md — The database provider](../audit-posture.md#the-database-provider).
+The audit log in the application database ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)), on `DatabaseManager`'s one connection, so it needs `ngdpbase.database.provider` `sqlite` and is encrypted when the database is (`NGDPBASE_DATABASE_KEY`). It shares `ngdpbase.audit.flushinterval`, `maxqueuesize` and `retentiondays` with the file provider. `max-results` is the largest page a search or the entries about one user returns, and the most rows an export holds. There is no connection string, table name or pool: the database is `DatabaseManager`'s. What it guarantees and how retention keeps the chain verifiable is in [audit-posture.md — The database provider](../audit-posture.md#the-database-provider).
 
 #### CloudAuditProvider (Future)
 
@@ -156,7 +156,7 @@ The audit log in the application database ([#1537](https://github.com/jwilleke/n
 | ----- | ----- | ----- | ----- |
 | __FileAuditProvider__ | ✅ Production | Single-instance, development | Local files, rotation, search |
 | __NullAuditProvider__ | ✅ Production | Disabled auditing, testing | No-op operations |
-| __DatabaseAuditProvider__ | ✅ Production | A site with an application database; indexed queries, the entries about one person | SQLite (SQLCipher when keyed), hash chain, checkpoint retention, witness |
+| __DatabaseAuditProvider__ | ✅ Production | A site with an application database; indexed queries, the entries about one user | SQLite (SQLCipher when keyed), hash chain, checkpoint retention, witness |
 | __CloudAuditProvider__ | 🚧 Planned | Cloud deployments | CloudWatch, Azure, GCP |
 
 ### Provider Selection Logic
@@ -350,7 +350,7 @@ const authFailures = await auditManager.searchAuditLogs({
 });
 
 // Search what a proxy did while acting for others (#1762): `user` is the
-// person represented, `actor` the person who acted
+// user represented, `actor` the user who acted
 const byProxy = await auditManager.searchAuditLogs({ actor: 'jim' });
 
 // Search denied access attempts
@@ -482,12 +482,12 @@ audited.
 | `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
 | `token-extend` | Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) | refuse | yes |
-| `proxy-grant` | Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) | refuse | yes |
+| `proxy-grant` | Proxy grant made: someone may act for the user named in user; actor is who made it (#1762) | refuse | yes |
 | `vault-proxy` | Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant | continue | no |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `search-page` | Page search; not recorded, read volume | continue | no |
-| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
+| `search-user` | Users searched for; enumerating users is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
 | `user-read` | User profile read; not recorded, read volume | continue | no |
 | `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
 | `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
@@ -499,10 +499,10 @@ audited.
 | `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
-| `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
-| `consent-grant` | A person accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
-| `consent-withdraw` | A person's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
-| `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762) | continue | yes |
+| `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the user represented, actor who ended it (#1762) | refuse | yes |
+| `consent-grant` | A user accepted a document they are asked to accept (#1603): which document (core's terms-of-service or privacy-policy, or an add-on's), its version and effective date, and how (sign-up, sign-in, turning an add-on on). Recorded before the acceptance is stored, which cannot proceed without it: consent must be provable | refuse | yes |
+| `consent-withdraw` | A user's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed | refuse | yes |
+| `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
 | `authentication-logout` | User signed out | continue | yes |
@@ -549,12 +549,12 @@ audited.
 | `oidcuserinfo-error` | OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account) | continue | yes |
 | `oidcserver-error` | OpenID Connect: the provider failed while handling a request | continue | yes |
 | `reauth-prompt` | Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one | continue | yes |
-| `reauth-success` | Step-up: the person re-authenticated, with the factor used | continue | yes |
-| `reauth-failure` | Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) | continue | yes |
+| `reauth-success` | Step-up: the user re-authenticated, with the factor used | continue | yes |
+| `reauth-failure` | Step-up: a re-authentication failed (wrong password, another user's passkey, throttled) | continue | yes |
 | `signinapproval-request` | Sign-in approval: an approval message was sent for a waiting sign-in, saying from where (IP, approximate place, browser) (#1532) | continue | yes |
 | `signinapproval-open` | Sign-in approval: the approval page was opened, with the opener's IP and browser; opening changes nothing (#1532) | continue | yes |
-| `signinapproval-approve` | Sign-in approval: the person pressed Approve (#1532) | continue | yes |
-| `signinapproval-deny` | Sign-in approval: the person pressed Deny; that sign-in will not complete (#1532) | continue | yes |
+| `signinapproval-approve` | Sign-in approval: the user pressed Approve (#1532) | continue | yes |
+| `signinapproval-deny` | Sign-in approval: the user pressed Deny; that sign-in will not complete (#1532) | continue | yes |
 | `signinapproval-expire` | Sign-in approval: a waiting sign-in expired before it was completed (#1532) | continue | yes |
 | `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
 | `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
@@ -611,7 +611,7 @@ how the other read-volume events (`asset-read`, `search-page`, `user-read`,
   timestamp: '2025-01-15T10:30:00.000Z', // ISO 8601 timestamp
   level: 'info',                         // Log level (debug, info, warn, error)
   eventType: 'page-edit',                // Type of event (see Event Types)
-  user: 'john.doe',                      // The account acted on (under a proxy grant: the person represented)
+  user: 'john.doe',                      // The account acted on (under a proxy grant: the user represented)
   actor: 'jane.roe',                     // Only under a proxy grant (#1762): who actually did it; absent otherwise
   userId: 'user-123',                    // Internal user ID
   sessionId: 'session-456',              // Session identifier
@@ -704,7 +704,7 @@ __Parameters:__
   - `offset` (number): Result offset (default: 0)
   - `sortBy` (string): Sort field (default: 'timestamp')
   - `sortOrder` (string): Sort order 'asc' or 'desc' (default: 'desc')
-- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A person reads the entries about themselves through [searchEntriesAbout](#searchentriesaboutperson-options-caller).
+- `caller` (PermissionSubject): who is asking, the request's subject. Required: the manager asks the PDP for `admin-system` (`audit-export` for an export) with this subject and refuses (`AuditQueryForbiddenError`) without it. `getAuditStats(filters, caller)` and `exportAuditLogs(filters, format, caller)` take it the same way. A user reads the entries about themselves through [searchEntriesAbout](#searchentriesaboutperson-options-caller).
 
 __Returns:__ `Promise<Object>`
 
@@ -720,7 +720,7 @@ __Returns:__ `Promise<Object>`
 
 #### searchEntriesAbout(person, options, caller)
 
-The entries about one person, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the person when the person is its `user` (the account acted on, or the person represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
+The entries about one user, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the user when the user is its `user` (the account acted on, or the user represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
 
 ```javascript
 const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0 }, ctx.subject);
@@ -728,7 +728,7 @@ const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0
 
 - `person` (string): the username whose entries are listed
 - `options`: `limit` (default 100, capped by the provider: `ngdpbase.audit.provider.database.max-results`) and `offset`
-- `caller` (PermissionSubject): the request's subject. The PDP decides with it: `profile-manage` (every account holds it) when `caller.username` is `person`, `admin-system` for anyone else's. Under a proxy grant the subject's username is the person represented and the PDP bounds the answer by the grant. A refusal is `AuditQueryForbiddenError`.
+- `caller` (PermissionSubject): the request's subject. The PDP decides with it: `profile-manage` (every account holds it) when `caller.username` is `person`, `admin-system` for anyone else's. Under a proxy grant the subject's username is the user represented and the PDP bounds the answer by the grant. A refusal is `AuditQueryForbiddenError`.
 
 __Returns:__ the same page shape as `searchAuditLogs`. The database provider answers from indexed columns; the file provider from the records it holds in memory (the newest 10,000); a provider that cannot answer (the null provider) rejects rather than returning an empty page.
 
@@ -1237,7 +1237,7 @@ __Recommendations:__
 
 ### DatabaseAuditProvider
 
-Not measured. `continue` records are written in one transaction per flush (`ngdpbase.audit.flushinterval`, `maxqueuesize`); a `refuse` record commits the queue and itself before the action goes on. Searches, stats and the entries about one person are SQL over indexed columns (time, type, user, actor, owner, resource), a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows.
+Not measured. `continue` records are written in one transaction per flush (`ngdpbase.audit.flushinterval`, `maxqueuesize`); a `refuse` record commits the queue and itself before the action goes on. Searches, stats and the entries about one user are SQL over indexed columns (time, type, user, actor, owner, resource), a page at a time, never more than `ngdpbase.audit.provider.database.max-results` rows.
 
 ## Backup and restore
 
