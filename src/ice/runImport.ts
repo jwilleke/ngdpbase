@@ -17,14 +17,19 @@
  *   files receiver's upload door. A fingerprint's original is kept once per
  *   scope and door: the ledger holds its reference, and a retry after a
  *   failed or refused import reuses it.
+ * - a receiver whose `keepOriginal` writes into an encrypted store
+ *   (`keepsEncrypted`) has its originals kept during the upload instead,
+ *   with the request's context while the user's key is live
+ *   ({@link keepOriginalsAtUpload}, #2034); the run then finds each one in
+ *   the ledger and reuses it, so it never needs the key.
  */
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import type {
-  IceCitation, IceFileReport, IceItem, IceLedger, IceRunReport, IceRunRequest, KeptOriginal, LedgerOriginal, OriginalChoice,
-  ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
+  IceCitation, IceFileReport, IceFileStatus, IceItem, IceLedger, IceRunReport, IceRunRequest, IceUpload, KeptOriginal, LedgerFileEntry,
+  LedgerOriginal, OriginalChoice, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from './types.js';
 
 /** Configuration the engine reads (each a key under `ngdpbase.import.engine.`). */
@@ -153,6 +158,109 @@ async function keepOriginal(file: IceItem, sha256: string, receiver: RegisteredR
   return files.receive(file, ctx, { runId, source: { name: file.name, sha256 }, chain: [] });
 }
 
+/** One file as the engine first hands it on: its bytes, and the same bytes as text. */
+function fileItem(upload: IceUpload): IceItem {
+  return { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
+}
+
+/** What the engine decides about one file before converting it. */
+interface FilePlan {
+  file?: IceItem;
+  sha256?: string;
+  last: LedgerFileEntry | null;
+  shim: RegisteredShim | null;
+  /** Set when the file goes no further: its status, and whether the ledger records it. */
+  stop?: { status: IceFileStatus; message?: string; refs?: string[]; record: boolean };
+}
+
+/**
+ * The checks every file passes before anything is kept or converted: noise,
+ * size, fingerprint, a shim (or a receiver taking files), and whether the
+ * scope already took it. One place, so keeping at upload decides exactly as
+ * the run does.
+ */
+async function planFile(upload: IceUpload, request: IceRunRequest, receiver: RegisteredReceiver, deps: IceRunDeps, scope: string): Promise<FilePlan> {
+  if (isNoise(upload.name, deps.settings.noise)) return { last: null, shim: null, stop: { status: 'noise', record: false } };
+  if (upload.bytes.length > deps.settings.maxFileBytes) {
+    return { last: null, shim: null, stop: { status: 'failed', message: `larger than the ${deps.settings.maxFileBytes} bytes allowed`, record: false } };
+  }
+  const sha256 = fingerprint(upload.bytes);
+  const last = await deps.ledger.lastFile(scope, sha256);
+  const file = fileItem(upload);
+  const shim = firstShim(file, request, receiver, deps);
+  if (!shim && !receiver.accepts.includes('file')) {
+    const message = request.shim
+      ? `${request.shim} is not available, or cannot hand to ${receiver.id}`
+      : `no shim reads this file for ${receiver.id}`;
+    return { file, sha256, last, shim, stop: { status: 'unreadable', message, record: true } };
+  }
+  if (shim?.duplicates !== 'item' && last && DONE.has(last.status)) {
+    return { file, sha256, last, shim, stop: { status: 'unchanged', refs: last.refs, message: `already imported ${last.at}`, record: false } };
+  }
+  return { file, sha256, last, shim };
+}
+
+/** Does this run keep its originals during the upload (#2034)? */
+export function keepsAtUpload(receiver: RegisteredReceiver | undefined, original: OriginalChoice): boolean {
+  return original === 'keep' && !!receiver?.keepOriginal && receiver.keepsEncrypted === true;
+}
+
+/** What keeping at upload did: how many it kept, or the first file it could not keep. */
+export interface UploadKeepResult {
+  kept: number;
+  refused?: { name: string; message: string };
+}
+
+/**
+ * Keep the originals of a run whose receiver keeps into an encrypted store,
+ * now, during the upload (#2034). `ctx` is the REQUEST's context: it holds
+ * the user's unlocked key, so the receiver's `keepOriginal` seals the bytes
+ * and the store's sealed index entry while the key is live. Each kept
+ * original is recorded in the ledger by fingerprint and door (#2011), so the
+ * queued run reuses it and never keeps again.
+ *
+ * The files are decided exactly as the run decides them ({@link planFile}):
+ * noise, a file too large, one nothing reads and one already imported are
+ * not kept. An original already kept through this door is not kept again.
+ * Stops at the first refusal (or failure) and says which file: the caller
+ * then queues nothing. Originals kept before it stay kept, and recorded, so
+ * the next try reuses them.
+ */
+export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, scope: string): Promise<UploadKeepResult> {
+  const now = deps.now ?? ((): Date => new Date());
+  const receiver = deps.receivers.get(request.receiver);
+  const result: UploadKeepResult = { kept: 0 };
+  if (!receiver?.keepOriginal || !keepsAtUpload(receiver, request.original ?? deps.settings.defaultOriginal)) return result;
+  const door = receiver.id;
+
+  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
+  for (const upload of files) {
+    const plan = await planFile(upload, request, receiver, deps, scope);
+    if (plan.stop || !plan.sha256 || !plan.file) continue;
+    if (plan.last?.original?.door === door) continue;
+    let outcome: ReceiveOutcome;
+    try {
+      outcome = await receiver.keepOriginal(plan.file, ctx);
+    } catch (err) {
+      outcome = { status: 'refused', message: err instanceof Error ? err.message : String(err) };
+    }
+    if (outcome.status === 'refused' || !outcome.ref) {
+      result.refused = { name: upload.name, message: outcome.message ?? 'refused' };
+      return result;
+    }
+    // The keep-once record (#2011). The file is not imported yet: its last
+    // status stays as it was, or `failed` with a note, as the run records a
+    // keep before its conversion.
+    await deps.ledger.recordFile(scope, {
+      ...(plan.last ?? { status: 'failed' as const, refs: [], message: 'the original was kept at upload; not imported yet' }),
+      name: upload.name, sha256: plan.sha256, size: upload.bytes.length, at: now().toISOString(),
+      original: { name: upload.name, sha256: plan.sha256, ref: outcome.ref, door }
+    });
+    result.kept++;
+  }
+  return result;
+}
+
 /**
  * Run one import. Fills and returns `report`, which the caller may be
  * showing while it runs. Never throws for one file's failure; that file's
@@ -181,47 +289,29 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     const fr: IceFileReport = { name: upload.name, size: upload.bytes.length, status: 'failed', chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] };
     report.files.push(fr);
 
-    if (isNoise(upload.name, deps.settings.noise)) {
-      fr.status = 'noise';
-      continue;
-    }
-    if (upload.bytes.length > deps.settings.maxFileBytes) {
-      fr.message = `larger than the ${deps.settings.maxFileBytes} bytes allowed`;
-      continue;
-    }
-    const sha256 = fingerprint(upload.bytes);
-    fr.sha256 = sha256;
-    const last = await deps.ledger.lastFile(scope, sha256);
+    const plan = await planFile(upload, request, receiver, deps, scope);
+    if (plan.sha256) fr.sha256 = plan.sha256;
     // The original kept for these bytes, carried forward in every entry so a retry never keeps another (#2011).
-    let keptOriginal: LedgerOriginal | undefined = last?.original;
+    let keptOriginal: LedgerOriginal | undefined = plan.last?.original;
     const record = async (): Promise<void> => {
+      if (!fr.sha256) return;
       await deps.ledger.recordFile(scope, {
-        name: fr.name, sha256, size: fr.size, status: fr.status, at: now().toISOString(), refs: fr.refs,
+        name: fr.name, sha256: fr.sha256, size: fr.size, status: fr.status, at: now().toISOString(), refs: fr.refs,
         ...(fr.message ? { message: fr.message } : {}),
         ...(keptOriginal ? { original: keptOriginal } : {})
       });
     };
-
-    const file: IceItem = { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
-    const shim = firstShim(file, request, receiver, deps);
-    if (!shim && !receiver.accepts.includes('file')) {
-      fr.status = 'unreadable';
-      fr.message = request.shim
-        ? `${request.shim} is not available, or cannot hand to ${receiver.id}`
-        : `no shim reads this file for ${receiver.id}`;
-      await record();
+    if (plan.stop || !plan.sha256 || !plan.file) {
+      if (plan.stop) {
+        fr.status = plan.stop.status;
+        if (plan.stop.message) fr.message = plan.stop.message;
+        if (plan.stop.refs) fr.refs = plan.stop.refs;
+        if (plan.stop.record) await record();
+      }
       continue;
     }
-
+    const { file, shim, sha256 } = plan;
     const perItem = shim?.duplicates === 'item';
-    if (!perItem) {
-      if (last && DONE.has(last.status)) {
-        fr.status = 'unchanged';
-        fr.refs = last.refs;
-        fr.message = `already imported ${last.at}`;
-        continue;
-      }
-    }
 
     try {
       let kept: KeptOriginal | undefined;
