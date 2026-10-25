@@ -19,7 +19,7 @@ const HOST_KEYS = [
   'logger', 'guardedFetch', 'setEnabledForPerson',
   'registerShim', 'registerReceiver',
   'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
-  'zonedParts'
+  'zonedParts', 'keyedSerial'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -156,6 +156,49 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     const host = hostOf('ledger');
     expect(Object.isFrozen(host)).toBe(true);
     expect(() => { host.guardedFetch = () => null; }).toThrow(TypeError);
+  });
+
+  describe('#2065: keyedSerial() — core\'s KeyedSerial, one per manager', () => {
+    const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    test('each call returns a new instance of core\'s own KeyedSerial', async () => {
+      await load();
+      const host = hostOf('ledger');
+      const { KeyedSerial } = await import('../../utils/keyedSerial');
+      const a = host.keyedSerial();
+      const b = host.keyedSerial();
+      expect(a).toBeInstanceOf(KeyedSerial);
+      expect(b).toBeInstanceOf(KeyedSerial);
+      expect(a).not.toBe(b);
+    });
+
+    test('two read-modify-writes of one record at once both land', async () => {
+      await load();
+      const serial = hostOf('ledger').keyedSerial();
+      // The add-on's own store: copy the map, change it, save it after a wait, as AccommodationManager does.
+      let store: Record<string, string[]> = { 'unit-1': [] };
+      const addTo = (id: string, entry: string) => serial.run(id, async () => {
+        const copy = { ...store, [id]: [...(store[id] ?? [])] };
+        await tick();
+        copy[id].push(entry);
+        store = copy;
+      });
+      await Promise.all([addTo('unit-1', 'upsert'), addTo('unit-1', 'billing')]);
+      expect(store['unit-1']).toEqual(['upsert', 'billing']);
+    });
+
+    test('different records run side by side', async () => {
+      await load();
+      const serial = hostOf('ledger').keyedSerial();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const first = serial.run('unit-1', () => held);
+      let otherRan = false;
+      await serial.run('unit-2', async () => { otherRan = true; });
+      expect(otherRan).toBe(true);
+      release();
+      await first;
+    });
   });
 
   test('each add-on gets its own host', async () => {

@@ -91,6 +91,26 @@ describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', ()
     `);
     expect(errors).toEqual([]);
   }, 60_000);
+
+  test('an add-on manager changes its own records one at a time through host.keyedSerial (#2065)', () => {
+    const errors = compileAgainstEntry(`
+      import type { AddonHost, KeyedSerial } from './index.js';
+      export class AccommodationManager {
+        private readonly serial: KeyedSerial;
+        private store = new Map<string, { billing: string }>();
+        constructor(host: AddonHost) { this.serial = host.keyedSerial(); }
+        setBilling(id: string, billing: string): Promise<number> {
+          return this.serial.run(id, async () => {
+            const next = new Map(this.store);
+            next.set(id, { ...next.get(id), billing });
+            this.store = next;
+            return next.size;
+          });
+        }
+      }
+    `);
+    expect(errors).toEqual([]);
+  }, 60_000);
 });
 
 describe('@jwilleke/ngdpbase-types: a scheduled job in the site\'s time zone (#1998)', () => {
@@ -136,6 +156,13 @@ describe('@jwilleke/ngdpbase-types/testing (#1865)', () => {
     const engine = { getManager: (n: string) => (n === 'PolicyInformationPoint' ? { systemPrincipalName: () => 'svc-test' } : null) };
     expect(buildAddonHost('ledger', defaults, undefined, engine).systemContext('ledger: seed')).toMatchObject({ username: 'svc-test', origin: 'boot', reason: 'ledger: seed' });
     expect(buildAddonHost('ledger', defaults).systemContext('ledger: seed').username).toBe('system');
+  });
+
+  test('#2065: buildAddonHost\'s keyedSerial gives a new KeyedSerial at each call', async () => {
+    const host = buildAddonHost('ledger', defaults);
+    const serial = host.keyedSerial();
+    expect(serial).not.toBe(host.keyedSerial());
+    await expect(serial.run('unit-1', async () => 'done')).resolves.toBe('done');
   });
 
   test('buildAddonHost refuses an undeclared event, as on a site', async () => {

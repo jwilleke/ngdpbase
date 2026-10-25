@@ -581,6 +581,7 @@ async register(engine, config) {
 | `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
 | `isAtLeast` | Whether an `x.y.z` version is at least another; throws on anything else |
 | `zonedParts(instant, timeZone)` | An instant's local `year`, `month` (1–12), `date` (`YYYY-MM-DD`), `day` (weekday) and `minutes` since midnight in a time zone: core's own, so a job needs no Intl code ([A job that runs on a schedule](#a-job-that-runs-on-a-schedule), [#1998](https://github.com/jwilleke/ngdpbase/issues/1998)) |
+| `keyedSerial()` | A new `KeyedSerial`, core's own per-key queue, at each call: one per manager, to [change your own records one at a time](#change-your-own-records-one-at-a-time) ([#2065](https://github.com/jwilleke/ngdpbase/issues/2065)) |
 
 ```typescript
 async register(engine, config, host) {
@@ -677,7 +678,7 @@ An addon in its own repository compiles against `@jwilleke/ngdpbase-types` ([#18
 npm install --save-dev --save-exact @jwilleke/ngdpbase-types@<ngdpbase.minVersion>
 ```
 
-- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` (with `PdfOptions`, `PdfMargin`, `PdfPageSize`, `PdfUnavailableError`), `EmailManager` (with `SendOptions`, `MailAttachment`, `AttachmentRefusedError`), `PolicyDecisionPoint`, `PageManager`, `PageAction`, and for contacts `IdentityManager` (and `PersonManager`, its deprecated alias for one release), `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactPoint`, `ContactPointEntry`, `PostalAddress`, `ContactRefusedError` and `LinkOfferOutcome`, and for imports `ImportManager`, `AddonIceDeclaration`, `IceShim`, `IceReceiver`, `IceItem`, `IceKind`, `IceWarning`, `ShimDirection`, `ShimAccepts`, `ShimTools`, `ShimReadResult`, `ReceiveInfo`, `ReceiveOutcome`, `IceCitation`, `KeptOriginal`, `OriginalChoice`, `IceOriginalChoices`, `OriginalKeep`, `IceUpload`, `IceSource`, `IceRunRequest`, `IceRunReport`, `IceFileReport` and `IceFileStatus`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
+- __The main entry is types only.__ Import it with `import type`; a value import fails at run time on purpose. It names `AddonModule`, `AddonManifest`, `AddonListing`, `AddonHost`, `PersonSwitchSetter`, `KeyedSerial` (what `host.keyedSerial()` returns), `WikiEngine` (with `createRouter`, `serveStatic`, `getManager`), `ApiContext`, `ActorContext`, `PermissionSubject`, `Decision`, `PluginContext`, `PluginParams`, `PluginFormatters`, `SimplePlugin`, `AuditEvent`, `JobRunContext`, `DatabaseManager`, `AddonDatabaseOptions`, `AddonDatabaseDeclaration`, `DatabaseEncrypt`, `Migration`, `ExportManager` (with `PdfOptions`, `PdfMargin`, `PdfPageSize`, `PdfUnavailableError`), `EmailManager` (with `SendOptions`, `MailAttachment`, `AttachmentRefusedError`), `PolicyDecisionPoint`, `PageManager`, `PageAction`, and for contacts `IdentityManager` (and `PersonManager`, its deprecated alias for one release), `OrganizationManager`, `Person`, `PersonAffiliation`, `PersonInput`, `PersonUpdate`, `Organization`, `OrganizationInput`, `OrganizationUpdate`, `ContactPoint`, `ContactPointEntry`, `PostalAddress`, `ContactRefusedError` and `LinkOfferOutcome`, and for imports `ImportManager`, `AddonIceDeclaration`, `IceShim`, `IceReceiver`, `IceItem`, `IceKind`, `IceWarning`, `ShimDirection`, `ShimAccepts`, `ShimTools`, `ShimReadResult`, `ReceiveInfo`, `ReceiveOutcome`, `IceCitation`, `KeptOriginal`, `OriginalChoice`, `IceOriginalChoices`, `OriginalKeep`, `IceUpload`, `IceSource`, `IceRunRequest`, `IceRunReport`, `IceFileReport` and `IceFileStatus`. Each is core's own declaration. Anything else is internal; ask for an addition by pull request to [`packages/ngdpbase-types/index.ts`](../../packages/ngdpbase-types/index.ts). Additions only between majors, as for `host`.
 - __`@jwilleke/ngdpbase-types/testing` is for tests.__ It holds core's own values, so an addon's CI needs no built ngdpbase:
   - `buildAddonHost(slug, defaults, setEnabledForPerson?, engine?)`: the real host, built from the addon's `config/default-config.json`. An undeclared audit event throws, as on a site, and a declared one reaches the sink. It binds the audit registry to those defaults, as a site's configuration does at boot. `host.setEnabledForPerson` calls the setter you pass, and without one it refuses, since a test has no accounts. `engine` names the system principal `host.systemContext(reason)` uses; without one it is core's fallback principal. To pass an engine and no setter, pass `undefined` for the setter.
   - `openAddonTestDatabase(owner, { migrations, ledgerTable }, declaredBy?)`: the handle `openAddonDatabase` returns, in memory, with the same owner and ledger-table rules. Migrations and triggers run as on a site. Each call opens a new database; close it in the test. Pass `declaredBy: { slug, defaults }` (the addon's `config/default-config.json`) and core's own reader checks the addon's database declaration: a missing, malformed or other-ledger declaration throws, as a site refuses it. `encrypt` is not applied, since the database is in memory, so a declaration with `encrypt: "required"` opens without a key.
@@ -754,13 +755,43 @@ await users.updateUser(username, (current) => {
 }, ctx.getActor());
 ```
 
-- Core runs the function inside that user's key, between the read and the write, so changes to one user happen one after another, each seeing the last. You cannot build this yourself: the key is not on `host`, and an add-on never writes its own per-key queue.
+- Core runs the function inside that user's key, between the read and the write, so changes to one user happen one after another, each seeing the last. You cannot build this yourself: the account's key is UserManager's own, not one from `host.keyedSerial()`, and an add-on never writes its own per-key queue.
 - `current` is a copy of the user's account without the password hash, your own fields included. Return only the fields to merge; return `undefined` to change nothing (nothing is written or recorded).
 - It may be `async`, but must not call `updateUser` for the same user, directly or through another manager: it would wait for itself forever.
 - The checks, the role change and the `user-edit` record are the same as for the object form `updateUser(username, { field: value }, ctx)`, which is still right when the change does not depend on the current account.
 - The context is the caller's, as for every door: `ctx.getActor()` in a route, the `JobContext` in a job.
 
 The worked examples are the journal's settings saves (`addons/journal/index.ts`, `addons/journal/routes/editor.ts`). The rules are in [UserManager](../managers/UserManager.md#one-change-at-a-time-per-account).
+
+### Change your own records one at a time
+
+An add-on that keeps records in its own store (a map in a file, rows it reads and writes back) changes each record through a `KeyedSerial` from `host.keyedSerial()` ([#2065](https://github.com/jwilleke/ngdpbase/issues/2065)). Two changes to one record at once (an admin's upsert and an owner's billing change) would otherwise both copy the old record, and the later save would drop the earlier change. It is core's own class, the one the [managers guide](managers-developer-guide.md#standing-rules) requires for every read-modify-write; never write another per-key queue, or chain every write on one promise (that holds up unrelated records too).
+
+```typescript
+import type { AddonHost, KeyedSerial } from '@jwilleke/ngdpbase-types';
+
+class AccommodationManager {
+  private readonly serial: KeyedSerial;
+  constructor(host: AddonHost) {
+    this.serial = host.keyedSerial(); // one per manager
+  }
+
+  setBilling(id: string, billing: Billing): Promise<void> {
+    return this.serial.run(id, async () => {
+      const all = await this.load(); // the read, inside run
+      all[id] = { ...all[id], billing };
+      await this.save(all); // the write, inside the same run
+    });
+  }
+}
+```
+
+- __Keep the read and the write inside `run(recordId, …)`.__ A read made before `run` is already stale when the write happens.
+- __Key by record id__, so changes to one record happen one after another, each seeing the last, while different records run side by side.
+- __Not re-entrant.__ Never call `run` for the same key from inside `fn`, directly or through another of your methods: the inner call waits for the outer one, which never finishes.
+- `run` resolves or rejects as `fn` does; a failed change fails its own caller only, and the next one on the key still runs.
+- It orders changes within one server process only; two processes sharing one data folder can still race ([managers guide, Known gaps](managers-developer-guide.md#known-gaps)).
+- In a test, `buildAddonHost` from [`@jwilleke/ngdpbase-types/testing`](#types-and-the-test-kit-jwillekengdpbase-types) is the real host, so `host.keyedSerial()` is the same class there.
 
 ### Create a user and invite them
 

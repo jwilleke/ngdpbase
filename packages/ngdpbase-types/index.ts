@@ -27,6 +27,9 @@ export type { Decision } from '../../src/types/Policy.js';
 export type { PluginContext, PluginParams, PluginFormatters } from '../../src/managers/PluginManager.js';
 export type { SimplePlugin } from '../../src/plugins/types.js';
 
+// Records changed one at a time (#2065): what `host.keyedSerial()` returns.
+export type { KeyedSerial } from '../../src/utils/keyedSerial.js';
+
 // Audit: the event shape `host.recordAuditEvent` takes.
 export type { AuditEvent } from '../../src/utils/auditEvents.js';
 
