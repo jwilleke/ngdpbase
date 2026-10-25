@@ -11,10 +11,13 @@ import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataMana
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
 import { resolveChoiceOptions, choiceValues } from '../managers/fieldOptions.js';
-import { submissionDetails } from '../managers/submissionText.js';
+import { submissionAnswers, submissionDetails } from '../managers/submissionText.js';
+import type { FormDefinition } from '../managers/FormsDataManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+import { FORMS_REVIEW_HANDLER, REVIEW_FORM_KEY, REVIEW_SUBMISSION_KEY } from '../managers/review.js';
 import type PluginManager from '../../../dist/src/managers/PluginManager.js';
 
-type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
+type AddonRef = { callHandler(formId: string, submission: FormSubmission, ctx: { engine: WikiEngine; req: unknown; decider: ActorContext | null }): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
 export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: AddonHost): Router {
   const { ApiContext, ApiError, sendApiError, logger } = host;
@@ -22,6 +25,46 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
 
   function fdm(): FormsDataManager | undefined {
     return engine.getManager<FormsDataManager>('FormsDataManager');
+  }
+
+  /**
+   * #2072: keep a submission to a form that needs review and file it with
+   * core's reviews, for the holders of the form's `review.decidePermission`.
+   * Returns why it could not be filed (the submission is then not kept), or
+   * null when it was.
+   */
+  async function fileForReview(
+    form: FormDefinition,
+    submission: FormSubmission,
+    filer: ActorContext,
+    choiceOptions: Awaited<ReturnType<typeof resolveChoiceOptions>>
+  ): Promise<string | null> {
+    const m = fdm();
+    if (!m || !form.review) return 'This form cannot be submitted right now';
+    await m.saveSubmission(submission);
+    const pluginManager = engine.getManager<PluginManager>('PluginManager');
+    const answers = pluginManager ? submissionAnswers(form, submission.data, choiceOptions, pluginManager.formatters.formatMoney) : [];
+    const details: Record<string, string> = {};
+    for (const a of answers) details[a.label] = a.text;
+    if (submission.onBehalfOf?.name) details['Submitted for'] = submission.onBehalfOf.name;
+    details[REVIEW_FORM_KEY] = form.id;
+    details[REVIEW_SUBMISSION_KEY] = submission.id;
+    const from = submission.onBehalfOf?.name ?? (submission.submittedBy.toLowerCase() !== 'anonymous' ? submission.submittedBy : 'someone not signed in');
+    try {
+      await host.reviews.fileRequest(filer, {
+        kind: FORMS_REVIEW_HANDLER,
+        subject: form.title,
+        summary: `A submission to "${form.title}" from ${from}`,
+        details,
+        decidePermission: form.review.decidePermission,
+        handlerId: FORMS_REVIEW_HANDLER
+      });
+      return null;
+    } catch (err) {
+      await m.discardSubmission(form.id, submission.id);
+      logger.error(`[forms] a submission to '${form.id}' could not be filed for review, so it was not kept: ${(err as Error).message}`);
+      return 'This form needs a review that is not available on this site right now, so it was not submitted. Please try again later.';
+    }
   }
 
   // ── POST /api/forms/submit/:formId ────────────────────────────────────────
@@ -96,20 +139,27 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
           status: 'pending'
         };
 
-        // ── 5. Handler first: a refused submission leaves nothing behind ───
-        const handlerResult = await addon.callHandler(formId, submission, { engine, req });
-        if (!handlerResult.ok) {
-          const { error, fields } = handlerResult as { error?: string; fields?: unknown };
-          res.status(409).json({
-            ok: false,
-            error: error ?? 'Handler rejected submission',
-            ...(fields && typeof fields === 'object' ? { fields } : {})
-          });
-          return;
-        }
+        if (form.review) {
+          // ── 5a. "Needs review" (#2072): keep the submission and file it with
+          // core's reviews; the form's handler runs when a reviewer approves it.
+          const refused = await fileForReview(form, submission, ctx.getActor(), choiceOptions);
+          if (refused) { res.status(503).json({ ok: false, error: refused }); return; }
+        } else {
+          // ── 5. Handler first: a refused submission leaves nothing behind ───
+          const handlerResult = await addon.callHandler(formId, submission, { engine, req, decider: null });
+          if (!handlerResult.ok) {
+            const { error, fields } = handlerResult as { error?: string; fields?: unknown };
+            res.status(409).json({
+              ok: false,
+              error: error ?? 'Handler rejected submission',
+              ...(fields && typeof fields === 'object' ? { fields } : {})
+            });
+            return;
+          }
 
-        // ── 6. Keep the submission, unless the form says the handler's record is the record
-        if (form.store !== false) await m.saveSubmission(submission);
+          // ── 6. Keep the submission, unless the form says the handler's record is the record
+          if (form.store !== false) await m.saveSubmission(submission);
+        }
 
         // Steps 7 and 8 tell someone about the submission; a form with
         // "notify": false sends neither (#1954).
@@ -160,7 +210,8 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         // user, so a role nobody holds is told nothing.
         const nm = engine.getManager<NotificationManager>('NotificationManager');
         const users = engine.getManager<UserManager>('UserManager');
-        if (notify && nm && users && ctx.subject) {
+        // A form that needs review: core tells the holders of its permission instead (#2072).
+        if (notify && !form.review && nm && users && ctx.subject) {
           const notice = {
             type:    'system' as const,
             title:   `New form submission: ${form.title}`,
@@ -182,7 +233,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
           }).catch((err: unknown) => logger.warn(`[forms] could not notify '${form.notifyRole}' of a submission to '${formId}':`, err));
         }
 
-        res.status(201).json({ ok: true, submissionId: submission.id });
+        res.status(201).json({ ok: true, submissionId: submission.id, ...(form.review ? { review: 'pending' } : {}) });
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err); return; }
         console.error('[forms] submit error:', err);

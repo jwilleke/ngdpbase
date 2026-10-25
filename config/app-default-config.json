@@ -532,6 +532,10 @@
     "privacy-policy"
   ],
   "ngdpbase.consent.storagedir": "${FAST_STORAGE}/consent",
+  "_comment_reviews": "#2072 — one core way to review requests (ReviewManager). An add-on, or a form set to need review, files a request naming the permission whose holders decide; they are notified, decide on /reviews, and on approval the add-on's handler carries it out. Requests are kept in the application database and only while it is encrypted (ngdpbase.database.provider sqlite and NGDPBASE_DATABASE_KEY set), since they can hold personal details. retention-days: how long a decided request is kept before it is removed (0 keeps them). list-limit: the most open requests the reviewer screen shows at once. details-max-bytes: the largest a request's details may be, as JSON.",
+  "ngdpbase.reviews.retention-days": 365,
+  "ngdpbase.reviews.list-limit": 200,
+  "ngdpbase.reviews.details-max-bytes": 65536,
   "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code's names are generated from configuration into src/utils/auditEventNames.generated.ts. #1638: every event is declared on its permission entry (ngdpbase.permissions.definitions.<name>.audit); an event that is a record rather than an action anyone may be granted (system-start, authentication-failed, job-*) is an entry with grantable: false. This map ships empty: it remains so an app-custom-config.json written before #1638 still overrides an event here (warned at boot). A name is declared in exactly one place. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
   "ngdpbase.audit.events": {},
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",
@@ -2220,6 +2224,34 @@
     },
     "job-started": {
       "description": "A background job started, and who asked for it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "review-filed": {
+      "description": "A request was filed for review (#2072): who filed it, its id, kind, the add-on handler and the permission whose holders decide; never its summary or details",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "review-approved": {
+      "description": "A request was approved and the add-on's handler carried it out (#2072): who decided, its id, kind and handler; never the note, summary or details",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "review-rejected": {
+      "description": "A request was rejected (#2072): who decided, its id, kind and handler; never the note, summary or details",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "review-failed": {
+      "description": "A request was approved but the add-on's handler did not carry it out, so it stays open (#2072): who approved it, its id, kind and handler",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

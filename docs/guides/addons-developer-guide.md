@@ -582,6 +582,7 @@ async register(engine, config) {
 | `isAtLeast` | Whether an `x.y.z` version is at least another; throws on anything else |
 | `zonedParts(instant, timeZone)` | An instant's local `year`, `month` (1–12), `date` (`YYYY-MM-DD`), `day` (weekday) and `minutes` since midnight in a time zone: core's own, so a job needs no Intl code ([A job that runs on a schedule](#a-job-that-runs-on-a-schedule), [#1998](https://github.com/jwilleke/ngdpbase/issues/1998)) |
 | `keyedSerial()` | A new `KeyedSerial`, core's own per-key queue, at each call: one per manager, to [change your own records one at a time](#change-your-own-records-one-at-a-time) ([#2065](https://github.com/jwilleke/ngdpbase/issues/2065)) |
+| `reviews`, `registerReviewHandler` | Core's one way to review requests: file one for the holders of a permission to decide, and register the handler that carries an approval out, only under this add-on's slug ([Ask for a review](#ask-for-a-review), [#2072](https://github.com/jwilleke/ngdpbase/issues/2072)) |
 
 ```typescript
 async register(engine, config, host) {
@@ -815,6 +816,43 @@ if (invited.outcome !== 'sent') {
 - __The outcome says when nothing was sent__, not an exception: `email-unavailable` (email off or failing, or no site address), `send-failed`, or `not-invitable` (no email address, a password already, signed in already). The account stays; an administrator can resend from User Management or set a password by hand.
 - __Core records it__ (`invitation-send`, then `invitation-use`, `-cancel` or `-expire`). Do not record it again; record your own action (the approval) with your own event.
 - `auth.cancelInvitation(actor, username)` stops a link; sending again replaces the old one. A link lasts `ngdpbase.auth.invitation.ttl-days`. The invited user lands on core's setup page (a password or passkey, the recovery words, the site's terms); your add-on's own documents are asked for as usual ([Terms an add-on asks users to accept](#terms-an-add-on-asks-users-to-accept)).
+
+### Ask for a review
+
+Something that must wait for someone to say yes (a new owner from a public form, an owner adding or removing another owner) is filed with core's reviews, never kept in a queue of your own ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072); [ReviewManager](../managers/ReviewManager.md)). Core tells the deciders, lists the request on `/reviews`, records each decision, and on approval calls your handler.
+
+```typescript
+import type { AddonHost, ReviewRequest, ActorContext } from '@jwilleke/ngdpbase-types';
+
+async register(engine, config, host: AddonHost) {
+  // Carries out an approved request, with the reviewer's context. Throw to leave it open;
+  // your message is shown to reviewers as the reason, so write it for them.
+  host.registerReviewHandler('accommodation.new-owner', async (request: ReviewRequest, ctx: ActorContext) => {
+    const created = await users.createUser({ username, email, displayName }, ctx);
+    const invited = await auth.inviteUser(ctx, created.username);
+    if (invited.outcome !== 'sent') throw new Error(`The account was made but no invitation was sent: ${invited.reason}`);
+    return { summary: `Account created for ${created.displayName} and invitation sent` };
+  });
+}
+
+// In your route, as whoever the request is for (a public form's visitor included):
+await host.reviews.fileRequest(ctx.getActor(), {
+  kind: 'accommodation.new-owner',          // starts with your slug
+  subject: 'Unit 12B',                      // a few words a reviewer recognises
+  summary: 'Add Pat Lee as an owner of unit 12B',
+  details: { Name: 'Pat Lee', Email: 'pat@example.com' }, // label and value pairs
+  decidePermission: 'owner-approve',        // your own permission, granted in your policy; never a role
+  handlerId: 'accommodation.new-owner'      // registered above
+});
+```
+
+- __Who decides is a permission.__ Declare it in your `config/default-config.json` and grant it in your own policy ([Permissions](#permissions)); `fileRequest` refuses one the site does not declare or that is not grantable. Its holders are notified when the request is filed, see it on `/reviews`, and only they may decide it.
+- __Only your own.__ `kind` and `handlerId` start with your slug (`<slug>.`), and `registerReviewHandler` takes only `<slug>.<name>`: anything else throws, so one add-on can never file for, or carry out, another's requests.
+- __Complete or not.__ Return `{ summary }` when the work is done; the request is approved with that summary. Throw when it is not: the request stays open, with your message and the time shown to reviewers, who approve again once it is fixed. Never return early with half the work done: undo what you wrote, then throw ([managers guide](managers-developer-guide.md#standing-rules)).
+- __The handler runs as the reviewer.__ `ctx` is the decider's context: your doors ask their permissions of it, and the records your handler's work leaves (the account, the invitation) name them. Core records the request itself (`review-filed`, `review-approved`, `review-rejected`, `review-failed`); record only your own action, if you have one.
+- __Details may be personal.__ Core keeps requests only in the encrypted application database (`ngdpbase.database.provider` `sqlite` with `NGDPBASE_DATABASE_KEY`). Without one, `fileRequest` throws `ReviewsUnavailableError` (its `name`), saying why: tell your user it could not be filed and keep nothing; never fall back to a queue of your own.
+- `host.reviews.listOpen(ctx)`, `get(ctx, id)` and `decide(ctx, id, 'approve' | 'reject', note?)` are the reviewer's calls, if you show requests on a screen of your own; core's `/reviews` already shows every request.
+- A rejection calls none of your code yet, and a requester cannot see or withdraw their own request (operator: a future enhancement). Register your handler on every start, even when reviews are off, so a site that turns them on later works.
 
 ### Contacts and identity records
 
@@ -1190,6 +1228,8 @@ An administrator can clear a form's stored submissions, on any form: built on th
 - A form with `"store": false` has no stored submissions, so it never needs clearing.
 
 Each submission records `formVersion`: the `providedBy` version of the form it was submitted on. Your handler receives it on the submission, and the stored submission keeps it. A site-built form's submissions have none.
+
+A form whose submissions must wait for a decision ships with `"review": { "decidePermission": "<permission>" }` ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072)): each submission is kept and filed with core's reviews ([Ask for a review](#ask-for-a-review)) for the holders of that permission, and your handler runs only when one of them approves it, with `context.decider` the reviewer's context (`null` on an ordinary submission, and `req` is then `null`). The form then sends no "New form submission" notification: core tells the deciders. Such a form cannot say `"store": false`, and a submission is refused (503, nothing kept) when the site keeps no reviews. The form builder has no box for it yet: set it in the definition.
 
 A form whose submissions are private (health notes, say) ships with `"store": false` and `"notify": false` ([#1954](https://github.com/jwilleke/ngdpbase/issues/1954)). Both default to `true`, and both may be left out of the definition you register. On a replace, the values you ship are the values stored.
 

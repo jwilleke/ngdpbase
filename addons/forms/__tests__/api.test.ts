@@ -758,3 +758,53 @@ describe('POST /api/forms/submit/:formId — formVersion (#1973)', () => {
     expect(saved[0]).not.toHaveProperty('formVersion');
   });
 });
+
+// ── "Needs review" (#2072) ────────────────────────────────────────────────────
+// Sabotaged once each (then restored): filing skipped and the handler run as
+// usual ("files it for review…" went red); the discard on a refused filing
+// removed ("…not kept" went red).
+
+describe('POST /api/forms/submit/:formId — a form that needs review (#2072)', () => {
+  const reviewForm = { ...testForm, id: 'review-form', title: 'New owner', proxySubmission: false, review: { decidePermission: 'user-create' } };
+
+  function reviewApp(fileRequest: (ctx: unknown, input: Record<string, unknown>) => Promise<unknown>) {
+    const saved: Array<{ id: string }> = [];
+    const discarded: string[] = [];
+    const engine = makeEngine({
+      FormsDataManager: {
+        getDefinition: () => reviewForm,
+        saveSubmission: (s: { id: string }) => { saved.push(s); return Promise.resolve(s); },
+        discardSubmission: (_f: string, id: string) => { discarded.push(id); return Promise.resolve(); }
+      }
+    });
+    const site = { getManager: (n: string) => (n === 'ReviewManager' ? { fileRequest, registerHandler: () => undefined } : undefined) };
+    const handler = vi.fn(async () => ({ ok: true }));
+    const app = express();
+    app.use(express.json());
+    app.use('/api/forms', apiRoutes(engine as never, { callHandler: handler }, buildAddonHost('forms', {}, undefined, site as never)));
+    return { app, saved, discarded, handler };
+  }
+
+  test('files it for review with the submitter\'s context, keeps it, and runs no handler yet', async () => {
+    const filed: Array<{ ctx: unknown; input: Record<string, unknown> }> = [];
+    const { app, saved, handler } = reviewApp((ctx, input) => { filed.push({ ctx, input }); return Promise.resolve({ id: 'r1' }); });
+    const res = await request(app).post('/api/forms/submit/review-form').send({ name: 'Pat Lee' });
+    expect(res.status).toBe(201);
+    expect(res.body.review).toBe('pending');
+    expect(handler).not.toHaveBeenCalled();
+    expect(saved).toHaveLength(1);
+    expect(filed).toHaveLength(1);
+    expect(filed[0].ctx).toBe(SUBMITTER);
+    expect(filed[0].input).toMatchObject({ kind: 'forms.submission', handlerId: 'forms.submission', decidePermission: 'user-create', subject: 'New owner' });
+    expect(filed[0].input.details).toMatchObject({ Name: 'Pat Lee', 'Form id': 'review-form', 'Submission id': saved[0].id });
+  });
+
+  test('a filing that is refused answers 503 and the submission is not kept', async () => {
+    const { app, saved, discarded, handler } = reviewApp(() => Promise.reject(new Error('Requests for review are kept in the application database')));
+    const res = await request(app).post('/api/forms/submit/review-form').send({ name: 'Pat Lee' });
+    expect(res.status).toBe(503);
+    expect(res.body.ok).toBe(false);
+    expect(discarded).toEqual([saved[0].id]);
+    expect(handler).not.toHaveBeenCalled();
+  });
+});

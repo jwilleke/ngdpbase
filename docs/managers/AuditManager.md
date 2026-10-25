@@ -517,6 +517,10 @@ audited.
 | `manager-state-change` | A manager changed state: degraded, disabled, failed or recovered | continue | yes |
 | `posture-recorded` | Security posture at startup, compared against the previous start | refuse | yes |
 | `job-started` | A background job started, and who asked for it | continue | yes |
+| `review-filed` | A request was filed for review (#2072): who filed it, its id, kind, the add-on handler and the permission whose holders decide; never its summary or details | continue | yes |
+| `review-approved` | A request was approved and the add-on's handler carried it out (#2072): who decided, its id, kind and handler; never the note, summary or details | continue | yes |
+| `review-rejected` | A request was rejected (#2072): who decided, its id, kind and handler; never the note, summary or details | continue | yes |
+| `review-failed` | A request was approved but the add-on's handler did not carry it out, so it stays open (#2072): who approved it, its id, kind and handler | continue | yes |
 | `job-completed` | A background job finished successfully | continue | yes |
 | `job-failed` | A background job failed | continue | yes |
 | `job-skipped` | Scheduled slots a job passed over, by its catch-up or overlap rule | continue | yes |

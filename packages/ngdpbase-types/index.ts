@@ -30,6 +30,14 @@ export type { SimplePlugin } from '../../src/plugins/types.js';
 // Records changed one at a time (#2065): what `host.keyedSerial()` returns.
 export type { KeyedSerial } from '../../src/utils/keyedSerial.js';
 
+// Requests for review (#2072): what `host.reviews` takes and returns, and the handler `host.registerReviewHandler` registers.
+export type {
+  AddonReviews, ReviewDecision, ReviewHandler, ReviewHandlerResult, ReviewRequest, ReviewRequestInput, ReviewStatus
+} from '../../src/types/Review.js';
+export type {
+  default as ReviewManager, ReviewRefusedError, ReviewsUnavailableError, ReviewNotOpenError, ReviewInputError, ReviewHandlerFailedError
+} from '../../src/managers/ReviewManager.js';
+
 // Audit: the event shape `host.recordAuditEvent` takes.
 export type { AuditEvent } from '../../src/utils/auditEvents.js';
 

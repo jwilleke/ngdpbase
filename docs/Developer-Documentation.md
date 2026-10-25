@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 43 | 48 | Core system managers |
+| [Managers](#managers) | 44 | 49 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 46 | 51 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -87,6 +87,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | PolicyManager | ✅ [doc](managers/PolicyManager.md) | Removed in |
 | PolicyValidator | ✅ [doc](managers/PolicyValidator.md) | Schema validation for policy definitions; runs at startup to refuse malformed policies |
 | RenderingManager | 📘 [doc](managers/RenderingManager.md) + [guide](managers/RenderingManager-Complete-Guide.md) | Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation |
+| ReviewManager | ✅ [doc](managers/ReviewManager.md) | One core way to review requests — an add-on files one naming the permission whose holders decide; they are notified, approve or reject on /reviews, and the add-on's handler carries an approval out (#2072) |
 | RoleManager | ✅ [doc](managers/RoleManager.md) | Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up) |
 | SchemaManager | 📘 [doc](managers/SchemaManager.md) + [guide](managers/SchemaManager-Complete-Guide.md) | JSON Schema registration and validation for typed entities (Person, Organization, etc.) |
 | SearchManager | 📘 [doc](managers/SearchManager.md) + [guide](managers/SearchManager-Complete-Guide.md) | Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker |
@@ -346,7 +347,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 43/43 with quick-reference docs (100%); 17 with Complete Guides.
+__Managers:__ 44/44 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 

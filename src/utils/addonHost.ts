@@ -23,6 +23,10 @@
  *   unchanged, so an add-on never imports them from `dist/` (#1813);
  * - `keyedSerial()` returns a new `KeyedSerial`, core's own per-key queue, so
  *   an add-on's manager changes each of its records one at a time (#2065);
+ * - `reviews` is ReviewManager's door (#2072), with `fileRequest` held to this
+ *   add-on's own `<slug>.` kinds and handlers, and `registerReviewHandler`
+ *   registers only `<slug>.<name>` handlers, so one add-on can never file for,
+ *   or carry out, another's requests;
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -46,6 +50,7 @@ import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
 import logger from './logger.js';
 import type { IceReceiver, IceShim } from '../ice/types.js';
+import type { AddonReviews, ReviewHandler } from '../types/Review.js';
 import type { AddonManifest } from '../managers/AddonsManager.js';
 
 /** The values core offers an add-on, under the names they were imported as. */
@@ -103,6 +108,20 @@ export interface AddonHost {
    */
   readonly keyedSerial: () => KeyedSerial;
   /**
+   * #2072: core's one way to review requests. `fileRequest(ctx, { kind,
+   * subject, summary, details, decidePermission, handlerId })` files one for
+   * the holders of `decidePermission` to decide; `kind` and `handlerId` must
+   * start with this add-on's slug. `listOpen`, `get` and `decide` are the
+   * reviewer's calls, each asked of the PDP with the caller's context.
+   */
+  readonly reviews: AddonReviews;
+  /**
+   * #2072: register the handler that carries out an approved request, as
+   * `<slug>.<name>`; any other prefix throws. It is called with the decider's
+   * context; throw to leave the request open with your message as the reason.
+   */
+  readonly registerReviewHandler: (handlerId: string, handler: ReviewHandler) => void;
+  /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
    * Returns the shim's id; site configuration switches it on and off.
@@ -118,6 +137,11 @@ export interface AddonHost {
 
 /** What the host may register for an add-on: the shim and receiver names its manifest declares (#1979). */
 export type AddonIceDeclaration = Pick<AddonManifest, 'shims' | 'receivers'>;
+
+/** ReviewManager, as the host reaches it (#2072). */
+interface ReviewDoor extends AddonReviews {
+  registerHandler(owner: string, handlerId: string, handler: ReviewHandler): void;
+}
 
 /** The engine's registry, as the host reaches it. */
 interface IceRegistry {
@@ -192,6 +216,30 @@ export function buildAddonHost(
     return registry as IceRegistry;
   };
 
+  const reviewDoor = (): ReviewDoor => {
+    const door = engine?.getManager('ReviewManager') as ReviewDoor | null | undefined;
+    if (!door) throw new Error('reviews are not available: this host was built without a site\'s ReviewManager');
+    return door;
+  };
+  const ownPrefix = (what: string, value: unknown): void => {
+    if (typeof value !== 'string' || !value.startsWith(`${slug}.`)) {
+      const message = `Add-on '${slug}' may file only its own review requests: a ${what} starts '${slug}.'; '${String(value)}' does not`;
+      logger.error(`[addons] ${message}`);
+      throw new Error(message);
+    }
+  };
+  const reviews: AddonReviews = {
+    fileRequest: async (ctx, input) => {
+      ownPrefix('kind', input?.kind);
+      ownPrefix('handler', input?.handlerId);
+      return reviewDoor().fileRequest(ctx, input);
+    },
+    listOpen: async (ctx) => reviewDoor().listOpen(ctx),
+    get: async (ctx, id) => reviewDoor().get(ctx, id),
+    decide: async (ctx, id, decision, note) => reviewDoor().decide(ctx, id, decision, note)
+  };
+  Object.freeze(reviews);
+
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
     const checked = addonAuditEventName(name);
     refuseUndeclared(slug, name, declared);
@@ -224,6 +272,8 @@ export function buildAddonHost(
     refusedNodeMessage,
     isAtLeast,
     zonedParts,
-    keyedSerial: () => new KeyedSerial()
+    keyedSerial: () => new KeyedSerial(),
+    reviews,
+    registerReviewHandler: (handlerId: string, handler: ReviewHandler) => reviewDoor().registerHandler(slug, handlerId, handler)
   });
 }

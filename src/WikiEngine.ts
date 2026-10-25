@@ -46,6 +46,7 @@ import FootnoteManager from './managers/FootnoteManager.js';
 import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import ConsentManager from './managers/ConsentManager.js';
+import ReviewManager from './managers/ReviewManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import IdentityManager from './managers/IdentityManager.js';
 import RoleManager from './managers/RoleManager.js';
@@ -417,6 +418,11 @@ class WikiEngine extends Engine {
     const consentManager = new ConsentManager(this);
     this.registerManager('ConsentManager', consentManager);
     await consentManager.initialize();
+
+    // #2072: requests for review, filed by add-ons, decided by the holders of a permission.
+    const reviewManager = new ReviewManager(this);
+    this.registerManager('ReviewManager', reviewManager);
+    await reviewManager.initialize();
 
     // Add BackupManager to the initialization sequence (must be last)
     const backupManager = new BackupManager(this);

@@ -70,7 +70,14 @@ export const FormDefinitionSchema = z.object({
   fields:          z.array(FieldSchema).min(1),
   // A form an add-on provides (#1973): the add-on, and its version that wrote
   // this copy. Set only by registerShippedForm; such a form is read-only here.
-  providedBy:      z.object({ addon: z.string(), version: z.string() }).optional()
+  providedBy:      z.object({ addon: z.string(), version: z.string() }).optional(),
+  // "Needs review" (#2072): each submission is filed with core's reviews for
+  // the holders of decidePermission; the form's handler runs only when one of
+  // them approves it. The submission is kept until then, so store must not be false.
+  review:          z.object({ decidePermission: z.string().min(1) }).optional()
+}).refine(form => !(form.review && form.store === false), {
+  message: 'a form that needs review keeps its submissions until they are decided, so store cannot be false',
+  path: ['store']
 });
 
 export type FormField      = z.infer<typeof FieldSchema>;
@@ -401,6 +408,25 @@ export default class FormsDataManager {
     } catch {
       return false;
     }
+  }
+
+  /** One stored submission, or null when there is none. */
+  async getSubmission(formId: string, submissionId: string): Promise<FormSubmission | null> {
+    if (!/^[a-z0-9-]+$/.test(formId) || !/^[0-9a-f-]+$/i.test(submissionId)) return null;
+    try {
+      return JSON.parse(await fsp.readFile(path.join(this.dataPath, 'submissions', formId, `${submissionId}.json`), 'utf8')) as FormSubmission;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Remove one stored submission (#2072): only one this add-on just saved for
+   * a request it then could not file, so the submission is not left behind.
+   */
+  async discardSubmission(formId: string, submissionId: string): Promise<void> {
+    if (!/^[a-z0-9-]+$/.test(formId) || !/^[0-9a-f-]+$/i.test(submissionId)) return;
+    await fsp.rm(path.join(this.dataPath, 'submissions', formId, `${submissionId}.json`), { force: true });
   }
 
   async getSubmissionCount(formId: string): Promise<number> {

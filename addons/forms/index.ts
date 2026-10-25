@@ -55,9 +55,11 @@ import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonHost } from '../../dist/src/utils/addonHost.js';
+import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
 import FormsPlugin from './plugins/FormsPlugin.js';
+import { FORMS_REVIEW_HANDLER, formsReviewHandler } from './managers/review.js';
 import apiRoutes from './routes/api.js';
 import adminRoutes from './routes/admin.js';
 import builderRoutes from './routes/builder.js';
@@ -74,10 +76,22 @@ export interface HandlerResult {
   [key: string]: unknown;
 }
 
+/**
+ * What a form's handler is called with: the engine, the submitting request
+ * (null when it runs on a reviewer's approval), and the reviewer's context
+ * when the form needs review (#2072), null otherwise.
+ */
+export interface FormHandlerContext {
+  engine: WikiEngine;
+  req: unknown;
+  decider: ActorContext | null;
+}
+
 export type FormHandler = (
   submission: FormSubmission,
-  context: { engine: WikiEngine; req: unknown }
+  context: FormHandlerContext
 ) => Promise<HandlerResult>;
+
 
 let dataManager: FormsDataManager | null = null;
 
@@ -101,7 +115,7 @@ const formsAddon = {
   async callHandler(
     formId: string,
     submission: FormSubmission,
-    context: { engine: WikiEngine; req: unknown }
+    context: FormHandlerContext
   ): Promise<HandlerResult> {
     const handler = this._handlers.get(formId);
     if (!handler) return { ok: true };
@@ -160,7 +174,20 @@ const formsAddon = {
     engine.app?.use('/addons/forms/builder', builderRoutes(engine, host));
     engine.app?.use('/addons/forms',         adminRoutes(engine, formsAddon, host));
 
-    // ── 8. Announce capability ───────────────────────────────────────────────
+    // ── 8. "Needs review" (#2072): a submission to such a form is carried out
+    // on a reviewer's approval, with the reviewer's context. Registered even
+    // where core keeps no reviews, so a site that turns them on later works.
+    try {
+      host.registerReviewHandler(FORMS_REVIEW_HANDLER, formsReviewHandler({
+        data: () => dataManager,
+        callHandler: (formId, submission, decider) => formsAddon.callHandler(formId, submission, { engine, req: null, decider }),
+        warn: (message) => host.logger.warn(message)
+      }));
+    } catch (err) {
+      host.logger.warn(`[forms] "needs review" forms cannot be decided: ${(err as Error).message}`);
+    }
+
+    // ── 9. Announce capability ───────────────────────────────────────────────
     engine.setCapability('forms', true);
   },
 

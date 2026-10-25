@@ -141,6 +141,14 @@ export const AUDIT_EVENT = {
   REAUTH_PROMPT: 'reauth-prompt',
   /** Step-up: the user re-authenticated, with the factor used */
   REAUTH_SUCCESS: 'reauth-success',
+  /** A request was approved and the add-on's handler carried it out (#2072): who decided, its id, kind and handler; never the note, summary or details */
+  REVIEW_APPROVED: 'review-approved',
+  /** A request was approved but the add-on's handler did not carry it out, so it stays open (#2072): who approved it, its id, kind and handler */
+  REVIEW_FAILED: 'review-failed',
+  /** A request was filed for review (#2072): who filed it, its id, kind, the add-on handler and the permission whose holders decide; never its summary or details */
+  REVIEW_FILED: 'review-filed',
+  /** A request was rejected (#2072): who decided, its id, kind and handler; never the note, summary or details */
+  REVIEW_REJECTED: 'review-rejected',
   /** Page search; not recorded, read volume */
   SEARCH_PAGE: 'search-page',
   /** Users searched for; enumerating users is disclosive in a way searching pages is not. Off by default as read volume */
