@@ -58,6 +58,7 @@ Set these in `app-custom-config.json`, or with Pause / Resume on the admin page.
 - A changed schedule counts its slots from the moment it takes effect: nothing is caught up for the schedule it replaced. The change is audited (`job-schedule-change`).
 - An override that does not compile is refused with an error in the log, and the schedule in force stays.
 - Automatic backups are set on Admin → Backup, not with an override.
+- An add-on may ship a job paused: its own `config/default-config.json` sets `ngdpbase.jobs.<id>.enabled: false`, and the job shows as paused until you press Resume (or set the key `true` here), which writes your own value over the add-on's. Nothing is caught up for the time it was paused ([#1998](https://github.com/jwilleke/ngdpbase/issues/1998)).
 
 ## What the server needs
 

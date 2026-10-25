@@ -45,23 +45,23 @@ describe('@jwilleke/ngdpbase-types main entry (#1865)', () => {
   });
 });
 
-describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', () => {
-  /** Type-check an add-on source against the public entry; returns its errors. */
-  function compileAgainstEntry(consumer: string): string[] {
-    const configPath = path.join(PKG, 'tsconfig.json');
-    const parsed = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, (f) => ts.sys.readFile(f)).config, ts.sys, PKG);
-    const file = path.join(PKG, '__consumer__.ts');
-    const options = { ...parsed.options, noEmit: true, emitDeclarationOnly: false, declaration: false };
-    const host = ts.createCompilerHost(options);
-    const { getSourceFile, fileExists, readFile } = host;
-    host.fileExists = (f) => f === file || fileExists(f);
-    host.readFile = (f) => (f === file ? consumer : readFile(f));
-    host.getSourceFile = (f, lang, ...rest) => (f === file ? ts.createSourceFile(f, consumer, lang) : getSourceFile(f, lang, ...rest));
-    const program = ts.createProgram([file], options, host);
-    return ts.getPreEmitDiagnostics(program, program.getSourceFile(file))
-      .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
-  }
+/** Type-check an add-on source against the public entry; returns its errors. */
+function compileAgainstEntry(consumer: string): string[] {
+  const configPath = path.join(PKG, 'tsconfig.json');
+  const parsed = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, (f) => ts.sys.readFile(f)).config, ts.sys, PKG);
+  const file = path.join(PKG, '__consumer__.ts');
+  const options = { ...parsed.options, noEmit: true, emitDeclarationOnly: false, declaration: false };
+  const host = ts.createCompilerHost(options);
+  const { getSourceFile, fileExists, readFile } = host;
+  host.fileExists = (f) => f === file || fileExists(f);
+  host.readFile = (f) => (f === file ? consumer : readFile(f));
+  host.getSourceFile = (f, lang, ...rest) => (f === file ? ts.createSourceFile(f, consumer, lang) : getSourceFile(f, lang, ...rest));
+  const program = ts.createProgram([file], options, host);
+  return ts.getPreEmitDiagnostics(program, program.getSourceFile(file))
+    .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+}
 
+describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', () => {
   test('a receiver passes its context, a job\'s included, straight to the PDP, with no cast', () => {
     const errors = compileAgainstEntry(`
       import type { ActorContext, AddonHost, PolicyDecisionPoint, Decision } from './index.js';
@@ -87,6 +87,27 @@ describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', ()
         await users.updateUser('pat', change, ctx);
         await users.updateUser('pat', async (current) => ({ displayName: current.displayName ?? 'Pat' }), ctx);
         await users.updateUser('pat', { displayName: 'Pat' }, ctx);
+      }
+    `);
+    expect(errors).toEqual([]);
+  }, 60_000);
+});
+
+describe('@jwilleke/ngdpbase-types: a scheduled job in the site\'s time zone (#1998)', () => {
+  test('a job finds its slot\'s local month through host.zonedParts and the scheduler\'s zone, with no cast', () => {
+    const errors = compileAgainstEntry(`
+      import type { AddonHost, BackgroundJobManager, JobDefinition } from './index.js';
+      export function register(jobs: BackgroundJobManager, host: AddonHost): void {
+        const def: JobDefinition = {
+          id: 'accounting-dues.issue-invoices',
+          displayName: 'Issue invoices',
+          schedule: 'start-of-month 06:00',
+          run: async (_progress, ctx) => {
+            const { year, month }: { year: number; month: number } = host.zonedParts(new Date(ctx.slot ?? Date.now()), jobs.scheduleTimeZone());
+            return { success: true, summary: \`\${year}-\${month}\` };
+          }
+        };
+        jobs.registerJob(def);
       }
     `);
     expect(errors).toEqual([]);

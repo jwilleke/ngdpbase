@@ -162,6 +162,15 @@ describe('#1432 availability', () => {
     test('an unknown time zone falls back to UTC rather than closing the site', () => {
       expect(zonedParts(new Date('2026-09-21T18:00:00Z'), 'Mars/Olympus').date).toBe('2026-09-21');
     });
+
+    test('#1998: the local year and month, which a month boundary needs, not the UTC ones', () => {
+      // 00:30 on 1 November in Tokyo is still 31 October in UTC.
+      const slot = new Date('2026-10-31T15:30:00Z');
+      expect(zonedParts(slot, 'Asia/Tokyo')).toEqual({ day: 'sunday', minutes: 30, date: '2026-11-01', year: 2026, month: 11 });
+      expect(zonedParts(slot, 'UTC')).toMatchObject({ date: '2026-10-31', year: 2026, month: 10 });
+      // New Year's Eve 22:00 in New York is already 1 January in UTC.
+      expect(zonedParts(new Date('2027-01-01T03:00:00Z'), 'America/New_York')).toMatchObject({ date: '2026-12-31', year: 2026, month: 12 });
+    });
   });
 
   describe('holidayKeyMatches', () => {

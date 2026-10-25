@@ -18,7 +18,8 @@ const HOST_KEYS = [
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
   'logger', 'guardedFetch', 'setEnabledForPerson',
   'registerShim', 'registerReceiver',
-  'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast'
+  'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
+  'zonedParts'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -127,6 +128,9 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     expect(host.createGuardedElasticsearchClient).toBe(es.createGuardedElasticsearchClient);
     expect(host.refusedNodeMessage).toBe(es.refusedNodeMessage);
     expect(host.isAtLeast).toBe(version.isAtLeast);
+    // #1998: core's own zonedParts, so a scheduled job finds its local month without an Intl copy.
+    const availability = await import('../../utils/availability');
+    expect(host.zonedParts).toBe(availability.zonedParts);
     expect(typeof host.recordAuditEvent).toBe('function');
     expect(typeof host.addonAuditEventName).toBe('function');
     expect(typeof host.logger.info).toBe('function');

@@ -500,10 +500,21 @@ class BackgroundJobManager extends BaseManager {
     return declared;
   }
 
+  /**
+   * The time zone the scheduler runs a schedule in when the schedule names
+   * none (#1998): `ngdpbase.default.timezone`, UTC when it is not set. Read
+   * each call, as the schedules are. An add-on's job passes it, with its
+   * `ctx.slot`, to `host.zonedParts` to learn the slot's local month or day.
+   * A schedule that names its own `tz` runs in that zone instead.
+   */
+  scheduleTimeZone(): string {
+    return String(this.setting('ngdpbase.default.timezone', 'UTC'));
+  }
+
   private compile(input: ScheduleInput, where: string): Schedule {
     try {
       return parseSchedule(input, {
-        defaultTimeZone: String(this.setting('ngdpbase.default.timezone', 'UTC')),
+        defaultTimeZone: this.scheduleTimeZone(),
         minIntervalMs: Number(this.setting('ngdpbase.jobs.min-interval-ms', 60_000))
       });
     } catch (err) {
