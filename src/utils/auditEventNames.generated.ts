@@ -199,6 +199,8 @@ export const AUDIT_EVENT = {
   USER_DELETE: 'user-delete',
   /** Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded */
   USER_EDIT: 'user-edit',
+  /** An operator's account import, summed up: the file, the operator, and how many accounts were created, skipped, refused, failed and invited (#2075). Each account it creates is its own user-create */
+  USER_IMPORT: 'user-import',
   /** User profile read; not recorded, read volume */
   USER_READ: 'user-read',
   /** Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant */

@@ -491,6 +491,7 @@ audited.
 | `user-read` | User profile read; not recorded, read volume | continue | no |
 | `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
 | `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
+| `user-import` | An operator's account import, summed up: the file, the operator, and how many accounts were created, skipped, refused, failed and invited (#2075). Each account it creates is its own user-create | continue | yes |
 | `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
 | `identity-manage` | Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values | continue | yes |
 | `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |

@@ -56,6 +56,80 @@ function publicRecord(user: User): Omit<User, 'password'> {
   return { ...rest, isTest: user.isTest === true };
 }
 
+/** An ISO 8601 instant not in the future, as stored; undefined for anything else (#2075). */
+function pastInstant(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && ms <= Date.now() ? new Date(ms).toISOString() : undefined;
+}
+
+/** A whole number above zero, or the fallback. */
+function positiveCount(value: unknown, fallback: number): number {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Let the event loop run between batches of a long import (#2075). */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** The roles an imported account gets when its row names none this site declares (#2075). */
+const IMPORT_DEFAULT_ROLES_KEY = 'ngdpbase.user.import.default-roles';
+/** How many rows an import takes before giving the event loop back (#2075). */
+const IMPORT_BATCH_SIZE_KEY = 'ngdpbase.user.import.batch-size';
+const DEFAULT_IMPORT_BATCH_SIZE = 25;
+/** The pause between two invitations an import sends (#2075). */
+const IMPORT_INVITE_INTERVAL_KEY = 'ngdpbase.user.import.invite-interval-ms';
+const DEFAULT_IMPORT_INVITE_INTERVAL_MS = 1000;
+/**
+ * The role an import gives only when told to (#2075). Input validation of the
+ * file, like the admin form's external-account rule, not an access decision.
+ */
+const IMPORT_GUARDED_ROLE = 'admin';
+/** Something that can be an address: no spaces, one `@` with text either side. */
+const IMPORT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+
+/** How an account import runs (#2075). */
+export interface AccountImportOptions {
+  /** Create the accounts. Without it nothing is written or recorded (a dry run). */
+  apply: boolean;
+  /** Let a row carry the `admin` role; without it such a row is refused. */
+  allowAdmin: boolean;
+  /** Send each created account the invitation (#2049). */
+  invite: boolean;
+  /** What is imported, for the report and the record: the file and the operator. */
+  source: string;
+}
+
+/** What became of one row: `create` is a dry run's "would be created". */
+export type AccountImportStatus = 'create' | 'created' | 'skipped' | 'refused' | 'failed';
+
+/** One row of an import's report (#2075). `row` counts from 1, in file order. */
+export interface AccountImportEntry {
+  row: number;
+  username: string;
+  status: AccountImportStatus;
+  /** Why the row was skipped, refused or failed. */
+  reason?: string;
+  /** The roles the account is given (beyond the roles every account holds). */
+  roles?: string[];
+  /** What was changed from the file: roles left out, default roles given. */
+  notes?: string[];
+  /** The invitation, when one was asked for. */
+  invitation?: { outcome: 'sent' | 'would-send' | 'not-sent'; reason?: string };
+}
+
+/** An account import's report, for the operator (#2075). */
+export interface AccountImportReport {
+  applied: boolean;
+  source: string;
+  entries: AccountImportEntry[];
+  counts: { rows: number; create: number; created: number; skipped: number; refused: number; failed: number; invited: number; notInvited: number };
+  /** Why no invitation can be sent on this site, when invitations were asked for and cannot be. */
+  invitationsUnavailable: string | null;
+}
+
 /**
  * Provider constructor type for dynamic loading
  */
@@ -241,6 +315,8 @@ interface UserCreateInput {
   profileLocked?: boolean;
   /** A test account (#1805): attribute only, grants nothing. Default false. */
   isTest?: boolean;
+  /** When the account was first made, for one brought from another system (#2075): ISO 8601, not in the future. Default now. */
+  createdAt?: string;
 }
 
 /**
@@ -1013,17 +1089,16 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Create new user
-   * @param {UserCreateInput} userData - User data
-   * @returns {Promise<Omit<User, 'password'>>} Created user (without password)
+   * Throws the `UserCreateError` `createUser` refuses an account with, before
+   * anything is written: the system principal's or a reserved name, a taken
+   * username or email, a display name that is an existing page's. The one
+   * statement of those rules, so an account import's dry run (#2075) refuses
+   * exactly what the create would.
    */
-  async createUser(userData: UserCreateInput, ctx: ActorContext): Promise<Omit<User, 'password'>> {
+  private async assertCreatable(username: string, email: string, displayName: string | undefined): Promise<void> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
-
-    const { username, email, displayName, password, roles: chosenRoles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false, isTest = false } = userData;
-    const roles = this.withAccountRoles(chosenRoles);
 
     if (this.policyInformationPoint().isSystemPrincipal(username)) {
       // #631: the system principal is an identity named in .env, not an
@@ -1069,6 +1144,22 @@ class UserManager extends BaseManager {
         `Display name "${finalDisplayName}" conflicts with an existing page`
       );
     }
+  }
+
+  /**
+   * Create new user
+   * @param {UserCreateInput} userData - User data
+   * @returns {Promise<Omit<User, 'password'>>} Created user (without password)
+   */
+  async createUser(userData: UserCreateInput, ctx: ActorContext): Promise<Omit<User, 'password'>> {
+    if (!this.provider) {
+      throw new Error('Provider not initialized');
+    }
+
+    const { username, email, displayName, password, roles: chosenRoles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false, isTest = false } = userData;
+    const roles = this.withAccountRoles(chosenRoles);
+
+    await this.assertCreatable(username, email, displayName);
 
     // #2049: no password given is no password stored, never the hash of an empty one; an invitation gives the user their way in.
     const hashedPassword = isExternal || !password ? '' : await this.hashPassword(password);
@@ -1090,7 +1181,8 @@ class UserManager extends BaseManager {
       isExternal: isExternal,
       isTest: isTest === true,
       profileLocked: profileLocked || undefined,
-      createdAt: new Date().toISOString(),
+      // #2075: an account brought from another system keeps when it was first made.
+      createdAt: pastInstant(userData.createdAt) ?? new Date().toISOString(),
       lastLogin: undefined,
       loginCount: 0,
       preferences: {
@@ -1172,6 +1264,184 @@ class UserManager extends BaseManager {
     } catch (error) {
       logger.error(`❌ Account ${username} could not be taken back after its roles failed; delete it by hand (#2015): ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * Bring accounts from another system (#2075): an operator's list of
+   * `{ username, email, displayName?, roles?, isTest?, createdAt? }`.
+   *
+   * Every row is checked first: its fields, a username or email that appears
+   * earlier in the list, and what `createUser` itself refuses
+   * (`assertCreatable`). A username that already has an account is skipped
+   * and left exactly as it is, so a second run creates nothing twice. A row's
+   * roles are kept when this site declares them (`ngdpbase.roles.definitions`),
+   * the `admin` role only when `allowAdmin` says so (otherwise the row is
+   * refused); a row left with no role gets `ngdpbase.user.import.default-roles`.
+   * No password and no passkey is ever carried: each account is made through
+   * `createUser` with none, which also makes its identity record and records
+   * `user-create` with `ctx` (the system principal, its reason naming the file
+   * and the operator).
+   *
+   * Without `apply` nothing is written and nothing is recorded: the report says
+   * what would be created and why each other row would not. With `invite`,
+   * each created account is sent the invitation (#2049) through
+   * `AuthManager.inviteUser`, one every `ngdpbase.user.import.invite-interval-ms`;
+   * the report says who was not invited and why. Rows are taken in batches of
+   * `ngdpbase.user.import.batch-size`, giving the event loop back between
+   * batches. One `user-import` record sums up an applied run. Needs
+   * `user-create` (throws `Permission denied`).
+   */
+  async importAccounts(rows: readonly unknown[], options: AccountImportOptions, ctx: ActorContext): Promise<AccountImportReport> {
+    if (!this.provider) {
+      throw new Error('Provider not initialized');
+    }
+    const pdp = this.engine.getManager<{ permits(subject: ActorContext, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (!pdp || !(await pdp.permits(ctx, 'user-create'))) throw new Error('Permission denied');
+
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declaredRoles = new Set(Object.keys((config?.getProperty('ngdpbase.roles.definitions', {}) ?? {})));
+    const defaultRoles = enabledEntries(config?.getProperty(IMPORT_DEFAULT_ROLES_KEY, { reader: true }));
+    const batchSize = positiveCount(config?.getProperty(IMPORT_BATCH_SIZE_KEY, DEFAULT_IMPORT_BATCH_SIZE), DEFAULT_IMPORT_BATCH_SIZE);
+    const inviteIntervalMs = Math.max(0, Number(config?.getProperty(IMPORT_INVITE_INTERVAL_KEY, DEFAULT_IMPORT_INVITE_INTERVAL_MS)) || 0);
+
+    const entries: AccountImportEntry[] = [];
+    const toCreate = new Map<AccountImportEntry, UserCreateInput>();
+    const firstRowOf = { username: new Map<string, number>(), email: new Map<string, number>() };
+    for (let i = 0; i < rows.length; i++) {
+      if (i > 0 && i % batchSize === 0) await yieldToEventLoop();
+      const checked = await this.checkImportRow(rows[i], i + 1, { declaredRoles, defaultRoles, allowAdmin: options.allowAdmin, firstRowOf });
+      entries.push(checked.entry);
+      if (checked.input) toCreate.set(checked.entry, checked.input);
+    }
+
+    if (options.apply) {
+      let n = 0;
+      for (const [entry, input] of toCreate) {
+        if (n > 0 && n % batchSize === 0) await yieldToEventLoop();
+        n++;
+        try {
+          await this.createUser(input, ctx);
+          entry.status = 'created';
+        } catch (error) {
+          entry.status = 'failed';
+          entry.reason = error instanceof Error ? error.message : String(error);
+        }
+      }
+    }
+
+    let invitationsUnavailable: string | null = null;
+    if (options.invite) {
+      const auth = this.engine.getManager<{ invitationsUnavailable(): string | null; inviteUser(c: ActorContext, u: string): Promise<{ outcome: string; reason?: string }> }>('AuthManager');
+      invitationsUnavailable = auth ? auth.invitationsUnavailable() : 'There is no sign-in manager on this site, so no invitation can be sent.';
+      let sends = 0;
+      for (const entry of entries.filter((e) => e.status === (options.apply ? 'created' : 'create'))) {
+        if (invitationsUnavailable || !auth) {
+          entry.invitation = { outcome: 'not-sent', reason: invitationsUnavailable ?? '' };
+        } else if (!options.apply) {
+          entry.invitation = { outcome: 'would-send' };
+        } else {
+          if (sends++ > 0 && inviteIntervalMs > 0) await new Promise((resolve) => setTimeout(resolve, inviteIntervalMs));
+          try {
+            const sent = await auth.inviteUser(ctx, entry.username);
+            entry.invitation = sent.outcome === 'sent' ? { outcome: 'sent' } : { outcome: 'not-sent', reason: sent.reason ?? sent.outcome };
+          } catch (error) {
+            entry.invitation = { outcome: 'not-sent', reason: error instanceof Error ? error.message : String(error) };
+          }
+        }
+      }
+    }
+
+    const count = (status: AccountImportStatus): number => entries.filter((e) => e.status === status).length;
+    const counts = {
+      rows: rows.length,
+      create: count('create'),
+      created: count('created'),
+      skipped: count('skipped'),
+      refused: count('refused'),
+      failed: count('failed'),
+      invited: entries.filter((e) => e.invitation?.outcome === 'sent').length,
+      notInvited: entries.filter((e) => e.invitation?.outcome === 'not-sent').length
+    };
+
+    if (options.apply) {
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_IMPORT,
+        ...who,
+        action: 'user-import',
+        result: counts.failed > 0 ? 'failure' : 'success',
+        severity: 'medium',
+        resource: options.source,
+        resourceType: 'user',
+        metadata: {
+          source: options.source,
+          rows: counts.rows, created: counts.created, skipped: counts.skipped, refused: counts.refused, failed: counts.failed,
+          ...(options.invite ? { invited: counts.invited, notInvited: counts.notInvited } : {}),
+          allowAdmin: options.allowAdmin,
+          ...who.metadata
+        }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-import of ${options.source}:`, err));
+    }
+
+    logger.info(`👥 Account import ${options.apply ? '' : '(dry run) '}from ${options.source}: ${options.apply ? `${counts.created} created` : `${counts.create} to create`}, ${counts.skipped} skipped, ${counts.refused} refused, ${counts.failed} failed`);
+    return { applied: options.apply, source: options.source, entries, counts, invitationsUnavailable };
+  }
+
+  /** One import row, checked (#2075): its entry in the report, and what to create when it is to be created. */
+  private async checkImportRow(
+    raw: unknown,
+    row: number,
+    rules: { declaredRoles: ReadonlySet<string>; defaultRoles: readonly string[]; allowAdmin: boolean; firstRowOf: { username: Map<string, number>; email: Map<string, number> } }
+  ): Promise<{ entry: AccountImportEntry; input?: UserCreateInput }> {
+    const fields = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+    const username = typeof fields.username === 'string' ? fields.username : '';
+    const refuse = (reason: string): { entry: AccountImportEntry } => ({ entry: { row, username, status: 'refused', reason } });
+
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return refuse('The row is not an account.');
+    if (username.trim() === '') return refuse('The row has no username.');
+    if (username !== username.trim()) return refuse('The username starts or ends with a space.');
+    const email = typeof fields.email === 'string' ? fields.email.trim() : '';
+    if (!IMPORT_EMAIL_PATTERN.test(email)) return refuse('The row has no valid email address.');
+    if (fields.displayName !== undefined && typeof fields.displayName !== 'string') return refuse('The display name is not text.');
+    if (fields.isTest !== undefined && typeof fields.isTest !== 'boolean') return refuse('isTest is not true or false.');
+    if (fields.createdAt !== undefined && fields.createdAt !== '' && !pastInstant(fields.createdAt)) return refuse('createdAt is not a date in the past.');
+    if (fields.roles !== undefined && (!Array.isArray(fields.roles) || fields.roles.some((r) => typeof r !== 'string'))) return refuse('The roles are not a list of role names.');
+
+    const given = [...new Set(((fields.roles ?? []) as string[]).map((r) => r.trim()).filter((r) => r !== ''))];
+    if (given.includes(IMPORT_GUARDED_ROLE) && !rules.allowAdmin) return refuse('The row asks for the admin role, which is given only when the import allows it (--allow-admin).');
+    const notes: string[] = [];
+    const undeclared = given.filter((r) => !rules.declaredRoles.has(r));
+    if (undeclared.length > 0) notes.push(`not a role on this site, not given: ${undeclared.join(', ')}`);
+    let roles = given.filter((r) => rules.declaredRoles.has(r));
+    if (roles.length === 0) {
+      roles = [...rules.defaultRoles];
+      notes.push(`given the default roles: ${roles.join(', ') || '(none)'}`);
+    }
+
+    const nameKey = normalizeUsername(username);
+    const emailKey = UserManager.emailKey(email);
+    const earlierName = rules.firstRowOf.username.get(nameKey);
+    if (earlierName !== undefined) return refuse(`The username is already on row ${earlierName} of the file.`);
+    rules.firstRowOf.username.set(nameKey, row);
+    const earlierEmail = rules.firstRowOf.email.get(emailKey);
+    if (earlierEmail !== undefined) return refuse(`The email address is already on row ${earlierEmail} of the file.`);
+    rules.firstRowOf.email.set(emailKey, row);
+
+    if (await this.provider!.userExists(username)) {
+      return { entry: { row, username, status: 'skipped', reason: 'An account with this username already exists; it is left as it is.' } };
+    }
+    const displayName = typeof fields.displayName === 'string' && fields.displayName.trim() !== '' ? fields.displayName.trim() : undefined;
+    try {
+      await this.assertCreatable(username, email, displayName);
+    } catch (error) {
+      return refuse(error instanceof Error ? error.message : String(error));
+    }
+
+    const createdAt = pastInstant(fields.createdAt);
+    return {
+      entry: { row, username, status: 'create', roles, ...(notes.length ? { notes } : {}) },
+      input: { username, email, displayName, password: '', roles, isTest: fields.isTest === true, ...(createdAt ? { createdAt } : {}) }
+    };
   }
 
   /**

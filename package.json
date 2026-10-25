@@ -17,6 +17,7 @@
     "audit:verify": "tsx scripts/verify-audit-chain.ts",
     "audit:restart-chain": "tsx scripts/restart-audit-chain.ts",
     "sweep:test-pages": "tsx scripts/sweep-test-pages.ts",
+    "accounts:import": "tsx scripts/import-accounts.ts",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/ngdpbase-types/tsconfig.json && npm run typecheck:addons",
     "typecheck:addons": "for c in addons/*/tsconfig.json; do tsc --noEmit -p \"$c\" || exit 1; done",

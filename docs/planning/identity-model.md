@@ -81,3 +81,11 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 - 5 A role member must have credentials: a contact is refused as a role member.
 - 6 Organizations get a `urn:uuid` `@id` (URL an ordinary field); every reference that stores a username for an identity switches to its `@id`.
 - 7 Add-ons switch: accounting to the new permission names; accommodation's owners/occupants to affiliations (so a contact can be an owner); association follows.
+
+## Users brought from another system ([#2075](https://github.com/jwilleke/ngdpbase/issues/2075), operator 2026-10-25)
+
+- An account import makes each one a user like any other: an account with its username kept, and its identity record made by `createUser`, as for an account made on the site. The identity record's id is new; the old system's id is not carried.
+- No credential is carried: no password hash, no passkey. Until the user uses their invitation or an administrator sets a password, the user has an account and an identity record but no way to sign in.
+- Records another system or an add-on owns by username (yourPHR's, for its cutover) are moved by that add-on's own migration, after the accounts exist; the import moves accounts only.
+- An existing username is never changed by an import, so an add-on migration can run the import first and rely on the usernames it needs being there.
+- Operator steps: [Account Import](../admin/Account-Import.md).
