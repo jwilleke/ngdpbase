@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { declaredResourceTypes } from './PolicyEvaluator.js';
+import { declaredResourceTypes, SUBJECT_MATCHERS } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -19,9 +19,11 @@ const AjvCtor = Ajv as unknown as new (...args: unknown[]) => AjvLike;
 const applyFormats = addFormats as unknown as (ajv: AjvLike) => void;
 
 /**
- * Subject type enumeration
+ * Subject type: one the evaluator matches, `role` or `job` (#1999) —
+ * `SUBJECT_MATCHERS` in PolicyEvaluator, not listed here. A policy naming any
+ * other type would grant nothing, so it is refused.
  */
-type SubjectType = 'user' | 'role' | 'group' | 'attribute' | 'authenticated' | 'anonymous' | 'admin';
+type SubjectType = string;
 
 /**
  * Resource type: one of the types declared in `ngdpbase.access.resource-types`
@@ -265,7 +267,8 @@ class PolicyValidator extends BaseManager {
               properties: {
                 type: {
                   type: 'string',
-                  enum: ['user', 'role', 'group', 'attribute', 'authenticated', 'anonymous', 'admin']
+                  // #1999: only the types the evaluator matches.
+                  enum: Object.keys(SUBJECT_MATCHERS)
                 },
                 value: {
                   type: ['string', 'number', 'boolean']
@@ -787,6 +790,7 @@ class PolicyValidator extends BaseManager {
     case 'user':
     case 'role':
     case 'group':
+    case 'job':
       return s1.value === s2.value;
     case 'attribute':
       return s1.key === s2.key && s1.value === s2.value;

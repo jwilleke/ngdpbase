@@ -866,9 +866,12 @@ class BackgroundJobManager extends BaseManager {
       : null;
     heartbeat?.unref();
 
-    // A slot an administrator reran runs as them (#1718); every other slot as the system principal.
+    // A slot an administrator reran runs as them (#1718); every other slot as
+    // the job itself (#1999): the system principal's context naming the job,
+    // which decides as `job:<id>` when a policy names the job, else with the
+    // system principal's roles, as before.
     const requestedBy = rerun?.requestedBy
-      ?? scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}${resume ? ` (attempt ${resume.attempt}, resumed: ${resume.reason})` : ''}`);
+      ?? { ...scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}${resume ? ` (attempt ${resume.attempt}, resumed: ${resume.reason})` : ''}`), job: job.def.id };
     const runId = rerun?.runId ?? resume?.runId ?? randomUUID();
     const attempt = resume?.attempt ?? 1;
     const run: JobRun = {

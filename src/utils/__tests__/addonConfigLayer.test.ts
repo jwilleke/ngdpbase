@@ -231,3 +231,34 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
     expect(merged[SENSITIVE]).toEqual({ ...core, 'ngdpbase.addons.a.url': 'sensitive', 'my.secret': 'secret' });
   });
 });
+
+describe('#1999 an add-on\'s policy names only its own jobs', () => {
+  const POLICIES = 'ngdpbase.access.policies';
+  const addon = (slug: string, job: string, enabled = true) => ({
+    slug, dir: '', source: 'directory' as const, enabled,
+    defaults: {
+      [POLICIES]: [{ id: `${slug}-job`, effect: 'allow', subjects: [{ type: 'job', value: job }], resources: [{ type: 'page', pattern: '*' }], actions: [`${slug}-read`] }],
+      [`ngdpbase.addons.${slug}.setting`]: 1
+    }
+  });
+
+  test('a policy naming its own job is merged', () => {
+    const { merged, refused } = mergeWithAddonLayer({ [POLICIES]: [] }, [addon('accounting-dues', 'accounting-dues.issue-invoices')], {});
+    expect(refused.size).toBe(0);
+    expect((merged[POLICIES] as Array<{ id: string }>).map((p) => p.id)).toEqual(['accounting-dues-job']);
+  });
+
+  test("a policy naming core's job or another add-on's refuses the add-on: none of its keys apply", () => {
+    for (const job of ['pages.reindex', 'accounting.month-close', 'accounting-duesx.job', 'accounting-dues']) {
+      const { merged, refused, problems } = mergeWithAddonLayer({ [POLICIES]: [] }, [addon('accounting-dues', job)], {});
+      expect(refused.get('accounting-dues')).toContain('which are not its own');
+      expect(problems.join('\n')).toContain(`'${job}'`);
+      expect(merged[POLICIES]).toEqual([]);
+      expect(merged).not.toHaveProperty('ngdpbase.addons.accounting-dues.setting');
+    }
+  });
+
+  test('a turned-off add-on is not refused', () => {
+    expect(mergeWithAddonLayer({}, [addon('accounting-dues', 'pages.reindex', false)], {}).refused.size).toBe(0);
+  });
+});

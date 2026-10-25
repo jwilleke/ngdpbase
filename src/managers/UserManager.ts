@@ -220,6 +220,8 @@ export interface JobSubject {
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
   viaProxy?: ProxyClaim;
+  /** #1999: the scheduled job a run acts as (`JobContext.job`). */
+  job?: string;
 }
 
 

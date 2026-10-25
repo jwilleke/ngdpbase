@@ -530,6 +530,12 @@ Preferred: __Role__
 
 A set of permissions granted against resources. Only users hold roles, because only users act. Never a title or a group.
 
+### Job Subject
+
+Preferred: __Job subject__
+
+A scheduled job acting as itself in a decision: `job:<job id>`, named in a policy as `{ "type": "job", "value": "<job id>" }` ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)). Not a digital identity and not a user: it holds no roles, only what policies naming the job grant, and only the scheduled runs of that job act as it.
+
 ### Affiliation
 
 Preferred: __Affiliation__

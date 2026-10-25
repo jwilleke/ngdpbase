@@ -64,7 +64,7 @@ function isPolicy(obj: unknown): obj is Policy {
 
 /** The subject's current attributes are the PIP's (#1431 step 13). */
 interface SubjectSourceLike {
-  resolveSubjectNow(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean }>;
+  resolveSubjectNow(username: string, job?: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean }>;
   subjectFor(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean } | null>;
 }
 
@@ -139,6 +139,17 @@ export class PolicyDecisionPoint extends BaseManager {
         return { ...p, actions: withRetiredExpanded(p.actions) };
       })
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  }
+
+  /**
+   * Whether a policy in force names the scheduled job `jobId` as a subject
+   * (`{ "type": "job", "value": jobId }`, #1999), allow or deny. When one
+   * does, the job's runs act as the job itself; when none does, as the system
+   * principal. Read live, so a site that removes the policy gives the job the
+   * system roles back at its next decision.
+   */
+  namesJob(jobId: string): boolean {
+    return this.policies().some((p) => (p.subjects ?? []).some((s) => s.type === 'job' && s.value === jobId));
   }
 
   /**
@@ -561,7 +572,8 @@ export class PolicyDecisionPoint extends BaseManager {
         logger.warn('[PDP] PolicyInformationPoint not available to resolve roles, denying');
         return { permit: false, applicable: false, reason: 'no_information_point' };
       }
-      userContext = await pip.resolveSubjectNow(subject.username);
+      // #1999: a scheduled run names the job it acts as; the PIP decides who that is now.
+      userContext = await (subject.job ? pip.resolveSubjectNow(subject.username, subject.job) : pip.resolveSubjectNow(subject.username));
     } else if (subject) {
       userContext = {
         username: subject.username,

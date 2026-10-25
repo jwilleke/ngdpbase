@@ -51,6 +51,11 @@
  * classify only its own keys, `ngdpbase.addons.<slug>` and what is under it
  * (paths inside its values included). An entry for any other key refuses the
  * addon, since it could unhide core's or another addon's secret.
+ *
+ * A fifth, `ngdpbase.access.policies` job subjects (#1999): an enabled addon's
+ * policy may name only its own scheduled jobs, `{ "type": "job", "value":
+ * "<slug>.<job>" }`. A policy naming core's job or another addon's refuses
+ * the addon, since it would grant that job permissions its owner never chose.
  */
 
 import fs from 'fs';
@@ -338,6 +343,39 @@ export function addonSensitiveValuesLayer(addons: readonly AddonDefaults[]): Add
   return layer;
 }
 
+export interface AddonJobPolicyLayer {
+  /** Addons whose policies name a job that is not their own, by slug, with why: never loaded. */
+  refused: Map<string, string>;
+  problems: string[];
+}
+
+/**
+ * Which jobs an addon's policies may name (#1999): its own, ids starting
+ * `<slug>.`, the prefix its job ids carry. Only an enabled addon's policies
+ * reach the merge, so only an enabled addon is checked.
+ */
+export function addonJobPolicyLayer(addons: readonly AddonDefaults[]): AddonJobPolicyLayer {
+  const layer: AddonJobPolicyLayer = { refused: new Map(), problems: [] };
+  for (const addon of addons) {
+    if (!addon.enabled) continue;
+    const policies = addon.defaults['ngdpbase.access.policies'];
+    if (!Array.isArray(policies)) continue;
+    const foreign: string[] = [];
+    for (const policy of policies) {
+      const subjects = isPlainObject(policy) && Array.isArray(policy.subjects) ? policy.subjects : [];
+      for (const subject of subjects) {
+        if (!isPlainObject(subject) || subject.type !== 'job') continue;
+        if (typeof subject.value !== 'string' || !subject.value.startsWith(`${addon.slug}.`)) foreign.push(`'${String(subject.value)}' (policy '${String((policy as { id?: unknown }).id)}')`);
+      }
+    }
+    if (foreign.length === 0) continue;
+    const reason = `its policies name the job(s) ${foreign.join(', ')}, which are not its own; an add-on's policy names only its own jobs, ${addon.slug}.<job>`;
+    layer.refused.set(addon.slug, reason);
+    layer.problems.push(`${addonProblemSubject(addon.slug, addon.enabled)}: ${reason}; the add-on is not loaded`);
+  }
+  return layer;
+}
+
 /** The configuration key that makes an addon site-critical (#1883). */
 export function addonSiteCriticalKey(slug: string): string {
   return `ngdpbase.addons.${slug}.site-critical`;
@@ -434,9 +472,10 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   const databaseLayer = addonDatabaseLayer(addons, custom);
   const criticalLayer = addonSiteCriticalLayer(addons, custom);
   const sensitiveLayer = addonSensitiveValuesLayer(addons);
+  const jobPolicyLayer = addonJobPolicyLayer(addons);
   const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
-  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
   const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
     .filter((a) => a.enabled && !refused.has(a.slug))
@@ -447,14 +486,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems], refused, databases, siteCritical };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems], refused, databases, siteCritical };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems], refused, databases, siteCritical };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems], refused, databases, siteCritical };
 }
 
 /**

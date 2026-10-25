@@ -326,8 +326,28 @@ __A permission over a user's own records__ ("your receipts", "your health record
 ```
 
 - Never declare a core policy's `id` (such as `signed-in-self-service`) to add to it: policies merge by `id`, so that changes core's own policy, and the change outlives your add-on.
-- Never use `"type": "authenticated"` (or `user`, `group`, `attribute`, `admin`) as a subject: the validator accepts them, but a decision matches `role` subjects only, so such a policy grants nothing.
+- Never use `"type": "authenticated"` (or `user`, `group`, `attribute`, `admin`) as a subject: a decision matches only `role` and `job` subjects, so such a policy grants nothing, and the validator refuses it.
 - A list of every role by name misses any role added later; name the every-account role.
+
+__A permission your scheduled job needs__ goes to the job itself, not to a role ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999), operator 2026-10-22). Name the job as the policy's subject, with only what its work needs:
+
+```json
+{
+  "id": "my-addon-month-close-job",
+  "name": "My addon: the month-close job",
+  "priority": 90,
+  "effect": "allow",
+  "subjects": [{ "type": "job", "value": "my-addon.month-close" }],
+  "resources": [{ "type": "page", "pattern": "*" }],
+  "actions": ["my-addon-close", "ledger-read"]
+}
+```
+
+- The job's scheduled runs then act as `job:my-addon.month-close`: they hold exactly what policies naming the job grant, and nothing of the system principal's admin roles. A job no policy names runs with the system principal's roles, as before.
+- Name only your own jobs, `<slug>.<job>`. A policy naming core's job or another add-on's refuses your add-on, and it does not load.
+- A site can change or remove the policy in its configuration. Removed, the job runs with the system principal's roles again.
+- Run now and a rerun act as the admin who clicked, with that admin's own permissions. An admin who lacks what the job needs (an admin without ledger access) is refused; only the scheduled run, or someone who holds both the job's permissions and `admin-system`, can do the job's work.
+- In the job, ask with `ctx` as given: `await pdp.permits(ctx, 'ledger-read')`, or hand `ctx` to the manager door. Never build a subject from it.
 
 A route asks `await ctx.requirePermission('my-addon-manage')` or `await ctx.hasPermission('my-addon-manage')` on an `ApiContext`. A page door asks `canAccess` or `hasPermissionOn`.
 
@@ -1706,7 +1726,7 @@ __What the run is handed__ (`ctx`, a `JobRunContext`):
 
 | Field | |
 |---|---|
-| `username`, `origin`, `reason` | Who it runs as. A scheduled run is the system principal with origin `schedule`; an admin's "run now" or rerun is that admin. Permission checks the job makes ask with this, as in [security-developer-guide.md](security-developer-guide.md). |
+| `username`, `origin`, `reason`, `job` | Who it runs as. A scheduled run is the system principal with origin `schedule` and `job` set to the job's id: it acts as the job when a policy names the job ([A permission your scheduled job needs](#permissions)), else with the system principal's roles. An admin's "run now" or rerun is that admin, with no `job`. Permission checks the job makes ask with this, as in [security-developer-guide.md](security-developer-guide.md). |
 | `slot` | The slot's instant (ISO, UTC), or `null` for a run nobody scheduled. Key your work on it. |
 | `signal` | Aborted at the timeout and at shutdown. A long job checks it and stops. |
 | `resume` | `null` on a first attempt; on a later one `{ attempt, checkpoint, reason }`. |
@@ -2003,6 +2023,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 - [#1974](https://github.com/jwilleke/ngdpbase/issues/1974) — [PDF](#make-a-pdf-and-email-it): the same HTML gives the same bytes only on the same provider and engine version; another site, provider or engine may differ. Core ships no font files of its own, so embed yours as `data:` URIs. `PdfUnavailableError` and `AttachmentRefusedError` are types only in `@jwilleke/ngdpbase-types`; test the error's `code`. A render waiting for a slot has no queue limit.
 - [#1998](https://github.com/jwilleke/ngdpbase/issues/1998) — [shipping a job paused](#a-job-that-runs-on-a-schedule): the add-on config layer does not check whose job a `ngdpbase.jobs.<id>.enabled` key names, so an add-on's file could pause core's or another add-on's job. Name only your own. `scheduleTimeZone()` is the site's zone; a job whose schedule names its own `tz` passes that zone to `zonedParts` itself.
+- [#1999](https://github.com/jwilleke/ngdpbase/issues/1999) — [a job's own permissions](#permissions): the job's policies are not yet shown in the admin roles matrix (it lists roles); read them in Configuration (`ngdpbase.access.policies`). A job id's `<slug>.` prefix is checked in an add-on's policies, but not when the job registers: `registerJob` cannot tell which add-on calls it, and a second registration of an id still replaces the first with a warning.
 - [#1979](https://github.com/jwilleke/ngdpbase/issues/1979) — [import shims](#import-shims-and-receivers-ice-1979): only uploads are a source, and only inbound shims run; export (`out`), scheduled URL sources (feeds) and the takeout import come later. No core screen starts an engine run yet, so an addon starts its own from its route. The manifest's `shims` and `receivers` are checked by the host at registration, not yet by a manifest schema (#1966).
 
 ---
