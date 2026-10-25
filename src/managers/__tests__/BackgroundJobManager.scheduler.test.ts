@@ -575,6 +575,8 @@ describe('what an administrator does (#1718)', () => {
     // #1563: one job's view, the same without its history; null for a job that is not scheduled.
     expect(await m.scheduledJobView('test.hourly')).toEqual({ ...view, runs: [] });
     expect(await m.scheduledJobView('no.such.job')).toBeNull();
+    // #2067: the names alone, as the list names them, for the roles page.
+    expect(m.scheduledJobNames()).toEqual([{ id: view.id, displayName: view.displayName }]);
   });
 
   test('run now runs as the person asking, outside the schedule, and marks no slot done', async () => {

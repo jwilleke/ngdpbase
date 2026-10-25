@@ -67,7 +67,7 @@ import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
-import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
+import { jobGrants, roleGrants, type RoleGrants } from '../utils/roleGrants.js';
 import type { Policy } from '../types/Policy.js';
 import type { JournalAuthorCounter } from '../types/Journal.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
@@ -11950,6 +11950,52 @@ ${panes}
     return roleGrants(pdp?.policies?.() ?? []);
   }
 
+  /**
+   * The roles page's Jobs part (#2067): every scheduled job, and every job a
+   * policy names, with what it may do. A job a policy names acts as itself
+   * (#1999) and holds only what those policies grant, each shown with the
+   * policy that grants it; a job no policy names runs with the system roles.
+   * Display only, like the role table.
+   */
+  private jobsForRolesPage(
+    roles: Record<string, { name: string; displayname?: string }>,
+    permissionDefs: Record<string, unknown>
+  ): Array<{
+    id: string;
+    displayName: string;
+    scheduled: boolean;
+    ownPermissions: boolean;
+    grants: Array<{ key: string; label: string; limited: boolean; policies: string[] }>;
+    denies: Array<{ key: string; label: string }>;
+    systemRoles: string[];
+  }> {
+    const pdp = this.engine.getManager('PolicyDecisionPoint') as { policies?: () => Policy[] } | null;
+    const policies = pdp?.policies?.() ?? [];
+    const byJob = jobGrants(policies);
+    const policyName = new Map(policies.map((p) => [p.id, p.name || p.id]));
+    const label = (key: string): string => permissionLabel(permissionDefs[key]) ?? key;
+    const jobManager = this.engine.getManager('BackgroundJobManager') as { scheduledJobNames?: () => Array<{ id: string; displayName: string }>; displayNameOf?: (id: string) => string } | null;
+    const scheduled = jobManager?.scheduledJobNames?.() ?? [];
+    const systemRoles = ((this.engine.getManager('PolicyInformationPoint') as { systemSubject?: () => { roles?: string[] } } | null)?.systemSubject?.().roles ?? [])
+      .map((r) => roles[r]?.displayname || r);
+    const names = new Map(scheduled.map((j) => [j.id, j.displayName]));
+    const ids = [...new Set([...names.keys(), ...Object.keys(byJob)])];
+    return ids
+      .map((id) => {
+        const own = byJob[id];
+        return {
+          id,
+          displayName: names.get(id) ?? jobManager?.displayNameOf?.(id) ?? id,
+          scheduled: names.has(id),
+          ownPermissions: Boolean(own),
+          grants: (own?.allows ?? []).map((g) => ({ key: g.action, label: label(g.action), limited: g.limited, policies: g.by.map((p) => policyName.get(p) ?? p) })),
+          denies: (own?.denies ?? []).map((key) => ({ key, label: label(key) })),
+          systemRoles: own ? [] : systemRoles
+        };
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   async adminUsers(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
@@ -12290,7 +12336,8 @@ ${panes}
       const configManager = this.engine.getManager('ConfigurationManager');
       const roles = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>;
       // #1638: records (grantable: false) are not rows in the roles matrix.
-      const permissions = grantablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { description?: string }>);
+      const permissionDefs = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { description?: string }>;
+      const permissions = grantablePermissions(permissionDefs);
       // #1431: each role's permission list is DERIVED from the access
       // policies, which are what grant. The catalogue's inline `permissions[]`
       // was a display copy kept matched by hand (#713), so this page could
@@ -12312,7 +12359,9 @@ ${panes}
           description: def?.description ?? key,
           // #1764: the plain line, the same field every permission listing reads.
           label: permissionLabel(def) ?? key
-        }))
+        })),
+        // #2067: the scheduled jobs, and what each may do (#1999).
+        jobs: this.jobsForRolesPage(roles, permissionDefs)
       });
     } catch (err: unknown) {
       logger.error('Error loading admin roles:', err);

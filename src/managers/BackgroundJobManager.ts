@@ -725,6 +725,15 @@ class BackgroundJobManager extends BaseManager {
   }
 
   /**
+   * Every scheduled job's id and display name, as `listScheduledJobs` names
+   * them, without reading their state — for the admin roles page's Jobs part
+   * (#2067).
+   */
+  scheduledJobNames(): Array<{ id: string; displayName: string }> {
+    return [...this.scheduled.values()].map((job) => ({ id: job.def.id, displayName: job.def.displayName }));
+  }
+
+  /**
    * One scheduled job as `listScheduledJobs` shows it, without its run
    * history, or null when no job of that id is scheduled. For a manager that
    * shows its own job's next run (BackupManager, #1563) without reading every
