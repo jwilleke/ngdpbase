@@ -37,7 +37,7 @@ export type { AuditEvent } from '../../src/utils/auditEvents.js';
 export type { default as BackgroundJobManager, JobDefinition, JobResult, JobRunContext } from '../../src/managers/BackgroundJobManager.js';
 
 // The managers add-ons reach through `engine.getManager`, and what their add-on methods take.
-export type { default as DatabaseManager, AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';
+export type { default as DatabaseManager, AddonDatabaseOptions, ReadOnlyDatabase, ReadOnlyStatement, ReadOnlyOpenRequest } from '../../src/managers/DatabaseManager.js';
 export type { Migration } from '../../src/providers/sqliteMigrations.js';
 export type { AddonDatabaseDeclaration, DatabaseEncrypt } from '../../src/utils/addonDatabaseRules.js';
 export type { default as ExportManager, PdfOptions, PdfMargin, PdfPageSize, PdfUnavailableError } from '../../src/managers/ExportManager.js';

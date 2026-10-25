@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-21'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -20,6 +20,8 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 - `ngdpbase.database.busy-timeout-ms` — how long a statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with `SQLITE_BUSY`. Default `5000`, the driver's own default, stated ([#1710](https://github.com/jwilleke/ngdpbase/issues/1710)). Applies to the application database and every add-on database. A value that is not a whole number, 0 or more, refuses to start.
 - `NGDPBASE_DATABASE_KEY` — the SQLCipher key, from the environment or the instance `.env`, never from config. Without it the file is plain SQLite and boot logs a warning.
 - `NGDPBASE_BACKUP_KEY` — the key every database backup is encrypted under ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)), and every other file of a backup too ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)); declared once in `src/utils/backupKey.ts`, from the environment or the instance `.env`, never from config. Its own secret: the same value as `NGDPBASE_DATABASE_KEY` still backs up, but degrades the manager and notifies admins exactly as a missing key does. Without it no database is backed up: see [Backup and restore](#backup-and-restore).
+- `ngdpbase.database.foreign-read.dir` — the one folder a foreign SQLite or SQLCipher file may be opened from, read-only ([#2076](https://github.com/jwilleke/ngdpbase/issues/2076), [below](#foreign-files-read-only)). An absolute path, or `${FAST_STORAGE}/…`. Empty (the default) turns the feature off. Read at each open.
+- `ngdpbase.database.foreign-read.max-open` — how many foreign files may be open at once across the site. Default `4`. Read at each open; a value that is not a whole number, 1 or more, refuses the open, naming the key.
 - `ngdpbase.database.backup.worker-timeout-ms` — how long a backup's database copy, or a restore's staging, may run on its worker thread before it is stopped and reported as failed. Default `3600000` (an hour). Read at each backup; a value that is not a whole number above 0 fails that backup, naming the key.
 
 ## What boot refuses
@@ -77,6 +79,34 @@ const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
 - Its migrations follow the rules in [Migrations](#migrations), recorded in the add-on's own ledger table. The table name must start with the owner's slug, dashes as underscores, then `_`. Prefix the add-on's tables the same way, so several databases can later be told apart by table name in one backup.
 - An add-on that depends on the owner declares the owner's slug and its own ledger table (`"owner": "accounting", "ledgerTable": "accounting_dues_schema_migrations"`, under `ngdpbase.addons.accounting-dues.database`), and calls `openAddonDatabase` with them. Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
 - `integrityOk()` covers every open database (and is false while the application database is unavailable), and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
+
+## Foreign files, read-only
+
+An add-on migrating from another system reads that system's SQLite or SQLCipher file through core's own driver, never one of its own ([#2076](https://github.com/jwilleke/ngdpbase/issues/2076)): PHR reads yourPHR's encrypted `records.db` ([yourphr#969](https://github.com/jwilleke/yourphr/issues/969)). An add-on bundles no native driver, and no plaintext export is written.
+
+```ts
+const source = await host.openReadOnlyDatabase(ctx, { path: 'records.db', keyRef: '$YOURPHR_DATABASE_KEY', purpose: 'phr: migrate yourPHR records' });
+try {
+  for (const row of source.prepare('SELECT * FROM records').iterate()) { /* write it through your own door */ }
+} finally {
+  source.close();
+}
+```
+
+`openReadOnly(ctx, { path, keyRef?, purpose })` (the host's `openReadOnlyDatabase` adds the add-on's slug as `addon`) is refused, naming why, unless:
+
+- __The caller is a job or an admin.__ A job context with a reason whose origin is not `request` (`host.systemContext(reason)`, a scheduled or boot run's `ctx`, an operator command), or any context the PDP grants `admin-system`. A job a request queued is asked as the person who queued it.
+- __The file is inside `ngdpbase.database.foreign-read.dir`.__ `path` is relative to it, or absolute inside it; the real path, symbolic links followed, must be a file inside the folder, so `..` and a link pointing out are refused. The application database and every declared add-on database are refused even when they sit inside it. Empty folder setting: the feature is off.
+- __A key is a reference.__ `keyRef` is `$NAME`, an environment variable that is set (the environment or the instance `.env`); a literal key is refused, and the refusal never repeats it. `NGDPBASE_DATABASE_KEY` and `NGDPBASE_BACKUP_KEY` are refused: the foreign file's key gets a variable of its own. A key that does not open the file, or no key on an encrypted file, is refused with "not a database" and which of the two it is.
+- __There is room.__ Fewer than `ngdpbase.database.foreign-read.max-open` foreign files are open.
+
+The handle (`ReadOnlyDatabase`) has `file`, `open`, `prepare(sql)` and `close()`:
+
+- The file is opened `readonly` and `fileMustExist`: nothing is created, migrated or written. In WAL mode SQLite may still keep its `-shm` index beside it.
+- `prepare` takes one `SELECT`, `WITH` or `VALUES` query that reads and returns rows; a statement's `all`, `get`, `iterate` and `columns` are all it offers. Anything else is refused before it is prepared, since SQLite applies some pragmas (a key, a cipher) while preparing them: every `PRAGMA` (read one through its table-valued function, `SELECT * FROM pragma_table_info('records')`, `SELECT * FROM pragma_user_version`), `ATTACH` (it would open another file), `VACUUM INTO` (it writes a copy), and every write. The driver's connection and statements are never handed out.
+- `close()` is safe to call twice and frees its place under `max-open`. `shutdown()` closes every foreign file still open, before the add-on databases and the application database.
+- __Every open is recorded__, `database-open-readonly` (on-failure `refuse`): `resource` is the file, `metadata` has `purpose`, `encrypted`, `addon` and the context's own fields (a job's `reason`); never the key. The record is written before the handle is returned; an open that can't be recorded is closed and refused. Refused attempts are not recorded.
+- It does not need the application database: it works with `ngdpbase.database.provider` `none`.
 
 ## Backup and restore
 

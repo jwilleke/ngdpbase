@@ -33,6 +33,50 @@ export type SqliteHandle = InstanceType<typeof DatabaseDriver>;
 /** The lock wait when none is configured: the driver's own default, stated (#1710). */
 export const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 
+/** One prepared query on a {@link ReadOnlyDatabase} (#2076): it reads, and nothing else. */
+export interface ReadOnlyStatement {
+  all(...params: unknown[]): unknown[];
+  get(...params: unknown[]): unknown;
+  iterate(...params: unknown[]): IterableIterator<unknown>;
+  /** The result columns: name, and the table and column each comes from where SQLite knows it. */
+  columns(): Array<{ name: string; column: string | null; table: string | null; database: string | null; type: string | null }>;
+}
+
+/**
+ * A foreign SQLite or SQLCipher file opened read-only (#2076,
+ * `DatabaseManager.openReadOnly`). Only `SELECT`, `WITH` and `VALUES` queries
+ * that read are prepared: no `PRAGMA` (read one through its table-valued
+ * function, `SELECT * FROM pragma_table_info('t')`), no `ATTACH`, no
+ * `VACUUM INTO`, no write. The connection itself is never handed out.
+ */
+export interface ReadOnlyDatabase {
+  /** The file, as resolved (symbolic links followed). */
+  readonly file: string;
+  /** False once closed. */
+  readonly open: boolean;
+  /** Prepare one reading query; throws for anything else. */
+  prepare(sql: string): ReadOnlyStatement;
+  /** Close the file. Safe to call twice. */
+  close(): void;
+}
+
+/** What a read-only query may start with, after comments and white space (#2076). */
+const READ_QUERY = /^(select|with|values)\b/i;
+/** Leading white space or one SQL comment. */
+const LEADING_NOISE = /^(\s+|--[^\n]*(\n|$)|\/\*[\s\S]*?\*\/)/;
+
+/**
+ * Whether `sql` may be prepared on a read-only handle: decided from its text
+ * BEFORE it is prepared, since SQLite applies some pragmas (a key, a cipher,
+ * a temp directory) while preparing them, and `ATTACH` reports itself as
+ * read-only though it opens another file.
+ */
+function isReadQuery(sql: string): boolean {
+  let rest = sql;
+  for (let m = LEADING_NOISE.exec(rest); m; m = LEADING_NOISE.exec(rest)) rest = rest.slice(m[0].length);
+  return READ_QUERY.test(rest);
+}
+
 class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
   protected override providerName = 'SqliteDatabaseProvider';
   protected override providerDescription = 'SQLite application database, SQLCipher-encrypted when a key is set';
@@ -92,6 +136,51 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
     } finally {
       db.close();
     }
+  }
+
+  /**
+   * Open a foreign file read-only and hand back a handle that only reads
+   * (#2076). `readonly` and `fileMustExist`, so nothing is created or written;
+   * the key, when given, must open it (one read of the schema), or this
+   * throws and nothing stays open. `onClose` runs once, when it is closed.
+   */
+  static openReadOnly(file: string, key: string, onClose: () => void = () => undefined): ReadOnlyDatabase {
+    const db = new Database(file, { readonly: true, fileMustExist: true });
+    try {
+      SqliteDatabaseProvider.unlock(db, key);
+      db.prepare('SELECT count(*) FROM sqlite_master').get();
+    } catch (err) {
+      db.close();
+      throw err;
+    }
+    let closed = false;
+    return Object.freeze({
+      file,
+      get open(): boolean { return !closed; },
+      prepare(sql: string): ReadOnlyStatement {
+        if (closed) throw new Error(`The read-only database ${file} is closed (#2076)`);
+        if (typeof sql !== 'string' || !isReadQuery(sql)) {
+          throw new Error('A read-only database runs only SELECT, WITH and VALUES queries that read; read a pragma through its table-valued function, e.g. SELECT * FROM pragma_table_info(\'t\') (#2076)');
+        }
+        const stmt = db.prepare(sql);
+        if (!stmt.reader || !stmt.readonly) {
+          throw new Error('A read-only database runs only queries that read and return rows (#2076)');
+        }
+        // The driver's statement is not handed out: its `database` is the connection.
+        return Object.freeze({
+          all: (...params: unknown[]) => stmt.all(...params),
+          get: (...params: unknown[]) => stmt.get(...params),
+          iterate: (...params: unknown[]) => stmt.iterate(...params),
+          columns: () => stmt.columns()
+        });
+      },
+      close(): void {
+        if (closed) return;
+        closed = true;
+        db.close();
+        onClose();
+      }
+    });
   }
 
   /** Read an existing file read-only: the key opens it and it passes the quick check, or this throws. */

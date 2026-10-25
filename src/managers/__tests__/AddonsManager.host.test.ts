@@ -19,7 +19,7 @@ const HOST_KEYS = [
   'logger', 'guardedFetch', 'setEnabledForPerson',
   'registerShim', 'registerReceiver',
   'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
-  'zonedParts', 'keyedSerial'
+  'zonedParts', 'keyedSerial', 'openReadOnlyDatabase'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
@@ -59,11 +59,14 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     };
     // #1973: the system principal is the PolicyInformationPoint's, as on a site.
     const pip = { systemPrincipalName: () => 'svc-site' };
-    const managers: Record<string, unknown> = { ConfigurationManager: cm, PolicyInformationPoint: pip, ImportManager: iceRegistry };
+    const managers: Record<string, unknown> = { ConfigurationManager: cm, PolicyInformationPoint: pip, ImportManager: iceRegistry, DatabaseManager: databases };
     const manager = new AddonsManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
     return manager;
   };
+
+  /** #2076: DatabaseManager's read-only door, as the host reaches it. */
+  const databases = { openReadOnly: vi.fn(async (_ctx: unknown, request: Record<string, unknown>) => ({ file: request.path, open: true })) };
 
   /** #1979: the import engine's registry, as the host reaches it. */
   const iceRegistry = {
@@ -198,6 +201,21 @@ describe('AddonsManager — host passed to register (#1813)', () => {
       expect(otherRan).toBe(true);
       release();
       await first;
+    });
+  });
+
+  describe('#2076: openReadOnlyDatabase — DatabaseManager.openReadOnly, for this add-on', () => {
+    test('calls DatabaseManager.openReadOnly with the context as given and the add-on\'s own slug', async () => {
+      await load();
+      const ctx = { username: 'svc-site', origin: 'boot', requestedAt: '2026-10-25T00:00:00.000Z', reason: 'ledger: migrate' };
+      const handle = await hostOf('ledger').openReadOnlyDatabase(ctx, { path: 'old.db', keyRef: '$OLD_KEY', purpose: 'ledger: migrate', addon: 'someone-else' });
+      expect(handle).toEqual({ file: 'old.db', open: true });
+      expect(databases.openReadOnly).toHaveBeenCalledWith(ctx, { path: 'old.db', keyRef: '$OLD_KEY', purpose: 'ledger: migrate', addon: 'ledger' });
+    });
+
+    test('a host built without a site refuses', async () => {
+      const { buildAddonHost } = await import('../../utils/addonHost');
+      await expect(buildAddonHost('ledger', {}).openReadOnlyDatabase({}, { path: 'old.db', purpose: 'x' })).rejects.toThrow(/without a site's DatabaseManager/);
     });
   });
 

@@ -92,6 +92,22 @@ describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', ()
     expect(errors).toEqual([]);
   }, 60_000);
 
+  test('an add-on job reads a migration source through host.openReadOnlyDatabase (#2076)', () => {
+    const errors = compileAgainstEntry(`
+      import type { AddonHost, JobRunContext, ReadOnlyDatabase, ReadOnlyStatement } from './index.js';
+      export async function migrate(host: AddonHost, ctx: JobRunContext): Promise<number> {
+        const source: ReadOnlyDatabase = await host.openReadOnlyDatabase(ctx, { path: 'records.db', keyRef: '$YOURPHR_DATABASE_KEY', purpose: 'phr: migrate yourPHR records' });
+        try {
+          const rows: ReadOnlyStatement = source.prepare('SELECT count(*) AS n FROM records');
+          return (rows.get() as { n: number }).n;
+        } finally {
+          source.close();
+        }
+      }
+    `);
+    expect(errors).toEqual([]);
+  }, 60_000);
+
   test('an add-on manager changes its own records one at a time through host.keyedSerial (#2065)', () => {
     const errors = compileAgainstEntry(`
       import type { AddonHost, KeyedSerial } from './index.js';

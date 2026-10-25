@@ -86,6 +86,9 @@
   "ngdpbase.database.busy-timeout-ms": 5000,
   "_comment_database_backup": "#1723 — every database (the application database and each declared add-on database, on or off) is copied into each backup, encrypted under NGDPBASE_BACKUP_KEY from the environment or the instance .env (never config; never the database key). Without it no database is backed up and admins are told. worker-timeout-ms: how long a backup's database copy, or a restore's staging, may run on its worker thread before it is stopped and reported as failed. A whole number, more than 0.",
   "ngdpbase.database.backup.worker-timeout-ms": 3600000,
+  "_comment_database_foreign_read": "#2076 — DatabaseManager.openReadOnly: an add-on's migration job (or an admin) reads a foreign SQLite or SQLCipher file read-only through core's own driver; nothing is migrated or written. dir: the one folder such files may be opened from (an absolute path, or ${FAST_STORAGE}/...); a path that resolves outside it, through .. or a symbolic link, is refused. Empty (the default) turns the feature off. A SQLCipher key is only ever an environment reference ($NAME), never the key itself, and never the site's own database or backup key. max-open: how many such files may be open at once across the site. A whole number, 1 or more. Every open is recorded in the audit log (database-open-readonly: the file and the purpose, never the key).",
+  "ngdpbase.database.foreign-read.dir": "",
+  "ngdpbase.database.foreign-read.max-open": 4,
   "_comment_jobs_state": "#1715 — where scheduled jobs keep their slots, run history and locks. auto: the application database when it is open, else files under ngdpbase.jobs.state.dir. file | sqlite to choose; sqlite with no database open refuses to start. Switching carries nothing across: next slots are recomputed and nothing is caught up. The file backend refuses NFS/SMB.",
   "ngdpbase.jobs.state.provider": "auto",
   "ngdpbase.jobs.state.dir": "${FAST_STORAGE}/jobs",
@@ -2338,6 +2341,13 @@
     },
     "backup-restore-cancel": {
       "description": "A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "database-open-readonly": {
+      "description": "A foreign SQLite or SQLCipher file opened read-only for an add-on's migration or an admin (#2076): the file, the purpose and who asked, never the key; recorded before the handle is handed over, which cannot proceed without it",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"

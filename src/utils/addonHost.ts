@@ -23,6 +23,9 @@
  *   unchanged, so an add-on never imports them from `dist/` (#1813);
  * - `keyedSerial()` returns a new `KeyedSerial`, core's own per-key queue, so
  *   an add-on's manager changes each of its records one at a time (#2065);
+ * - `openReadOnlyDatabase(ctx, request)` opens a foreign SQLite or SQLCipher
+ *   file read-only through `DatabaseManager.openReadOnly`, recorded as opened
+ *   for this add-on (#2076);
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -47,6 +50,7 @@ import { auditDeclarationsFrom } from './auditRegistry.js';
 import logger from './logger.js';
 import type { IceReceiver, IceShim } from '../ice/types.js';
 import type { AddonManifest } from '../managers/AddonsManager.js';
+import type { ReadOnlyDatabase, ReadOnlyOpenRequest } from '../managers/DatabaseManager.js';
 
 /** The values core offers an add-on, under the names they were imported as. */
 export interface AddonHost {
@@ -102,6 +106,16 @@ export interface AddonHost {
    * the read included. Not re-entrant: `fn` must not `run` the same key again.
    */
   readonly keyedSerial: () => KeyedSerial;
+  /**
+   * #2076: open a foreign SQLite or SQLCipher file read-only — a migration
+   * source — through core's own driver (`DatabaseManager.openReadOnly`),
+   * recorded as opened for this add-on. `path` is inside the site's
+   * `ngdpbase.database.foreign-read.dir`; `keyRef` is a `$NAME` environment
+   * reference, never the key; `ctx` is your job's context with a reason
+   * (`systemContext(reason)`, a scheduled run's `ctx`) or an admin's. Only
+   * reading queries run. Close the handle when done.
+   */
+  readonly openReadOnlyDatabase: (ctx: ActorContext, request: Omit<ReadOnlyOpenRequest, 'addon'>) => Promise<ReadOnlyDatabase>;
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -192,6 +206,14 @@ export function buildAddonHost(
     return registry as IceRegistry;
   };
 
+  const openReadOnlyDatabase = async (ctx: ActorContext, request: Omit<ReadOnlyOpenRequest, 'addon'>): Promise<ReadOnlyDatabase> => {
+    const databases = engine?.getManager('DatabaseManager') as { openReadOnly?(ctx: ActorContext, request: ReadOnlyOpenRequest): Promise<ReadOnlyDatabase> } | null | undefined;
+    if (typeof databases?.openReadOnly !== 'function') {
+      throw new Error('openReadOnlyDatabase is not available: this host was built without a site\'s DatabaseManager');
+    }
+    return databases.openReadOnly(ctx, { ...request, addon: slug });
+  };
+
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
     const checked = addonAuditEventName(name);
     refuseUndeclared(slug, name, declared);
@@ -224,6 +246,7 @@ export function buildAddonHost(
     refusedNodeMessage,
     isAtLeast,
     zonedParts,
-    keyedSerial: () => new KeyedSerial()
+    keyedSerial: () => new KeyedSerial(),
+    openReadOnlyDatabase
   });
 }

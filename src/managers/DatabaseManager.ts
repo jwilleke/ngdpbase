@@ -35,17 +35,24 @@
  * beside BackupManager's document, encrypted under `NGDPBASE_BACKUP_KEY`. A
  * restore stages `<file>.staged` beside each database, all or nothing, and the
  * next start puts them in place before any database opens.
+ *
+ * A foreign SQLite or SQLCipher file — an add-on's migration source — is read
+ * through `openReadOnly` (#2076): only from the folder the operator names,
+ * only by an add-on's job or an admin, read-only, with its key from an
+ * environment reference, and every open is in the audit log.
  */
 import path from 'node:path';
 import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
-import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS, type SqliteHandle } from '../providers/SqliteDatabaseProvider.js';
+import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS, type ReadOnlyDatabase, type SqliteHandle } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import { envRefName } from '../utils/configPaths.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { BackupData, DegradedKind, ManagerBackupOptions, ManagerRestoreOptions } from './BaseManager.js';
@@ -66,6 +73,23 @@ export { BACKUP_KEY_ENV, backupKeyFingerprint } from '../utils/backupKey.js';
 
 /** How long a database backup or restore staging may run on its worker before it is stopped, when not configured. */
 export const DEFAULT_BACKUP_WORKER_TIMEOUT_MS = 3_600_000;
+
+/** How many foreign files may be open read-only at once when `ngdpbase.database.foreign-read.max-open` is not set (#2076). */
+export const DEFAULT_FOREIGN_READ_MAX_OPEN = 4;
+
+export type { ReadOnlyDatabase, ReadOnlyStatement } from '../providers/SqliteDatabaseProvider.js';
+
+/** What `openReadOnly` is asked to open (#2076). */
+export interface ReadOnlyOpenRequest {
+  /** The file: relative to `ngdpbase.database.foreign-read.dir`, or absolute inside it. */
+  path: string;
+  /** A SQLCipher file's key, as an environment reference (`$NAME`) — never the key itself. Omit for a plain SQLite file. */
+  keyRef?: string;
+  /** Why it is opened, for the audit record (e.g. "phr: migrate yourPHR records"). */
+  purpose: string;
+  /** The add-on it is opened for. `host.openReadOnlyDatabase` sets it to the calling add-on's slug. */
+  addon?: string;
+}
 
 /** The backup's name for the application database; an add-on's is `addon-<owner>`. */
 const APPLICATION = 'application';
@@ -172,6 +196,8 @@ class DatabaseManager extends BaseManager {
   private databaseFile: string | null = null;
   private busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS;
   private readonly addonDatabases = new Map<string, AddonDatabase>();
+  /** Foreign files open read-only (#2076), closed at shutdown. */
+  private readonly foreignReads = new Set<ReadOnlyDatabase>();
   /** What the start did with a staged restore (#1723), reported once the notifications exist. */
   private restoreAtStart: ApplyOutcome | null = null;
   /** The databases a staged restore put back at this start (#1876): kept after the report, for the managers whose data is in them. */
@@ -406,6 +432,142 @@ class DatabaseManager extends BaseManager {
   private static keyRefusal(declaration: AddonDatabaseDeclaration, key: string): string | null {
     if (declaration.encrypt !== 'required' || key) return null;
     return `Add-on '${declaration.declaredBy}' declares database '${declaration.owner}' with encrypt "required", but ${DATABASE_KEY_ENV} is not set — it is never opened unencrypted. Set ${DATABASE_KEY_ENV} in the environment or the instance .env (<FAST_STORAGE>/.env) and restart (#1860, #1883)`;
+  }
+
+  // ---- Foreign files, read-only (#2076) -------------------------------------
+
+  /**
+   * Open a foreign SQLite or SQLCipher file read-only (#2076): an add-on's
+   * migration source, such as yourPHR's `records.db`, read through core's own
+   * driver. Nothing is migrated and nothing is written: the handle runs only
+   * queries that read (see {@link ReadOnlyDatabase}). Close it when done; any
+   * still open are closed at shutdown.
+   *
+   * Refused, naming why, unless all of these hold:
+   * - the caller is a job with a reason (a boot, scheduled or operator
+   *   context, as `host.systemContext(reason)` gives), or holds `admin-system`;
+   * - `ngdpbase.database.foreign-read.dir` is set, and `path` resolves —
+   *   symbolic links followed — to a file inside it that is not one of this
+   *   site's own databases;
+   * - `keyRef`, when given, is a `$NAME` reference to a set environment
+   *   variable other than the site's database and backup keys, and opens it;
+   * - fewer than `ngdpbase.database.foreign-read.max-open` are open.
+   *
+   * Each open is recorded (`database-open-readonly`: the file and the purpose,
+   * never the key) before the handle is returned; one that cannot be recorded
+   * is closed and refused.
+   */
+  async openReadOnly(ctx: ActorContext, request: ReadOnlyOpenRequest): Promise<ReadOnlyDatabase> {
+    const purpose = typeof request?.purpose === 'string' ? request.purpose.trim() : '';
+    if (!purpose) throw new Error('openReadOnly needs a purpose, for the audit record (#2076)');
+    if (typeof request.path !== 'string' || request.path === '') throw new Error('openReadOnly needs the path of the file to open (#2076)');
+    if (!(await this.mayReadForeign(ctx))) {
+      throw new Error('Only an add-on\'s job (a system context with a reason) or an administrator (admin-system) may open a foreign database (#2076)');
+    }
+    const file = this.foreignFile(request.path);
+    const key = DatabaseManager.foreignKey(request.keyRef);
+    const max = this.foreignReadMaxOpen();
+    if (this.foreignReads.size >= max) {
+      throw new Error(`${this.foreignReads.size} foreign database(s) are already open, the most ngdpbase.database.foreign-read.max-open allows (${max}); close one first (#2076)`);
+    }
+
+    let handle: ReadOnlyDatabase;
+    try {
+      handle = SqliteDatabaseProvider.openReadOnly(file, key, () => { this.foreignReads.delete(handle); });
+    } catch (err) {
+      const cause = (err as Error).message;
+      throw new Error(`The foreign database ${file} could not be opened read-only: ${cause}${/not a database/i.test(cause) ? (key ? ' — the key does not open it' : ' — it may be encrypted: pass keyRef') : ''} (#2076)`, { cause: err });
+    }
+    // Counted from now, so two opens at once cannot both pass the limit; closing removes it.
+    this.foreignReads.add(handle);
+    const who = actorOf(ctx);
+    try {
+      await recordAuditEvent(this.engine.getManager('AuditManager'), {
+        eventType: AUDIT_EVENT.DATABASE_OPEN_READONLY,
+        ...who,
+        action: 'database-open-readonly',
+        result: 'success',
+        severity: 'medium',
+        resource: file,
+        resourceType: 'database',
+        metadata: { ...who.metadata, purpose, encrypted: key !== '', ...(request.addon ? { addon: request.addon } : {}) }
+      });
+    } catch (err) {
+      handle.close();
+      throw err;
+    }
+    logger.info(`[DatabaseManager] Opened ${file} read-only for ${request.addon ? `add-on '${request.addon}'` : who.user}: ${purpose} (#2076)`);
+    return handle;
+  }
+
+  /** A job with a reason (boot, schedule, operator), or a caller the PDP grants `admin-system` (#2076). */
+  private async mayReadForeign(ctx: ActorContext): Promise<boolean> {
+    if (!ctx || typeof ctx !== 'object') return false;
+    if (isJobContext(ctx) && ctx.origin !== 'request' && typeof ctx.reason === 'string' && ctx.reason.trim() !== '') return true;
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    return typeof pdp?.permits === 'function' ? pdp.permits(ctx, 'admin-system') : false;
+  }
+
+  /** The file asked for, resolved inside `ngdpbase.database.foreign-read.dir`, or a refusal (#2076). */
+  private foreignFile(requested: string): string {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const dir = configManager?.getResolvedDataPath('ngdpbase.database.foreign-read.dir', '') ?? '';
+    if (typeof dir !== 'string' || dir === '') {
+      throw new Error('Opening foreign databases is off: set ngdpbase.database.foreign-read.dir to the folder they may be read from (#2076)');
+    }
+    if (!path.isAbsolute(dir)) throw new Error(`ngdpbase.database.foreign-read.dir must be an absolute path — got ${JSON.stringify(dir)} (#2076)`);
+    let root: string;
+    try {
+      root = realpathSync(dir);
+    } catch {
+      throw new Error(`ngdpbase.database.foreign-read.dir ${dir} does not exist (#2076)`);
+    }
+    let file: string;
+    try {
+      file = realpathSync(path.resolve(root, requested));
+    } catch {
+      throw new Error(`No file ${requested} in ngdpbase.database.foreign-read.dir (#2076)`);
+    }
+    if (!file.startsWith(root + path.sep)) {
+      throw new Error(`${requested} is outside ngdpbase.database.foreign-read.dir; only files inside it may be opened (#2076)`);
+    }
+    if (!statSync(file).isFile()) throw new Error(`${requested} is not a file (#2076)`);
+    if (this.ownDatabaseFiles().has(file)) throw new Error(`${requested} is one of this site's own databases, which are never opened as foreign (#2076)`);
+    return file;
+  }
+
+  /** The application database and every declared add-on database, as real paths, for those that exist. */
+  private ownDatabaseFiles(): Set<string> {
+    const own = new Set<string>();
+    const files = [this.databaseFile, ...this.getDeclaredDatabases().map((d) => d.file)];
+    for (const f of files) {
+      if (!f) continue;
+      try { own.add(realpathSync(f)); } catch { /* not created yet */ }
+    }
+    return own;
+  }
+
+  /** The key a `$NAME` reference names; '' for none. Never echoes what it was given (#2076). */
+  private static foreignKey(keyRef: unknown): string {
+    if (keyRef === undefined || keyRef === null || keyRef === '') return '';
+    const name = envRefName(keyRef);
+    if (!name) throw new Error('keyRef must be an environment reference ($NAME), never the key itself (#2076)');
+    if (name === DATABASE_KEY_ENV || name === BACKUP_KEY_ENV) {
+      throw new Error(`keyRef may not name ${name}, the site's own key; give the foreign file's key its own variable (#2076)`);
+    }
+    const value = process.env[name] ?? '';
+    if (!value) throw new Error(`The environment variable ${name} named by keyRef is not set (#2076)`);
+    return value;
+  }
+
+  /** `ngdpbase.database.foreign-read.max-open`, read at each open (#2076). */
+  private foreignReadMaxOpen(): number {
+    const value = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.database.foreign-read.max-open', DEFAULT_FOREIGN_READ_MAX_OPEN);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+      throw new Error(`ngdpbase.database.foreign-read.max-open must be a whole number, 1 or more — got ${JSON.stringify(value)} (#2076)`);
+    }
+    return value;
   }
 
   // ---- Backup and restore (#1723) ------------------------------------------
@@ -813,8 +975,10 @@ class DatabaseManager extends BaseManager {
     return true;
   }
 
-  /** Closes the add-on databases, then the application database. */
+  /** Closes the foreign files open read-only, the add-on databases, then the application database. */
   async shutdown(): Promise<void> {
+    for (const handle of [...this.foreignReads]) handle.close();
+    this.foreignReads.clear();
     for (const { provider } of this.addonDatabases.values()) provider.close();
     this.addonDatabases.clear();
     this.provider?.close();

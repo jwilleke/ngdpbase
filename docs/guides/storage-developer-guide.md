@@ -107,6 +107,16 @@ An add-on that keeps rows of its own declares its database in its `config/defaul
 - __It is backed up because it is declared__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Write no backup code: `DatabaseManager` copies every declared database, on or off, into each backup, encrypted under `NGDPBASE_BACKUP_KEY`, and a restore puts it back at the next start. Details in [DatabaseManager.md](../managers/DatabaseManager.md#backup-and-restore).
 - __Never open the file yourself__, for a backup or anything else. A second connection, a file copy or a `VACUUM INTO` is a second door, and a copy of a live WAL file can be torn or miss committed pages.
 
+## Reading another system's database (migration)
+
+An add-on migrating records from another system's SQLite or SQLCipher file (PHR from yourPHR's `records.db`) reads it through `host.openReadOnlyDatabase(ctx, { path, keyRef, purpose })`, which is `DatabaseManager.openReadOnly` ([#2076](https://github.com/jwilleke/ngdpbase/issues/2076); the rules are in [DatabaseManager.md](../managers/DatabaseManager.md#foreign-files-read-only)). Never bundle a SQLite driver, and never export the source to a plaintext file first: health data would sit unencrypted on disk.
+
+- __The operator puts the file in the one folder__ `ngdpbase.database.foreign-read.dir` names; empty, the feature is off. `path` is relative to it. Nothing outside it opens, through `..` or a symbolic link, and neither does any of this site's own databases.
+- __The key is an environment reference__, `keyRef: '$YOURPHR_DATABASE_KEY'`, which the operator sets in the instance `.env`; never the key itself, and never `NGDPBASE_DATABASE_KEY` or `NGDPBASE_BACKUP_KEY`.
+- __Run it from your job__, with the job's context (a reason says what and why), or for an admin: `purpose` goes into the audit record with the file.
+- __It only reads__: `SELECT`, `WITH` and `VALUES`; read a pragma as `SELECT * FROM pragma_user_version`. Write what you read through your own doors (your database, `PageManager`), never back into the source.
+- __Close it__ when the migration is done (`finally`). At most `ngdpbase.database.foreign-read.max-open` are open at once across the site; shutdown closes what is left.
+
 ## Writing pages and files
 
 - __Pages__ go through `PageManager`, with the caller's context. A private page's name is `vaults/{owner}/{vaultid}/{title}`. `npm run lint:page-door` fails on any other page write.
@@ -187,6 +197,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 
 - __An add-on that catches `openAddonDatabase`'s error still loads__ (#1860). It gets no connection, so nothing is written, but its status shows it as loaded. A `"required"` database with no key is caught before import and never gets this far; an undeclared owner or ledger is refused only when opened. Let the error leave `register()`.
 - __A declared database that is never opened__ (the add-on is off, or it opens lazily) is listed as not open; nothing checks that its file exists or passes its integrity check until it is opened.
+- __Any add-on can open a foreign file__ (#2076). The caller rule takes a job context with a reason, and `host.systemContext(reason)` gives every add-on one, so the folder setting, not the caller, decides what can be read: put only the files being migrated in it, and empty it afterwards. Every open is in the audit log; refused attempts are not.
 
 ## Checklist
 
@@ -199,3 +210,4 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - [ ] The add-on's own data is in its database or `dataPath`, never a vault
 - [ ] Its database is declared under `ngdpbase.addons.<slug>.database`, with `encrypt` `"required"` for anything personal
 - [ ] No backup code of its own, and no second connection to its database file
+- [ ] A migration source is read through `host.openReadOnlyDatabase`, with its key as a `$NAME` reference, and closed when done; no SQLite driver of its own
