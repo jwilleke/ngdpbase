@@ -1,7 +1,7 @@
 ---
 name: UserManager
 description: "User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution"
-dateModified: '2026-10-24'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/UserManager.ts
 ---
@@ -69,8 +69,9 @@ None. A door asks its context (`ctx.hasPermission`, `ctx.canAccess`); the decisi
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `createUser(userData)` | `User` | Create new user |
+| `createUser(userData)` | `User` | Create new user. No `password` (or an empty one) stores none, never the hash of an empty string: the account then has no way in until it is invited ([#2049](https://github.com/jwilleke/ngdpbase/issues/2049), `AuthManager.inviteUser`) or an administrator sets one |
 | `updateUser(username, updates, ctx)` | `Omit<User, 'password'>` | Change an account. `updates` is the fields to merge, or a function `(current) => updates` (below). Returns the account as written, never the password hash: the hash leaves UserManager only through `storedPasswordHash`, for the password check |
+| `setFirstPassword(username, newPassword, ctx)` | `boolean` | The user's first password, chosen by themselves after an invitation ([#2049](https://github.com/jwilleke/ngdpbase/issues/2049)): only their own account, signed in as themselves (no agent token, share link or proxy), under `account-security`, and only while it has no password; inside the account's key, recorded as a `user-edit` like any password change. `false`, changing nothing, otherwise. The length rule is the route's |
 | `deleteUser(username)` | `void` | Delete user |
 | `getUser(username)` | `User\|null` | Get user by username |
 | `getAllUsers()` | `User[]` | Get all users |

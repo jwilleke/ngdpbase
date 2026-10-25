@@ -62,7 +62,7 @@ import type ConsentManager from '../managers/ConsentManager.js';
 import { ConsentChangedError, ConsentRefusedError } from '../managers/ConsentManager.js';
 import { CONSENT_PATH, CORE_CONSENT_SCOPE, type ConsentSeen } from '../types/Consent.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -144,6 +144,7 @@ import {
   parsePrivatePageName,
   PRIVATE_URL_SEGMENT,
   privateStoreLayoutFromConfig,
+  systemCategoryVaults,
   type PrivatePageName,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
@@ -326,6 +327,8 @@ interface IUserManager {
   deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
   /** #1452: a forgotten password, reset with the recovery words. */
   resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean>;
+  /** #2049: a user's first password, chosen by themselves; false when the account already has one. */
+  setFirstPassword(username: string, newPassword: string, ctx: UserContext): Promise<boolean>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
@@ -7474,6 +7477,168 @@ ${panes}
     req.session.save(() => res.redirect(returnTo));
   }
 
+  // ── Invitations (#2049) ────────────────────────────────────────────────
+
+  /**
+   * GET /invitation?t= — the invitation link. Shows who it is for and a
+   * button; opening it changes nothing, because mail scanners open links
+   * (the magic-link rule, #1019). The button posts with the session's CSRF
+   * token, which a scanner does not have.
+   */
+  async invitationPage(req: Request, res: Response): Promise<void> {
+    try {
+      const token = typeof req.query.t === 'string' ? req.query.t : '';
+      const invitation = await this.authManagerFor2Step().invitationFor(token);
+      const commonData = await this.getCommonTemplateData(req);
+      res.set('Cache-Control', 'no-store');
+      if (!invitation) res.status(404);
+      res.render('invitation', {
+        ...commonData,
+        title: 'Your invitation',
+        invitation,
+        token: invitation ? token : '',
+        csrfToken: req.session?.csrfToken || ''
+      });
+    } catch (err) {
+      logger.error('[invitation] could not show the invitation:', err);
+      await this.renderError(req, res, 500, 'Error', 'The invitation could not be shown. Try the link again later.');
+    }
+  }
+
+  /** POST /invitation — use the link: sign in once and go on to set up the sign-in (#2049). */
+  async useInvitation(req: Request, res: Response): Promise<void> {
+    try {
+      const token = typeof req.body?.t === 'string' ? req.body.t : '';
+      const next = await this.authManagerFor2Step().useInvitation(req, token);
+      if (!next) {
+        res.redirect(`${INVITATION_PATH}?t=`);
+        return;
+      }
+      req.session.save((err) => {
+        if (err) {
+          logger.error('[invitation] could not save the session after an invitation sign-in:', err);
+          res.redirect('/login?error=' + encodeURIComponent('Signing in did not finish. Ask for a new invitation.'));
+          return;
+        }
+        res.redirect(next);
+      });
+    } catch (err) {
+      logger.error('[invitation] could not use the invitation:', err);
+      await this.renderError(req, res, 500, 'Error', 'The invitation could not be used. Ask for a new one.');
+    }
+  }
+
+  /**
+   * GET /account/setup — where an invitation lands (#2049): choose a
+   * password or add a passkey, the recovery words, and the terms. Your own
+   * account: profile-manage, which every user holds.
+   */
+  async accountSetupPage(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    try {
+      const username = String(req.session?.username ?? '');
+      const authManager = this.authManagerFor2Step();
+      const userManager = this.engine.getManager('UserManager');
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const account = await userManager.getUser(username);
+      const passkeys = authManager.passkeyRelyingParty() !== null && await authManager.userMayUseProvider(username, 'passkey');
+      // The recovery words come with a sealed (encrypted) store's key, shown once at its door.
+      const sealedStores = [...new Set(systemCategoryVaults(configManager.getProperty('ngdpbase.system-category', {}))
+        .filter((v) => v.encrypt).map((v) => v.vaultId))];
+      const consent = this.engine.getManager('ConsentManager');
+      const termsPending = ((await consent?.pendingFor?.(username, CORE_CONSENT_SCOPE)) ?? []).length > 0;
+      const commonData = await this.getCommonTemplateData(req);
+      res.set('Cache-Control', 'no-store');
+      res.render('account-setup', {
+        ...commonData,
+        title: 'Set up your sign-in',
+        username,
+        displayName: String(account?.displayName || username),
+        isExternal: account?.isExternal === true,
+        hasPassword: await userManager.hasPassword(username),
+        hasPasskey: authManager.hasCredential(username, 'passkey'),
+        passkeys,
+        sealedStores,
+        termsPending,
+        minPasswordLength: (Number(configManager.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6),
+        success: typeof req.query.success === 'string' ? req.query.success : null,
+        error: typeof req.query.error === 'string' ? req.query.error : null,
+        csrfToken: req.session?.csrfToken || ''
+      });
+    } catch (err) {
+      logger.error('[account-setup] could not show the setup page:', err);
+      await this.renderError(req, res, 500, 'Error', 'The setup page could not be shown.');
+    }
+  }
+
+  /**
+   * POST /account/setup/password — the user's first password (#2049). Asks
+   * `account-security` like every change to how the account is protected;
+   * `UserManager.setFirstPassword` refuses an account that already has one.
+   * The private stores are then unlocked with it, so a sealed store's door
+   * can show the recovery words without another sign-in.
+   */
+  async accountSetupPassword(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const back = (q: string): void => res.redirect(`${ACCOUNT_SETUP_PATH}?${q}`);
+    try {
+      const username = String(req.session?.username ?? '');
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const password = typeof body.newPassword === 'string' ? body.newPassword : '';
+      const confirm = typeof body.confirmPassword === 'string' ? body.confirmPassword : '';
+      const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+      if (password.length < minLength) return back('error=' + encodeURIComponent(`Your password must be at least ${minLength} characters.`));
+      if (password !== confirm) return back('error=' + encodeURIComponent('The two passwords are not the same.'));
+      const userManager = this.engine.getManager('UserManager');
+      if (!(await userManager.setFirstPassword(username, password, wikiContext.userContext))) {
+        return back('error=' + encodeURIComponent('Your password could not be set here. If you already have one, change it on your profile.'));
+      }
+      const authManager = this.authManagerFor2Step();
+      // #1482: the new password ends the account's other sessions, not this one.
+      await authManager.stampSessionGeneration(req, username);
+      const handle = await authManager.unlockVaults(username, password);
+      if (handle) req.session.privateStoreHandle = handle;
+      req.session.save(() => back('success=' + encodeURIComponent('Your password is set.')));
+    } catch (err) {
+      logger.error('[account-setup] could not set the first password:', err);
+      back('error=' + encodeURIComponent('Your password could not be set. Try again.'));
+    }
+  }
+
+  /** POST /admin/users/:username/invitation — send, or send again, an invitation (#2049; user-create). */
+  async adminSendInvitation(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'user-create', req, res, 'page'))) return;
+    const username = String(req.params.username ?? '');
+    try {
+      const sent = await this.authManagerFor2Step().inviteUser(wikiContext.userContext, username);
+      res.redirect('/admin/users?' + (sent.outcome === 'sent'
+        ? 'success=' + encodeURIComponent(`Invitation sent to ${username}.`)
+        : 'error=' + encodeURIComponent(`No invitation was sent to ${username}: ${sent.reason}`)));
+    } catch (err) {
+      logger.error(`[admin/users] could not invite ${username}:`, err);
+      res.redirect('/admin/users?error=' + encodeURIComponent(`No invitation was sent to ${username}.`));
+    }
+  }
+
+  /** POST /admin/users/:username/invitation/cancel — the link stops working (#2049; user-create). */
+  async adminCancelInvitation(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'user-create', req, res, 'page'))) return;
+    const username = String(req.params.username ?? '');
+    try {
+      const cancelled = await this.authManagerFor2Step().cancelInvitation(wikiContext.userContext, username);
+      res.redirect('/admin/users?' + (cancelled
+        ? 'success=' + encodeURIComponent(`The invitation to ${username} is cancelled.`)
+        : 'error=' + encodeURIComponent(`${username} had no invitation waiting.`)));
+    } catch (err) {
+      logger.error(`[admin/users] could not cancel the invitation to ${username}:`, err);
+      res.redirect('/admin/users?error=' + encodeURIComponent(`The invitation to ${username} could not be cancelled.`));
+    }
+  }
+
   /**
    * GET /consent — what the signed-in person is asked to accept (#1603):
    * core's terms (`scope` absent), or an add-on's documents (`?scope=<slug>`).
@@ -11811,9 +11976,20 @@ ${panes}
       // #2018: the roles column is part of the account list user-read allowed above,
       // read by core under the system context (user-read does not imply identity-read).
       const listing = systemContext(this.engine, `list each account's roles on the user-management page for ${currentUser.username}, who holds user-read`);
-      const users = await Promise.all(usersRaw.map(async (u: { username?: string; [key: string]: unknown }) => ({
+      // #2049: the invitations waiting, each shown on its account until first sign-in.
+      const authManager = this.engine.getManager<AuthManager>('AuthManager');
+      const invitations = new Map<string, InvitationView>();
+      try {
+        for (const inv of (await authManager?.listInvitations(currentUser)) ?? []) invitations.set(inv.username, inv);
+      } catch (err) {
+        logger.warn('[admin/users] could not list the invitations waiting (#2049):', err);
+      }
+      const users = await Promise.all(usersRaw.map(async (u: { username?: string; isExternal?: boolean; lastLogin?: string; loginCount?: number; [key: string]: unknown }) => ({
         ...u,
-        roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(listing, u.username) : []
+        roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(listing, u.username) : [],
+        invitation: u.username ? invitations.get(u.username) ?? null : null,
+        // No password and never signed in: an invitation is how this account gets its way in.
+        awaitingSetup: !!u.username && !u.isExternal && !u.lastLogin && !u.loginCount && !(await userManager.hasPassword(u.username))
       })));
       const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
@@ -11839,6 +12015,8 @@ ${panes}
         roles: roles,
         // #1521: what each role is granted, from the merged policies.
         roleGrants: this.currentRoleGrants(),
+        // #2049: why no invitation can be sent now (email not working), or null.
+        invitationsUnavailable: authManager ? authManager.invitationsUnavailable() : 'Invitations are not available on this site.',
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
         csrfToken: req.session.csrfToken
@@ -11949,7 +12127,12 @@ ${panes}
         return res.status(403).send('Access denied');
       }
 
-      const { username, email, displayName, password, roles, isTest } = req.body;
+      const { username, email, displayName, password, roles, isTest, invite } = req.body;
+      // #2049: an invitation instead of a password; the user chooses their own.
+      const inviting = formChecked(invite);
+      if (inviting && password) {
+        return res.redirect('/admin/users?error=' + encodeURIComponent('Set a password or send an invitation, not both.'));
+      }
 
       logger.debug(`[admin/users] Attempting to create user: "${username}" with display name: "${displayName}"`);
 
@@ -11957,7 +12140,7 @@ ${panes}
         username,
         email,
         displayName,
-        password,
+        password: inviting ? '' : password,
         // #1521: no role is ticked in advance, so none may be sent.
         roles: roles === undefined ? [] : Array.isArray(roles) ? roles : [roles],
         // #1805: the form's "Test account" checkbox.
@@ -11965,6 +12148,13 @@ ${panes}
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
       }, currentUser);
 
+      if (success && inviting) {
+        const created = String((success as { username?: unknown }).username ?? username);
+        const sent = await this.authManagerFor2Step().inviteUser(currentUser, created);
+        return res.redirect('/admin/users?' + (sent.outcome === 'sent'
+          ? 'success=' + encodeURIComponent(`User created, and an invitation sent to ${created}.`)
+          : 'error=' + encodeURIComponent(`User created, but no invitation was sent: ${sent.reason} You can set a password on the user's edit page instead.`)));
+      }
       if (success) {
         return res.redirect('/admin/users?success=User created successfully');
       } else {
@@ -16662,6 +16852,13 @@ ${panes}
     app.post(CONSENT_PATH, (req: Request, res: Response) => void this.acceptConsent(req, res));
     app.get(ACTING_FOR_PATH, (req: Request, res: Response) => void this.actingForPage(req, res));
     app.post(ACTING_FOR_PATH, (req: Request, res: Response) => void this.switchActingFor(req, res));
+    // #2049: an invitation link, and the setup page it leads to.
+    app.get(INVITATION_PATH, (req: Request, res: Response) => void this.invitationPage(req, res));
+    app.post(INVITATION_PATH, (req: Request, res: Response) => void this.useInvitation(req, res));
+    app.get(ACCOUNT_SETUP_PATH, (req: Request, res: Response) => void this.accountSetupPage(req, res));
+    app.post(`${ACCOUNT_SETUP_PATH}/password`, (req: Request, res: Response) => void this.accountSetupPassword(req, res));
+    app.post('/admin/users/:username/invitation', (req: Request, res: Response) => void this.adminSendInvitation(req, res));
+    app.post('/admin/users/:username/invitation/cancel', (req: Request, res: Response) => void this.adminCancelInvitation(req, res));
     app.post('/profile/proxy-access', (req: Request, res: Response) => void this.giveProxyAccess(req, res));
     app.post('/profile/proxy-access/:id/revoke', (req: Request, res: Response) => void this.revokeOwnProxyAccess(req, res));
     app.post('/admin/users/:username/proxy-access', (req: Request, res: Response) => void this.adminGiveProxyAccess(req, res));

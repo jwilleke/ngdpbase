@@ -1,7 +1,7 @@
 ---
 name: BaseCredentialsProvider
 description: Abstract credentials store — an account's passkeys, TOTP, verified addresses and known devices, signed rows, AuthManager the only door (#1524)
-dateModified: '2026-10-13'
+dateModified: '2026-10-25'
 category: providers
 code: src/providers/BaseCredentialsProvider.ts
 ---
@@ -11,7 +11,7 @@ code: src/providers/BaseCredentialsProvider.ts
 __Module:__ `src/providers/BaseCredentialsProvider.ts`
 __Extends:__ [BaseProvider](../../src/providers/BaseProvider.ts)
 
-An account's ways in beyond its password, many per account: `passkey`, `totp`, `email`, `sms`, `device`, `identity`. One kind is not a way in: `proxy` ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)), a proxy grant, whose `username` is the user represented, `subject` the grant id and `secret` the grant's terms as JSON; AuthManager reads and writes it only through its proxy-grant methods. Passwords are not stored here; they stay on the user record ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524), decided 2026-10-02).
+An account's ways in beyond its password, many per account: `passkey`, `totp`, `email`, `sms`, `device`, `identity`. One kind is not a way in: `proxy` ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)), a proxy grant, whose `username` is the user represented, `subject` the grant id and `secret` the grant's terms as JSON; AuthManager reads and writes it only through its proxy-grant methods. Nor is `invitation` ([#2049](https://github.com/jwilleke/ngdpbase/issues/2049)): a one-time link to set up a new user's sign-in, whose `username` is the account invited, `subject` the SHA-256 of the link's token (never the token) and `secret` its terms as JSON; read and written only through AuthManager's invitation methods. Passwords are not stored here; they stay on the user record ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524), decided 2026-10-02).
 
 A row: `id`, `username`, `kind`, `subject` (a passkey's credential id, an address, a device token's hash), `secret` (a public key, an encrypted TOTP seed, or empty), `label`, `createdAt`, `lastUsedAt`.
 

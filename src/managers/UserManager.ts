@@ -1068,7 +1068,8 @@ class UserManager extends BaseManager {
       );
     }
 
-    const hashedPassword = isExternal ? '' : await this.hashPassword(password);
+    // #2049: no password given is no password stored, never the hash of an empty one; an invitation gives the user their way in.
+    const hashedPassword = isExternal || !password ? '' : await this.hashPassword(password);
 
     const userLocale = LocaleUtils.parseAcceptLanguage(acceptLanguage || 'en-US');
     const defaultDateFormat = LocaleUtils.getDateFormatFromLocale(userLocale);
@@ -1207,6 +1208,32 @@ class UserManager extends BaseManager {
     if (!edit) return false;
     await this.finishEdit(username, edit, ctx);
     logger.info(`🔑 Password reset with recovery words for ${username}`);
+    return true;
+  }
+
+  /**
+   * A user's first password, chosen by themselves (#2049: after an
+   * invitation signed them in). Only for their own account, signed in as
+   * themselves (no token, share link or proxy), under `account-security`,
+   * and only while the account has no password: a password already set is
+   * changed on the profile, which asks for the current one. `false`,
+   * changing nothing, otherwise. The length rule is the route's, as for
+   * every password form. Recorded like any password change (`user-edit`).
+   */
+  async setFirstPassword(username: string, newPassword: string, ctx: PermissionSubject): Promise<boolean> {
+    if (!this.provider || !username || !newPassword || ctx?.username !== username) return false;
+    if (ctx.viaToken || ctx.viaShare || ctx.viaProxy) return false;
+    const pdp = this.engine.getManager<{ permits(subject: ActorContext, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (!pdp || !(await pdp.permits(ctx, 'account-security'))) return false;
+    const provider = this.provider;
+    const edit = await this.inAccountKey(username, async () => {
+      const user = await provider.getUser(username);
+      if (!user || user.isExternal || user.isActive === false || user.password) return null;
+      return this.editAccount(username, { password: newPassword }, ctx);
+    });
+    if (!edit) return false;
+    await this.finishEdit(username, edit, ctx);
+    logger.info(`🔑 First password set for ${username}`);
     return true;
   }
 

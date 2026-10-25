@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-10-23'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -96,6 +96,19 @@ AuthManager is the only door to an account's credentials beyond its password: pa
 ## Backup and restore
 
 The credentials store is in a backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)), as its own file beside the backup document, `<stem>.credentials.tar.enc`, __only ever encrypted__ under `NGDPBASE_BACKUP_KEY`: AuthManager declares the file in `backupFolders()` with `requireKey`, and BackupManager writes it ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). Without the backup key it is left out: the entry's `credentials` is null, beside the provider list `backup()` returns, with a warning that BackupManager recognises as left out for want of the key: its banner and one-time notice say so, not a notice per backup. A site restore stages it as `credentials.json.staged` (BackupManager, from the declaration); `BaseManager.initialize()` puts it in place at the next start, before the store is opened, keeping the live file as `credentials.json.pre-restore`. A backup that left it out stages nothing, and the store on the site stays. The rows are still signed with `NGDPBASE_CREDENTIALS_KEY`, which is not in the backup: restored onto a site with another credentials key they are held in quarantine (above). See the [backup and restore guide](../guides/backup-restore-guide.md).
+
+## Invitations (#2049)
+
+A one-time email link for an account made without a password, so the new user chooses their own way in. The rule is in [authentication-developer-guide.md](../guides/authentication-developer-guide.md#standing-rules); the user-facing page is [Accepting An Invitation](../../required-pages/44d68569-2d5d-4c14-a369-1278e3986e56.md).
+
+- `inviteUser(ctx, username)` → `InviteOutcome`: `{ outcome: 'sent', invitation }`, or `email-unavailable` / `send-failed` / `not-invitable` with a `reason` in plain words for the administrator. Needs `user-create` (else throws `Permission denied`). The account must be active, local, have an email, no password and no sign-in yet. Any earlier invitation is cancelled first (resend). Recorded as `invitation-send` before the row exists (refuse on failure); the message goes through `EmailManager.sendTo(ctx, …)` and says until when the link works in the user's own time zone. A failed send removes the row, recorded as `invitation-cancel` with reason `not-sent`.
+- `cancelInvitation(ctx, username)` → whether one was waiting. `user-create`. Recorded first as `invitation-cancel` (reason `cancelled`; `replaced` on a resend; `account-deleted` from `closeAccess`).
+- `listInvitations(ctx)` → `InvitationView[]` (`id`, `username`, `createdBy`, `createdAt`, `expiresAt`; never the link). Asks whether the caller holds `user-read`. Expired ones are removed first.
+- `invitationFor(token)` → `{ username, displayName, expiresAt }` or null. Changes nothing but expiry (an expired one is removed and recorded as `invitation-expire`): the page shown by `GET /invitation`.
+- `useInvitation(req, token)` → where to go next, or null for an unknown, used, expired or turned-off one. Removes the row (only one request can), records `invitation-use` (`user` the invited user, the request's IP and browser), then `completeSignIn` with factor `invitation` (`amr: ['email']`, AAL1) and `returnTo` `/account/setup`, so the terms prompt comes first when terms are waiting.
+- `invitationsUnavailable()` → why no invitation can be sent now, or null: email off (`ngdpbase.mail.enabled`) or failing (`isDeliveryFailing`), no explicit `ngdpbase.application.base-url`, or no credentials store.
+- `invitationTtlMs()` → `ngdpbase.auth.invitation.ttl-days` (default 7), read on every call.
+- Stored as a signed `invitation` row of the credentials store: `username` the account invited, `subject` the token's SHA-256 (the 32-byte token itself is never stored or recorded), `secret` the terms (`createdBy`, `expiresAt`) as JSON. `listCredentials` never shows one; `addCredential`, `renameCredential` and `removeCredential` refuse one; `closeAccess` on delete cancels it.
 
 ## My tokens and devices (#1764)
 

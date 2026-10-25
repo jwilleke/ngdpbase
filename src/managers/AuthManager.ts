@@ -76,7 +76,7 @@ import LocaleUtils from '../utils/LocaleUtils.js';
 import { describeBrowser } from '../utils/browserDescription.js';
 import { approximateLocation } from '../utils/ipLocation.js';
 import type { PluginFormatters } from './PluginManager.js';
-import { createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
+import { createHash, createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
 import {
@@ -87,7 +87,7 @@ import {
 } from '../providers/BaseCredentialsProvider.js';
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
 import { recordAuditEvent, type AuditResult } from '../utils/auditEvents.js';
-import { actorOf } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { proxyAttribution } from '../utils/proxyClaim.js';
 import { lackingScopes, requireScopeList, VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
@@ -104,7 +104,7 @@ import { safeRedirect } from '../utils/safeRedirect.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
 import { safeRegistrationMessage } from '../utils/userCreateError.js';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
-import { systemPrincipalOf } from '../context/bootActions.js';
+import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -341,6 +341,13 @@ export function maskEmail(address: string): string {
 
 /** Kinds that can start a sign-in on their own — what "a way in" counts (#1524, #1743). */
 const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email', 'identity']);
+
+/**
+ * Rows of the credentials store that are not sign-in methods (#1762, #2049):
+ * a proxy grant and an invitation. The credential methods neither list nor
+ * change one; each is read and written only through its own methods.
+ */
+const NOT_SIGN_IN_METHODS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['proxy', 'invitation']);
 
 /**
  * Presets fill what a well-known provider always has (#1743). `microsoft` is
@@ -598,6 +605,58 @@ export type ProxyGrantSide = { asOwner: string; asProxy?: undefined } | { asProx
 
 /** Where a signed-in person chooses whom to act for, and switches back (#1762 slice 4). */
 export const ACTING_FOR_PATH = '/account/acting-for';
+
+/** Where an invitation link opens (#2049): `GET` shows it, `POST` uses it. */
+export const INVITATION_PATH = '/invitation';
+/** Where an invited user sets up their sign-in after the link signs them in (#2049). */
+export const ACCOUNT_SETUP_PATH = '/account/setup';
+/** How many days an invitation link stays usable (#2049); read on every call. */
+export const INVITATION_TTL_KEY = 'ngdpbase.auth.invitation.ttl-days';
+const DEFAULT_INVITATION_TTL_DAYS = 7;
+
+/** An invitation as an administrator sees it (#2049): never the link or its token. */
+export interface InvitationView {
+  id: string;
+  /** The account invited. */
+  username: string;
+  /** Who sent it. */
+  createdBy: string;
+  /** RFC 3339. */
+  createdAt: string;
+  /** RFC 3339: after this the link does nothing. */
+  expiresAt: string;
+}
+
+/** What sending an invitation came to (#2049); `reason` is plain words for the administrator. */
+export type InviteOutcome =
+  | { outcome: 'sent'; invitation: InvitationView }
+  | { outcome: 'email-unavailable' | 'send-failed' | 'not-invitable'; reason: string };
+
+/** An invitation row's terms, as its `secret` holds them. */
+interface InvitationTerms { createdBy: string; expiresAt: string }
+
+/** An `invitation` row's view, or null when its terms do not read. */
+function invitationOf(row: CredentialRecord): InvitationView | null {
+  if (row.kind !== 'invitation') return null;
+  try {
+    const t = JSON.parse(row.secret) as Partial<InvitationTerms>;
+    if (typeof t.createdBy !== 'string' || typeof t.expiresAt !== 'string') return null;
+    return { id: row.id, username: row.username, createdBy: t.createdBy, createdAt: row.createdAt, expiresAt: t.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether an invitation is still usable at `now`; an end date that does not read counts as passed. */
+function invitationLive(inv: InvitationView, now: number): boolean {
+  const end = Date.parse(inv.expiresAt);
+  return Number.isFinite(end) && end > now;
+}
+
+/** What an invitation link's token is stored as: its SHA-256. The token is 32 random bytes, so a fast hash is enough. */
+function invitationTokenHash(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
+}
 
 /**
  * Why a session started or stopped acting for someone (#1762 slice 4), as the
@@ -1531,13 +1590,14 @@ class AuthManager extends BaseManager {
   async listCredentials(ctx: PermissionSubject, username: string): Promise<CredentialView[]> {
     if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
     // #1762: a proxy grant is not a sign-in method; it is listed and ended through the proxy-grant methods only.
-    return this.requireCredentialsStore().list(username).filter(r => r.kind !== 'proxy').map(({ secret: _secret, ...view }) => view);
+    return this.requireCredentialsStore().list(username).filter(r => !NOT_SIGN_IN_METHODS.has(r.kind)).map(({ secret: _secret, ...view }) => view);
   }
 
   /** Enrol a credential for `username`; returns its id. Audited (#1524). */
   async addCredential(ctx: PermissionSubject, username: string, input: CredentialInput): Promise<string> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
     if (input.kind === 'proxy') throw new Error('A proxy grant is made with grantProxy (#1762)');
+    if (input.kind === 'invitation') throw new Error('An invitation is sent with inviteUser (#2049)');
     return this.storeCredential(ctx, username, input);
   }
 
@@ -1566,7 +1626,7 @@ class AuthManager extends BaseManager {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
     const store = this.requireCredentialsStore();
     const row = store.get(id);
-    if (!row || row.username !== username || row.kind === 'proxy') return false;
+    if (!row || row.username !== username || NOT_SIGN_IN_METHODS.has(row.kind)) return false;
     if (WAY_IN_KINDS.has(row.kind)) {
       const others = store.list(username).filter(r => r.id !== id && this.isWayIn(r)).length;
       if (others === 0 && !(await this.hasPassword(username))) {
@@ -1627,6 +1687,11 @@ class AuthManager extends BaseManager {
         const grant = proxyGrantOf(row);
         if (grant && (grant.owner === username || grant.proxy === username)) await this.endProxyGrant(ctx, grant, 'account-deleted');
       }
+    });
+    // #2049: an invitation to the account stops working, recorded as cancelled.
+    await step('invitations', async () => {
+      if (!this.credentials) return;
+      for (const row of this.credentials.list(username).filter(r => r.kind === 'invitation')) await this.endInvitation(ctx, row, 'account-deleted');
     });
     // #1603: what the account accepted goes with it; the audit log keeps consent-withdraw.
     await step('consent records', async () => this.engine.getManager<{ removeAccount(u: string, c: PermissionSubject): Promise<void> }>('ConsentManager')?.removeAccount(username, ctx));
@@ -2164,7 +2229,7 @@ class AuthManager extends BaseManager {
     const name = credentialLabel(label);
     const store = this.requireCredentialsStore();
     const row = store.get(id);
-    if (!row || row.username !== username || row.kind === 'proxy') return false;
+    if (!row || row.username !== username || NOT_SIGN_IN_METHODS.has(row.kind)) return false;
     const renamed = await store.relabel(id, name);
     if (renamed) this.auditCredentialChange(ctx, username, 'credential-rename', { ...row, label: name });
     return renamed;
@@ -2820,6 +2885,268 @@ class AuthManager extends BaseManager {
     return { provider: signIn.provider, factors, ...this.assess(factors), at: fresh.at };
   }
 
+  // ── Invitations (#2049) ───────────────────────────────────────────────
+  //
+  // An account made without a password gets a one-time email link that signs
+  // the new user in once, at AAL1 as an email link, and sends them to set up
+  // a password or passkey (ACCOUNT_SETUP_PATH), through the terms prompt
+  // `completeSignIn` already applies. Unlike a magic link it is persisted: a
+  // signed `invitation` row of the credentials store, holding only the
+  // token's SHA-256, so it survives a restart and a reader of the file learns
+  // no link. Not a sign-in method a user picks (no factor entry, no
+  // provider): AuthManager checks the token itself, as it does an approval
+  // link, and spends the row before the session exists.
+
+  /** How long an invitation link stays usable: `ngdpbase.auth.invitation.ttl-days`, read on every call. */
+  invitationTtlMs(): number {
+    const days = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(INVITATION_TTL_KEY, DEFAULT_INVITATION_TTL_DAYS));
+    return (Number.isFinite(days) && days > 0 ? days : DEFAULT_INVITATION_TTL_DAYS) * 86_400_000;
+  }
+
+  /**
+   * Why no invitation can be sent on this site now, in plain words for the
+   * administrator, or null when one can: email set up and working, an
+   * explicit site address for the link, and the credentials store open.
+   */
+  invitationsUnavailable(): string | null {
+    const mail = this.engine.getManager<EmailManager>('EmailManager');
+    if (!mail?.isEnabled()) return 'Email is not set up on this site, so no invitation can be sent.';
+    if (mail.isDeliveryFailing()) return 'Email is not working on this site right now, so no invitation can be sent.';
+    if (!this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.isBaseUrlExplicit()) {
+      return 'The site\'s own address is not set, so no invitation link can be made.';
+    }
+    if (!this.credentials) return 'The credentials store is not open on this site, so no invitation can be kept.';
+    return null;
+  }
+
+  /** Sending, resending and cancelling an invitation is creating an account's way in: `user-create` (#2049). */
+  private async mayInvite(ctx: ActorContext): Promise<boolean> {
+    const pdp = this.engine.getManager<{ permits(subject: ActorContext, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    return !!pdp && !!ctx && pdp.permits(ctx, 'user-create');
+  }
+
+  /** The live and expired invitation rows of the store, or none while it is closed. */
+  private invitationRows(username?: string): CredentialRecord[] {
+    if (!this.credentials) return [];
+    return username === undefined
+      ? this.credentials.listKind('invitation')
+      : this.credentials.list(username).filter(r => r.kind === 'invitation');
+  }
+
+  /**
+   * Why `username` cannot be invited, in plain words, or null when they can:
+   * an active account of this site, with an email address, no password, and
+   * never signed in. An account with a way in needs no invitation.
+   */
+  private async notInvitable(username: string): Promise<string | null> {
+    const users = this.engine.getManager<UserManager>('UserManager');
+    const account = await users?.getUser(username);
+    if (!account) return `There is no account ${username}.`;
+    if (account.isActive === false) return 'The account is turned off.';
+    if (account.isExternal) return 'The account signs in through another service, so it needs no invitation.';
+    if (typeof account.email !== 'string' || account.email.trim() === '') return 'The account has no email address to send the invitation to.';
+    if (await users?.hasPassword(username)) return 'The account already has a password.';
+    if (account.lastLogin || (account.loginCount ?? 0) > 0) return 'The account has already signed in.';
+    return null;
+  }
+
+  /**
+   * Send `username` an invitation (#2049): an email with a one-time link to
+   * set up their sign-in. Needs `user-create` (throws `Permission denied`).
+   * A new invitation replaces any earlier one, whose link stops working
+   * (resend). Recorded first, as `invitation-send` (refuse on failure), so no
+   * link exists that the audit log does not know of. When email cannot be
+   * sent the answer says so and nothing is kept; a send that fails removes
+   * the link again, recorded as `invitation-cancel` with reason `not-sent`.
+   * The message goes through EmailManager with the caller's context.
+   */
+  async inviteUser(ctx: ActorContext, username: string): Promise<InviteOutcome> {
+    if (!(await this.mayInvite(ctx))) throw new Error('Permission denied');
+    await this.sweepInvitations();
+    const unavailable = this.invitationsUnavailable();
+    if (unavailable) return { outcome: 'email-unavailable', reason: unavailable };
+    const refused = await this.notInvitable(username);
+    if (refused) return { outcome: 'not-invitable', reason: refused };
+    const account = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
+    const address = String(account?.email ?? '').trim();
+
+    // Resend: the earlier link stops working before the new one exists.
+    for (const row of this.invitationRows(username)) await this.endInvitation(ctx, row, 'replaced');
+
+    const token = randomBytes(32).toString('base64url');
+    const now = Date.now();
+    const createdBy = actorOf(ctx).actor ?? actorOf(ctx).user;
+    const terms: InvitationTerms = { createdBy, expiresAt: new Date(now + this.invitationTtlMs()).toISOString() };
+    const row: CredentialRecord = {
+      id: randomUUID(), username, kind: 'invitation', subject: invitationTokenHash(token),
+      secret: JSON.stringify(terms), label: '', createdAt: new Date(now).toISOString()
+    };
+    const invitation = invitationOf(row) as InvitationView;
+    // The message is made before the link exists, so nothing below can fail between storing it and sending it but the send.
+    const site = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getApplicationName() ?? 'ngdpbase';
+    const url = `${this.linkBase()}${INVITATION_PATH}?t=${token}`;
+    const until = await this.localTimeFor(username, new Date(terms.expiresAt));
+    const htmlEscape = this.escapeHtml();
+
+    await this.auditInvitation(AUDIT_EVENT.INVITATION_SEND, ctx, invitation);
+    await this.requireCredentialsStore().add(row);
+    try {
+      const mail = this.engine.getManager<EmailManager>('EmailManager') as EmailManager;
+      await mail.sendTo(ctx, address, `You are invited to ${site}`, [
+        `An account has been made for you on ${site}, with the username ${username}.`,
+        '',
+        'Open this link to choose how you sign in (a password or a passkey) and finish setting up your account:',
+        '',
+        url,
+        '',
+        `The link works once, until ${until}. If you were not expecting this, you can ignore this email.`
+      ].join('\n'), [
+        `<p>An account has been made for you on <strong>${htmlEscape(site)}</strong>, with the username <strong>${htmlEscape(username)}</strong>.</p>`,
+        `<p><a href="${htmlEscape(url)}">Set up your sign-in</a>: choose a password or a passkey and finish setting up your account.</p>`,
+        `<p>The link works once, until ${htmlEscape(until)}. If you were not expecting this, you can ignore this email.</p>`
+      ].join('\n'));
+    } catch {
+      // #1916: EmailManager reported the failure; here the link goes, and the administrator is told.
+      await this.endInvitation(ctx, row, 'not-sent');
+      return { outcome: 'send-failed', reason: 'The invitation email could not be sent, so no invitation is waiting. You can set a password for the account by hand instead.' };
+    }
+    return { outcome: 'sent', invitation };
+  }
+
+  /**
+   * Cancel `username`'s invitation (#2049): its link stops working. Needs
+   * `user-create` (throws `Permission denied`). Recorded first, as
+   * `invitation-cancel` (refuse on failure). False when none was waiting.
+   */
+  async cancelInvitation(ctx: ActorContext, username: string): Promise<boolean> {
+    if (!(await this.mayInvite(ctx))) throw new Error('Permission denied');
+    let cancelled = false;
+    for (const row of this.invitationRows(username)) cancelled = (await this.endInvitation(ctx, row, 'cancelled')) || cancelled;
+    return cancelled;
+  }
+
+  /**
+   * The invitations waiting to be used, for the administrator's user list
+   * (#2049). Reading is not a change: it asks whether the caller holds
+   * `user-read`. Expired ones are removed first, each recorded as
+   * `invitation-expire`.
+   */
+  async listInvitations(ctx: ActorContext): Promise<InvitationView[]> {
+    const pdp = this.engine.getManager<{ holds(subject: ActorContext, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (!pdp || !(await pdp.holds(ctx, 'user-read'))) throw new Error('Permission denied');
+    await this.sweepInvitations();
+    return this.invitationRows().map(invitationOf).filter((v): v is InvitationView => v !== null);
+  }
+
+  /** The live invitation a link's token names, or null: unknown, used, or expired (an expired one is removed, recorded). */
+  private async liveInvitation(token: unknown): Promise<{ row: CredentialRecord; invitation: InvitationView } | null> {
+    if (typeof token !== 'string' || token === '' || !this.credentials) return null;
+    const row = this.credentials.findBySubject('invitation', invitationTokenHash(token));
+    const invitation = row ? invitationOf(row) : null;
+    if (!row || !invitation) return null;
+    if (!invitationLive(invitation, Date.now())) {
+      await this.expireInvitation(row, invitation);
+      return null;
+    }
+    return { row, invitation };
+  }
+
+  /**
+   * Who an invitation link is for, to show before it is used (#2049), or
+   * null. Opening the link changes nothing (mail scanners open links): the
+   * page's button posts to `useInvitation`, behind the session's CSRF token.
+   */
+  async invitationFor(token: unknown): Promise<{ username: string; displayName: string; expiresAt: string } | null> {
+    const live = await this.liveInvitation(token);
+    if (!live) return null;
+    const account = await this.engine.getManager<UserManager>('UserManager')?.getUser(live.row.username);
+    if (!account || account.isActive === false) return null;
+    return { username: live.row.username, displayName: String(account.displayName || live.row.username), expiresAt: live.invitation.expiresAt };
+  }
+
+  /**
+   * Use an invitation link (#2049): spend it, then sign its user in once
+   * through `completeSignIn` (a new session; the terms prompt first when
+   * terms are waiting), at AAL1 as an email link, so a role above that
+   * steps down as for any such sign-in. Returns where to go next
+   * (`ACCOUNT_SETUP_PATH`, or the terms prompt on the way there), or null
+   * when the link is unknown, used, expired, or its account is turned off.
+   *
+   * The row's removal is the single-use gate: the store deletes in memory
+   * before it writes, so of two requests with one link exactly one sees
+   * true. Recorded as `invitation-use`; the sign-in itself as
+   * `authentication-success`, method `invitation`.
+   */
+  async useInvitation(req: Request, token: unknown): Promise<string | null> {
+    const live = await this.liveInvitation(token);
+    if (!live) return null;
+    const account = await this.engine.getManager<UserManager>('UserManager')?.getUser(live.row.username);
+    if (!account || account.isActive === false) return null;
+    if (!(await this.requireCredentialsStore().remove(live.row.id))) return null;
+    await this.recordInvitationUse(req, live.invitation);
+    const result: AuthenticateResult = {
+      success: true,
+      username: live.row.username,
+      provider: 'invitation',
+      factors: [{ provider: 'invitation', ...EMAIL_FACTOR, at: new Date().toISOString() }]
+    };
+    const completed = await this.completeSignIn(req, result, { method: 'invitation', returnTo: ACCOUNT_SETUP_PATH });
+    return completed.next ?? ACCOUNT_SETUP_PATH;
+  }
+
+  /** Remove every invitation past its end date, each recorded as `invitation-expire`. */
+  private async sweepInvitations(): Promise<void> {
+    const now = Date.now();
+    for (const row of this.invitationRows()) {
+      const invitation = invitationOf(row);
+      if (!invitation || !invitationLive(invitation, now)) await this.expireInvitation(row, invitation);
+    }
+  }
+
+  private async expireInvitation(row: CredentialRecord, invitation: InvitationView | null): Promise<void> {
+    if (!(await this.credentials?.remove(row.id))) return;
+    const ctx = systemContext(this.engine, `invitation ${row.id} for ${row.username} passed its end date`);
+    await this.auditInvitation(AUDIT_EVENT.INVITATION_EXPIRE, ctx, invitation ?? { id: row.id, username: row.username, createdBy: '', createdAt: row.createdAt, expiresAt: '' });
+  }
+
+  /** End one invitation the caller may end: recorded first (`invitation-cancel`, refuse), then removed. */
+  private async endInvitation(ctx: ActorContext, row: CredentialRecord, why: 'cancelled' | 'replaced' | 'not-sent' | 'account-deleted'): Promise<boolean> {
+    const invitation = invitationOf(row) ?? { id: row.id, username: row.username, createdBy: '', createdAt: row.createdAt, expiresAt: '' };
+    await this.auditInvitation(AUDIT_EVENT.INVITATION_CANCEL, ctx, invitation, why);
+    return (await this.credentials?.remove(row.id)) ?? false;
+  }
+
+  /** An invitation record: `user` who acted (the sender, the canceller, the system), `resource` the account invited. Never the token. */
+  private async auditInvitation(eventType: AuditEventName, ctx: ActorContext, invitation: InvitationView, reason?: string): Promise<void> {
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType,
+      ...who,
+      action: eventType,
+      result: 'success',
+      severity: 'medium',
+      resource: invitation.username,
+      resourceType: 'user',
+      ...(reason ? { reason } : {}),
+      metadata: { ...who.metadata, invitationId: invitation.id, owner: invitation.username, expiresAt: invitation.expiresAt, createdBy: invitation.createdBy }
+    }, (err) => logger.warn(`[AuthManager] Audit record failed for ${eventType} of invitation ${invitation.id}:`, err));
+  }
+
+  /** `invitation-use`: the invited user, before any session exists, from the request's address and browser. */
+  private async recordInvitationUse(req: Request, invitation: InvitationView): Promise<void> {
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.INVITATION_USE,
+      user: invitation.username,
+      ipAddress: req.ip,
+      action: AUDIT_EVENT.INVITATION_USE,
+      result: 'success',
+      severity: 'medium',
+      resource: invitation.username,
+      resourceType: 'user',
+      metadata: { invitationId: invitation.id, owner: invitation.username, createdBy: invitation.createdBy, userAgent: req.get?.('user-agent') }
+    }, (err) => logger.warn(`[AuthManager] Audit record failed for invitation-use of ${invitation.id}:`, err));
+  }
+
   // ── Two-step sign-in (#1523) ──────────────────────────────────────────
 
   private pendingSignIns = new Map<string, PendingSignIn>();
@@ -3054,6 +3381,27 @@ class AuthManager extends BaseManager {
   }
 
   /**
+   * `at` as `username` reads it: in their own time zone (their `timezone`
+   * preference, else `ngdpbase.default.timezone`), locale and clock, with the
+   * zone named (#1532). For a message sent to them, where no page script can
+   * show it in local time; the approval request and an invitation (#2049).
+   */
+  private async localTimeFor(username: string, at: Date): Promise<string> {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const prefs = (await this.engine.getManager<UserManager>('UserManager')?.getUser(username))?.preferences;
+    const zone = [prefs?.timezone, cm?.getProperty('ngdpbase.default.timezone', 'UTC')].find((z): z is string => typeof z === 'string' && LocaleUtils.isValidTimezone(z)) ?? 'UTC';
+    const opts: Intl.DateTimeFormatOptions = {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short',
+      ...(prefs?.timeFormat === '12h' || prefs?.timeFormat === '24h' ? { hour12: prefs.timeFormat === '12h' } : {})
+    };
+    try {
+      return at.toLocaleString(LocaleUtils.normalizeLocale(typeof prefs?.locale === 'string' ? prefs.locale : 'en-US'), opts);
+    } catch {
+      return at.toLocaleString('en-US', opts);
+    }
+  }
+
+  /**
    * What an approval request says about a waiting sign-in (#1532), one source
    * for the message and the page: the site's name, when it was asked in the
    * account holder's own time zone (their preference, else the site default),
@@ -3062,22 +3410,9 @@ class AuthManager extends BaseManager {
    */
   private async approvalContext(p: PendingSignIn): Promise<ApprovalAbout> {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const prefs = (await this.engine.getManager<UserManager>('UserManager')?.getUser(p.username))?.preferences;
-    const zone = [prefs?.timezone, cm?.getProperty('ngdpbase.default.timezone', 'UTC')].find((z): z is string => typeof z === 'string' && LocaleUtils.isValidTimezone(z)) ?? 'UTC';
-    const opts: Intl.DateTimeFormatOptions = {
-      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short',
-      ...(prefs?.timeFormat === '12h' || prefs?.timeFormat === '24h' ? { hour12: prefs.timeFormat === '12h' } : {})
-    };
-    const at = new Date(p.requestedAt);
-    let when: string;
-    try {
-      when = at.toLocaleString(LocaleUtils.normalizeLocale(typeof prefs?.locale === 'string' ? prefs.locale : 'en-US'), opts);
-    } catch {
-      when = at.toLocaleString('en-US', opts);
-    }
     return {
       site: cm?.getApplicationName() ?? 'ngdpbase',
-      when,
+      when: await this.localTimeFor(p.username, new Date(p.requestedAt)),
       device: describeBrowser(p.requestUserAgent),
       ...(p.requestIp ? { ip: p.requestIp } : {}),
       location: p.requestLocation ?? null

@@ -88,6 +88,7 @@ const mockCacheManager = {
 };
 
 const mockUserManager = {
+  hasPassword: vi.fn().mockResolvedValue(true), // #2049: the user list asks which accounts await setup
   getUser: vi.fn(),
   getUsers: vi.fn(),
   searchUsers: vi.fn(),

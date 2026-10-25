@@ -67,6 +67,8 @@ export type {
 // Accounts (#2025): the account door, and the change `updateUser` takes (the fields, or a function of the account as it is now).
 export type { default as UserManager, UserUpdateInput, UserUpdateFn } from '../../src/managers/UserManager.js';
 export type { User, UserPreferences } from '../../src/types/User.js';
+// Invitations (#2049): an add-on that creates an account without a password invites the user through AuthManager.
+export type { default as AuthManager, InviteOutcome, InvitationView } from '../../src/managers/AuthManager.js';
 
 // Contacts (#1930): the identity record and organization doors, their records, and their refusal.
 export type { default as IdentityManager, LinkOfferOutcome } from '../../src/managers/IdentityManager.js';

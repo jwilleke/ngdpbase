@@ -722,6 +722,29 @@ await users.updateUser(username, (current) => {
 
 The worked examples are the journal's settings saves (`addons/journal/index.ts`, `addons/journal/routes/editor.ts`). The rules are in [UserManager](../managers/UserManager.md#one-change-at-a-time-per-account).
 
+### Create a user and invite them
+
+An add-on that makes an account for someone (association approving an occupancy submission from a person with no account) makes it without a password and invites them, so they choose their own password or passkey ([#2049](https://github.com/jwilleke/ngdpbase/issues/2049)). Never make up a password and email it, and never ask your user to pass one on.
+
+```typescript
+import type { AuthManager, UserManager } from '@jwilleke/ngdpbase-types';
+
+await ctx.requirePermission('user-create'); // the approver's own permission, through your policy
+const actor = ctx.getActor();
+const users = engine.getManager<UserManager>('UserManager')!;
+const created = await users.createUser({ username, email, displayName, roles: ['reader'] }, actor); // no password
+const auth = engine.getManager<AuthManager>('AuthManager')!;
+const invited = await auth.inviteUser(actor, created.username);
+if (invited.outcome !== 'sent') {
+  // invited.reason says why in plain words (email is not working, say): show it to the approver.
+}
+```
+
+- __Both doors take the caller's context.__ `inviteUser` asks `user-create` of it and throws `Permission denied` without it. Grant `user-create` to the role that approves in your add-on's own policy ([Permissions](#permissions)), never by naming `admin`.
+- __The outcome says when nothing was sent__, not an exception: `email-unavailable` (email off or failing, or no site address), `send-failed`, or `not-invitable` (no email address, a password already, signed in already). The account stays; an administrator can resend from User Management or set a password by hand.
+- __Core records it__ (`invitation-send`, then `invitation-use`, `-cancel` or `-expire`). Do not record it again; record your own action (the approval) with your own event.
+- `auth.cancelInvitation(actor, username)` stops a link; sending again replaces the old one. A link lasts `ngdpbase.auth.invitation.ttl-days`. The invited user lands on core's setup page (a password or passkey, the recovery words, the site's terms); your add-on's own documents are asked for as usual ([Terms an add-on asks users to accept](#terms-an-add-on-asks-users-to-accept)).
+
 ### Contacts and identity records
 
 Donors, members and suppliers an add-on keeps are core's identity records and organizations, not the add-on's own table ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)). User, contact, identity record and profile mean what the [glossary](../GLOSSARY.md#identities) says. A donor is a user, a contact or an organization. Store the `@id` in your own records, and keep what your record needs to show (the name, say) there too: deleting a user deletes its identity record, even one your add-on made for a contact that later signed up, so the `@id` can come to name nothing (operator, 2026-10-20). Handle a `get` that returns `null`.

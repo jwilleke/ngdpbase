@@ -26,10 +26,16 @@ export const CREDENTIALS_KEY_ENV = 'NGDPBASE_CREDENTIALS_KEY';
  * represented, `subject` the grant id, `secret` the grant's terms as JSON
  * (whom it is for, the permissions, who made it, when it ends). Never a way
  * in; AuthManager reads and writes it only through its proxy-grant methods.
+ *
+ * `invitation` (#2049): a one-time link that lets a new user set up their
+ * sign-in — `username` the account invited, `subject` the SHA-256 of the
+ * link's token (the token itself is never stored), `secret` the terms as JSON
+ * (who sent it, when it ends). Not a sign-in method; AuthManager reads and
+ * writes it only through its invitation methods.
  */
-export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device' | 'identity' | 'proxy';
+export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device' | 'identity' | 'proxy' | 'invitation';
 
-export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device', 'identity', 'proxy'];
+export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device', 'identity', 'proxy', 'invitation'];
 
 /** One credential, as stored. */
 export interface CredentialRecord {

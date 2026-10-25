@@ -559,6 +559,10 @@ audited.
 | `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
 | `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
 | `signinapproval-throttle` | Sign-in approval: another approval message was asked for too soon and not sent (#1532) | continue | yes |
+| `invitation-send` | Invitation sent (#2049): a one-time link emailed to a new user to set up their sign-in; user is who sent it, resource the account invited. A credential nobody knows exists is the worst case, so it is recorded before the link exists | refuse | yes |
+| `invitation-use` | Invitation used (#2049): the invited user opened their link and was signed in once; the link is spent | continue | yes |
+| `invitation-cancel` | Invitation cancelled (#2049): an administrator cancelled it or sent a new one, the email could not be sent, or the account was deleted; the link stops working | refuse | yes |
+| `invitation-expire` | Invitation expired (#2049): the link was not used in time and was removed | continue | yes |
 <!-- AUTO:audit-events END -->
 
 #### Retired names

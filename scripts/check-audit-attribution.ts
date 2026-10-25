@@ -63,6 +63,8 @@ const ALLOWED: Record<string, string> = {
     'step-up (reauth) records the SIGNED-IN person\'s own fresh sign-in; under a proxy that is the actor, which is what session.username names (slice 4: session.username stays the actor; the grant acted under is session.actingFor)',
   'src/managers/AuthManager.ts::p.username':
     'signinapproval-* (#1532): the account a waiting sign-in is for, before any session exists. Whom to act for is chosen after sign-in (slice 4), so there is no proxy to name; who took each step is the record\'s ipAddress and browser',
+  'src/managers/AuthManager.ts::invitation.username':
+    'invitation-use (#2049): the invited user using their own link, before any session exists, so there is no context and no proxy to name; who opened it is the record\'s ipAddress and browser',
   'src/utils/auditLifecycle.ts::input.principal ?? \'system\'':
     'system-start / system-shutdown: the configured system principal at boot, with no request and no person'
 };

@@ -118,6 +118,13 @@
                     <% } else { %>
                       <span class="badge bg-danger" >Inactive</span>
                     <% } %>
+                    <%# #2049: invited until first sign-in; an account with no way in yet says so. %>
+                    <% if (user.invitation) { %>
+                      <span class="badge bg-info text-dark" data-invited>Invited</span>
+                      <div class="small text-muted">until <time datetime="<%= user.invitation.expiresAt %>" data-local-time><%= user.invitation.expiresAt %></time></div>
+                    <% } else if (user.awaitingSetup) { %>
+                      <span class="badge bg-secondary" data-not-set-up title="No password and never signed in">Not set up</span>
+                    <% } %>
                   </td>
                   <td>
                     <% if (user.lastLogin) { %>
@@ -140,6 +147,24 @@
                         </button>
                       <% } %>
                     </div>
+                    <% if (user.awaitingSetup) { %>
+                      <div class="mt-1 d-flex gap-1">
+                        <form action="/admin/users/<%= encodeURIComponent(user.username) %>/invitation" method="POST" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <button type="submit" class="btn btn-sm btn-outline-secondary" data-invite-send<%= locals.invitationsUnavailable ? ' disabled' : '' %><%- lockedUnless('user-create') %>>
+                            <i class="fas fa-envelope"></i> <%= user.invitation ? 'Resend invitation' : 'Send invitation' %>
+                          </button>
+                        </form>
+                        <% if (user.invitation) { %>
+                          <form action="/admin/users/<%= encodeURIComponent(user.username) %>/invitation/cancel" method="POST" class="d-inline">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" data-invite-cancel title="The link stops working"<%- lockedUnless('user-create') %>>
+                              Cancel invitation
+                            </button>
+                          </form>
+                        <% } %>
+                      </div>
+                    <% } %>
                   </td>
                 </tr>
                 <% }); %>
@@ -193,13 +218,26 @@
             <div class="form-text">Optional: Email address for notifications.</div>
           </div>
           
+          <%# #2049: instead of a password, an emailed one-time link; the user chooses their own. %>
           <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="invite" name="invite" value="true"<%= locals.invitationsUnavailable ? ' disabled' : '' %>>
+              <label class="form-check-label" for="invite">Send an invitation instead of setting a password</label>
+            </div>
+            <% if (locals.invitationsUnavailable) { %>
+              <div class="form-text text-warning" data-invitations-unavailable><%= locals.invitationsUnavailable %> Set a password for the account instead.</div>
+            <% } else { %>
+              <div class="form-text">The user gets an email with a one-time link to choose their own password or passkey. Needs an email address.</div>
+            <% } %>
+          </div>
+
+          <div class="mb-3" data-password-field>
             <label for="password" class="form-label">Password *</label>
             <input type="password" class="form-control" id="password" name="password" required>
             <div class="form-text">Minimum 6 characters.</div>
           </div>
           
-          <div class="mb-3">
+          <div class="mb-3" data-password-field>
             <label for="confirmPassword" class="form-label">Confirm Password *</label>
             <input type="password" class="form-control" id="confirmPassword" required>
             <div class="form-text">Must match the password above.</div>
@@ -292,7 +330,29 @@ document.addEventListener('DOMContentLoaded', function() {
   const password = document.getElementById('password');
   const confirmPassword = document.getElementById('confirmPassword');
 
+  // #2049: inviting hides the password; the email is then needed instead.
+  const invite = document.getElementById('invite');
+  const email = document.getElementById('email');
+  function syncInvite() {
+    const inviting = invite.checked;
+    document.querySelectorAll('[data-password-field]').forEach(function (el) { el.classList.toggle('d-none', inviting); });
+    password.required = !inviting;
+    confirmPassword.required = !inviting;
+    email.required = inviting;
+    if (inviting) { password.value = ''; confirmPassword.value = ''; }
+  }
+  invite.addEventListener('change', syncInvite);
+
   form.addEventListener('submit', function(e) {
+    if (invite.checked) {
+      const roles = document.querySelectorAll('input[name="roles"]:checked');
+      if (roles.length === 0) {
+        e.preventDefault();
+        alert('Please select at least one role for the user.');
+        return false;
+      }
+      return true;
+    }
     if (password.value !== confirmPassword.value) {
       e.preventDefault();
       confirmPassword.setCustomValidity('Passwords do not match');
