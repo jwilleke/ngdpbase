@@ -131,9 +131,15 @@ export class CloudflareAccessAuthProvider implements AuthProvider {
       return null;
     }
 
-    // Email-keyed lookup (Q1=a). Falls back to scanning when the provider
-    // doesn't expose a direct getUserByEmail.
-    const existing = await this.findUserByEmail(userManager, email);
+    // Email-keyed lookup (Q1=a).
+    // #2073: an email several accounts share is refused, never guessed between
+    // and never given a new account: a gateway's header cannot ask which.
+    const holders = await userManager.getUsersByEmail(email);
+    if (holders.length > 1) {
+      logger.warn(`[CloudflareAccessAuthProvider] ${holders.length} accounts share an address at ${emailDomain(email)}; refused, since a gateway sign-in cannot ask which (#2073)`);
+      return null;
+    }
+    const existing = holders[0];
     if (existing) {
       logger.info(`[CloudflareAccessAuthProvider] Existing user matched: ${existing.username}`);
       return { username: existing.username };
@@ -181,37 +187,6 @@ export class CloudflareAccessAuthProvider implements AuthProvider {
       if (mapped) out.add(mapped);
     }
     return Array.from(out);
-  }
-
-  private async findUserByEmail(
-    userManager: UserManager,
-    email: string
-  ): Promise<{ username: string } | null> {
-    const candidate = (userManager as unknown as {
-      getUserByEmail?: (e: string) => Promise<{ username: string } | null>;
-    }).getUserByEmail;
-    if (typeof candidate === 'function') {
-      try {
-        const found = await candidate.call(userManager, email);
-        if (found) return found;
-      } catch (err) {
-        logger.warn('[CloudflareAccessAuthProvider] getUserByEmail failed:', err);
-      }
-    }
-    // Fallback: scan via getAllUsers if available.
-    const listAll = (userManager as unknown as {
-      getAllUsers?: () => Promise<Array<{ username: string; email?: string }>>;
-    }).getAllUsers;
-    if (typeof listAll === 'function') {
-      try {
-        const users = await listAll.call(userManager);
-        const found = users.find(u => u.email?.toLowerCase() === email);
-        return found ? { username: found.username } : null;
-      } catch (err) {
-        logger.warn('[CloudflareAccessAuthProvider] getAllUsers fallback failed:', err);
-      }
-    }
-    return null;
   }
 
   private async deriveUniqueUsername(

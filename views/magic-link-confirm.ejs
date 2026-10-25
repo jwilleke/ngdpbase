@@ -26,6 +26,25 @@
                         </div>
                     <% } %>
 
+                    <% if (typeof accounts !== 'undefined' && accounts) { %>
+                    <%# #2073: more than one account uses this email; the person chooses which one. %>
+                    <form action="/auth/magic-link/verify" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="token" value="<%= token %>">
+                        <fieldset class="mb-3" data-account-choice>
+                            <legend class="h6">Your link is valid. More than one account uses this email. Which account do you want to sign in to?</legend>
+                            <% accounts.forEach(function (a, i) { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="account" id="account-<%= i %>" value="<%= a.username %>" required<% if (i === 0) { %> checked<% } %>>
+                                <label class="form-check-label" for="account-<%= i %>"><%= a.displayName %> <span class="text-muted">(<%= a.username %>)</span></label>
+                            </div>
+                            <% }) %>
+                        </fieldset>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sign-in-alt" aria-hidden="true"></i> Sign in to this account
+                        </button>
+                    </form>
+                    <% } else { %>
                     <p class="text-center mb-4">
                         Your link is valid. Click below to finish signing in as
                         <strong><%= username %></strong>.
@@ -38,6 +57,7 @@
                             <i class="fas fa-sign-in-alt"></i> Click to sign in
                         </button>
                     </form>
+                    <% } %>
 
                     <p class="text-muted small text-center mt-3 mb-0">
                         This link can only be used once. If you did not request it, close this page

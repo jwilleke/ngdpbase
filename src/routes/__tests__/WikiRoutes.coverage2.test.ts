@@ -135,6 +135,9 @@ const mockSearchManager = {
 const mockUserManager = {
   getUser: vi.fn(),
   getUsers: vi.fn(),
+  // #2073: shared emails.
+  usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+  isEmailShared: vi.fn(() => Promise.resolve(false)),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -687,7 +690,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
       const res = await request(app)
         .post('/profile')
-        .send({ displayName: 'New Name', email: 'new@x.com', _csrf: csrf });
+        .send({ displayName: 'New Name', _csrf: csrf }); // #2073: a new email goes by its link, tested in WikiRoutes.emailChange
 
       expect(res.status).toBe(302);
       expect(res.headers.location).not.toMatch(/error/);

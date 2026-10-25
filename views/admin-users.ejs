@@ -104,7 +104,7 @@
                     <% } %>
                   </td>
                   <td><%= user.displayName || user.username %></td>
-                  <td><%= user.email || 'Not set' %></td>
+                  <td><%= user.email || 'Not set' %><% if (user.sharedEmail) { %> <span class="badge bg-light text-dark border" data-shared-email title="Another account uses this email too. Emailed sign-in links ask which account.">Shared email</span><% } %></td>
                   <td>
                     <% user.roles.forEach(role => { %>
                       <span class="badge bg-<%= role === 'admin' ? 'danger' : 'secondary' %>">

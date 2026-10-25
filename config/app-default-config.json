@@ -147,6 +147,12 @@
   "ngdpbase.application.persons.link-offer.ttl-minutes": 30,
   "_comment_application_persons_default_country": "#2073: the country a phone or address on /profile is read with until the user picks another (ISO 3166-1 alpha-2). Phones are stored in E.164.",
   "ngdpbase.application.persons.default-country": "US",
+  "_comment_auth_email_change": "#2073: how long the link that confirms a user's new email stays usable. A user's own email changes only when they click it.",
+  "ngdpbase.auth.email-change.ttl-minutes": 60,
+  "_comment_auth_email_change_throttle": "#2073: how often one account may be sent a link to confirm a new email: at least cooldown-seconds apart, and at most max-per-window in window-minutes. Past either, no mail is sent.",
+  "ngdpbase.auth.email-change.cooldown-seconds": 60,
+  "ngdpbase.auth.email-change.max-per-window": 5,
+  "ngdpbase.auth.email-change.window-minutes": 60,
   "ngdpbase.application.organization.search.limit": 50,
   "ngdpbase.application.organization.provider.default": "fileorganizationprovider",
   "ngdpbase.application.organization.provider": "fileorganizationprovider",
@@ -2537,6 +2543,20 @@
     },
     "signinapproval-expire": {
       "description": "Sign-in approval: a waiting sign-in expired before it was completed (#1532)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "emailchange-request": {
+      "description": "A user asked to change their own email: a confirmation link was sent to the new address (#2073). Names only, never an address",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "emailchange-confirm": {
+      "description": "A user's new email was confirmed by its emailed link and saved (#2073). Names only, never an address",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

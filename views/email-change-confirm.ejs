@@ -1,0 +1,37 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #2073: the link that confirms a user's new email. The GET shows what it would change;
+    only the button below changes it, so a mail scanner opening the link changes nothing.
+    It never signs anyone in. %>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Confirm your new email</h4>
+                </div>
+                <div class="card-body">
+                    <% if (result) { %>
+                    <div class="alert <%= result.ok ? 'alert-success' : 'alert-danger' %>" role="<%= result.ok ? 'status' : 'alert' %>" data-email-change-result><%= result.message %></div>
+                    <% } else if (offer) { %>
+                    <p>Use <strong><%= offer.address %></strong> as the email of the account <strong><%= offer.username %></strong>?</p>
+                    <form action="/account/email/confirm" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="t" value="<%= token %>">
+                        <button type="submit" class="btn btn-primary w-100">Confirm this email</button>
+                    </form>
+                    <p class="text-muted small mt-3 mb-0">This does not sign you in. If you did not ask for this, close this page and nothing changes.</p>
+                    <% } else { %>
+                    <div class="alert alert-danger" role="alert" data-email-change-result>This link has expired or was already used. Ask for a new one by changing your email on your profile again.</div>
+                    <% } %>
+                    <hr>
+                    <div class="text-center">
+                        <p class="mb-0"><a href="/profile">Your profile</a> · <a href="/login">Sign in</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

@@ -126,9 +126,11 @@ async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[]; tmp?:
   (accounts as unknown as { checkDisplayNamePageConflict: () => Promise<boolean> }).checkDisplayNamePageConflict = async () => false;
   managers.UserManager = accounts;
 
+  // #2073: an account made with its email proven, as a magic-link sign-up is. A self-registration
+  // gets its email only by confirming a link (AuthManager.confirmEmailChange), so it is never made with one.
   const signUp = (username: string, email: string) => accounts.createUser(
     { username, email, displayName: username, password: `pw-${randomUUID()}`, roles: ['reader'] },
-    jobContextFromRequestWithReason({ username }, 'self-registration')
+    jobContextFromRequestWithReason({ username: 'svc' }, `provisioned by magic-link for ${username}`)
   );
   const contacts = () => sink.filter((e) => e.eventType === 'identity-manage');
   return { tmp, engine, persons, organizations, roles, accounts, sink, contacts, mail, signUp };

@@ -76,7 +76,7 @@
 
                     <!-- #2073: the user's own contact details, from their identity record and account. -->
                     <% if (typeof contactDetails !== 'undefined') { %>
-                    <%- include('_profile-contact-details', { contactDetails: contactDetails, contactDetailsSaved: typeof contactDetailsSaved !== 'undefined' ? contactDetailsSaved : null, contactDetailsError: typeof contactDetailsError !== 'undefined' ? contactDetailsError : null, csrfToken: csrfToken }) %>
+                    <%- include('_profile-contact-details', { contactDetails: contactDetails, contactDetailsSaved: typeof contactDetailsSaved !== 'undefined' ? contactDetailsSaved : null, contactDetailsError: typeof contactDetailsError !== 'undefined' ? contactDetailsError : null, pendingEmail: typeof pendingEmail !== 'undefined' ? pendingEmail : null, csrfToken: csrfToken }) %>
                     <% } %>
 
                     <!-- #640: My Contributions card -->

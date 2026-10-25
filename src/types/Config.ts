@@ -422,6 +422,18 @@ export interface ApplicationOrganizationConfig {
   /** #2073: the country (ISO 3166-1 alpha-2) a phone or address on /profile is read with until the user picks another */
   'ngdpbase.application.persons.default-country': string;
 
+  /** #2073: minutes the link confirming a user's new email stays usable */
+  'ngdpbase.auth.email-change.ttl-minutes': number;
+
+  /** #2073: the least time between two email-change links for one account, in seconds */
+  'ngdpbase.auth.email-change.cooldown-seconds': number;
+
+  /** #2073: the most email-change links one account is sent per window */
+  'ngdpbase.auth.email-change.max-per-window': number;
+
+  /** #2073: that window, in minutes */
+  'ngdpbase.auth.email-change.window-minutes': number;
+
   /** #1930: the most results `OrganizationManager.search` returns when the caller gives no limit */
   'ngdpbase.application.organization.search.limit': number;
 

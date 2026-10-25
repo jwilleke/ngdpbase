@@ -101,6 +101,9 @@ vi.mock('../../WikiEngine', () => {
   // Create mock managers once
   const mockUserManager = {
     destroySession: vi.fn().mockResolvedValue(true),
+    // #2073: shared emails.
+    usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+    isEmailShared: vi.fn(() => Promise.resolve(false)),
     getUsers: vi.fn().mockResolvedValue([
       { 
         username: 'admin', 

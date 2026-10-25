@@ -80,6 +80,8 @@ describe('MagicLinkAuthProvider logs the domain only', () => {
     const send = opts.send ?? vi.fn().mockResolvedValue(undefined);
     const userManager = {
       getUserByEmail: vi.fn().mockResolvedValue(opts.user ?? undefined),
+      // #2073: the provider asks for every account on the address.
+      getUsersByEmail: vi.fn().mockResolvedValue(opts.user ? [opts.user] : []),
       getUser: vi.fn().mockResolvedValue(undefined),
       createUser: opts.createUser ?? vi.fn(async (u: { username: string }) => ({ username: u.username }))
     };

@@ -80,6 +80,9 @@ const mockPageManager = {
 const mockUserManager = {
   getUser: vi.fn(),
   getUsers: vi.fn(),
+  // #2073: shared emails.
+  usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+  isEmailShared: vi.fn(() => Promise.resolve(false)),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -159,6 +162,7 @@ const mockAuthManager = {
   // #1022: the state recorded when the link was requested. null = a token
   // issued before binding existed, which must not read as a mismatch.
   getDeviceState: vi.fn().mockReturnValue(null),
+  getAccountChoices: vi.fn().mockReturnValue(null),
   provisionIfNew: vi.fn().mockResolvedValue(undefined),
   // #1021: consumeToken returns whether THIS caller consumed the token, and
   // the routes gate session creation on it. A mock returning undefined reads

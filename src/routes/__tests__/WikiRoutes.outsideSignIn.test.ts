@@ -36,6 +36,8 @@ function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
     startConnect: vi.fn().mockResolvedValue('https://accounts.example/authorize?state=s2'),
     flowConnectsFor: vi.fn(() => opts.connectFor ?? null),
     finishOutsideSignIn: vi.fn().mockResolvedValue({ outcome: 'signed-in', next: '/after' }),
+    outsideChoice: vi.fn((): { displayName: string; choices: string[] } | null => ({ displayName: 'Google', choices: ['ann', 'bob'] })),
+    finishOutsideChoice: vi.fn().mockResolvedValue({ outcome: 'signed-in', next: '/after' }) as ReturnType<typeof vi.fn>,
     dropPendingConnection: vi.fn(),
     pendingConnection: vi.fn(() => ({ displayName: 'Google', email: 'ann@gmail.example' })),
     confirmPendingConnection: vi.fn().mockResolvedValue('/profile?success=Connected'),
@@ -57,7 +59,8 @@ function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
       holds: vi.fn(() => Promise.resolve(true))
     },
     AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('a'), logAuthentication: vi.fn().mockResolvedValue('a') },
-    ConfigurationManager: { getProperty: (_k: string, d: unknown) => d }
+    ConfigurationManager: { getProperty: (_k: string, d: unknown) => d },
+    UserManager: { getUser: vi.fn((u: string) => Promise.resolve({ username: u, displayName: u === 'ann' ? 'Ann Smith' : 'Bob Smith' })) }
   };
   const engine = { getManager: vi.fn((n: string) => managers[n] ?? null) };
   authManager.engine = engine;
@@ -111,6 +114,57 @@ describe('outside sign-in routes (#1743)', () => {
     expect(out.clearCookie).toHaveBeenCalledWith(OAUTH_STATE_COOKIE, { path: '/' });
     expect(q.session.save).toHaveBeenCalled();
     expect(out.redirect).toHaveBeenCalledWith('/after');
+  });
+
+  describe('an email several accounts share (#2073)', () => {
+    test('callback: the person is sent to choose which account', async () => {
+      const { r, authManager } = routes();
+      authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'choose-account' });
+      const out = res();
+      const q = req({ method: 'GET', query: { code: 'c1', state: 's1' } });
+      await r.finishOutsideFlow(q, out);
+      expect(q.session.save).toHaveBeenCalled();
+      expect(out.redirect).toHaveBeenCalledWith('/auth/choose-account');
+    });
+
+    test('the page lists the accounts offered by name; with none waiting, back to sign in', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      await r.chooseAccountPage(req({ method: 'GET' }), out);
+      expect(out.render).toHaveBeenCalledWith('choose-account', expect.objectContaining({
+        providerName: 'Google', accounts: [{ username: 'ann', displayName: 'Ann Smith' }, { username: 'bob', displayName: 'Bob Smith' }]
+      }));
+      authManager.outsideChoice.mockReturnValue(null);
+      const none = res();
+      await r.chooseAccountPage(req({ method: 'GET' }), none);
+      expect(none.render).not.toHaveBeenCalled();
+      expect(none.redirect).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?error=/));
+    });
+
+    test('choosing passes the account to AuthManager, which decides; signed in, the person goes on', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      const q = req({ body: { account: 'bob' } });
+      await r.chooseAccount(q, out);
+      expect(authManager.finishOutsideChoice).toHaveBeenCalledWith(q, 'bob');
+      expect(q.session.save).toHaveBeenCalled();
+      expect(out.redirect).toHaveBeenCalledWith('/after');
+    });
+
+    test('a refused choice signs nobody in and says so neutrally; a second step is held as after any sign-in', async () => {
+      const { r, authManager } = routes();
+      authManager.finishOutsideChoice.mockResolvedValue({ outcome: 'refused' });
+      const out = res();
+      const q = req({ body: { account: 'mallory' } });
+      await r.chooseAccount(q, out);
+      expect(out.redirect).toHaveBeenCalledWith('/login?error=' + encodeURIComponent('Sign-in failed. Please sign in again.'));
+      expect(q.session.save).not.toHaveBeenCalled();
+
+      authManager.finishOutsideChoice.mockResolvedValue({ outcome: 'second-step', handle: 'h', binding: 'b', next: '/after' });
+      const held = vi.spyOn(r as unknown as { holdForSecondStep: (...a: unknown[]) => void }, 'holdForSecondStep').mockImplementation(() => undefined);
+      await r.chooseAccount(req({ body: { account: 'bob' } }), res());
+      expect(held).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'h', 'b', '/after');
+    });
   });
 
   test('callback: an account created for the identity goes where it says too', async () => {

@@ -1,0 +1,39 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #2073: an outside sign-in whose email more than one account here uses. The person
+    chooses which account; this is asked every time and nothing is remembered. %>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Choose an account</h4>
+                </div>
+                <div class="card-body">
+                    <form action="/auth/choose-account" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <fieldset class="mb-3" data-account-choice>
+                            <legend class="h6">You signed in with <%= providerName %>. More than one account here uses that email. Which account do you want to sign in to?</legend>
+                            <% accounts.forEach(function (a, i) { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="account" id="account-<%= i %>" value="<%= a.username %>" required<% if (i === 0) { %> checked<% } %>>
+                                <label class="form-check-label" for="account-<%= i %>"><%= a.displayName %> <span class="text-muted">(<%= a.username %>)</span></label>
+                            </div>
+                            <% }) %>
+                        </fieldset>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sign-in-alt" aria-hidden="true"></i> Sign in to this account
+                        </button>
+                    </form>
+                    <p class="text-muted small text-center mt-3 mb-0">You will be asked again the next time you sign in this way.</p>
+                    <hr>
+                    <div class="text-center">
+                        <p class="mb-0"><a href="/login">← Back to login</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

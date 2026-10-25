@@ -63,6 +63,10 @@ export const AUDIT_EVENT = {
   CONSENT_GRANT: 'consent-grant',
   /** A user's acceptances ended (#1603): today only when their account is deleted, which removes their consent records; names the documents and versions they had accepted. Recorded before the records are removed */
   CONSENT_WITHDRAW: 'consent-withdraw',
+  /** A user's new email was confirmed by its emailed link and saved (#2073). Names only, never an address */
+  EMAILCHANGE_CONFIRM: 'emailchange-confirm',
+  /** A user asked to change their own email: a confirmation link was sent to the new address (#2073). Names only, never an address */
+  EMAILCHANGE_REQUEST: 'emailchange-request',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
   FOOTNOTE_EDIT: 'footnote-edit',
   /** Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values */

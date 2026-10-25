@@ -153,7 +153,14 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
 
     // Email-keyed lookup. Resolving to the human's existing account is the
     // mechanism behind decision A (author reads as the human).
-    const existing = await this.findUserByEmail(userManager, email);
+    // #2073: an email several accounts share is refused, never guessed between
+    // and never given a new account: a gateway's header cannot ask which.
+    const holders = await userManager.getUsersByEmail(email);
+    if (holders.length > 1) {
+      logger.warn(`[AuthentikBearerAuthProvider] ${holders.length} accounts share an address at ${emailDomain(email)}; refused, since a gateway sign-in cannot ask which (#2073)`);
+      return null;
+    }
+    const existing = holders[0];
     if (existing) {
       logger.info(`[AuthentikBearerAuthProvider] Existing user matched: ${existing.username}`);
       return { username: existing.username };
@@ -197,37 +204,6 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
       if (mapped) out.add(mapped);
     }
     return Array.from(out);
-  }
-
-  private async findUserByEmail(
-    userManager: UserManager,
-    email: string
-  ): Promise<{ username: string } | null> {
-    const candidate = (userManager as unknown as {
-      getUserByEmail?: (e: string) => Promise<{ username: string } | null>;
-    }).getUserByEmail;
-    if (typeof candidate === 'function') {
-      try {
-        const found = await candidate.call(userManager, email);
-        if (found) return found;
-      } catch (err) {
-        logger.warn('[AuthentikBearerAuthProvider] getUserByEmail failed:', err);
-      }
-    }
-    // Fallback: scan via getAllUsers if available.
-    const listAll = (userManager as unknown as {
-      getAllUsers?: () => Promise<Array<{ username: string; email?: string }>>;
-    }).getAllUsers;
-    if (typeof listAll === 'function') {
-      try {
-        const users = await listAll.call(userManager);
-        const found = users.find(u => u.email?.toLowerCase() === email);
-        return found ? { username: found.username } : null;
-      } catch (err) {
-        logger.warn('[AuthentikBearerAuthProvider] getAllUsers fallback failed:', err);
-      }
-    }
-    return null;
   }
 
   private async deriveUniqueUsername(

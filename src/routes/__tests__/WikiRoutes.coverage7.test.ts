@@ -93,6 +93,9 @@ const mockCacheManager = {
 const mockUserManager = {
   getUser: vi.fn(),
   getUsers: vi.fn(),
+  // #2073: shared emails.
+  usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+  isEmailShared: vi.fn(() => Promise.resolve(false)),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -689,7 +692,7 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app)
         .post('/profile')
         .set('x-csrf-token', 'test-csrf-token')
-        .send({ displayName: 'Updated Name', email: 'updated@example.com' });
+        .send({ displayName: 'Updated Name' }); // #2073: a new email goes by its link, tested in WikiRoutes.emailChange
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/profile');
       expect(res.headers.location).toContain('success');

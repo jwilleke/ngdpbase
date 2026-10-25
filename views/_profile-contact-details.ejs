@@ -1,6 +1,6 @@
 <%# #2073: the user's own contact details, from their identity record and account.
     Locals: contactDetails (null when it could not be read), contactDetailsSaved,
-    contactDetailsError, csrfToken. The form's field names are src/routes/profileContactDetails.ts's. %>
+    contactDetailsError, pendingEmail (the new email waiting for its link), csrfToken. The form's field names are src/routes/profileContactDetails.ts's. %>
 <% const cd = contactDetails; %>
 <% function countrySelect(id, name, label, chosen, withCode) { %>
     <label class="form-label small text-muted" for="<%= id %>"><%= label %></label>
@@ -56,7 +56,10 @@
                             <div class="col-md-6 mb-2">
                                 <label class="form-label" for="cdEmail">Email</label>
                                 <input type="email" class="form-control" id="cdEmail" name="email" value="<%= cd.email %>" required autocomplete="email" aria-describedby="cdEmailHint">
-                                <div class="form-text" id="cdEmailHint">Emailed sign-in links go here. Changing it may ask you to sign in again.</div>
+                                <div class="form-text" id="cdEmailHint">Emailed sign-in links go here. A new email changes only when you click the link we send to it.</div>
+                                <% if (typeof pendingEmail !== 'undefined' && pendingEmail) { %>
+                                <div class="alert alert-info small mt-2 mb-0" role="status" data-pending-email>We sent a link to <strong><%= pendingEmail %></strong>. Your email changes when you click it.</div>
+                                <% } %>
                             </div>
                             <div class="col-md-6 mb-2">
                                 <label class="form-label" for="cdGivenName">Given name</label>

@@ -102,7 +102,9 @@ import { accountBindingOf } from '../utils/sessionAccount.js';
 import { DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from '../utils/sessionLimits.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
-import { safeRegistrationMessage } from '../utils/userCreateError.js';
+import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
+import { sameUsername } from '../utils/username.js';
+import { isEmail } from '../types/guards.js';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 
@@ -478,12 +480,35 @@ export interface PendingConnection {
   returnTo?: string;
 }
 
+/**
+ * An outside sign-in whose verified email several accounts here share
+ * (#2073): held in the session while the person chooses which account, asked
+ * every time and never remembered (no identity is connected). Single use.
+ */
+export interface OutsideChoice {
+  providerId: string;
+  /** The provider's verified email. */
+  email: string;
+  /** The accounts on that email, by username, when the callback came back. */
+  choices: string[];
+  /** The provider's name, for the page. */
+  displayName: string;
+  /** What the provider reported about its own sign-in (#1633), kept for the level it counts for. */
+  reported: ReportedAssurance;
+  /** Where the sign-in was going. */
+  returnTo: string;
+  /** Epoch ms. */
+  expiresAt: number;
+}
+
 /** How an outside sign-in's callback ended (#1743), for the route to answer. */
 export type OutsideSignIn =
   /** Signed in (`created`: an account was made for it first); `next` is where to go. */
   | { outcome: 'signed-in' | 'created'; next: string }
   /** Held as a pending connection: the person signs in another way to connect it. `error` is what to say, if anything. */
   | { outcome: 'connect-first'; error?: string }
+  /** #2073: several accounts share the verified email; held for the person to choose one (`outsideChoice`). */
+  | { outcome: 'choose-account' }
   /** Refused; nothing says whether an account exists. */
   | { outcome: 'refused' }
   /** The state was already used: no second session. */
@@ -503,6 +528,17 @@ export interface SignInCompleted {
 
 /** Short: a shared browser should not keep someone else's identity waiting for long (#1743). */
 const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
+
+/** #2073: how long the link confirming a new email lasts, in minutes. */
+const EMAIL_CHANGE_TTL_KEY = 'ngdpbase.auth.email-change.ttl-minutes';
+/** #2073: the least time between two email-change links for one account, in seconds. */
+const EMAIL_CHANGE_COOLDOWN_KEY = 'ngdpbase.auth.email-change.cooldown-seconds';
+/** #2073: the most email-change links one account is sent in a window, and the window, in minutes. */
+const EMAIL_CHANGE_MAX_KEY = 'ngdpbase.auth.email-change.max-per-window';
+const EMAIL_CHANGE_WINDOW_KEY = 'ngdpbase.auth.email-change.window-minutes';
+
+/** #2073: an outside sign-in's verified email already belongs to one account here; it is connected only by signing in to that account. */
+const OUTSIDE_EMAIL_HELD = 'An account here already uses that email. Sign in to it another way, then connect this sign-in.';
 
 /** Who changed a credential, for its audit record: the person acting, and from where. */
 type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress' | 'viaProxy'>;
@@ -1233,6 +1269,23 @@ class AuthManager extends BaseManager {
       };
       return error ? { outcome: 'connect-first', error } : { outcome: 'connect-first' };
     };
+    // #2073: a verified email accounts here already hold. Several share it:
+    // the person chooses which account, every time, and nothing is connected
+    // or remembered. One: the email step, as before — an email alone never
+    // connects an identity to an account. Either way no account is created.
+    if (identity.email) {
+      const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(identity.email) ?? [];
+      const active = holders.filter((u) => u.isActive !== false);
+      if (active.length > 1) {
+        delete req.session.pendingConnection;
+        req.session.outsideChoice = {
+          providerId, email: identity.email, choices: active.map((u) => u.username), displayName: provider.displayName,
+          reported: identity.reported, returnTo: redirect, expiresAt: Date.now() + PENDING_CONNECTION_TTL_MS
+        };
+        return { outcome: 'choose-account' };
+      }
+      if (holders.length > 0) return hold(this.outsideMayCreateAccounts(provider) ? OUTSIDE_EMAIL_HELD : undefined);
+    }
     if (!identity.email || !this.outsideMayCreateAccounts(provider)) return hold();
 
     const created = await this.createAccountFor(req, provider, identity.email);
@@ -1323,6 +1376,51 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.error(`[AuthManager] the account ${username}, created for ${provider.id}, could not be removed after its identity failed to connect:`, err);
     }
+  }
+
+  /**
+   * The accounts an outside sign-in to a shared email offers (#2073), for the
+   * page asking which; null when none is waiting, and an expired one is dropped.
+   */
+  outsideChoice(req: Request): { displayName: string; choices: string[] } | null {
+    const choice = req.session?.outsideChoice;
+    if (!choice) return null;
+    if (!(choice.expiresAt > Date.now())) {
+      delete req.session.outsideChoice;
+      return null;
+    }
+    return { displayName: choice.displayName, choices: [...choice.choices] };
+  }
+
+  /**
+   * Finish an outside sign-in to a shared email (#2073): `account` must be one
+   * the sign-in offered, still hold that email, be active, and be allowed to
+   * use the provider. The choice is used once, connects nothing and is not
+   * remembered; the next sign-in asks again. A sign-in at AAL1 takes the
+   * second step, as any outside sign-in does (#1532).
+   */
+  async finishOutsideChoice(req: Request, account: string): Promise<OutsideSignIn> {
+    const choice = req.session?.outsideChoice;
+    if (req.session) delete req.session.outsideChoice;
+    if (!choice || !(choice.expiresAt > Date.now()) || !choice.choices.includes(account)) return { outcome: 'refused' };
+    const provider = this.outsideProvider(choice.providerId);
+    if (!provider) return { outcome: 'refused' };
+    const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(choice.email) ?? [];
+    if (!holders.some((u) => u.username === account && u.isActive !== false)) return { outcome: 'refused' };
+    if (!(await this.userMayUseProvider(account, choice.providerId))) {
+      logger.warn(`[AuthManager] User ${account} not allowed to use provider: ${choice.providerId}`);
+      return { outcome: 'refused' };
+    }
+    const reported = reportedValues(choice.reported, this.trustsOutsideMfa(provider));
+    const result: AuthenticateResult = { success: true, username: account, provider: choice.providerId, factors: this.satisfiedFactors(choice.providerId, reported), reported };
+    const next = safeRedirect(choice.returnTo);
+    if (this.needsSecondStep(result)) {
+      const binding = randomBytes(24).toString('base64url');
+      const handle = await this.beginTwoStep(result, { binding, ip: req.ip, userAgent: req.get?.('user-agent'), location: await this.approximateLocation(req) });
+      return { outcome: 'second-step', handle, binding, next };
+    }
+    const done = await this.completeSignIn(req, result, { method: choice.providerId, returnTo: next });
+    return { outcome: 'signed-in', next: done.next ?? next };
   }
 
   /**
@@ -3152,6 +3250,10 @@ class AuthManager extends BaseManager {
   private pendingSignIns = new Map<string, PendingSignIn>();
   private approvalTokens = new Map<string, { handle: string; expiresAt: number }>();
   private enrolTokens = new Map<string, { username: string; address: string; expiresAt: number }>();
+  /** #2073: links confirming a user's new email, by token; one waiting per account. In memory: a restart drops them. */
+  private emailChangeTokens = new Map<string, { username: string; address: string; expiresAt: number }>();
+  /** #2073: when each account's email-change links were sent, for the cooldown and the cap. In memory. */
+  private emailChangeSends = new Map<string, number[]>();
 
   /** Mail can carry an email-link factor: a mail transport and an explicit base-url for the link. */
   private mailForLinks(): EmailManager | null {
@@ -3533,6 +3635,141 @@ class AuthManager extends BaseManager {
   }
 
   /**
+   * A user asks to change their own email (#2073, operator 2026-10-25): it
+   * changes only when they click a link sent to the new address. Until then
+   * the account keeps its old email. The link is single use, lasts
+   * `ngdpbase.auth.email-change.ttl-minutes` (60), is bound to the account and
+   * the new address, and replaces any link still waiting for that account. The
+   * old address, when there is one, is told a change was asked, with no link.
+   * Recorded as `emailchange-request`, naming the account, never an address.
+   *
+   * Only the account itself asks (its own context, signed in or just
+   * registered). `unavailable`: this site cannot send email now, so nothing
+   * is sent and an administrator can change it instead. `failed`: the send
+   * failed and no link is waiting. `unchanged`: the address is the one the
+   * account already has. `throttled`: the account asked too soon after its
+   * last link (`ngdpbase.auth.email-change.cooldown-seconds`, 60) or too often
+   * in the window (`ngdpbase.auth.email-change.max-per-window` links per
+   * `ngdpbase.auth.email-change.window-minutes`, 5 per 60); no mail is sent.
+   */
+  async requestEmailChange(ctx: ActorContext, username: string, newEmail: string, via: 'profile' | 'registration'): Promise<'sent' | 'unchanged' | 'unavailable' | 'failed' | 'throttled'> {
+    if (!ctx || !sameUsername(ctx.username, username)) throw new Error('Permission denied');
+    const address = typeof newEmail === 'string' ? newEmail.trim() : '';
+    if (!isEmail(address)) throw new Error('requestEmailChange: not an email address');
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    const account = await userManager?.getUser(username);
+    if (!account) throw new Error(`requestEmailChange: no account ${username}`);
+    const current = typeof account.email === 'string' ? account.email.trim() : '';
+    if (current.toLowerCase() === address.toLowerCase()) return 'unchanged';
+    const mail = this.mailForLinks();
+    if (!mail || (mail as { isDeliveryFailing?(): boolean }).isDeliveryFailing?.()) return 'unavailable';
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const setting = (key: string, fallback: number): number => {
+      const value = Number(cm?.getProperty(key, fallback));
+      return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+    const now = Date.now();
+    const windowMs = setting(EMAIL_CHANGE_WINDOW_KEY, 60) * 60_000;
+    const recent = (this.emailChangeSends.get(account.username) ?? []).filter((at) => now - at < windowMs);
+    const last = recent.at(-1);
+    if ((last !== undefined && now - last < setting(EMAIL_CHANGE_COOLDOWN_KEY, 60) * 1000) || recent.length >= setting(EMAIL_CHANGE_MAX_KEY, 5)) {
+      this.emailChangeSends.set(account.username, recent);
+      logger.info(`[email change] ${account.username} asked again too soon or too often; no link sent (#2073)`);
+      return 'throttled';
+    }
+
+    for (const [t, entry] of this.emailChangeTokens) {
+      if (entry.username === account.username || Date.now() > entry.expiresAt) this.emailChangeTokens.delete(t);
+    }
+    const ttlMinutes = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(EMAIL_CHANGE_TTL_KEY, 60)) || 60;
+    const token = randomBytes(32).toString('base64url');
+    this.emailChangeTokens.set(token, { username: account.username, address, expiresAt: Date.now() + ttlMinutes * 60_000 });
+    const site = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getApplicationName() ?? 'ngdpbase';
+    const url = `${this.linkBase()}/account/email/confirm?t=${token}`;
+    const htmlEscape = this.escapeHtml();
+    try {
+      await mail.send({
+        to: address,
+        subject: `Confirm your new email for ${site}`,
+        text: [`You asked to use this address for your account ${account.username} on ${site}. Open this link to confirm it:`, '', url, '', `It works once, for ${ttlMinutes} minutes. Opening it does not sign you in. If you did not ask for this, ignore it and nothing changes.`].join('\n'),
+        html: `<p>You asked to use this address for your account <strong>${htmlEscape(account.username)}</strong> on ${htmlEscape(site)}.</p><p><a href="${url}">Confirm this address</a></p><p>It works once, for ${ttlMinutes} minutes. Opening it does not sign you in. If you did not ask for this, ignore it and nothing changes.</p>`
+      });
+    } catch {
+      // EmailManager has reported the failure; no link is waiting.
+      this.emailChangeTokens.delete(token);
+      return 'failed';
+    }
+    this.emailChangeSends.set(account.username, [...recent, now]);
+    if (current) {
+      await mail.send({
+        to: current,
+        subject: `Your email for ${site} is being changed`,
+        text: `Someone signed in as ${account.username} on ${site} asked to change its email to another address. It changes only if that address confirms it. If this was not you, change your password and tell the site administrator.`,
+        html: `<p>Someone signed in as <strong>${htmlEscape(account.username)}</strong> on ${htmlEscape(site)} asked to change its email to another address. It changes only if that address confirms it.</p><p>If this was not you, change your password and tell the site administrator.</p>`
+      }).catch(() => undefined);
+    }
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.EMAILCHANGE_REQUEST, ...who, action: 'emailchange-request', result: 'success', severity: 'medium',
+      resource: account.username, resourceType: 'user', metadata: { ...who.metadata, username: account.username, via }
+    }, (err) => logger.warn('[email change] audit record failed for emailchange-request:', err));
+    return 'sent';
+  }
+
+  /** The new address waiting to be confirmed for `username` (#2073), for the profile to show; null when none. */
+  pendingEmailChange(username: string): string | null {
+    for (const entry of this.emailChangeTokens.values()) {
+      if (sameUsername(entry.username, username) && Date.now() <= entry.expiresAt) return entry.address;
+    }
+    return null;
+  }
+
+  /** What a confirmation link would change (#2073), for its page; null for an unknown, used or expired link. */
+  emailChangeOffer(token: string): { username: string; address: string } | null {
+    const entry = typeof token === 'string' ? this.emailChangeTokens.get(token) : undefined;
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    return { username: entry.username, address: entry.address };
+  }
+
+  /**
+   * Confirm a new email from its emailed link (#2073). Single use: the link is
+   * spent first. The rules are checked again now: the account still exists,
+   * is on, and is not a shared account whose email only an administrator
+   * changes; and UserManager's own (an administrator's email is never
+   * shared). Saved through UserManager under the system context naming the
+   * account (the link is the authority), which keeps the identity record in
+   * step. Nobody is signed in. Recorded as `emailchange-confirm`. A user who
+   * had no email yet (just registered) is then offered their contact record,
+   * as at sign-up (#1930).
+   */
+  async confirmEmailChange(token: string): Promise<{ outcome: 'changed'; username: string } | { outcome: 'expired' } | { outcome: 'refused'; message: string }> {
+    const entry = typeof token === 'string' ? this.emailChangeTokens.get(token) : undefined;
+    if (!entry || !this.emailChangeTokens.delete(token) || Date.now() > entry.expiresAt) return { outcome: 'expired' };
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    const account = await userManager?.getUser(entry.username);
+    if (!userManager || !account || account.isActive === false || account.profileLocked) {
+      return { outcome: 'refused', message: 'This account cannot change its email now. An administrator can change it.' };
+    }
+    const ctx = systemContext(this.engine, `confirm the new email of account ${entry.username} by the link sent to it (#2073)`);
+    try {
+      await userManager.updateUser(entry.username, { email: entry.address }, ctx);
+    } catch (err) {
+      if (err instanceof UserCreateError) return { outcome: 'refused', message: safeRegistrationMessage(err) };
+      throw err;
+    }
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.EMAILCHANGE_CONFIRM, ...who, action: 'emailchange-confirm', result: 'success', severity: 'medium',
+      resource: entry.username, resourceType: 'user', metadata: { ...who.metadata, username: entry.username }
+    }, (err) => logger.warn('[email change] audit record failed for emailchange-confirm:', err));
+    if (!(typeof account.email === 'string' && account.email.trim())) {
+      await this.engine.getManager<{ offerSignUpLink(ctx: ActorContext, username: string): Promise<unknown> }>('IdentityManager')
+        ?.offerSignUpLink(ctx, entry.username).catch(() => undefined);
+    }
+    return { outcome: 'changed', username: entry.username };
+  }
+
+  /**
    * Initiate a challenge-based auth flow (magic link email, OAuth redirect).
    */
   async initiate(providerId: string, context: AuthInitiateContext): Promise<void> {
@@ -3675,6 +3912,14 @@ class AuthManager extends BaseManager {
   getDeviceState(providerId: string, handle: string): string | null {
     const provider = this.providers.get(providerId);
     return provider?.getDeviceState?.(handle) ?? null;
+  }
+
+  /**
+   * The accounts an emailed link to a shared address offers (#2073), by
+   * username, or null when the link names one account. Read without consuming.
+   */
+  getAccountChoices(providerId: string, handle: string): string[] | null {
+    return this.providers.get(providerId)?.accountChoices?.(handle) ?? null;
   }
 
   /**

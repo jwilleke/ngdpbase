@@ -360,6 +360,12 @@ class RoleManager extends BaseManager {
     if (!Object.hasOwn(declared ?? {}, roleName)) {
       throw new Error('Role not found');
     }
+    // #2073: an account holding the admin role never shares its email; the rule is UserManager's.
+    if (roleName === 'admin') {
+      const userManager = this.engine.getManager<UserManager>('UserManager');
+      const account = await userManager?.getUser(username);
+      await userManager?.assertAdminEmailUnshared(username, account?.email, ctx, ['admin']);
+    }
     await this.recordedRoleChange(username, 'assign', roleName, ctx, () => this.applyRoleDiff(username, [], [roleName]));
     logger.info(`👤 Assigned role '${roleName}' to user '${username}'`);
     return true;

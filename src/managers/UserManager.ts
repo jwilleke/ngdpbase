@@ -5,8 +5,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
-import { emailDomain } from '../utils/emailForLog.js';
-import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
@@ -45,6 +44,9 @@ import { USER_DATA_TOPIC } from '../cache/CacheDependencies.js';
 // provisions an account now says so in the JobContext's reason.
 
 /** Account fields whose change alters what the account may do or who holds it. Preferences are not among them. */
+/** The role whose accounts never share an email (#2073, operator 2026-10-25). */
+const ADMIN_ROLE = 'admin';
+
 const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'isTest', 'email', 'profileLocked', 'username'] as const;
 
 /**
@@ -443,7 +445,6 @@ class UserManager extends BaseManager {
 
     const userCount = this.provider ? (await this.provider.getAllUsers()).size : 0;
     logger.info(`👤 UserManager initialized with ${userCount} users`);
-    await this.reportDuplicateEmails();
   }
 
   /** An email as accounts are compared on it (#1748): trimmed, any case. No provider rules (Gmail dots, plus addressing, aliases). */
@@ -451,26 +452,73 @@ class UserManager extends BaseManager {
     return typeof email === 'string' ? email.trim().toLowerCase() : '';
   }
 
-  /** The accounts holding this email, by username. Empty for no email. */
-  private async accountsWithEmail(email: unknown): Promise<string[]> {
+  /**
+   * Every account holding this email (#2073): two or more accounts may share
+   * one (a couple, an older adult and a carer). Compared trimmed and in any
+   * case, with no provider rules (plus addressing is a different address).
+   * Empty for no email. Without the password hash.
+   */
+  async getUsersByEmail(email: unknown): Promise<Array<Omit<User, 'password'>>> {
     const key = UserManager.emailKey(email);
     if (!key || !this.provider) return [];
     const all = await this.provider.getAllUsers();
     return Array.from(all.values())
       .filter((u): u is User => u != null && UserManager.emailKey(u.email) === key)
-      .map((u) => u.username);
+      .map((u) => publicRecord(u));
   }
 
   /**
-   * One email, one account (#1748): refuse to save an email another account
-   * already has. Not a setting. Thrown as `email-taken`, so registration shows
-   * its safe message and other routes their own.
+   * An account holding the admin role never shares its email (#2073, operator
+   * 2026-10-25), either way round: refused when `username` is or will be an
+   * administrator and another account holds `email`, and when another account
+   * holding `email` is an administrator. `roles` are the account's roles
+   * after the change, when the change sets them; otherwise its current ones
+   * are read. Throws `UserCreateError('admin-email-shared')`; the message names
+   * the accounts, for the log and an administrator, never for a visitor.
    */
-  private async assertEmailFree(email: unknown, ownUsername: string | null): Promise<void> {
-    const holders = (await this.accountsWithEmail(email)).filter((u) => u !== ownUsername);
-    if (holders.length > 0) {
-      throw new UserCreateError('email-taken', `Email address is already used by another account (${holders.join(', ')})`);
+  async assertAdminEmailUnshared(username: string, email: unknown, ctx: ActorContext, roles?: readonly string[]): Promise<void> {
+    const others = (await this.getUsersByEmail(email)).filter((u) => !sameUsername(u.username, username));
+    if (others.length === 0) return;
+    const read = this.lifecycleContext(`check the admin role of the accounts sharing an email with ${username}`, ctx);
+    const rm = this.roleManager();
+    const isAdmin = roles ? roles.includes(ADMIN_ROLE) : (await this.provider?.userExists(username)) === true && await rm.hasRole(read, username, ADMIN_ROLE);
+    if (isAdmin) {
+      throw new UserCreateError('admin-email-shared', `An account holding the admin role cannot share its email; ${others.map((u) => u.username).join(', ')} already use it`);
     }
+    for (const other of others) {
+      if (await rm.hasRole(read, other.username, ADMIN_ROLE)) {
+        throw new UserCreateError('admin-email-shared', `That email belongs to ${other.username}, an account holding the admin role, which cannot share it`);
+      }
+    }
+  }
+
+  /**
+   * An account never sets its own email without the emailed link (#2073): a
+   * change of email made as the account itself is refused unless the caller
+   * holds `user-edit` (an administrator in Admin → Users is trusted). The
+   * link is AuthManager's (`requestEmailChange`, `confirmEmailChange`), which
+   * saves under the system context. Throws `UserCreateError('email-unconfirmed')`.
+   */
+  private async assertEmailChangeAllowed(username: string, ctx: ActorContext): Promise<void> {
+    if (!ctx || !sameUsername(ctx.username, username)) return;
+    const pdp = this.engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (pdp && await pdp.permits(ctx, 'user-edit')) return;
+    throw new UserCreateError('email-unconfirmed', `Account ${username} cannot set its own email without the emailed link`);
+  }
+
+  /** The usernames of every account whose email another account holds too (#2073): the admins' marker on the user list. */
+  async usernamesSharingAnEmail(): Promise<Set<string>> {
+    const byEmail = new Map<string, string[]>();
+    for (const u of this.provider ? (await this.provider.getAllUsers()).values() : []) {
+      const key = UserManager.emailKey(u?.email);
+      if (key) byEmail.set(key, [...(byEmail.get(key) ?? []), u.username]);
+    }
+    return new Set([...byEmail.values()].filter((names) => names.length > 1).flat());
+  }
+
+  /** Whether an account other than `ownUsername` holds this email too (#2073): for the note at save and the admins' marker. */
+  async isEmailShared(email: unknown, ownUsername: string | null): Promise<boolean> {
+    return (await this.getUsersByEmail(email)).some((u) => u.username !== ownUsername);
   }
 
   /**
@@ -489,39 +537,6 @@ class UserManager extends BaseManager {
       void this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
         type: 'system', level: 'error', title: 'Nobody can sign in over plain http', message: SESSION_COOKIE_WITHHELD_MESSAGE
       }).catch((err: unknown) => logger.warn('🔐 Could not post the session-cookie notification:', err));
-    }
-  }
-
-  /**
-   * Accounts that share an email, saved before #1748 refused it. They are not
-   * changed — an admin decides — but they are never silent: the manager is
-   * degraded (dashboard, `manager-state-change` audit), the log says which,
-   * and admins get a notification. Until resolved, a lookup by that email
-   * refuses (see `getUserByEmail`).
-   */
-  private async reportDuplicateEmails(): Promise<void> {
-    if (!this.provider) return;
-    const byEmail = new Map<string, string[]>();
-    for (const u of (await this.provider.getAllUsers()).values()) {
-      const key = UserManager.emailKey(u?.email);
-      if (!key) continue;
-      byEmail.set(key, [...(byEmail.get(key) ?? []), u.username]);
-    }
-    const shared = [...byEmail.entries()].filter(([, names]) => names.length > 1);
-    if (shared.length === 0) return;
-    const detail = shared.map(([email, names]) => `${email}: ${names.join(', ')}`).join('; ');
-    const reason = `${shared.length} email address(es) are shared by more than one account — give each account its own (Admin → Users). Sign-in by email refuses them until then (#1748)`;
-    // #1916: the log names each address's domain only; the notice names the address.
-    const logDetail = shared.map(([email, names]) => `an address at ${emailDomain(email)}: ${names.join(', ')}`).join('; ');
-    logger.error(`👤 ${reason}. ${logDetail}`);
-    if (this.markNeedsAttention(reason)) {
-      try {
-        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
-          type: 'system', level: 'error', title: 'Accounts share an email address', message: `${reason}. ${detail}`
-        });
-      } catch (err) {
-        logger.warn('👤 Could not post the shared-email notification:', err);
-      }
     }
   }
 
@@ -1077,7 +1092,13 @@ class UserManager extends BaseManager {
       throw new UserCreateError('username-taken', `Username already exists: "${username}"`);
     }
 
-    await this.assertEmailFree(email, null);
+    // #2073: an account never sets its own email without the emailed link
+    // (self-registration gets it by confirming one), and an administrator's
+    // account never shares its email.
+    if (typeof email === 'string' && email.trim() !== '') {
+      await this.assertEmailChangeAllowed(username, ctx);
+      await this.assertAdminEmailUnshared(username, email, ctx, roles);
+    }
 
     const finalDisplayName = displayName || username;
     const hasPageConflict = await this.checkDisplayNamePageConflict(finalDisplayName);
@@ -1329,9 +1350,13 @@ class UserManager extends BaseManager {
         throw new Error('Cannot set a password for an external OAuth user. Change the account type to Local first.');
       }
     }
-    // #1748: one email, one account — a change to another account's email is refused.
-    if (updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email)) {
-      await this.assertEmailFree(updates.email, username);
+    // #2073: a new email is set by the account itself only through the
+    // emailed link; an administrator's account never shares its email, by an
+    // email change or by being given the admin role.
+    const emailChanges = updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email);
+    if (emailChanges) await this.assertEmailChangeAllowed(username, ctx);
+    if (emailChanges || (Array.isArray(updates.roles) && updates.roles.some((r) => r === ADMIN_ROLE))) {
+      await this.assertAdminEmailUnshared(username, updates.email ?? user.email, ctx, updates.roles);
     }
 
     // #617 iteration 3b: the `roles` field on User is deprecated; role
@@ -1536,13 +1561,10 @@ class UserManager extends BaseManager {
     const matches = Array.from(allUsers.values()).filter(
       (u): u is User => u != null && UserManager.emailKey(u.email) === normalizedEmail
     );
-    // #1748: an email two accounts share (saved before it was refused) finds
-    // nobody, rather than whichever account came first — a magic link must
-    // never sign into another person's account.
-    if (matches.length > 1) {
-      logger.warn(`👤 getUserByEmail: ${matches.length} accounts share this address — refusing to pick one (#1748)`);
-      return undefined;
-    }
+    // #1748, #2073: an email two accounts share finds nobody here, never
+    // whichever came first. A caller that can let the person choose (an
+    // emailed sign-in link, an outside sign-in) asks getUsersByEmail instead.
+    if (matches.length > 1) return undefined;
     const found = matches[0];
     if (!found) return undefined;
     return publicRecord(found);
