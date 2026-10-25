@@ -63,7 +63,10 @@ export interface JobContext {
   viaToken?: AgentTokenGrant;
   /** The share the requesting call presented, when it did (#1222). Carried for the same reason. */
   viaShare?: ShareGrant;
-  /** The proxy grant the requesting call acted under, when it did (#1762). Carried for the same reason: a job never runs as the represented person unbounded. */
+  /**
+   * The proxy grant the requesting call acted under, when it did (#1762). Carried for the same reason: a job never runs as the represented user unbounded.
+   * Never with its `keyHandle` (#2047): a job carries no key of any kind, so it reaches no key copy and none is written to a run record ({@link withoutKeyHandle}).
+   */
   viaProxy?: ProxyClaim;
   /** The address the requesting call came from (#1179), when there was one. Provenance for the record. */
   ipAddress?: string;
@@ -110,10 +113,26 @@ export function jobContextFromRequest(
     origin: 'request',
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
     ...(identity?.viaShare ? { viaShare: identity.viaShare } : {}),
-    ...(identity?.viaProxy ? { viaProxy: identity.viaProxy } : {}),
+    ...(identity?.viaProxy ? { viaProxy: proxyClaimForJob(identity.viaProxy) } : {}),
     ...(identity?.ipAddress ? { ipAddress: identity.ipAddress } : {}),
     requestedAt: now.toISOString()
   };
+}
+
+/** The proxy claim without its key handle (#2047): the actor, grant and scopes stay for the ceiling and the record. */
+function proxyClaimForJob(claim: ProxyClaim): ProxyClaim {
+  const { keyHandle: _dropped, ...kept } = claim;
+  return kept;
+}
+
+/**
+ * A job context with no key handle in it (#2047). `jobContextFromRequest`
+ * already leaves the handle out; the job manager also passes every context it
+ * stores through this, so a context built by hand cannot carry a key copy's
+ * handle into a job or onto disk.
+ */
+export function withoutKeyHandle(ctx: JobContext): JobContext {
+  return ctx.viaProxy?.keyHandle === undefined ? ctx : { ...ctx, viaProxy: proxyClaimForJob(ctx.viaProxy) };
 }
 
 /**

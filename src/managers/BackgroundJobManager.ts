@@ -6,7 +6,7 @@ import path from 'node:path';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { describeJobContext, type JobContext } from '../context/JobContext.js';
+import { describeJobContext, withoutKeyHandle, type JobContext } from '../context/JobContext.js';
 import { scheduleContext } from '../context/bootActions.js';
 import { actorOf } from '../context/ActorContext.js';
 import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
@@ -791,7 +791,7 @@ class BackgroundJobManager extends BaseManager {
     if (ofSlot.length === 0) throw new JobActionError(`'${jobId}' has no record of slot ${slotIso}`, 404);
     if (ofSlot.some((r) => r.status === 'completed')) throw new JobActionError(`Slot ${slotIso} of '${jobId}' already completed`, 409);
     const runId = randomUUID();
-    this.startDrain(job, [{ slot: new Date(t), rerun: { runId, requestedBy } }], null);
+    this.startDrain(job, [{ slot: new Date(t), rerun: { runId, requestedBy: withoutKeyHandle(requestedBy) } }], null);
     return runId;
   }
 
@@ -1100,7 +1100,7 @@ class BackgroundJobManager extends BaseManager {
       const runId = randomUUID();
       logger.error(`[BackgroundJobManager] '${jobId}' not run: ${this.held}`);
       this.runs.set(runId, {
-        runId, jobId, displayName: this.jobs.get(jobId)?.displayName ?? jobId, requestedBy,
+        runId, jobId, displayName: this.jobs.get(jobId)?.displayName ?? jobId, requestedBy: withoutKeyHandle(requestedBy),
         status: 'failed', result: { success: false, error: this.held }, startedAt: new Date(), completedAt: new Date()
       });
       return runId;
@@ -1139,8 +1139,10 @@ class BackgroundJobManager extends BaseManager {
   }
 
   /** Start a run by hand, or a cut-off one again. Returns its run id at once; the work runs in the background. */
-  private startHandRun(def: JobDefinition, requestedBy: JobContext, resume: Resume | null): string {
+  private startHandRun(def: JobDefinition, asked: JobContext, resume: Resume | null): string {
     const runId = resume?.runId ?? randomUUID();
+    // A run, its record and the context its work is handed carry no key handle (#2047).
+    const requestedBy = withoutKeyHandle(asked);
     const run: JobRun = {
       runId, jobId: def.id, displayName: def.displayName, requestedBy, status: 'pending', startedAt: this.clock(),
       ...(resume ? { attempt: resume.attempt, resumeReason: resume.reason } : {})

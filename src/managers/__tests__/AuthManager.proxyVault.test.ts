@@ -23,6 +23,9 @@
  * (grantProxy's and vaultGrantBlocked's viaProxy test) — the re-delegation
  * test went red. The actor check in openKeyCopy, removed alone, stays green:
  * the copy is sealed to jim, so another person's key cannot open it anyway.
+ * #2047: the job-context refusal in copyFor, removed alone, sent the
+ * "a job context still naming the handle" assertion red (the handle drop in
+ * jobContextFromRequest covers the other one).
  */
 vi.unmock('../../providers/FileCredentialsProvider');
 
@@ -45,6 +48,7 @@ import {
   unlockedStoreIdsFor
 } from '../../utils/privateStoreUnlock';
 import { isLockbox, type Lockbox } from '../../utils/shareLockbox';
+import { jobContextFromRequest } from '../../context/JobContext';
 import logger from '../../utils/logger';
 import type { PermissionSubject } from '../UserManager';
 
@@ -330,5 +334,29 @@ describe('AuthManager — encrypted vaults through a wrapped key copy, slice 5 (
     }
     const envelope = JSON.parse(fs.readFileSync(privateUserKeysPath(pagesDir, 'jim'), 'utf8')) as { personKey: { privateWrap: { ct: string } } };
     expect(out).not.toContain(envelope.personKey.privateWrap.ct);
+  });
+
+  test('a job enqueued by the proxy reaches no key copy (#2047)', async () => {
+    await unlock('mom');
+    const grant = await grantMomToJim();
+    await unlock('jim');
+    const acting = await actingAs(grant.id);
+    // The request opens mom's vault through the copy...
+    expect(dekFor(acting, 'mom', STORE)).toBeDefined();
+
+    // ...the job it enqueues does not: the handle is not in its context.
+    const job = jobContextFromRequest(acting);
+    expect(job.viaProxy).toEqual(expect.objectContaining({ grantId: grant.id, actor: 'jim' }));
+    expect(job.viaProxy).not.toHaveProperty('keyHandle');
+    expect(dekFor(job, 'mom', STORE)).toBeUndefined();
+    expect(unlockedStoreIdsFor(job)).toEqual([]);
+
+    // A job context that still names the handle (built by hand) is refused as well.
+    const byHand = { ...job, viaProxy: { ...acting.viaProxy!, keyHandle: handleOf('jim') } };
+    expect(dekFor(byHand, 'mom', STORE)).toBeUndefined();
+    expect(unlockedStoreIdsFor(byHand)).toEqual([]);
+
+    // The request itself still holds its copy.
+    expect(dekFor(acting, 'mom', STORE)).toBeDefined();
   });
 });

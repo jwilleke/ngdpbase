@@ -39,7 +39,7 @@ import {
   type PrivateStoreLayout
 } from './privateStorePath.js';
 import { emptyUserCatalog, readUserCatalog, type UserCatalog } from './privateStoreCatalogs.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 import type { PermissionSubject } from '../managers/UserManager.js';
 import { writeFileAtomic } from './atomicWrite.js';
 import { SECRET_FILE_MODE } from './secretFileMode.js';
@@ -441,6 +441,9 @@ function handleOf(ctx: ActorContext | undefined): string | undefined {
  * grant and wipes the copy when it is not).
  */
 function copyFor(ctx: ActorContext | undefined): KeyCopy | undefined {
+  // A job carries no key (#2047): `jobContextFromRequest` drops the handle, and
+  // a job context that still names one is refused here as well.
+  if (!ctx || isJobContext(ctx)) return undefined;
   const subject = ctx as Partial<PermissionSubject> | undefined;
   const claim = subject?.viaProxy;
   if (!claim?.keyHandle || !proxyCarries(claim, 'vault-proxy') || mixesProxyWithDelegation(subject)) return undefined;

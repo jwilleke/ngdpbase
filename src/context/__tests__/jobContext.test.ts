@@ -25,8 +25,10 @@ import {
   jobContextFromSchedule,
   toPermissionSubject,
   describeJobContext,
+  withoutKeyHandle,
   ANONYMOUS_USERNAME
 } from '../JobContext';
+import { actorOf } from '../ActorContext';
 
 const at = new Date('2026-09-02T10:00:00.000Z');
 const token = { id: 'tok-1', name: 'reader', scopes: ['page-read'] };
@@ -151,5 +153,39 @@ describe('#631 — the audit line', () => {
   test('a system job says why instead', () => {
     expect(describeJobContext(jobContextFromSystem(SYSTEM, 'retention pass', at)))
       .toBe('svc-ngdpbase (boot) — retention pass');
+  });
+});
+
+/**
+ * #2047 — a job carries no key handle. A proxy's claim keeps who acted, the
+ * grant and its scopes, for the ceiling and the record; its `keyHandle` (where
+ * the session's key copy is held) never reaches the job.
+ *
+ * Sabotaged once each (then restored): `jobContextFromRequest` copying
+ * `viaProxy` whole — the first test went red; `withoutKeyHandle` returning
+ * its input — the second went red.
+ */
+describe('#2047 — a proxy-enqueued job carries no key handle', () => {
+  const claim = { kind: 'proxy' as const, grantId: 'grant-1', actor: 'jim', scopes: ['page-read', 'vault-proxy'], keyHandle: 'h-jim' };
+
+  test('jobContextFromRequest drops the handle and keeps the rest of the claim', () => {
+    const ctx = jobContextFromRequest({ username: 'mom', viaProxy: claim, ipAddress: '192.0.2.1' });
+    expect(ctx.viaProxy).toEqual({ kind: 'proxy', grantId: 'grant-1', actor: 'jim', scopes: ['page-read', 'vault-proxy'] });
+    expect(JSON.stringify(ctx)).not.toContain('h-jim');
+    // The source claim is not changed: the request still holds its copy.
+    expect(claim.keyHandle).toBe('h-jim');
+    // The record still names both users.
+    const who = actorOf(ctx);
+    expect(who.user).toBe('mom');
+    expect(who.actor).toBe('jim');
+    expect(who.metadata).toEqual(expect.objectContaining({ delegated: 'proxy', proxyGrantId: 'grant-1' }));
+  });
+
+  test('withoutKeyHandle strips a handle from a context built by hand, and leaves others as they are', () => {
+    const byHand = { username: 'mom', origin: 'request' as const, requestedAt: new Date(0).toISOString(), viaProxy: claim };
+    expect(withoutKeyHandle(byHand).viaProxy).not.toHaveProperty('keyHandle');
+    expect(withoutKeyHandle(byHand).viaProxy?.actor).toBe('jim');
+    const plain = jobContextFromRequest({ username: 'jim' });
+    expect(withoutKeyHandle(plain)).toBe(plain);
   });
 });
