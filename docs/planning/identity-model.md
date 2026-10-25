@@ -60,7 +60,7 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 | Same `@id` before and after a contact signs up (`linkAccount`, sign-up link) | Kept: one id for life |
 | Organizations in OrganizationManager, not treated as digital identities | Organizations are digital identities (no credentials for now) |
 | RoleManager's doc says it can hold business titles ("Board President at Acme Corp"); none exist | Roles are permission sets only, held by users; titles are affiliations. Correct the doc |
-| Owner/Occupant are entries on the user record (accommodation `ownership`, `occupies`), so a contact can't be an owner | Owner/Occupant are affiliations on the identity record, so a contact can be an owner too |
+| Owner/Occupant are entries on the user record (accommodation `ownership`, `occupies`), so a contact can't be an owner | Kept: every owner has an account (operator, 2026-10-25). Ownership stays on the owner's account; every other reference to an owner (billing results, requests) uses the identity `@id` |
 | Affiliations (`affiliation: [{ organization, role? }]`) on the identity record | A kind of affiliation (to an organization, with a title) |
 | Role files list members by identity `@id` | Kept (same id for life), but only identities with credentials may be members |
 | A contact could in principle be listed in a role | Refused: a role member must have credentials |
@@ -80,4 +80,4 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 - 4 Affiliations: the `OrganizationRole` shape (memberOf, title as `roleName`, startDate/endDate), who may set them, search by affiliation; today's `affiliation: [{ organization, role? }]` converted. Built in [#2039](https://github.com/jwilleke/ngdpbase/issues/2039): `IdentityManager.search(ctx, { affiliation: { memberOf, title?, current? } })`; an ongoing affiliation has no `endDate` (core does not adopt a `"current"` marker, [#2003](https://github.com/jwilleke/ngdpbase/issues/2003)).
 - 5 A role member must have credentials: a contact is refused as a role member.
 - 6 Organizations get a `urn:uuid` `@id` (URL an ordinary field); every reference that stores a username for an identity switches to its `@id`.
-- 7 Add-ons switch: accounting to the new permission names; accommodation's owners/occupants to affiliations (so a contact can be an owner); association follows.
+- 7 Add-ons switch: accounting to the new permission names; accommodation keeps owners and occupants on their accounts (every owner has an account, operator 2026-10-25) and refers to them elsewhere by `@id`; its billing array is free-form billing addresses with shares totalling 100%; association follows.
