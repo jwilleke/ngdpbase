@@ -315,6 +315,40 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       }
     });
 
+    /** Serve one file of the caller's own vault, with this metadata; return the headers set. */
+    const serveOwn = async (metadata: Record<string, unknown>): Promise<Map<string, string>> => {
+      const mockReq = createMockReq({ username: 'molly', isAuthenticated: true, roles: ['vault-owner'] }, { attachmentId: 'own-kept' });
+      const headers = new Map<string, string>();
+      const mockRes = { ...createMockRes(), setHeader: vi.fn((n: string, v: string) => headers.set(n, v)), send: vi.fn() };
+      const original = mockEngine.getManager.getMockImplementation();
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') {
+          return { ...mockAttachmentManager, getPrivateStoreAttachment: vi.fn(async () => ({ buffer: Buffer.from('{}'), metadata })) };
+        }
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
+        return null;
+      });
+      try {
+        await wikiRoutes.serveAttachment(mockReq, mockRes);
+        expect(mockRes.send).toHaveBeenCalled();
+      } finally {
+        mockEngine.getManager.mockImplementation(original);
+      }
+      return headers;
+    };
+
+    test('an import\'s kept original is always a download, with nosniff (#2061)', async () => {
+      const headers = await serveOwn({ name: 'Patient "A".json', encodingFormat: 'application/json', download: true });
+      expect(headers.get('Content-Disposition')).toBe('attachment; filename="Patient _A_.json"');
+      expect(headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
+    test('any other vault file still shows inline, so a picture on a private page displays (#2061)', async () => {
+      const headers = await serveOwn({ name: 'scan.png', encodingFormat: 'image/png' });
+      expect(headers.get('Content-Disposition')).toBe('inline; filename="scan.png"');
+      expect(headers.get('Content-Type')).toBe('image/png');
+    });
+
     test('should serve attachments to authorized users', async () => {
       // Setup - serveAttachment uses attachmentId param
       const mockReq = createMockReq(

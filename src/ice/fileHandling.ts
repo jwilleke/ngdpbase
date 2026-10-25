@@ -5,8 +5,77 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { resolveUploadMime } from '../utils/sniffMime.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
 import type { IceUpload } from './types.js';
+
+/**
+ * A file's media type by its extension (#2061): how the engine labels a file
+ * it unpacks from a zip, and how the folder import labels a file it reads.
+ * A typed table, not configuration: it states what each format is, which is
+ * not a site's choice. What a site decides is which types it takes, and that
+ * is already its attachment allow-list (and a receiver's `originals.types`).
+ */
+export const MEDIA_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.tiff': 'image/tiff',
+  '.tif': 'image/tiff',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.xml': 'application/xml',
+  '.json': 'application/json',
+  '.ndjson': 'application/x-ndjson',
+  '.zip': 'application/zip',
+  '.gz': 'application/gzip',
+  '.tar': 'application/x-tar',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.avi': 'video/x-msvideo'
+};
+
+/** What a file with no known extension is. */
+const UNKNOWN_MEDIA_TYPE = 'application/octet-stream';
+
+/** A file's media type by its extension alone: {@link MEDIA_TYPE_BY_EXTENSION}, else `application/octet-stream`. */
+export function mediaTypeByExtension(name: string): string {
+  return MEDIA_TYPE_BY_EXTENSION[path.extname(name).toLowerCase()] ?? UNKNOWN_MEDIA_TYPE;
+}
+
+/**
+ * The media type of a file unpacked from a zip (#2061): its extension's,
+ * checked against its bytes where that is cheap. JSON must start with `{` or
+ * `[` (NDJSON with `{`), XML with `<`; one that does not is
+ * `application/octet-stream`. Then the upload door's own rule
+ * (`resolveUploadMime`): bytes that show a type decide (an XML file with an
+ * `<?xml` prolog is `text/xml`), and a claim they do not bear out is
+ * `application/octet-stream`. So the type a receiver is handed is the type
+ * the door stores.
+ */
+export function memberMediaType(name: string, bytes: Buffer): string {
+  const claimed = mediaTypeByExtension(name);
+  const head = bytes.subarray(0, 64).toString('utf8').trimStart();
+  if (claimed === 'application/json' && !/^[[{]/.test(head)) return UNKNOWN_MEDIA_TYPE;
+  if (claimed === 'application/x-ndjson' && !head.startsWith('{')) return UNKNOWN_MEDIA_TYPE;
+  if (claimed === 'application/xml' && !head.startsWith('<')) return UNKNOWN_MEDIA_TYPE;
+  return resolveUploadMime(bytes, claimed);
+}
 
 /** A file's fingerprint: SHA-256 of its bytes, hex. */
 export function fingerprint(bytes: Buffer): string {
@@ -49,8 +118,9 @@ export function isZip(upload: IceUpload): boolean {
 
 /**
  * Unpack the zips among the uploads into the files they hold, named
- * `archive.zip/inner/path`. A nested zip is unpacked too. Everything else is
- * passed through. Limits are per archive (`ZipReadLimits`), so a small
+ * `archive.zip/inner/path`, each with its media type ({@link memberMediaType},
+ * #2061). A nested zip is unpacked too. Everything else is passed through,
+ * with the type its request gave it. Limits are per archive (`ZipReadLimits`), so a small
  * archive that expands enormously stops at the budget. An archive that cannot
  * be read is returned in `unreadable`, with why; the rest go on.
  */
@@ -78,7 +148,10 @@ export function expandUploads(
       unreadable.push({ name: upload.name, size: upload.bytes.length, message: (err as Error).message });
       continue;
     }
-    const inner = expandUploads(members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes })), limits, maxDepth, depth + 1);
+    const inner = expandUploads(
+      members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes, mediaType: memberMediaType(m.path, m.bytes) })),
+      limits, maxDepth, depth + 1
+    );
     files.push(...inner.files);
     unreadable.push(...inner.unreadable);
   }

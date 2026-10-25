@@ -118,6 +118,13 @@ The smallest piece that proves the engine:
 - Keeps through `core.files`, and through a receiver without `keepsEncrypted`, stay in the run.
 - A zip is unpacked once for the keeps and again by the run: the same bounded work (`zip-max-*`), done twice only for these uploads.
 
+### Kept types, media types and downloads ([#2061](https://github.com/jwilleke/ngdpbase/issues/2061), built 2026-10-25)
+
+- __Decided (operator, 2026-10-25, option a):__ a receiver declares the media types it keeps, `originals: { allowed, default, types }`. Core allows exactly those types, only into that receiver's own vault, for a keep at upload; the site's attachment allow-list is unchanged for every other upload. Not chosen: (b) no type check for a user's own encrypted vault; (c) keep the site's list and have phr default to `none`.
+- The exemption is an `OriginalKeep` the engine opens for one receiver, one user and one `keepOriginal` call, passed on by the receiver as the upload's `keep` option and closed when the call returns. The upload door honours it only for that user's own vault of a system-category the receiver's add-on declares. A wildcard type is refused at registration.
+- The engine sets the media type of every file it unpacks from a zip, by extension, checked against the bytes where cheap (JSON, NDJSON, XML), then by the upload door's own sniffing rule, so receivers never label files themselves. The extension table is code (`MEDIA_TYPE_BY_EXTENSION`), not configuration: what a format is is not a site's choice; which types a site takes already is.
+- Kept originals are always served as downloads (`Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`), never inline: the store's index marks them `download`.
+
 Later, once the engine has proven itself:
 
 - feeds moved onto it (D10);

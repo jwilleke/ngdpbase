@@ -666,6 +666,26 @@ export interface StoreFileEntry {
   dateModified: string;
   /** Pages the file was uploaded onto. */
   mentions: string[];
+  /**
+   * An import's kept original (#2061): always served as a download
+   * (`Content-Disposition: attachment`, `nosniff`), never shown inline.
+   */
+  download?: true;
+}
+
+/** What `storeFileInStore` is told about a file it stores in a private store. */
+export interface StoreFileInput {
+  originalName: string;
+  mimeType: string;
+  description: string;
+  author?: string;
+  pageName?: string;
+  /**
+   * Set only by AttachmentManager for an import's keep into the receiver's
+   * own vault (#2061): `types` are allowed beyond the site's allow-list, and
+   * the file is marked {@link StoreFileEntry.download}.
+   */
+  keptOriginal?: { types: readonly string[] };
 }
 
 /**

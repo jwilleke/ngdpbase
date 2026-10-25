@@ -60,6 +60,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import { converterShim } from '../ice/converterShim.js';
 import { convertChain, defaultScope, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
+import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
   IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
@@ -341,8 +342,12 @@ const ORIGINAL_CHOICES: readonly OriginalChoice[] = ['none', 'cite', 'keep'];
 export interface UsableReceiver {
   id: string;
   label?: string;
-  originals: Required<IceOriginalChoices>;
+  /** What the screen offers; the kept types (`types`, #2061) are the upload door's business, not the screen's. */
+  originals: Required<Omit<IceOriginalChoices, 'types'>>;
 }
+
+/** A media type a receiver may declare it keeps (#2061): `type/subtype`, exactly, no wildcard. */
+const KEPT_MEDIA_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 
 /** Shim and receiver names: lower-case letters, numbers and dashes. */
 const ICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -458,7 +463,14 @@ class ImportManager extends BaseManager {
     if (typeof receiver.receive !== 'function' || typeof receiver.mayUse !== 'function' || !Array.isArray(receiver.accepts)) {
       throw new Error(`ICE receiver '${id}': declare accepts, mayUse() and receive()`);
     }
-    this.receiverRegistry.set(id, { ...receiver, id, owner });
+    const types = receiver.originals?.types;
+    if (types !== undefined && (!Array.isArray(types) || !types.every(t => typeof t === 'string' && KEPT_MEDIA_TYPE.test(t.trim().toLowerCase())))) {
+      throw new Error(`ICE receiver '${id}': originals.types are media types, type/subtype exactly, with no wildcard`);
+    }
+    this.receiverRegistry.set(id, {
+      ...receiver, id, owner,
+      ...(receiver.originals && types ? { originals: { ...receiver.originals, types: types.map(t => t.trim().toLowerCase()) } } : {})
+    });
     return id;
   }
 
@@ -493,7 +505,7 @@ class ImportManager extends BaseManager {
    * declares, else all three; its default when it names one it allows, else
    * `ngdpbase.import.engine.default-original` when allowed, else the first.
    */
-  private originalChoices(receiver: IceReceiver): Required<IceOriginalChoices> {
+  private originalChoices(receiver: IceReceiver): UsableReceiver['originals'] {
     const declared = (receiver.originals?.allowed ?? []).filter(c => ORIGINAL_CHOICES.includes(c));
     const allowed = declared.length > 0 ? ORIGINAL_CHOICES.filter(c => declared.includes(c)) : [...ORIGINAL_CHOICES];
     const wanted = [receiver.originals?.default, this.engineSettings().defaultOriginal];
@@ -813,7 +825,7 @@ class ImportManager extends BaseManager {
         try {
           const stored = await attachmentManager.uploadAttachment(
             bytes,
-            { originalName, mimeType: item.mediaType || this.getMimeType(originalName), size: bytes.length },
+            { originalName, mimeType: item.mediaType || mediaTypeByExtension(originalName), size: bytes.length },
             ctx,
             { description: `Imported ${item.name}` }
           );
@@ -1699,7 +1711,7 @@ class ImportManager extends BaseManager {
     const fileBuffer = await fs.readFile(filePath);
     const fileInfo = {
       originalName: filename,
-      mimeType: this.getMimeType(filename),
+      mimeType: mediaTypeByExtension(filename),
       size: fileBuffer.length
     };
     if (options.dryRun) {
@@ -1826,7 +1838,7 @@ class ImportManager extends BaseManager {
 
         // Read file and upload
         const fileBuffer = await fs.readFile(latestFilePath);
-        const mimeType = this.getMimeType(originalFilename);
+        const mimeType = mediaTypeByExtension(originalFilename);
 
         const fileInfo = {
           originalName: originalFilename,
@@ -1862,46 +1874,6 @@ class ImportManager extends BaseManager {
     }
 
     return stats;
-  }
-
-  /**
-   * Get MIME type from file extension
-   */
-  private getMimeType(filename: string): string {
-    const ext = path.extname(filename).toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.webp': 'image/webp',
-      '.bmp': 'image/bmp',
-      '.ico': 'image/x-icon',
-      '.tiff': 'image/tiff',
-      '.tif': 'image/tiff',
-      '.pdf': 'application/pdf',
-      '.txt': 'text/plain',
-      '.csv': 'text/csv',
-      '.html': 'text/html',
-      '.htm': 'text/html',
-      '.xml': 'text/xml',
-      '.json': 'application/json',
-      '.zip': 'application/zip',
-      '.gz': 'application/gzip',
-      '.tar': 'application/x-tar',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.xls': 'application/vnd.ms-excel',
-      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      '.ppt': 'application/vnd.ms-powerpoint',
-      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.mp4': 'video/mp4',
-      '.avi': 'video/x-msvideo'
-    };
-    return mimeTypes[ext] || 'application/octet-stream';
   }
 
   /**
@@ -2191,7 +2163,7 @@ class ImportManager extends BaseManager {
       try {
         const stored = await attachmentManager.uploadAttachment(
           file.bytes,
-          { originalName: file.name, mimeType: file.encodingFormat || this.getMimeType(file.name), size: file.bytes.length },
+          { originalName: file.name, mimeType: file.encodingFormat || mediaTypeByExtension(file.name), size: file.bytes.length },
           ctx,
           { private: true, store, description: file.description ?? '' }
         );

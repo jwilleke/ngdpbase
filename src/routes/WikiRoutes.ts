@@ -206,7 +206,7 @@ import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY, ADMIN_SWITCH_REASON } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
-import { untrustedFileHeaders } from '../utils/securityHeaders.js';
+import { untrustedFileHeaders, vaultFileDisposition } from '../utils/securityHeaders.js';
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
@@ -5915,7 +5915,8 @@ ${panes}
         const ownType = String(own.metadata.encodingFormat ?? 'application/octet-stream');
         res.setHeader('Content-Type', ownType);
         for (const [name, value] of Object.entries(untrustedFileHeaders(ownType))) res.setHeader(name, value);
-        res.setHeader('Content-Disposition', `inline; filename="${ownName}"`);
+        // #2061: an import's kept original is always a download.
+        for (const [name, value] of Object.entries(vaultFileDisposition(ownName, own.metadata.download === true))) res.setHeader(name, value);
         res.setHeader('Content-Length', String(own.buffer.length));
         res.setHeader('Cache-Control', 'private, no-store');
         return res.send(own.buffer);
@@ -20715,7 +20716,7 @@ ${description}
       for (const [name, value] of Object.entries(untrustedFileHeaders(foundType))) res.setHeader(name, value);
       // The URL carries the capability token: no shared cache may keep it.
       res.setHeader('Cache-Control', 'private, no-store');
-      res.setHeader('Content-Disposition', `inline; filename="${name.replace(/["\\\r\n]/g, '_')}"`);
+      for (const [header, value] of Object.entries(vaultFileDisposition(name, found.metadata.download === true))) res.setHeader(header, value);
       return res.send(found.buffer);
     } catch (err: unknown) {
       logger.error('[share] Error serving a vault link attachment:', err);

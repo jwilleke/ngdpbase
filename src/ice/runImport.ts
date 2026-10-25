@@ -21,12 +21,16 @@
  *   (`keepsEncrypted`) has its originals kept during the upload instead,
  *   with the request's context while the user's key is live
  *   ({@link keepOriginalsAtUpload}, #2034); the run then finds each one in
- *   the ledger and reuses it, so it never needs the key.
+ *   the ledger and reuses it, so it never needs the key. Each such keep
+ *   carries an `OriginalKeep` for that call only (#2061): the upload
+ *   door then allows the receiver's declared `originals.types` into its own
+ *   vault, and nowhere else.
  */
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
+import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
 import type {
   IceCitation, IceFileReport, IceFileStatus, IceItem, IceLedger, IceRunReport, IceRunRequest, IceUpload, KeptOriginal, LedgerFileEntry,
   LedgerOriginal, OriginalChoice, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
@@ -239,10 +243,14 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
     if (plan.stop || !plan.sha256 || !plan.file) continue;
     if (plan.last?.original?.door === door) continue;
     let outcome: ReceiveOutcome;
+    // #2061: this one call may keep the receiver's declared types into its own vault.
+    const keep = openOriginalKeep(receiver, ctx);
     try {
-      outcome = await receiver.keepOriginal(plan.file, ctx);
+      outcome = await receiver.keepOriginal(plan.file, ctx, keep);
     } catch (err) {
       outcome = { status: 'refused', message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      closeOriginalKeep(keep);
     }
     if (outcome.status === 'refused' || !outcome.ref) {
       result.refused = { name: upload.name, message: outcome.message ?? 'refused' };

@@ -1,5 +1,5 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
-import type { ProviderInfo, StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
+import type { ProviderInfo, StoreFileEntry, StoreFileInput, StoreFileLocation } from '../types/Provider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
 import { UNKNOWN_UPLOADER } from '../types/Asset.js';
@@ -587,9 +587,10 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   /**
    * Validate file against constraints
    * @param fileInfo - File information
+   * @param alsoAllowed - Types allowed beyond the site's list: only an import's kept original into its receiver's own vault (#2061)
    * @private
    */
-  private validateFile(fileInfo: FileInfo): void {
+  private validateFile(fileInfo: FileInfo, alsoAllowed: readonly string[] = []): void {
     if (!fileInfo.size || fileInfo.size === 0) {
       throw new Error('File is empty');
     }
@@ -606,7 +607,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
           return fileInfo.mimeType.startsWith(prefix);
         }
         return fileInfo.mimeType === pattern;
-      });
+      }) || alsoAllowed.includes(fileInfo.mimeType.toLowerCase());
 
       if (!isAllowed) {
         throw new Error(`File type '${fileInfo.mimeType}' not allowed. Allowed types: ${this.allowedMimeTypes.join(', ')}`);
@@ -965,9 +966,9 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   async storeFileInStore(
     location: StoreFileLocation,
     bytes: Buffer,
-    file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+    file: StoreFileInput
   ): Promise<StoreFileEntry> {
-    this.validateFile({ originalName: file.originalName, mimeType: file.mimeType, size: bytes.length });
+    this.validateFile({ originalName: file.originalName, mimeType: file.mimeType, size: bytes.length }, file.keptOriginal?.types);
     const fingerprint = crypto.createHash('sha256').update(bytes).digest('hex');
     const files = await this.readStoreIndex(location);
     const now = new Date().toISOString();
@@ -976,8 +977,12 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     // the public pool or another store.
     const existing = Object.values(files).find((f) => f.fingerprint === fingerprint);
     if (existing) {
-      if (file.pageName && !existing.mentions.includes(file.pageName)) {
-        existing.mentions.push(file.pageName);
+      const mention = !!file.pageName && !existing.mentions.includes(file.pageName);
+      // #2061: the same bytes kept as an import's original are served as a download from now on.
+      const download = !!file.keptOriginal && existing.download !== true;
+      if (mention && file.pageName) existing.mentions.push(file.pageName);
+      if (download) existing.download = true;
+      if (mention || download) {
         existing.dateModified = now;
         await this.writeStoreIndex(location, files);
       }
@@ -1001,7 +1006,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       ...(file.author ? { author: file.author } : {}),
       dateCreated: now,
       dateModified: now,
-      mentions: file.pageName ? [file.pageName] : []
+      mentions: file.pageName ? [file.pageName] : [],
+      ...(file.keptOriginal ? { download: true as const } : {})
     };
     files[id] = entry;
     await this.writeStoreIndex(location, files);
