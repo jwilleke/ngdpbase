@@ -193,4 +193,35 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     expect(await manager.deleteAttachment(stored.identifier, BOB)).toBe(false);
     expect(await fs.readdir(attachmentsDir())).toHaveLength(1);
   });
+
+  /**
+   * #2048: an encrypted store's file is audited by id and store only — never
+   * its original name, its page or its size. Sabotaged once each (then
+   * restored): the upload's `io.sealed` branch replaced by the plain detail —
+   * the upload test went red; the delete's `own.location.io.sealed` branch
+   * replaced likewise — the delete test went red.
+   */
+  const rows = () => audit.mock.calls.map(c => c[0] as { eventType: string; user: string; metadata: Record<string, unknown> });
+
+  test('an upload into it is audited by id and store, never the file name (#2048)', async () => {
+    audit.mockClear();
+    const stored = await upload(PDF, MOLLY, 'vaults/molly/vault/Lab results');
+    const row = rows().find(e => e.eventType === 'asset-upload');
+    expect(row?.user).toBe('molly');
+    expect(row?.metadata).toEqual(expect.objectContaining({ attachmentId: stored.identifier, owner: 'molly', store: STORE, sealed: true }));
+    for (const key of ['filename', 'pageName', 'sizeBytes']) expect(row?.metadata).not.toHaveProperty(key);
+    const recorded = JSON.stringify(audit.mock.calls);
+    expect(recorded).not.toContain('labs.pdf');
+    expect(recorded).not.toContain('Lab results');
+  });
+
+  test('a delete from it is audited by id and store, never the file name (#2048)', async () => {
+    const stored = await upload();
+    audit.mockClear();
+    expect(await manager.deleteAttachment(stored.identifier, MOLLY)).toBe(true);
+    const row = rows().find(e => e.eventType === 'asset-delete');
+    expect(row?.metadata).toEqual(expect.objectContaining({ attachmentId: stored.identifier, owner: 'molly', store: STORE, sealed: true }));
+    for (const key of ['filename', 'sizeBytes']) expect(row?.metadata).not.toHaveProperty(key);
+    expect(JSON.stringify(audit.mock.calls)).not.toContain('labs.pdf');
+  });
 });

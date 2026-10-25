@@ -175,13 +175,16 @@ export interface TokenInput extends CommonInput {
   revokedBy?: string;
 }
 
-export interface AttachmentInput extends CommonInput {
-  op: AttachmentOp;
-  attachmentId: string;
-  filename: string;
-  pageName?: string | null;
-  sizeBytes?: number | null;
-}
+/**
+ * What an attachment record says about the file. A file in an ENCRYPTED store
+ * is recorded by its id and the store only (#2048): its name, its page and its
+ * size are the store's to keep sealed, so the record carries none of them.
+ */
+export type AttachmentDetail =
+  | { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null }
+  | { attachmentId: string; sealedStore: { owner: string; store: string } };
+
+export type AttachmentInput = CommonInput & { op: AttachmentOp } & AttachmentDetail;
 
 /**
  * Token identity as metadata. Always present as explicit nulls for a human
@@ -282,17 +285,16 @@ export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
  * unattended destruction is the case someone reviewing the log is looking for.
  */
 export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
-  const { op, attachmentId, filename, pageName, sizeBytes, viaToken } = input;
+  const { op, attachmentId, viaToken } = input;
   const who = whoOf(input);
 
-  const metadata: Record<string, unknown> = {
-    attachmentId,
-    filename,
-    ...tokenMetadata(viaToken),
-    ...who.metadata
-  };
-  if (pageName) metadata.pageName = pageName;
-  if (typeof sizeBytes === 'number') metadata.sizeBytes = sizeBytes;
+  const metadata: Record<string, unknown> = 'sealedStore' in input
+    ? { attachmentId, owner: input.sealedStore.owner, store: input.sealedStore.store, sealed: true, ...tokenMetadata(viaToken), ...who.metadata }
+    : { attachmentId, filename: input.filename, ...tokenMetadata(viaToken), ...who.metadata };
+  if (!('sealedStore' in input)) {
+    if (input.pageName) metadata.pageName = input.pageName;
+    if (typeof input.sizeBytes === 'number') metadata.sizeBytes = input.sizeBytes;
+  }
 
   const severity: AuditSeverity = op === 'delete'
     ? (viaToken ? 'high' : 'medium')
