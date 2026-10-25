@@ -32,9 +32,7 @@ export type UserCreateFailureReason =
   /** The requested username is already taken. */
   | 'username-taken'
   /** The display name collides with something that already exists. */
-  | 'display-name-conflict'
-  /** The email address already belongs to another account (#1748). */
-  | 'email-taken';
+  | 'display-name-conflict';
 
 /**
  * A user-creation failure with a reason a caller can branch on.
@@ -69,10 +67,8 @@ export const GENERIC_REGISTRATION_FAILURE = 'Registration failed. Please try aga
  */
 const SAFE_MESSAGES: Record<UserCreateFailureReason, string> = {
   'username-taken': 'That username is not available. Please choose another.',
-  'display-name-conflict': 'That display name is not available. Please choose another.',
-  // #1748: one email, one account. Registration has to say so for the visitor
-  // to use another address, as it must for a username.
-  'email-taken': 'That email address is already used by another account. Please use another.'
+  'display-name-conflict': 'That display name is not available. Please choose another.'
+  // No email reason: since #2073 two accounts may share an email (#1748's refusal reversed).
 };
 
 /**

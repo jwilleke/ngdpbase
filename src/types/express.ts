@@ -17,7 +17,7 @@
  */
 import type { ShareGrant } from './Share.js';
 import type { ProxyClaim } from '../managers/UserManager.js';
-import type { SignInRecord, PendingConnection } from '../managers/AuthManager.js';
+import type { SignInRecord, PendingConnection, OutsideChoice } from '../managers/AuthManager.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -42,6 +42,8 @@ declare module 'express-session' {
     pendingRedirect?: string;
     /** A verified outside identity no account has connected, waiting for the person to sign in another way (#1743). */
     pendingConnection?: PendingConnection;
+    /** #2073: an outside sign-in whose email several accounts share, waiting for the person to choose one. */
+    outsideChoice?: OutsideChoice;
     /**
      * Set at sign-in when the person has core terms to accept at their current
      * version (#1603); the consent gate holds the session to the prompt until

@@ -91,6 +91,9 @@ const mockUserManager = {
   hasPassword: vi.fn().mockResolvedValue(true), // #2049: the user list asks which accounts await setup
   getUser: vi.fn(),
   getUsers: vi.fn(),
+  // #2073: shared emails.
+  usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+  isEmailShared: vi.fn(() => Promise.resolve(false)),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -457,6 +460,17 @@ describe('WikiRoutes — coverage batch 11', () => {
       expect(res.headers.location).toContain('success');
     });
 
+    test('an email another account uses too is saved, and the administrator is told (#2073)', async () => {
+      mockUserManager.isEmailShared.mockResolvedValueOnce(true);
+      const res = await request(app)
+        .post('/admin/users')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ username: 'newuser', email: 'couple@example.com', password: 'pass', roles: 'authenticated' });
+      expect(res.status).toBe(302);
+      expect(decodeURIComponent(res.headers.location)).toContain('success=User created. Another account uses this email too. Emailed sign-in links will ask which account.');
+      expect(mockUserManager.isEmailShared).toHaveBeenCalledWith('couple@example.com', 'newuser');
+    });
+
     test('redirects with error when creation fails', async () => {
       mockUserManager.createUser.mockResolvedValue(false);
       const res = await request(app)
@@ -485,6 +499,16 @@ describe('WikiRoutes — coverage batch 11', () => {
         .send({ displayName: 'Updated' });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+
+    test('an email another account uses too is saved, and the administrator is told (#2073)', async () => {
+      mockUserManager.isEmailShared.mockResolvedValueOnce(true);
+      const res = await request(app)
+        .put('/admin/users/testuser')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ email: 'couple@example.com' });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true, message: 'User updated. Another account uses this email too. Emailed sign-in links will ask which account.' });
     });
   });
 

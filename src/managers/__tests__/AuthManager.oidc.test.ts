@@ -20,7 +20,6 @@ import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 import { guardedFetch } from '../../http/guardedFetch.js';
 import { fakeIssuer, flowFrom, type FakeIssuer } from '../../providers/__tests__/__fixtures__/fakeOidcIssuer';
-import { UserCreateError } from '../../utils/userCreateError';
 import { endSession } from '../../utils/sessionEnd';
 import { decodeProtectedHeader, exportPKCS8, generateKeyPair } from 'jose';
 import { envRefName, mapConfigValue } from '../../utils/configPaths';
@@ -43,7 +42,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
   let file: string;
   let idp: FakeIssuer;
   let config: Record<string, unknown>;
-  let users: Record<string, { passwordSet?: boolean; allowedAuthMethods?: string[]; email?: string }>;
+  let users: Record<string, { passwordSet?: boolean; allowedAuthMethods?: string[]; email?: string; isActive?: boolean }>;
   let created: Array<{ input: Record<string, unknown>; ctx: Record<string, unknown> }>;
   let emailLookups: number;
   let auditEvents: Array<Record<string, unknown>>;
@@ -76,12 +75,13 @@ describe('AuthManager outside sign-in (#1743)', () => {
         getUser: (u: string) => Promise.resolve(users[u] ? { username: u, ...users[u] } : undefined),
         hasPassword: (u: string) => Promise.resolve(Boolean(users[u]?.passwordSet)),
         getUserByEmail: () => { emailLookups++; return Promise.resolve(undefined); },
-        // The account-creation door: one email, one account (#1748), as UserManager refuses it.
+        // #2073: every account on an address, as UserManager answers; two may share one.
+        getUsersByEmail: (email: string) => {
+          return Promise.resolve(Object.entries(users).filter(([, u]) => u.email?.toLowerCase() === email.toLowerCase()).map(([username, u]) => ({ username, ...u })));
+        },
+        // The account-creation door; since #2073 it takes an email another account has.
         createUser: async (input: Record<string, unknown>, ctx: Record<string, unknown>) => {
           await Promise.resolve();
-          if (Object.values(users).some(u => u.email === input.email)) {
-            throw new UserCreateError('email-taken', 'Email address is already used by another account');
-          }
           created.push({ input, ctx });
           users[String(input.username)] = { email: String(input.email) };
           return { username: input.username };
@@ -538,7 +538,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(am.pendingConnection(req)).toEqual({ displayName: 'Example IdP', email: '' });
     });
 
-    test('no enumeration: the answer is the same whether or not an account has that email, and email is never looked up', async () => {
+    test('no enumeration: the answer is the same whether or not one account has that email; an email never signs anyone in', async () => {
       const am = await started();
       const known = fakeReq();
       const unknown = fakeReq();
@@ -548,6 +548,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(a).toEqual({ outcome: 'connect-first' });
       expect(Object.keys(known.session).sort()).toEqual(Object.keys(unknown.session).sort());
       expect(known.session.username).toBeUndefined();
+      // #2073: the email is looked up only to tell a shared one apart (getUsersByEmail), never to pick an account.
       expect(emailLookups).toBe(0);
       expect(created).toEqual([]);
     });
@@ -621,13 +622,13 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(req.session.username).toBeUndefined();
     });
 
-    test('an email that already belongs to an account creates nothing: the email step, with the plain email-taken message', async () => {
+    test('an email that already belongs to an account creates nothing: the email step, saying to sign in to that account first', async () => {
       config = { ...config, ...PROVISION, 'ngdpbase.auth.oidc.providers': { idp: provider({ 'auto-provision': true }) } };
       const am = await started();
       const req = fakeReq();
       expect(await outsideSignIn(am, req, { email: 'ann@example.com', email_verified: true })).toEqual({
         outcome: 'connect-first',
-        error: 'That email address is already used by another account. Please use another.'
+        error: 'An account here already uses that email. Sign in to it another way, then connect this sign-in.'
       });
       expect(created).toEqual([]);
       expect(req.session.username).toBeUndefined();
@@ -641,6 +642,87 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(await outsideSignIn(am, req, { email: 'new@idp.example', email_verified: false })).toEqual({ outcome: 'connect-first' });
       expect(created).toEqual([]);
       expect(am.pendingConnection(req)).toEqual({ displayName: 'Example IdP', email: '' });
+    });
+
+    /*
+     * #2073. Sabotaged once each (2026-10-25), and watched go red: a shared email
+     * held for the email step instead of asking; the one-account email step
+     * dropped (an account was created beside it); the offered-accounts check,
+     * the still-holds-the-email check and the provider-allowed check each removed.
+     */
+    describe('an email several accounts share (#2073)', () => {
+      const shared = { email: 'Couple@Example.com', email_verified: true };
+      beforeEach(() => {
+        users = { ann: { passwordSet: true, email: 'couple@example.com' }, bob: { passwordSet: true, email: 'couple@example.com' }, cal: { email: 'couple@example.com', isActive: false }, sam: {} };
+      });
+
+      test('asks which account, every time; the choice signs that account in, connects nothing and is not remembered', async () => {
+        config = { ...config, ...PROVISION, 'ngdpbase.auth.oidc.providers': { idp: provider({ 'auto-provision': true }) } };
+        const am = await started();
+        for (const chosen of ['bob', 'ann']) {
+          const req = fakeReq();
+          expect(await outsideSignIn(am, req, shared)).toEqual({ outcome: 'choose-account' });
+          expect(req.session.pendingConnection).toBeUndefined();
+          expect(req.session.username).toBeUndefined();
+          // A turned-off account is not offered.
+          expect(am.outsideChoice(req)).toEqual({ displayName: 'Example IdP', choices: ['ann', 'bob'] });
+          expect(await am.finishOutsideChoice(req, chosen)).toEqual({ outcome: 'signed-in', next: '/wanted' });
+          expect(req.session.username).toBe(chosen);
+          expect(req.session.outsideChoice).toBeUndefined();
+        }
+        expect(created).toEqual([]);
+        expect(await am.connectedIdentities(subject('ann'), 'ann')).toEqual([]);
+        expect(await am.connectedIdentities(subject('bob'), 'bob')).toEqual([]);
+      });
+
+      test('an account not offered, an expired choice or a used one is refused, and nobody signs in', async () => {
+        const am = await started();
+        const req = fakeReq();
+        expect(await outsideSignIn(am, req, shared)).toEqual({ outcome: 'choose-account' });
+        expect(await am.finishOutsideChoice(req, 'sam')).toEqual({ outcome: 'refused' });
+        expect(req.session.username).toBeUndefined();
+
+        // An account that took the address after the choice was offered was not offered: refused.
+        const joined = fakeReq();
+        await outsideSignIn(am, joined, shared);
+        users.dan = { email: 'couple@example.com' };
+        expect(await am.finishOutsideChoice(joined, 'dan')).toEqual({ outcome: 'refused' });
+        expect(joined.session.username).toBeUndefined();
+        delete users.dan;
+        expect(await am.finishOutsideChoice(req, 'ann')).toEqual({ outcome: 'refused' }); // used: the refusal spent it
+
+        const late = fakeReq();
+        await outsideSignIn(am, late, shared);
+        (late.session.outsideChoice as { expiresAt: number }).expiresAt = Date.now() - 1;
+        expect(am.outsideChoice(late)).toBeNull();
+        expect(await am.finishOutsideChoice(late, 'ann')).toEqual({ outcome: 'refused' });
+
+        // An account that left the address meanwhile is refused too.
+        const moved = fakeReq();
+        await outsideSignIn(am, moved, shared);
+        users.bob.email = 'bob@example.com';
+        expect(await am.finishOutsideChoice(moved, 'bob')).toEqual({ outcome: 'refused' });
+        expect(moved.session.username).toBeUndefined();
+      });
+
+      test('an account that may not use the provider is refused', async () => {
+        users.bob.allowedAuthMethods = ['password'];
+        const am = await started();
+        const req = fakeReq();
+        await outsideSignIn(am, req, shared);
+        expect(await am.finishOutsideChoice(req, 'bob')).toEqual({ outcome: 'refused' });
+        expect(req.session.username).toBeUndefined();
+      });
+
+      test('an identity already connected to one account still goes straight in, without asking', async () => {
+        const am = await started();
+        expect(await am.connectIdentity(subject('ann'), 'ann', 'oidc:idp',
+          await callback(am, () => am.startConnect(subject('ann'), 'ann', 'oidc:idp', { deviceState: BROWSER }), shared))).toBe('connected');
+        const req = fakeReq();
+        expect(await outsideSignIn(am, req, shared)).toEqual({ outcome: 'signed-in', next: '/wanted' });
+        expect(req.session.username).toBe('ann');
+        expect(req.session.outsideChoice).toBeUndefined();
+      });
     });
 
     test('a replayed callback opens no second session', async () => {

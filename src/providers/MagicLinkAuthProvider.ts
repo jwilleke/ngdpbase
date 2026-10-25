@@ -16,6 +16,11 @@
  *
  * Tokens are in-memory only — lost on restart, acceptable for the default 15-min TTL.
  *
+ * A shared address (#2073): two or more accounts may hold one email. The link
+ * then names no account; the person opening it chooses one of the accounts on
+ * the address, and the link alone is enough for any of them (the mailbox is
+ * the shared trust, operator 2026-10-25).
+ *
  * @see AuthManager
  * @see BaseAuthProvider
  */
@@ -46,6 +51,12 @@ interface TokenEntry {
    */
   username: string;
   email: string;
+  /**
+   * #2073: the accounts on a shared address, by username, when the link was
+   * requested. Set, the link names no account (`username` is '') and the
+   * person chooses one of these when they open it.
+   */
+  choices?: string[];
   redirect: string;
   expiresAt: number; // Date.now() + ttlMs
   /** True when verifying this token must create the account first (#1026) */
@@ -107,8 +118,12 @@ export class MagicLinkAuthProvider implements AuthProvider {
       const userManager = this.engine.getManager<UserManager>('UserManager');
       if (!userManager) return;
 
-      const user = await userManager.getUserByEmail(email);
-      if (!user && !this.isAutoProvisionEnabled()) {
+      // #2073: an address may be shared; the accounts on it that may sign in.
+      const holders = await userManager.getUsersByEmail(email);
+      const active = holders.filter((u) => u.isActive !== false);
+      const choices = active.length > 1 ? active.map((u) => u.username) : undefined;
+      const user = choices ? undefined : holders.length === 1 ? holders[0] : active[0];
+      if (!user && !choices && (holders.length > 0 || !this.isAutoProvisionEnabled())) {
         // Silent — do not reveal whether email is registered
         logger.debug(`[MagicLinkAuthProvider] No user for an address at ${emailDomain(email)} (silent)`);
         return;
@@ -120,10 +135,12 @@ export class MagicLinkAuthProvider implements AuthProvider {
       // spray of requests at other people's addresses leaves nothing behind.
       // The caller-visible response is identical either way, which is what
       // keeps the anti-enumeration property intact.
-      const isNewUser = !user;
-      const username = user
-        ? user.username
-        : await deriveUsername(email, userManager);
+      const isNewUser = !user && !choices;
+      const username = choices
+        ? ''
+        : user
+          ? user.username
+          : await deriveUsername(email, userManager);
 
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = Date.now() + this.config.ttlMs;
@@ -131,6 +148,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
       this.tokens.set(token, {
         username,
         email,
+        ...(choices ? { choices } : {}),
         redirect: context.redirect || '/',
         expiresAt,
         isNewUser,
@@ -176,7 +194,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
       this.cleanupExpired();
       logger.info(
         `[MagicLinkAuthProvider] Link sent to an address at ${emailDomain(email)} ` +
-        (user ? `for user ${user.username}` : '(new account — provisioned on verify)')
+        (choices ? `for ${choices.length} accounts sharing it (the person chooses one)` : user ? `for user ${user.username}` : '(new account — provisioned on verify)')
       );
     } catch (err) {
       logger.error(`[MagicLinkAuthProvider] Error in initiate: ${errorForLog(err)}`);
@@ -187,19 +205,38 @@ export class MagicLinkAuthProvider implements AuthProvider {
    * Verify a token. Returns AuthResult on success, null if invalid or expired.
    * Does NOT consume the token — call consumeToken() after the session is created.
    */
-  verify(credentials: AuthVerifyCredentials): Promise<AuthResult | null> {
+  async verify(credentials: AuthVerifyCredentials): Promise<AuthResult | null> {
     const { token } = credentials;
-    if (!token) return Promise.resolve(null);
+    if (!token) return null;
 
+    const entry = this.liveEntry(token);
+    if (!entry) return null;
+    if (!entry.choices) return { username: entry.username };
+
+    // #2073: a shared address — the account chosen must be one the link offered, and still hold the address.
+    const account = credentials.account;
+    if (!account || !entry.choices.includes(account)) return null;
+    const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(entry.email) ?? [];
+    return holders.some((u) => u.username === account) ? { username: account } : null;
+  }
+
+  /**
+   * The accounts a link to a shared address offers (#2073), by username, or
+   * null for a link to one account (or an unknown or expired one). Read
+   * without consuming, so the page asking which account can be shown.
+   */
+  accountChoices(token: string): string[] | null {
+    return this.liveEntry(token)?.choices ?? null;
+  }
+
+  private liveEntry(token: string): TokenEntry | null {
     const entry = this.tokens.get(token);
-    if (!entry) return Promise.resolve(null);
-
+    if (!entry) return null;
     if (Date.now() > entry.expiresAt) {
       this.tokens.delete(token);
-      return Promise.resolve(null);
+      return null;
     }
-
-    return Promise.resolve({ username: entry.username });
+    return entry;
   }
 
   /**
@@ -272,10 +309,12 @@ export class MagicLinkAuthProvider implements AuthProvider {
     if (!userManager) return false;
 
     // Re-check: the name was derived when the link was requested and something
-    // else may have claimed it since.
-    const existing = await userManager.getUserByEmail(entry.email);
-    if (existing) {
-      entry.username = existing.username;
+    // else may have claimed it since. #2073: accounts made for the address
+    // meanwhile are not guessed between; the link is refused instead.
+    const existing = await userManager.getUsersByEmail(entry.email);
+    if (existing.length > 1) return false;
+    if (existing.length === 1) {
+      entry.username = existing[0].username;
       entry.isNewUser = false;
       return true;
     }

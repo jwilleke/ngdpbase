@@ -28,7 +28,6 @@
 import WikiRoutes from '../WikiRoutes';
 import IdentityManager, { ContactDetailsInvalidError } from '../../managers/IdentityManager';
 import { ContactRefusedError } from '../../utils/contactAccess';
-import { UserCreateError } from '../../utils/userCreateError';
 
 const OWN_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const ACCOUNT = { username: 'pat', displayName: 'Pat', email: 'pat@example.org' };
@@ -58,7 +57,7 @@ const createMockRes = () => ({
  * `fail`: what the identity door's check throws (a bad detail); `identityFail`: what its write
  * rejects with; `lookupFail`: what reading the user's own record rejects with.
  */
-function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown> } = {}) {
+function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown>; shared?: boolean } = {}) {
   const order: string[] = [];
   const identityManager = {
     checkContactDetails: vi.fn((..._args: unknown[]) => { order.push('check'); if (opts.fail) throw opts.fail; }),
@@ -67,7 +66,8 @@ function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Err
   };
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(opts.account ?? ACCOUNT)),
-    updateUser: vi.fn((..._args: unknown[]) => { order.push('account'); return opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT); })
+    updateUser: vi.fn((..._args: unknown[]) => { order.push('account'); return opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT); }),
+    isEmailShared: vi.fn((..._args: unknown[]) => Promise.resolve(opts.shared === true))
   };
   const policyDecisionPoint = { permits: vi.fn(() => Promise.resolve(true)) };
   const managers: Record<string, unknown> = { IdentityManager: identityManager, UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
@@ -233,11 +233,12 @@ describe('POST /profile/contact-details (#2073)', () => {
     expect(target(res)).toContain('contactDetailsSaved=');
   });
 
-  test('an email another account holds is refused plainly, without naming it (#1748)', async () => {
-    const { routes } = makeRoutes({ accountFail: new UserCreateError('email-taken', 'taken') });
+  test('an email another account uses too is saved, with a note that sign-in links will ask which account (#2073)', async () => {
+    const { routes, userManager } = makeRoutes({ shared: true });
     const res = createMockRes();
-    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'theirs@example.org' }), res);
-    expect(target(res)).toBe('/profile?contactDetailsError=That email address is already used by another account. Please use another. Nothing was saved.#contact-details');
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'couple@example.org' }), res);
+    expect(userManager.updateUser).toHaveBeenCalledWith('pat', { email: 'couple@example.org' }, expect.anything());
+    expect(target(res)).toBe('/profile?contactDetailsSaved=Contact details saved. Another account uses this email too. Emailed sign-in links will ask which account.#contact-details');
   });
 
   test('a bad detail is refused before the account is written, so nothing is saved', async () => {

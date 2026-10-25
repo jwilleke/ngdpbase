@@ -77,7 +77,7 @@ import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
-import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
+import { safeRegistrationMessage } from '../utils/userCreateError.js';
 import { RoleChangeError } from '../utils/roleChangeError.js';
 import {
   DEVICE_STATE_COOKIE,
@@ -269,6 +269,9 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+/** Said when an email is saved that another account uses too (#2073, operator 2026-10-25): sharing is allowed, and sign-in by email asks which account. */
+const SHARED_EMAIL_NOTE = 'Another account uses this email too. Emailed sign-in links will ask which account.';
+
 /** A checkbox or boolean from a form or JSON body: `true` or `'true'`, anything else false. */
 function formChecked(value: unknown): boolean {
   return value === true || value === 'true';
@@ -342,6 +345,10 @@ interface IUserManager {
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
+  /** #2073: the usernames of every account whose email another account holds too. */
+  usernamesSharingAnEmail(): Promise<Set<string>>;
+  /** #2073: whether an account other than `ownUsername` holds this email too. */
+  isEmailShared(email: unknown, ownUsername: string | null): Promise<boolean>;
 }
 
 interface IConfigManager {
@@ -7250,6 +7257,15 @@ ${panes}
         return res.redirect('/login?error=Invalid+link');
       }
 
+      // #2073: a link to an address several accounts share asks which one; the link alone is enough for any of them.
+      const choices = authManager.getAccountChoices('magic-link', token);
+      if (choices) {
+        const userManager = this.engine.getManager('UserManager');
+        const accounts = await Promise.all(choices.map(async (username) => ({ username, displayName: (await userManager.getUser(username))?.displayName ?? username })));
+        const commonData = await this.getCommonTemplateData(req);
+        return res.render('magic-link-confirm', { ...commonData, token, username: '', accounts, error: '' });
+      }
+
       const result = await authManager.authenticate('magic-link', { token }, this.attemptFrom(req, 'sign-in'));
       if (!result.success) {
         return res.redirect('/login?error=Link+expired+or+already+used');
@@ -7260,6 +7276,7 @@ ${panes}
         ...commonData,
         token,
         username: result.username,
+        accounts: null,
         error: ''
       });
     } catch (err: unknown) {
@@ -7305,7 +7322,9 @@ ${panes}
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
 
-      const result = await authManager.authenticate('magic-link', { token }, this.attemptFrom(req, 'sign-in'));
+      // #2073: the account chosen, for a link to a shared address; ignored for a link to one account.
+      const account = typeof req.body?.account === 'string' ? req.body.account : undefined;
+      const result = await authManager.authenticate('magic-link', { token, account }, this.attemptFrom(req, 'sign-in'));
       if (!result.success) {
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
@@ -7917,8 +7936,8 @@ ${panes}
       if (done.outcome === 'second-step') return this.holdForSecondStep(req, res, done.handle, done.binding, done.next);
       const target = done.outcome === 'connect-first'
         ? '/login' + (done.error ? '?error=' + encodeURIComponent(done.error) : '')
-        : done.next;
-      if (done.outcome !== 'connect-first') logger.info(`👤 User signed in via ${providerId}${done.outcome === 'created' ? ' (account created)' : ''}`);
+        : done.outcome === 'choose-account' ? '/auth/choose-account' : done.next;
+      if (done.outcome === 'signed-in' || done.outcome === 'created') logger.info(`👤 User signed in via ${providerId}${done.outcome === 'created' ? ' (account created)' : ''}`);
       req.session.save((err) => {
         if (err) {
           logger.error('Error saving session after an outside sign-in:', err);
@@ -7929,6 +7948,42 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error finishing an outside sign-in:', err);
       res.redirect(refusedSignIn);
+    }
+  }
+
+  /**
+   * GET /auth/choose-account — an outside sign-in whose verified email several
+   * accounts share (#2073): the person chooses which account. Asked every
+   * time; nothing is remembered.
+   */
+  async chooseAccountPage(req: Request, res: Response): Promise<void> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const choice = authManager?.outsideChoice(req);
+    if (!choice) return res.redirect('/login?error=' + encodeURIComponent('That sign-in has expired. Please sign in again.'));
+    const userManager = this.engine.getManager('UserManager');
+    const accounts = await Promise.all(choice.choices.map(async (username) => ({ username, displayName: (await userManager.getUser(username))?.displayName ?? username })));
+    res.render('choose-account', { ...(await this.getCommonTemplateData(req)), title: 'Choose an account', providerName: choice.displayName, accounts });
+  }
+
+  /** POST /auth/choose-account — sign in to the account chosen (#2073); AuthManager checks it was offered. */
+  async chooseAccount(req: Request, res: Response): Promise<void> {
+    try {
+      const authManager = this.engine.getManager<AuthManager>('AuthManager');
+      const account = typeof req.body?.account === 'string' ? req.body.account : '';
+      const done = authManager ? await authManager.finishOutsideChoice(req, account) : { outcome: 'refused' as const };
+      if (done.outcome === 'second-step') return this.holdForSecondStep(req, res, done.handle, done.binding, done.next);
+      if (done.outcome !== 'signed-in') return res.redirect('/login?error=' + encodeURIComponent('Sign-in failed. Please sign in again.'));
+      logger.info('👤 User signed in through an outside sign-in to a shared email (#2073)');
+      req.session.save((err) => {
+        if (err) {
+          logger.error('Error saving session after choosing an account:', err);
+          return res.redirect('/login?error=Session+save+failed');
+        }
+        res.redirect(done.next);
+      });
+    } catch (err: unknown) {
+      logger.error('Error finishing a sign-in to a shared email:', err);
+      res.redirect('/login?error=' + encodeURIComponent('Sign-in failed. Please sign in again.'));
     }
   }
 
@@ -10561,12 +10616,11 @@ ${panes}
         }
       }
 
-      res.redirect('/profile?success=Profile updated successfully');
+      // #2073: a shared email is saved; the user is told sign-in links will ask which account.
+      const sharedNote = updates.email && updates.email !== account?.email && await userManager.isEmailShared(updates.email, currentUser.username ?? null)
+        ? ` ${SHARED_EMAIL_NOTE}` : '';
+      res.redirect('/profile?success=' + encodeURIComponent(`Profile updated successfully.${sharedNote}`));
     } catch (err: unknown) {
-      // #1748: one email, one account — said plainly, without naming the other account.
-      if (err instanceof UserCreateError && err.reason === 'email-taken') {
-        return res.redirect('/profile?error=' + encodeURIComponent('That email address is already used by another account. Please use another.'));
-      }
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
     }
@@ -10615,15 +10669,7 @@ ${panes}
       if (!own) return answer('error', 'Your contact details could not be saved. Nothing was saved.');
       const accountFields = Object.keys(accountChanges) as Array<'displayName' | 'email'>;
       if (accountFields.length > 0) {
-        try {
-          await userManager.updateUser(username, accountChanges, user);
-        } catch (err: unknown) {
-          // #1748: one email, one account — said plainly, without naming the other account.
-          if (err instanceof UserCreateError && err.reason === 'email-taken') {
-            return answer('error', 'That email address is already used by another account. Please use another. Nothing was saved.');
-          }
-          throw err;
-        }
+        await userManager.updateUser(username, accountChanges, user);
       }
       try {
         await identities.updateContactDetails(user, own['@id'], details);
@@ -10633,7 +10679,9 @@ ${panes}
         const saved = accountFields.length === 2 ? 'name and email were' : accountFields[0] === 'email' ? 'email was' : 'name was';
         return answer('error', `Your ${saved} saved, but your other contact details could not be saved. Try again.`);
       }
-      answer('success', 'Contact details saved.');
+      // #2073: a shared email is saved; the user is told sign-in links will ask which account.
+      const shared = accountChanges.email !== undefined && await userManager.isEmailShared(accountChanges.email, username);
+      answer('success', shared ? `Contact details saved. ${SHARED_EMAIL_NOTE}` : 'Contact details saved.');
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
       if (err instanceof ContactDetailsInvalidError) return answer('error', `${contactDetailLabel(err.part, err.field)} ${err.message}. Nothing was saved.`);
@@ -12130,8 +12178,11 @@ ${panes}
       } catch (err) {
         logger.warn('[admin/users] could not list the invitations waiting (#2049):', err);
       }
+      // #2073: accounts that share an email are marked, not faulted.
+      const sharing = await userManager.usernamesSharingAnEmail();
       const users = await Promise.all(usersRaw.map(async (u: { username?: string; isExternal?: boolean; lastLogin?: string; loginCount?: number; [key: string]: unknown }) => ({
         ...u,
+        sharedEmail: !!u.username && sharing.has(u.username),
         roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(listing, u.username) : [],
         invitation: u.username ? invitations.get(u.username) ?? null : null,
         // No password and never signed in: an invitation is how this account gets its way in.
@@ -12302,7 +12353,9 @@ ${panes}
           : 'error=' + encodeURIComponent(`User created, but no invitation was sent: ${sent.reason} You can set a password on the user's edit page instead.`)));
       }
       if (success) {
-        return res.redirect('/admin/users?success=User created successfully');
+        // #2073: the administrator is told when the email is shared; the list marks it too.
+        const shared = email && await userManager.isEmailShared(email, String((success as { username?: unknown }).username ?? username));
+        return res.redirect('/admin/users?success=' + encodeURIComponent(shared ? `User created. ${SHARED_EMAIL_NOTE}` : 'User created successfully'));
       } else {
         return res.redirect('/admin/users?error=Failed to create user');
       }
@@ -12353,17 +12406,15 @@ ${panes}
       }
 
       if (success) {
-        return res.json({ success: true, message: 'User updated successfully' });
+        // #2073: a shared email is saved; the administrator is told.
+        const shared = typeof updates.email === 'string' && updates.email.trim() !== '' && await userManager.isEmailShared(updates.email, username);
+        return res.json({ success: true, message: shared ? `User updated. ${SHARED_EMAIL_NOTE}` : 'User updated successfully' });
       } else {
         return res
           .status(400)
           .json({ success: false, message: 'Failed to update user' });
       }
     } catch (err: unknown) {
-      // #1748: an admin is told which account already has the email.
-      if (err instanceof UserCreateError && err.reason === 'email-taken') {
-        return res.status(409).json({ success: false, message: err.message });
-      }
       // #2015: the administrator is told which role change was not saved.
       if (err instanceof RoleChangeError) {
         logger.error('Error updating user roles:', err);
@@ -17089,6 +17140,8 @@ ${panes}
     // POST is where the token is spent. Splitting them is what stops an email
     // scanner's pre-fetch from burning the link.
     app.get('/auth/magic-link/verify', (req: Request, res: Response) => this.verifyMagicLink(req, res));
+    app.get('/auth/choose-account', (req: Request, res: Response) => void this.chooseAccountPage(req, res));
+    app.post('/auth/choose-account', (req: Request, res: Response) => void this.chooseAccount(req, res));
     app.post('/auth/magic-link/verify', (req: Request, res: Response) => this.completeMagicLink(req, res));
     // #1743: outside OpenID Connect providers; Google's URLs are these with :name = google.
     app.post('/auth/oauth/:name', (req: Request, res: Response) => void this.startOutsideSignIn(req, res));

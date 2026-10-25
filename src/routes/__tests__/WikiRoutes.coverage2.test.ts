@@ -135,6 +135,9 @@ const mockSearchManager = {
 const mockUserManager = {
   getUser: vi.fn(),
   getUsers: vi.fn(),
+  // #2073: shared emails.
+  usernamesSharingAnEmail: vi.fn(() => Promise.resolve(new Set<string>())),
+  isEmailShared: vi.fn(() => Promise.resolve(false)),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),

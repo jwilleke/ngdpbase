@@ -478,12 +478,35 @@ export interface PendingConnection {
   returnTo?: string;
 }
 
+/**
+ * An outside sign-in whose verified email several accounts here share
+ * (#2073): held in the session while the person chooses which account, asked
+ * every time and never remembered (no identity is connected). Single use.
+ */
+export interface OutsideChoice {
+  providerId: string;
+  /** The provider's verified email. */
+  email: string;
+  /** The accounts on that email, by username, when the callback came back. */
+  choices: string[];
+  /** The provider's name, for the page. */
+  displayName: string;
+  /** What the provider reported about its own sign-in (#1633), kept for the level it counts for. */
+  reported: ReportedAssurance;
+  /** Where the sign-in was going. */
+  returnTo: string;
+  /** Epoch ms. */
+  expiresAt: number;
+}
+
 /** How an outside sign-in's callback ended (#1743), for the route to answer. */
 export type OutsideSignIn =
   /** Signed in (`created`: an account was made for it first); `next` is where to go. */
   | { outcome: 'signed-in' | 'created'; next: string }
   /** Held as a pending connection: the person signs in another way to connect it. `error` is what to say, if anything. */
   | { outcome: 'connect-first'; error?: string }
+  /** #2073: several accounts share the verified email; held for the person to choose one (`outsideChoice`). */
+  | { outcome: 'choose-account' }
   /** Refused; nothing says whether an account exists. */
   | { outcome: 'refused' }
   /** The state was already used: no second session. */
@@ -503,6 +526,9 @@ export interface SignInCompleted {
 
 /** Short: a shared browser should not keep someone else's identity waiting for long (#1743). */
 const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
+
+/** #2073: an outside sign-in's verified email already belongs to one account here; it is connected only by signing in to that account. */
+const OUTSIDE_EMAIL_HELD = 'An account here already uses that email. Sign in to it another way, then connect this sign-in.';
 
 /** Who changed a credential, for its audit record: the person acting, and from where. */
 type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress' | 'viaProxy'>;
@@ -1233,6 +1259,23 @@ class AuthManager extends BaseManager {
       };
       return error ? { outcome: 'connect-first', error } : { outcome: 'connect-first' };
     };
+    // #2073: a verified email accounts here already hold. Several share it:
+    // the person chooses which account, every time, and nothing is connected
+    // or remembered. One: the email step, as before — an email alone never
+    // connects an identity to an account. Either way no account is created.
+    if (identity.email) {
+      const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(identity.email) ?? [];
+      const active = holders.filter((u) => u.isActive !== false);
+      if (active.length > 1) {
+        delete req.session.pendingConnection;
+        req.session.outsideChoice = {
+          providerId, email: identity.email, choices: active.map((u) => u.username), displayName: provider.displayName,
+          reported: identity.reported, returnTo: redirect, expiresAt: Date.now() + PENDING_CONNECTION_TTL_MS
+        };
+        return { outcome: 'choose-account' };
+      }
+      if (holders.length > 0) return hold(this.outsideMayCreateAccounts(provider) ? OUTSIDE_EMAIL_HELD : undefined);
+    }
     if (!identity.email || !this.outsideMayCreateAccounts(provider)) return hold();
 
     const created = await this.createAccountFor(req, provider, identity.email);
@@ -1323,6 +1366,51 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.error(`[AuthManager] the account ${username}, created for ${provider.id}, could not be removed after its identity failed to connect:`, err);
     }
+  }
+
+  /**
+   * The accounts an outside sign-in to a shared email offers (#2073), for the
+   * page asking which; null when none is waiting, and an expired one is dropped.
+   */
+  outsideChoice(req: Request): { displayName: string; choices: string[] } | null {
+    const choice = req.session?.outsideChoice;
+    if (!choice) return null;
+    if (!(choice.expiresAt > Date.now())) {
+      delete req.session.outsideChoice;
+      return null;
+    }
+    return { displayName: choice.displayName, choices: [...choice.choices] };
+  }
+
+  /**
+   * Finish an outside sign-in to a shared email (#2073): `account` must be one
+   * the sign-in offered, still hold that email, be active, and be allowed to
+   * use the provider. The choice is used once, connects nothing and is not
+   * remembered; the next sign-in asks again. A sign-in at AAL1 takes the
+   * second step, as any outside sign-in does (#1532).
+   */
+  async finishOutsideChoice(req: Request, account: string): Promise<OutsideSignIn> {
+    const choice = req.session?.outsideChoice;
+    if (req.session) delete req.session.outsideChoice;
+    if (!choice || !(choice.expiresAt > Date.now()) || !choice.choices.includes(account)) return { outcome: 'refused' };
+    const provider = this.outsideProvider(choice.providerId);
+    if (!provider) return { outcome: 'refused' };
+    const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(choice.email) ?? [];
+    if (!holders.some((u) => u.username === account && u.isActive !== false)) return { outcome: 'refused' };
+    if (!(await this.userMayUseProvider(account, choice.providerId))) {
+      logger.warn(`[AuthManager] User ${account} not allowed to use provider: ${choice.providerId}`);
+      return { outcome: 'refused' };
+    }
+    const reported = reportedValues(choice.reported, this.trustsOutsideMfa(provider));
+    const result: AuthenticateResult = { success: true, username: account, provider: choice.providerId, factors: this.satisfiedFactors(choice.providerId, reported), reported };
+    const next = safeRedirect(choice.returnTo);
+    if (this.needsSecondStep(result)) {
+      const binding = randomBytes(24).toString('base64url');
+      const handle = await this.beginTwoStep(result, { binding, ip: req.ip, userAgent: req.get?.('user-agent'), location: await this.approximateLocation(req) });
+      return { outcome: 'second-step', handle, binding, next };
+    }
+    const done = await this.completeSignIn(req, result, { method: choice.providerId, returnTo: next });
+    return { outcome: 'signed-in', next: done.next ?? next };
   }
 
   /**
@@ -3675,6 +3763,14 @@ class AuthManager extends BaseManager {
   getDeviceState(providerId: string, handle: string): string | null {
     const provider = this.providers.get(providerId);
     return provider?.getDeviceState?.(handle) ?? null;
+  }
+
+  /**
+   * The accounts an emailed link to a shared address offers (#2073), by
+   * username, or null when the link names one account. Read without consuming.
+   */
+  getAccountChoices(providerId: string, handle: string): string[] | null {
+    return this.providers.get(providerId)?.accountChoices?.(handle) ?? null;
   }
 
   /**

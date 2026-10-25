@@ -30,7 +30,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
     userExists: vi.fn(async (name: string) => users.has(name)),
     createUser: vi.fn(async (u: Record<string, unknown>) => { users.set(u.username as string, { ...u }); }),
     getUser: vi.fn(async (name: string) => users.get(name) ?? null),
-    // #1748: the one-email-one-account check reads every account.
+    // #2073: whether a saved email is shared reads every account.
     getAllUsers: vi.fn(async () => users),
     updateUser: vi.fn(async (name: string, u: Record<string, unknown>) => { users.set(name, { ...u }); }),
     deleteUser: vi.fn(async (name: string) => { users.delete(name); })

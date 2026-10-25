@@ -48,6 +48,8 @@ export interface AuthVerifyCredentials {
   password?: string;
   /** One-time token — used by MagicLinkAuthProvider */
   token?: string;
+  /** The account chosen for a link to a shared address (#2073) — used by MagicLinkAuthProvider. */
+  account?: string;
   /** OAuth `state` from the callback — used by OidcAuthProvider */
   state?: string;
   /** The browser-binding value from the caller's cookie (#1022 magic link, #1630 OAuth) */
@@ -225,6 +227,12 @@ export interface AuthProvider {
    * Must be read BEFORE `consumeToken()`, which deletes the entry.
    */
   getDeviceState?(handle: string): string | null;
+
+  /**
+   * The accounts a flow to a shared address offers (#2073), by username, or
+   * null when it names one account. Read without consuming.
+   */
+  accountChoices?(handle: string): string[] | null;
 
   /**
    * Create the account behind a first-time credential (#1049).

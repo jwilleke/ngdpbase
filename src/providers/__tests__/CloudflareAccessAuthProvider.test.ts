@@ -68,8 +68,9 @@ function buildEngine(initialUsers: FakeUser[] = []) {
   const users: FakeUser[] = [...initialUsers];
   const created: Array<Record<string, unknown>> = [];
   const userManager = {
-    getUserByEmail: async (email: string) =>
-      users.find(u => u.email?.toLowerCase() === email.toLowerCase()) ?? null,
+    // #2073: every account on an address, as UserManager answers; two may share one.
+    getUsersByEmail: async (email: string) =>
+      users.filter(u => u.email?.toLowerCase() === email.toLowerCase()),
     getUser: async (username: string) =>
       users.find(u => u.username === username) ?? null,
     createUser: async (input: Record<string, unknown>) => {
@@ -101,6 +102,17 @@ function buildProvider(engine: ReturnType<typeof buildEngine>['engine'], overrid
 }
 
 describe('CloudflareAccessAuthProvider (#649)', () => {
+  test('an email two accounts share is refused: never guessed between, and no account is made (#2073)', async () => {
+    const { engine, created } = buildEngine([
+      { username: 'ann', email: 'couple@example.com' },
+      { username: 'bob', email: 'Couple@example.com' }
+    ]);
+    const provider = buildProvider(engine);
+    const token = await mintJwt({ email: 'couple@example.com' });
+    expect(await provider.verify({ token })).toBeNull();
+    expect(created).toHaveLength(0);
+  });
+
   test('valid JWT + known user → returns existing username (no JIT)', async () => {
     const { engine, created } = buildEngine([
       { username: 'jim', email: 'jim@example.com', roles: ['admin'] }

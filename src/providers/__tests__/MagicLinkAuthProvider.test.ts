@@ -13,7 +13,9 @@ describe('MagicLinkAuthProvider', () => {
     mockMailProvider = { send: vi.fn().mockResolvedValue(undefined) };
 
     mockUserManager = {
-      getUserByEmail: vi.fn()
+      getUserByEmail: vi.fn(),
+      // #2073: the provider asks for every account on the address; one test account, or none, unless a test says otherwise.
+      getUsersByEmail: vi.fn(async (email) => { const u = await mockUserManager.getUserByEmail(email); return u ? [u] : []; })
     };
 
     // #642 Iteration 3: provider derives baseUrl from getBaseURL() at runtime.
@@ -351,6 +353,74 @@ describe('MagicLinkAuthProvider', () => {
       // sent. Only the recipient can tell the two apart.
       expect(knownResult).toBe(unknownResult);
       expect(mockMailProvider.send).toHaveBeenCalledTimes(1);
+    });
+  });
+  /**
+   * #2073: an address several accounts share. The link names no account; the
+   * person chooses one of the active accounts on it, and the link alone is
+   * enough for any of them. Sabotaged once each (2026-10-25) and watched go red:
+   * - verify() returning the first offered account when none was chosen → "names no account";
+   * - the still-holds-the-address check removed → "an account that left the address";
+   * - inactive accounts offered → "offers the active accounts".
+   */
+  describe('a shared address (#2073)', () => {
+    const ann = { username: 'ann', email: 'couple@example.com' };
+    const bob = { username: 'bob', email: 'couple@example.com' };
+    const off = { username: 'cal', email: 'couple@example.com', isActive: false };
+    const tokenFrom = () => mockMailProvider.send.mock.calls[0][0].text.match(/token=([a-f0-9]{64})/)[1];
+
+    test('one link is sent; it names no account and offers the active accounts on the address', async () => {
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, bob, off]);
+      await provider.initiate({ email: 'Couple@Example.com', redirect: '/wanted' });
+      expect(mockMailProvider.send).toHaveBeenCalledTimes(1);
+      const token = tokenFrom();
+      expect(provider.accountChoices(token)).toEqual(['ann', 'bob']);
+      expect(await provider.verify({ token })).toBeNull();
+      expect(await provider.verify({ token, account: 'cal' })).toBeNull();
+      expect(await provider.verify({ token, account: 'mallory' })).toBeNull();
+      expect(await provider.verify({ token, account: 'bob' })).toEqual({ username: 'bob' });
+      expect(await provider.verify({ token, account: 'ann' })).toEqual({ username: 'ann' });
+      expect(provider.consumeToken(token)).toBe(true);
+      expect(provider.accountChoices(token)).toBeNull();
+      expect(await provider.verify({ token, account: 'ann' })).toBeNull();
+    });
+
+    test('an account that left the address since the link was sent is refused', async () => {
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, bob]);
+      await provider.initiate({ email: 'couple@example.com' });
+      const token = tokenFrom();
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann]);
+      expect(await provider.verify({ token, account: 'bob' })).toBeNull();
+      expect(await provider.verify({ token, account: 'ann' })).toEqual({ username: 'ann' });
+    });
+
+    test('with only one active account on it, the link is that account\'s, as before', async () => {
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, off]);
+      await provider.initiate({ email: 'couple@example.com' });
+      const token = tokenFrom();
+      expect(provider.accountChoices(token)).toBeNull();
+      expect(await provider.verify({ token })).toEqual({ username: 'ann' });
+    });
+
+    test('an address whose accounts are all turned off gets no link and never a new account', async () => {
+      mockConfigManager.getProperty = vi.fn((key, fallback) => (key === 'ngdpbase.auth.magic-link.auto-provision' ? true : fallback));
+      mockUserManager.createUser = vi.fn();
+      mockUserManager.getUsersByEmail.mockResolvedValue([off, { ...off, username: 'dee' }]);
+      await provider.initiate({ email: 'couple@example.com' });
+      expect(mockMailProvider.send).not.toHaveBeenCalled();
+      expect(mockUserManager.createUser).not.toHaveBeenCalled();
+    });
+
+    test('a new-account link refuses when several accounts took the address meanwhile, and makes none', async () => {
+      mockConfigManager.getProperty = vi.fn((key, fallback) => (key === 'ngdpbase.auth.magic-link.auto-provision' ? true : fallback));
+      mockUserManager.getUser = vi.fn().mockResolvedValue(undefined);
+      mockUserManager.createUser = vi.fn();
+      mockUserManager.getUsersByEmail.mockResolvedValue([]);
+      await provider.initiate({ email: 'couple@example.com' });
+      const token = tokenFrom();
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, bob]);
+      expect(await provider.provisionIfNew(token)).toBe(false);
+      expect(mockUserManager.createUser).not.toHaveBeenCalled();
     });
   });
 });
