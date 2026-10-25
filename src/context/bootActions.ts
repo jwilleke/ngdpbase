@@ -70,7 +70,9 @@ export function attributedTo(ctx: JobContext): { user: string; actor?: string; i
       origin: ctx.origin,
       reason: ctx.reason ?? null,
       requestedAt: ctx.requestedAt,
-      ...proxyMeta
+      // #2059: the delegation a request-origin job was queued under, by kind,
+      // with the same precedence as a request's own record (`actorOf`).
+      ...(ctx.viaToken ? { delegated: 'token' } : ctx.viaShare ? { delegated: 'share' } : proxyMeta)
     }
   };
 }
