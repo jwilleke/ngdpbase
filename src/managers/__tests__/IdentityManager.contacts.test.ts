@@ -882,3 +882,108 @@ describe('affiliations as OrganizationRole (#2039)', () => {
     expect(people.every((x) => !('role' in x))).toBe(true);
   });
 });
+
+/**
+ * #2073 — a user's own phones and emergency contact, set from /profile
+ * through `updateContactPoints`, beside entries add-ons wrote.
+ *
+ * Sabotaged once each (2026-10-25), and watched go red:
+ * - the merge replaced the whole array with the given entries → "other
+ *   entries are kept" went red;
+ * - the match ignored `@type` → the business PostalAddress was overwritten
+ *   and "other entries are kept" went red;
+ * - the phone check removed → "invalid input is refused" went red;
+ * - `requireRecordAccess` removed from updateContactPoints → "another user's
+ *   record" went red (the bad phone was reported to a caller with no right
+ *   to that record, instead of the refusal).
+ */
+describe('a user sets their own contact details (#2073)', () => {
+  let site: Awaited<ReturnType<typeof makeSite>>;
+
+  beforeEach(async () => {
+    site = await makeSite();
+    await site.signUp('pat', 'pat@example.org');
+    await site.signUp('sam', 'sam@example.org');
+  });
+
+  afterEach(async () => {
+    await fs.remove(site.tmp).catch(() => {});
+  });
+
+  const phone = (contactType: string, telephone: string) => ({ '@type': 'ContactPoint' as const, contactType, telephone });
+
+  test('own phones and emergency contact are saved and read back, recorded as an identity-manage update naming fields only', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
+    const saved = await site.persons.updateContactPoints(pat, own['@id'], [
+      phone('home', ' +1 555 0100 '),
+      phone('mobile', '(555) 010-0199 x12'),
+      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam Sibling', telephone: '+44 20 7946 0958', email: 'sam@example.org' }
+    ]);
+    expect(saved?.contactPoint).toEqual([
+      phone('home', '+1 555 0100'),
+      phone('mobile', '(555) 010-0199 x12'),
+      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam Sibling', telephone: '+44 20 7946 0958', email: 'sam@example.org' }
+    ]);
+    expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toHaveLength(3);
+    const record = site.contacts().at(-1);
+    expect(record).toMatchObject({ action: 'person-update', user: 'pat', resource: own['@id'] });
+    expect(record?.metadata.fields).toEqual(['contactPoint']);
+    expect(JSON.stringify(record)).not.toContain('555');
+  });
+
+  test('other entries are kept: add-on kinds, a PostalAddress of the same type, and fields on the matched entry', async () => {
+    const own = (await site.persons.getByIdentifier(SYS, 'pat'))!;
+    const written = [
+      { '@type': 'PostalAddress' as const, contactType: 'mailing', streetAddress: 'PO Box 9', addressLocality: 'Town' },
+      { '@type': 'PostalAddress' as const, contactType: 'business', streetAddress: '2 Works Rd' },
+      { '@type': 'PostalAddress' as const, contactType: 'agent', name: 'Rental Agent Co', telephone: '+1 555 0102' },
+      { '@type': 'ContactPoint' as const, contactType: 'business', telephone: '+1 555 0103', availableLanguage: ['en'] },
+      { '@type': 'ContactPoint' as const, contactType: 'other', telephone: '+1 555 0104' }
+    ];
+    await site.persons.update(ADMIN, own['@id'], { contactPoint: written });
+    const pat = await subjectOf(site, 'pat');
+    const saved = await site.persons.updateContactPoints(pat, own['@id'], [
+      phone('business', '+1 555 0199'), // work phone changed in place, its other field kept
+      phone('other', ''), // removed
+      phone('home', '') // never there: nothing added
+    ]);
+    expect(saved?.contactPoint).toEqual([
+      written[0], written[1], written[2],
+      { '@type': 'ContactPoint', contactType: 'business', telephone: '+1 555 0199', availableLanguage: ['en'] }
+    ]);
+  });
+
+  test('invalid input is refused with a clear message, and nothing is written', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
+    await site.persons.updateContactPoints(pat, own['@id'], [phone('home', '+1 555 0100')]);
+    const before = site.contacts().length;
+    const cases: Array<[Array<{ '@type': 'ContactPoint'; contactType: string; telephone?: string; name?: string; email?: string }>, string]> = [
+      [[phone('home', '+1 555 0111'), phone('mobile', 'call me')], 'telephone'],
+      [[phone('mobile', '12')], 'telephone'],
+      [[phone('mobile', '1234567890123456')], 'telephone'],
+      [[{ '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam', email: 'not-an-email' }], 'email']
+    ];
+    for (const [bad, field] of cases) {
+      await expect(site.persons.updateContactPoints(pat, own['@id'], bad)).rejects.toMatchObject({ name: 'ContactDetailsInvalidError', field });
+    }
+    // The message names the rule, never the value (it reaches URLs and add-ons' logs).
+    const refused = await site.persons.updateContactPoints(pat, own['@id'], [phone('mobile', 'call me')]).catch((e: unknown) => e as Error);
+    expect(refused.message).toBe('is not a phone number: use digits, with spaces, + ( ) - . if you like, 3 to 15 digits');
+    const badEmail = await site.persons.updateContactPoints(pat, own['@id'], [{ '@type': 'ContactPoint', contactType: 'emergency', email: 'pat-secret@nowhere' }]).catch((e: unknown) => e as Error);
+    expect(badEmail.message).toBe('is not an email address');
+    expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toEqual([phone('home', '+1 555 0100')]);
+    expect(site.contacts().length).toBe(before);
+  });
+
+  test('another user\'s record is refused without identity-manage, before any check of what was given', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const sam = (await site.persons.getByIdentifier(SYS, 'sam'))!;
+    await expect(site.persons.updateContactPoints(pat, sam['@id'], [phone('home', 'call me')])).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-manage' });
+    await expect(site.persons.updateContactPoints(pat, sam['@id'], [phone('home', '+1 555 0100')])).rejects.toMatchObject({ permission: 'identity-manage' });
+    expect((await site.persons.getById(SYS, sam['@id']))?.contactPoint).toBeUndefined();
+    // An administrator, under identity-manage, may (the rule is unchanged).
+    expect((await site.persons.updateContactPoints(ADMIN, sam['@id'], [phone('home', '+1 555 0100')]))?.contactPoint).toEqual([phone('home', '+1 555 0100')]);
+  });
+});

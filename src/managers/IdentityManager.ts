@@ -5,6 +5,8 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { Person, PersonAffiliation, LegacyPersonAffiliation, PersonChange, PersonInput } from '../types/Person.js';
 import type { PersonProvider } from '../types/PersonProvider.js';
+import type { ContactPoint, ContactPointEntry } from '../types/Organization.js';
+import { isEmail } from '../types/guards.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { ACCOUNTLESS_PERSON_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
@@ -425,6 +427,56 @@ class IdentityManager extends BaseManager {
     return result;
   }
 
+  /**
+   * Set some of an identity record's contact points, keeping every other
+   * entry as it is (#2073): what `/profile` saves for the user's own phones
+   * and emergency contact, beside entries add-ons wrote. Each given entry is a
+   * `ContactPoint` with a `contactType`; it takes the place of the record's
+   * first `ContactPoint` of that `contactType` (a `PostalAddress` of the same
+   * type is never touched), keeping that entry's other fields. A field given
+   * empty is removed, and an entry left with no `name`, `telephone` or `email`
+   * is dropped. Phones and email addresses are checked first: a bad one
+   * throws {@link ContactDetailsInvalidError} and nothing is written. The
+   * access and the record are {@link update}'s: the caller's own record under
+   * `profile-manage`, anyone else's under `identity-manage`, recorded as an
+   * `identity-manage` update naming `contactPoint`, never the values.
+   */
+  async updateContactPoints(ctx: ActorContext, id: string, given: ContactPoint[]): Promise<Person | null> {
+    const record = await this.cachedById(id);
+    await requireRecordAccess(this.engine, ctx, 'manage', record);
+    if (!record) return null;
+    const entries = [...(record.contactPoint ?? [])] as ContactPointEntry[];
+    for (const entry of given ?? []) {
+      const contactType = typeof entry?.contactType === 'string' ? entry.contactType.trim() : '';
+      if (entry?.['@type'] !== 'ContactPoint' || !contactType) throw new ContactDetailsInvalidError(contactType, 'contactType', 'is not a ContactPoint with a contactType');
+      const fields: Record<string, string> = {};
+      for (const key of CONTACT_POINT_TEXT_FIELDS) {
+        const value = entry[key];
+        if (value === undefined) continue;
+        if (typeof value !== 'string') throw new ContactDetailsInvalidError(contactType, key, 'is not text');
+        fields[key] = value.trim();
+      }
+      if (fields.telephone && !isTelephone(fields.telephone)) {
+        throw new ContactDetailsInvalidError(contactType, 'telephone', 'is not a phone number: use digits, with spaces, + ( ) - . if you like, 3 to 15 digits');
+      }
+      const email = fields.email ?? '';
+      if (email && !isEmail(email)) {
+        throw new ContactDetailsInvalidError(contactType, 'email', 'is not an email address');
+      }
+      const at = entries.findIndex((c) => c['@type'] === 'ContactPoint' && c.contactType === contactType);
+      const merged: Record<string, unknown> = { ...(at >= 0 ? entries[at] : {}), '@type': 'ContactPoint', contactType };
+      for (const [key, value] of Object.entries(fields)) {
+        if (value) merged[key] = value;
+        else delete merged[key];
+      }
+      const kept = CONTACT_POINT_TEXT_FIELDS.some((key) => typeof merged[key] === 'string' && merged[key] !== '');
+      if (at >= 0 && kept) entries[at] = merged as unknown as ContactPoint;
+      else if (at >= 0) entries.splice(at, 1);
+      else if (kept) entries.push(merged as unknown as ContactPoint);
+    }
+    return this.update(ctx, id, { contactPoint: entries });
+  }
+
   async delete(ctx: ActorContext, id: string): Promise<boolean> {
     await requireContactPermission(this.engine, ctx, 'manage');
     const result = await this.requireProvider().delete(id);
@@ -726,6 +778,29 @@ class IdentityManager extends BaseManager {
       .join('');
   }
 }
+
+/** The text fields of a contact point that {@link IdentityManager.updateContactPoints} sets (#2073). */
+const CONTACT_POINT_TEXT_FIELDS = ['name', 'telephone', 'email'] as const;
+
+/** A phone number: digits with optional spaces, + ( ) - . /, and an extension; 3 to 15 digits (E.164's most). */
+function isTelephone(value: string): boolean {
+  const match = /^(\+?[\d\s().\-/]+?)(?:\s*(?:x|ext\.?)\s*\d{1,6})?$/i.exec(value);
+  if (!match) return false;
+  const digits = match[1].replace(/\D/g, '').length;
+  return digits >= 3 && digits <= 15;
+}
+
+/**
+ * A contact detail given to {@link IdentityManager.updateContactPoints} is not valid (#2073); nothing was written.
+ * The message names the rule, never the value given: it reaches URLs and logs.
+ */
+export class ContactDetailsInvalidError extends Error {
+  constructor(public readonly contactType: string, public readonly field: string, message: string) {
+    super(message);
+    this.name = 'ContactDetailsInvalidError';
+  }
+}
+
 
 /** What tells two affiliations apart: organization, title and dates. */
 function affiliationKey(a: PersonAffiliation): string {

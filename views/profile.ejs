@@ -74,6 +74,74 @@
                         </div>
                     </div>
 
+                    <!-- #2073: the user's own phones and emergency contact, from their identity record. -->
+                    <% if (typeof contactDetails !== 'undefined') { %>
+                    <div class="row mb-4" id="contact-details">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-address-book" aria-hidden="true"></i> Contact details <%- include('_help-icon', { slug: 'your-contact-details', label: 'Your Contact Details' }) %></h6>
+                                </div>
+                                <div class="card-body">
+                                    <% if (typeof contactDetailsError !== 'undefined' && contactDetailsError) { %>
+                                    <div class="alert alert-danger" role="alert" data-contact-details-error><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <%= contactDetailsError %></div>
+                                    <% } %>
+                                    <% if (typeof contactDetailsSaved !== 'undefined' && contactDetailsSaved) { %>
+                                    <div class="alert alert-success" role="status" data-contact-details-saved><i class="fas fa-check-circle" aria-hidden="true"></i> <%= contactDetailsSaved %></div>
+                                    <% } %>
+                                    <% if (contactDetails === null) { %>
+                                    <p class="text-muted mb-0">Your contact details could not be read just now. Try again later.</p>
+                                    <% } else { %>
+                                    <p class="text-muted small" id="contact-details-hint">Your phones and an emergency contact. Leave a box empty to remove it. People who manage contacts on this site can also see them.</p>
+                                    <form action="/profile/contact-details" method="POST" aria-describedby="contact-details-hint">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <fieldset class="mb-3">
+                                            <legend class="h6">Phones</legend>
+                                            <div class="row">
+                                                <% contactDetails.phones.forEach(function (phone) { %>
+                                                <div class="col-md-6 mb-2">
+                                                    <label class="form-label" for="<%= phone.field %>"><%= phone.label %></label>
+                                                    <input type="tel" class="form-control" id="<%= phone.field %>" name="<%= phone.field %>" value="<%= phone.value %>" autocomplete="<%= phone.field === 'phoneMobile' ? 'mobile tel' : phone.field === 'phoneHome' ? 'home tel' : phone.field === 'phoneWork' ? 'work tel' : 'tel' %>">
+                                                </div>
+                                                <% }) %>
+                                            </div>
+                                        </fieldset>
+                                        <fieldset class="mb-3">
+                                            <legend class="h6">Emergency contact</legend>
+                                            <p class="text-muted small mb-2">Someone to call if something happens to you.</p>
+                                            <div class="row">
+                                                <div class="col-md-4 mb-2">
+                                                    <label class="form-label" for="emergencyName">Name</label>
+                                                    <input type="text" class="form-control" id="emergencyName" name="emergencyName" value="<%= contactDetails.emergency.name %>" autocomplete="off">
+                                                </div>
+                                                <div class="col-md-4 mb-2">
+                                                    <label class="form-label" for="emergencyPhone">Phone</label>
+                                                    <input type="tel" class="form-control" id="emergencyPhone" name="emergencyPhone" value="<%= contactDetails.emergency.telephone %>" autocomplete="off">
+                                                </div>
+                                                <div class="col-md-4 mb-2">
+                                                    <label class="form-label" for="emergencyEmail">Email</label>
+                                                    <input type="email" class="form-control" id="emergencyEmail" name="emergencyEmail" value="<%= contactDetails.emergency.email %>" autocomplete="off">
+                                                </div>
+                                            </div>
+                                        </fieldset>
+                                        <% if (contactDetails.mailing) { %>
+                                        <div class="mb-3" data-mailing-address>
+                                            <h6>Mailing address</h6>
+                                            <address class="mb-1">
+                                                <% contactDetails.mailing.forEach(function (line) { %><%= line %><br><% }) %>
+                                            </address>
+                                            <p class="text-muted small mb-0">To change your mailing address, ask the site administrator.</p>
+                                        </div>
+                                        <% } %>
+                                        <button type="submit" class="btn btn-primary"><i class="fas fa-save" aria-hidden="true"></i> Save contact details</button>
+                                    </form>
+                                    <% } %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #640: My Contributions card -->
                     <div class="row mb-4">
                         <div class="col-12">

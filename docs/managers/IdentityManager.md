@@ -40,6 +40,12 @@ An affiliation is a schema.org `OrganizationRole` on the identity record ([#2039
 
 The shape before #2039, `{ organization, role? }`, is converted when read, accepted on writes for one release, and rewritten on disk once at start-up (`initialize`): only records still holding an old entry, each recorded as `identity-manage` (`person-update`, field `affiliation`) under the system context, with every other field kept; a second start finds nothing to do. The rules are in the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door); the calls in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
+## Setting some contact points
+
+`updateContactPoints(ctx, id, entries)` ([#2073](https://github.com/jwilleke/ngdpbase/issues/2073)) sets some of a record's `contactPoint[]` entries and keeps all the others, so a caller never has to read, merge and replace the whole array. Each given entry is a `ContactPoint` with a `contactType`; it takes the place of the record's first `ContactPoint` of that `contactType` (a `PostalAddress` of the same type, such as a `business` address, is never touched), keeping that entry's other fields. A field given empty is removed; an entry left with no `name`, `telephone` or `email` is dropped. A `telephone` must have 3 to 15 digits, with spaces, a leading `+`, `( ) - . /` and an extension (`x12`, `ext 12`) allowed; an `email` must look like one (`isEmail`). A bad one throws `ContactDetailsInvalidError` (its `contactType` and `field`; the message names the rule, never the value, since it reaches URLs and logs) and nothing is written. The access check comes first, so a caller with no right to the record gets the refusal, not a check of what it gave. Access and the record are `update`'s: own record under `profile-manage`, anyone else's under `identity-manage`, recorded as `person-update` naming `contactPoint`, never the values.
+
+The `/profile` "Contact details" card saves through it (`POST /profile/contact-details`), always for the signed-in user's own record: home, mobile, work (`business`) and other phones, and the `emergency` contact (`name`, `telephone`, `email`). A `mailing` PostalAddress is shown there, not edited. `update` itself still stores `contactPoint[]` exactly as given.
+
 ## Provider Pattern
 
 `PersonProvider` is the storage abstraction. Default: [FilePersonProvider](../providers/FilePersonProvider.md) (one JSON file per identity record under `data/persons/`).

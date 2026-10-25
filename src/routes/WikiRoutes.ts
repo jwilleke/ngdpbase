@@ -188,6 +188,8 @@ import type { ReviewRequest } from '../types/Review.js';
 
 /** A request id as ReviewManager makes them (a UUID); anything else is never put in a URL (#2072). */
 const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+import { ContactDetailsInvalidError } from '../managers/IdentityManager.js';
+import type { ContactPoint, PostalAddress } from '../types/Organization.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
@@ -269,6 +271,55 @@ function getErrorMessage(error: unknown): string {
 /** A checkbox or boolean from a form or JSON body: `true` or `'true'`, anything else false. */
 function formChecked(value: unknown): boolean {
   return value === true || value === 'true';
+}
+
+/**
+ * The phones a user keeps on /profile (#2073): the form field, its label, and
+ * the `contactType` of its ContactPoint — the ones the association and
+ * accommodation add-ons write too (a work phone is `business`).
+ */
+const PROFILE_PHONES = [
+  { field: 'phoneHome', label: 'Home phone', contactType: 'home' },
+  { field: 'phoneMobile', label: 'Mobile phone', contactType: 'mobile' },
+  { field: 'phoneWork', label: 'Work phone', contactType: 'business' },
+  { field: 'phoneOther', label: 'Other phone', contactType: 'other' }
+] as const;
+
+/** What the /profile "Contact details" card shows (#2073). */
+interface ProfileContactDetails {
+  phones: Array<{ field: string; label: string; value: string }>;
+  emergency: { name: string; telephone: string; email: string };
+  /** The mailing address, shown only; null when the record has none. */
+  mailing: string[] | null;
+}
+
+/** The card's values from an identity record's contact points: the first ContactPoint (or PostalAddress) of each kind. */
+function profileContactDetails(contactPoint: unknown[] | undefined): ProfileContactDetails {
+  const entries = (contactPoint ?? []) as Array<Record<string, unknown>>;
+  const find = (type: string, contactType: string): Record<string, unknown> =>
+    entries.find((c) => c['@type'] === type && c.contactType === contactType) ?? {};
+  const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const emergency = find('ContactPoint', 'emergency');
+  const mailing = find('PostalAddress', 'mailing') as Partial<PostalAddress>;
+  const lines = [
+    s(mailing.name),
+    s(mailing.streetAddress),
+    [s(mailing.addressLocality), s(mailing.addressRegion), s(mailing.postalCode)].filter(Boolean).join(' '),
+    s(mailing.addressCountry)
+  ].filter(Boolean);
+  return {
+    phones: PROFILE_PHONES.map((p) => ({ field: p.field, label: p.label, value: s(find('ContactPoint', p.contactType).telephone) })),
+    emergency: { name: s(emergency.name), telephone: s(emergency.telephone), email: s(emergency.email) },
+    mailing: lines.length > 0 ? lines : null
+  };
+}
+
+/** The label a user sees for a contact detail the door refused (#2073). */
+function contactDetailLabel(contactType: string, field: string): string {
+  if (contactType === 'emergency') {
+    return `Emergency contact ${field === 'telephone' ? 'phone' : field === 'email' ? 'email' : 'name'}`;
+  }
+  return PROFILE_PHONES.find((p) => p.contactType === contactType)?.label ?? 'Contact details';
 }
 
 /**
@@ -8800,9 +8851,24 @@ ${panes}
         }
       }
 
+      // #2073: the user's own phones, emergency contact and mailing address, from their identity record.
+      // Null when it could not be read (#1738): not an empty record.
+      let contactDetails: ProfileContactDetails | null = null;
+      if (currentUser?.username) {
+        try {
+          const own = await this.engine.getManager('IdentityManager').getByUserIdentifier(currentUser, currentUser.username);
+          contactDetails = profileContactDetails(own?.contactPoint);
+        } catch (err) {
+          logger.warn(`[profile] Could not read the contact details of ${currentUser.username}: ${getErrorMessage(err)}`);
+        }
+      }
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        contactDetails, // #2073
+        contactDetailsSaved: typeof req.query.contactDetailsSaved === 'string' ? req.query.contactDetailsSaved : null,
+        contactDetailsError: typeof req.query.contactDetailsError === 'string' ? req.query.contactDetailsError : null,
         consents, // #1603
         addonConsentPending, // #1603
         credentials, // #1524
@@ -10550,6 +10616,38 @@ ${panes}
       }
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
+    }
+  }
+
+  /**
+   * POST /profile/contact-details — the user's own phones and emergency
+   * contact (#2073). Always the signed-in user's own identity record, never
+   * one named in the form: saved through IdentityManager's door with their
+   * own context (`profile-manage`), which keeps every other contact point.
+   */
+  async updateOwnContactDetails(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    // Shown in the card itself, where the form is, not at the top of the page.
+    const answer = (kind: 'success' | 'error', text: string): void => res.redirect(`/profile?${kind === 'success' ? 'contactDetailsSaved' : 'contactDetailsError'}=${encodeURIComponent(text)}#contact-details`);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const text = (name: string): string => (typeof body[name] === 'string' ? body[name] : '');
+    const given: ContactPoint[] = [
+      ...PROFILE_PHONES.map((p): ContactPoint => ({ '@type': 'ContactPoint', contactType: p.contactType, telephone: text(p.field) })),
+      { '@type': 'ContactPoint', contactType: 'emergency', name: text('emergencyName'), telephone: text('emergencyPhone'), email: text('emergencyEmail') }
+    ];
+    try {
+      const identities = this.engine.getManager('IdentityManager');
+      const own = await identities.getByUserIdentifier(user, String(user.username ?? ''));
+      if (!own) return answer('error', 'Your contact details could not be saved.');
+      await identities.updateContactPoints(user, own['@id'], given);
+      answer('success', 'Contact details saved.');
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      if (err instanceof ContactDetailsInvalidError) return answer('error', `${contactDetailLabel(err.contactType, err.field)} ${err.message}. Nothing was saved.`);
+      logger.warn(`[profile] Saving the contact details of ${user.username} failed: ${getErrorMessage(err)}`);
+      answer('error', 'Your contact details could not be saved.');
     }
   }
 
@@ -17033,6 +17131,7 @@ ${panes}
     app.post('/contact', (req: Request, res: Response) => this.processContact(req, res));
     app.get('/profile', (req: Request, res: Response) => this.profilePage(req, res));
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
+    app.post('/profile/contact-details', (req: Request, res: Response) => void this.updateOwnContactDetails(req, res));
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
