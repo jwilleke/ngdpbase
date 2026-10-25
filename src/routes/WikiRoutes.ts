@@ -182,6 +182,12 @@ import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
 import type IdentityManager from '../managers/IdentityManager.js';
 import { ContactRefusedError } from '../utils/contactAccess.js';
+import { ReviewHandlerFailedError, ReviewNotOpenError, ReviewRefusedError, ReviewsUnavailableError } from '../managers/ReviewManager.js';
+import type ReviewManager from '../managers/ReviewManager.js';
+import type { ReviewRequest } from '../types/Review.js';
+
+/** A request id as ReviewManager makes them (a UUID); anything else is never put in a URL (#2072). */
+const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
@@ -16389,6 +16395,101 @@ ${panes}
   }
 
   /**
+   * GET /reviews — the open requests the viewer may decide (#2072), each with
+   * Approve and Reject and a note. Any signed-in user may open it; what it
+   * lists is ReviewManager's answer, asked with the viewer's context, so it
+   * shows only the requests whose permission the viewer holds.
+   *
+   * After a decision the URL carries only an outcome code and the request's
+   * id (`?done=approved&id=…`), never text: the message is built here from the
+   * code and the request as the store holds it, read under the viewer's own
+   * decide check. An unknown code, or a request the viewer may not read,
+   * shows nothing.
+   */
+  async reviewsPage(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const reviews = this.engine.getManager<ReviewManager>('ReviewManager');
+    const unavailable = !reviews || reviews.getUnavailableReason() !== null;
+    const requests = unavailable ? [] : await reviews.listOpen(wikiContext.userContext);
+    const outcome = unavailable ? { success: '', error: '' } : await this.reviewOutcome(reviews, wikiContext.userContext, req.query.done, req.query.id);
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('reviews', {
+      ...commonData,
+      title: 'Reviews',
+      requests,
+      unavailable,
+      success: outcome.success,
+      error: outcome.error,
+      csrfToken: req.session?.csrfToken || ''
+    });
+  }
+
+  /** The message for a decision's outcome code (#2072): fixed words, plus the request read from the store under the viewer's check. */
+  private async reviewOutcome(reviews: ReviewManager, viewer: ActorContext, code: unknown, id: unknown): Promise<{ success: string; error: string }> {
+    const none = { success: '', error: '' };
+    const fixed: Record<string, { success: string; error: string }> = {
+      'choose': { success: '', error: 'Choose Approve or Reject.' },
+      'not-open': { success: '', error: 'That request was decided already.' },
+      'unavailable': { success: '', error: 'Reviews are not turned on for this site.' },
+      'not-saved': { success: '', error: 'The decision could not be saved. Try again, or ask an administrator.' }
+    };
+    if (typeof code !== 'string') return none;
+    if (Object.prototype.hasOwnProperty.call(fixed, code)) return fixed[code];
+    if (!['approved', 'rejected', 'failed'].includes(code) || typeof id !== 'string' || !REVIEW_ID.test(id)) return none;
+    let request: ReviewRequest | null;
+    try {
+      request = await reviews.get(viewer, id);
+    } catch {
+      return none; // not theirs to read: nothing is said about it
+    }
+    if (!request) return none;
+    if (code === 'approved' && request.status === 'approved') return { success: `Approved: ${request.subject}. ${request.outcome ?? ''}`.trim(), error: '' };
+    if (code === 'rejected' && request.status === 'rejected') return { success: `Rejected: ${request.subject}.`, error: '' };
+    if (code === 'failed' && request.status === 'open' && request.failure) return { success: '', error: `Not carried out, so "${request.subject}" is still open: ${request.failure}` };
+    return none;
+  }
+
+  /**
+   * POST /reviews/:id/decide — approve or reject one request, with an
+   * optional note (#2072). ReviewManager decides who may (the request's own
+   * permission, asked of the PDP) and, on approval, runs the add-on's
+   * handler; a handler that fails leaves the request open. The redirect back
+   * names only an outcome code and the id, never the request's words.
+   */
+  async decideReview(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const id = String(req.params.id);
+    const back = (code: string, withId = false): void =>
+      res.redirect(`/reviews?done=${code}${withId && REVIEW_ID.test(id) ? `&id=${id}` : ''}`);
+    const decision = body.decision === 'approve' ? 'approve' : body.decision === 'reject' ? 'reject' : null;
+    if (!decision) { back('choose'); return; }
+    const reviews = this.engine.getManager<ReviewManager>('ReviewManager');
+    if (!reviews) { back('unavailable'); return; }
+    try {
+      const decided = await reviews.decide(wikiContext.userContext, id, decision, typeof body.note === 'string' ? body.note : undefined);
+      back(decided.status === 'approved' ? 'approved' : 'rejected', true);
+    } catch (err: unknown) {
+      if (err instanceof ReviewRefusedError) {
+        if (await wikiContext.holdsPermission(err.permission)) {
+          await this.askForFreshSignIn(wikiContext, err.permission, req, res, 'page');
+          return;
+        }
+        await this.refuse(wikiContext, req, res, 'page', err.permission);
+        return;
+      }
+      if (err instanceof ReviewHandlerFailedError) { back('failed', true); return; }
+      if (err instanceof ReviewNotOpenError) { back('not-open'); return; }
+      if (err instanceof ReviewsUnavailableError) { back('unavailable'); return; }
+      logger.error(`[reviews] deciding request ${REVIEW_ID.test(id) ? id : '(bad id)'} failed: ${err instanceof Error ? err.name : 'error'}`);
+      back('not-saved');
+    }
+  }
+
+  /**
    * Admin Organizations Management Page
    */
   async adminOrganizations(req: Request, res: Response) {
@@ -17261,6 +17362,9 @@ ${panes}
     app.post('/admin/contacts/delete', (req: Request, res: Response) => void this.adminDeleteContact(req, res));
     app.get('/contacts/link/confirm', (req: Request, res: Response) => void this.contactLinkConfirmPage(req, res));
     app.post('/contacts/link/confirm', (req: Request, res: Response) => void this.answerContactLink(req, res));
+    // #2072: one screen for every request waiting for review.
+    app.get('/reviews', (req: Request, res: Response) => void this.reviewsPage(req, res));
+    app.post('/reviews/:id/decide', (req: Request, res: Response) => void this.decideReview(req, res));
 
     // #1546: the idle-timeout warning. The status poll is not activity (the
     // session middleware skips it), so it can never keep a session alive on its

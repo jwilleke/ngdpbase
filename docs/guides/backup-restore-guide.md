@@ -1,7 +1,7 @@
 ---
 name: Backup and restore guide
 description: How a site is backed up and restored today — triggers, files, retention, the staged databases restore and the staged site restore, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
-dateModified: 2026-10-23
+dateModified: 2026-10-25
 category: guides
 relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManager, PageManager, AttachmentManager, UserManager, ConfigurationManager, RoleManager, IdentityManager, OrganizationManager, FootnoteManager, CommentManager, AuthManager, AuditManager]
 ---
@@ -80,6 +80,7 @@ In short: __a site can be backed up, and Admin → Backup can restore the whole 
 | Add-on data in files under its `dataPath` | Yes, every loaded add-on's, with no add-on code ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)): `<stem>.<slug>.tar` when the folder exists — `<stem>.forms.tar` (definitions and submissions), `<stem>.calendar.tar`, `<stem>.feeds.tar` (record stores) — and any further folder the add-on's module declares (`backupFolders(config)`). The bundled three keep the entry their manager wrote before (`FormsDataManager`, `CalendarDataManager`, `FeedManager`); any other add-on's is `addon:<slug>`. The journal keeps no files. A registered object with nothing of its own (`FormsAddon`, the accounting managers) has no `backup()` and is skipped ([#1943](https://github.com/jwilleke/ngdpbase/issues/1943)) (tests: forms, calendar and feeds from a v5.25.0 backup; an add-on's `dataPath` and a declared folder) | BackupManager, for the add-on | `AddonsManager.addonBackupFolders`, `BackupManager` |
 | Agent tokens | The list only, without the hashes; can't be restored (`restorable: false`) | AgentTokenManager | `AgentTokenManager.backup`, `restore` throws |
 | OpenID Connect provider | Client registrations are configuration (`oidc-auth-server.clients`), so they travel with it. Live grants: a list for incident response, can't be restored. Signing and cookie keys: no (`.env`) | OidcManager | `OidcManager.backup`, `restore` throws |
+| Requests for review | Tables in the application database (`review_requests`, [#2072](https://github.com/jwilleke/ngdpbase/issues/2072)), so in the database copy; kept only while that database is encrypted, so never in files | ReviewManager | `DatabaseManager.backup` |
 | Scheduled-job state | With a database (`ngdpbase.jobs.state.provider: auto` and the database open) it is tables in the application database, so in the database copy. In files (`ngdpbase.jobs.state.dir`): yes, as `<stem>.jobs.tar` — state, run history and checkpoints, without the slot locks (#1876 slice 2; tests) | BackgroundJobManager | a declared folder while job state is in files (`BackgroundJobManager.backupFolders`), written by BackupManager |
 | Shares, notifications | No, by decision: a restore leaves them as they are and names them in its notification | ShareManager, NotificationManager | no `backup()` |
 | Add-ons on or off | A list only; restore does nothing | AddonsManager | `AddonsManager.backup` |

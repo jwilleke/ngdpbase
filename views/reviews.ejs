@@ -1,0 +1,60 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #2072 — the one screen for requests waiting for review. Lists only what the viewer may
+    decide (ReviewManager.listOpen, asked with their context). Locals: requests (ReviewRequest[]),
+    unavailable (bool), success, error, csrfToken. Times go out as <time datetime data-local-time>
+    with the UTC text as the fallback; /js/local-time.js (loaded by header.ejs) shows them in the
+    viewer's own zone. No script of its own. %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+%>
+
+<div class="container py-4" data-testid="reviews-page">
+    <h1 class="h3 mb-3">Reviews</h1>
+    <p class="text-muted">Requests waiting for your decision. Approving carries the request out straight away; rejecting closes it. A note is optional and is kept with your decision.</p>
+
+    <% if (success) { %><div class="alert alert-success" role="status" data-testid="reviews-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-danger" role="alert" data-testid="reviews-error"><%= error %></div><% } %>
+
+    <% if (unavailable) { %>
+        <div class="alert alert-secondary" data-testid="reviews-unavailable">Reviews are not turned on for this site. An administrator can see why on the admin dashboard.</div>
+    <% } else if (requests.length === 0) { %>
+        <p data-testid="reviews-empty">Nothing is waiting for you.</p>
+    <% } else { %>
+        <% requests.forEach(function (r) { %>
+        <div class="card mb-3" data-testid="review-request" data-review-id="<%= r.id %>">
+            <div class="card-header d-flex justify-content-between flex-wrap gap-2">
+                <strong><%= r.subject %></strong>
+                <span class="text-muted small">Asked <time datetime="<%= r.filedAt %>" data-local-time><%= utc(r.filedAt) %></time><% if (r.filedBy && r.filedBy !== 'anonymous') { %> by <%= r.filedBy %><% } %></span>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><%= r.summary %></p>
+                <% const keys = Object.keys(r.details || {}); if (keys.length > 0) { %>
+                <dl class="row mb-2 small">
+                    <% keys.forEach(function (k) { %>
+                    <dt class="col-sm-4"><%= k %></dt>
+                    <dd class="col-sm-8"><%= r.details[k] === null ? '' : String(r.details[k]) %></dd>
+                    <% }) %>
+                </dl>
+                <% } %>
+                <% if (r.failure) { %>
+                <div class="alert alert-warning small" data-testid="review-failure">
+                    Approved <time datetime="<%= r.failedAt %>" data-local-time><%= utc(r.failedAt) %></time>, but it was not carried out: <%= r.failure %>. It is still open; you can approve it again once that is fixed.
+                </div>
+                <% } %>
+                <form action="/reviews/<%= encodeURIComponent(r.id) %>/decide" method="POST">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <label class="form-label small" for="note-<%= r.id %>">Note (optional)</label>
+                    <textarea class="form-control mb-2" id="note-<%= r.id %>" name="note" rows="2" maxlength="2000"></textarea>
+                    <div class="d-flex gap-2">
+                        <button type="submit" name="decision" value="approve" class="btn btn-primary" data-testid="review-approve">Approve</button>
+                        <button type="submit" name="decision" value="reject" class="btn btn-outline-danger" data-testid="review-reject">Reject</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <% }) %>
+    <% } %>
+</div>
+
+<%- include('footer') %>

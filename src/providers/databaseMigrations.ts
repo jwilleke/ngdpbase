@@ -94,6 +94,36 @@ const DATABASE_MIGRATIONS: Migration[] = [
         created_at TEXT NOT NULL
       )`);
     }
+  },
+  {
+    // #2072: requests for review. `details` is the request's JSON, which can
+    // be personal: ReviewManager writes rows only while this database is
+    // encrypted. A failed handler leaves the row `open`, with `failure` and
+    // `failed_at` saying why and when.
+    id: '20261025120000',
+    description: 'reviews: review_requests',
+    up: (db) => {
+      db.exec(`CREATE TABLE review_requests (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        handler_id TEXT NOT NULL,
+        decide_permission TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        details TEXT NOT NULL,
+        status TEXT NOT NULL,
+        filed_at TEXT NOT NULL,
+        filed_by TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        note TEXT,
+        outcome TEXT,
+        failed_at TEXT,
+        failure TEXT
+      )`);
+      db.exec('CREATE INDEX review_requests_by_status ON review_requests (status, filed_at)');
+      db.exec('CREATE INDEX review_requests_by_decided ON review_requests (decided_at)');
+    }
   }
 ];
 

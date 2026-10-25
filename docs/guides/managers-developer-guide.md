@@ -67,6 +67,14 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - __No unchecked reads.__ Every lookup takes a context: `getById`, `getByIdentifier` and `getByUserIdentifier` here, `OrganizationManager.getById` / `getByFile`, `RoleManager.hasRole` / `resolveUserRoles` / `getById`, and `AssetManager.getById` / `getAssetsForPage` (`asset-read`). The system context (origin boot or schedule, naming the system principal, with no token, share or proxy) is recognised by its fields and allowed without a policy evaluation, so resolving roles on every request stays cheap; it never reaches a request. Built ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)); `npm run lint:context` fails a call with the context left out, in core and add-ons alike.
 - The calls an add-on makes are in the [add-ons guide](addons-developer-guide.md#contacts-and-identity-records).
 
+## Requests for review have one door
+
+`ReviewManager` keeps the requests that wait for someone's decision, for every add-on ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072), [ReviewManager.md](../managers/ReviewManager.md)). An add-on files one through `host.reviews.fileRequest` and registers the handler that carries an approval out; nothing builds a queue of its own.
+
+- __Who decides__ is a permission the request names, asked of the PDP with the caller's context; the holders are notified through `usersHolding`.
+- __Complete or not:__ the handler runs with the decider's context, in their request; a failure leaves the request open with the reason shown, a success marks it approved with the handler's summary.
+- __Stored__ in core's application database, and only while it is encrypted; `ngdpbase.reviews.retention-days`, `list-limit` and `details-max-bytes` are its values.
+
 ## How to add a manager
 
 - 1 Scaffold from [docs/templates/Manager-Template.md](../templates/Manager-Template.md).

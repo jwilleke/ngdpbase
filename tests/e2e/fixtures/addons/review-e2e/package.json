@@ -1,0 +1,11 @@
+{
+  "name": "@ngdpbase/review-e2e",
+  "version": "1.0.0",
+  "description": "E2E fixture add-on for core's reviews (#2072): ships a form that needs review; never bundled",
+  "private": true,
+  "type": "module",
+  "ngdpbase": {
+    "slug": "review-e2e",
+    "type": "additive"
+  }
+}

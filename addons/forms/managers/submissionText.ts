@@ -28,23 +28,50 @@ export function submissionDetails(
   formatMoney: FormatMoney
 ): string[] {
   const out: string[] = [];
+  for (const answer of submissionAnswers(form, data, options, formatMoney)) {
+    if (answer.rows) {
+      out.push(`  ${answer.label}:`);
+      answer.rows.forEach((row, i) => out.push(`    ${i + 1}. ${row}`));
+    } else {
+      out.push(`  ${answer.label}: ${answer.text}`);
+    }
+  }
+  return out;
+}
+
+/** One answer of a submission: a field's label and its text, or a `lines` field's rows. */
+export interface SubmissionAnswer {
+  label: string;
+  text: string;
+  rows?: string[];
+}
+
+/**
+ * The answers {@link submissionDetails} prints, one per field that holds a
+ * value: the same text, so the email and a review request (#2072) read alike.
+ */
+export function submissionAnswers(
+  form: FormDefinition,
+  data: Record<string, unknown>,
+  options: Map<string, FormOption[]>,
+  formatMoney: FormatMoney
+): SubmissionAnswer[] {
+  const out: SubmissionAnswer[] = [];
   for (const field of form.fields) {
     if (field.type === 'hidden' || field.type === 'section') continue;
     if (field.type === 'lines') {
-      const rows = Array.isArray(data[field.name]) ? (data[field.name] as Array<Record<string, unknown>>) : [];
-      if (rows.length === 0) continue;
-      out.push(`  ${field.label}:`);
-      rows.forEach((row, i) => {
-        const parts = (field.fields ?? [])
-          .map(sub => [sub.label, valueText(sub, row[sub.name], options.get(`${field.name}.${sub.name}`), formatMoney)])
-          .filter(([, text]) => text !== '')
-          .map(([label, text]) => `${label}: ${text}`);
-        out.push(`    ${i + 1}. ${parts.join(' · ')}`);
-      });
+      const rowsData = Array.isArray(data[field.name]) ? (data[field.name] as Array<Record<string, unknown>>) : [];
+      if (rowsData.length === 0) continue;
+      const rows = rowsData.map((row) => (field.fields ?? [])
+        .map(sub => [sub.label, valueText(sub, row[sub.name], options.get(`${field.name}.${sub.name}`), formatMoney)])
+        .filter(([, text]) => text !== '')
+        .map(([label, text]) => `${label}: ${text}`)
+        .join(' · '));
+      out.push({ label: field.label, text: rows.map((r, i) => `${i + 1}. ${r}`).join('; '), rows });
       continue;
     }
     const text = valueText(field, data[field.name], options.get(field.name), formatMoney);
-    if (text !== '') out.push(`  ${field.label}: ${text}`);
+    if (text !== '') out.push({ label: field.label, text });
   }
   return out;
 }
