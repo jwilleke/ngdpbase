@@ -1,6 +1,6 @@
 import logger from '../utils/logger.js';
 import { AttachmentMetadata, AttachmentProvider } from '../types/index.js';
-import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
+import type { StoreFileEntry, StoreFileInput, StoreFileLocation } from '../types/Provider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { ProviderInfo } from './BasePageProvider.js';
 import BaseProvider from './BaseProvider.js';
@@ -198,7 +198,7 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
   async storeFileInStore(
     _location: StoreFileLocation,
     _bytes: Buffer,
-    _file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+    _file: StoreFileInput
   ): Promise<StoreFileEntry> {
     throw new Error(`${this.constructor.name} cannot keep files in a private store`);
   }

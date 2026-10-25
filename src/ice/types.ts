@@ -141,6 +141,35 @@ export interface IceOriginalChoices {
   allowed: OriginalChoice[];
   /** One of `allowed`. Default: `ngdpbase.import.engine.default-original` when allowed, else the first allowed. */
   default?: OriginalChoice;
+  /**
+   * The media types this receiver keeps (#2061), exactly, e.g.
+   * `['application/json', 'application/x-ndjson', 'text/xml']`: no wildcards.
+   * For a keep at upload into the receiver's own vault, the upload door
+   * allows these even when the site's attachment allow-list does not
+   * ({@link OriginalKeep}). Every other upload still uses the site's list.
+   */
+  types?: string[];
+}
+
+/**
+ * What a keep at upload carries to the upload door (#2061): the engine opens
+ * one for one receiver, one user and one call of its `keepOriginal`, and
+ * closes it when the call returns. Pass it on unchanged as the upload's
+ * `keep` option. The door honours only one the engine has open, and only
+ * for a file going into this user's own vault of a system-category the
+ * receiver's add-on declares: there it allows `types` beyond the site's
+ * attachment allow-list, and the file is always served as a download.
+ * Anywhere else it changes nothing.
+ */
+export interface OriginalKeep {
+  /** The receiver keeping, `<slug>.<name>`. */
+  readonly receiver: string;
+  /** The add-on that registered it: only a vault its own system-category declares. */
+  readonly addon: string;
+  /** The user the upload is for: only their own vault. */
+  readonly user: string;
+  /** The receiver's `originals.types`. */
+  readonly types: readonly string[];
 }
 
 /** A citation to the origin (D11): the receiver renders it, as a footnote on a page. */
@@ -193,8 +222,12 @@ export interface IceReceiver {
   /**
    * Keep the original file itself (D11: phr keeps originals in its own
    * store). Without this, `keep` hands the original to the files receiver.
+   * `original.mediaType` is the engine's (#2061): the request's type for a
+   * file uploaded on its own, the engine's for one unpacked from a zip.
+   * `keep` is given for a keep at upload (`keepsEncrypted`): pass it to the
+   * upload door unchanged, as the upload's `keep` option.
    */
-  keepOriginal?(original: IceItem, ctx: ActorContext): Promise<ReceiveOutcome>;
+  keepOriginal?(original: IceItem, ctx: ActorContext, keep?: OriginalKeep): Promise<ReceiveOutcome>;
   /**
    * `keepOriginal` writes into an encrypted store (phr's vault), which only a
    * request holding the user's unlocked key can write (#2034). The engine then

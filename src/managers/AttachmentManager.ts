@@ -46,9 +46,12 @@ import { localizeNcmImages, type NcmImageDeps } from '../converters/ncm/index.js
 import { guardedFetch } from '../http/guardedFetch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { UNKNOWN_UPLOADER, type AssetProvider, type AssetQuery, type AssetRecord } from '../types/Asset.js';
-import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
+import type { StoreFileEntry, StoreFileInput, StoreFileLocation } from '../types/Provider.js';
 import { resolveUploadMime } from '../utils/sniffMime.js';
 import { ATTACHMENT_DATA_TOPIC } from '../cache/CacheDependencies.js';
+import { keepAllowsInto } from '../ice/originalKeep.js';
+import type { OriginalKeep } from '../ice/types.js';
+import { storeKindFromConfig } from '../utils/privateStoreDoor.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -87,7 +90,7 @@ interface BaseAttachmentProvider {
   storeFileInStore(
     location: StoreFileLocation,
     bytes: Buffer,
-    file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+    file: StoreFileInput
   ): Promise<StoreFileEntry>;
   getFileInStore(location: StoreFileLocation, id: string): Promise<{ entry: StoreFileEntry; bytes: Buffer } | null>;
   listFilesInStore(location: StoreFileLocation): Promise<StoreFileEntry[]>;
@@ -150,6 +153,15 @@ export interface UploadOptions {
   private?: boolean;
   /** Store id when private with no private page; default from ConfigurationManager defaultstoreid */
   store?: string;
+  /**
+   * An import's keep at upload (#2061): the `OriginalKeep` the engine handed
+   * the receiver's `keepOriginal`, passed on unchanged. Honoured only while
+   * the engine holds it open, for a file going into its user's own vault of a
+   * system-category the receiver's add-on declares: there the receiver's
+   * declared types are allowed beyond the site's allow-list, and the file is
+   * served as a download. Anywhere else it changes nothing.
+   */
+  keep?: OriginalKeep;
 }
 
 // #1179: the acting methods below take an `ActorContext` — the request's
@@ -709,6 +721,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         // match a PUBLIC attachment lands here rather than returning the
         // public record.
         const io = await storeFileIO(ctx, { pagesDirectory, owner: pageCreator, store: pageStore, layout });
+        // #2061: an import keeping an original into the receiver's own vault.
+        const keep = options.keep && keepAllowsInto(options.keep, {
+          uploader: author,
+          owner: pageCreator,
+          vaultAddon: storeKindFromConfig((key, fallback) => configManager.getProperty(key, fallback), pageStore)?.owner ?? null
+        }) ? options.keep : null;
         const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
           { owner: pageCreator, store: pageStore, io },
           fileBuffer,
@@ -717,7 +735,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             mimeType: fileInfo.mimeType,
             description: options.description || '',
             author,
-            ...(pageName ? { pageName } : {})
+            ...(pageName ? { pageName } : {}),
+            ...(keep ? { keptOriginal: { types: keep.types } } : {})
           }
         ));
         // #1461: a private file is logged by id — never by its filename.
@@ -999,7 +1018,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       mentions: entry.mentions.map((name) => ({ '@type': 'WebPage', name, url: `/view/${encodeURIComponent(name)}` })),
       isPrivate: true,
       creator: owner,
-      store
+      store,
+      ...(entry.download === true ? { download: true } : {})
     };
   }
 

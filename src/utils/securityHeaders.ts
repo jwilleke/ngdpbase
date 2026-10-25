@@ -66,6 +66,19 @@ export function untrustedFileHeaders(contentType: string): Record<string, string
 }
 
 /**
+ * How a vault file is served (#2061): inline, so a picture on a private page
+ * still shows, unless it is marked a download (an import's kept original):
+ * then always `attachment` with `nosniff`, whatever the site's header mode,
+ * so a kept file never runs as a page. The name is made safe for the header.
+ */
+export function vaultFileDisposition(fileName: string, download: boolean): Record<string, string> {
+  const name = fileName.replace(/["\\\r\n]/g, '_');
+  return download
+    ? { 'Content-Disposition': `attachment; filename="${name}"`, 'X-Content-Type-Options': 'nosniff' }
+    : { 'Content-Disposition': `inline; filename="${name}"` };
+}
+
+/**
  * A fresh nonce for one response's inline scripts (#1703): 128 random bits,
  * base64, as CSP's `'nonce-…'` source expects. Never reused: a nonce an
  * attacker can predict or replay is no nonce.

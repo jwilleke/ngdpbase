@@ -4,7 +4,7 @@
  */
 import { createHash } from 'node:crypto';
 import { packZip } from '../../utils/zipArchive';
-import { expandUploads, fingerprint, isNoise, isZip } from '../fileHandling';
+import { expandUploads, fingerprint, isNoise, isZip, memberMediaType } from '../fileHandling';
 
 const NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._*'];
 const LIMITS = { maxEntries: 100, maxTotalBytes: 1_000_000 };
@@ -88,5 +88,45 @@ describe('expandUploads', () => {
     expect(isZip({ name: 'a.ZIP', bytes: Buffer.alloc(0) })).toBe(true);
     expect(isZip({ name: 'upload', bytes: Buffer.alloc(0), mediaType: 'application/zip' })).toBe(true);
     expect(isZip({ name: 'a.md', bytes: Buffer.alloc(0) })).toBe(false);
+  });
+});
+
+describe('media types of unpacked files (#2061)', () => {
+  test('every file from a zip carries a media type; an upload on its own keeps its request type', async () => {
+    const zip = await packZip([
+      { path: 'Patient.json', bytes: Buffer.from('{"resourceType":"Patient"}') },
+      { path: 'export/Observation.ndjson', bytes: Buffer.from('{"resourceType":"Observation"}\n{"resourceType":"Observation"}\n') },
+      { path: 'ccda.xml', bytes: Buffer.from('<ClinicalDocument xmlns="urn:hl7-org:v3"/>') },
+      { path: 'prolog.xml', bytes: Buffer.from('<?xml version="1.0"?><ClinicalDocument/>') },
+      { path: 'scan.png', bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]) },
+      { path: 'README', bytes: Buffer.from('notes') }
+    ]);
+    const { files } = expandUploads([
+      { name: 'alone.json', bytes: Buffer.from('{}'), mediaType: 'application/fhir+json' },
+      { name: 'unlabelled.json', bytes: Buffer.from('{}') },
+      { name: 'export.zip', bytes: zip }
+    ], LIMITS, 3);
+    expect(files.map(f => [f.name, f.mediaType])).toEqual([
+      ['alone.json', 'application/fhir+json'],
+      ['unlabelled.json', undefined],
+      ['export.zip/Patient.json', 'application/json'],
+      ['export.zip/export/Observation.ndjson', 'application/x-ndjson'],
+      ['export.zip/ccda.xml', 'application/xml'],
+      ['export.zip/prolog.xml', 'text/xml'],
+      ['export.zip/scan.png', 'image/png'],
+      ['export.zip/README', 'application/octet-stream']
+    ]);
+  });
+
+  test('a file whose bytes do not bear out its extension is application/octet-stream', () => {
+    expect(memberMediaType('a.json', Buffer.from('not json'))).toBe('application/octet-stream');
+    expect(memberMediaType('a.ndjson', Buffer.from('[1]'))).toBe('application/octet-stream');
+    expect(memberMediaType('a.xml', Buffer.from('plain text'))).toBe('application/octet-stream');
+    expect(memberMediaType('a.png', Buffer.from('not a png'))).toBe('application/octet-stream');
+  });
+
+  test('the bytes decide when they show a type: HTML named .xml is text/html', () => {
+    expect(memberMediaType('page.xml', Buffer.from('<html><script>x</script></html>'))).toBe('text/html');
+    expect(memberMediaType('a.json', Buffer.from('﻿  {"a":1}'))).toBe('application/json');
   });
 });
