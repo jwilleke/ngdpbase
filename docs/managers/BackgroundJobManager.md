@@ -1,7 +1,7 @@
 ---
 name: BackgroundJobManager
 description: Long-running job registry + scheduler with progress reporting and polling API
-dateModified: '2026-10-23'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/BackgroundJobManager.ts
 ---
@@ -17,7 +17,7 @@ Lets the platform run long-running work (page-reindex, version-history maintenan
 | `JobDefinition` | Registered job blueprint: `{ id, displayName, run }`, plus `schedule`, `catchUp`, `overlap`, `timeout` and `persist` for a scheduled job |
 | `JobResult` | What a job's `run` resolves with: `{ success, summary? }` |
 | `ReportProgress` | Callback the job calls during execution to push live progress messages |
-| `JobRunContext` | The `ctx` a run receives: who asked (`JobContext`), the `signal` aborted on timeout, the `slot` it runs for, `resume` (set when it picks up an unfinished slot) and `checkpoint(data)` |
+| `JobRunContext` | The `ctx` a run receives: who asked (`JobContext`), the `signal` aborted on timeout, the `slot` it runs for, `resume` (set when it picks up an unfinished slot) and `checkpoint(data)`. It carries no key: under a proxy grant the claim stays, without its `keyHandle`, here and in the run record ([#2047](https://github.com/jwilleke/ngdpbase/issues/2047)) |
 
 ## Lifecycle
 
