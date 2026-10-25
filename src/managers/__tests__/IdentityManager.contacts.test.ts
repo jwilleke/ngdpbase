@@ -34,7 +34,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { readFileSync } from 'fs';
 import { randomUUID } from 'crypto';
-import IdentityManager from '../IdentityManager';
+import IdentityManager, { ContactDetailsInvalidError } from '../IdentityManager';
 import OrganizationManager from '../OrganizationManager';
 import RoleManager from '../RoleManager';
 import UserManager from '../UserManager';
@@ -45,6 +45,7 @@ import { ContactRefusedError } from '../../utils/contactAccess';
 import { isReservedUsername } from '../../utils/username';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
 import type { WikiEngine } from '../../types/WikiEngine';
+import type { ContactDetailsInput } from '../../types/Person';
 
 const shipped = JSON.parse(readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
@@ -884,18 +885,27 @@ describe('affiliations as OrganizationRole (#2039)', () => {
 });
 
 /**
- * #2073 — a user's own phones and emergency contact, set from /profile
- * through `updateContactPoints`, beside entries add-ons wrote.
+ * #2073 — a user's own contact details, set from /profile through
+ * `updateContactDetails`: name parts, phones in E.164 (each read with its own
+ * country), the emergency contact, home and mailing addresses, languages, a
+ * photo and links, beside entries add-ons wrote.
  *
  * Sabotaged once each (2026-10-25), and watched go red:
- * - the merge replaced the whole array with the given entries → "other
+ * - the merge starting from no entries instead of the record's → "other
  *   entries are kept" went red;
- * - the match ignored `@type` → the business PostalAddress was overwritten
+ * - the match ignoring `@type` → the business PostalAddress was overwritten
  *   and "other entries are kept" went red;
- * - the phone check removed → "invalid input is refused" went red;
- * - `requireRecordAccess` removed from updateContactPoints → "another user's
- *   record" went red (the bad phone was reported to a caller with no right
- *   to that record, instead of the refusal).
+ * - each phone read with the default country, not its own → "each phone is
+ *   read with its own country" went red;
+ * - the E.164 check removed (the typed text stored) → "invalid input is
+ *   refused" went red;
+ * - the configured default country ignored (always US) → "the default
+ *   country is configuration" went red;
+ * - an error message quoting the value → "invalid input is refused" went red;
+ * - `requireRecordAccess` removed from updateContactDetails → "another
+ *   user's record" went red (the bad phone was reported instead of the refusal);
+ * - every field sent to the door, changed or not → "only the fields that
+ *   changed are recorded" went red.
  */
 describe('a user sets their own contact details (#2073)', () => {
   let site: Awaited<ReturnType<typeof makeSite>>;
@@ -910,80 +920,132 @@ describe('a user sets their own contact details (#2073)', () => {
     await fs.remove(site.tmp).catch(() => {});
   });
 
-  const phone = (contactType: string, telephone: string) => ({ '@type': 'ContactPoint' as const, contactType, telephone });
+  const phone = (contactType: string, number: string, country?: string, extension?: string) => ({ contactType, number, ...(country ? { country } : {}), ...(extension ? { extension } : {}) });
 
-  test('own phones and emergency contact are saved and read back, recorded as an identity-manage update naming fields only', async () => {
+  test('own details are saved: phones in E.164 with the extension apart, addresses, languages, photo and links; recorded naming fields only', async () => {
     const pat = await subjectOf(site, 'pat');
     const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
-    const saved = await site.persons.updateContactPoints(pat, own['@id'], [
-      phone('home', ' +1 555 0100 '),
-      phone('mobile', '(555) 010-0199 x12'),
-      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam Sibling', telephone: '+44 20 7946 0958', email: 'sam@example.org' }
-    ]);
+    const saved = await site.persons.updateContactDetails(pat, own['@id'], {
+      givenName: ' Pat ', familyName: 'Doe',
+      phones: [phone('home', '(415) 555-2671'), phone('mobile', '415 555 2672 x12'), phone('business', '212-555-0123', 'US', '7')],
+      emergency: { name: 'Sam Sibling', email: 'sam@example.org', phone: { number: '020 7946 0958', country: 'GB' } },
+      address: { streetAddress: '1 Home St', addressLocality: 'Town', addressRegion: 'CA', postalCode: '94000' },
+      mailing: { streetAddress: 'PO Box 9', addressLocality: 'Town', postalCode: '94001', addressCountry: 'us' },
+      knowsLanguage: ['English', ' es ', 'english', ''],
+      image: 'https://example.org/pat.jpg',
+      sameAs: ['https://example.org/pat', '', 'https://example.org/pat']
+    });
+    expect(saved).toMatchObject({ givenName: 'Pat', familyName: 'Doe', knowsLanguage: ['en', 'es'], image: 'https://example.org/pat.jpg', sameAs: ['https://example.org/pat'] });
+    expect(saved?.address).toEqual({ '@type': 'PostalAddress', streetAddress: '1 Home St', addressLocality: 'Town', addressRegion: 'CA', postalCode: '94000', addressCountry: 'US' });
     expect(saved?.contactPoint).toEqual([
-      phone('home', '+1 555 0100'),
-      phone('mobile', '(555) 010-0199 x12'),
-      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam Sibling', telephone: '+44 20 7946 0958', email: 'sam@example.org' }
+      { '@type': 'ContactPoint', contactType: 'home', telephone: '+14155552671' },
+      { '@type': 'ContactPoint', contactType: 'mobile', telephone: '+14155552672', extension: '12' },
+      { '@type': 'ContactPoint', contactType: 'business', telephone: '+12125550123', extension: '7' },
+      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam Sibling', email: 'sam@example.org', telephone: '+442079460958' },
+      { '@type': 'PostalAddress', contactType: 'mailing', streetAddress: 'PO Box 9', addressLocality: 'Town', postalCode: '94001', addressCountry: 'US' }
     ]);
-    expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toHaveLength(3);
+    const stored = JSON.parse(await fs.readFile(path.join(site.tmp, 'persons', `${own['@id'].replace('urn:uuid:', '')}.json`), 'utf8')) as Record<string, unknown>;
+    expect(stored.contactPoint).toEqual(saved?.contactPoint);
     const record = site.contacts().at(-1);
     expect(record).toMatchObject({ action: 'person-update', user: 'pat', resource: own['@id'] });
-    expect(record?.metadata.fields).toEqual(['contactPoint']);
-    expect(JSON.stringify(record)).not.toContain('555');
+    expect(record?.metadata.fields).toEqual(['address', 'contactPoint', 'familyName', 'givenName', 'image', 'knowsLanguage', 'sameAs']);
+    for (const value of ['555', 'Sam Sibling', 'Home St', 'example.org']) expect(JSON.stringify(record)).not.toContain(value);
+  });
+
+  test('each phone is read with its own country; a leading + keeps its own country code', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
+    const saved = await site.persons.updateContactDetails(pat, own['@id'], {
+      phones: [phone('home', '020 7946 0958', 'GB'), phone('mobile', '+1 415 555 2671', 'GB'), phone('other', '(415) 555-2671')]
+    });
+    expect(saved?.contactPoint?.map((c) => (c as { telephone?: string }).telephone)).toEqual(['+442079460958', '+14155552671', '+14155552671']);
+  });
+
+  test('the default country is configuration', async () => {
+    const gb = await makeSite({ props: { 'ngdpbase.application.persons.default-country': 'GB' } });
+    try {
+      await gb.signUp('pat', 'pat@example.org');
+      const pat = await subjectOf(gb, 'pat');
+      const own = (await gb.persons.getByIdentifier(pat, 'pat'))!;
+      expect(gb.persons.defaultCountry()).toBe('GB');
+      const saved = await gb.persons.updateContactDetails(pat, own['@id'], { phones: [phone('home', '020 7946 0958')], address: { streetAddress: '1 High St' } });
+      expect(saved?.contactPoint).toEqual([{ '@type': 'ContactPoint', contactType: 'home', telephone: '+442079460958' }]);
+      expect(saved?.address?.addressCountry).toBe('GB');
+    } finally {
+      await fs.remove(gb.tmp).catch(() => {});
+    }
+    expect(site.persons.defaultCountry()).toBe('US');
   });
 
   test('other entries are kept: add-on kinds, a PostalAddress of the same type, and fields on the matched entry', async () => {
     const own = (await site.persons.getByIdentifier(SYS, 'pat'))!;
     const written = [
-      { '@type': 'PostalAddress' as const, contactType: 'mailing', streetAddress: 'PO Box 9', addressLocality: 'Town' },
       { '@type': 'PostalAddress' as const, contactType: 'business', streetAddress: '2 Works Rd' },
       { '@type': 'PostalAddress' as const, contactType: 'agent', name: 'Rental Agent Co', telephone: '+1 555 0102' },
       { '@type': 'ContactPoint' as const, contactType: 'business', telephone: '+1 555 0103', availableLanguage: ['en'] },
-      { '@type': 'ContactPoint' as const, contactType: 'other', telephone: '+1 555 0104' }
+      { '@type': 'ContactPoint' as const, contactType: 'other', telephone: '+1 555 0104' },
+      { '@type': 'PostalAddress' as const, contactType: 'mailing', name: 'Pat at the box', streetAddress: 'PO Box 9' }
     ];
-    await site.persons.update(ADMIN, own['@id'], { contactPoint: written });
+    await site.persons.update(ADMIN, own['@id'], { contactPoint: written, address: { '@type': 'PostalAddress', streetAddress: '1 Home St', name: 'Home' } });
     const pat = await subjectOf(site, 'pat');
-    const saved = await site.persons.updateContactPoints(pat, own['@id'], [
-      phone('business', '+1 555 0199'), // work phone changed in place, its other field kept
-      phone('other', ''), // removed
-      phone('home', '') // never there: nothing added
-    ]);
+    const saved = await site.persons.updateContactDetails(pat, own['@id'], {
+      phones: [phone('business', '(415) 555-2671'), phone('other', ''), phone('home', '')],
+      mailing: { streetAddress: '' }, // the address goes, the entry stays for its name
+      address: { streetAddress: '' } // the home address goes
+    });
     expect(saved?.contactPoint).toEqual([
-      written[0], written[1], written[2],
-      { '@type': 'ContactPoint', contactType: 'business', telephone: '+1 555 0199', availableLanguage: ['en'] }
+      written[0], written[1],
+      { '@type': 'ContactPoint', contactType: 'business', telephone: '+14155552671', availableLanguage: ['en'] },
+      { '@type': 'PostalAddress', contactType: 'mailing', name: 'Pat at the box' }
     ]);
+    expect((await site.persons.getById(pat, own['@id']))?.address).toBeUndefined();
   });
 
-  test('invalid input is refused with a clear message, and nothing is written', async () => {
+  test('invalid input is refused naming the part and the rule, never the value, and nothing is written', async () => {
     const pat = await subjectOf(site, 'pat');
     const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
-    await site.persons.updateContactPoints(pat, own['@id'], [phone('home', '+1 555 0100')]);
+    await site.persons.updateContactDetails(pat, own['@id'], { phones: [phone('home', '(415) 555-2671')] });
     const before = site.contacts().length;
-    const cases: Array<[Array<{ '@type': 'ContactPoint'; contactType: string; telephone?: string; name?: string; email?: string }>, string]> = [
-      [[phone('home', '+1 555 0111'), phone('mobile', 'call me')], 'telephone'],
-      [[phone('mobile', '12')], 'telephone'],
-      [[phone('mobile', '1234567890123456')], 'telephone'],
-      [[{ '@type': 'ContactPoint', contactType: 'emergency', name: 'Sam', email: 'not-an-email' }], 'email']
+    const cases: Array<[ContactDetailsInput, string, string, string]> = [
+      [{ phones: [phone('home', '(415) 555-2672'), phone('mobile', 'call me 5550000')] }, 'mobile', 'telephone', 'is not a phone number we can read: check it and the country beside it'],
+      [{ phones: [phone('mobile', '555 0100')] }, 'mobile', 'telephone', 'is not a phone number we can read: check it and the country beside it'],
+      [{ phones: [phone('mobile', '020 7946 0958', 'ZZ')] }, 'mobile', 'country', 'is not a country on the list'],
+      [{ phones: [phone('mobile', '(415) 555-2671', undefined, '12a')] }, 'mobile', 'extension', 'is not an extension: use digits only'],
+      [{ phones: [phone('mobile', '', undefined, '12')] }, 'mobile', 'extension', 'needs a phone number'],
+      [{ emergency: { name: 'Sam', email: 'secret-not-an-email' } }, 'emergency', 'email', 'is not an email address'],
+      [{ mailing: { streetAddress: 'secret 1 Box', addressCountry: 'XX' } }, 'mailing', 'addressCountry', 'is not a country on the list'],
+      [{ knowsLanguage: ['English', 'secret-Klingon'] }, 'knowsLanguage', 'language', 'has a language we do not know: use names such as English or Spanish'],
+      [{ image: 'javascript:alert(1)' }, 'image', 'url', 'is not a web address: start it with https://'],
+      [{ sameAs: ['https://example.org', 'secret ftp://x'] }, 'sameAs', 'url', 'has a line that is not a web address: start each with https://']
     ];
-    for (const [bad, field] of cases) {
-      await expect(site.persons.updateContactPoints(pat, own['@id'], bad)).rejects.toMatchObject({ name: 'ContactDetailsInvalidError', field });
+    for (const [input, part, field, message] of cases) {
+      const err = await site.persons.updateContactDetails(pat, own['@id'], input).catch((e: unknown) => e as ContactDetailsInvalidError);
+      expect(err).toMatchObject({ name: 'ContactDetailsInvalidError', part, field, message });
+      expect(err.message).not.toContain('secret');
+      expect(err.message).not.toContain('5550000');
     }
-    // The message names the rule, never the value (it reaches URLs and add-ons' logs).
-    const refused = await site.persons.updateContactPoints(pat, own['@id'], [phone('mobile', 'call me')]).catch((e: unknown) => e as Error);
-    expect(refused.message).toBe('is not a phone number: use digits, with spaces, + ( ) - . if you like, 3 to 15 digits');
-    const badEmail = await site.persons.updateContactPoints(pat, own['@id'], [{ '@type': 'ContactPoint', contactType: 'emergency', email: 'pat-secret@nowhere' }]).catch((e: unknown) => e as Error);
-    expect(badEmail.message).toBe('is not an email address');
-    expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toEqual([phone('home', '+1 555 0100')]);
+    expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toEqual([{ '@type': 'ContactPoint', contactType: 'home', telephone: '+14155552671' }]);
     expect(site.contacts().length).toBe(before);
+  });
+
+  test('only the fields that changed are recorded; nothing changed, nothing is written', async () => {
+    const pat = await subjectOf(site, 'pat');
+    const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
+    await site.persons.updateContactDetails(pat, own['@id'], { givenName: 'Pat', phones: [phone('home', '(415) 555-2671')] });
+    const before = site.contacts().length;
+    await site.persons.updateContactDetails(pat, own['@id'], { givenName: 'Pat', familyName: '', phones: [phone('home', '415.555.2671')], image: '' });
+    expect(site.contacts().length).toBe(before);
+    await site.persons.updateContactDetails(pat, own['@id'], { givenName: 'Patricia', phones: [phone('home', '415.555.2671')] });
+    expect(site.contacts().at(-1)?.metadata.fields).toEqual(['givenName']);
   });
 
   test('another user\'s record is refused without identity-manage, before any check of what was given', async () => {
     const pat = await subjectOf(site, 'pat');
     const sam = (await site.persons.getByIdentifier(SYS, 'sam'))!;
-    await expect(site.persons.updateContactPoints(pat, sam['@id'], [phone('home', 'call me')])).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-manage' });
-    await expect(site.persons.updateContactPoints(pat, sam['@id'], [phone('home', '+1 555 0100')])).rejects.toMatchObject({ permission: 'identity-manage' });
+    await expect(site.persons.updateContactDetails(pat, sam['@id'], { phones: [phone('home', 'call me')] })).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-manage' });
+    await expect(site.persons.updateContactDetails(pat, sam['@id'], { phones: [phone('home', '(415) 555-2671')] })).rejects.toMatchObject({ permission: 'identity-manage' });
     expect((await site.persons.getById(SYS, sam['@id']))?.contactPoint).toBeUndefined();
     // An administrator, under identity-manage, may (the rule is unchanged).
-    expect((await site.persons.updateContactPoints(ADMIN, sam['@id'], [phone('home', '+1 555 0100')]))?.contactPoint).toEqual([phone('home', '+1 555 0100')]);
+    expect((await site.persons.updateContactDetails(ADMIN, sam['@id'], { phones: [phone('home', '(415) 555-2671')] }))?.contactPoint).toEqual([{ '@type': 'ContactPoint', contactType: 'home', telephone: '+14155552671' }]);
   });
 });

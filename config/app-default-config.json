@@ -145,6 +145,8 @@
   "_comment_application_contacts": "Contacts (#1930): the most results IdentityManager.search / OrganizationManager.search return when the caller gives no limit, and how long the 'Is this you?' sign-up link stays usable.",
   "ngdpbase.application.persons.search.limit": 50,
   "ngdpbase.application.persons.link-offer.ttl-minutes": 30,
+  "_comment_application_persons_default_country": "#2073: the country a phone or address on /profile is read with until the user picks another (ISO 3166-1 alpha-2). Phones are stored in E.164.",
+  "ngdpbase.application.persons.default-country": "US",
   "ngdpbase.application.organization.search.limit": 50,
   "ngdpbase.application.organization.provider.default": "fileorganizationprovider",
   "ngdpbase.application.organization.provider": "fileorganizationprovider",

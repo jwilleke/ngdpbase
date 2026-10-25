@@ -3,10 +3,12 @@ import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type { Person, PersonAffiliation, LegacyPersonAffiliation, PersonChange, PersonInput } from '../types/Person.js';
+import type { AddressInput, ContactDetailsInput, Person, PersonAffiliation, LegacyPersonAffiliation, PersonChange, PersonInput, PhoneInput } from '../types/Person.js';
 import type { PersonProvider } from '../types/PersonProvider.js';
-import type { ContactPoint, ContactPointEntry } from '../types/Organization.js';
+import type { ContactPointEntry, PostalAddress } from '../types/Organization.js';
 import { isEmail } from '../types/guards.js';
+import { knownCountry, toE164 } from '../utils/phoneNumbers.js';
+import { languageTag } from '../utils/languages.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { ACCOUNTLESS_PERSON_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
@@ -82,6 +84,7 @@ export interface LinkOfferDetails {
 export type LinkOfferOutcome = 'sent' | 'no-match' | 'several' | 'unavailable' | 'failed';
 
 const SEARCH_LIMIT_KEY = 'ngdpbase.application.persons.search.limit';
+const DEFAULT_COUNTRY_KEY = 'ngdpbase.application.persons.default-country';
 const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
 
 /**
@@ -428,53 +431,85 @@ class IdentityManager extends BaseManager {
   }
 
   /**
-   * Set some of an identity record's contact points, keeping every other
-   * entry as it is (#2073): what `/profile` saves for the user's own phones
-   * and emergency contact, beside entries add-ons wrote. Each given entry is a
-   * `ContactPoint` with a `contactType`; it takes the place of the record's
-   * first `ContactPoint` of that `contactType` (a `PostalAddress` of the same
-   * type is never touched), keeping that entry's other fields. A field given
-   * empty is removed, and an entry left with no `name`, `telephone` or `email`
-   * is dropped. Phones and email addresses are checked first: a bad one
-   * throws {@link ContactDetailsInvalidError} and nothing is written. The
-   * access and the record are {@link update}'s: the caller's own record under
-   * `profile-manage`, anyone else's under `identity-manage`, recorded as an
-   * `identity-manage` update naming `contactPoint`, never the values.
+   * The parts of an identity record a user keeps on `/profile` (#2073):
+   * given and family name, phones, the emergency contact, the home and
+   * mailing addresses, languages, a photo and links. A part left out of
+   * `input` is not touched; a text given empty is removed.
+   *
+   * - Phones are stored in E.164 with any extension apart (`extension`),
+   *   read with the country chosen beside each one (the configured default,
+   *   `ngdpbase.application.persons.default-country`, when none is given); a
+   *   number typed with a leading `+` keeps its own country code.
+   * - A phone, the emergency contact and the mailing address each take the
+   *   place of the record's first entry of their kind in `contactPoint`
+   *   (a ContactPoint by `contactType`, the mailing address as the
+   *   `mailing` PostalAddress), keeping that entry's other fields; every
+   *   other entry, an add-on's included, is kept as it is.
+   * - Languages are stored as tags ("es"), given by name or tag.
+   *
+   * Everything is checked before anything is written: a bad part throws
+   * {@link ContactDetailsInvalidError}, naming the part and the rule, never
+   * the value. The access and the record are {@link update}'s: the caller's
+   * own record under `profile-manage`, anyone else's under `identity-manage`,
+   * recorded as an `identity-manage` update naming the fields that changed.
+   * Nothing changed, nothing is written or recorded.
    */
-  async updateContactPoints(ctx: ActorContext, id: string, given: ContactPoint[]): Promise<Person | null> {
+  async updateContactDetails(ctx: ActorContext, id: string, input: ContactDetailsInput): Promise<Person | null> {
     const record = await this.cachedById(id);
     await requireRecordAccess(this.engine, ctx, 'manage', record);
     if (!record) return null;
-    const entries = [...(record.contactPoint ?? [])] as ContactPointEntry[];
-    for (const entry of given ?? []) {
-      const contactType = typeof entry?.contactType === 'string' ? entry.contactType.trim() : '';
-      if (entry?.['@type'] !== 'ContactPoint' || !contactType) throw new ContactDetailsInvalidError(contactType, 'contactType', 'is not a ContactPoint with a contactType');
-      const fields: Record<string, string> = {};
-      for (const key of CONTACT_POINT_TEXT_FIELDS) {
-        const value = entry[key];
-        if (value === undefined) continue;
-        if (typeof value !== 'string') throw new ContactDetailsInvalidError(contactType, key, 'is not text');
-        fields[key] = value.trim();
-      }
-      if (fields.telephone && !isTelephone(fields.telephone)) {
-        throw new ContactDetailsInvalidError(contactType, 'telephone', 'is not a phone number: use digits, with spaces, + ( ) - . if you like, 3 to 15 digits');
-      }
-      const email = fields.email ?? '';
-      if (email && !isEmail(email)) {
-        throw new ContactDetailsInvalidError(contactType, 'email', 'is not an email address');
-      }
-      const at = entries.findIndex((c) => c['@type'] === 'ContactPoint' && c.contactType === contactType);
-      const merged: Record<string, unknown> = { ...(at >= 0 ? entries[at] : {}), '@type': 'ContactPoint', contactType };
-      for (const [key, value] of Object.entries(fields)) {
-        if (value) merged[key] = value;
-        else delete merged[key];
-      }
-      const kept = CONTACT_POINT_TEXT_FIELDS.some((key) => typeof merged[key] === 'string' && merged[key] !== '');
-      if (at >= 0 && kept) entries[at] = merged as unknown as ContactPoint;
-      else if (at >= 0) entries.splice(at, 1);
-      else if (kept) entries.push(merged as unknown as ContactPoint);
+    const fallback = this.defaultCountry();
+    const given = input ?? {};
+    const next: Record<string, unknown> = {};
+
+    for (const key of ['givenName', 'familyName'] as const) {
+      if (given[key] !== undefined) next[key] = textOf(given[key], key, 'name') || undefined;
     }
-    return this.update(ctx, id, { contactPoint: entries });
+    let entries = [...(record.contactPoint ?? [])];
+    for (const phone of given.phones ?? []) {
+      const contactType = textOf(phone?.contactType, 'phone', 'contactType');
+      if (!contactType || contactType === 'emergency') throw new ContactDetailsInvalidError(contactType, 'contactType', 'is not a kind of phone');
+      entries = withContactPoint(entries, contactType, phoneFields(contactType, phone, fallback));
+    }
+    if (given.emergency) {
+      const e = given.emergency;
+      const email = textOf(e.email, 'emergency', 'email');
+      if (email && !isEmail(email)) throw new ContactDetailsInvalidError('emergency', 'email', 'is not an email address');
+      entries = withContactPoint(entries, 'emergency', { name: textOf(e.name, 'emergency', 'name'), email, ...phoneFields('emergency', e.phone ?? {}, fallback) });
+    }
+    if (given.mailing) entries = withMailingAddress(entries, addressFields('mailing', given.mailing, fallback));
+    next.contactPoint = entries.length > 0 ? entries : undefined;
+    if (given.address) next.address = withAddress(record.address, addressFields('address', given.address, fallback));
+    if (given.knowsLanguage) {
+      const tags: string[] = [];
+      for (const language of given.knowsLanguage) {
+        const typed = textOf(language, 'knowsLanguage', 'language');
+        if (!typed) continue;
+        const tag = languageTag(typed);
+        if (!tag) throw new ContactDetailsInvalidError('knowsLanguage', 'language', 'has a language we do not know: use names such as English or Spanish');
+        if (!tags.includes(tag)) tags.push(tag);
+      }
+      next.knowsLanguage = tags.length > 0 ? tags : undefined;
+    }
+    if (given.image !== undefined) next.image = webAddress(given.image, 'image') || undefined;
+    if (given.sameAs) {
+      const links = given.sameAs.map((link) => webAddress(link, 'sameAs')).filter(Boolean);
+      next.sameAs = links.length > 0 ? [...new Set(links)] : undefined;
+    }
+
+    // Only what changed goes to the door, so the record names those fields alone.
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(next)) {
+      if (JSON.stringify(value) !== JSON.stringify(record[key])) patch[key] = value;
+    }
+    if (Object.keys(patch).length === 0) return record;
+    return this.update(ctx, id, patch);
+  }
+
+  /** The country a phone or address is read with when none is chosen (#2073): `ngdpbase.application.persons.default-country`, `US` when unset or unknown. */
+  defaultCountry(): string {
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(DEFAULT_COUNTRY_KEY, 'US');
+    return knownCountry(configured) ?? 'US';
   }
 
   async delete(ctx: ActorContext, id: string): Promise<boolean> {
@@ -779,28 +814,122 @@ class IdentityManager extends BaseManager {
   }
 }
 
-/** The text fields of a contact point that {@link IdentityManager.updateContactPoints} sets (#2073). */
-const CONTACT_POINT_TEXT_FIELDS = ['name', 'telephone', 'email'] as const;
+/** The fields whose presence keeps a contactPoint entry (#2073): with none left, it is dropped. */
+const CONTACT_POINT_CONTENT = ['name', 'telephone', 'email', 'streetAddress', 'addressLocality', 'addressRegion', 'postalCode'] as const;
 
-/** A phone number: digits with optional spaces, + ( ) - . /, and an extension; 3 to 15 digits (E.164's most). */
-function isTelephone(value: string): boolean {
-  const match = /^(\+?[\d\s().\-/]+?)(?:\s*(?:x|ext\.?)\s*\d{1,6})?$/i.exec(value);
-  if (!match) return false;
-  const digits = match[1].replace(/\D/g, '').length;
-  return digits >= 3 && digits <= 15;
+/** The fields of an address that make it one; the country alone does not (#2073). */
+const ADDRESS_CONTENT = ['streetAddress', 'addressLocality', 'addressRegion', 'postalCode'] as const;
+
+/** A part of the details as trimmed text; '' for none. Anything but text is refused. */
+function textOf(value: unknown, part: string, field: string): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') throw new ContactDetailsInvalidError(part, field, 'is not text');
+  return value.trim();
+}
+
+/** A phone as stored (#2073): E.164 and the extension; both '' for no phone. */
+function phoneFields(part: string, phone: PhoneInput, fallback: string): { telephone: string; extension: string } {
+  const number = textOf(phone.number, part, 'telephone');
+  const extension = textOf(phone.extension, part, 'extension');
+  if (extension && !/^\d{1,10}$/.test(extension)) throw new ContactDetailsInvalidError(part, 'extension', 'is not an extension: use digits only');
+  if (!number) {
+    if (extension) throw new ContactDetailsInvalidError(part, 'extension', 'needs a phone number');
+    return { telephone: '', extension: '' };
+  }
+  const chosen = textOf(phone.country, part, 'country');
+  const country = chosen ? knownCountry(chosen) : fallback;
+  if (!country) throw new ContactDetailsInvalidError(part, 'country', 'is not a country on the list');
+  const read = toE164(number, country);
+  if (!read) throw new ContactDetailsInvalidError(part, 'telephone', 'is not a phone number we can read: check it and the country beside it');
+  return { telephone: read.telephone, extension: extension || read.extension || '' };
+}
+
+/** An address as given (#2073), its country checked; every field '' when it has no content. */
+function addressFields(part: string, address: AddressInput, fallback: string): Record<(typeof ADDRESS_CONTENT)[number] | 'addressCountry', string> {
+  const fields = {
+    streetAddress: textOf(address.streetAddress, part, 'streetAddress'),
+    addressLocality: textOf(address.addressLocality, part, 'addressLocality'),
+    addressRegion: textOf(address.addressRegion, part, 'addressRegion'),
+    postalCode: textOf(address.postalCode, part, 'postalCode'),
+    addressCountry: ''
+  };
+  if (!ADDRESS_CONTENT.some((key) => fields[key])) return fields;
+  const chosen = textOf(address.addressCountry, part, 'addressCountry');
+  const country = chosen ? knownCountry(chosen) : fallback;
+  if (!country) throw new ContactDetailsInvalidError(part, 'addressCountry', 'is not a country on the list');
+  fields.addressCountry = country;
+  return fields;
+}
+
+/** `fields` set on `base`: a '' removes that field. */
+function withFields(base: Record<string, unknown>, fields: Record<string, string>): Record<string, unknown> {
+  const out = { ...base };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value) out[key] = value;
+    else delete out[key];
+  }
+  return out;
+}
+
+function hasContent(entry: Record<string, unknown>, keys: readonly string[]): boolean {
+  return keys.some((key) => typeof entry[key] === 'string' && entry[key] !== '');
+}
+
+/** `entries` with `fields` set on the first ContactPoint of `contactType` (#2073): added when missing, dropped when left empty. */
+function withContactPoint(entries: ContactPointEntry[], contactType: string, fields: Record<string, string>): ContactPointEntry[] {
+  return withEntry(entries, 'ContactPoint', contactType, fields);
+}
+
+/** `entries` with the `mailing` PostalAddress set (#2073), kept while it has an address, a name or a phone. */
+function withMailingAddress(entries: ContactPointEntry[], fields: Record<string, string>): ContactPointEntry[] {
+  return withEntry(entries, 'PostalAddress', 'mailing', fields);
+}
+
+function withEntry(entries: ContactPointEntry[], type: 'ContactPoint' | 'PostalAddress', contactType: string, fields: Record<string, string>): ContactPointEntry[] {
+  const out = [...entries];
+  const at = out.findIndex((c) => c['@type'] === type && c.contactType === contactType);
+  const merged = withFields({ ...(at >= 0 ? out[at] : {}), '@type': type, contactType }, fields);
+  const kept = hasContent(merged, CONTACT_POINT_CONTENT);
+  if (!hasContent(merged, ADDRESS_CONTENT)) delete merged.addressCountry;
+  if (at >= 0 && kept) out[at] = merged as unknown as ContactPointEntry;
+  else if (at >= 0) out.splice(at, 1);
+  else if (kept) out.push(merged as unknown as ContactPointEntry);
+  return out;
+}
+
+/** The home address with `fields` set (#2073); undefined when it has no address left. */
+function withAddress(current: PostalAddress | undefined, fields: Record<string, string>): PostalAddress | undefined {
+  const merged = withFields({ ...(current ?? {}), '@type': 'PostalAddress' }, fields);
+  return hasContent(merged, ADDRESS_CONTENT) ? merged as unknown as PostalAddress : undefined;
+}
+
+/** A web address (http or https), or '' for none (#2073). */
+function webAddress(value: unknown, part: string): string {
+  const text = textOf(value, part, 'url');
+  if (!text) return '';
+  let url: URL | null;
+  try {
+    url = new URL(text);
+  } catch {
+    url = null;
+  }
+  if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
+    throw new ContactDetailsInvalidError(part, 'url', part === 'sameAs' ? 'has a line that is not a web address: start each with https://' : 'is not a web address: start it with https://');
+  }
+  return url.href;
 }
 
 /**
- * A contact detail given to {@link IdentityManager.updateContactPoints} is not valid (#2073); nothing was written.
- * The message names the rule, never the value given: it reaches URLs and logs.
+ * A contact detail given to {@link IdentityManager.updateContactDetails} is not valid (#2073); nothing was written.
+ * `part` is which detail (a phone's `contactType`, `emergency`, `address`, `mailing`, `knowsLanguage`, `image`,
+ * `sameAs`, `name`), `field` which box of it. The message names the rule, never the value given: it reaches URLs and logs.
  */
 export class ContactDetailsInvalidError extends Error {
-  constructor(public readonly contactType: string, public readonly field: string, message: string) {
+  constructor(public readonly part: string, public readonly field: string, message: string) {
     super(message);
     this.name = 'ContactDetailsInvalidError';
   }
 }
-
 
 /** What tells two affiliations apart: organization, title and dates. */
 function affiliationKey(a: PersonAffiliation): string {
