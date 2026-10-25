@@ -45,7 +45,7 @@ describe('UserManager#searchUsers()', () => {
   const pdp = { decide: vi.fn(async (_subject: unknown, _request: { action: string }) => ({ permit: true, applicable: true })) };
 
   const makeEngine = (allUsers) => {
-    const personManager = {
+    const identityManager = {
       getByUserIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
         const u = allUsers.find((x) => x.username === username);
         return u ? { '@id': personIdFor(username), identifier: username } : null;
@@ -61,7 +61,7 @@ describe('UserManager#searchUsers()', () => {
     };
     const engine = {
       getManager: vi.fn((name) => {
-        if (name === 'PersonManager') return personManager;
+        if (name === 'IdentityManager') return identityManager;
         if (name === 'RoleManager') return roles;
         // #2018: searchUsers decides search-user with the caller's context.
         if (name === 'PolicyDecisionPoint') return pdp;

@@ -76,7 +76,7 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 
 - 1 Glossary and guides: digital identity, credentials, user, contact, identity record, role, affiliation, title; drop "person" in prose. No code.
 - 2 An account missing its identity record gets one at start-up, recorded (the paused fix; unblocks hand-made test users).
-- 3 Renames with one-release aliases: PersonManager → IdentityManager; `contact-read` / `contact-manage` → `identity-read` / `identity-manage`.
+- 3 Renames with one-release aliases: PersonManager → IdentityManager; `contact-read` / `contact-manage` → `identity-read` / `identity-manage`. Built in [#2038](https://github.com/jwilleke/ngdpbase/issues/2038).
 - 4 Affiliations: the `OrganizationRole` shape (memberOf, title as `roleName`, startDate/endDate), who may set them, search by affiliation; today's `affiliation: [{ organization, role? }]` converted.
 - 5 A role member must have credentials: a contact is refused as a role member.
 - 6 Organizations get a `urn:uuid` `@id` (URL an ordinary field); every reference that stores a username for an identity switches to its `@id`.

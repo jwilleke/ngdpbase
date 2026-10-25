@@ -303,7 +303,7 @@ class OrganizationManager extends BaseManager {
     return value;
   }
 
-  /** One organization by `@id`, for a caller who may read contacts (`contact-read`), or core's own work (#2018). */
+  /** One organization by `@id`, for a caller who may read contacts (`identity-read`), or core's own work (#2018). */
   async getById(ctx: ActorContext, id: string): Promise<Organization | null> {
     await requireRecordAccess(this.engine, ctx, 'read');
     if (this.byIdCache.has(id)) {
@@ -337,13 +337,13 @@ class OrganizationManager extends BaseManager {
 
   // ── The door (#1930) ─────────────────────────────────────────────────────
   //
-  // Each call takes the caller's context first and asks the PDP: `contact-read` to read,
-  // `contact-manage` to change; each change is recorded as the `contact-manage` audit
+  // Each call takes the caller's context first and asks the PDP: `identity-read` to read,
+  // `identity-manage` to change; each change is recorded as the `identity-manage` audit
   // event; a refusal throws ContactRefusedError. getById and getByFile take the
   // caller's context too (#2018); core's own reads pass the system context.
   // getInstallOrg is the site's own anchor Organization, named in configuration.
 
-  /** Every organization, for a caller who may read contacts (`contact-read`). */
+  /** Every organization, for a caller who may read contacts (`identity-read`). */
   async list(ctx: ActorContext): Promise<Organization[]> {
     await requireContactPermission(this.engine, ctx, 'read');
     return this.requireProvider().list();
@@ -382,7 +382,7 @@ class OrganizationManager extends BaseManager {
    */
   async people(ctx: ActorContext, organizationId: string): Promise<Array<{ person: Person; role?: string }>> {
     await requireContactPermission(this.engine, ctx, 'read');
-    const persons = this.engine.getManager<{ list(ctx: ActorContext): Promise<Person[]> }>('PersonManager');
+    const persons = this.engine.getManager<{ list(ctx: ActorContext): Promise<Person[]> }>('IdentityManager');
     if (!persons) return [];
     const out: Array<{ person: Person; role?: string }> = [];
     for (const person of await persons.list(ctx)) {

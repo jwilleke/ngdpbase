@@ -413,7 +413,7 @@ export interface ApplicationOrganizationConfig {
   /** Active Person provider class (lowercased; falls back to .default) */
   'ngdpbase.application.persons.provider': string;
 
-  /** #1930: the most results `PersonManager.search` returns when the caller gives no limit */
+  /** #1930: the most results `IdentityManager.search` returns when the caller gives no limit */
   'ngdpbase.application.persons.search.limit': number;
 
   /** #1930: minutes the emailed "Is this you?" sign-up link stays usable */

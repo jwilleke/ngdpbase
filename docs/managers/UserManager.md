@@ -24,7 +24,7 @@ UserManager handles user authentication, authorization, role management, and ses
 - __Role-Based Access Control__ - Roles defined in configuration
 - __Session Management__ - File-based sessions with expiration
 - __External Authentication__ - OAuth/JWT support for external users
-- __Schema.org Integration__ - Keeps each user's identity record (schema.org `Person`) through PersonManager
+- __Schema.org Integration__ - Keeps each user's identity record (schema.org `Person`) through IdentityManager
 - __User Pages__ - Automatic user page creation
 
 ## Quick Example
@@ -85,7 +85,7 @@ Every read-merge-write of an account runs inside one `KeyedSerial` (`src/utils/k
 - `resetPasswordWithRecoveryWords`: the read, the key rewrap and the password write.
 - `createUser`'s second write, which records the user's profile page.
 
-What comes after the write runs outside the key, because it reaches other managers: turning a disabled account's access off (`AuthManager.closeAccess`), keeping the user's identity record in step (`PersonManager`), and the `user-edit` audit record.
+What comes after the write runs outside the key, because it reaches other managers: turning a disabled account's access off (`AuthManager.closeAccess`), keeping the user's identity record in step (`IdentityManager`), and the `user-edit` audit record.
 
 __The function form.__ When the change depends on what the account holds now (append to a list, flip a preference), pass a function instead of the fields:
 
@@ -107,7 +107,7 @@ Core's own preference saves use it: `POST /preferences`, the theme toggle, My Li
 
 ### Every user has an identity record
 
-`createUser` makes the user's identity record with the account. A user without one (an account written straight into `users.json`, or one whose identity record was lost) gets it at start-up ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)): after the bootstrap admin check and before the account roles are given, UserManager lists the identity records once and, for each user that has none, calls `PersonManager.getByUserIdentifier` under the system context, which makes it and records it as `contact-manage`. Only the missing ones cost a write. A failure is logged at error level and the start goes on: the role paths make the record when the account is next used. The rule is the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door)'s.
+`createUser` makes the user's identity record with the account. A user without one (an account written straight into `users.json`, or one whose identity record was lost) gets it at start-up ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)): after the bootstrap admin check and before the account roles are given, UserManager lists the identity records once and, for each user that has none, calls `IdentityManager.getByUserIdentifier` under the system context, which makes it and records it as `identity-manage`. Only the missing ones cost a write. A failure is logged at error level and the start goes on: the role paths make the record when the account is next used. The rule is the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door)'s.
 
 ## Role Methods
 
@@ -191,7 +191,7 @@ Neither flag restricts administrators. `/admin/users/<name>/edit` requires `user
 - [PolicyManager](PolicyManager.md) - Policy definitions
 - [PolicyEvaluator](PolicyEvaluator.md) - Permission evaluation
 - [SchemaManager](SchemaManager.md) - JSON Schema registration and validation
-- [PersonManager](PersonManager.md) - Identity records
+- [IdentityManager](IdentityManager.md) - Identity records
 - [PageManager](PageManager.md) - User page creation
 
 ## Developer Documentation

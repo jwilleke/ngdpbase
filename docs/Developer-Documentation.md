@@ -72,6 +72,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | FileManager | ✅ [doc](managers/FileManager.md) | The one door for files (epic #1851). First step, read-only: today's attachments shown as file records, and the migration dry run |
 | FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
+| IdentityManager | ✅ [doc](managers/IdentityManager.md) | Identity records (#617) for every user and contact — kept apart from sign-in, shared across addons |
 | ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | The ICE engine — imports through shims into receivers' own doors; the folder, URL and takeout imports |
 | Manager-SOT | ✅ [doc](managers/Manager-SOT.md) | Where each fact lives and which manager owns it — the standing rule, the current violations, and the plan to fix them. Starts with the access-control subject |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
@@ -80,7 +81,6 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | OidcManager | ✅ [doc](managers/OidcManager.md) | The embedded OpenID Connect provider at the base URL's /oidc — off unless enabled, never loaded when off (#1570) |
 | OrganizationManager | ✅ [doc](managers/OrganizationManager.md) | Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider |
 | PageManager | 📘 [doc](managers/PageManager.md) + [guide](managers/PageManager-Complete-Guide.md) | Page CRUD and storage facade over the PageProvider registry |
-| PersonManager | ✅ [doc](managers/PersonManager.md) | Identity records (#617) for every user and contact — kept apart from sign-in, shared across addons |
 | PluginManager | 📘 [doc](managers/PluginManager.md) + [guide](managers/PluginManager-Complete-Guide.md) | Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output |
 | PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of PolicyInformationPoint — evaluates role/permission policies against principals and resources |
 | PolicyInformationPoint | ✅ [doc](managers/PolicyInformationPoint.md) | What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager) |

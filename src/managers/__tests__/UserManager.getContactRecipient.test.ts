@@ -33,7 +33,7 @@ describe('UserManager#getContactRecipient()', () => {
   const personIdFor = (username: string) => `urn:uuid:test:${username}`;
 
   const makeEngine = (allUsers: any[]) => {
-    const personManager = {
+    const identityManager = {
       getByUserIdentifier: vi.fn(async (_ctx: unknown, username: string) => {
         const u = allUsers.find((x) => x.username === username);
         return u ? { '@id': personIdFor(username), identifier: username } : null;
@@ -49,7 +49,7 @@ describe('UserManager#getContactRecipient()', () => {
     };
     const engine = {
       getManager: vi.fn((name: string) => {
-        if (name === 'PersonManager') return personManager;
+        if (name === 'IdentityManager') return identityManager;
         if (name === 'RoleManager') return roles;
         return null;
       }),

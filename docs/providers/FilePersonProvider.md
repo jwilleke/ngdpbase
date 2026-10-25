@@ -8,7 +8,7 @@ code: src/providers/FilePersonProvider.ts
 
 # FilePersonProvider
 
-Default storage backend for [PersonManager](../managers/PersonManager.md). One JSON file per identity record (user or contact; the `Person` type) under `data/persons/`.
+Default storage backend for [IdentityManager](../managers/IdentityManager.md). One JSON file per identity record (user or contact; the `Person` type) under `data/persons/`.
 
 ## Storage
 
@@ -18,7 +18,7 @@ Default storage backend for [PersonManager](../managers/PersonManager.md). One J
 
 ## See Also
 
-- [PersonManager](../managers/PersonManager.md) — consumer
+- [IdentityManager](../managers/IdentityManager.md) — consumer
 - `src/types/PersonProvider.ts` — the interface contract
 - `src/types/Person.ts` — the record shape
 - Issue #617 — canonical-records design

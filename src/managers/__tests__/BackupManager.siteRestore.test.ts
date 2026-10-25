@@ -22,7 +22,7 @@ import { applyInstanceEnvAtStart } from '../../utils/instanceEnvBackup';
 import BackupManager from '../BackupManager';
 import DatabaseManager, { BACKUP_KEY_ENV, DATABASE_KEY_ENV } from '../DatabaseManager';
 import RoleManager from '../RoleManager';
-import PersonManager from '../PersonManager';
+import IdentityManager from '../IdentityManager';
 import OrganizationManager from '../OrganizationManager';
 import FootnoteManager from '../FootnoteManager';
 import CommentManager from '../CommentManager';
@@ -38,7 +38,9 @@ const SEALED = sealBytes(Buffer.alloc(32, 7), Buffer.from([0x00, 0xff, 0xfe, 0x8
 const POOL_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x10, 0x20]);
 const ATTACHMENT_ID = 'a'.repeat(64);
 
-const FILE_MANAGERS = ['OrganizationManager', 'PersonManager', 'RoleManager', 'AttachmentManager', 'CommentManager', 'FootnoteManager'] as const;
+const FILE_MANAGERS = ['OrganizationManager', 'IdentityManager', 'RoleManager', 'AttachmentManager', 'CommentManager', 'FootnoteManager'] as const;
+/** The entries they are recorded under: IdentityManager keeps its `PersonManager` entry (#2038). */
+const FILE_ENTRIES = FILE_MANAGERS.map((name) => (name === 'IdentityManager' ? 'PersonManager' : name));
 
 describe('a site restore stages every part together (#1876)', () => {
   let dir: string;
@@ -113,7 +115,7 @@ describe('a site restore stages every part together (#1876)', () => {
     const database = new DatabaseManager(engine);
     managers.DatabaseManager = database;
     await database.initialize();
-    const ctors = { OrganizationManager, PersonManager, RoleManager, AttachmentManager, CommentManager, FootnoteManager };
+    const ctors = { OrganizationManager, IdentityManager, RoleManager, AttachmentManager, CommentManager, FootnoteManager };
     for (const name of FILE_MANAGERS) {
       const manager = new ctors[name](engine);
       managers[name] = manager;
@@ -266,7 +268,7 @@ describe('a site restore stages every part together (#1876)', () => {
     change(site);
     const results = await site.backup.restoreFromFile(CTX, file);
     expect(results.failed).toEqual([]);
-    expect(results.success).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_MANAGERS]));
+    expect(results.success).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_ENTRIES]));
     expect(notifications.map((n) => n.title)).toContain('A site restore is staged');
     // Staged, not applied: the live data still has every change.
     expect(JSON.parse(fs.readFileSync(path.join(p.roles, 'editor.json'), 'utf8')).member).toEqual([]);
@@ -372,7 +374,7 @@ describe('a site restore stages every part together (#1876)', () => {
     expect(site.backup.isRestoreRunning()).toBe(true);
     const results = await done;
     expect(site.backup.isRestoreRunning()).toBe(false);
-    expect(results?.success).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_MANAGERS]));
+    expect(results?.success).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_ENTRIES]));
     expect(JSON.parse(fs.readFileSync(p.siteRestore, 'utf8'))).toMatchObject({ state: 'staged', source: path.basename(file), stagedBy: 'admin' });
     expect(notifications.map((n) => n.title)).toContain('A site restore is staged');
     // Nothing is restored live from the page: a manager without a staged restore is left out, and named afterwards.
@@ -446,7 +448,7 @@ describe('a site restore stages every part together (#1876)', () => {
     site.managers.PageManager = liveManager();
     site.managers.UserManager = { backup: async () => ({}) };
     const { restored, notRestored } = site.backup.siteRestoreScope();
-    expect(restored).toEqual(expect.arrayContaining(['the databases', 'attachment files', 'role membership', 'persons', 'organizations', 'footnotes on public pages', 'comments on public pages']));
+    expect(restored).toEqual(expect.arrayContaining(['the databases', 'attachment files', 'role membership', 'identity records (of users and contacts)', 'organizations', 'footnotes on public pages', 'comments on public pages']));
     expect(restored).not.toContain('pages (with their history, trash and private stores)');
     expect(notRestored).toEqual(expect.arrayContaining(['pages (with their history, trash and private stores)', 'user accounts', 'settings', 'sign-in sessions', 'TLS certificate files']));
     expect(notRestored).not.toContain('attachment files');
@@ -461,7 +463,7 @@ describe('a site restore stages every part together (#1876)', () => {
     await expect(site.backup.restoreFromFile(CTX, file)).rejects.toThrow(/already staged; cancel it or replace it/);
     await expect(site.backup.startRestore(CTX, path.basename(file), { replace: true })).rejects.toThrow(/site restore .* is staged/);
     const cancelled = await site.backup.cancelStagedSiteRestore(CTX);
-    expect(cancelled.parts.map((p) => p.manager)).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_MANAGERS]));
+    expect(cancelled.parts.map((p) => p.manager)).toEqual(expect.arrayContaining(['DatabaseManager', ...FILE_ENTRIES]));
     expect(leftovers(/\.staged$/)).toEqual([]);
     expect(site.database.getStagedRestore()).toBeNull();
     await stop(site);

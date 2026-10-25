@@ -44,7 +44,7 @@
  *    `viaProxy` would let a job outrun its ceiling. So each conversion
  *    function appears exactly where {@link CONVERSIONS} says, and nowhere
  *    else outside tests.
- * 6. __No context-free lookup__ (#2018) — PersonManager's `getById`,
+ * 6. __No context-free lookup__ (#2018) — IdentityManager's `getById`,
  *    `getByIdentifier` and `getByUserIdentifier`, RoleManager's `hasRole`,
  *    `resolveUserRoles` and `getById`, OrganizationManager's `getById` and
  *    `getByFile`, and AssetManager's `getById` take the caller's context first.
@@ -138,7 +138,7 @@ export interface Violation {
 }
 
 /** The managers whose `getById` / `getByFile` are doors (#2018); another manager's `getById` is its own. */
-const DOOR_RECEIVER = /(Person|Role|Organization|Asset)Manager|\b(persons|personManager|orgs|organizations|organizationManager|roleManager|roles|assetManager|assets)\b/;
+const DOOR_RECEIVER = /(Identity|Person|Role|Organization|Asset)Manager|\b(persons|identityManager|personManager|orgs|organizations|organizationManager|roleManager|roles|assetManager|assets)\b/;
 
 /**
  * The lookups that take the caller's context first (#2018), and how many
@@ -155,7 +155,7 @@ const LOOKUPS: ReadonlyArray<{ method: string; args: number; receiver?: RegExp }
 ];
 
 /** The files that hold those doors: their own `this.getById(…)` is the door too. */
-const DOOR_FILES = new Set(['src/managers/PersonManager.ts', 'src/managers/RoleManager.ts', 'src/managers/OrganizationManager.ts', 'src/managers/AssetManager.ts']);
+const DOOR_FILES = new Set(['src/managers/IdentityManager.ts', 'src/managers/RoleManager.ts', 'src/managers/OrganizationManager.ts', 'src/managers/AssetManager.ts']);
 
 /** A provider's lookup, below the door: `provider.x(`, `this.provider.x(`, `requireProvider().x(`. */
 const PROVIDER_RECEIVER = /provider\s*(\(\s*\))?\s*!?\s*\??\s*$/i;

@@ -172,7 +172,7 @@ class MetricsManager extends BaseManager {
       description: 'Total number of HTTP requests'
     });
     // #620: identity-cache hit/miss telemetry. Attributes:
-    //   manager — RoleManager | PersonManager | OrganizationManager
+    //   manager — RoleManager | IdentityManager | OrganizationManager
     //   cache   — short cache key name (memberCache, byIdentifier, ...)
     //   result  — 'hit' | 'miss'
     this.cacheLookupsTotal = this.meter.createCounter(`${this.prefix}_cache_lookups_total`, {

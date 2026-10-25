@@ -191,7 +191,8 @@ const RESTORE_LABELS: Record<string, string> = {
   BackgroundJobManager: 'scheduled-job state',
   AttachmentManager: 'attachment files',
   RoleManager: 'role membership',
-  PersonManager: 'persons',
+  // IdentityManager's entry keeps its old name (#2038, MANAGER_ENTRY_NAMES).
+  PersonManager: 'identity records (of users and contacts)',
   OrganizationManager: 'organizations',
   FootnoteManager: 'footnotes on public pages',
   CommentManager: 'comments on public pages',
@@ -215,6 +216,27 @@ const ADDON_ENTRY_NAMES: Readonly<Record<string, string>> = {
   feeds: 'FeedManager'
 };
 
+/**
+ * A core manager renamed after its entry was first written keeps that entry
+ * (#2038): IdentityManager was PersonManager, and its part is still recorded
+ * as `PersonManager` in the backup document and the site restore record, so
+ * an old backup restores and an older site can restore a new one. Keyed by
+ * the registered name; an entry is a stored name, never renamed.
+ */
+const MANAGER_ENTRY_NAMES: Readonly<Record<string, string>> = {
+  IdentityManager: 'PersonManager'
+};
+
+/** The backup entry a registered manager's part is recorded under (#2038): its name, unless it was renamed. */
+export function managerEntryName(registered: string): string {
+  return Object.hasOwn(MANAGER_ENTRY_NAMES, registered) ? MANAGER_ENTRY_NAMES[registered] : registered;
+}
+
+/** The registered manager a backup entry belongs to (#2038): the inverse of {@link managerEntryName}. */
+function registeredNameOf(entry: string): string {
+  return Object.entries(MANAGER_ENTRY_NAMES).find(([, e]) => e === entry)?.[0] ?? entry;
+}
+
 /** The backup document entry, and the site restore part, an add-on's files are recorded under (#1985). */
 export function addonEntryName(slug: string): string {
   return ADDON_ENTRY_NAMES[slug] ?? `addon:${slug}`;
@@ -231,7 +253,7 @@ export function addonEntryName(slug: string): string {
 export function applyStagedPartsAtStart(engine: WikiEngine, manager: string, declared: BackupFolder[]): StagedRestoreAtStart | null {
   const configManager = engine?.getManager?.<ConfigurationManager>('ConfigurationManager');
   if (!configManager) return null;
-  return applyDeclaredPartsAtStart(manager, declared, configManager);
+  return applyDeclaredPartsAtStart(managerEntryName(manager), declared, configManager);
 }
 
 /** The site restore manifest's file, as configured; a module function for the start, before BackupManager exists (#1986). */
@@ -826,7 +848,7 @@ class BackupManager extends BaseManager {
       };
 
       // Get all manager names from engine
-      const managerNames = this.engine.getRegisteredManagers();
+      const managerNames = this.registeredEntries();
       logger.info(`📋 Found ${managerNames.length} registered managers`);
 
       // #1723: a manager may write its own files (the databases) beside the
@@ -855,7 +877,7 @@ class BackupManager extends BaseManager {
         }
 
         try {
-          const manager = this.engine.getManager<BaseManager>(managerName);
+          const manager = this.managerFor(managerName);
           const parts = declared.get(managerName) ?? [];
           if (!manager && parts.length === 0) {
             logger.warn(`⚠️  Manager not found: ${managerName}`);
@@ -1610,7 +1632,7 @@ class BackupManager extends BaseManager {
         }
 
         try {
-          const manager = this.engine.getManager<BaseManager>(managerName);
+          const manager = this.managerFor(managerName);
           if (!manager) {
             logger.warn(`⚠️  Manager not found: ${managerName}, skipping`);
             results.skipped.push(managerName);
@@ -1658,10 +1680,20 @@ class BackupManager extends BaseManager {
     }
   }
 
+  /** The registered managers, by the entry each is recorded under in a backup (#2038), in registration order. */
+  private registeredEntries(): string[] {
+    return this.engine.getRegisteredManagers().map(managerEntryName);
+  }
+
+  /** The manager a backup entry belongs to (#2038), or undefined when this site has none. */
+  private managerFor(entry: string): BaseManager | undefined {
+    return this.engine.getManager<BaseManager>(registeredNameOf(entry));
+  }
+
   /** Whether this site's manager of that name stages its restore (#1876), or its entry is declared folders (#1985). */
   private restoresStaged(name: string): boolean {
     if (this.declaredFor(name).length > 0) return true;
-    const manager = this.engine.getManager<BaseManager>(name);
+    const manager = this.managerFor(name);
     return typeof manager?.restoreIsStaged === 'function' && manager.restoreIsStaged();
   }
 
@@ -1682,7 +1714,7 @@ class BackupManager extends BaseManager {
 
   /** What a manager declares, and an add-on's folders recorded under the same entry (#1985). */
   private declaredFor(name: string, forBackup = false): BackupFolder[] {
-    const manager = this.engine.getManager<BaseManager>(name);
+    const manager = this.managerFor(name);
     let own: BackupFolder[] = [];
     try {
       own = typeof manager?.backupFolders === 'function' ? manager.backupFolders() : [];
@@ -1694,7 +1726,7 @@ class BackupManager extends BaseManager {
 
   /** Every entry with declared folders or files, in registration order, add-ons' after (#1985). */
   private declaredParts(options: { forBackup?: boolean } = {}): Map<string, BackupFolder[]> {
-    const names = [...this.engine.getRegisteredManagers(), ...this.addonParts().map((a) => a.entry)];
+    const names = [...this.registeredEntries(), ...this.addonParts().map((a) => a.entry)];
     const out = new Map<string, BackupFolder[]>();
     for (const name of names) {
       if (out.has(name) || name === 'BackupManager') continue;
@@ -1790,7 +1822,7 @@ class BackupManager extends BaseManager {
           await stageDeclaredParts(name, declared, backupData.managers[name] as BaseBackupData, restoreOptions);
           continue;
         }
-        await this.engine.getManager<BaseManager>(name)!.restore(backupData.managers[name] as BaseBackupData, restoreOptions);
+        await this.managerFor(name)!.restore(backupData.managers[name] as BaseBackupData, restoreOptions);
       }
       // #1876: the instance .env, BackupManager's own part; applied at the very start of the process.
       const env = (backupData.managers.BackupManager as { data?: { env?: DirectoryBackupData | null } } | undefined)?.data?.env;
@@ -2030,7 +2062,7 @@ class BackupManager extends BaseManager {
 
   /** The managers on this site whose restore is staged (#1876), in registration order: what a site restore stages. */
   private stagedManagerNames(): string[] {
-    const names = this.engine.getRegisteredManagers().filter((name) => this.restoresStaged(name));
+    const names = this.registeredEntries().filter((name) => this.restoresStaged(name));
     // #1985: an add-on's files under an entry no manager of that name has (`addon:<slug>`).
     for (const { entry } of this.addonParts()) if (!names.includes(entry)) names.push(entry);
     return names;
@@ -2050,7 +2082,7 @@ class BackupManager extends BaseManager {
       .filter((name) => name !== 'DatabaseManager' || databases?.isEnabled?.() !== false)
       .map(restoreLabel);
     const notRestored = Object.keys(RESTORE_LABELS)
-      .filter((name) => name !== 'BackupManager' && this.engine.getManager(name) && !this.restoresStaged(name))
+      .filter((name) => name !== 'BackupManager' && this.managerFor(name) && !this.restoresStaged(name))
       .map(restoreLabel);
     return { restored, notRestored: [...notRestored, ...NEVER_IN_A_BACKUP] };
   }

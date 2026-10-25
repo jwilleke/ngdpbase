@@ -100,6 +100,20 @@ export class PolicyDecisionPoint extends BaseManager {
   // src/utils/rolePermissions.ts; before step 10, a PolicyManager that copied
   // the policies at boot, so an edit was not enforced until a restart.)
 
+  /** Each `<policy id> <retired name>` already warned about (#2038): said once per process. */
+  private readonly warnedRetired = new Set<string>();
+
+  /** Warn, once per policy and name, that a policy names a retired permission and what it is read as (#2038). */
+  private warnRetiredOnce(policy: Policy): void {
+    for (const name of policy.actions ?? []) {
+      const now = RETIRED_PERMISSIONS.get(name);
+      const key = `${policy.id} ${name}`;
+      if (!now || this.warnedRetired.has(key)) continue;
+      this.warnedRetired.add(key);
+      logger.warn(`[PDP] Policy '${policy.id}' names the retired permission '${name}'; it is read as ${now.map((n) => `'${n}'`).join(', ')}. Name ${now.length > 1 ? 'those' : 'that'} instead (#2038).`);
+    }
+  }
+
   /**
    * The policies in force right now, highest priority first.
    *
@@ -118,8 +132,12 @@ export class PolicyDecisionPoint extends BaseManager {
     if (!Array.isArray(raw)) return [];
     return raw.filter(isPolicy)
       // #1638: a policy written before a permission was split still grants
-      // what the old name stood for.
-      .map((p) => (p.actions?.some((a) => RETIRED_PERMISSIONS.has(a)) ? { ...p, actions: withRetiredExpanded(p.actions) } : p))
+      // what the old name stood for; #2038: or renamed, said once per policy and name.
+      .map((p) => {
+        if (!p.actions?.some((a) => RETIRED_PERMISSIONS.has(a))) return p;
+        this.warnRetiredOnce(p);
+        return { ...p, actions: withRetiredExpanded(p.actions) };
+      })
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
   }
 

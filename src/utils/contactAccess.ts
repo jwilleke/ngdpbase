@@ -1,11 +1,11 @@
 /**
  * The contacts door's one decision and its one record (#1930).
  *
- * PersonManager and OrganizationManager are the enforcement points for
+ * IdentityManager and OrganizationManager are the enforcement points for
  * contacts. Both ask the PDP the same two questions with the caller's
- * context: `contact-read` to list, search or view, `contact-manage` to
+ * context: `identity-read` to list, search or view, `identity-manage` to
  * create, change, delete or link; and both record each change as the
- * `contact-manage` audit event. That rule lives here once, so the two doors
+ * `identity-manage` audit event. That rule lives here once, so the two doors
  * cannot drift (operator, 2026-10-20).
  *
  * A refusal is thrown as {@link ContactRefusedError}, carrying the decision.
@@ -15,7 +15,7 @@
  *
  * Every lookup takes a context too (#2018, operator 2026-10-23), through
  * {@link requireRecordAccess}: a user's own identity record under
- * `profile-manage`, anyone else's under `contact-read` / `contact-manage`, and
+ * `profile-manage`, anyone else's under `identity-read` / `identity-manage`, and
  * core's own reads under the system context without a policy evaluation, so
  * resolving roles on every request stays cheap.
  */
@@ -36,7 +36,7 @@ interface DeciderLike {
 }
 
 /** What a contacts door asks: `read` to list, search or view; `manage` to change. */
-export const CONTACT_PERMISSION = { read: 'contact-read', manage: 'contact-manage' } as const satisfies Record<string, CorePermission>;
+export const CONTACT_PERMISSION = { read: 'identity-read', manage: 'identity-manage' } as const satisfies Record<string, CorePermission>;
 
 /** A contacts door said no. `permission` is what was refused; `decision` is the PDP's answer. */
 export class ContactRefusedError extends Error {
@@ -48,7 +48,7 @@ export class ContactRefusedError extends Error {
 
 /**
  * Throws {@link ContactRefusedError} unless `ctx` may do `kind` (`read` asks
- * `contact-read`, `manage` asks `contact-manage`), and each of `also` (a link
+ * `identity-read`, `manage` asks `identity-manage`), and each of `also` (a link
  * to an account also asks `user-edit`). A missing context or decision point
  * refuses: closed, never open.
  */
@@ -85,7 +85,7 @@ export function isSystemWork(engine: EngineLike, ctx: ActorContext | null | unde
  * - read it as core's own work ({@link isSystemWork}): allowed, not evaluated;
  * - read or change its own identity record (the context's username is the
  *   record's `identifier`): `profile-manage`, which every user holds;
- * - read or change any other record: `contact-read` / `contact-manage`.
+ * - read or change any other record: `identity-read` / `identity-manage`.
  *
  * `record` is the identity record (or what names it, `{ identifier }`); left
  * out for a record that is never anyone's own (an organization, a role).
@@ -136,14 +136,14 @@ export interface ContactChange {
 }
 
 /**
- * Record a contacts change as `contact-manage`, under the caller's context.
+ * Record a contacts change as `identity-manage`, under the caller's context.
  * `continue`: a lost record is counted, the change stands. A system context
  * goes through `recordSystemAction`, so the bootstrap admin's person, made
  * before the audit sink is up, is recorded once it is.
  */
 export async function recordContactChange(engine: EngineLike, ctx: ActorContext, change: ContactChange): Promise<void> {
   const event = {
-    eventType: AUDIT_EVENT.CONTACT_MANAGE,
+    eventType: AUDIT_EVENT.IDENTITY_MANAGE,
     action: `${change.kind}-${change.operation}`,
     result: 'success' as const,
     severity: change.operation === 'link' || change.operation === 'delete' ? 'medium' as const : 'low' as const,

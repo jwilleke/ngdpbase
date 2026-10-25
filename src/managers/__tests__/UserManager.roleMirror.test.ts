@@ -2,7 +2,7 @@
  * UserManager → RoleManager mirror tests (#617 follow-up, iteration 2).
  *
  * Verifies that User.roles[] writes mirror into the OrganizationRole records
- * managed by RoleManager. PersonManager + OrganizationManager + RoleManager
+ * managed by RoleManager. IdentityManager + OrganizationManager + RoleManager
  * are mocked at the engine.getManager seam; the public UserManager methods
  * (createUser, updateUser, deleteUser, assignRole, removeRole) are exercised
  * end-to-end. The provider is stubbed per-test so we don't depend on
@@ -117,7 +117,7 @@ function makeMocks(opts: {
   roleManager?: ReturnType<typeof makeRoleManagerStub>;
 } = {}) {
   const lookup = vi.fn(async () => opts.person ?? null);
-  const personManager = {
+  const identityManager = {
     getByIdentifier: lookup,
     getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),
@@ -130,7 +130,7 @@ function makeMocks(opts: {
     )
   };
   const roleManager = opts.roleManager ?? makeRoleManagerStub();
-  return { personManager, organizationManager, roleManager };
+  return { identityManager, organizationManager, roleManager };
 }
 
 /**
@@ -142,7 +142,7 @@ function makeEngine(mocks: ReturnType<typeof makeMocks>, configManager: ReturnTy
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return configManager;
-      if (name === 'PersonManager') return mocks.personManager;
+      if (name === 'IdentityManager') return mocks.identityManager;
       if (name === 'OrganizationManager') return mocks.organizationManager;
       if (name === 'RoleManager') return roles;
       if (name === 'UserManager') return userManager;
@@ -465,7 +465,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect(roleManager._store.get('editor')?.member).toEqual([{ '@id': 'urn:uuid:other-person' }]);
       // Person is deleted after role memberships are scrubbed
       // #1930: under a system context (account lifecycle), never the caller's own.
-      expect(mocks.personManager.delete).toHaveBeenCalledWith(expect.objectContaining({ origin: 'boot', reason: expect.stringContaining('account lifecycle') }), PERSON_ID);
+      expect(mocks.identityManager.delete).toHaveBeenCalledWith(expect.objectContaining({ origin: 'boot', reason: expect.stringContaining('account lifecycle') }), PERSON_ID);
     });
   });
 

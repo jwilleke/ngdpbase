@@ -37,7 +37,10 @@ export function grantablePermissions<T>(definitions: Record<string, T> | null | 
  */
 export const RETIRED_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map([
   // #1638: one name per action — create, extend and revoke are separate.
-  ['share-manage', ['share-create', 'share-extend', 'share-revoke']]
+  ['share-manage', ['share-create', 'share-extend', 'share-revoke']],
+  // #2038: renamed (identity model, step 3); the old names are read for one release only.
+  ['contact-read', ['identity-read']],
+  ['contact-manage', ['identity-manage']]
 ]);
 
 /** The names with every retired permission replaced by what it stood for, de-duplicated, order kept. */

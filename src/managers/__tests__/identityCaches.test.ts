@@ -1,7 +1,7 @@
 /**
  * In-memory cache behaviour for the three #617 identity managers (#620
  * Option B). Exercises the cache hit/miss/bust pattern uniformly across
- * RoleManager, PersonManager, OrganizationManager. Each manager is tested
+ * RoleManager, IdentityManager, OrganizationManager. Each manager is tested
  * with a stub provider whose method calls are counted via vi.fn() — the
  * cache effect is observable as "provider only saw 1 call across N reads
  * with the same key, then saw 1 more after a write."
@@ -13,7 +13,7 @@ import fs from 'fs-extra';
 describe('Identity manager caches (#620 Option B)', () => {
   let tmpDir: string;
   let RoleManager: any;
-  let PersonManager: any;
+  let IdentityManager: any;
   let OrganizationManager: any;
 
   const ORG_ID = 'https://example.com/';
@@ -46,7 +46,7 @@ describe('Identity manager caches (#620 Option B)', () => {
     process.env.INSTANCE_DATA_FOLDER = tmpDir;
 
     RoleManager = (await import('../RoleManager')).default;
-    PersonManager = (await import('../PersonManager')).default;
+    IdentityManager = (await import('../IdentityManager')).default;
     OrganizationManager = (await import('../OrganizationManager')).default;
   });
 
@@ -198,7 +198,7 @@ describe('Identity manager caches (#620 Option B)', () => {
     });
   });
 
-  describe('PersonManager', () => {
+  describe('IdentityManager', () => {
     const mockPerson = (identifier: string, id: string = `urn:uuid:${identifier}`) => ({
       '@context': 'https://schema.org' as const,
       '@type': 'Person' as const,
@@ -239,7 +239,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const engine = {
         getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null)
       };
-      const manager = new PersonManager(engine);
+      const manager = new IdentityManager(engine);
       await manager.initialize();
       const provider = stubProvider(initialPersons);
       (manager).provider = provider;
@@ -485,7 +485,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'hit' });
     });
 
-    test('PersonManager.getByIdentifier records hit and miss', async () => {
+    test('IdentityManager.getByIdentifier records hit and miss', async () => {
       const metrics = stubMetrics();
       const configManager = makeConfig({
         'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
@@ -497,7 +497,7 @@ describe('Identity manager caches (#620 Option B)', () => {
           return null;
         })
       };
-      const manager = new PersonManager(engine);
+      const manager = new IdentityManager(engine);
       await manager.initialize();
       (manager).provider = {
         getByIdentifier: vi.fn(async () => null),
@@ -508,11 +508,11 @@ describe('Identity manager caches (#620 Option B)', () => {
       await manager.getByIdentifier(SYS, 'alice'); // miss
       await manager.getByIdentifier(SYS, 'alice'); // hit
 
-      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'miss' });
-      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'IdentityManager', cache: 'byIdentifier', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'IdentityManager', cache: 'byIdentifier', result: 'hit' });
     });
 
-    test('PersonManager.getById records hit and miss', async () => {
+    test('IdentityManager.getById records hit and miss', async () => {
       const metrics = stubMetrics();
       const configManager = makeConfig({
         'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
@@ -524,7 +524,7 @@ describe('Identity manager caches (#620 Option B)', () => {
           return null;
         })
       };
-      const manager = new PersonManager(engine);
+      const manager = new IdentityManager(engine);
       await manager.initialize();
       (manager).provider = {
         getById: vi.fn(async () => null),
@@ -535,8 +535,8 @@ describe('Identity manager caches (#620 Option B)', () => {
       await manager.getById(SYS, PERSON_A); // miss
       await manager.getById(SYS, PERSON_A); // hit
 
-      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'miss' });
-      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'IdentityManager', cache: 'byId', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'IdentityManager', cache: 'byId', result: 'hit' });
     });
 
     test('OrganizationManager.getInstallOrg records hit and miss', async () => {
@@ -628,7 +628,7 @@ describe('Identity manager caches (#620 Option B)', () => {
       const engine = {
         getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : name === 'PolicyDecisionPoint' ? PERMIT_ALL : null)
       };
-      const manager = new PersonManager(engine);
+      const manager = new IdentityManager(engine);
       await manager.initialize();
       (manager).provider = {
         getByIdentifier: vi.fn(async () => null),

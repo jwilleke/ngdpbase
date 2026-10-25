@@ -832,7 +832,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
     it('a vault-owner-only user gets people, searched under their own context (#2018)', async () => {
       // As shipped every user holds search-user through vault-owner; the
-      // decision itself is searchUsers' (PersonManager.contacts.test, shipped policies).
+      // decision itself is searchUsers' (IdentityManager.contacts.test, shipped policies).
       const owner = { authenticated: true, username: 'olive', roles: ['vault-owner'] };
       const userManager = makeUserManager([{ username: 'jim', displayName: 'Jim' }]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);

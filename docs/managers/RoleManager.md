@@ -14,21 +14,21 @@ Which roles __exist__ is a declaration in configuration (`ngdpbase.roles.definit
 
 ## Membership
 
-Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12. Callers hold usernames; `PersonManager` maps a username to the identity record's `@id` a role record lists.
+Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12. Callers hold usernames; `IdentityManager` maps a username to the identity record's `@id` a role record lists.
 
-Who holds a role is read about a named account, so every read takes the caller's context first ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). `resolveUserRoles` and `hasRole` read the account's identity record through `PersonManager.getByUserIdentifier(ctx, username)`, which makes it when the user has none ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)): a user about themselves under `profile-manage`, about anyone else under `contact-read`. A refusal is thrown as `ContactRefusedError`, never answered as "no roles". Core's own reads pass the system context (`systemContext(engine, reason)`), allowed without a policy evaluation: `PolicyInformationPoint.subjectFor` on every request, the idle-timeout check in `app.ts`, `UserManager`'s account lifecycle, its user search's role filter and the contact-form recipient, the user-management pages after their `user-read` decision, and the install reset. An add-on job passes its job context: on its schedule that is the system context; started from a request, it is the requester's.
+Who holds a role is read about a named account, so every read takes the caller's context first ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). `resolveUserRoles` and `hasRole` read the account's identity record through `IdentityManager.getByUserIdentifier(ctx, username)`, which makes it when the user has none ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)): a user about themselves under `profile-manage`, about anyone else under `identity-read`. A refusal is thrown as `ContactRefusedError`, never answered as "no roles". Core's own reads pass the system context (`systemContext(engine, reason)`), allowed without a policy evaluation: `PolicyInformationPoint.subjectFor` on every request, the idle-timeout check in `app.ts`, `UserManager`'s account lifecycle, its user search's role filter and the contact-form recipient, the user-management pages after their `user-read` decision, and the install reset. An add-on job passes its job context: on its schedule that is the system context; started from a request, it is the requester's.
 
 | Method | For |
 | --- | --- |
 | `resolveUserRoles(ctx, username)` | the user's role names, live; `[]` when there is no account by that username or no role record |
 | `hasRole(ctx, username, roleName)` | the same question for one role — a lookup, not an access decision |
-| `getById(ctx, id)` | one role record; its members are identity records, so `contact-read`, or the system context |
+| `getById(ctx, id)` | one role record; its members are identity records, so `identity-read`, or the system context |
 | `assignRole(username, roleName, ctx)` / `removeRole(…)` | one role, for an existing account and a declared role; recorded as `user-edit` |
 | `applyRoleDiff(username, oldRoles, newRoles)` | what `UserManager` calls when an account is created or edited; the account write records the audit event |
 | `removeAllMemberships(username)` | a deleted account's identity record leaves every role |
 | `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands; each grant recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
 
-A role change completes or it does not happen (operator, 2026-10-23, [#2015](https://github.com/jwilleke/ngdpbase/issues/2015)). One that cannot be made, whatever the cause (a failed save, no PersonManager, no account by that username, no anchor Organization; an account missing its identity record gets it first, [#2037](https://github.com/jwilleke/ngdpbase/issues/2037)), is always an error, never a warning: the changes of that request already made are undone, it is logged at error level, admins get an error notification, and a `RoleChangeError` (`src/utils/roleChangeError.ts`) is thrown, naming the change and, when an administrator can fix it, the reason. If an undo itself fails, the error names what is still in effect.
+A role change completes or it does not happen (operator, 2026-10-23, [#2015](https://github.com/jwilleke/ngdpbase/issues/2015)). One that cannot be made, whatever the cause (a failed save, no IdentityManager, no account by that username, no anchor Organization; an account missing its identity record gets it first, [#2037](https://github.com/jwilleke/ngdpbase/issues/2037)), is always an error, never a warning: the changes of that request already made are undone, it is logged at error level, admins get an error notification, and a `RoleChangeError` (`src/utils/roleChangeError.ts`) is thrown, naming the change and, when an administrator can fix it, the reason. If an undo itself fails, the error names what is still in effect.
 
 - `assignRole` / `removeRole` record the attempt as a `user-edit` either way, with `result: failure` when it was refused.
 - `UserManager.createUser` (admin form, self-registration, outside sign-in) and `createDefaultAdmin`: the account and its identity record are taken back, so a retry finds the username and email free, and the creation is recorded as a failed `user-create`. A bootstrap admin whose role cannot be given stops that boot; the store is empty again, so the next boot tries again.
@@ -58,7 +58,7 @@ Role records (membership) are in every backup ([#1876](https://github.com/jwille
 ## See Also
 
 - [FileRoleProvider](../providers/FileRoleProvider.md)
-- [OrganizationManager](OrganizationManager.md), [PersonManager](PersonManager.md)
+- [OrganizationManager](OrganizationManager.md), [IdentityManager](IdentityManager.md)
 - `src/types/Role.ts` — `Role`, `RoleUpdate`
 - Issue #617 — canonical-records design
 - Page Audience + Roles documentation: `/view/roles`

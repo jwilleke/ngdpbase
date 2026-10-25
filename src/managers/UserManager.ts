@@ -14,7 +14,7 @@ import { WikiEngine } from '../types/WikiEngine.js';
 import { UserProvider, ProviderInfo } from '../types/Provider.js';
 import { User, UserPreferences, UserSession } from '../types/User.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type PersonManager from './PersonManager.js';
+import type IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type RoleManager from './RoleManager.js';
 import type PageManager from './PageManager.js';
@@ -677,22 +677,22 @@ class UserManager extends BaseManager {
   /**
    * Every account has exactly one identity record, made by `createUser`
    * (#2037). One that has none (written straight into the user store, or
-   * whose record was lost) gets it at boot, once, through PersonManager's
+   * whose record was lost) gets it at boot, once, through IdentityManager's
    * door under the system context, each creation recorded as
-   * `contact-manage`. The identity records are listed once and only the
+   * `identity-manage`. The identity records are listed once and only the
    * missing ones are made, so a large user store costs one read. A failure
    * is logged and the boot goes on: the role paths make the record when the
    * account is next used (`getByUserIdentifier`).
    */
   private async giveIdentityRecordsToAccountsWithout(): Promise<void> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!this.provider || !personManager?.getProvider?.()) return;
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!this.provider || !identityManager?.getProvider?.()) return;
     const all = await this.provider.getAllUsers();
     if (!(all instanceof Map) || all.size === 0) return;
     const ctx = systemContext(this.engine, 'give every account that has none its identity record (#2037)');
     let have: Set<unknown>;
     try {
-      have = new Set((await personManager.list(ctx)).map((p) => p.identifier));
+      have = new Set((await identityManager.list(ctx)).map((p) => p.identifier));
     } catch (error) {
       logger.error(`❌ Could not list identity records to find accounts without one: ${error instanceof Error ? error.message : String(error)}`);
       return;
@@ -702,7 +702,7 @@ class UserManager extends BaseManager {
     let made = 0;
     for (const username of missing) {
       try {
-        if (await personManager.getByUserIdentifier(ctx, username)) made++;
+        if (await identityManager.getByUserIdentifier(ctx, username)) made++;
       } catch (error) {
         logger.error(`❌ Could not make the identity record of account ${username}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -1584,10 +1584,10 @@ class UserManager extends BaseManager {
 
 
   /**
-   * The account lifecycle reaches PersonManager's door under a system context
+   * The account lifecycle reaches IdentityManager's door under a system context
    * (#1930): keeping an account's person in step with the account is core's
    * own bookkeeping, not the caller's contact management, so it never depends
-   * on the caller holding `contact-manage`. The reason names the account and
+   * on the caller holding `identity-manage`. The reason names the account and
    * who changed it, so the record says why.
    */
   private personSyncContext(what: string, username: string, ctx: ActorContext): JobContext {
@@ -1606,13 +1606,13 @@ class UserManager extends BaseManager {
    * thrown — auth must still succeed if Person storage is degraded.
    */
   private async syncPersonOnCreate(user: User, ctx: ActorContext): Promise<void> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) return;
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) return;
     try {
       const installOrg = await this.engine
         .getManager<OrganizationManager>('OrganizationManager')
         ?.getInstallOrg();
-      await personManager.create(this.personSyncContext('create', user.username, ctx), {
+      await identityManager.create(this.personSyncContext('create', user.username, ctx), {
         identifier: user.username,
         ...(user.displayName ? { name: user.displayName } : {}),
         ...(user.email ? { email: user.email } : {}),
@@ -1626,41 +1626,41 @@ class UserManager extends BaseManager {
 
   /**
    * At sign-up, offer the new account a person with no account who has the
-   * same email (#1930): PersonManager mails an "Is this you?" link, and joins
+   * same email (#1930): IdentityManager mails an "Is this you?" link, and joins
    * them only when the account confirms. Skipped when email is off. Never
    * fails the account write.
    */
   private async offerContactLink(username: string, ctx: ActorContext): Promise<void> {
     try {
-      await this.engine.getManager<PersonManager>('PersonManager')?.offerSignUpLink(ctx, username);
+      await this.engine.getManager<IdentityManager>('IdentityManager')?.offerSignUpLink(ctx, username);
     } catch (error) {
       logger.warn(`👤 Could not offer ${username} a contact record: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   private async syncPersonOnUpdate(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<void> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) return;
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) return;
     try {
-      const person = await personManager.getByIdentifier(this.personSyncContext('update', username, ctx), username);
+      const person = await identityManager.getByIdentifier(this.personSyncContext('update', username, ctx), username);
       if (!person) return;
       const patch: PersonUpdate = {};
       if (updates.displayName !== undefined) patch.name = updates.displayName;
       if (updates.email !== undefined) patch.email = updates.email;
       if (Object.keys(patch).length === 0) return;
-      await personManager.update(this.personSyncContext('update', username, ctx), person['@id'], patch);
+      await identityManager.update(this.personSyncContext('update', username, ctx), person['@id'], patch);
     } catch (error) {
       logger.error(`❌ Failed to update Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   private async syncPersonOnDelete(username: string, ctx: ActorContext): Promise<void> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) return;
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) return;
     try {
-      const person = await personManager.getByIdentifier(this.personSyncContext('delete', username, ctx), username);
+      const person = await identityManager.getByIdentifier(this.personSyncContext('delete', username, ctx), username);
       if (!person) return;
-      await personManager.delete(this.personSyncContext('delete', username, ctx), person['@id']);
+      await identityManager.delete(this.personSyncContext('delete', username, ctx), person['@id']);
     } catch (error) {
       logger.error(`❌ Failed to delete Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }

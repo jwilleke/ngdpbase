@@ -142,7 +142,7 @@
   "ngdpbase.application.persons.storagedir": "${FAST_STORAGE}/persons",
   "ngdpbase.application.persons.provider.default": "filepersonprovider",
   "ngdpbase.application.persons.provider": "filepersonprovider",
-  "_comment_application_contacts": "Contacts (#1930): the most results PersonManager.search / OrganizationManager.search return when the caller gives no limit, and how long the 'Is this you?' sign-up link stays usable.",
+  "_comment_application_contacts": "Contacts (#1930): the most results IdentityManager.search / OrganizationManager.search return when the caller gives no limit, and how long the 'Is this you?' sign-up link stays usable.",
   "ngdpbase.application.persons.search.limit": 50,
   "ngdpbase.application.persons.link-offer.ttl-minutes": 30,
   "ngdpbase.application.organization.search.limit": 50,
@@ -2019,20 +2019,20 @@
         "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
       }
     },
-    "contact-read": {
-      "description": "List, search and view contacts: persons (with or without an account) and organizations, and their affiliations, through PersonManager and OrganizationManager, and the /admin/contacts and /admin/organizations views (#1930). Admins and demo admins by default; an add-on grants it to its own roles in its own policy",
-      "label": "Find and view contacts (people and organizations)",
+    "identity-read": {
+      "description": "List, search and view identity records, of users and contacts alike, and organizations, and their affiliations, through IdentityManager and OrganizationManager, and the /admin/contacts and /admin/organizations views (#1930). Was contact-read until #2038; a policy naming that is still read as this for one release. Admins and demo admins by default; an add-on grants it to its own roles in its own policy",
+      "label": "Find and view identity records (users, contacts and organizations)",
       "icon": "address-book",
       "color": "#6c757d"
     },
-    "contact-manage": {
-      "description": "Create, edit, delete and link contacts: persons (with or without an account) and organizations, and a person's affiliations, through PersonManager and OrganizationManager (#1930). Reading them is contact-read. Admins by default; an add-on grants it to its own roles in its own policy",
-      "label": "Add, change and link contacts (people and organizations)",
+    "identity-manage": {
+      "description": "Create, edit, delete and link identity records, of users and contacts alike, and organizations, and an identity's affiliations, through IdentityManager and OrganizationManager (#1930). Reading them is identity-read. Was contact-manage until #2038; a policy naming that is still read as this for one release. Admins by default; an add-on grants it to its own roles in its own policy",
+      "label": "Add, change and link identity records (users, contacts and organizations)",
       "icon": "address-book",
       "color": "#0d6efd",
       "audit": {
         "on-failure": "continue",
-        "description": "Contact created, changed, deleted or linked to an account; metadata names the kind (person or organization), the operation and the fields changed, never their values"
+        "description": "Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values"
       }
     },
     "admin-read": {
@@ -2708,8 +2708,8 @@
     },
     {
       "id": "contact-read-access",
-      "name": "Administrators and demo administrators find and view contacts",
-      "description": "List, search and view persons and organizations (#1930). Changing them is contact-manage, admins only. An add-on that needs contacts grants contact-read to its own roles in its own policy",
+      "name": "Administrators and demo administrators find and view identity records",
+      "description": "List, search and view identity records and organizations (#1930). Changing them is identity-manage, admins only. An add-on that needs them grants identity-read to its own roles in its own policy. The id keeps its name from before #2038, so an operator's override of it still merges",
       "priority": 100,
       "effect": "allow",
       "subjects": [
@@ -2729,13 +2729,13 @@
         }
       ],
       "actions": [
-        "contact-read"
+        "identity-read"
       ]
     },
     {
       "id": "contact-manage-admin",
-      "name": "Administrators change contacts",
-      "description": "Admins create, edit, delete and link persons and organizations (#1930). An add-on that needs to change contacts grants contact-manage to its own roles in its own policy",
+      "name": "Administrators change identity records",
+      "description": "Admins create, edit, delete and link identity records and organizations (#1930). An add-on that needs to change them grants identity-manage to its own roles in its own policy. The id keeps its name from before #2038, so an operator's override of it still merges",
       "priority": 100,
       "effect": "allow",
       "subjects": [
@@ -2751,7 +2751,7 @@
         }
       ],
       "actions": [
-        "contact-manage"
+        "identity-manage"
       ]
     },
     {

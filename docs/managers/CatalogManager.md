@@ -58,7 +58,7 @@ CatalogManager initializes __immediately after ConfigurationManager__ (`src/Wiki
 1b. CatalogManager          ← here
 2.  CacheManager
 2b. MetricsManager
-2c. OrganizationManager, PersonManager
+2c. OrganizationManager, IdentityManager
 3+. (the rest — UserManager, PageManager, MediaManager, AttachmentManager, SearchManager, ...)
 ```
 

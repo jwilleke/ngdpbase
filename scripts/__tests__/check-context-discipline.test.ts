@@ -20,15 +20,16 @@ describe('#2018 lint:context — no context-free lookup', () => {
 
   test('a reintroduced context-free call is named, in core or an add-on', () => {
     const planted = [
-      'const a = await personManager.getByUserIdentifier(username);',
+      'const a = await identityManager.getByUserIdentifier(username);',
       'const b = await roleManager.hasRole(username, roleName);',
       'const c = await this.engine.getManager(\'RoleManager\').resolveUserRoles(u.username);',
       'const d = await persons.getByIdentifier(\'alice\');',
       'const e = await orgs.getById(organization);',
-      'const f = await assetManager.getById(id, providerId);'
+      'const f = await assetManager.getById(id, providerId);',
+      'const g = await personManager.getByUserIdentifier(username); // an add-on still on the old name (#2038)'
     ].join('\n');
     const found = contextFreeLookups('addons/x/index.ts', planted);
-    expect(found.map((v) => v.line).sort()).toEqual([1, 2, 3, 4, 5]);
+    expect(found.map((v) => v.line).sort()).toEqual([1, 2, 3, 4, 5, 7]);
     expect(found.every((v) => v.rule === 'context-free-lookup')).toBe(true);
     // Line 6, AssetManager.getById(id, providerId), has as many arguments as a call with the
     // context and no provider id, so a count cannot tell them apart; the compiler does, in src/.
@@ -38,7 +39,7 @@ describe('#2018 lint:context — no context-free lookup', () => {
     const fine = [
       'await roleManager.hasRole(ctx, username, \'admin\');',
       'await roleManager?.resolveUserRoles(systemContext(engine, \'why, and more\'), name);',
-      'await personManager.getByIdentifier(ctx, username);',
+      'await identityManager.getByIdentifier(ctx, username);',
       'await this.requireProvider().getByIdentifier(identifier);',
       'await provider.getById(id);',
       'await this.provider.getByIdentifier(id);',
@@ -49,7 +50,7 @@ describe('#2018 lint:context — no context-free lookup', () => {
   });
 
   test('inside a door\'s own file, this.getById(id) is the door too', () => {
-    expect(contextFreeLookups('src/managers/PersonManager.ts', 'return this.getById(id);')).toHaveLength(1);
+    expect(contextFreeLookups('src/managers/IdentityManager.ts', 'return this.getById(id);')).toHaveLength(1);
     expect(contextFreeLookups('src/managers/AgentTokenManager.ts', 'return this.getById(id);')).toEqual([]);
   });
 });

@@ -58,8 +58,12 @@ const SEARCH_LIMIT_KEY = 'ngdpbase.application.persons.search.limit';
 const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
 
 /**
- * PersonManager — canonical core record for persons (#617), and the door for
- * contacts (#1930).
+ * IdentityManager — the identity record of every digital identity, user or
+ * contact (#617), and the door for them (#1930). Named PersonManager until
+ * #2038; `getManager('PersonManager')` still answers with it for one release
+ * (`MANAGER_ALIASES` in `src/core/Engine.ts`). What is stored keeps its
+ * "person" names: `data/persons/`, `ngdpbase.application.persons.*`, the
+ * `Person` types, `person:<uuid>`, the `person-*` audit actions.
  *
  * A person may have an account or not. Each account has exactly one person
  * (`identifier` = the username); a person with no account has the identifier
@@ -67,14 +71,14 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * the account lifecycle under a system context.
  *
  * The door: `create`, `update`, `delete`, `get`, `list`, `search` and
- * `linkAccount` take the caller's context first and ask the PDP: `contact-read`
- * to list, search or get; `contact-manage` to change (`linkAccount` also `user-edit`). Each change is recorded as
- * the `contact-manage` audit event. A refusal throws `ContactRefusedError`.
+ * `linkAccount` take the caller's context first and ask the PDP: `identity-read`
+ * to list, search or get; `identity-manage` to change (`linkAccount` also `user-edit`). Each change is recorded as
+ * the `identity-manage` audit event. A refusal throws `ContactRefusedError`.
  *
  * Every lookup takes the caller's context too (#2018): `getById`,
  * `getByIdentifier` and `getByUserIdentifier`. A user reads their own identity
  * record, and `update` changes it, under `profile-manage`; anyone else's needs
- * `contact-read` / `contact-manage`. Core's own reads (RoleManager resolving
+ * `identity-read` / `identity-manage`. Core's own reads (RoleManager resolving
  * roles on every request, UserManager's account lifecycle) pass the system
  * context, allowed without a policy evaluation (`requireRecordAccess`).
  *
@@ -87,8 +91,8 @@ const LINK_TTL_KEY = 'ngdpbase.application.persons.link-offer.ttl-minutes';
  * `getByUserIdentifier(ctx, username)` returns a user's identity record and
  * makes it when the user has none (#2037): every user has exactly one.
  */
-class PersonManager extends BaseManager {
-  readonly description = 'Canonical Person records (#617)';
+class IdentityManager extends BaseManager {
+  readonly description = 'Identity records of users and contacts (#617)';
 
   private provider: PersonProvider | null = null;
   private providerClass?: string;
@@ -119,7 +123,7 @@ class PersonManager extends BaseManager {
 
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) {
-      throw new Error('PersonManager requires ConfigurationManager');
+      throw new Error('IdentityManager requires ConfigurationManager');
     }
 
     const storageDir = this.configuredStorageDir(configManager)!;
@@ -129,7 +133,7 @@ class PersonManager extends BaseManager {
       storageDir
     );
     if (!preflight.ok) {
-      logger.warn('👤 PersonManager initialized in degraded mode (storage path unavailable)');
+      logger.warn('👤 IdentityManager initialized in degraded mode (storage path unavailable)');
       return;
     }
 
@@ -148,7 +152,7 @@ class PersonManager extends BaseManager {
     this.provider = new mod.default(this.engine);
     await this.provider.initialize();
 
-    logger.info(`👤 PersonManager initialized (${(await this.provider.list()).length} persons)`);
+    logger.info(`👤 IdentityManager initialized (${(await this.provider.list()).length} persons)`);
   }
 
   /** `ngdpbase.application.persons.storagedir`, resolved: where the records are. */
@@ -170,7 +174,7 @@ class PersonManager extends BaseManager {
 
   /**
    * One identity record by `@id` (#2018): the caller's own under
-   * `profile-manage`, anyone else's under `contact-read`, core's own work
+   * `profile-manage`, anyone else's under `identity-read`, core's own work
    * under the system context. A refusal throws `ContactRefusedError`.
    */
   async getById(ctx: ActorContext, id: string): Promise<Person | null> {
@@ -190,10 +194,10 @@ class PersonManager extends BaseManager {
 
   private async cachedById(id: string): Promise<Person | null> {
     if (this.byIdCache.has(id)) {
-      this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
+      this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byId', result: 'hit' });
       return this.byIdCache.get(id) ?? null;
     }
-    this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byId', result: 'miss' });
+    this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byId', result: 'miss' });
     const person = await this.requireProvider().getById(id);
     this.byIdCache.set(id, person);
     return person;
@@ -201,10 +205,10 @@ class PersonManager extends BaseManager {
 
   private async cachedByIdentifier(identifier: string): Promise<Person | null> {
     if (this.byIdentifierCache.has(identifier)) {
-      this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
+      this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byIdentifier', result: 'hit' });
       return this.byIdentifierCache.get(identifier) ?? null;
     }
-    this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byIdentifier', result: 'miss' });
+    this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byIdentifier', result: 'miss' });
     const person = await this.requireProvider().getByIdentifier(identifier);
     this.byIdentifierCache.set(identifier, person);
     return person;
@@ -223,13 +227,13 @@ class PersonManager extends BaseManager {
 
   // ── The door (#1930) ─────────────────────────────────────────────────────
 
-  /** Every person, for a caller who may read contacts (`contact-read`). */
+  /** Every person, for a caller who may read contacts (`identity-read`). */
   async list(ctx: ActorContext): Promise<Person[]> {
     await requireContactPermission(this.engine, ctx, 'read');
     return this.requireProvider().list();
   }
 
-  /** One person by `@id`: {@link getById}, the caller's own under `profile-manage`, anyone else's under `contact-read`. */
+  /** One person by `@id`: {@link getById}, the caller's own under `profile-manage`, anyone else's under `identity-read`. */
   async get(ctx: ActorContext, id: string): Promise<Person | null> {
     return this.getById(ctx, id);
   }
@@ -246,7 +250,7 @@ class PersonManager extends BaseManager {
     const q = (query ?? '').trim().toLowerCase();
     const out: Person[] = [];
     for (const p of await this.requireProvider().list()) {
-      if (options.accountless && !PersonManager.isAccountless(p)) continue;
+      if (options.accountless && !IdentityManager.isAccountless(p)) continue;
       if (q && ![p.name, p.givenName, p.familyName, p.email].some((v) => typeof v === 'string' && v.toLowerCase().includes(q))) continue;
       out.push(p);
       if (limit > 0 && out.length >= limit) break;
@@ -269,13 +273,13 @@ class PersonManager extends BaseManager {
     let identifier = `${ACCOUNTLESS_PERSON_PREFIX}${uuid}`;
     if (requested !== undefined) {
       if (typeof requested !== 'string' || !requested.trim() || isReservedUsername(requested)) {
-        throw new Error('PersonManager.create: identifier must be an account\'s username, or left out for a person with no account');
+        throw new Error('IdentityManager.create: identifier must be an account\'s username, or left out for a person with no account');
       }
       if (!(await this.engine.getManager<UserManagerLike>('UserManager')?.getUser(requested))) {
-        throw new Error(`PersonManager.create: no account '${requested}' to make a person for`);
+        throw new Error(`IdentityManager.create: no account '${requested}' to make a person for`);
       }
       if (await provider.getByIdentifier(requested)) {
-        throw new Error(`PersonManager.create: account '${requested}' already has a person`);
+        throw new Error(`IdentityManager.create: account '${requested}' already has a person`);
       }
       identifier = requested;
     }
@@ -296,7 +300,7 @@ class PersonManager extends BaseManager {
   /**
    * Change a person's fields, affiliations included. `@id` and `identifier`
    * never change here. The caller's own identity record under
-   * `profile-manage`, anyone else's under `contact-manage` (#2018).
+   * `profile-manage`, anyone else's under `identity-manage` (#2018).
    */
   async update(ctx: ActorContext, id: string, patch: PersonUpdate): Promise<Person | null> {
     await requireRecordAccess(this.engine, ctx, 'manage', await this.cachedById(id));
@@ -319,7 +323,7 @@ class PersonManager extends BaseManager {
 
   /**
    * An administrator joins a person who has no account to an account (#1930),
-   * for when the email differs or none was given. Asks `contact-manage` and
+   * for when the email differs or none was given. Asks `identity-manage` and
    * `user-edit`. The person keeps its `@id`; the account's own person, if it
    * has one, is folded in and removed.
    */
@@ -348,7 +352,7 @@ class PersonManager extends BaseManager {
     if (!user || !address) return 'no-match';
     const wanted = address.toLowerCase();
     const matches = (await this.provider.list())
-      .filter((p) => PersonManager.isAccountless(p) && typeof p.email === 'string' && p.email.trim().toLowerCase() === wanted);
+      .filter((p) => IdentityManager.isAccountless(p) && typeof p.email === 'string' && p.email.trim().toLowerCase() === wanted);
     if (matches.length === 0) return 'no-match';
     if (matches.length > 1) {
       logger.info(`👤 ${matches.length} persons with no account share the new account ${user.username}'s address; none offered, an administrator links by hand (#1930)`);
@@ -393,7 +397,7 @@ class PersonManager extends BaseManager {
     const offer = this.liveOffer(ctx, token);
     if (!offer) return null;
     const person = await this.cachedById(offer.personId);
-    if (!person || !PersonManager.isAccountless(person)) return null;
+    if (!person || !IdentityManager.isAccountless(person)) return null;
     return { personName: typeof person.name === 'string' ? person.name : null, email: offer.address };
   }
 
@@ -444,10 +448,10 @@ class PersonManager extends BaseManager {
   private async join(ctx: ActorContext, personId: string, username: string, via: 'admin' | 'email'): Promise<Person> {
     const provider = this.requireProvider();
     const target = await provider.getById(personId);
-    if (!target) throw new Error('PersonManager: no such person');
-    if (!PersonManager.isAccountless(target)) throw new Error('PersonManager: that person already has an account');
+    if (!target) throw new Error('IdentityManager: no such person');
+    if (!IdentityManager.isAccountless(target)) throw new Error('IdentityManager: that person already has an account');
     const user = await this.engine.getManager<UserManagerLike>('UserManager')?.getUser(username);
-    if (!user) throw new Error(`PersonManager: no account '${username}'`);
+    if (!user) throw new Error(`IdentityManager: no account '${username}'`);
     const accountPerson = await provider.getByIdentifier(user.username);
 
     const joined: Person = { ...target, identifier: user.username };
@@ -489,15 +493,15 @@ class PersonManager extends BaseManager {
    */
   private async checkedAffiliations(ctx: ActorContext, value: unknown): Promise<PersonAffiliation[]> {
     if (value === undefined || value === null) return [];
-    if (!Array.isArray(value)) throw new Error('PersonManager: affiliation must be a list of { organization, role? }');
+    if (!Array.isArray(value)) throw new Error('IdentityManager: affiliation must be a list of { organization, role? }');
     const orgs = this.engine.getManager<OrganizationLookup>('OrganizationManager');
     const out: PersonAffiliation[] = [];
     for (const entry of value as unknown[]) {
       const organization = (entry as { organization?: unknown })?.organization;
       const role = (entry as { role?: unknown })?.role;
-      if (typeof organization !== 'string' || !organization) throw new Error('PersonManager: each affiliation names an organization by its @id');
-      if (role !== undefined && typeof role !== 'string') throw new Error('PersonManager: an affiliation\'s role is text');
-      if (!orgs || !(await orgs.getById(ctx, organization))) throw new Error(`PersonManager: no organization '${organization}'`);
+      if (typeof organization !== 'string' || !organization) throw new Error('IdentityManager: each affiliation names an organization by its @id');
+      if (role !== undefined && typeof role !== 'string') throw new Error('IdentityManager: an affiliation\'s role is text');
+      if (!orgs || !(await orgs.getById(ctx, organization))) throw new Error(`IdentityManager: no organization '${organization}'`);
       out.push({ organization, ...(role && role.trim() ? { role: role.trim() } : {}) });
     }
     return dedupeAffiliations(out);
@@ -524,11 +528,11 @@ class PersonManager extends BaseManager {
    * store) gets it here, from the account's display name and email.
    *
    * The read is decided as {@link getByIdentifier} (#2018): a signed-in user's
-   * own under `profile-manage`, anyone else's under `contact-read`, core's own
+   * own under `profile-manage`, anyone else's under `identity-read`, core's own
    * work under the system context. Making the missing record is core's
    * bookkeeping, not the caller's contact management, so it goes through
    * {@link create} under the system context, naming the caller, and is
-   * recorded as `contact-manage`. One at a time per username, so two lookups
+   * recorded as `identity-manage`. One at a time per username, so two lookups
    * never make two records. Null when there is no account by that name.
    * Never a second record: a contact with the same email is left alone
    * (an administrator links it, {@link linkAccount}).
@@ -551,7 +555,7 @@ class PersonManager extends BaseManager {
 
   private requireProvider(): PersonProvider {
     if (!this.provider) {
-      throw new Error('PersonManager: no provider available (initialization failed or storage path unavailable)');
+      throw new Error('IdentityManager: no provider available (initialization failed or storage path unavailable)');
     }
     return this.provider;
   }
@@ -601,4 +605,4 @@ function accountRecordInput(user: Omit<User, 'password'>): PersonInput {
 }
 
 export { ContactRefusedError } from '../utils/contactAccess.js';
-export default PersonManager;
+export default IdentityManager;
