@@ -64,7 +64,7 @@ The PIP also supplies the subject's attributes (operator, [#1431](https://github
 | --- | --- |
 | `currentSubject(req)` | who is making a request — the middleware's subject, else the session's account now, else anonymous. Was `UserManager.getCurrentUser` |
 | `subjectFor(username)` | an active account with its current roles, or `null`; what the session and bearer middleware in `app.ts` use |
-| `resolveSubjectNow(username)` | a job's requester at decision time (#631); the PDP asks this |
+| `resolveSubjectNow(username, job?)` | a job's requester at decision time (#631); the PDP asks this. For the system principal with a `job` that a policy names, the job itself: `job:<id>`, no roles ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)) |
 | `anonymousSubject()` | the anonymous visitor |
 | `subjectEnabledAddons(ctx)` | the per-user add-ons the subject has turned on ([#1963](https://github.com/jwilleke/ngdpbase/issues/1963)), from `AddonsManager.enabledAddonsFor`; for the page audience `addon:<slug>` ([#1964](https://github.com/jwilleke/ngdpbase/issues/1964)) |
 | `systemPrincipalName()` / `isSystemPrincipal(name)` / `systemSubject()` | the server acting for itself (#631); `UserManager.createUser` reserves the name through this |

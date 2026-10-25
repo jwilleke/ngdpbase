@@ -73,3 +73,27 @@ describe('only declared resource types match (#1504)', () => {
     expect(types).toEqual(Object.keys(RESOURCE_MATCHERS).sort());
   });
 });
+
+describe('#1999 policy subjects: role and job', () => {
+  const policy = (subjects: unknown[]) => ({ id: 'p', priority: 1, effect: 'allow', subjects, resources: [{ type: 'page', pattern: '*' }], actions: ['ledger-read'] });
+
+  test('a job subject matches the run acting as that job, and nothing else', async () => {
+    const pe = evaluatorWith([policy([{ type: 'job', value: 'acct.issue' }])]);
+    const ask = (userContext: Record<string, unknown>) => pe.evaluateAccess({ pageName: '*', action: 'ledger-read', userContext });
+    expect((await ask({ username: 'job:acct.issue', roles: [], job: 'acct.issue' })).allowed).toBe(true);
+    expect((await ask({ username: 'job:acct.other', roles: [], job: 'acct.other' })).allowed).toBe(false);
+    expect((await ask({ username: 'acct.issue', roles: ['acct.issue'] })).allowed).toBe(false);
+  });
+
+  test('a role subject still matches a role the subject holds', async () => {
+    const pe = evaluatorWith([policy([{ type: 'role', value: 'contributor' }])]);
+    expect((await pe.evaluateAccess({ pageName: '*', action: 'ledger-read', userContext: jim })).allowed).toBe(true);
+  });
+
+  test('any other subject type matches nobody, a prototype key included', async () => {
+    for (const type of ['user', 'authenticated', 'constructor', 'toString']) {
+      const pe = evaluatorWith([policy([{ type, value: 'jim' }])]);
+      expect((await pe.evaluateAccess({ pageName: '*', action: 'ledger-read', userContext: jim })).allowed).toBe(false);
+    }
+  });
+});

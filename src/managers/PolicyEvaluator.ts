@@ -62,6 +62,23 @@ export const RESOURCE_MATCHERS: Record<string, (pattern: string, pageName: strin
   }
 };
 
+/**
+ * How each policy subject type matches (#1999), one matcher per type. These
+ * are the only subject types a decision matches, and the only ones
+ * PolicyValidator accepts: a type with no matcher here would be a policy that
+ * grants nothing.
+ */
+export const SUBJECT_MATCHERS: Record<string, (value: string, userContext: UserContext | undefined) => boolean> = {
+  /** A subject holding the role. */
+  role: (value, userContext) => (userContext?.roles ?? []).includes(value),
+  /**
+   * A scheduled job acting as itself, by its id (#1999). The PIP gives a
+   * scheduled run's subject `job` only when a policy names the job, and only
+   * for the system principal's context.
+   */
+  job: (value, userContext) => typeof userContext?.job === 'string' && userContext.job === value
+};
+
 const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
 
 /**
@@ -252,8 +269,6 @@ class PolicyEvaluator extends BaseManager {
       return true; // A policy with no subjects applies to everyone.
     }
 
-    const userRoles = new Set(userContext?.roles || []);
-
     // #1429: the `All` special case is gone. `All` was a role nobody was ever
     // granted — injected into every subject at construction so that a policy
     // naming it would match — which put a grant outside the role catalogue and
@@ -262,19 +277,18 @@ class PolicyEvaluator extends BaseManager {
     // role, which is a real role with real grants. A deployment whose OWN
     // policies name `All` must name the roles it means instead.
 
-    // If user has no roles, they cannot match policies requiring specific roles
-    if (userRoles.size === 0) {
-      return false;
-    }
-
-    // The user is a match if they have AT LEAST ONE of the roles specified in the policy's subjects
+    // A match when AT LEAST ONE subject matches: a role the user holds, or
+    // (#1999) the job a scheduled run acts as. A subject with no roles and no
+    // job matches no policy that names subjects; any other type matches nobody.
     for (const subject of policySubjects) {
-      if (subject.type === 'role' && userRoles.has(subject.value)) {
+      // Own keys only: `constructor` or `toString` as a type must match nobody.
+      const matcher = Object.hasOwn(SUBJECT_MATCHERS, subject.type) ? SUBJECT_MATCHERS[subject.type] : undefined;
+      if (matcher && matcher(subject.value, userContext)) {
         return true; // Match found!
       }
     }
 
-    return false; // No matching role was found in the user's context.
+    return false; // No subject matched.
   }
 
   /**

@@ -49,7 +49,7 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `description` | A human explanation | String | — |
 | `priority` | Evaluation order: higher is checked first | Number | `0` |
 | `effect` | What a match decides | `allow` / `deny` | Not a valid policy; ignored |
-| `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`. Only `role` is matched | The policy applies to everyone |
+| `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`, or `{ "type": "job", "value": "<job id>" }` for a scheduled job that holds its own permissions ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)). Only `role` and `job` are matched; the validator refuses any other type | The policy applies to everyone |
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
 
@@ -62,6 +62,7 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 - Policies are sorted by `priority`, highest first.
 - A policy matches when its subjects, its resources and its actions all match.
 - A subject matches when the user holds at least one of the listed roles. A user with no roles matches no policy that names roles. An unauthenticated caller holds the `anonymous` role.
+- A `job` subject matches a scheduled run of that job. When any policy names a job, its scheduled runs act as `job:<id>` with no roles, holding only what such policies grant; a job no policy names runs with the system principal's roles (`ngdpbase.system.roles`). A run started by hand acts as the admin who started it.
 - __The first matching policy decides__, allow or deny. Later policies are not consulted.
 - __No matching policy means deny.__
 

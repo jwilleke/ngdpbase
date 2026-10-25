@@ -74,6 +74,15 @@ export interface JobContext {
   requestedAt: string;
   /** Why, for origins with no person to ask. Free text, for the audit record. */
   reason?: string;
+  /**
+   * The scheduled job this run acts as (#1999): its id. Set by
+   * BackgroundJobManager on a scheduled slot's context, never on a run
+   * started by hand. When a policy names the job (`{ "type": "job", "value":
+   * "<id>" }`), its decisions are made as `job:<id>`, holding only what such
+   * policies grant; when none does, as the system principal, as before. Only
+   * the system principal's context can act as a job.
+   */
+  job?: string;
 }
 
 /** The shape a request-bound context exposes; both WikiContext and ApiContext satisfy it. */
@@ -217,7 +226,9 @@ export function toPermissionSubject(ctx: JobContext): JobSubject {
     resolveRolesNow: true,
     ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}),
     ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {}),
-    ...(ctx.viaProxy ? { viaProxy: ctx.viaProxy } : {})
+    ...(ctx.viaProxy ? { viaProxy: ctx.viaProxy } : {}),
+    // #1999: the job a scheduled run acts as, for the PIP to resolve.
+    ...(ctx.job ? { job: ctx.job } : {})
   };
 }
 

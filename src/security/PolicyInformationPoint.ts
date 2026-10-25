@@ -50,6 +50,12 @@ export function systemPrincipalFromConfig(configManager: { getProperty(key: stri
   return name.trim();
 }
 
+/** The scheduled job a job's subject acts as (#1999), when it names one. */
+function jobOf(userContext: unknown): string | undefined {
+  const job = (userContext as { job?: unknown } | null | undefined)?.job;
+  return typeof job === 'string' ? job : undefined;
+}
+
 function systemPrincipalRefusal(why: string): string {
   return `Refusing to start: NGDPBASE_SYSTEM_USER ${why}. It names the system principal, the identity the server acts ` +
     'under at boot and from timers; it is a name, not an account. Set it in .env, e.g. NGDPBASE_SYSTEM_USER=system, ' +
@@ -306,8 +312,16 @@ class PolicyInformationPoint extends BaseManager {
    * resolves to the anonymous subject: the job then holds exactly what a
    * visitor holds, which is the safe answer for someone who no longer exists.
    */
-  async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
+  async resolveSubjectNow(username: string | undefined, job?: string): Promise<UserContext> {
     if (username && this.isSystemPrincipal(username)) {
+      // #1999: a scheduled run that a policy names acts as the job itself:
+      // `job:<id>`, no roles, holding only what the job's policies grant. A
+      // job no policy names keeps the system principal's roles. Only the
+      // system principal's context can act as a job.
+      if (job && this.policyDecisionPoint().namesJob(job)) {
+        // permission-subject-ignore: the job's own subject — no roles, matched by its `job` policies (#1999).
+        return { username: `job:${job}`, roles: [], isAuthenticated: true, job };
+      }
       return this.systemSubject();
     }
     const subject = username ? await this.subjectFor(username) : null;
@@ -330,7 +344,9 @@ class PolicyInformationPoint extends BaseManager {
   private async matchableNow(userContext: UserContext | null | undefined): Promise<UserContext | null | undefined> {
     if (!(userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow || !userContext) return userContext;
     // permission-subject-ignore: matching only — the roles are resolved now, from the store.
-    return { username: userContext.username, roles: (await this.resolveSubjectNow(userContext.username)).roles ?? [] } as UserContext;
+    const now = await this.resolveSubjectNow(userContext.username, jobOf(userContext));
+    // #1999: a job that acts as itself is matched as `job:<id>`, never as the system principal.
+    return { username: now.job ? now.username : userContext.username, roles: now.roles ?? [], ...(now.job ? { job: now.job } : {}) } as UserContext;
   }
 
   /**
@@ -991,7 +1007,7 @@ class PolicyInformationPoint extends BaseManager {
     // once here as the PDP resolves them for one page — so the list and the
     // single-page answer agree for a job too — and for Tier 1's matching.
     const subjectNow = (userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow
-      ? await this.resolveSubjectNow(userContext?.username)
+      ? await this.resolveSubjectNow(userContext?.username, jobOf(userContext))
       : userContext;
     const decidePolicy = this.policyEvaluator?.compile(subjectNow ?? undefined, policyAction);
     const matchable = await this.matchableNow(userContext);

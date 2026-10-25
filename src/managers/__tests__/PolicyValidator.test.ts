@@ -119,3 +119,29 @@ describe('PolicyValidator — getStatistics()', () => {
     expect(typeof stats.validatorReady).toBe('boolean');
   });
 });
+
+describe('PolicyValidator — subject types are the ones the evaluator matches (#1999)', () => {
+  const policy = (subjects: unknown[]) => ({
+    id: 'p1', name: 'P1', priority: 50, effect: 'allow',
+    subjects, resources: [{ type: 'page', pattern: '*' }], actions: ['view'], conditions: []
+  }) as never;
+
+  test('it accepts a role subject and a job subject', async () => {
+    const v = await makeValidator();
+    expect(v.validatePolicy(policy([{ type: 'role', value: 'editor' }])).isValid).toBe(true);
+    expect(v.validatePolicy(policy([{ type: 'job', value: 'accounting-dues.issue-invoices' }])).isValid).toBe(true);
+  });
+
+  test('it refuses a type the evaluator ignores, which would grant nothing', async () => {
+    const v = await makeValidator();
+    for (const type of ['user', 'group', 'authenticated', 'anonymous', 'admin']) {
+      expect(v.validatePolicy(policy([{ type, value: 'x' }])).isValid).toBe(false);
+    }
+  });
+
+  test('two job subjects match when they name the same job', async () => {
+    const v = await makeValidator();
+    expect(v.subjectsMatch({ type: 'job', value: 'a.b' }, { type: 'job', value: 'a.b' })).toBe(true);
+    expect(v.subjectsMatch({ type: 'job', value: 'a.b' }, { type: 'job', value: 'a.c' })).toBe(false);
+  });
+});

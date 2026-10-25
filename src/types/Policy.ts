@@ -15,9 +15,9 @@
  * how a field gets added to one and missed in the others.
  */
 
-/** Who a policy grants to. `role` is the only type the evaluator matches today. */
+/** Who a policy grants to. The evaluator matches `role` and `job` (#1999), its `SUBJECT_MATCHERS`. */
 export interface PolicySubject {
-  /** `role`, and in future `user` or `group`. */
+  /** `role`, or `job` for a scheduled job acting as itself (#1999). */
   type: string;
   value: string;
 }
