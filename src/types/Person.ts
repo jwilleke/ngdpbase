@@ -114,3 +114,45 @@ export type PersonChange = Omit<PersonUpdate, 'affiliation'> & {
  * new account.
  */
 export type PersonInput = PersonChange & { identifier?: string };
+
+/** A phone as a user typed it (#2073): the number, the country to read it with, and an extension. */
+export interface PhoneInput {
+  number?: string;
+  /** ISO 3166-1 alpha-2; the configured default country when left out. Ignored for a number typed with a leading `+`. */
+  country?: string;
+  extension?: string;
+}
+
+/** An address as a user typed it (#2073). Every field empty removes the address. */
+export interface AddressInput {
+  streetAddress?: string;
+  addressLocality?: string;
+  addressRegion?: string;
+  postalCode?: string;
+  /** ISO 3166-1 alpha-2; the configured default country when left out. */
+  addressCountry?: string;
+}
+
+/**
+ * What `IdentityManager.updateContactDetails` takes (#2073): the parts of an
+ * identity record a user keeps on /profile. A part left out is not touched;
+ * a text given empty is removed.
+ */
+export interface ContactDetailsInput {
+  givenName?: string;
+  familyName?: string;
+  /** Phones by `contactType` (`home`, `mobile`, `business`, `other`, or any other kind). */
+  phones?: Array<PhoneInput & { contactType: string }>;
+  /** The `emergency` ContactPoint: who to call, their phone and email. */
+  emergency?: { name?: string; email?: string; phone?: PhoneInput };
+  /** The home address (`address`). */
+  address?: AddressInput;
+  /** The `mailing` PostalAddress in `contactPoint`. */
+  mailing?: AddressInput;
+  /** Languages, each a name ("Spanish") or a tag ("es"); stored as tags. */
+  knowsLanguage?: string[];
+  /** A photo: a web address. */
+  image?: string;
+  /** Links: web addresses. */
+  sameAs?: string[];
+}

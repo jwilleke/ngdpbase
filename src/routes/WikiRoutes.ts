@@ -188,6 +188,9 @@ import type { ReviewRequest } from '../types/Review.js';
 
 /** A request id as ReviewManager makes them (a UUID); anything else is never put in a URL (#2072). */
 const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+import { ContactDetailsInvalidError } from '../managers/IdentityManager.js';
+import { contactDetailLabel, contactDetailsCard, contactDetailsFromForm, type ContactDetailsCard } from './profileContactDetails.js';
+import { isEmail } from '../types/guards.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
@@ -8800,9 +8803,25 @@ ${panes}
         }
       }
 
+      // #2073: the user's own details, from their identity record and account.
+      // Null when it could not be read (#1738): not an empty record.
+      let contactDetails: ContactDetailsCard | null = null;
+      if (currentUser?.username) {
+        try {
+          const identities = this.engine.getManager('IdentityManager');
+          const own = await identities.getByUserIdentifier(currentUser, currentUser.username);
+          contactDetails = contactDetailsCard(own, freshUser, identities.defaultCountry());
+        } catch (err) {
+          logger.warn(`[profile] Could not read the contact details of ${currentUser.username}: ${getErrorMessage(err)}`);
+        }
+      }
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        contactDetails, // #2073
+        contactDetailsSaved: typeof req.query.contactDetailsSaved === 'string' ? req.query.contactDetailsSaved : null,
+        contactDetailsError: typeof req.query.contactDetailsError === 'string' ? req.query.contactDetailsError : null,
         consents, // #1603
         addonConsentPending, // #1603
         credentials, // #1524
@@ -10550,6 +10569,76 @@ ${panes}
       }
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
+    }
+  }
+
+  /**
+   * POST /profile/contact-details — the user's own contact details (#2073).
+   * Always the signed-in user's own identity record and account, never one
+   * named in the form. The identity record's parts go through IdentityManager's
+   * door with the user's own context (`profile-manage`), which keeps every
+   * other contact point; the name and email are the account's, through
+   * UserManager's door, which keeps the identity record in step. A changed
+   * email is account security (`account-security`, #1525), and a shared
+   * account's name and email stay an administrator's (#1029). Everything is
+   * checked before anything is written. Messages name the box, never the
+   * value: they travel in the URL.
+   */
+  async updateOwnContactDetails(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    const username = String(user.username ?? '');
+    // Shown in the card itself, where the form is, not at the top of the page.
+    const answer = (kind: 'success' | 'error', text: string): void => res.redirect(`/profile?${kind === 'success' ? 'contactDetailsSaved' : 'contactDetailsError'}=${encodeURIComponent(text)}#contact-details`);
+    const { displayName, email, details } = contactDetailsFromForm((req.body ?? {}) as Record<string, unknown>);
+    try {
+      const userManager = this.engine.getManager('UserManager');
+      const account = await userManager.getUser(username);
+      if (!account) return answer('error', 'Your contact details could not be saved.');
+      if (!displayName) return answer('error', 'Name is needed. Nothing was saved.');
+      if (!email) return answer('error', 'Email is needed. Nothing was saved.');
+      if (!isEmail(email)) return answer('error', 'Email is not an email address. Nothing was saved.');
+      const accountChanges: { displayName?: string; email?: string } = {};
+      if (displayName !== account.displayName) accountChanges.displayName = displayName;
+      if (email !== account.email) accountChanges.email = email;
+      if (account.profileLocked && Object.keys(accountChanges).length > 0) {
+        return answer('error', 'This is a shared account: its name and email can only be changed by an administrator. Nothing was saved.');
+      }
+      if (accountChanges.email !== undefined && !(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+
+      // Everything is checked before anything is written; then the account, then the identity record,
+      // so a failure says exactly what was saved.
+      const identities = this.engine.getManager('IdentityManager');
+      identities.checkContactDetails(details);
+      const own = await identities.getByUserIdentifier(user, username);
+      if (!own) return answer('error', 'Your contact details could not be saved. Nothing was saved.');
+      const accountFields = Object.keys(accountChanges) as Array<'displayName' | 'email'>;
+      if (accountFields.length > 0) {
+        try {
+          await userManager.updateUser(username, accountChanges, user);
+        } catch (err: unknown) {
+          // #1748: one email, one account — said plainly, without naming the other account.
+          if (err instanceof UserCreateError && err.reason === 'email-taken') {
+            return answer('error', 'That email address is already used by another account. Please use another. Nothing was saved.');
+          }
+          throw err;
+        }
+      }
+      try {
+        await identities.updateContactDetails(user, own['@id'], details);
+      } catch (err: unknown) {
+        if (accountFields.length === 0) throw err;
+        logger.warn(`[profile] The name or email of ${username} was saved, but not the other contact details: ${getErrorMessage(err)}`);
+        const saved = accountFields.length === 2 ? 'name and email were' : accountFields[0] === 'email' ? 'email was' : 'name was';
+        return answer('error', `Your ${saved} saved, but your other contact details could not be saved. Try again.`);
+      }
+      answer('success', 'Contact details saved.');
+    } catch (err: unknown) {
+      if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
+      if (err instanceof ContactDetailsInvalidError) return answer('error', `${contactDetailLabel(err.part, err.field)} ${err.message}. Nothing was saved.`);
+      logger.warn(`[profile] Saving the contact details of ${username} failed: ${getErrorMessage(err)}`);
+      answer('error', 'Your contact details could not be saved. Nothing was saved.');
     }
   }
 
@@ -17033,6 +17122,7 @@ ${panes}
     app.post('/contact', (req: Request, res: Response) => this.processContact(req, res));
     app.get('/profile', (req: Request, res: Response) => this.profilePage(req, res));
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
+    app.post('/profile/contact-details', (req: Request, res: Response) => void this.updateOwnContactDetails(req, res));
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));

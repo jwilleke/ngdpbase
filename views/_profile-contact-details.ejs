@@ -1,0 +1,145 @@
+<%# #2073: the user's own contact details, from their identity record and account.
+    Locals: contactDetails (null when it could not be read), contactDetailsSaved,
+    contactDetailsError, csrfToken. The form's field names are src/routes/profileContactDetails.ts's. %>
+<% const cd = contactDetails; %>
+<% function countrySelect(id, name, label, chosen, withCode) { %>
+    <label class="form-label small text-muted" for="<%= id %>"><%= label %></label>
+    <select class="form-select" id="<%= id %>" name="<%= name %>">
+        <% cd.countries.forEach(function (c) { %>
+        <option value="<%= c.code %>"<% if (c.code === chosen) { %> selected<% } %>><%= c.name %><% if (withCode) { %> (+<%= c.callingCode %>)<% } %></option>
+        <% }) %>
+    </select>
+<% } %>
+<% function phoneRow(key, label, phone, autocomplete) { %>
+    <div class="row g-2 mb-3">
+        <div class="col-md-4">
+            <% countrySelect(key + 'PhoneCountry', key + 'PhoneCountry', 'Country for ' + label.toLowerCase(), phone.country, true) %>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label" for="<%= key %>Phone"><%= label %></label>
+            <input type="tel" class="form-control" id="<%= key %>Phone" name="<%= key %>Phone" value="<%= phone.number %>" autocomplete="<%= autocomplete %>">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="<%= key %>PhoneExt"><%= label %> extension</label>
+            <input type="text" inputmode="numeric" class="form-control" id="<%= key %>PhoneExt" name="<%= key %>PhoneExt" value="<%= phone.extension %>" autocomplete="off">
+        </div>
+    </div>
+<% } %>
+<div class="row mb-4" id="contact-details">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-address-book" aria-hidden="true"></i> Contact details <%- include('_help-icon', { slug: 'your-contact-details', label: 'Your Contact Details' }) %></h6>
+            </div>
+            <div class="card-body">
+                <% if (typeof contactDetailsError !== 'undefined' && contactDetailsError) { %>
+                <div class="alert alert-danger" role="alert" data-contact-details-error><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <%= contactDetailsError %></div>
+                <% } %>
+                <% if (typeof contactDetailsSaved !== 'undefined' && contactDetailsSaved) { %>
+                <div class="alert alert-success" role="status" data-contact-details-saved><i class="fas fa-check-circle" aria-hidden="true"></i> <%= contactDetailsSaved %></div>
+                <% } %>
+                <% if (cd === null) { %>
+                <p class="text-muted mb-0">Your contact details could not be read just now. Try again later.</p>
+                <% } else { %>
+                <p class="text-muted small" id="contact-details-hint">Your name, email, phones, addresses and an emergency contact. Leave a box empty to remove it. People who manage contacts on this site can also see these details.</p>
+                <form action="/profile/contact-details" method="POST" aria-describedby="contact-details-hint">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                    <fieldset class="mb-3">
+                        <legend class="h6">Name and email</legend>
+                        <div class="row g-2">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label" for="cdDisplayName">Name</label>
+                                <input type="text" class="form-control" id="cdDisplayName" name="displayName" value="<%= cd.displayName %>" required autocomplete="name" aria-describedby="cdDisplayNameHint">
+                                <div class="form-text" id="cdDisplayNameHint">The name others see on this site.</div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label" for="cdEmail">Email</label>
+                                <input type="email" class="form-control" id="cdEmail" name="email" value="<%= cd.email %>" required autocomplete="email" aria-describedby="cdEmailHint">
+                                <div class="form-text" id="cdEmailHint">Emailed sign-in links go here. Changing it may ask you to sign in again.</div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label" for="cdGivenName">Given name</label>
+                                <input type="text" class="form-control" id="cdGivenName" name="givenName" value="<%= cd.givenName %>" autocomplete="given-name">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label" for="cdFamilyName">Family name</label>
+                                <input type="text" class="form-control" id="cdFamilyName" name="familyName" value="<%= cd.familyName %>" autocomplete="family-name">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3">
+                        <legend class="h6">Phones</legend>
+                        <% cd.phones.forEach(function (phone) { phoneRow(phone.key, phone.label, phone, phone.autocomplete); }) %>
+                    </fieldset>
+
+                    <fieldset class="mb-3">
+                        <legend class="h6">Emergency contact</legend>
+                        <p class="text-muted small mb-2">Someone to call if something happens to you.</p>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-6">
+                                <label class="form-label" for="emergencyName">Emergency contact name</label>
+                                <input type="text" class="form-control" id="emergencyName" name="emergencyName" value="<%= cd.emergency.name %>" autocomplete="off">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="emergencyEmail">Emergency contact email</label>
+                                <input type="email" class="form-control" id="emergencyEmail" name="emergencyEmail" value="<%= cd.emergency.email %>" autocomplete="off">
+                            </div>
+                        </div>
+                        <% phoneRow('emergency', 'Emergency contact phone', cd.emergency, 'off') %>
+                    </fieldset>
+
+                    <% cd.addresses.forEach(function (a) { %>
+                    <fieldset class="mb-3">
+                        <legend class="h6"><%= a.label %></legend>
+                        <div class="row g-2">
+                            <div class="col-12 mb-2">
+                                <label class="form-label" for="<%= a.key %>Street"><%= a.label %> street</label>
+                                <textarea class="form-control" id="<%= a.key %>Street" name="<%= a.key %>Street" rows="2" autocomplete="<%= a.autocomplete %> street-address"><%= a.streetAddress %></textarea>
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label" for="<%= a.key %>City"><%= a.label %> city or town</label>
+                                <input type="text" class="form-control" id="<%= a.key %>City" name="<%= a.key %>City" value="<%= a.addressLocality %>" autocomplete="<%= a.autocomplete %> address-level2">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label" for="<%= a.key %>Region"><%= a.label %> state or region</label>
+                                <input type="text" class="form-control" id="<%= a.key %>Region" name="<%= a.key %>Region" value="<%= a.addressRegion %>" autocomplete="<%= a.autocomplete %> address-level1">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label" for="<%= a.key %>PostalCode"><%= a.label %> postal code</label>
+                                <input type="text" class="form-control" id="<%= a.key %>PostalCode" name="<%= a.key %>PostalCode" value="<%= a.postalCode %>" autocomplete="<%= a.autocomplete %> postal-code">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <% countrySelect(a.key + 'Country', a.key + 'Country', a.label + ' country', a.country, false) %>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <% }) %>
+
+                    <fieldset class="mb-3">
+                        <legend class="h6">More about you</legend>
+                        <div class="mb-2">
+                            <label class="form-label" for="cdLanguages">Languages</label>
+                            <input type="text" class="form-control" id="cdLanguages" name="languages" value="<%= cd.languages %>" aria-describedby="cdLanguagesHint">
+                            <div class="form-text" id="cdLanguagesHint">Separate them with commas, for example: English, Spanish</div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="cdImage">Photo</label>
+                            <input type="url" class="form-control" id="cdImage" name="image" value="<%= cd.image %>" aria-describedby="cdImageHint" placeholder="https://">
+                            <div class="form-text" id="cdImageHint">The web address of a photo of you.</div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="cdLinks">Links</label>
+                            <textarea class="form-control" id="cdLinks" name="links" rows="3" aria-describedby="cdLinksHint"><%= cd.links %></textarea>
+                            <div class="form-text" id="cdLinksHint">Web pages about you, one per line.</div>
+                        </div>
+                    </fieldset>
+
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save" aria-hidden="true"></i> Save contact details</button>
+                </form>
+                <% } %>
+            </div>
+        </div>
+    </div>
+</div>

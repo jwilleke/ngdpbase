@@ -41,7 +41,10 @@ export interface ContactPoint {
   /** Who or what this contact point reaches, e.g. an agent's or an emergency contact's name (schema.org Thing.name). */
   name?: string;
   email?: string;
+  /** E.164 (`+14155552671`) when written from /profile (#2073); add-ons may store other forms. */
   telephone?: string;
+  /** A phone's extension, digits, kept apart from `telephone` (#2073). */
+  extension?: string;
   url?: string;
   availableLanguage?: string[];
 }

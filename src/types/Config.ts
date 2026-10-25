@@ -419,6 +419,9 @@ export interface ApplicationOrganizationConfig {
   /** #1930: minutes the emailed "Is this you?" sign-up link stays usable */
   'ngdpbase.application.persons.link-offer.ttl-minutes': number;
 
+  /** #2073: the country (ISO 3166-1 alpha-2) a phone or address on /profile is read with until the user picks another */
+  'ngdpbase.application.persons.default-country': string;
+
   /** #1930: the most results `OrganizationManager.search` returns when the caller gives no limit */
   'ngdpbase.application.organization.search.limit': number;
 
