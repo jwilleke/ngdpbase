@@ -13,6 +13,8 @@
  * lazy token issuance, so the very first response can already render the
  * token in any form. Mismatches return HTTP 403 with a plain-text body and
  * a logger.warn that captures method, path, ip, and which side was missing.
+ * When the cause is a secure session cookie on a plain-http request, the
+ * body says so in plain words (#2071).
  *
  * Token comparison uses `crypto.timingSafeEqual` after a length-equal guard
  * so neither presence nor length leaks via response timing.
@@ -20,6 +22,7 @@
 import { randomBytes, timingSafeEqual } from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger.js';
+import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 
 const TOKEN_BYTES = 32;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -92,14 +95,20 @@ function continueAfterSave(req: Request, res: Response, next: NextFunction): voi
   ) {
     const expectedState = expected ? 'present' : 'missing';
     const submittedState = submitted ? 'present' : 'missing';
+    // #2071: a secure cookie on a plain-http request never reached the
+    // browser, so no token could match. Say so, rather than only "invalid".
+    const withheld = sessionCookieWithheld(req);
     logger.warn(
       `[csrf] rejected ${req.method} ${req.path} from ${req.ip ?? 'unknown'} — ` +
-        `expected:${expectedState} submitted:${submittedState}`
+        `expected:${expectedState} submitted:${submittedState}` +
+        (withheld ? ' (the session cookie is secure and this request is plain http, #2071)' : '')
     );
     res
       .status(403)
       .type('text/plain')
-      .send('Forbidden — invalid CSRF token');
+      .send(withheld
+        ? `Forbidden — invalid CSRF token. ${SESSION_COOKIE_WITHHELD_MESSAGE}`
+        : 'Forbidden — invalid CSRF token');
     return;
   }
 

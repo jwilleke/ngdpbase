@@ -28,6 +28,9 @@ let mockUserContext: {
   roles?: string[];
   preferences?: Record<string, unknown>;
 } | null = null;
+// #2071: what the last render was handed, and whether the session cookie is secure.
+let lastRenderData: Record<string, unknown> | null = null;
+let mockCookieSecure = false;
 
 vi.mock('../../context/WikiContext', async () => {
   const { createMockWikiContext, MOCK_WIKI_CONTEXT_CONSTANTS } = await import('./__fixtures__/createMockWikiContext');
@@ -361,6 +364,7 @@ function buildApp() {
 
   appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
     res.render = (_view: string, _data: unknown, cb?: (err: Error | null, str?: string) => void) => {
+      lastRenderData = _data as Record<string, unknown>;
       if (cb) cb(null, '<html>stub</html>');
       else res.send('<html>stub</html>');
     };
@@ -370,6 +374,7 @@ function buildApp() {
   appInstance.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
     const sess: Record<string, unknown> = {
       csrfToken: 'test-csrf-token',
+      cookie: { secure: mockCookieSecure },
       user: mockUserContext ? { username: mockUserContext.username } : null,
       destroy: (cb: () => void) => cb?.(),
       save: (cb: (err?: unknown) => void) => cb?.()
@@ -437,6 +442,26 @@ describe('WikiRoutes — coverage batch 14', () => {
       mockUserContext = null;
       const res = await request(app).get('/login?redirect=/admin');
       expect(res.status).toBe(200);
+    });
+
+    // #2071: a secure cookie on plain http never reaches the browser; the page says so.
+    test('says why sign-in cannot work when the secure session cookie is withheld over plain http', async () => {
+      mockUserContext = null;
+      mockCookieSecure = true;
+      try {
+        await request(app).get('/login').expect(200);
+        expect(String(lastRenderData?.sessionCookieWithheld)).toContain('ngdpbase.session.secure to false');
+        await request(app).get('/admin/login').expect(200);
+        expect(String(lastRenderData?.sessionCookieWithheld)).toContain('session cookie only over https');
+      } finally {
+        mockCookieSecure = false;
+      }
+    });
+
+    test('shows no such notice when the cookie is not secure', async () => {
+      mockUserContext = null;
+      await request(app).get('/login').expect(200);
+      expect(lastRenderData?.sessionCookieWithheld).toBeNull();
     });
   });
 

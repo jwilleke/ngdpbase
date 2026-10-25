@@ -45,7 +45,7 @@ import WikiRoutes from './routes/WikiRoutes.js';
 import InstallRoutes from './routes/InstallRoutes.js';
 import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
-import { resolveSessionSecurity } from './utils/sessionSecurity.js';
+import { resolveSessionSecurity, sessionCookieWithheld } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
@@ -782,6 +782,19 @@ void (async (): Promise<void> => {
       maxAge: anonymousSession
     }
   }));
+
+  // #2071: a secure cookie on a request Express sees as plain http is never
+  // sent, and nothing else says so: login fails as "invalid CSRF token". The
+  // default (secure in production) stays; UserManager makes the failure loud,
+  // once per process. Registered only when the cookie is secure, so other
+  // sites pay nothing; on a secure one it is a boolean check per request.
+  if (sessionSecure) {
+    const sessionsOwner = engine.getManager('UserManager') as { reportSessionCookieWithheld(): void } | null;
+    app.use((req, _res, next) => {
+      if (sessionCookieWithheld(req)) sessionsOwner?.reportSessionCookieWithheld();
+      next();
+    });
+  }
 
   // #776/#777 follow-up: capture req.ip into the session on first write so the
   // admin Session Manager can display it. Only writes when the session exists

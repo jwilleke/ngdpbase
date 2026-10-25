@@ -143,3 +143,32 @@ export function resolveSessionSecurity(
     misconfigured: false
   };
 }
+
+/**
+ * #2071 — what an administrator and a visitor are told when the session
+ * cookie cannot reach the browser, spelled once: the server log, the admin
+ * dashboard, the CSRF refusal and the login page all say this.
+ */
+export const SESSION_COOKIE_WITHHELD_MESSAGE =
+  'Sign-in cannot work on this connection: this site sends its session cookie only over https, ' +
+  'and this request came over plain http, so the browser never receives it. ' +
+  'Serve the site over https, put it behind a proxy that sets X-Forwarded-Proto, ' +
+  'or set ngdpbase.session.secure to false.';
+
+/** The two request fields the check reads; express's Request has both. */
+export interface SessionCookieRequest {
+  secure?: boolean;
+  session?: { cookie?: { secure?: unknown } } | null;
+}
+
+/**
+ * True when express-session will NOT send the session cookie on this request
+ * (#2071): the cookie is `secure` and the request is not https as Express
+ * sees it, after `trust proxy`. express-session makes exactly this check and
+ * then silently sends nothing, so the browser has no session, every POST
+ * meets a fresh one, and the CSRF middleware refuses it. A boolean read of
+ * two fields, cheap enough for every request.
+ */
+export function sessionCookieWithheld(req: SessionCookieRequest): boolean {
+  return req.session?.cookie?.secure === true && req.secure !== true;
+}

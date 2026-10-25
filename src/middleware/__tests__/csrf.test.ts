@@ -137,6 +137,33 @@ describe('csrfMiddleware', () => {
     });
   });
 
+  // #2071: a secure session cookie on a plain-http request never reached the
+  // browser, so the refusal names that cause instead of only "invalid".
+  describe('refusal when the session cookie was withheld', () => {
+    const fresh = (): FakeSession => ({ cookie: { secure: true } });
+
+    it('plain http with a secure cookie → 403 that says why and what to do', async () => {
+      const { app } = buildApp(fresh());
+      const res = await request(app).post('/save').set(csrfTestHeaders()).expect(403);
+      expect(res.text).toContain('Forbidden — invalid CSRF token');
+      expect(res.text).toContain('session cookie only over https');
+      expect(res.text).toContain('ngdpbase.session.secure to false');
+    });
+
+    it('behind a trusted proxy that says https → the plain refusal only', async () => {
+      const { app } = buildApp(fresh());
+      app.set('trust proxy', true);
+      const res = await request(app).post('/save').set(csrfTestHeaders()).set('X-Forwarded-Proto', 'https').expect(403);
+      expect(res.text).toBe('Forbidden — invalid CSRF token');
+    });
+
+    it('a cookie that is not secure → the plain refusal only', async () => {
+      const { app } = buildApp({ cookie: { secure: false } });
+      const res = await request(app).post('/save').set(csrfTestHeaders()).expect(403);
+      expect(res.text).toBe('Forbidden — invalid CSRF token');
+    });
+  });
+
   describe('generateCsrfToken', () => {
     it('returns a 64-char hex string (32 bytes)', () => {
       const token = generateCsrfToken();

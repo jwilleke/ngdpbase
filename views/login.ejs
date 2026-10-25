@@ -8,6 +8,13 @@
                     <h4>Sign in to <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></h4>
                 </div>
                 <div class="card-body">
+                    <%# #2071: this browser will never get the session cookie, so sign-in cannot work here. %>
+                    <% if (typeof sessionCookieWithheld !== 'undefined' && sessionCookieWithheld) { %>
+                        <div class="alert alert-danger" role="alert" data-session-cookie-withheld>
+                            <%= sessionCookieWithheld %>
+                        </div>
+                    <% } %>
+
                     <% if (error) { %>
                         <div class="alert alert-danger">
                             <%= error %>

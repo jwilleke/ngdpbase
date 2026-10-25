@@ -69,7 +69,9 @@ describe('#1046 session cookie behind a TLS-terminating proxy', () => {
         .send({ _csrf: page.body.csrfToken, username: 'someone', password: 'whatever' });
 
       expect(post.status).toBe(403);
-      expect(post.text).toBe('Forbidden — invalid CSRF token');
+      // #2071: the refusal now names the cause instead of only "invalid".
+      expect(post.text).toContain('Forbidden — invalid CSRF token');
+      expect(post.text).toContain('session cookie only over https');
     });
   });
 
