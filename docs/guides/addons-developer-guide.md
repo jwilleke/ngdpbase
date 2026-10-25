@@ -1731,6 +1731,8 @@ __`persist`__ (default `true` for a scheduled job) keeps slots, history and lock
 
 __Do not use `setInterval` for recurring work.__ A timer catches nothing up after downtime, runs twice during a rolling update, records nothing when it misses, and is not stopped cleanly at shutdown. Register a scheduled job instead.
 
+__A job that runs often sets `routine: true`.__ Every successful run of an ordinary job is audited and sends admins an info notification ("… complete"). For work that runs every few minutes and whose next run does the same thing (refreshing a feed, polling an outside source), that buries them: a job every 10 minutes is 144 notices a day. With `routine: true` a success is neither audited nor notified and logs at debug; a failure is still audited and notified like any job's. Keep it off for a run someone needs to know happened (a monthly close, a daily statement).
+
 __What the operator controls__, without changing your code: `ngdpbase.jobs.<id>.schedule` replaces the schedule, `ngdpbase.jobs.<id>.enabled: false` pauses it, and Admin → Scheduled Jobs runs it now, reruns a skipped or failed slot, or retries a waiting run. See [Scheduled Jobs](../admin/Scheduled-Jobs.md).
 
 __Testing a scheduled job.__ Construct `BackgroundJobManager` with `{ stateProvider, now }` (a `FileJobStateProvider` in a temporary directory and your own clock), register the job, move the clock, call `tick()`, then `whenIdle()`. A second manager over the same directory is a restart. `src/managers/__tests__/BackgroundJobManager.scheduler.test.ts` shows each case.
