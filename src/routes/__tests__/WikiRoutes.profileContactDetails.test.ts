@@ -28,6 +28,7 @@
 import WikiRoutes from '../WikiRoutes';
 import IdentityManager, { ContactDetailsInvalidError } from '../../managers/IdentityManager';
 import { ContactRefusedError } from '../../utils/contactAccess';
+import { UserCreateError } from '../../utils/userCreateError';
 
 const OWN_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const ACCOUNT = { username: 'pat', displayName: 'Pat', email: 'pat@example.org' };
@@ -57,7 +58,7 @@ const createMockRes = () => ({
  * `fail`: what the identity door's check throws (a bad detail); `identityFail`: what its write
  * rejects with; `lookupFail`: what reading the user's own record rejects with.
  */
-function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown>; shared?: boolean } = {}) {
+function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown>; mail?: boolean; sent?: string; adminShared?: boolean } = {}) {
   const order: string[] = [];
   const identityManager = {
     checkContactDetails: vi.fn((..._args: unknown[]) => { order.push('check'); if (opts.fail) throw opts.fail; }),
@@ -67,13 +68,18 @@ function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Err
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(opts.account ?? ACCOUNT)),
     updateUser: vi.fn((..._args: unknown[]) => { order.push('account'); return opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT); }),
-    isEmailShared: vi.fn((..._args: unknown[]) => Promise.resolve(opts.shared === true))
+    assertAdminEmailUnshared: vi.fn((..._args: unknown[]) => { const refusal: Error = new UserCreateError('admin-email-shared', 'root holds it'); return opts.adminShared ? Promise.reject(refusal) : Promise.resolve(); })
+  };
+  // #2073: a user's own new email is sent a link to confirm it; it is never written here.
+  const authManager = {
+    emailLinksAvailable: vi.fn(() => opts.mail !== false),
+    requestEmailChange: vi.fn((..._args: unknown[]) => { order.push('link'); return Promise.resolve(opts.sent ?? 'sent'); })
   };
   const policyDecisionPoint = { permits: vi.fn(() => Promise.resolve(true)) };
-  const managers: Record<string, unknown> = { IdentityManager: identityManager, UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
+  const managers: Record<string, unknown> = { IdentityManager: identityManager, UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint, AuthManager: authManager };
   const engine = { getManager: vi.fn((name: string) => managers[name] ?? null) };
   const routes = new WikiRoutes(engine);
-  return { routes, identityManager, userManager, order };
+  return { routes, identityManager, userManager, authManager, order };
 }
 
 const target = (res: ReturnType<typeof createMockRes>): string => decodeURIComponent(String(res.redirect.mock.calls[0]?.[0] ?? ''));
@@ -208,12 +214,13 @@ describe('POST /profile/contact-details (#2073)', () => {
     expect(identityManager.updateContactDetails).not.toHaveBeenCalled();
     expect(userManager.updateUser).not.toHaveBeenCalled();
 
-    // Allowed: the email goes to the account door, which keeps the identity record in step.
+    // Allowed: a link is sent to the new address; the email itself is not written (#2073).
     const ok = makeRoutes();
     const res = createMockRes();
     await ok.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'new@example.org' }), res);
-    expect(ok.userManager.updateUser).toHaveBeenCalledWith('pat', { email: 'new@example.org' }, expect.objectContaining({ username: 'pat' }));
-    expect(target(res)).toContain('contactDetailsSaved=');
+    expect(ok.userManager.updateUser).not.toHaveBeenCalled();
+    expect(ok.authManager.requestEmailChange).toHaveBeenCalledWith(expect.objectContaining({ username: 'pat' }), 'pat', 'new@example.org', 'profile');
+    expect(target(res)).toBe('/profile?contactDetailsSaved=Contact details saved.#contact-details');
   });
 
   test('a shared account\'s name and email stay an administrator\'s (#1029); its other details save', async () => {
@@ -233,12 +240,41 @@ describe('POST /profile/contact-details (#2073)', () => {
     expect(target(res)).toContain('contactDetailsSaved=');
   });
 
-  test('an email another account uses too is saved, with a note that sign-in links will ask which account (#2073)', async () => {
-    const { routes, userManager } = makeRoutes({ shared: true });
+  test('a new email is never written here: a link goes to it, after the other details are saved, and the URL never holds it (#2073)', async () => {
+    const { routes, userManager, order } = makeRoutes();
     const res = createMockRes();
-    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'couple@example.org' }), res);
-    expect(userManager.updateUser).toHaveBeenCalledWith('pat', { email: 'couple@example.org' }, expect.anything());
-    expect(target(res)).toBe('/profile?contactDetailsSaved=Contact details saved. Another account uses this email too. Emailed sign-in links will ask which account.#contact-details');
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'Pat P', email: 'couple@example.org', homePhone: '(415) 555-2671' }), res);
+    expect(order).toEqual(['check', 'account', 'identity', 'link']);
+    expect(userManager.updateUser).toHaveBeenCalledWith('pat', { displayName: 'Pat P' }, expect.anything());
+    expect(String(res.redirect.mock.calls[0][0])).not.toContain('couple');
+  });
+
+  test('a site that cannot send email refuses a user\'s own email change, saying an admin can change it; nothing is saved (#2073)', async () => {
+    const { routes, identityManager, userManager, authManager } = makeRoutes({ mail: false });
+    const res = createMockRes();
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'Pat P', email: 'new@example.org' }), res);
+    expect(target(res)).toBe('/profile?contactDetailsError=Your email cannot be changed here, because this site cannot send email to confirm it. An administrator can change it. Nothing was saved.#contact-details');
+    expect(userManager.updateUser).not.toHaveBeenCalled();
+    expect(identityManager.updateContactDetails).not.toHaveBeenCalled();
+    expect(authManager.requestEmailChange).not.toHaveBeenCalled();
+  });
+
+  test('an address that would make an administrator share is refused plainly, naming no account; nothing is saved (#2073)', async () => {
+    const { routes, identityManager, authManager } = makeRoutes({ adminShared: true });
+    const res = createMockRes();
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'root@example.org' }), res);
+    expect(target(res)).toBe('/profile?contactDetailsError=That email address cannot be used, because an administrator\'s account never shares its email. Please use another. Nothing was saved.#contact-details');
+    expect(target(res)).not.toContain('root holds');
+    expect(identityManager.updateContactDetails).not.toHaveBeenCalled();
+    expect(authManager.requestEmailChange).not.toHaveBeenCalled();
+  });
+
+  test('a link that cannot be sent leaves the other details saved and says the email was not changed (#2073)', async () => {
+    const { routes, identityManager } = makeRoutes({ sent: 'failed' });
+    const res = createMockRes();
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'new@example.org', homePhone: '(415) 555-2671' }), res);
+    expect(identityManager.updateContactDetails).toHaveBeenCalled();
+    expect(target(res)).toBe('/profile?contactDetailsError=Your other details were saved, but your email was not changed: this site could not send the link to confirm it. An administrator can change it.#contact-details');
   });
 
   test('a bad detail is refused before the account is written, so nothing is saved', async () => {
@@ -255,25 +291,20 @@ describe('POST /profile/contact-details (#2073)', () => {
     await ok.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New', homePhone: '(415) 555-2671' }), createMockRes());
     expect(ok.order).toEqual(['check', 'account', 'identity']);
 
-    // The account change fails: the identity record is not written, and nothing was saved.
+    // The account change fails: the identity record is not written, no link is sent, and nothing was saved.
     const accountDown = makeRoutes({ accountFail: new Error('disk full') });
     const res = createMockRes();
-    await accountDown.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'new@example.org', homePhone: '(415) 555-2671' }), res);
+    await accountDown.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New', email: 'new@example.org', homePhone: '(415) 555-2671' }), res);
     expect(accountDown.identityManager.updateContactDetails).not.toHaveBeenCalled();
+    expect(accountDown.authManager.requestEmailChange).not.toHaveBeenCalled();
     expect(target(res)).toBe('/profile?contactDetailsError=Your contact details could not be saved. Nothing was saved.#contact-details');
 
-    // The account is saved, then the identity record fails: the page says which part was saved.
-    for (const [body, saved] of [
-      [{ ...FORM, displayName: 'New', email: 'new@example.org' }, 'name and email were'],
-      [{ ...FORM, email: 'new@example.org' }, 'email was'],
-      [{ ...FORM, displayName: 'New' }, 'name was']
-    ] as const) {
-      const identityDown = makeRoutes({ identityFail: new Error('disk full') });
-      const out = createMockRes();
-      await identityDown.routes.updateOwnContactDetails(createMockReq('pat', { ...body }), out);
-      expect(identityDown.order).toEqual(['check', 'account', 'identity']);
-      expect(target(out)).toBe(`/profile?contactDetailsError=Your ${saved} saved, but your other contact details could not be saved. Try again.#contact-details`);
-    }
+    // The name is saved, then the identity record fails: the page says which part was saved, and no link is sent.
+    const identityDown = makeRoutes({ identityFail: new Error('disk full') });
+    const out1 = createMockRes();
+    await identityDown.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New', email: 'new@example.org' }), out1);
+    expect(identityDown.order).toEqual(['check', 'account', 'identity']);
+    expect(target(out1)).toBe('/profile?contactDetailsError=Your name was saved, but your other contact details could not be saved, and your email was not changed. Try again.#contact-details');
 
     // No account change: an identity failure saved nothing.
     const onlyDetails = makeRoutes({ identityFail: new Error('disk full') });

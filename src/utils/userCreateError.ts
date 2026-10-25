@@ -32,7 +32,11 @@ export type UserCreateFailureReason =
   /** The requested username is already taken. */
   | 'username-taken'
   /** The display name collides with something that already exists. */
-  | 'display-name-conflict';
+  | 'display-name-conflict'
+  /** An account holding the admin role would share its email (#2073). */
+  | 'admin-email-shared'
+  /** The account would set its own email without the emailed link (#2073). */
+  | 'email-unconfirmed';
 
 /**
  * A user-creation failure with a reason a caller can branch on.
@@ -67,8 +71,11 @@ export const GENERIC_REGISTRATION_FAILURE = 'Registration failed. Please try aga
  */
 const SAFE_MESSAGES: Record<UserCreateFailureReason, string> = {
   'username-taken': 'That username is not available. Please choose another.',
-  'display-name-conflict': 'That display name is not available. Please choose another.'
-  // No email reason: since #2073 two accounts may share an email (#1748's refusal reversed).
+  'display-name-conflict': 'That display name is not available. Please choose another.',
+  // #2073: plain, and without saying which account holds the address.
+  'admin-email-shared': 'That email address cannot be used. Please use another.',
+  'email-unconfirmed': 'Your email is set when you click the link we send to it.'
+  // No email-taken reason: since #2073 two accounts may share an email (#1748's refusal reversed).
 };
 
 /**

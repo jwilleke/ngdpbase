@@ -385,6 +385,15 @@ describe('MagicLinkAuthProvider', () => {
       expect(await provider.verify({ token, account: 'ann' })).toBeNull();
     });
 
+    test('an account turned off since the link was sent is refused', async () => {
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, bob]);
+      await provider.initiate({ email: 'couple@example.com' });
+      const token = tokenFrom();
+      mockUserManager.getUsersByEmail.mockResolvedValue([ann, { ...bob, isActive: false }]);
+      expect(await provider.verify({ token, account: 'bob' })).toBeNull();
+      expect(await provider.verify({ token, account: 'ann' })).toEqual({ username: 'ann' });
+    });
+
     test('an account that left the address since the link was sent is refused', async () => {
       mockUserManager.getUsersByEmail.mockResolvedValue([ann, bob]);
       await provider.initiate({ email: 'couple@example.com' });

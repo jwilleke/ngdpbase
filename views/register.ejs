@@ -30,7 +30,9 @@
                         
                         <div class="form-group mb-3">
                             <label for="email">Email:</label>
-                            <input type="email" class="form-control" id="email" name="email" required>
+                            <input type="email" class="form-control" id="email" name="email" required aria-describedby="emailHint">
+                            <%# #2073: the email is confirmed by its link before it is the account's. %>
+                            <div class="form-text" id="emailHint">We send a link to this address. It becomes your email when you click it.</div>
                         </div>
                         
                         <div class="form-group mb-3">

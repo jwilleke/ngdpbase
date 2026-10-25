@@ -77,7 +77,7 @@ import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
-import { safeRegistrationMessage } from '../utils/userCreateError.js';
+import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
 import { RoleChangeError } from '../utils/roleChangeError.js';
 import {
   DEVICE_STATE_COOKIE,
@@ -345,6 +345,8 @@ interface IUserManager {
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
+  /** #2073: refuses an email that would make an administrator's account share one. */
+  assertAdminEmailUnshared(username: string, email: unknown, ctx: ActorContext, roles?: readonly string[]): Promise<void>;
   /** #2073: the usernames of every account whose email another account holds too. */
   usernamesSharingAnEmail(): Promise<Set<string>>;
   /** #2073: whether an account other than `ownUsername` holds this email too. */
@@ -8657,15 +8659,17 @@ ${panes}
         return res.redirect(`/register?error=${encodeURIComponent(`Please read and accept the ${terms.map((d) => d.title).join(' and ')}`)}`);
       }
 
+      // #2073: the account is made without the email; it is set when the link sent to it is clicked.
+      const registrant = jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'self-registration'); // #1204: the new account is the actor; #1179: as a context that says so
       await userManager.createUser({
         username,
-        email,
+        email: '',
         displayName: displayName || username,
         password,
         roles: ['reader'], // Default role
         isExternal: false, // Local user
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
-      }, jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'self-registration')); // #1204: the new account is the actor; #1179: as a context that says so
+      }, registrant);
 
       logger.debug(`👤 User registered: ${username}`);
 
@@ -8683,7 +8687,25 @@ ${panes}
           logger.warn(`[register] the terms acceptance of ${username} was not recorded; they will be asked at sign-in: ${(err as Error).message}`);
         }
       }
-      res.redirect('/login?success=Registration successful');
+      // #2073: the email is confirmed by its link before it is the account's. Said the same whether or not
+      // another account uses the address, so registration tells a visitor nothing about other accounts.
+      let emailNote = '';
+      const typedEmail = typeof email === 'string' ? email.trim() : '';
+      if (typedEmail && isEmail(typedEmail)) {
+        const stored = (await userManager.getUser(username))?.username ?? username;
+        // The account is made either way; a link that cannot be sent leaves it without an email.
+        let sent: string = 'unavailable';
+        try {
+          sent = await this.engine.getManager<AuthManager>('AuthManager')
+            ?.requestEmailChange(jobContextFromRequestWithReason({ username: stored, ipAddress: req.ip }, 'self-registration: confirm the email given'), stored, typedEmail, 'registration') ?? 'unavailable';
+        } catch (err: unknown) {
+          logger.warn(`[register] no email confirmation link for ${stored}: ${getErrorMessage(err)}`);
+        }
+        emailNote = sent === 'sent'
+          ? ' We sent a link to the email address you gave; it becomes your email when you click it.'
+          : ' Your email address was not saved, because this site could not send the link to confirm it. An administrator can add it.';
+      }
+      res.redirect('/login?success=' + encodeURIComponent(`Registration successful.${emailNote}`));
     } catch (err: unknown) {
       // #1086: the full error goes to the log; the visitor gets a message from
       // a closed set. This used to forward `getErrorMessage(err)` verbatim,
@@ -8875,6 +8897,8 @@ ${panes}
         ...commonData,
         title: 'Profile',
         contactDetails, // #2073
+        // #2073: the new email waiting for its link, from the server: never in the URL.
+        pendingEmail: currentUser?.username ? this.engine.getManager<AuthManager>('AuthManager')?.pendingEmailChange?.(currentUser.username) ?? null : null,
         contactDetailsSaved: typeof req.query.contactDetailsSaved === 'string' ? req.query.contactDetailsSaved : null,
         contactDetailsError: typeof req.query.contactDetailsError === 'string' ? req.query.contactDetailsError : null,
         consents, // #1603
@@ -10519,12 +10543,18 @@ ${panes}
       // a magic link resolves — is account-security, the permission step-up
       // guards; the rest of the profile stays profile-manage. The form posts
       // email prefilled, so only a different value counts as a change.
-      if (newPassword || (email && email !== account?.email)) {
+      // #2073: the form's email is a user's own change, so it waits for its link and is never written here.
+      const newEmail = typeof email === 'string' && email.trim() && email.trim().toLowerCase() !== String(account?.email ?? '').trim().toLowerCase() ? email.trim() : null;
+      if (newPassword || newEmail) {
         if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+      }
+      if (newEmail) {
+        if (!isEmail(newEmail)) return res.redirect('/profile?error=' + encodeURIComponent('Email is not an email address. Nothing was saved.'));
+        const blocked = await this.ownEmailChangeBlocked(currentUser.username ?? '', newEmail, currentUser);
+        if (blocked) return res.redirect('/profile?error=' + encodeURIComponent(`${blocked} Nothing was saved.`));
       }
 
       if (displayName) updates.displayName = displayName;
-      if (email) updates.email = email;
       updates.profilePage = (profilePage as string || '').trim() || undefined;
 
       // Handle password change for local users only
@@ -10616,10 +10646,14 @@ ${panes}
         }
       }
 
-      // #2073: a shared email is saved; the user is told sign-in links will ask which account.
-      const sharedNote = updates.email && updates.email !== account?.email && await userManager.isEmailShared(updates.email, currentUser.username ?? null)
-        ? ` ${SHARED_EMAIL_NOTE}` : '';
-      res.redirect('/profile?success=' + encodeURIComponent(`Profile updated successfully.${sharedNote}`));
+      // #2073: the new email waits for its link; the profile shows the address from the server, never the URL.
+      if (newEmail) {
+        const sent = await this.engine.getManager<AuthManager>('AuthManager')?.requestEmailChange(currentUser, currentUser.username ?? '', newEmail, 'profile') ?? 'unavailable';
+        if (sent === 'unavailable' || sent === 'failed') {
+          return res.redirect('/profile?error=' + encodeURIComponent('Profile updated, but your email was not changed: this site could not send the link to confirm it. An administrator can change it.'));
+        }
+      }
+      res.redirect('/profile?success=' + encodeURIComponent('Profile updated successfully.'));
     } catch (err: unknown) {
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
@@ -10653,13 +10687,18 @@ ${panes}
       if (!displayName) return answer('error', 'Name is needed. Nothing was saved.');
       if (!email) return answer('error', 'Email is needed. Nothing was saved.');
       if (!isEmail(email)) return answer('error', 'Email is not an email address. Nothing was saved.');
-      const accountChanges: { displayName?: string; email?: string } = {};
+      const accountChanges: { displayName?: string } = {};
       if (displayName !== account.displayName) accountChanges.displayName = displayName;
-      if (email !== account.email) accountChanges.email = email;
-      if (account.profileLocked && Object.keys(accountChanges).length > 0) {
+      // #2073: a new email is not saved here; it changes when the link sent to it is clicked.
+      const newEmail = email.toLowerCase() !== String(account.email ?? '').trim().toLowerCase() ? email : null;
+      if (account.profileLocked && (accountChanges.displayName !== undefined || newEmail)) {
         return answer('error', 'This is a shared account: its name and email can only be changed by an administrator. Nothing was saved.');
       }
-      if (accountChanges.email !== undefined && !(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+      if (newEmail) {
+        if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+        const blocked = await this.ownEmailChangeBlocked(username, newEmail, user);
+        if (blocked) return answer('error', `${blocked} Nothing was saved.`);
+      }
 
       // Everything is checked before anything is written; then the account, then the identity record,
       // so a failure says exactly what was saved.
@@ -10667,27 +10706,80 @@ ${panes}
       identities.checkContactDetails(details);
       const own = await identities.getByUserIdentifier(user, username);
       if (!own) return answer('error', 'Your contact details could not be saved. Nothing was saved.');
-      const accountFields = Object.keys(accountChanges) as Array<'displayName' | 'email'>;
-      if (accountFields.length > 0) {
-        await userManager.updateUser(username, accountChanges, user);
-      }
+      if (accountChanges.displayName !== undefined) await userManager.updateUser(username, accountChanges, user);
       try {
         await identities.updateContactDetails(user, own['@id'], details);
       } catch (err: unknown) {
-        if (accountFields.length === 0) throw err;
-        logger.warn(`[profile] The name or email of ${username} was saved, but not the other contact details: ${getErrorMessage(err)}`);
-        const saved = accountFields.length === 2 ? 'name and email were' : accountFields[0] === 'email' ? 'email was' : 'name was';
-        return answer('error', `Your ${saved} saved, but your other contact details could not be saved. Try again.`);
+        if (accountChanges.displayName === undefined) throw err;
+        logger.warn(`[profile] The name of ${username} was saved, but not the other contact details: ${getErrorMessage(err)}`);
+        return answer('error', 'Your name was saved, but your other contact details could not be saved, and your email was not changed. Try again.');
       }
-      // #2073: a shared email is saved; the user is told sign-in links will ask which account.
-      const shared = accountChanges.email !== undefined && await userManager.isEmailShared(accountChanges.email, username);
-      answer('success', shared ? `Contact details saved. ${SHARED_EMAIL_NOTE}` : 'Contact details saved.');
+      // #2073: the new email waits for its link; the card shows the address from the server, never the URL.
+      if (newEmail) {
+        const sent = await this.engine.getManager<AuthManager>('AuthManager')?.requestEmailChange(user, username, newEmail, 'profile') ?? 'unavailable';
+        if (sent === 'unavailable' || sent === 'failed') {
+          return answer('error', 'Your other details were saved, but your email was not changed: this site could not send the link to confirm it. An administrator can change it.');
+        }
+      }
+      answer('success', 'Contact details saved.');
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
       if (err instanceof ContactDetailsInvalidError) return answer('error', `${contactDetailLabel(err.part, err.field)} ${err.message}. Nothing was saved.`);
       logger.warn(`[profile] Saving the contact details of ${username} failed: ${getErrorMessage(err)}`);
       answer('error', 'Your contact details could not be saved. Nothing was saved.');
     }
+  }
+
+  /**
+   * GET /account/email/confirm?t= — the link confirming a user's new email
+   * (#2073). Shows what it would change; the button on the page confirms, so a
+   * mail scanner opening the link changes nothing. Signed in or not: it never
+   * signs anyone in.
+   */
+  async emailChangeConfirmPage(req: Request, res: Response): Promise<void> {
+    const token = typeof req.query.t === 'string' ? req.query.t : '';
+    const offer = this.engine.getManager<AuthManager>('AuthManager')?.emailChangeOffer(token) ?? null;
+    res.render('email-change-confirm', { ...(await this.getCommonTemplateData(req)), title: 'Confirm your new email', offer, token, result: null });
+  }
+
+  /** POST /account/email/confirm — confirm the new email (#2073); AuthManager checks the rules again and saves it. */
+  async emailChangeConfirm(req: Request, res: Response): Promise<void> {
+    const token = typeof (req.body as Record<string, unknown> | undefined)?.t === 'string' ? String((req.body as Record<string, unknown>).t) : '';
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const common = await this.getCommonTemplateData(req);
+    try {
+      const done = authManager ? await authManager.confirmEmailChange(token) : { outcome: 'expired' as const };
+      if (done.outcome === 'changed') {
+        const address = (await this.engine.getManager('UserManager').getUser(done.username))?.email ?? '';
+        const shared = address ? await this.engine.getManager('UserManager').isEmailShared(address, done.username) : false;
+        return res.render('email-change-confirm', { ...common, title: 'Email changed', offer: null, token: '', result: { ok: true, message: shared ? `Your email is changed. ${SHARED_EMAIL_NOTE}` : 'Your email is changed.' } });
+      }
+      const message = done.outcome === 'refused' ? done.message : 'This link has expired or was already used. Ask for a new one by changing your email on your profile again.';
+      res.status(done.outcome === 'refused' ? 409 : 410).render('email-change-confirm', { ...common, title: 'Email not changed', offer: null, token: '', result: { ok: false, message } });
+    } catch (err: unknown) {
+      logger.error('Error confirming a new email:', err);
+      res.status(500).render('email-change-confirm', { ...common, title: 'Email not changed', offer: null, token: '', result: { ok: false, message: 'Your email could not be changed. Try again later.' } });
+    }
+  }
+
+  /**
+   * Why a user's own change to `email` cannot start (#2073), or null: this
+   * site cannot send the link (an administrator can change it instead), or
+   * the address would make an administrator's account share its email. Said
+   * plainly, never naming another account.
+   */
+  private async ownEmailChangeBlocked(username: string, email: string, ctx: ActorContext): Promise<string | null> {
+    const mail = this.engine.getManager('EmailManager') as { isDeliveryFailing?(): boolean } | null;
+    if (!this.engine.getManager<AuthManager>('AuthManager')?.emailLinksAvailable() || mail?.isDeliveryFailing?.()) {
+      return 'Your email cannot be changed here, because this site cannot send email to confirm it. An administrator can change it.';
+    }
+    try {
+      await this.engine.getManager('UserManager').assertAdminEmailUnshared(username, email, ctx);
+    } catch (err: unknown) {
+      if (err instanceof UserCreateError) return 'That email address cannot be used, because an administrator\'s account never shares its email. Please use another.';
+      throw err;
+    }
+    return null;
   }
 
   /**
@@ -12415,6 +12507,10 @@ ${panes}
           .json({ success: false, message: 'Failed to update user' });
       }
     } catch (err: unknown) {
+      // #2073: an administrator's account never shares its email; the administrator is told which account holds it.
+      if (err instanceof UserCreateError) {
+        return res.status(409).json({ success: false, message: err.message });
+      }
       // #2015: the administrator is told which role change was not saved.
       if (err instanceof RoleChangeError) {
         logger.error('Error updating user roles:', err);
@@ -17176,6 +17272,8 @@ ${panes}
     app.get('/profile', (req: Request, res: Response) => this.profilePage(req, res));
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
     app.post('/profile/contact-details', (req: Request, res: Response) => void this.updateOwnContactDetails(req, res));
+    app.get('/account/email/confirm', (req: Request, res: Response) => void this.emailChangeConfirmPage(req, res));
+    app.post('/account/email/confirm', (req: Request, res: Response) => void this.emailChangeConfirm(req, res));
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));

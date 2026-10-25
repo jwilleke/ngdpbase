@@ -54,18 +54,21 @@ const createMockRes = () => ({
 function makeRoutes(account: Record<string, unknown>, held: (action: string) => boolean = () => true) {
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(account)),
-    updateUser: vi.fn(() => Promise.resolve(account)),
-    authenticateUser: vi.fn(() => Promise.resolve(true))
+    updateUser: vi.fn((..._a: unknown[]) => Promise.resolve(account)),
+    authenticateUser: vi.fn(() => Promise.resolve(true)),
+    assertAdminEmailUnshared: vi.fn(() => Promise.resolve())
   };
+  // #2073: a user's own new email is sent a link; it is never written by the form.
+  const authManager = { emailLinksAvailable: vi.fn(() => true), requestEmailChange: vi.fn(() => Promise.resolve('sent')) };
   // #1431 step 14: decisions are the PDP's.
   // #1198: the profile routes ask profile-manage of policy; a reader holds it.
   const policyDecisionPoint = { permits: vi.fn((_subject: unknown, action: string) => Promise.resolve(held(action))) };
-  const managers: Record<string, unknown> = { UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
+  const managers: Record<string, unknown> = { UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint, AuthManager: authManager };
   const engine = {
     getManager: vi.fn((name: string) => managers[name] ?? null)
   };
   const routes = new WikiRoutes(engine);
-  return { routes, userManager };
+  return { routes, userManager, authManager };
 }
 
 /** The redirect the handler used to bounce the caller back to /profile. */
@@ -137,12 +140,15 @@ describe('an ordinary account is unaffected (#1029)', () => {
     ['display name', { displayName: 'Jim W' }]
   ])('%s change goes through', async (_label, body) => {
     const res = createMockRes();
-    const { routes, userManager } = makeRoutes(UNLOCKED);
+    const { routes, userManager, authManager } = makeRoutes(UNLOCKED);
 
     await routes.updateProfile(createMockReq('jim', body), res);
 
     expect(userManager.updateUser).toHaveBeenCalled();
     expect(decodeURIComponent(redirectTarget(res))).not.toContain('shared account');
+    // #2073: the email itself is never written here; it waits for the link sent to it.
+    expect((userManager.updateUser.mock.calls[0][1] as Record<string, unknown>).email).toBeUndefined();
+    if ('email' in body) expect(authManager.requestEmailChange).toHaveBeenCalledWith(expect.anything(), 'jim', body.email, 'profile');
   });
 });
 

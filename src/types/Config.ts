@@ -422,6 +422,9 @@ export interface ApplicationOrganizationConfig {
   /** #2073: the country (ISO 3166-1 alpha-2) a phone or address on /profile is read with until the user picks another */
   'ngdpbase.application.persons.default-country': string;
 
+  /** #2073: minutes the link confirming a user's new email stays usable */
+  'ngdpbase.auth.email-change.ttl-minutes': number;
+
   /** #1930: the most results `OrganizationManager.search` returns when the caller gives no limit */
   'ngdpbase.application.organization.search.limit': number;
 

@@ -213,11 +213,11 @@ export class MagicLinkAuthProvider implements AuthProvider {
     if (!entry) return null;
     if (!entry.choices) return { username: entry.username };
 
-    // #2073: a shared address — the account chosen must be one the link offered, and still hold the address.
+    // #2073: a shared address — the account chosen must be one the link offered, still hold the address, and still be on.
     const account = credentials.account;
     if (!account || !entry.choices.includes(account)) return null;
     const holders = await this.engine.getManager<UserManager>('UserManager')?.getUsersByEmail(entry.email) ?? [];
-    return holders.some((u) => u.username === account) ? { username: account } : null;
+    return holders.some((u) => u.username === account && u.isActive !== false) ? { username: account } : null;
   }
 
   /**

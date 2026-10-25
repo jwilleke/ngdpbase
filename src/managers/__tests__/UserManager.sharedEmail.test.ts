@@ -12,17 +12,24 @@
  * - the refusal put back in createUser → "a new account may take an email another has";
  * - getUserByEmail returning the first of several → "finds nobody, never the first";
  * - getUsersByEmail compared without case → "lists every account on it";
- * - the start-up report put back → "is not reported at start-up".
+ * - the start-up report put back → "is not reported at start-up";
+ * - the admin rule skipped for an administrator saving an email → "an
+ *   administrator never shares", and for another holder being one → "nor
+ *   takes one", and for a role change → "nor becomes one";
+ * - the own-email rule skipped → "an account never sets its own email".
  */
 
 import { randomUUID } from 'node:crypto';
 import UserManager from '../UserManager';
+import RoleManager from '../RoleManager';
+import { UserCreateError } from '../../utils/userCreateError';
 import type { ActorContext } from '../../context/ActorContext';
 
 const ACTOR = { username: 'admin', isAuthenticated: true, roles: ['admin'] } as ActorContext;
 
-function makeManager() {
+function makeManager(opts: { admins?: string[]; userEdit?: boolean } = {}) {
   const store = new Map<string, Record<string, unknown>>();
+  const admins = new Set(opts.admins ?? []);
   const notes: Array<{ level: string; title: string }> = [];
   const provider = {
     getUser: vi.fn((name: string) => Promise.resolve(store.get(name))),
@@ -39,7 +46,13 @@ function makeManager() {
   };
   const managers: Record<string, unknown> = {
     ConfigurationManager: { getProperty: vi.fn((_key: string, dflt: unknown) => dflt) },
-    RoleManager: { applyRoleDiff: vi.fn(() => Promise.resolve()), resolveUserRoles: vi.fn(() => Promise.resolve([])) },
+    RoleManager: {
+      applyRoleDiff: vi.fn((name: string, _old: string[], roles: string[]) => { if (roles.includes('admin')) admins.add(name); return Promise.resolve(); }),
+      resolveUserRoles: vi.fn((_ctx: unknown, name: string) => Promise.resolve(admins.has(name) ? ['admin'] : [])),
+      hasRole: vi.fn((_ctx: unknown, name: string, role: string) => Promise.resolve(role === 'admin' && admins.has(name)))
+    },
+    // #2073: who holds user-edit (an administrator in Admin → Users) may set an account's email directly.
+    PolicyDecisionPoint: { permits: vi.fn((_s: unknown, action: string) => Promise.resolve(action === 'user-edit' && opts.userEdit === true)) },
     PolicyInformationPoint: { isSystemPrincipal: () => false },
     NotificationManager: { addNotification: (n: { level: string; title: string }) => { notes.push(n); return Promise.resolve('n'); } }
   };
@@ -115,5 +128,74 @@ describe('accounts may share an email (#2073)', () => {
     const state = (manager as unknown as { status?: { state: string } }).status;
     expect(state?.state).not.toBe('degraded');
     expect(notes).toHaveLength(0);
+  });
+
+  test('an administrator never shares its email: refused, whoever saves it (#2073)', async () => {
+    const { manager, store } = makeManager({ admins: ['root'] });
+    store.set('root', { username: 'root', email: 'root@example.com' });
+    store.set('ann', { username: 'ann', email: 'ann@example.com' });
+    // The administrator takes an address another account holds.
+    await expect(manager.updateUser('root', { email: 'ANN@example.com' }, ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    expect(store.get('root')?.email).toBe('root@example.com');
+    // An admin-role account is created with an address another account holds.
+    await expect(manager.createUser({ ...person('boss', 'ann@example.com'), roles: ['admin'] }, ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    expect(store.has('boss')).toBe(false);
+  });
+
+  test('nor takes one: another account cannot take an administrator\'s email (#2073)', async () => {
+    const { manager, store } = makeManager({ admins: ['root'] });
+    store.set('root', { username: 'root', email: 'root@example.com' });
+    store.set('ann', { username: 'ann', email: 'ann@example.com' });
+    await expect(manager.updateUser('ann', { email: 'root@example.com' }, ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    await expect(manager.createUser(person('bob', ' Root@Example.com'), ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    expect(store.get('ann')?.email).toBe('ann@example.com');
+    expect(store.has('bob')).toBe(false);
+  });
+
+  test('nor becomes one: the admin role is refused to an account whose email is shared (#2073)', async () => {
+    const { manager, store } = makeManager();
+    store.set('ann', { username: 'ann', email: 'couple@example.com' });
+    store.set('bob', { username: 'bob', email: 'couple@example.com' });
+    await expect(manager.updateUser('bob', { roles: ['reader', 'admin'] }, ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    // Not shared: the role is given.
+    store.set('cal', { username: 'cal', email: 'cal@example.com' });
+    await manager.updateUser('cal', { roles: ['reader', 'admin'] }, ACTOR);
+  });
+
+  test('an account never sets its own email: only through its link, or by an administrator (#2073)', async () => {
+    const { manager, store } = makeManager();
+    store.set('ann', { username: 'ann', email: 'ann@example.com' });
+    const self = { username: 'ann', isAuthenticated: true, roles: ['reader'] } as ActorContext;
+    await expect(manager.updateUser('ann', { email: 'new@example.com' }, self)).rejects.toMatchObject({ reason: 'email-unconfirmed' });
+    expect(store.get('ann')?.email).toBe('ann@example.com');
+    // Its own case, or other fields, are not a new email.
+    await manager.updateUser('ann', { email: 'Ann@Example.com', displayName: 'Ann A' }, self);
+    expect(store.get('ann')?.displayName).toBe('Ann A');
+    // A self-registration is made without an email; with one it is refused.
+    const registrant = { username: 'dee', isAuthenticated: false, roles: [] } as unknown as ActorContext;
+    await expect(manager.createUser(person('dee', 'dee@example.com'), registrant)).rejects.toMatchObject({ reason: 'email-unconfirmed' });
+    await manager.createUser(person('dee', ''), registrant);
+    // An administrator (user-edit) editing their own account is trusted.
+    const admin = makeManager({ userEdit: true });
+    admin.store.set('root', { username: 'root', email: 'root@example.com' });
+    await admin.manager.updateUser('root', { email: 'root2@example.com' }, { username: 'root', isAuthenticated: true, roles: ['admin'] } as ActorContext);
+    expect(admin.store.get('root')?.email).toBe('root2@example.com');
+  });
+
+  test('nor becomes one through RoleManager: assigning the admin role asks the same rule, and is refused (#2073)', async () => {
+    const asked: unknown[] = [];
+    const um = {
+      getUser: () => Promise.resolve({ username: 'bob', email: 'couple@example.com' }),
+      assertAdminEmailUnshared: (...a: unknown[]) => { asked.push(a.slice(0, 2)); const refusal: Error = new UserCreateError('admin-email-shared', 'shared'); return Promise.reject(refusal); }
+    };
+    const roles = new RoleManager({ getManager: (n: string) => (n === 'UserManager' ? um : n === 'ConfigurationManager'
+      ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.roles.definitions' ? { admin: { name: 'admin' }, editor: { name: 'editor' } } : d) } : null) });
+    const change = vi.spyOn(roles as unknown as { recordedRoleChange: () => Promise<void> }, 'recordedRoleChange').mockResolvedValue(undefined);
+    await expect(roles.assignRole('bob', 'admin', ACTOR)).rejects.toMatchObject({ reason: 'admin-email-shared' });
+    expect(asked).toEqual([['bob', 'couple@example.com']]);
+    expect(change).not.toHaveBeenCalled();
+    // Another role asks nothing.
+    await roles.assignRole('bob', 'editor', ACTOR);
+    expect(asked).toHaveLength(1);
   });
 });

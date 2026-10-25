@@ -560,6 +560,8 @@ audited.
 | `signinapproval-approve` | Sign-in approval: the user pressed Approve (#1532) | continue | yes |
 | `signinapproval-deny` | Sign-in approval: the user pressed Deny; that sign-in will not complete (#1532) | continue | yes |
 | `signinapproval-expire` | Sign-in approval: a waiting sign-in expired before it was completed (#1532) | continue | yes |
+| `emailchange-request` | A user asked to change their own email: a confirmation link was sent to the new address (#2073). Names only, never an address | continue | yes |
+| `emailchange-confirm` | A user's new email was confirmed by its emailed link and saved (#2073). Names only, never an address | continue | yes |
 | `signinapproval-sendfail` | Sign-in approval: the approval message could not be sent (transport error, or no channel configured) (#1532) | continue | yes |
 | `signinapproval-abandon` | Sign-in approval: the browser that was waiting gave up the sign-in (#1532) | continue | yes |
 | `signinapproval-throttle` | Sign-in approval: another approval message was asked for too soon and not sent (#1532) | continue | yes |

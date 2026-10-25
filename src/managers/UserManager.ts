@@ -5,7 +5,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
-import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
@@ -44,6 +44,9 @@ import { USER_DATA_TOPIC } from '../cache/CacheDependencies.js';
 // provisions an account now says so in the JobContext's reason.
 
 /** Account fields whose change alters what the account may do or who holds it. Preferences are not among them. */
+/** The role whose accounts never share an email (#2073, operator 2026-10-25). */
+const ADMIN_ROLE = 'admin';
+
 const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'isTest', 'email', 'profileLocked', 'username'] as const;
 
 /**
@@ -462,6 +465,45 @@ class UserManager extends BaseManager {
     return Array.from(all.values())
       .filter((u): u is User => u != null && UserManager.emailKey(u.email) === key)
       .map((u) => publicRecord(u));
+  }
+
+  /**
+   * An account holding the admin role never shares its email (#2073, operator
+   * 2026-10-25), either way round: refused when `username` is or will be an
+   * administrator and another account holds `email`, and when another account
+   * holding `email` is an administrator. `roles` are the account's roles
+   * after the change, when the change sets them; otherwise its current ones
+   * are read. Throws `UserCreateError('admin-email-shared')`; the message names
+   * the accounts, for the log and an administrator, never for a visitor.
+   */
+  async assertAdminEmailUnshared(username: string, email: unknown, ctx: ActorContext, roles?: readonly string[]): Promise<void> {
+    const others = (await this.getUsersByEmail(email)).filter((u) => !sameUsername(u.username, username));
+    if (others.length === 0) return;
+    const read = this.lifecycleContext(`check the admin role of the accounts sharing an email with ${username}`, ctx);
+    const rm = this.roleManager();
+    const isAdmin = roles ? roles.includes(ADMIN_ROLE) : (await this.provider?.userExists(username)) === true && await rm.hasRole(read, username, ADMIN_ROLE);
+    if (isAdmin) {
+      throw new UserCreateError('admin-email-shared', `An account holding the admin role cannot share its email; ${others.map((u) => u.username).join(', ')} already use it`);
+    }
+    for (const other of others) {
+      if (await rm.hasRole(read, other.username, ADMIN_ROLE)) {
+        throw new UserCreateError('admin-email-shared', `That email belongs to ${other.username}, an account holding the admin role, which cannot share it`);
+      }
+    }
+  }
+
+  /**
+   * An account never sets its own email without the emailed link (#2073): a
+   * change of email made as the account itself is refused unless the caller
+   * holds `user-edit` (an administrator in Admin → Users is trusted). The
+   * link is AuthManager's (`requestEmailChange`, `confirmEmailChange`), which
+   * saves under the system context. Throws `UserCreateError('email-unconfirmed')`.
+   */
+  private async assertEmailChangeAllowed(username: string, ctx: ActorContext): Promise<void> {
+    if (!ctx || !sameUsername(ctx.username, username)) return;
+    const pdp = this.engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (pdp && await pdp.permits(ctx, 'user-edit')) return;
+    throw new UserCreateError('email-unconfirmed', `Account ${username} cannot set its own email without the emailed link`);
   }
 
   /** The usernames of every account whose email another account holds too (#2073): the admins' marker on the user list. */
@@ -1050,6 +1092,14 @@ class UserManager extends BaseManager {
       throw new UserCreateError('username-taken', `Username already exists: "${username}"`);
     }
 
+    // #2073: an account never sets its own email without the emailed link
+    // (self-registration gets it by confirming one), and an administrator's
+    // account never shares its email.
+    if (typeof email === 'string' && email.trim() !== '') {
+      await this.assertEmailChangeAllowed(username, ctx);
+      await this.assertAdminEmailUnshared(username, email, ctx, roles);
+    }
+
     const finalDisplayName = displayName || username;
     const hasPageConflict = await this.checkDisplayNamePageConflict(finalDisplayName);
     if (hasPageConflict) {
@@ -1299,6 +1349,14 @@ class UserManager extends BaseManager {
       if (willBeExternal) {
         throw new Error('Cannot set a password for an external OAuth user. Change the account type to Local first.');
       }
+    }
+    // #2073: a new email is set by the account itself only through the
+    // emailed link; an administrator's account never shares its email, by an
+    // email change or by being given the admin role.
+    const emailChanges = updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email);
+    if (emailChanges) await this.assertEmailChangeAllowed(username, ctx);
+    if (emailChanges || (Array.isArray(updates.roles) && updates.roles.some((r) => r === ADMIN_ROLE))) {
+      await this.assertAdminEmailUnshared(username, updates.email ?? user.email, ctx, updates.roles);
     }
 
     // #617 iteration 3b: the `roles` field on User is deprecated; role

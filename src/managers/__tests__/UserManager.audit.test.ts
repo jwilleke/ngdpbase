@@ -93,7 +93,8 @@ describe('#1204 user-create', () => {
   test('self-registration names the new account as the actor', async () => {
     const { um, sink } = makeManager();
     // #1179: the new account is not a subject yet — a request-origin context that says so.
-    await um.createUser({ username: 'bob', email: 'b@x', displayName: 'Bob', password: 'pw-1234567' }, jobContextFromRequestWithReason({ username: 'bob', ipAddress: '10.0.0.9' }, 'self-registration'));
+    // #2073: a self-registration is made without its email; the email is set by its confirming link.
+    await um.createUser({ username: 'bob', email: '', displayName: 'Bob', password: 'pw-1234567' }, jobContextFromRequestWithReason({ username: 'bob', ipAddress: '10.0.0.9' }, 'self-registration'));
     expect(sink[0]).toMatchObject({ user: 'bob', ipAddress: '10.0.0.9', metadata: { origin: 'request', reason: 'self-registration', selfRegistration: true } });
   });
 
