@@ -98,6 +98,8 @@ __This is only safe because the instance terminates TLS.__ Behind a proxy the sc
 
 `ngdpbase.session.secure` tells the browser to send the session cookie only over HTTPS. Turn it on without HTTPS actually reaching the browser and the cookie never comes back: every state-changing POST fails as *"Forbidden — invalid CSRF token"* and login becomes impossible. That is [#1046](https://github.com/jwilleke/ngdpbase/issues/1046), and it is the reason the flag ships `false`.
 
+With no `ngdpbase.session.secure` in the operator's file, the cookie is secure exactly when `NODE_ENV` is `production`, so a production site served over plain http with nothing in front hits the same wall. It is no longer silent ([#2071](https://github.com/jwilleke/ngdpbase/issues/2071)): the first request that arrives over plain http (as Express sees it, after `trust proxy`) while the cookie is secure logs an error once per process, puts UserManager under "Working, but needs your attention" on the admin dashboard with `ngdpbase.session.secure` as the key, and notifies administrators. The login page and the CSRF refusal say the same thing to the visitor: serve the site over https, put it behind a proxy that sets `X-Forwarded-Proto`, or set `ngdpbase.session.secure` to `false`.
+
 What makes it safe depends on the shape:
 
 - __Native TLS__ — Express sees the real TLS socket, so `req.secure` is true from the connection itself. Set `secure` on and leave `trust-proxy` alone.

@@ -44,6 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
@@ -6373,6 +6374,8 @@ ${panes}
         outsideProviders: authManager?.outsideProviders?.() ?? [], // #1743
         pendingConnection: authManager?.pendingConnection?.(req) ?? null, // #1743: sign in to connect it
         passwordAuthEnabled: authManager?.isEnabled('password') ?? true,
+        // #2071: this browser will never get the session cookie, so say why sign-in fails.
+        sessionCookieWithheld: sessionCookieWithheld(req) ? SESSION_COOKIE_WITHHELD_MESSAGE : null,
         csrfToken: req.session?.csrfToken || ''
       });
     } catch (err: unknown) {
@@ -6403,6 +6406,7 @@ ${panes}
         magicLinkEnabled: false,
         outsideProviders: [],
         passwordAuthEnabled: true,
+        sessionCookieWithheld: sessionCookieWithheld(req) ? SESSION_COOKIE_WITHHELD_MESSAGE : null, // #2071
         csrfToken: req.session?.csrfToken || ''
       });
     } catch (err: unknown) {

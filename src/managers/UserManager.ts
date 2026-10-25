@@ -22,6 +22,7 @@ import type TemplateManager from './TemplateManager.js';
 import type SessionStatsManager from './SessionStatsManager.js';
 import { endSession, type SessionEndReason } from '../utils/sessionEnd.js';
 import { checkSessionAccount } from '../utils/sessionAccount.js';
+import { SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import type ValidationManager from './ValidationManager.js';
 import type { PersonUpdate } from '../types/Person.js';
 import type { JobContext } from '../context/JobContext.js';
@@ -323,6 +324,8 @@ class UserManager extends BaseManager {
   private passwordSalt?: string;
   /** One read-merge-write at a time per account, keyed by the normalized username (#2025). */
   private readonly accountWrites = new KeyedSerial();
+  /** Whether this process has already reported the withheld session cookie (#2071). */
+  private sessionCookieWithheldReported = false;
 
   /**
    * Creates a new UserManager instance
@@ -467,6 +470,25 @@ class UserManager extends BaseManager {
     const holders = (await this.accountsWithEmail(email)).filter((u) => u !== ownUsername);
     if (holders.length > 0) {
       throw new UserCreateError('email-taken', `Email address is already used by another account (${holders.join(', ')})`);
+    }
+  }
+
+  /**
+   * The session cookie is `secure` and a request came over plain http, so
+   * express-session sent no cookie and nobody can sign in (#2071). Sessions
+   * are this manager's, so the report is too: an error in the log, the
+   * dashboard's "needs your attention", and a notification for admins, once
+   * per process. Every later call is one boolean check, because app.ts calls
+   * this on each such request.
+   */
+  reportSessionCookieWithheld(): void {
+    if (this.sessionCookieWithheldReported) return;
+    this.sessionCookieWithheldReported = true;
+    logger.error(`🔐 ${SESSION_COOKIE_WITHHELD_MESSAGE}`);
+    if (this.markNeedsAttention(SESSION_COOKIE_WITHHELD_MESSAGE, 'ngdpbase.session.secure')) {
+      void this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
+        type: 'system', level: 'error', title: 'Nobody can sign in over plain http', message: SESSION_COOKIE_WITHHELD_MESSAGE
+      }).catch((err: unknown) => logger.warn('🔐 Could not post the session-cookie notification:', err));
     }
   }
 

@@ -7,7 +7,11 @@
  * to be resolved together, and these cases pin that.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveSessionSecurity } from '../sessionSecurity.js';
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+import session from 'express-session';
+import request from 'supertest';
+import { resolveSessionSecurity, sessionCookieWithheld } from '../sessionSecurity.js';
 
 const SECURE = 'ngdpbase.session.secure';
 const TRUST = 'ngdpbase.server.trust-proxy';
@@ -174,5 +178,56 @@ describe('#1160 native TLS removes the reason to derive trust proxy', () => {
     // assert.
     const r = resolveSessionSecurity({ 'ngdpbase.session.secure': true }, 'production');
     expect(r.trustProxy).toBe(true);
+  });
+});
+
+/**
+ * #2071 — a production site on plain http: the cookie is secure, Express sees
+ * http, express-session silently sends nothing. The check must agree with
+ * express-session exactly, so it is pinned against the real middleware.
+ */
+describe('sessionCookieWithheld (#2071)', () => {
+  test('a secure cookie on a request that is not https is withheld', () => {
+    expect(sessionCookieWithheld({ secure: false, session: { cookie: { secure: true } } })).toBe(true);
+  });
+
+  test('https, a cookie that is not secure, or no session: nothing withheld', () => {
+    expect(sessionCookieWithheld({ secure: true, session: { cookie: { secure: true } } })).toBe(false);
+    expect(sessionCookieWithheld({ secure: false, session: { cookie: { secure: false } } })).toBe(false);
+    expect(sessionCookieWithheld({ secure: false })).toBe(false);
+  });
+
+  function appWith(secure: boolean, trustProxy: boolean): { app: express.Application; seen: boolean[] } {
+    const seen: boolean[] = [];
+    const app = express();
+    if (trustProxy) app.set('trust proxy', true);
+    app.use(session({ secret: randomUUID(), resave: false, saveUninitialized: false, cookie: { secure } }));
+    app.get('/', (req, res) => {
+      seen.push(sessionCookieWithheld(req));
+      (req.session as unknown as { touched: boolean }).touched = true;
+      res.send('ok');
+    });
+    return { app, seen };
+  }
+
+  test('plain http with a secure cookie: express-session sends no cookie, and the check says so', async () => {
+    const { app, seen } = appWith(true, false);
+    const res = await request(app).get('/');
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(seen).toEqual([true]);
+  });
+
+  test('behind a trusted proxy that says https: the cookie is sent, nothing withheld', async () => {
+    const { app, seen } = appWith(true, true);
+    const res = await request(app).get('/').set('X-Forwarded-Proto', 'https');
+    expect(res.headers['set-cookie']).toBeDefined();
+    expect(seen).toEqual([false]);
+  });
+
+  test('session.secure false over http: the cookie is sent, nothing withheld', async () => {
+    const { app, seen } = appWith(false, false);
+    const res = await request(app).get('/');
+    expect(res.headers['set-cookie']).toBeDefined();
+    expect(seen).toEqual([false]);
   });
 });

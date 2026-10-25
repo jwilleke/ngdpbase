@@ -99,7 +99,7 @@ After wiring the proxy, update `app-custom-config.json`:
 }
 ```
 
-`session.secure: true` requires HTTPS — set it only after the proxy is verified working.
+`session.secure: true` requires HTTPS — set it only after the proxy is verified working. Left unset, it is on whenever `NODE_ENV=production`. When a request reaches a site with a secure cookie over plain http, the site says so instead of failing silently: an error in the log, a notice on the admin dashboard and to administrators, and an explanation on the login page and the `Forbidden — invalid CSRF token` refusal (#2071).
 
 Turning `session.secure` on also turns `ngdpbase.server.trust-proxy` on automatically (#1046). The proxy terminates TLS, so ngdpbase itself sees plain HTTP; without trusting the proxy it would refuse to send the `Secure` session cookie at all, and every login would fail with `Forbidden — invalid CSRF token`. Trusting the proxy is what lets it read `X-Forwarded-Proto` and `X-Forwarded-For`, so `req.ip` also becomes the real visitor rather than the proxy.
 
