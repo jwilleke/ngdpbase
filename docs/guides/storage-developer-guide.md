@@ -189,6 +189,8 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __An add-on that catches `openAddonDatabase`'s error still loads__ (#1860). It gets no connection, so nothing is written, but its status shows it as loaded. A `"required"` database with no key is caught before import and never gets this far; an undeclared owner or ledger is refused only when opened. Let the error leave `register()`.
 - __A declared database that is never opened__ (the add-on is off, or it opens lazily) is listed as not open; nothing checks that its file exists or passes its integrity check until it is opened.
 
+- __A "needs review" form submission is kept in the clear__ ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072)). Core keeps the request (summary and details) only in the encrypted application database, but the forms add-on saves the full submission as plain JSON under its `dataPath` before filing it, as it does every stored submission, and keeps it after the decision. Forms' storage is not changed by #2072; a form whose answers are personal and must not be kept in the clear cannot use `review` yet.
+
 ## Checklist
 
 - [ ] Generated content is in the add-on's own system-category, never `general`

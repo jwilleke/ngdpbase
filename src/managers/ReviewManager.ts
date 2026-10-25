@@ -22,7 +22,11 @@
  * only while it is encrypted: a request's summary and details can be personal
  * (a new owner's name and email), and the storage guide keeps anything
  * personal in an encrypted database only. Without one the door is closed and
- * says why; nothing is ever written in the clear.
+ * says why, and this manager writes no request anywhere else. What leaves it
+ * is names only: the notice to deciders names the request's kind, the audit
+ * records and the log carry its id, kind and handler. What the filing add-on
+ * keeps itself is its own: the forms add-on keeps each "needs review"
+ * submission as plain JSON in its data folder (storage guide, Known gaps).
  *
  * The handler runs in the decider's request, awaited, not as a background job:
  * the reviewer is told at once whether the work was done, and a failure is
@@ -365,7 +369,8 @@ class ReviewManager extends BaseManager {
         const reason = messageOf(err).slice(0, SUMMARY_MAX);
         db.prepare("UPDATE review_requests SET failed_at = ?, failure = ? WHERE id = ? AND status = 'open'").run(now, reason, request.id);
         const failed = { ...request, failedAt: now, failure: reason };
-        logger.error(`[ReviewManager] request ${request.id} (${request.kind}) approved by ${decidedBy}, but its handler ${request.handlerId} failed; it stays open: ${reason}`);
+        // Ids and names only: the reason is the add-on's own words and may name someone; it is on the request (#2072).
+        logger.error(`[ReviewManager] request ${request.id} (${request.kind}) was approved, but its handler ${request.handlerId} failed; it stays open`);
         // The reason is the add-on's own words and may name someone: kept on the request, not in the audit.
         await this.record(AUDIT_EVENT.REVIEW_FAILED, ctx, failed, 'review-approve', 'failure');
         throw new ReviewHandlerFailedError(failed, reason);
@@ -434,8 +439,11 @@ class ReviewManager extends BaseManager {
       await notifications.createNotification({
         type: 'system',
         level: 'info',
-        title: `A request is waiting for review: ${request.subject}`,
-        message: `${request.summary}. Approve or reject it on the Reviews page (/reviews).`,
+        // Generic on purpose: notifications are stored in the clear, and a
+        // request's subject and summary can name someone (#2072). The
+        // reviewer reads them on /reviews, from the encrypted store.
+        title: 'A request is waiting for your review',
+        message: `A ${request.kind} request is waiting for your review on the Reviews page (/reviews).`,
         targetUsers: holders
       });
     } catch (err) {

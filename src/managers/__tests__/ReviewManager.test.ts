@@ -16,7 +16,9 @@
  * - the encryption check in initialize (opened an unencrypted database): "refuses an unencrypted database";
  * - registerHandler's owner check (removed): "only its own prefix";
  * - the KeyedSerial key in decide (a fresh key per call): "two approvals at once run the handler once";
- * - the audit record on approve (removed): "records filed and approved".
+ * - the audit record on approve (removed): "records filed and approved";
+ * - the notice's message (back to the summary): "the notice names only the kind";
+ * - the failure log line (with the reason again): "the log line for a failed handler".
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -28,6 +30,7 @@ import ReviewManager, {
 import SqliteDatabaseProvider from '../../providers/SqliteDatabaseProvider';
 import DATABASE_MIGRATIONS from '../../providers/databaseMigrations';
 import { buildAddonHost } from '../../utils/addonHost';
+import logger from '../../utils/logger';
 import type { ActorContext } from '../../context/ActorContext';
 
 interface Subj { username: string; isAuthenticated: boolean; roles: string[]; ipAddress?: string }
@@ -147,6 +150,14 @@ describe('ReviewManager (#2072)', () => {
       expect(notices[0].message).toContain('/reviews');
     });
 
+    test('the notice names only the kind: no subject, summary or details (notifications are stored in the clear)', async () => {
+      await rm.fileRequest(anonymous, input());
+      await tick();
+      const text = JSON.stringify(notices);
+      expect(text).toContain('accommodation.new-owner');
+      for (const value of ['Unit 12B', 'Pat Lee', 'pat-marker-7781', 'Add Pat Lee']) expect(text).not.toContain(value);
+    });
+
     test('nobody holding it is log-only: no notice to everyone', async () => {
       grants = { ann: new Set() };
       await rm.fileRequest(anonymous, input());
@@ -187,6 +198,21 @@ describe('ReviewManager (#2072)', () => {
       const approved = await rm.decide(user('dana'), filed.id, 'approve');
       expect(approved.status).toBe('approved');
       expect(approved.failure).toBeNull();
+    });
+
+    test('the log line for a failed handler carries ids and names, never the reason', async () => {
+      const lines: string[] = [];
+      const spy = vi.spyOn(logger, 'error').mockImplementation(((m: string) => { lines.push(String(m)); return logger; }) as never);
+      try {
+        rm.registerHandler('accommodation', 'accommodation.new-owner', () => Promise.reject(new Error('Pat Lee could not be reached')));
+        const filed = await rm.fileRequest(anonymous, input());
+        await rm.decide(user('dana'), filed.id, 'approve').catch(() => undefined);
+      } finally {
+        spy.mockRestore();
+      }
+      const line = lines.find((l) => l.includes('[ReviewManager]'));
+      expect(line).toContain('accommodation.new-owner');
+      expect(line).not.toContain('Pat Lee');
     });
 
     test('an add-on that is not running leaves the request open, saying so', async () => {

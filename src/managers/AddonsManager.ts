@@ -1897,6 +1897,8 @@ class AddonsManager extends BaseManager {
       addon.loaded = false;
 
       logger.error(`Failed to load add-on ${addonName}: ${errorMessage}`);
+      // #2072: a handler it registered before failing must not carry out requests for an add-on that is not running.
+      this.#forgetReviewHandlers(addonName);
       // Don't throw - allow other add-ons to load. #1883: register() throwing
       // covers a database the add-on opens there failing its migrations or
       // its integrity check (DatabaseManager.openAddonDatabase throws).
@@ -2463,6 +2465,11 @@ class AddonsManager extends BaseManager {
     return addon?.loaded ?? false;
   }
 
+  /** Forget the review handlers an add-on registered (#2072); its open requests then fail to approve, saying it is not running. */
+  #forgetReviewHandlers(addonName: string): void {
+    this.engine.getManager<{ unregisterHandlers?(owner: string): void }>('ReviewManager')?.unregisterHandlers?.(addonName);
+  }
+
   /**
    * Graceful shutdown of all loaded add-ons
    */
@@ -2475,6 +2482,8 @@ class AddonsManager extends BaseManager {
       .reverse();
 
     for (const [name, addon] of loadedAddons) {
+      // #2072: an add-on shut down carries out no more approved requests.
+      this.#forgetReviewHandlers(name);
       if (typeof addon.module.shutdown === 'function') {
         try {
           await addon.module.shutdown();
