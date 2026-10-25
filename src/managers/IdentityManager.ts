@@ -3,7 +3,7 @@ import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type { Person, PersonAffiliation, PersonInput, PersonUpdate } from '../types/Person.js';
+import type { Person, PersonAffiliation, LegacyPersonAffiliation, PersonChange, PersonInput } from '../types/Person.js';
 import type { PersonProvider } from '../types/PersonProvider.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
@@ -26,6 +26,31 @@ interface MetricsManagerLike {
 
 interface OrganizationLookup {
   getById(ctx: ActorContext, id: string): Promise<{ '@id': string } | null>;
+  getInstallOrg(): Promise<{ '@id': string } | null>;
+}
+
+/** What `search(ctx, { affiliation })` looks for (#2039). */
+export interface AffiliationQuery {
+  /** The organization, by its `@id` (or `{ '@id' }`). */
+  memberOf: string | { '@id': string };
+  /** The title, compared without case or surrounding spaces. Left out: any title, or none. */
+  title?: string;
+  /** True (the default): only affiliations held today, the first and last day included. False: any, past or future too. */
+  current?: boolean;
+}
+
+/** A search by affiliation (#2039). `limit` as for a text search; 0 is no limit. */
+export interface IdentitySearch {
+  affiliation: AffiliationQuery;
+  limit?: number;
+}
+
+/** One identity a search by affiliation found: a user or a contact, and the affiliations that matched. */
+export interface IdentityMatch {
+  identity: Person;
+  /** True for a user (an identity with credentials), false for a contact. */
+  hasCredentials: boolean;
+  affiliations: PersonAffiliation[];
 }
 
 interface RoleMembershipMover {
@@ -104,6 +129,9 @@ class IdentityManager extends BaseManager {
   // getById callers). Lazily populated; cleared on any write.
   private byIdentifierCache = new Map<string, Person | null>();
   private byIdCache = new Map<string, Person | null>();
+  // #2039: every record, read once and kept until the next write, so a list or
+  // a search (by text or affiliation) reads no file per record per call.
+  private allCache: Person[] | null = null;
 
   // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
   private metricsRef: MetricsManagerLike | null | undefined = undefined;
@@ -151,8 +179,40 @@ class IdentityManager extends BaseManager {
     const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: PersonProviderConstructor };
     this.provider = new mod.default(this.engine);
     await this.provider.initialize();
+    await this.convertLegacyAffiliations();
 
     logger.info(`👤 IdentityManager initialized (${(await this.provider.list()).length} persons)`);
+  }
+
+  /**
+   * Once, at start-up (#2039): every identity record still holding an
+   * affiliation in the old `{ organization, role? }` shape is rewritten as
+   * schema.org `OrganizationRole` (organization → `memberOf`, role →
+   * `roleName`), each rewrite recorded as `identity-manage` (`person-update`,
+   * field `affiliation`) under the system context. Nothing is dropped: any
+   * other field an old entry carries is kept on it. A record with no old entry
+   * is not touched, so a second start finds nothing to do. A record that
+   * cannot be rewritten is logged and left as it is; reads convert it anyway.
+   * Runs before any request, so nothing else writes these records meanwhile.
+   */
+  private async convertLegacyAffiliations(): Promise<number> {
+    const provider = this.requireProvider();
+    const stale = (await provider.list()).filter((p) => hasLegacyAffiliation(p.affiliation));
+    if (stale.length === 0) return 0;
+    const ctx = systemContext(this.engine, 'convert affiliations to schema.org OrganizationRole: organization → memberOf, role → roleName (#2039)');
+    let converted = 0;
+    for (const record of stale) {
+      try {
+        await provider.update(record['@id'], { affiliation: toOrganizationRoles(record.affiliation) });
+        converted++;
+        await recordContactChange(this.engine, ctx, { kind: 'person', operation: 'update', id: record['@id'], fields: ['affiliation'] });
+      } catch (error) {
+        logger.error(`❌ Could not convert the affiliations of identity record ${record['@id']}: ${error instanceof Error ? error.message : String(error)} (#2039)`);
+      }
+    }
+    this.invalidateCache();
+    logger.info(`👤 Converted the affiliations of ${converted} of ${stale.length} identity record(s) to schema.org OrganizationRole (#2039)`);
+    return converted;
   }
 
   /** `ngdpbase.application.persons.storagedir`, resolved: where the records are. */
@@ -198,9 +258,17 @@ class IdentityManager extends BaseManager {
       return this.byIdCache.get(id) ?? null;
     }
     this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byId', result: 'miss' });
-    const person = await this.requireProvider().getById(id);
+    const person = withOrganizationRoles(await this.requireProvider().getById(id));
     this.byIdCache.set(id, person);
     return person;
+  }
+
+  /** Every record, affiliations in the current shape, read from the provider once per write (#2039). */
+  private async allRecords(): Promise<Person[]> {
+    if (!this.allCache) {
+      this.allCache = (await this.requireProvider().list()).map((p) => withOrganizationRoles(p)!);
+    }
+    return this.allCache;
   }
 
   private async cachedByIdentifier(identifier: string): Promise<Person | null> {
@@ -209,7 +277,7 @@ class IdentityManager extends BaseManager {
       return this.byIdentifierCache.get(identifier) ?? null;
     }
     this.getMetrics()?.recordCacheLookup({ manager: 'IdentityManager', cache: 'byIdentifier', result: 'miss' });
-    const person = await this.requireProvider().getByIdentifier(identifier);
+    const person = withOrganizationRoles(await this.requireProvider().getByIdentifier(identifier));
     this.byIdentifierCache.set(identifier, person);
     return person;
   }
@@ -230,7 +298,7 @@ class IdentityManager extends BaseManager {
   /** Every person, for a caller who may read contacts (`identity-read`). */
   async list(ctx: ActorContext): Promise<Person[]> {
     await requireContactPermission(this.engine, ctx, 'read');
-    return this.requireProvider().list();
+    return [...(await this.allRecords())];
   }
 
   /** One person by `@id`: {@link getById}, the caller's own under `profile-manage`, anyone else's under `identity-read`. */
@@ -243,16 +311,46 @@ class IdentityManager extends BaseManager {
    * `query`, ignoring case; an empty query matches everyone. `accountless`
    * narrows to persons with no account. At most `limit` results
    * (`ngdpbase.application.persons.search.limit` by default).
+   *
+   * Or by affiliation (#2039): `search(ctx, { affiliation: { memberOf, title?,
+   * current? } })` finds every identity, users and contacts alike, with an
+   * affiliation to that organization: with that title when one is given, and
+   * held today (the first and last day included) unless `current` is false.
+   * Each match says whether it has credentials and which affiliations matched.
+   * Checked like any read of others' records: `identity-read`.
    */
-  async search(ctx: ActorContext, query: string, options: { limit?: number; accountless?: boolean } = {}): Promise<Person[]> {
+  async search(ctx: ActorContext, query: string, options?: { limit?: number; accountless?: boolean }): Promise<Person[]>;
+  async search(ctx: ActorContext, query: IdentitySearch): Promise<IdentityMatch[]>;
+  async search(ctx: ActorContext, query: string | IdentitySearch, options: { limit?: number; accountless?: boolean } = {}): Promise<Person[] | IdentityMatch[]> {
     await requireContactPermission(this.engine, ctx, 'read');
+    if (query && typeof query === 'object') return this.searchByAffiliation(query);
     const limit = options.limit ?? this.configNumber(SEARCH_LIMIT_KEY, 50);
     const q = (query ?? '').trim().toLowerCase();
     const out: Person[] = [];
-    for (const p of await this.requireProvider().list()) {
+    for (const p of await this.allRecords()) {
       if (options.accountless && !IdentityManager.isAccountless(p)) continue;
       if (q && ![p.name, p.givenName, p.familyName, p.email].some((v) => typeof v === 'string' && v.toLowerCase().includes(q))) continue;
       out.push(p);
+      if (limit > 0 && out.length >= limit) break;
+    }
+    return out;
+  }
+
+  private async searchByAffiliation(query: IdentitySearch): Promise<IdentityMatch[]> {
+    const wanted = query.affiliation;
+    const memberOf = typeof wanted?.memberOf === 'string' ? wanted.memberOf : wanted?.memberOf?.['@id'];
+    if (typeof memberOf !== 'string' || !memberOf) throw new Error('IdentityManager.search: an affiliation search names an organization (memberOf)');
+    const title = typeof wanted.title === 'string' ? wanted.title.trim().toLowerCase() : undefined;
+    const today = wanted.current === false ? null : localDate(new Date());
+    const limit = query.limit ?? this.configNumber(SEARCH_LIMIT_KEY, 50);
+    const out: IdentityMatch[] = [];
+    for (const identity of await this.allRecords()) {
+      const affiliations = (identity.affiliation ?? []).filter((a) =>
+        a?.memberOf?.['@id'] === memberOf &&
+        (title === undefined || (a.roleName ?? '').trim().toLowerCase() === title) &&
+        (today === null || heldOn(a, today)));
+      if (affiliations.length === 0) continue;
+      out.push({ identity, hasCredentials: !IdentityManager.isAccountless(identity), affiliations });
       if (limit > 0 && out.length >= limit) break;
     }
     return out;
@@ -283,7 +381,8 @@ class IdentityManager extends BaseManager {
       }
       identifier = requested;
     }
-    if ('affiliation' in fields) fields.affiliation = await this.checkedAffiliations(ctx, fields.affiliation);
+    // Creating asks identity-manage, so facts and claims alike may be set here (#2039).
+    if ('affiliation' in fields) fields.affiliation = await this.checkedAffiliations(fields.affiliation);
     const person: Person = {
       ...fields,
       '@context': 'https://schema.org',
@@ -301,12 +400,25 @@ class IdentityManager extends BaseManager {
    * Change a person's fields, affiliations included. `@id` and `identifier`
    * never change here. The caller's own identity record under
    * `profile-manage`, anyone else's under `identity-manage` (#2018).
+   *
+   * Affiliations (#2039): one with the site's own organization is a fact, so
+   * adding, changing or removing one also asks `identity-manage`, even on the
+   * caller's own record; one with any other organization is a claim, which a
+   * user may set on their own record under `profile-manage`.
    */
-  async update(ctx: ActorContext, id: string, patch: PersonUpdate): Promise<Person | null> {
-    await requireRecordAccess(this.engine, ctx, 'manage', await this.cachedById(id));
+  async update(ctx: ActorContext, id: string, patch: PersonChange): Promise<Person | null> {
+    const existing = await this.cachedById(id);
+    await requireRecordAccess(this.engine, ctx, 'manage', existing);
     const clean: Record<string, unknown> = { ...(patch ?? {}) };
     for (const fixed of ['@context', '@type', '@id', 'identifier']) delete clean[fixed];
-    if ('affiliation' in clean) clean.affiliation = await this.checkedAffiliations(ctx, clean.affiliation);
+    if ('affiliation' in clean) {
+      const affiliation = await this.checkedAffiliations(clean.affiliation);
+      const siteOrg = await this.siteOrganizationId();
+      if (siteOrg && factsOf(existing?.affiliation, siteOrg) !== factsOf(affiliation, siteOrg)) {
+        await requireContactPermission(this.engine, ctx, 'manage');
+      }
+      clean.affiliation = affiliation;
+    }
     const result = await this.requireProvider().update(id, clean);
     this.invalidateCache();
     if (result) await recordContactChange(this.engine, ctx, { kind: 'person', operation: 'update', id, fields: Object.keys(clean).sort() });
@@ -447,12 +559,12 @@ class IdentityManager extends BaseManager {
    */
   private async join(ctx: ActorContext, personId: string, username: string, via: 'admin' | 'email'): Promise<Person> {
     const provider = this.requireProvider();
-    const target = await provider.getById(personId);
+    const target = withOrganizationRoles(await provider.getById(personId));
     if (!target) throw new Error('IdentityManager: no such person');
     if (!IdentityManager.isAccountless(target)) throw new Error('IdentityManager: that person already has an account');
     const user = await this.engine.getManager<UserManagerLike>('UserManager')?.getUser(username);
     if (!user) throw new Error(`IdentityManager: no account '${username}'`);
-    const accountPerson = await provider.getByIdentifier(user.username);
+    const accountPerson = withOrganizationRoles(await provider.getByIdentifier(user.username));
 
     const joined: Person = { ...target, identifier: user.username };
     for (const [key, value] of Object.entries(accountPerson ?? {})) {
@@ -488,23 +600,53 @@ class IdentityManager extends BaseManager {
   }
 
   /**
-   * Each affiliation names an organization that exists, looked up with the
-   * caller's context; `role` is trimmed text. Throws on any other shape.
+   * Each affiliation is a schema.org `OrganizationRole` (#2039): `memberOf` an
+   * organization that exists, an optional `roleName` (the title, trimmed free
+   * text) and optional `startDate` / `endDate` (`YYYY-MM-DD`, the start not
+   * after the end; a null end is an ongoing one, stored without it). An entry
+   * in the old `{ organization, role? }` shape is converted (one release, for
+   * add-ons not yet switched). Throws on any other shape. The organization is
+   * looked up as core's own check, under the system context, so a user may
+   * name one on their own record without `identity-read`.
    */
-  private async checkedAffiliations(ctx: ActorContext, value: unknown): Promise<PersonAffiliation[]> {
+  private async checkedAffiliations(value: unknown): Promise<PersonAffiliation[]> {
     if (value === undefined || value === null) return [];
-    if (!Array.isArray(value)) throw new Error('IdentityManager: affiliation must be a list of { organization, role? }');
+    if (!Array.isArray(value)) throw new Error('IdentityManager: affiliation must be a list of { \'@type\': \'OrganizationRole\', memberOf, roleName?, startDate?, endDate? }');
     const orgs = this.engine.getManager<OrganizationLookup>('OrganizationManager');
+    const lookupCtx = systemContext(this.engine, 'check that an affiliation\'s organization exists (#2039)');
     const out: PersonAffiliation[] = [];
-    for (const entry of value as unknown[]) {
-      const organization = (entry as { organization?: unknown })?.organization;
-      const role = (entry as { role?: unknown })?.role;
-      if (typeof organization !== 'string' || !organization) throw new Error('IdentityManager: each affiliation names an organization by its @id');
-      if (role !== undefined && typeof role !== 'string') throw new Error('IdentityManager: an affiliation\'s role is text');
-      if (!orgs || !(await orgs.getById(ctx, organization))) throw new Error(`IdentityManager: no organization '${organization}'`);
-      out.push({ organization, ...(role && role.trim() ? { role: role.trim() } : {}) });
+    for (const given of value as unknown[]) {
+      const entry = (isLegacyAffiliation(given) ? toOrganizationRole(given) : given) as Record<string, unknown> | null;
+      if (!entry || typeof entry !== 'object') throw new Error('IdentityManager: each affiliation is an OrganizationRole');
+      if (entry['@type'] !== undefined && entry['@type'] !== 'OrganizationRole') throw new Error('IdentityManager: an affiliation\'s @type is OrganizationRole');
+      const memberOf = (entry.memberOf as { '@id'?: unknown } | undefined)?.['@id'];
+      if (typeof memberOf !== 'string' || !memberOf) throw new Error('IdentityManager: each affiliation names its organization as memberOf: { \'@id\' }');
+      const { roleName, startDate, endDate } = entry;
+      if (roleName !== undefined && roleName !== null && typeof roleName !== 'string') throw new Error('IdentityManager: an affiliation\'s title (roleName) is text');
+      const start = checkedDate(startDate, 'startDate');
+      const end = checkedDate(endDate, 'endDate');
+      if (start && end && start > end) throw new Error('IdentityManager: an affiliation\'s startDate is after its endDate');
+      if (!orgs || !(await orgs.getById(lookupCtx, memberOf))) throw new Error(`IdentityManager: no organization '${memberOf}'`);
+      const title = typeof roleName === 'string' ? roleName.trim() : '';
+      out.push({
+        '@type': 'OrganizationRole',
+        memberOf: { '@id': memberOf },
+        ...(title ? { roleName: title } : {}),
+        ...(start ? { startDate: start } : {}),
+        ...(end ? { endDate: end } : {})
+      });
     }
     return dedupeAffiliations(out);
+  }
+
+  /** The site's own organization's `@id` (`OrganizationManager.getInstallOrg`): an affiliation with it is a fact (#2039). */
+  private async siteOrganizationId(): Promise<string | null> {
+    const orgs = this.engine.getManager<OrganizationLookup>('OrganizationManager');
+    try {
+      return (await orgs?.getInstallOrg())?.['@id'] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private configNumber(key: string, fallback: number): number {
@@ -519,6 +661,7 @@ class IdentityManager extends BaseManager {
   invalidateCache(): void {
     this.byIdentifierCache.clear();
     this.byIdCache.clear();
+    this.allCache = null;
   }
 
   /**
@@ -584,15 +727,86 @@ class IdentityManager extends BaseManager {
   }
 }
 
-/** One entry per organization and role, in the order first given. */
+/** What tells two affiliations apart: organization, title and dates. */
+function affiliationKey(a: PersonAffiliation): string {
+  return [a.memberOf?.['@id'] ?? '', a.roleName ?? '', a.startDate ?? '', a.endDate ?? ''].join('\u0000');
+}
+
+/** One entry per organization, title and dates, in the order first given. */
 function dedupeAffiliations(list: PersonAffiliation[]): PersonAffiliation[] {
   const seen = new Set<string>();
   return list.filter((a) => {
-    const key = `${a.organization}\u0000${a.role ?? ''}`;
+    const key = affiliationKey(a);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+/** The affiliations with the site's own organization (facts), as one comparable string (#2039). */
+function factsOf(list: readonly PersonAffiliation[] | undefined, siteOrg: string): string {
+  return (list ?? []).filter((a) => a?.memberOf?.['@id'] === siteOrg).map(affiliationKey).sort().join('\n');
+}
+
+/** An entry in the shape before #2039: `organization` and no `memberOf`. */
+function isLegacyAffiliation(entry: unknown): entry is LegacyPersonAffiliation & Record<string, unknown> {
+  return Boolean(entry) && typeof entry === 'object' && 'organization' in (entry as object) && !('memberOf' in (entry as object));
+}
+
+/** True when a stored list still holds an entry in the old shape. */
+function hasLegacyAffiliation(list: unknown): boolean {
+  return Array.isArray(list) && list.some(isLegacyAffiliation);
+}
+
+/**
+ * An old `{ organization, role? }` entry as an OrganizationRole (#2039):
+ * organization → `memberOf`, a text role → `roleName`. Every other field is
+ * kept as it was, and a role that is not text stays as `role`, so nothing is lost.
+ */
+function toOrganizationRole(entry: LegacyPersonAffiliation & Record<string, unknown>): PersonAffiliation {
+  const { organization, role, ...rest } = entry;
+  const title = typeof role === 'string' ? role.trim() : '';
+  return {
+    ...rest,
+    '@type': 'OrganizationRole',
+    memberOf: { '@id': organization },
+    ...(title ? { roleName: title } : {}),
+    ...(role !== undefined && typeof role !== 'string' ? { role } : {})
+  };
+}
+
+/** A stored list with every old entry converted; current entries, and anything else, as they are. */
+function toOrganizationRoles(list: unknown): PersonAffiliation[] {
+  return (Array.isArray(list) ? list : []).map((a: unknown) => (isLegacyAffiliation(a) ? toOrganizationRole(a) : a as PersonAffiliation));
+}
+
+/** A record as read: its affiliations in the current shape (#2039). The same object when there is nothing to convert. */
+function withOrganizationRoles(person: Person | null): Person | null {
+  if (!person || !hasLegacyAffiliation(person.affiliation)) return person;
+  return { ...person, affiliation: toOrganizationRoles(person.affiliation) };
+}
+
+/** A `YYYY-MM-DD` date that exists, or undefined for none (null or left out). Throws on anything else. */
+function checkedDate(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const d = new Date(`${value}T00:00:00Z`);
+    if (!Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value) return value;
+  }
+  throw new Error(`IdentityManager: an affiliation's ${field} is an ISO date (YYYY-MM-DD)`);
+}
+
+/** Today's date on this server's calendar, `YYYY-MM-DD`. */
+function localDate(now: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Held on `day` (`YYYY-MM-DD`): started by then, if a start is known, and not ended before it. Both days count. */
+function heldOn(a: PersonAffiliation, day: string): boolean {
+  if (typeof a.startDate === 'string' && a.startDate > day) return false;
+  if (typeof a.endDate === 'string' && a.endDate < day) return false;
+  return true;
 }
 
 /** What an account's identity record is made from: its username, display name and email. */

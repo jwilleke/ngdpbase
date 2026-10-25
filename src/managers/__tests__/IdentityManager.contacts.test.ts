@@ -57,18 +57,23 @@ const DEMO_ADMIN = { username: 'demo', roles: ['demo-admin'], isAuthenticated: t
 /** Core's own read (#2018): the system context, for the site's principal 'svc'. */
 const SYS = jobContextFromSystem('svc', 'test: read as core');
 
-async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}) {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'contacts-1930-'));
+async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[]; tmp?: string; props?: Record<string, unknown>; beforeStart?: (personsDir: string) => Promise<void> } = {}) {
+  const tmp = opts.tmp ?? await fs.mkdtemp(path.join(os.tmpdir(), 'contacts-1930-'));
   const dirs: Record<string, string> = {
     'ngdpbase.application.persons.storagedir': path.join(tmp, 'persons'),
     'ngdpbase.application.organization.storagedir': path.join(tmp, 'organizations'),
     'ngdpbase.application.roles.storagedir': path.join(tmp, 'roles')
   };
+  if (opts.beforeStart) {
+    await fs.ensureDir(dirs['ngdpbase.application.persons.storagedir']);
+    await opts.beforeStart(dirs['ngdpbase.application.persons.storagedir']);
+  }
   const props: Record<string, unknown> = {
     ...shipped,
     'ngdpbase.access.policies': [...(shipped['ngdpbase.access.policies'] as unknown[]), ...(opts.extraPolicies ?? [])],
     'ngdpbase.system.principal': 'svc',
-    'ngdpbase.application-name': 'Test Site'
+    'ngdpbase.application-name': 'Test Site',
+    ...(opts.props ?? {})
   };
   const configManager = {
     getProperty: (k: string, d: unknown) => (k in props ? props[k] : d),
@@ -328,18 +333,19 @@ describe('contacts in core (#1930)', () => {
     const club = await site.organizations.create(ADMIN, { name: 'Garden Club' });
     expect(club['@id']).toMatch(/^urn:uuid:/);
 
+    // The old { organization, role } shape is still accepted at the door, and stored as an OrganizationRole (#2039).
     const dana = await site.persons.create(ADMIN, { name: 'Dana', affiliation: [{ organization: acme['@id'], role: ' Treasurer ' }] });
-    expect(dana.affiliation).toEqual([{ organization: acme['@id'], role: 'Treasurer' }]);
+    expect(dana.affiliation).toEqual([{ '@type': 'OrganizationRole', memberOf: { '@id': acme['@id'] }, roleName: 'Treasurer' }]);
     const eli = await site.persons.create(ADMIN, { name: 'Eli' });
-    await site.persons.update(ADMIN, eli['@id'], { affiliation: [{ organization: acme['@id'] }, { organization: club['@id'], role: 'Chair' }] });
+    await site.persons.update(ADMIN, eli['@id'], { affiliation: [{ '@type': 'OrganizationRole', memberOf: { '@id': acme['@id'] } }, { '@type': 'OrganizationRole', memberOf: { '@id': club['@id'] }, roleName: 'Chair' }] });
 
     const people = await site.organizations.people(ADMIN, acme['@id']);
-    expect(people.map((x) => [x.person.name, x.role ?? null]).sort()).toEqual([['Dana', 'Treasurer'], ['Eli', null]]);
-    expect((await site.organizations.people(ADMIN, club['@id'])).map((x) => x.role)).toEqual(['Chair']);
+    expect(people.map((x) => [x.person.name, x.affiliation.roleName ?? null]).sort()).toEqual([['Dana', 'Treasurer'], ['Eli', null]]);
+    expect((await site.organizations.people(ADMIN, club['@id'])).map((x) => x.affiliation)).toEqual([{ '@type': 'OrganizationRole', memberOf: { '@id': club['@id'] }, roleName: 'Chair' }]);
     // The organization record carries no copy of its people.
     expect(JSON.stringify(await site.organizations.getById(SYS, acme['@id']))).not.toContain(dana['@id']);
 
-    await expect(site.persons.update(ADMIN, eli['@id'], { affiliation: [{ organization: 'urn:nope' }] })).rejects.toThrow(/no organization/);
+    await expect(site.persons.update(ADMIN, eli['@id'], { affiliation: [{ '@type': 'OrganizationRole', memberOf: { '@id': 'urn:nope' } }] })).rejects.toThrow(/no organization/);
     expect(site.contacts().filter((e) => e.action === 'person-update').at(-1)?.metadata.fields).toEqual(['affiliation']);
   });
 
@@ -433,7 +439,7 @@ describe('contacts in core (#1930)', () => {
 
     const joined = await site.persons.linkAccount(ADMIN, donor['@id'], 'pat');
     expect(joined).toMatchObject({ '@id': donor['@id'], identifier: 'pat', name: 'Pat Donor', email: 'pat.other@example.org' });
-    expect(joined.affiliation).toEqual([{ organization: acme['@id'], role: 'Patron' }]);
+    expect(joined.affiliation).toEqual([{ '@type': 'OrganizationRole', memberOf: { '@id': acme['@id'] }, roleName: 'Patron' }]);
     expect(await site.persons.getById(SYS, own!['@id'])).toBeNull();
     expect((await site.persons.list(ADMIN)).filter((p) => p.identifier === 'pat')).toHaveLength(1);
     expect(await site.roles.resolveUserRoles(SYS, 'pat')).toContain('reader');
@@ -647,5 +653,232 @@ describe('searchUsers decides search-user (#2018)', () => {
     const found = await site.accounts.searchUsers('', { role: 'reader', limit: 0 }, SYS);
     expect(found.map((u) => u.username).sort()).toEqual(['pat', 'sam']);
     expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #2039 — affiliations as schema.org OrganizationRole (identity model step 4):
+ * the shape, the old `{ organization, role? }` shape converted when read and
+ * once at start-up, fact (the site's own organization) vs claim (any other),
+ * search by affiliation, and OrganizationManager.people. Same real PDP over
+ * the shipped policies as above.
+ *
+ * Sabotaged once each (2026-10-25), and watched go red:
+ * - read-time conversion off (`withOrganizationRoles` returning the record as stored) → the old-record read test;
+ * - the start-up conversion not called → the start-up test;
+ * - the conversion dropping an old entry's other fields → the start-up test ("nothing is lost");
+ * - the conversion's identity-manage record removed → the start-up test;
+ * - the conversion rewriting every record, not only old ones → the start-up test (second start records again);
+ * - the fact check removed from update → the fact vs claim test;
+ * - the organization looked up with the caller's context, not the system one → the fact vs claim test and seven others;
+ * - `current` ignored, and the first day not counted → the search test, each;
+ * - the title compared with case and spaces → the old-record read and search tests;
+ * - the records cache always re-read, and not cleared on a write → the read-once test, each;
+ * - `hasCredentials` always true → the search test;
+ * - the affiliation search answered before the identity-read check → the search test;
+ * - people() adding `role` beside the OrganizationRole, and leaving out past ones → the people() test, each.
+ */
+describe('affiliations as OrganizationRole (#2039)', () => {
+  let site: Awaited<ReturnType<typeof makeSite>>;
+  const role = (orgId: string, extra: Record<string, unknown> = {}) => ({ '@type': 'OrganizationRole' as const, memberOf: { '@id': orgId }, ...extra });
+  const day = (offset: number): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const fileOf = (s: typeof site, id: string) => path.join(s.tmp, 'persons', `${id.replace('urn:uuid:', '')}.json`);
+
+  beforeEach(async () => {
+    // The site's own organization named in configuration, so other organizations can be added beside it.
+    site = await makeSite({ props: { 'ngdpbase.application.organization.file': 'site-test.json' } });
+    await site.organizations.seedFromConfig({ orgName: 'Test Site', orgUrl: 'https://site.test/' });
+  });
+
+  afterEach(async () => {
+    await fs.remove(site.tmp).catch(() => {});
+  });
+
+  test('the OrganizationRole shape round-trips: title and dates as given, stored once, an open end left out', async () => {
+    const assoc = await site.organizations.create(ADMIN, { name: 'Fairways Association' });
+    const given = [
+      role(assoc['@id'], { roleName: 'Owner', startDate: '2021-06-01', endDate: null }),
+      role(assoc['@id'], { roleName: ' Treasurer ', startDate: '2024-01-01', endDate: '2024-12-31' })
+    ];
+    const dana = await site.persons.create(ADMIN, { name: 'Dana', affiliation: given as never });
+    const expected = [
+      role(assoc['@id'], { roleName: 'Owner', startDate: '2021-06-01' }),
+      role(assoc['@id'], { roleName: 'Treasurer', startDate: '2024-01-01', endDate: '2024-12-31' })
+    ];
+    expect(dana.affiliation).toEqual(expected);
+    site.persons.invalidateCache();
+    expect((await site.persons.getById(ADMIN, dana['@id']))?.affiliation).toEqual(expected);
+    expect((JSON.parse(await fs.readFile(fileOf(site, dana['@id']), 'utf8')) as { affiliation: unknown }).affiliation).toEqual(expected);
+
+    const bad: unknown[] = [
+      [role(assoc['@id'], { startDate: '2021-13-01' })],
+      [role(assoc['@id'], { endDate: '1 June 2021' })],
+      [role(assoc['@id'], { startDate: '2022-01-02', endDate: '2022-01-01' })],
+      [role(assoc['@id'], { roleName: 7 })],
+      [{ '@type': 'Role', memberOf: { '@id': assoc['@id'] } }],
+      [{ '@type': 'OrganizationRole', memberOf: assoc['@id'] }]
+    ];
+    for (const affiliation of bad) {
+      await expect(site.persons.update(ADMIN, dana['@id'], { affiliation })).rejects.toThrow(/IdentityManager/);
+    }
+    expect((await site.persons.getById(ADMIN, dana['@id']))?.affiliation).toEqual(expected);
+  });
+
+  test('an old { organization, role } record is read as an OrganizationRole, and a read does not touch the file', async () => {
+    const acme = await site.organizations.create(ADMIN, { name: 'Acme Trust' });
+    const p = await site.persons.create(ADMIN, { name: 'Old Shape' });
+    const legacy = { ...(JSON.parse(await fs.readFile(fileOf(site, p['@id']), 'utf8')) as object), affiliation: [{ organization: acme['@id'], role: 'Vendor' }, { organization: acme['@id'] }] };
+    await fs.writeFile(fileOf(site, p['@id']), JSON.stringify(legacy));
+    site.persons.invalidateCache();
+
+    const want = [role(acme['@id'], { roleName: 'Vendor' }), role(acme['@id'])];
+    expect((await site.persons.getById(ADMIN, p['@id']))?.affiliation).toEqual(want);
+    expect((await site.persons.getByIdentifier(ADMIN, p.identifier))?.affiliation).toEqual(want);
+    expect((await site.persons.list(ADMIN)).find((x) => x['@id'] === p['@id'])?.affiliation).toEqual(want);
+    expect((await site.persons.search(ADMIN, { affiliation: { memberOf: acme['@id'], title: 'vendor' } })).map((m) => m.identity['@id'])).toEqual([p['@id']]);
+    expect((await site.organizations.people(ADMIN, acme['@id'])).map((x) => x.affiliation.roleName ?? null)).toEqual(['Vendor', null]);
+    expect(JSON.parse(await fs.readFile(fileOf(site, p['@id']), 'utf8'))).toEqual(legacy);
+  });
+
+  test('at start-up old affiliations are converted on disk once, recorded, and nothing is lost', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'contacts-2039-'));
+    const old = { '@context': 'https://schema.org', '@type': 'Person', '@id': 'urn:uuid:11111111-1111-4111-8111-111111111111', identifier: 'person:11111111-1111-4111-8111-111111111111', name: 'Old', affiliation: [{ organization: 'urn:org:a', role: ' Owner ', note: 'kept' }, { organization: 'urn:org:b' }, { organization: 'urn:org:c', role: 3 }] };
+    const current = { '@context': 'https://schema.org', '@type': 'Person', '@id': 'urn:uuid:22222222-2222-4222-8222-222222222222', identifier: 'person:22222222-2222-4222-8222-222222222222', name: 'Current', affiliation: [role('urn:org:a', { roleName: 'Vendor' })] };
+    const none = { '@context': 'https://schema.org', '@type': 'Person', '@id': 'urn:uuid:33333333-3333-4333-8333-333333333333', identifier: 'person:33333333-3333-4333-8333-333333333333', name: 'None' };
+    const file = (p: { '@id': string }, dir: string) => path.join(dir, `${p['@id'].replace('urn:uuid:', '')}.json`);
+    const first = await makeSite({
+      tmp,
+      beforeStart: async (dir) => {
+        for (const p of [old, current, none]) await fs.writeFile(file(p, dir), JSON.stringify(p, null, 2));
+      }
+    });
+    const dir = path.join(tmp, 'persons');
+    try {
+      const converted = JSON.parse(await fs.readFile(file(old, dir), 'utf8')) as Record<string, unknown>;
+      expect(converted).toEqual({
+        ...old,
+        affiliation: [
+          { '@type': 'OrganizationRole', memberOf: { '@id': 'urn:org:a' }, roleName: 'Owner', note: 'kept' },
+          { '@type': 'OrganizationRole', memberOf: { '@id': 'urn:org:b' } },
+          { '@type': 'OrganizationRole', memberOf: { '@id': 'urn:org:c' }, role: 3 }
+        ]
+      });
+      expect(JSON.parse(await fs.readFile(file(current, dir), 'utf8'))).toEqual(current);
+      expect(JSON.parse(await fs.readFile(file(none, dir), 'utf8'))).toEqual(none);
+
+      const recs = first.contacts();
+      expect(recs).toHaveLength(1);
+      expect(recs[0]).toMatchObject({ user: 'svc', action: 'person-update', resource: old['@id'] });
+      expect(recs[0].metadata).toMatchObject({ fields: ['affiliation'], origin: 'boot' });
+      expect(String(recs[0].metadata.reason)).toContain('#2039');
+      expect(JSON.stringify(recs[0].metadata)).not.toContain('Owner'); // fields, never values
+
+      // A second start finds nothing to do.
+      const again = await makeSite({ tmp });
+      expect(again.contacts()).toHaveLength(0);
+      expect(JSON.parse(await fs.readFile(file(old, dir), 'utf8'))).toEqual(converted);
+    } finally {
+      await fs.remove(tmp).catch(() => {});
+    }
+  });
+
+  test('fact vs claim: a user claims another organization on their own record, but a fact with the site needs identity-manage', async () => {
+    const siteOrg = (await site.organizations.getInstallOrg())!;
+    const club = await site.organizations.create(ADMIN, { name: 'Garden Club' });
+    await site.signUp('pat', 'pat@example.org');
+    await site.signUp('sam', 'sam@example.org');
+    const pat = await subjectOf(site, 'pat');
+    const own = (await site.persons.getByIdentifier(pat, 'pat'))!;
+    const samRecord = (await site.persons.getByIdentifier(SYS, 'sam'))!;
+    const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
+    expect(await pdp.permits(pat, 'identity-manage')).toBe(false);
+
+    // A claim, on their own record: allowed under profile-manage, recorded with pat as the actor.
+    const claim = role(club['@id'], { roleName: 'Member' });
+    expect((await site.persons.update(pat, own['@id'], { affiliation: [claim] }))?.affiliation).toEqual([claim]);
+    expect(site.contacts().at(-1)).toMatchObject({ user: 'pat', action: 'person-update', resource: own['@id'] });
+    expect(site.contacts().at(-1)?.metadata.fields).toEqual(['affiliation']);
+
+    // A fact, on their own record: refused, and nothing written.
+    const before = site.contacts().length;
+    const fact = role(siteOrg['@id'], { roleName: 'Owner', startDate: '2021-06-01' });
+    await expect(site.persons.update(pat, own['@id'], { affiliation: [claim, fact] })).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-manage' });
+    expect((await site.persons.getById(SYS, own['@id']))?.affiliation).toEqual([claim]);
+    expect(site.contacts().length).toBe(before);
+
+    // An administrator sets the fact; pat may then change claims around it, but not the fact itself.
+    await site.persons.update(ADMIN, own['@id'], { affiliation: [claim, fact] });
+    const other = role(club['@id'], { roleName: 'Chair' });
+    expect((await site.persons.update(pat, own['@id'], { affiliation: [fact, other] }))?.affiliation).toEqual([fact, other]);
+    for (const affiliation of [[other], [{ ...fact, roleName: 'Treasurer' }, other], [{ ...fact, endDate: '2030-01-01' }, other]]) {
+      await expect(site.persons.update(pat, own['@id'], { affiliation })).rejects.toMatchObject({ permission: 'identity-manage' });
+    }
+    expect((await site.persons.getById(SYS, own['@id']))?.affiliation).toEqual([fact, other]);
+
+    // Someone else's record: identity-manage, claim or not.
+    await expect(site.persons.update(pat, samRecord['@id'], { affiliation: [claim] })).rejects.toMatchObject({ permission: 'identity-manage' });
+    // Affiliations grant nothing: pat holds the same roles as sam, who has none.
+    expect(await site.roles.resolveUserRoles(SYS, 'pat')).toEqual(await site.roles.resolveUserRoles(SYS, 'sam'));
+  });
+
+  test('search by affiliation: organization, title and today, users and contacts alike, each saying whether it has credentials', async () => {
+    const assoc = await site.organizations.create(ADMIN, { name: 'Fairways Association' });
+    const club = await site.organizations.create(ADMIN, { name: 'Garden Club' });
+    await site.signUp('pat', 'pat@example.org');
+    const pat = (await site.persons.getByIdentifier(SYS, 'pat'))!;
+    await site.persons.update(ADMIN, pat['@id'], { affiliation: [role(assoc['@id'], { roleName: 'Vendor' })] });
+    const dana = await site.persons.create(ADMIN, { name: 'Dana', affiliation: [role(assoc['@id'], { roleName: 'vendor ', startDate: day(0), endDate: day(0) })] });
+    await site.persons.create(ADMIN, { name: 'Past', affiliation: [role(assoc['@id'], { roleName: 'Vendor', endDate: day(-1) })] });
+    await site.persons.create(ADMIN, { name: 'Future', affiliation: [role(assoc['@id'], { roleName: 'Vendor', startDate: day(1) })] });
+    await site.persons.create(ADMIN, { name: 'Owner', affiliation: [role(assoc['@id'], { roleName: 'Owner' }), role(club['@id'], { roleName: 'Vendor' })] });
+
+    const names = (ms: Array<{ identity: { name?: unknown } }>) => ms.map((m) => String(m.identity.name)).sort();
+    const vendors = await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'], title: 'Vendor' } });
+    expect(names(vendors)).toEqual(['Dana', 'pat']);
+    expect(Object.fromEntries(vendors.map((m) => [String(m.identity.name), m.hasCredentials]))).toEqual({ Dana: false, pat: true });
+    expect(vendors.find((m) => m.identity['@id'] === dana['@id'])?.affiliations).toEqual([role(assoc['@id'], { roleName: 'vendor', startDate: day(0), endDate: day(0) })]);
+
+    expect(names(await site.persons.search(ADMIN, { affiliation: { memberOf: { '@id': assoc['@id'] }, title: 'vendor', current: false } }))).toEqual(['Dana', 'Future', 'Past', 'pat']);
+    expect(names(await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'] } }))).toEqual(['Dana', 'Owner', 'pat']);
+    expect(names(await site.persons.search(ADMIN, { affiliation: { memberOf: club['@id'], title: 'Vendor' } }))).toEqual(['Owner']);
+    expect(await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'], title: 'Treasurer' } })).toEqual([]);
+    expect((await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'], current: false }, limit: 2 })).length).toBe(2);
+
+    // Checked like any read of others' records.
+    await expect(site.persons.search(EDITOR, { affiliation: { memberOf: assoc['@id'] } })).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-read' });
+    expect(names(await site.persons.search(DEMO_ADMIN, { affiliation: { memberOf: assoc['@id'], title: 'Owner' } }))).toEqual(['Owner']);
+    await expect(site.persons.search(ADMIN, { affiliation: {} })).rejects.toThrow(/memberOf/);
+  });
+
+  test('search reads the records once until the next write, not a file per record per call', async () => {
+    const assoc = await site.organizations.create(ADMIN, { name: 'Fairways Association' });
+    for (const name of ['A', 'B', 'C']) await site.persons.create(ADMIN, { name, affiliation: [role(assoc['@id'], { roleName: 'Owner' })] });
+    const provider = site.persons.getProvider()!;
+    const list = vi.spyOn(provider, 'list');
+    const getById = vi.spyOn(provider, 'getById');
+    for (let i = 0; i < 5; i++) {
+      expect((await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'], title: 'Owner' } })).length).toBe(3);
+      expect((await site.persons.search(ADMIN, 'a')).length).toBeGreaterThan(0);
+    }
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(getById).not.toHaveBeenCalled();
+    // A write is seen by the next search.
+    await site.persons.create(ADMIN, { name: 'D', affiliation: [role(assoc['@id'], { roleName: 'Owner' })] });
+    expect((await site.persons.search(ADMIN, { affiliation: { memberOf: assoc['@id'] } })).length).toBe(4);
+  });
+
+  test('people(): one entry per affiliation, in the OrganizationRole shape, past ones included', async () => {
+    const assoc = await site.organizations.create(ADMIN, { name: 'Fairways Association' });
+    const p = await site.persons.create(ADMIN, { name: 'Dana', affiliation: [role(assoc['@id'], { roleName: 'Owner', startDate: '2021-06-01' }), role(assoc['@id'], { roleName: 'Treasurer', startDate: '2020-01-01', endDate: '2020-12-31' })] });
+    const people = await site.organizations.people(ADMIN, assoc['@id']);
+    expect(people).toEqual([
+      { person: expect.objectContaining({ '@id': p['@id'] }), affiliation: role(assoc['@id'], { roleName: 'Owner', startDate: '2021-06-01' }) },
+      { person: expect.objectContaining({ '@id': p['@id'] }), affiliation: role(assoc['@id'], { roleName: 'Treasurer', startDate: '2020-01-01', endDate: '2020-12-31' }) }
+    ]);
+    expect(people.every((x) => !('role' in x))).toBe(true);
   });
 });

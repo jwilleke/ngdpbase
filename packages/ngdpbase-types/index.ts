@@ -74,14 +74,14 @@ export type { User, UserPreferences } from '../../src/types/User.js';
 export type { default as AuthManager, InviteOutcome, InvitationView } from '../../src/managers/AuthManager.js';
 
 // Contacts (#1930): the identity record and organization doors, their records, and their refusal.
-export type { default as IdentityManager, LinkOfferOutcome } from '../../src/managers/IdentityManager.js';
+export type { default as IdentityManager, LinkOfferOutcome, AffiliationQuery, IdentitySearch, IdentityMatch } from '../../src/managers/IdentityManager.js';
 // Deprecated (#2038): `PersonManager` is the old name of `IdentityManager`, kept for one release only.
 export type {
   /** @deprecated Renamed `IdentityManager` (#2038); this alias goes after one release. */
   default as PersonManager
 } from '../../src/managers/IdentityManager.js';
 export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';
-export type { Person, PersonAffiliation, PersonInput, PersonUpdate } from '../../src/types/Person.js';
+export type { Person, PersonAffiliation, LegacyPersonAffiliation, PersonChange, PersonInput, PersonUpdate } from '../../src/types/Person.js';
 export type { Organization, OrganizationInput, OrganizationUpdate, ContactPoint, ContactPointEntry, PostalAddress } from '../../src/types/Organization.js';
 export type { ContactRefusedError } from '../../src/utils/contactAccess.js';
 // Who holds which role (#2018): every read takes the caller's context first, a job's included.

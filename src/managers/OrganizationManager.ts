@@ -8,13 +8,18 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import { randomUUID } from 'crypto';
 import type { Organization, OrganizationInput, OrganizationUpdate, PostalAddress, ContactPoint } from '../types/Organization.js';
 import type { OrganizationProvider } from '../types/OrganizationProvider.js';
-import type { Person } from '../types/Person.js';
+import type { Person, PersonAffiliation } from '../types/Person.js';
+import type { IdentitySearch, IdentityMatch } from './IdentityManager.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { installCompletePath } from '../utils/configFiles.js';
 import { recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 
 interface OrganizationProviderConstructor {
   new (engine: WikiEngine): OrganizationProvider;
+}
+
+interface IdentitySearcher {
+  search(ctx: ActorContext, query: IdentitySearch): Promise<IdentityMatch[]>;
 }
 
 interface MetricsManagerLike {
@@ -376,21 +381,20 @@ class OrganizationManager extends BaseManager {
   }
 
   /**
-   * The people affiliated with an organization, read from each person's
-   * `affiliation` (#1930): the link is stored once, on the person. Each comes
-   * with the role they hold there, when one is given.
+   * The identities affiliated with an organization, users and contacts alike,
+   * read from each identity record's `affiliation` (#1930): the link is stored
+   * once, on the identity record. One entry per affiliation, each with its
+   * schema.org `OrganizationRole` (title as `roleName`, dates) (#2039), past
+   * and future ones included; `IdentityManager.search(ctx, { affiliation })`
+   * answers who holds one today. Searching identities is IdentityManager's,
+   * so this asks it.
    */
-  async people(ctx: ActorContext, organizationId: string): Promise<Array<{ person: Person; role?: string }>> {
+  async people(ctx: ActorContext, organizationId: string): Promise<Array<{ person: Person; affiliation: PersonAffiliation }>> {
     await requireContactPermission(this.engine, ctx, 'read');
-    const persons = this.engine.getManager<{ list(ctx: ActorContext): Promise<Person[]> }>('IdentityManager');
-    if (!persons) return [];
-    const out: Array<{ person: Person; role?: string }> = [];
-    for (const person of await persons.list(ctx)) {
-      for (const a of person.affiliation ?? []) {
-        if (a.organization === organizationId) out.push({ person, ...(a.role ? { role: a.role } : {}) });
-      }
-    }
-    return out;
+    const identities = this.engine.getManager<IdentitySearcher>('IdentityManager');
+    if (!identities) return [];
+    const matches = await identities.search(ctx, { affiliation: { memberOf: organizationId, current: false }, limit: 0 });
+    return matches.flatMap((m) => m.affiliations.map((affiliation) => ({ person: m.identity, affiliation })));
   }
 
   /**

@@ -19,15 +19,39 @@
 import type { PostalAddress, ContactPointEntry } from './Organization.js';
 
 /**
- * One organization a person is affiliated with (#1930): schema.org
- * `affiliation`, with the person's role or title there when one is known.
+ * One affiliation of a digital identity (#2039): schema.org `affiliation`
+ * with an `OrganizationRole`, as the identity model says
+ * (`docs/planning/identity-model.md`, "Affiliation shape"). It puts the
+ * identity in a group, the organization plus the title, and never grants a
+ * permission.
+ *
  * The organization is named by its `@id`; OrganizationManager lists an
  * organization's people by reading these, so the link is stored once, here.
+ * With the site's own organization it is a fact, set only under
+ * `identity-manage`; with any other it is a claim, which a user may also set
+ * on their own identity record. IdentityManager's door decides.
  */
 export interface PersonAffiliation {
-  /** The organization's `@id`. */
+  '@type': 'OrganizationRole';
+  /** The organization, by its `@id`. */
+  memberOf: { '@id': string };
+  /** The affiliation's title there (Owner, Treasurer, Vendor): free text, never a Role. Left out when none is known. */
+  roleName?: string;
+  /** ISO date (`YYYY-MM-DD`) the affiliation began; left out when not known. */
+  startDate?: string;
+  /** ISO date (`YYYY-MM-DD`) it ended or ends, the day included; left out while it is ongoing. */
+  endDate?: string;
+}
+
+/**
+ * An affiliation in its shape before #2039, `{ organization, role? }`.
+ * Converted (organization → `memberOf`, role → `roleName`) when read, once on
+ * disk at start-up, and when an add-on still writes it (for one release).
+ *
+ * @deprecated Write {@link PersonAffiliation}.
+ */
+export interface LegacyPersonAffiliation {
   organization: string;
-  /** The person's role or title there (schema.org `roleName`), when known. */
   role?: string;
 }
 
@@ -62,7 +86,7 @@ export interface Person {
   image?: string;
   /** Other URLs that identify this person (LinkedIn, GitHub, etc.) */
   sameAs?: string[];
-  /** Organizations this person is affiliated with, each with an optional role (#1930). */
+  /** Affiliations: each a schema.org OrganizationRole, an organization with a title and dates (#2039). */
   affiliation?: PersonAffiliation[];
   /** Allow extension fields (additionalProperty, etc.) */
   [key: string]: unknown;
@@ -75,9 +99,18 @@ export interface Person {
 export type PersonUpdate = Partial<Omit<Person, '@context' | '@type' | '@id' | 'identifier'>>;
 
 /**
+ * What `IdentityManager.update` takes: a {@link PersonUpdate} whose
+ * `affiliation` (the whole list) may still hold entries in the old
+ * `{ organization, role? }` shape, converted at the door, for one release (#2039).
+ */
+export type PersonChange = Omit<PersonUpdate, 'affiliation'> & {
+  affiliation?: Array<PersonAffiliation | LegacyPersonAffiliation>;
+};
+
+/**
  * What a caller gives `IdentityManager.create` (#1930): the person's fields.
  * `identifier` is left out for a person with no account (one is generated);
  * UserManager passes the account's username when it creates the person for a
  * new account.
  */
-export type PersonInput = PersonUpdate & { identifier?: string };
+export type PersonInput = PersonChange & { identifier?: string };
