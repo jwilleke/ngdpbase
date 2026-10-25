@@ -1,7 +1,7 @@
 ---
 name: Private stores
 description: Developer and operator reference for private stores — layout, kinds, keys, access, pages, links, search, trash and files
-dateModified: 2026-10-17
+dateModified: 2026-10-25
 category: architecture
 relatedModules: [PageManager, AttachmentManager, SearchManager, PolicyInformationPoint, FileSystemProvider, VersioningFileProvider]
 ---
@@ -399,6 +399,8 @@ Every non-page file in a store lives in `{store}/attachments/{uuid}.ext` and is 
 - an upload onto a private page is always private, into that page's author's store — an unticked box does not make it public
 - an upload with no page, or onto a public page, follows the dialog's Private checkbox; ticked, it goes to the uploader's store (`options.store`, else `defaultstoreid`)
 - `BasicAttachmentProvider.storeAttachment` __refuses__ a private destination outright, so a private file cannot end up in the shared pool with its original name in `attachment-metadata.json`
+
+The audit record of an upload into, or a delete from, an __encrypted__ store names the file by its id and the store (owner and store id), never its original name, page or size ([#2048](https://github.com/jwilleke/ngdpbase/issues/2048)). A plain store's and the shared pool's records keep the name. Rows written before the change are left as they are.
 
 The rule (operator, 2026-10-16): __an upload is either an attachment, on a page, or a saved file. Every attachment of a vault page is stored in that vault__ ([#1842](https://github.com/jwilleke/ngdpbase/issues/1842)). The upload limits are the configured ones, `ngdpbase.attachment.allowedtypes` and `ngdpbase.attachment.maxsize`, whatever the destination.
 

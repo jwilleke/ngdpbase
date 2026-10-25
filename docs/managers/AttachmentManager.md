@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-22'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -97,6 +97,7 @@ A file uploaded into an __encrypted__ private store never enters the global `att
 - The provider keeps it in the store: bytes in `{store}/attachments/{uuid}.ext`, listed in the store's own index `{store}/files-index.json`. Both are written through the store's `StoreFileIO`, which seals them with the store DEK. The name on disk is a random UUID, so it cannot confirm a known file.
 - Duplicates are found in the same store only, by a SHA-256 fingerprint kept inside the sealed index.
 - This manager is the door. It gets the store's I/O from the context, asks the PIP (`canAccessPrivateContainer`) who may reach the file, calls the provider and writes the audit record. Only the requester's own stores whose DEK the session holds are looked in; a locked store, or another user's, contributes nothing.
+- The audit record (`asset-upload`, `asset-delete`) names the file by its id and the store only (`owner`, `store`, `sealed: true`), never its name, page or size ([private stores](../private-stores.md#files), [#2048](https://github.com/jwilleke/ngdpbase/issues/2048)).
 - Upload, serve (`/attachments/:id`, `Cache-Control: private, no-store`), the page's attached-files list, `[{ATTACH}]`/`[{Image}]` resolution and delete are covered. Unencrypted private files are still in the global index until [#1454](https://github.com/jwilleke/ngdpbase/issues/1454).
 
 ## UI Features

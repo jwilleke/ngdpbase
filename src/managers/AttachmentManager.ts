@@ -17,7 +17,7 @@ export const AUDIT_WRITE_FAILED = 'EAUDITWRITE';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
-import { buildAttachmentAuditEvent } from '../utils/auditEvents.js';
+import { buildAttachmentAuditEvent, type AttachmentDetail } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -722,12 +722,15 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         ));
         // #1461: a private file is logged by id — never by its filename.
         logger.info(`📎 Uploaded a file into ${pageCreator}'s private store '${pageStore}' (${entry.id})`);
-        await this.recordAttachmentEvent('upload', ctx, {
-          attachmentId: entry.id,
-          filename: fileInfo.originalName,
-          pageName: pageName ?? null,
-          sizeBytes: fileInfo.size ?? null
-        }, options.wikiContext);
+        // #2048: an encrypted store's file is recorded by id and store only.
+        await this.recordAttachmentEvent('upload', ctx, io.sealed
+          ? { attachmentId: entry.id, sealedStore: { owner: pageCreator, store: pageStore } }
+          : {
+            attachmentId: entry.id,
+            filename: fileInfo.originalName,
+            pageName: pageName ?? null,
+            sizeBytes: fileInfo.size ?? null
+          }, options.wikiContext);
         return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
       }
     }
@@ -2094,11 +2097,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // decision for a plain store: there is no key to fail to hold.
     if (!meta) {
       if (own) {
-        await this.recordAttachmentEvent('delete', context, {
-          attachmentId,
-          filename: own.entry.name,
-          sizeBytes: own.entry.contentSize
-        }, wikiContext);
+        // #2048: an encrypted store's file is recorded by id and store only.
+        await this.recordAttachmentEvent('delete', context, own.location.io.sealed
+          ? { attachmentId, sealedStore: { owner: own.location.owner, store: own.location.store } }
+          : {
+            attachmentId,
+            filename: own.entry.name,
+            sizeBytes: own.entry.contentSize
+          }, wikiContext);
         return (await this.writeAttachments(this.attachmentProvider.deleteFileInStore(own.location, attachmentId))) !== null;
       }
     }
@@ -2135,7 +2141,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   private async recordAttachmentEvent(
     op: 'upload' | 'delete',
     context: ActorContext,
-    detail: { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null },
+    detail: AttachmentDetail,
     wikiContext?: { request?: { ip?: string } | null }
   ): Promise<void> {
     // Lazily resolved, matching ConfigurationManager: absent during early boot,
@@ -2151,10 +2157,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       op,
       username: who.user,
       ipAddress: who.ipAddress ?? wikiContext?.request?.ip,
-      attachmentId: detail.attachmentId,
-      filename: detail.filename,
-      pageName: detail.pageName,
-      sizeBytes: detail.sizeBytes,
+      ...detail,
       // Forwarded, never rebuilt — the delegation rides on the caller's
       // context (P1). Without it a token-driven upload records as its owner
       // with no sign a token was involved.
@@ -2176,7 +2179,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       }
     } else {
       await recordAuditEvent(sink, event, (err) =>
-        logger.warn(`Audit log failed for attachment.${op} of '${detail.filename}':`, err)
+        logger.warn(`Audit log failed for attachment.${op} of '${'filename' in detail ? detail.filename : detail.attachmentId}':`, err)
       );
     }
   }

@@ -230,6 +230,17 @@ describe('AttachmentManager — files in an unencrypted private store (#1460)', 
     expect(audit).toHaveBeenCalled();
   });
 
+  // #2048 sabotage: the upload recorded as if every store were sealed — this went red.
+  test('a plain store\'s upload and delete are audited with the file name, as before (#2048)', async () => {
+    audit.mockClear();
+    const stored = await upload(PDF, MOLLY, DIARY);
+    expect(await manager.deleteAttachment(stored.identifier, MOLLY)).toBe(true);
+    const rows = audit.mock.calls.map(c => c[0] as { eventType: string; metadata: Record<string, unknown> });
+    expect(rows.find(e => e.eventType === 'asset-upload')?.metadata).toEqual(expect.objectContaining({ attachmentId: stored.identifier, filename: 'labs.pdf', sizeBytes: PDF.length }));
+    expect(rows.find(e => e.eventType === 'asset-delete')?.metadata).toEqual(expect.objectContaining({ attachmentId: stored.identifier, filename: 'labs.pdf' }));
+    for (const row of rows) expect(row.metadata).not.toHaveProperty('sealed');
+  });
+
   test('a thumbnail of a private file is rendered for its owner only, and never cached in the shared folder', async () => {
     const png = await (await import('sharp')).default({
       create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 20, b: 30 } }
