@@ -52,6 +52,25 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 
 ---
 
+## Working with core
+
+Who decides what, for every add-on and every agent session working on one (operator, 2026-10-25):
+
+- __Ask before you build.__ Before building anything that is not purely your add-on's domain — fetching, scheduling, imports, files, identities, notifications, email, PDF, consent and the like — ask core whether it already exists or is planned, even when you think it doesn't. A question costs a message; a duplicate costs a migration later (phr's own import engine before ICE, geohazardwatch's own fetch and timer, unchecked user reads in accommodation).
+- __Generic work comes to core first__ (operator, 2026-10-20). What would serve more than one add-on, core builds; you use it.
+- __If core already has it, use it__ as this guide says, even when your own version would be quicker.
+- __Core decides__ (the ngdpbase core session, or an ngdpbase issue):
+  - the rules every add-on follows: these guides, [docs/GLOSSARY.md](../GLOSSARY.md), [the identity model](../planning/identity-model.md), [Manager-SOT](../managers/Manager-SOT.md);
+  - anything an add-on needs from core;
+  - breaking changes and releases: what each add-on must change, by which release;
+  - core questions an add-on raises, settled from the guides;
+  - review of add-on work against the guides;
+  - add-ons with no session of their own.
+- __The add-on's session decides__ its own domain work: its records, screens, imports and jobs, within the rules.
+- __The operator decides__ domain priorities (what an add-on builds next), and anything that commits outside a working branch: merging, publishing to npm, releasing, deploying.
+- __How to reach core__: a message to the core session, or an issue in ngdpbase (cross-repo work is tracked there). Never wait on the operator for a core question: ask core, which answers or, if it truly needs the operator, takes it to them and reports back.
+- __What core sends you__: when a release you depend on ships, the version and the exact changes you must make. Make them, run your tests, and reply with what you changed.
+
 ## Identity
 
 The slug is the addon's identity. `resolveAddonSlug` (`src/utils/addonsPathResolver.ts`) computes it without loading the module:
