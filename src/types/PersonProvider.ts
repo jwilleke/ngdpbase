@@ -2,7 +2,7 @@
  * Storage seam for Person records (#617)
  *
  * File system is the v1 default. Future providers (LDAP, external directory)
- * implement the same interface and register without touching PersonManager.
+ * implement the same interface and register without touching IdentityManager.
  */
 
 import type { BaseProvider } from './Provider.js';
@@ -26,7 +26,7 @@ export interface PersonProvider extends BaseProvider {
 
   /**
    * Write the whole record in place of the one with the same `@id` (#1930).
-   * The only write that may change `identifier`: PersonManager uses it to join
+   * The only write that may change `identifier`: IdentityManager uses it to join
    * a person to an account.
    */
   replace(person: Person): Promise<Person>;

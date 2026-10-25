@@ -1,6 +1,25 @@
 import type { WikiConfig } from '../types/Config.js';
 import type BaseManager from '../managers/BaseManager.js';
 import { MaintenanceState } from '../utils/maintenanceState.js';
+import logger from '../utils/logger.js';
+
+/**
+ * Old manager names still answered, for one release, by the manager that took
+ * over the job (#2038). `getManager(old)` returns the new manager and warns
+ * once per old name, naming the caller. The registry itself holds only the new
+ * name, so nothing that lists managers sees the manager twice.
+ */
+export const MANAGER_ALIASES: ReadonlyMap<string, string> = new Map([
+  // #2038: PersonManager was renamed IdentityManager (identity model, step 3).
+  ['PersonManager', 'IdentityManager']
+]);
+
+/** The first stack frame outside this file: who asked for a manager by its old name. */
+function callerOutsideEngine(): string {
+  const frames = (new Error().stack ?? '').split('\n').slice(1).map((line) => line.trim());
+  const outside = frames.find((line) => !line.includes('/core/Engine.') && !line.includes('callerOutsideEngine'));
+  return outside ? outside.replace(/^at\s+/, '') : 'an unknown caller';
+}
 
 /**
  * Engine interface - Main wiki engine following JSPWiki architecture
@@ -32,6 +51,9 @@ class Engine {
    * Set via setCapability() during initialization; read by admin UIs and templates.
    */
   protected capabilities: Map<string, boolean>;
+
+  /** Old manager names already warned about (#2038): each is warned once per engine. */
+  private readonly warnedAliases = new Set<string>();
 
   /**
    * Creates a new Engine instance
@@ -95,7 +117,15 @@ class Engine {
    * const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
    */
   getManager<T = BaseManager>(managerName: string): T | undefined {
-    return this.managers.get(managerName) as T | undefined;
+    const found = this.managers.get(managerName);
+    if (found !== undefined) return found as T;
+    const renamed = MANAGER_ALIASES.get(managerName);
+    if (renamed === undefined) return undefined;
+    if (!this.warnedAliases.has(managerName)) {
+      this.warnedAliases.add(managerName);
+      logger.warn(`[Engine] getManager('${managerName}') is deprecated (#2038): it is '${renamed}' now, and the old name is answered for one release only. Asked by ${callerOutsideEngine()}`);
+    }
+    return this.managers.get(renamed) as T | undefined;
   }
 
   /**

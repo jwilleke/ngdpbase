@@ -8,7 +8,7 @@
  * so a test keeps its stub and gets the real membership code on top of it.
  *
  * `engine` must be the engine the RoleManager is registered in: membership
- * looks up PersonManager and OrganizationManager through it.
+ * looks up IdentityManager and OrganizationManager through it.
  */
 import RoleManager from '../../RoleManager';
 import type { WikiEngine } from '../../../types/WikiEngine';

@@ -110,9 +110,9 @@ describe('RoleManager (#617 follow-up)', () => {
     const SYS = { username: 'system', origin: 'boot' as const, requestedAt: new Date(0).toISOString(), reason: 'test: role lookup' };
     expect(await manager.getById(SYS, role['@id'])).toMatchObject({ namedPosition: 'admin' });
     expect(await manager.getById(SYS, 'urn:role:nope')).toBeNull();
-    // Anyone else asks contact-read of the PDP; with none to ask, refused (closed).
+    // Anyone else asks identity-read of the PDP; with none to ask, refused (closed).
     await expect(manager.getById({ username: 'rita', roles: ['reader'], isAuthenticated: true }, role['@id']))
-      .rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-read' });
+      .rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-read' });
   });
 
   test('getByOrgAndPosition is the (org, role) natural-key lookup', async () => {

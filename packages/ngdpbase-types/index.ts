@@ -68,8 +68,13 @@ export type {
 export type { default as UserManager, UserUpdateInput, UserUpdateFn } from '../../src/managers/UserManager.js';
 export type { User, UserPreferences } from '../../src/types/User.js';
 
-// Contacts (#1930): the person and organization doors, their records, and their refusal.
-export type { default as PersonManager, LinkOfferOutcome } from '../../src/managers/PersonManager.js';
+// Contacts (#1930): the identity record and organization doors, their records, and their refusal.
+export type { default as IdentityManager, LinkOfferOutcome } from '../../src/managers/IdentityManager.js';
+// Deprecated (#2038): `PersonManager` is the old name of `IdentityManager`, kept for one release only.
+export type {
+  /** @deprecated Renamed `IdentityManager` (#2038); this alias goes after one release. */
+  default as PersonManager
+} from '../../src/managers/IdentityManager.js';
 export type { default as OrganizationManager } from '../../src/managers/OrganizationManager.js';
 export type { Person, PersonAffiliation, PersonInput, PersonUpdate } from '../../src/types/Person.js';
 export type { Organization, OrganizationInput, OrganizationUpdate, ContactPoint, ContactPointEntry, PostalAddress } from '../../src/types/Organization.js';

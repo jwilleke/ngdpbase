@@ -1,30 +1,30 @@
 /**
  * #1930 — contacts in core: persons without accounts, the person and
- * organization doors (context first, `contact-manage`, audited), affiliations,
+ * organization doors (context first, `identity-manage`, audited), affiliations,
  * and joining a later sign-up (emailed "Is this you?" link, or an admin).
  *
- * Real PersonManager, OrganizationManager, RoleManager and UserManager on
+ * Real IdentityManager, OrganizationManager, RoleManager and UserManager on
  * temp-dir file storage; the real PDP over the SHIPPED policies, so
  * "admins only" is the shipped grant, not a stub. Teardown removes only this
  * test's own temp dir.
  *
  * Sabotaged once each (2026-10-20), and watched go red:
- * - `requireContactPermission` removed from PersonManager.create → the
+ * - `requireContactPermission` removed from IdentityManager.create → the
  *   editor-refused test went red (a person was written);
  * - the `user-edit` half of linkAccount's check removed → the user-admin /
- *   contact-manage-only refusal went red;
+ *   identity-manage-only refusal went red;
  * - `liveOffer`'s account check removed → "another account cannot confirm" went red;
- * - `recordContactChange` removed from PersonManager.update → the audit test went red;
+ * - `recordContactChange` removed from IdentityManager.update → the audit test went red;
  * - the account-person delete removed from the join → "never a second person" went red;
  * - `ACCOUNTLESS_PERSON_PREFIX` dropped from isReservedUsername → the collision test went red;
  * - `requireContactPermission` removed from OrganizationManager.list → the refusal test went red;
  * - UserManager's lifecycle sync given the caller's context instead of the
  *   system one → self-registration made no person, and four tests went red;
- * - every read asking contact-manage instead of contact-read → the demo-admin
- *   read test went red; every write asking contact-read → its write refusals went red;
+ * - every read asking identity-manage instead of identity-read → the demo-admin
+ *   read test went red; every write asking identity-read → its write refusals went red;
  * - PolicyEvaluator registered after UserManager again (the shipped order
  *   before this change) → the boot-order test went red.
- * - PersonManager.update keeping only '@type': 'ContactPoint' entries (2026-10-24)
+ * - IdentityManager.update keeping only '@type': 'ContactPoint' entries (2026-10-24)
  *   → the contact points round-trip test went red.
  */
 vi.unmock('../PolicyEvaluator');
@@ -34,7 +34,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { readFileSync } from 'fs';
 import { randomUUID } from 'crypto';
-import PersonManager from '../PersonManager';
+import IdentityManager from '../IdentityManager';
 import OrganizationManager from '../OrganizationManager';
 import RoleManager from '../RoleManager';
 import UserManager from '../UserManager';
@@ -97,8 +97,8 @@ async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}
   const organizations = new OrganizationManager(engine);
   managers.OrganizationManager = organizations;
   await organizations.initialize();
-  const persons = new PersonManager(engine);
-  managers.PersonManager = persons;
+  const persons = new IdentityManager(engine);
+  managers.IdentityManager = persons;
   await persons.initialize();
   const roles = new RoleManager(engine);
   managers.RoleManager = roles;
@@ -124,7 +124,7 @@ async function makeSite(opts: { mail?: boolean; extraPolicies?: unknown[] } = {}
     { username, email, displayName: username, password: `pw-${randomUUID()}`, roles: ['reader'] },
     jobContextFromRequestWithReason({ username }, 'self-registration')
   );
-  const contacts = () => sink.filter((e) => e.eventType === 'contact-manage');
+  const contacts = () => sink.filter((e) => e.eventType === 'identity-manage');
   return { tmp, engine, persons, organizations, roles, accounts, sink, contacts, mail, signUp };
 }
 
@@ -151,12 +151,12 @@ describe('contacts in core (#1930)', () => {
     await fs.remove(site.tmp).catch(() => {});
   });
 
-  test('as shipped: contact-read is held by admin and demo-admin, contact-manage (audited) by admin alone', async () => {
+  test('as shipped: identity-read is held by admin and demo-admin, identity-manage (audited) by admin alone', async () => {
     const defs = shipped['ngdpbase.permissions.definitions'] as Record<string, Record<string, unknown>>;
-    expect(defs['contact-manage']).toMatchObject({ audit: { 'on-failure': 'continue' } });
-    expect(defs['contact-manage'].grantable).not.toBe(false);
-    expect(defs['contact-read']).toBeDefined();
-    expect(defs['contact-read'].grantable).not.toBe(false);
+    expect(defs['identity-manage']).toMatchObject({ audit: { 'on-failure': 'continue' } });
+    expect(defs['identity-manage'].grantable).not.toBe(false);
+    expect(defs['identity-read']).toBeDefined();
+    expect(defs['identity-read'].grantable).not.toBe(false);
     const roleNames = Object.keys(shipped['ngdpbase.roles.definitions'] as Record<string, unknown>);
     const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
     const holders = async (permission: string): Promise<string[]> => {
@@ -166,8 +166,8 @@ describe('contacts in core (#1930)', () => {
       }
       return out.sort();
     };
-    expect(await holders('contact-manage')).toEqual(['admin']);
-    expect(await holders('contact-read')).toEqual(['admin', 'demo-admin']);
+    expect(await holders('identity-manage')).toEqual(['admin']);
+    expect(await holders('identity-read')).toEqual(['admin', 'demo-admin']);
   });
 
   test('demo-admin reads contacts but cannot change them', async () => {
@@ -193,15 +193,15 @@ describe('contacts in core (#1930)', () => {
       site.organizations.update(DEMO_ADMIN, acme['@id'], { name: 'Changed' }),
       site.organizations.delete(DEMO_ADMIN, acme['@id'])
     ];
-    for (const w of writes) await expect(w).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-manage' });
+    for (const w of writes) await expect(w).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-manage' });
     expect(await site.persons.getById(SYS, dana['@id'])).toMatchObject({ name: 'Dana', identifier: dana.identifier });
     expect(await site.organizations.getById(SYS, acme['@id'])).toMatchObject({ name: 'Acme Trust' });
     expect(site.contacts().length).toBe(before);
   });
 
-  test('a read refused without contact-read names that permission', async () => {
-    await expect(site.persons.search(EDITOR, '')).rejects.toMatchObject({ permission: 'contact-read' });
-    await expect(site.organizations.list(EDITOR)).rejects.toMatchObject({ permission: 'contact-read' });
+  test('a read refused without identity-read names that permission', async () => {
+    await expect(site.persons.search(EDITOR, '')).rejects.toMatchObject({ permission: 'identity-read' });
+    await expect(site.organizations.list(EDITOR)).rejects.toMatchObject({ permission: 'identity-read' });
   });
 
   test('the PDP can decide while UserManager starts: PolicyEvaluator is registered before it', () => {
@@ -219,7 +219,7 @@ describe('contacts in core (#1930)', () => {
     const p = await site.persons.create(ADMIN, { name: 'Dana Donor', email: 'dana@example.org' });
     expect(p.identifier).toMatch(/^person:[0-9a-f-]{36}$/);
     expect(p['@id']).toBe(`urn:uuid:${p.identifier.slice('person:'.length)}`);
-    expect(PersonManager.isAccountless(p)).toBe(true);
+    expect(IdentityManager.isAccountless(p)).toBe(true);
     expect(await site.persons.getById(SYS, p['@id'])).toMatchObject({ name: 'Dana Donor' });
 
     const [rec] = site.contacts();
@@ -249,7 +249,7 @@ describe('contacts in core (#1930)', () => {
     expect((await site.persons.search(ADMIN, '', { limit: 1 })).length).toBe(1);
   });
 
-  test('without contact-manage every door refuses, and nothing is written', async () => {
+  test('without identity-manage every door refuses, and nothing is written', async () => {
     const existing = await site.persons.create(ADMIN, { name: 'Kept' });
     const before = site.contacts().length;
     // Each started only when awaited, so no refusal is left unhandled while an earlier one is checked.
@@ -267,7 +267,7 @@ describe('contacts in core (#1930)', () => {
     ];
     for (const r of refusals) await expect(r()).rejects.toBeInstanceOf(ContactRefusedError);
     const err = await site.persons.create(EDITOR, { name: 'Sneaky' }).catch((e: ContactRefusedError) => e);
-    expect(err).toMatchObject({ permission: 'contact-manage' });
+    expect(err).toMatchObject({ permission: 'identity-manage' });
     expect((err as ContactRefusedError).decision.permit).toBe(false);
     expect((await site.persons.list(ADMIN)).map((p) => p.name)).toEqual(['Kept']);
     expect(site.contacts().length).toBe(before);
@@ -416,12 +416,12 @@ describe('contacts in core (#1930)', () => {
     const own = await site.persons.getByIdentifier(SYS, 'pat');
     expect(own).not.toBeNull();
 
-    // Refused without user-edit (user-admin holds user-edit but not contact-manage; editor neither).
-    await expect(site.persons.linkAccount(USER_ADMIN, donor['@id'], 'pat')).rejects.toMatchObject({ permission: 'contact-manage' });
+    // Refused without user-edit (user-admin holds user-edit but not identity-manage; editor neither).
+    await expect(site.persons.linkAccount(USER_ADMIN, donor['@id'], 'pat')).rejects.toMatchObject({ permission: 'identity-manage' });
     await expect(site.persons.linkAccount(EDITOR, donor['@id'], 'pat')).rejects.toBeInstanceOf(ContactRefusedError);
 
-    // An add-on may grant contact-manage to its own role; linking an account still needs user-edit.
-    const granted = await makeSite({ extraPolicies: [{ id: 'test-editor-contacts', name: 't', priority: 90, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'page', pattern: '*' }], actions: ['contact-manage'] }] });
+    // An add-on may grant identity-manage to its own role; linking an account still needs user-edit.
+    const granted = await makeSite({ extraPolicies: [{ id: 'test-editor-contacts', name: 't', priority: 90, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'page', pattern: '*' }], actions: ['identity-manage'] }] });
     try {
       const p = await granted.persons.create(EDITOR, { name: 'Allowed' });
       await granted.signUp('pat', 'pat@example.org');
@@ -445,7 +445,7 @@ describe('contacts in core (#1930)', () => {
   });
 
   test('the account lifecycle still keeps the account\'s person in step, under a system context', async () => {
-    // A self-registration holds no contact-manage, yet its person is made.
+    // A self-registration holds no identity-manage, yet its person is made.
     await site.signUp('sam', 'sam@example.org');
     const sam = await site.persons.getByIdentifier(SYS, 'sam');
     expect(sam).toMatchObject({ identifier: 'sam', email: 'sam@example.org', name: 'sam' });
@@ -468,10 +468,10 @@ describe('contacts in core (#1930)', () => {
 });
 
 /**
- * #2018 — every lookup takes the caller's context: PersonManager's getById,
+ * #2018 — every lookup takes the caller's context: IdentityManager's getById,
  * getByIdentifier and getByUserIdentifier, and RoleManager's resolveUserRoles
  * and hasRole. Own identity record under profile-manage; anyone else's under
- * contact-read; core's own work under the system context, with no policy
+ * identity-read; core's own work under the system context, with no policy
  * evaluation, so per-request role resolution stays cheap. Same real PDP over
  * the shipped policies as above.
  *
@@ -498,10 +498,10 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
     await fs.remove(site.tmp).catch(() => {});
   });
 
-  test('a user reads and changes their own identity record under profile-manage, with no contact-read', async () => {
+  test('a user reads and changes their own identity record under profile-manage, with no identity-read', async () => {
     const pat = await subjectOf(site, 'pat');
     const pdp = site.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')!;
-    expect(await pdp.permits(pat, 'contact-read')).toBe(false);
+    expect(await pdp.permits(pat, 'identity-read')).toBe(false);
     expect(await pdp.permits(pat, 'profile-manage')).toBe(true);
 
     const own = await site.persons.getByIdentifier(pat, 'pat');
@@ -512,14 +512,14 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
     expect(await site.roles.resolveUserRoles(pat, 'pat')).toContain('reader');
     expect(await site.roles.hasRole(pat, 'pat', 'reader')).toBe(true);
 
-    // Changing it: profile-manage, recorded as contact-manage with pat as the actor.
+    // Changing it: profile-manage, recorded as identity-manage with pat as the actor.
     expect(await site.persons.update(pat, own!['@id'], { name: 'Pat P' })).toMatchObject({ name: 'Pat P' });
     expect(site.contacts().at(-1)).toMatchObject({ action: 'person-update', user: 'pat', resource: own!['@id'] });
-    // Deleting it is not a profile change: contact-manage.
-    await expect(site.persons.delete(pat, own!['@id'])).rejects.toMatchObject({ permission: 'contact-manage' });
+    // Deleting it is not a profile change: identity-manage.
+    await expect(site.persons.delete(pat, own!['@id'])).rejects.toMatchObject({ permission: 'identity-manage' });
   });
 
-  test('another user\'s or a contact\'s identity record is refused without contact-read, and allowed with it', async () => {
+  test('another user\'s or a contact\'s identity record is refused without identity-read, and allowed with it', async () => {
     const pat = await subjectOf(site, 'pat');
     const sam = await site.persons.getByIdentifier(SYS, 'sam');
     const donor = await site.persons.create(ADMIN, { name: 'Dana Donor', email: 'dana@example.org' });
@@ -534,12 +534,12 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
       () => site.roles.resolveUserRoles(pat, 'sam'),
       () => site.roles.hasRole(pat, 'sam', 'reader')
     ];
-    for (const read of refusedReads) await expect(read()).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'contact-read' });
-    await expect(site.persons.update(pat, sam!['@id'], { name: 'No' })).rejects.toMatchObject({ permission: 'contact-manage' });
+    for (const read of refusedReads) await expect(read()).rejects.toMatchObject({ name: 'ContactRefusedError', permission: 'identity-read' });
+    await expect(site.persons.update(pat, sam!['@id'], { name: 'No' })).rejects.toMatchObject({ permission: 'identity-manage' });
     // Reads stay unaudited, refused or not.
     expect(site.contacts().filter((e) => e.user === 'pat')).toEqual([]);
 
-    // With contact-read (demo-admin, as shipped): allowed, and still no record.
+    // With identity-read (demo-admin, as shipped): allowed, and still no record.
     const before = site.contacts().length;
     expect(await site.persons.getByIdentifier(DEMO_ADMIN, 'sam')).toMatchObject({ identifier: 'sam' });
     expect(await site.persons.getById(DEMO_ADMIN, donor['@id'])).toMatchObject({ name: 'Dana Donor' });
@@ -565,11 +565,11 @@ describe('every lookup takes the caller\'s context (#2018)', () => {
     expect(decide).toHaveBeenCalledTimes(2);
   });
 
-  test('a job context works: its user\'s own record under profile-manage, anyone else\'s under contact-read', async () => {
+  test('a job context works: its user\'s own record under profile-manage, anyone else\'s under identity-read', async () => {
     const patJob = jobContextFromRequestWithReason({ username: 'pat' }, 'test: a job pat started');
     expect(await site.persons.getByIdentifier(patJob, 'pat')).toMatchObject({ identifier: 'pat' });
     expect(await site.roles.hasRole(patJob, 'pat', 'reader')).toBe(true);
-    await expect(site.roles.hasRole(patJob, 'sam', 'reader')).rejects.toMatchObject({ permission: 'contact-read' });
+    await expect(site.roles.hasRole(patJob, 'sam', 'reader')).rejects.toMatchObject({ permission: 'identity-read' });
 
     // accommodation's role job: run from the admin page as the admin, or on its schedule as the system.
     await site.accounts.createUser({ username: 'root', email: 'root@example.org', displayName: 'root', password: `pw-${randomUUID()}`, roles: ['admin'] }, SYS);

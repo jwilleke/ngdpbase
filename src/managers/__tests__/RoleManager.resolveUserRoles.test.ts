@@ -3,7 +3,7 @@
  * step 12 — who holds which role is RoleManager's).
  *
  * Returns the role-name array sourced from OrganizationRole records, or `[]`
- * when PersonManager is unavailable, when the user has no paired Person
+ * when IdentityManager is unavailable, when the user has no paired Person
  * record, or when the lookup fails. There is no fallback to `User.roles[]`.
  */
 import { roleManagerOver } from './__fixtures__/roleManagerOver';
@@ -25,17 +25,17 @@ interface MockRole {
 function makeRoleManager(opts: {
   person?: { '@id': string; identifier: string } | null;
   roles?: MockRole[];
-  registerPersonManager?: boolean;
+  registerIdentityManager?: boolean;
   listByMember?: ReturnType<typeof vi.fn>;
 }) {
-  const personManager = opts.registerPersonManager === false ? null : {
+  const identityManager = opts.registerIdentityManager === false ? null : {
     getByUserIdentifier: vi.fn(async (_ctx: unknown, _identifier: string) => opts.person ?? null)
   };
   const listByMember = opts.listByMember ?? vi.fn(async () => opts.roles ?? []);
   const engine = {
-    getManager: vi.fn((name: string) => (name === 'PersonManager' ? personManager : null))
+    getManager: vi.fn((name: string) => (name === 'IdentityManager' ? identityManager : null))
   };
-  return { roleManager: roleManagerOver(engine, { listByMember }), listByMember, personManager };
+  return { roleManager: roleManagerOver(engine, { listByMember }), listByMember, identityManager };
 }
 
 describe('RoleManager.resolveUserRoles (#617)', () => {
@@ -66,9 +66,9 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
     expect(listByMember).not.toHaveBeenCalled();
   });
 
-  test('returns [] when PersonManager is unavailable', async () => {
+  test('returns [] when IdentityManager is unavailable', async () => {
     const { roleManager } = makeRoleManager({
-      registerPersonManager: false,
+      registerIdentityManager: false,
       roles: [{ '@id': 'r', namedPosition: 'admin', organization: { '@id': 'o' } }]
     });
     expect(await roleManager.resolveUserRoles(SYSTEM, 'alice')).toEqual([]);
@@ -102,12 +102,12 @@ describe('RoleManager.resolveUserRoles (#617)', () => {
     expect(await roleManager.hasRole(SYSTEM, 'alice', 'admin')).toBe(false);
   });
 
-  test('#2018: the caller\'s context goes to PersonManager\'s door, and its refusal is thrown, never "no roles"', async () => {
-    const refusal = new ContactRefusedError('contact-read', { permit: false, applicable: true, reason: 'test' });
-    const { roleManager, personManager } = makeRoleManager({ person: { '@id': PERSON_ID, identifier: 'alice' } });
-    personManager?.getByUserIdentifier.mockRejectedValueOnce(refusal);
+  test('#2018: the caller\'s context goes to IdentityManager\'s door, and its refusal is thrown, never "no roles"', async () => {
+    const refusal = new ContactRefusedError('identity-read', { permit: false, applicable: true, reason: 'test' });
+    const { roleManager, identityManager } = makeRoleManager({ person: { '@id': PERSON_ID, identifier: 'alice' } });
+    identityManager?.getByUserIdentifier.mockRejectedValueOnce(refusal);
     const asker = { username: 'bob', roles: ['reader'], isAuthenticated: true };
     await expect(roleManager.resolveUserRoles(asker, 'alice')).rejects.toBe(refusal);
-    expect(personManager?.getByUserIdentifier).toHaveBeenCalledWith(asker, 'alice');
+    expect(identityManager?.getByUserIdentifier).toHaveBeenCalledWith(asker, 'alice');
   });
 });

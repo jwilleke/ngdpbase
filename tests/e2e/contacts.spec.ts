@@ -108,11 +108,11 @@ test.describe('Contacts (#1930)', () => {
     try {
       await signInWithPassword(demoPage, username, password); // #1603: accepts the terms when asked
 
-      // contact-read: the list and search work.
+      // identity-read: the list and search work.
       await demoPage.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);
       await expect(demoPage.locator('h1')).toContainText('Contacts');
       await expect(rowFor(demoPage, email)).toHaveCount(1);
-      // No contact-manage: the change controls are locked and the link form is absent.
+      // No identity-manage: the change controls are locked and the link form is absent.
       await expect(demoPage.getByTestId('contacts-add-submit')).toBeDisabled();
       await expect(rowFor(demoPage, email).getByTestId('contacts-remove')).toBeDisabled();
       await expect(rowFor(demoPage, email).getByTestId('contacts-link-username')).toHaveCount(0);
@@ -125,7 +125,7 @@ test.describe('Contacts (#1930)', () => {
 
       await demoPage.goto('/admin/organizations');
       await expect(demoPage.locator('h1')).toContainText('Organization Management');
-      await expect(demoPage.getByText("needs the 'contact-read' permission")).toHaveCount(0);
+      await expect(demoPage.getByText("needs the 'identity-read' permission")).toHaveCount(0);
     } finally {
       await demo.close();
       await page.goto(`/admin/contacts?q=${encodeURIComponent(email)}`);

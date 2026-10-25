@@ -18,7 +18,7 @@ The __UserManager__ handles user authentication, authorization, role management,
 - ✅ __Policy Integration:__ Queries PolicyManager for actual permissions
 - ✅ __Session Management:__ File-based session storage with expiration
 - ✅ __External Authentication:__ Supports OAuth/JWT external users
-- ✅ __Schema.org Integration:__ Keeps each user's identity record (schema.org `Person`) through PersonManager
+- ✅ __Schema.org Integration:__ Keeps each user's identity record (schema.org `Person`) through IdentityManager
 - ✅ __User Pages:__ Automatically creates user pages for new accounts
 
 ---
@@ -215,7 +215,7 @@ __Features:__
 - Checks for username/display name conflicts
 - Auto-detects user locale from Accept-Language header
 - Creates user page automatically
-- Keeps the user's identity record (schema.org `Person`) in PersonManager
+- Keeps the user's identity record (schema.org `Person`) in IdentityManager
 
 ---
 

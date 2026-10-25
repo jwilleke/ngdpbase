@@ -140,7 +140,7 @@ __6 Not an overlap, contrary to appearances.__ Role __membership__ has a single 
 `resolveUserRoles` (`:1818`) reads `RoleManager` records and nothing else; the legacy
 `User.roles[]` fallback was removed in #617 iteration 3b, with `scripts/strip-user-roles.ts` to
 clear the deprecated field. One hazard to keep in view: it returns `[]` — no roles at all — when
-`PersonManager` or `RoleManager` is unavailable, so a degraded init silently demotes every user
+`IdentityManager` or `RoleManager` is unavailable, so a degraded init silently demotes every user
 rather than failing loudly.
 
 ### What is wrong

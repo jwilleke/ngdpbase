@@ -44,7 +44,7 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
   const lookup = vi.fn(async () =>
     opts.person === null ? null : (opts.person ?? { '@id': PERSON_ID })
   );
-  const personManager = {
+  const identityManager = {
     getByIdentifier: lookup,
     getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),
@@ -61,7 +61,7 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
     getManager: vi.fn((name: string) => {
       if (name === 'NotificationManager') return { addNotification: async (n: Record<string, unknown>) => { notifications.push(n); return 'n1'; } };
       if (name === 'ConfigurationManager') return makeConfigManager();
-      if (name === 'PersonManager') return personManager;
+      if (name === 'IdentityManager') return identityManager;
       if (name === 'OrganizationManager') return organizationManager;
       return null;
     }),

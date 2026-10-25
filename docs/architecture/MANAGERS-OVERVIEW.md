@@ -107,7 +107,7 @@ __Key API:__
 | Method | Description |
 |---|---|
 | `authenticateUser(username, password)` | Verify credentials → `User \| null` |
-| `createUser(data)` | Create user; makes its identity record through PersonManager |
+| `createUser(data)` | Create user; makes its identity record through IdentityManager |
 | `getUser(username)` | Fetch without password |
 | `searchUsers(query, options?)` | Filtered user list |
 | `createSession(username, data)` | Return session ID |
@@ -117,7 +117,7 @@ __Key API:__
 
 __Inter-manager calls:__
 
-- `PersonManager` → keep the user's identity record in step on create/update/delete
+- `IdentityManager` → keep the user's identity record in step on create/update/delete
 - `PageManager` → detect display-name page conflict
 - `TemplateManager` → apply template when creating user page
 - `ValidationManager` → generate metadata for user page
@@ -379,7 +379,7 @@ JSPWiki-compatible variable expansion. Resolves `[{$variableName}]` tokens in ma
 
 ### SchemaManager
 
-Registers JSON Schemas and validates typed entities against them. Identity records (users and contacts) are PersonManager's, not SchemaManager's.
+Registers JSON Schemas and validates typed entities against them. Identity records (users and contacts) are IdentityManager's, not SchemaManager's.
 
 ---
 

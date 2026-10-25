@@ -47,7 +47,7 @@ import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import ConsentManager from './managers/ConsentManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
-import PersonManager from './managers/PersonManager.js';
+import IdentityManager from './managers/IdentityManager.js';
 import RoleManager from './managers/RoleManager.js';
 
 // Parsers
@@ -219,16 +219,16 @@ class WikiEngine extends Engine {
     this.registerManager('SessionStatsManager', sessionStatsManager);
     await sessionStatsManager.initialize();
 
-    // 2c. OrganizationManager + PersonManager — canonical core identity
+    // 2c. OrganizationManager + IdentityManager — canonical core identity
     // records (#617). Loaded before UserManager so downstream managers can
     // resolve the install's anchor org / paired Person from the start.
     const organizationManager = new OrganizationManager(this);
     this.registerManager('OrganizationManager', organizationManager);
     await organizationManager.initialize();
 
-    const personManager = new PersonManager(this);
-    this.registerManager('PersonManager', personManager);
-    await personManager.initialize();
+    const identityManager = new IdentityManager(this);
+    this.registerManager('IdentityManager', identityManager);
+    await identityManager.initialize();
 
     const roleManager = new RoleManager(this);
     this.registerManager('RoleManager', roleManager);
@@ -245,7 +245,7 @@ class WikiEngine extends Engine {
     // #1930: the PDP's matching engine starts with it. It needs only
     // ConfigurationManager, and without it every decision during the later
     // managers' start-up was 'no_evaluator' — the bootstrap admin's person,
-    // made through PersonManager's door under the system principal, was refused.
+    // made through IdentityManager's door under the system principal, was refused.
     const policyEvaluator = new PolicyEvaluator(this);
     this.registerManager('PolicyEvaluator', policyEvaluator);
     await policyEvaluator.initialize();

@@ -178,7 +178,7 @@ import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
-import type PersonManager from '../managers/PersonManager.js';
+import type IdentityManager from '../managers/IdentityManager.js';
 import { ContactRefusedError } from '../utils/contactAccess.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
@@ -511,7 +511,7 @@ interface IOrganizationRecord {
   [key: string]: unknown;
 }
 
-// #1930: the door takes the caller's context first and asks contact-read to read and contact-manage to change.
+// #1930: the door takes the caller's context first and asks identity-read to read and identity-manage to change.
 interface IOrganizationManager {
   list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
   getById(ctx: ActorContext, id: string): Promise<IOrganizationRecord | null>;
@@ -557,7 +557,7 @@ interface WikiEngine {
   getManager(name: 'PolicyInformationPoint'): IPolicyInformationPoint;
   getManager(name: 'SchemaManager'): ISchemaManager;
   getManager(name: 'OrganizationManager'): IOrganizationManager;
-  getManager(name: 'PersonManager'): PersonManager;
+  getManager(name: 'IdentityManager'): IdentityManager;
   getManager(name: 'SearchManager'): ISearchManager;
   getManager(name: 'RoleManager'): RoleManager;
   getManager(name: 'PolicyDecisionPoint'): PolicyDecisionPoint;
@@ -821,7 +821,7 @@ export const VIEW_PERMISSIONS = [
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
   'config-manage', 'secret-reveal', 'account-security',
   // #1930: the dashboard's Contacts entry (read) and the contacts page's change controls.
-  'contact-read', 'contact-manage'
+  'identity-read', 'identity-manage'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
@@ -11809,7 +11809,7 @@ ${panes}
       // each user's roles from RoleManager so admin-users.ejs can keep
       // reading `u.roles` directly (templates unchanged).
       // #2018: the roles column is part of the account list user-read allowed above,
-      // read by core under the system context (user-read does not imply contact-read).
+      // read by core under the system context (user-read does not imply identity-read).
       const listing = systemContext(this.engine, `list each account's roles on the user-management page for ${currentUser.username}, who holds user-read`);
       const users = await Promise.all(usersRaw.map(async (u: { username?: string; [key: string]: unknown }) => ({
         ...u,
@@ -15982,15 +15982,15 @@ ${panes}
    * GET /admin/contacts — persons, with or without an account (#1930). Search
    * by name or email; `?accountless=1` shows only persons with no account,
    * each with a form to link it to an account by hand. The door asks
-   * `contact-read`; changes ask `contact-manage`.
+   * `identity-read`; changes ask `identity-manage`.
    */
   async adminContacts(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'contact-read', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'identity-read', req, res, 'page'))) return;
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     const accountless = req.query.accountless === '1';
     try {
-      const persons = await this.engine.getManager('PersonManager').search(wikiContext.userContext, q, { accountless });
+      const persons = await this.engine.getManager('IdentityManager').search(wikiContext.userContext, q, { accountless });
       const organizationManager = this.engine.getManager('OrganizationManager');
       const orgNames: Record<string, string> = {};
       for (const org of await organizationManager.list(wikiContext.userContext)) {
@@ -16024,7 +16024,7 @@ ${panes}
   /** POST /admin/contacts — add a person with no account (#1930): a name, and an email when known. */
   async adminCreateContact(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'identity-manage', req, res, 'page'))) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -16033,7 +16033,7 @@ ${panes}
       return;
     }
     try {
-      await this.engine.getManager('PersonManager').create(wikiContext.userContext, { name, ...(email ? { email } : {}) });
+      await this.engine.getManager('IdentityManager').create(wikiContext.userContext, { name, ...(email ? { email } : {}) });
       res.redirect('/admin/contacts?accountless=1&success=' + encodeURIComponent(`Added ${name}.`));
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
@@ -16048,16 +16048,16 @@ ${panes}
    */
   async adminDeleteContact(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'identity-manage', req, res, 'page'))) return;
     const personId = typeof (req.body as Record<string, unknown> | undefined)?.personId === 'string' ? String((req.body as Record<string, unknown>).personId) : '';
     try {
-      const personManager = this.engine.getManager('PersonManager');
-      const person = personId ? await personManager.get(wikiContext.userContext, personId) : null;
+      const identityManager = this.engine.getManager('IdentityManager');
+      const person = personId ? await identityManager.get(wikiContext.userContext, personId) : null;
       if (!person || !person.identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX)) {
         res.redirect('/admin/contacts?error=' + encodeURIComponent('Only a person with no account is removed here; remove an account under Users.'));
         return;
       }
-      await personManager.delete(wikiContext.userContext, personId);
+      await identityManager.delete(wikiContext.userContext, personId);
       res.redirect('/admin/contacts?success=' + encodeURIComponent('Removed.'));
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
@@ -16069,11 +16069,11 @@ ${panes}
   /**
    * POST /admin/contacts/link — link a person with no account to an account
    * by hand (#1930), for when the email differs or none was given. The door
-   * asks `contact-manage` and `user-edit`; it never makes a second person.
+   * asks `identity-manage` and `user-edit`; it never makes a second person.
    */
   async adminLinkContact(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'contact-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'identity-manage', req, res, 'page'))) return;
     if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const personId = typeof body.personId === 'string' ? body.personId : '';
@@ -16083,12 +16083,12 @@ ${panes}
       return;
     }
     try {
-      await this.engine.getManager('PersonManager').linkAccount(wikiContext.userContext, personId, username);
+      await this.engine.getManager('IdentityManager').linkAccount(wikiContext.userContext, personId, username);
       res.redirect('/admin/contacts?success=' + encodeURIComponent(`Linked to the account ${username}.`));
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
       logger.warn(`[contacts] Linking ${personId} to ${username} failed: ${getErrorMessage(err)}`);
-      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(getErrorMessage(err).replace(/^PersonManager:\s*/, '')));
+      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(getErrorMessage(err).replace(/^IdentityManager:\s*/, '')));
     }
   }
 
@@ -16103,7 +16103,7 @@ ${panes}
     // Any signed-in account: the link itself is the authority, bound to one account.
     if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
     const token = typeof req.query.t === 'string' ? req.query.t : '';
-    const offer = await this.engine.getManager('PersonManager').signUpLinkOffer(wikiContext.userContext, token);
+    const offer = await this.engine.getManager('IdentityManager').signUpLinkOffer(wikiContext.userContext, token);
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.render('contact-link-confirm', {
@@ -16122,16 +16122,16 @@ ${panes}
     if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const token = typeof body.t === 'string' ? body.t : '';
-    const personManager = this.engine.getManager('PersonManager');
+    const identityManager = this.engine.getManager('IdentityManager');
     try {
       if (body.answer === 'join') {
-        const joined = await personManager.confirmSignUpLink(wikiContext.userContext, token);
+        const joined = await identityManager.confirmSignUpLink(wikiContext.userContext, token);
         res.redirect('/profile?' + (joined
           ? 'success=' + encodeURIComponent('Your account is now joined to your contact record.')
           : 'error=' + encodeURIComponent('That link has expired or was for another account.')));
         return;
       }
-      personManager.declineSignUpLink(wikiContext.userContext, token);
+      identityManager.declineSignUpLink(wikiContext.userContext, token);
       res.redirect('/profile?success=' + encodeURIComponent('Nothing was joined.'));
     } catch (err: unknown) {
       logger.warn(`[contacts] Joining from a sign-up link failed: ${getErrorMessage(err)}`);
@@ -16171,11 +16171,11 @@ ${panes}
       let organizations: unknown[] = [];
       let listError: string | undefined;
       try {
-        // #1930: the door asks contact-read of this viewer.
+        // #1930: the door asks identity-read of this viewer.
         organizations = await organizationManager.list(currentUser);
       } catch (err: unknown) {
         if (err instanceof ContactRefusedError) {
-          listError = "Listing organizations needs the 'contact-read' permission.";
+          listError = "Listing organizations needs the 'identity-read' permission.";
         } else {
           logger.error('Error loading organizations:', getErrorMessage(err));
         }
@@ -16245,7 +16245,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-read or contact-manage).
+      // #1930: the contacts door refused (identity-read or identity-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
@@ -16303,7 +16303,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-read or contact-manage).
+      // #1930: the contacts door refused (identity-read or identity-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
@@ -16356,7 +16356,7 @@ ${panes}
         );
       }
     } catch (error: unknown) {
-      // #1930: the contacts door refused (contact-read or contact-manage).
+      // #1930: the contacts door refused (identity-read or identity-manage).
       if (error instanceof ContactRefusedError) {
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;

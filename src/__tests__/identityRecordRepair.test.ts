@@ -13,7 +13,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import WikiEngine from '../WikiEngine';
 import type UserManager from '../managers/UserManager';
-import type PersonManager from '../managers/PersonManager';
+import type IdentityManager from '../managers/IdentityManager';
 import type RoleManager from '../managers/RoleManager';
 import AuditManagerClass from '../managers/AuditManager';
 import { systemContext } from '../context/bootActions';
@@ -84,7 +84,7 @@ describe('an account missing its identity record (#2037)', () => {
     const logged = vi.spyOn(AuditManagerClass.prototype, 'logAuditEvent');
     const engine = await boot();
     const users = engine.getManager<UserManager>('UserManager')!;
-    const persons = engine.getManager<PersonManager>('PersonManager')!;
+    const persons = engine.getManager<IdentityManager>('IdentityManager')!;
     const roles = engine.getManager<RoleManager>('RoleManager')!;
     const sys = systemContext(engine, 'test: #2037');
 
@@ -94,7 +94,7 @@ describe('an account missing its identity record (#2037)', () => {
     expect(all.filter((p) => p.identifier === 'handmade')).toHaveLength(1);
     expect(all.filter((p) => p.identifier === 'admin')).toHaveLength(1);
 
-    const created = logged.mock.calls.map(([e]) => e).filter((e) => e.eventType === 'contact-manage' && e.action === 'person-create' && e.resource === record!['@id']);
+    const created = logged.mock.calls.map(([e]) => e).filter((e) => e.eventType === 'identity-manage' && e.action === 'person-create' && e.resource === record!['@id']);
     expect(created).toHaveLength(1);
     expect(created[0].user).toBe('system');
     logged.mockRestore();
@@ -117,7 +117,7 @@ describe('an account missing its identity record (#2037)', () => {
   test('a role path makes it when it went missing after start-up; a username with no account still fails', async () => {
     const engine = await boot();
     const users = engine.getManager<UserManager>('UserManager')!;
-    const persons = engine.getManager<PersonManager>('PersonManager')!;
+    const persons = engine.getManager<IdentityManager>('IdentityManager')!;
     const roles = engine.getManager<RoleManager>('RoleManager')!;
     const sys = systemContext(engine, 'test: #2037');
 

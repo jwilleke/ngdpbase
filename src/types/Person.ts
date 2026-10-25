@@ -75,7 +75,7 @@ export interface Person {
 export type PersonUpdate = Partial<Omit<Person, '@context' | '@type' | '@id' | 'identifier'>>;
 
 /**
- * What a caller gives `PersonManager.create` (#1930): the person's fields.
+ * What a caller gives `IdentityManager.create` (#1930): the person's fields.
  * `identifier` is left out for a person with no account (one is generated);
  * UserManager passes the account's username when it creates the person for a
  * new account.

@@ -53,6 +53,8 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
 
+A permission that was renamed or split keeps working under its old name: a policy or an agent token naming it is read as what it now stands for, and a policy naming it is warned about once, at the first decision that reads it, naming the policy. The list is `RETIRED_PERMISSIONS` in `src/utils/permissionCatalog.ts`: `share-manage` is read as `share-create`, `share-extend` and `share-revoke` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)); `contact-read` as `identity-read` and `contact-manage` as `identity-manage`, accepted for one release only ([#2038](https://github.com/jwilleke/ngdpbase/issues/2038)). Name the new permissions in anything you write.
+
 ### How a decision is made
 
 In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with the policies from `PolicyDecisionPoint.policies()`:

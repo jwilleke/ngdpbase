@@ -4,7 +4,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { Role, RoleUpdate } from '../types/Role.js';
 import type { RoleProvider } from '../types/RoleProvider.js';
-import type PersonManager from './PersonManager.js';
+import type IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type UserManager from './UserManager.js';
 import type { Organization } from '../types/Organization.js';
@@ -40,9 +40,9 @@ interface MetricsManagerLike {
  *
  * Who holds a role is read about a named account, so the reads take the
  * caller's context (#2018): `resolveUserRoles` and `hasRole` read the
- * account's identity record through PersonManager's door (own under
- * `profile-manage`, anyone else's under `contact-read`), and `getById` asks
- * `contact-read`. Core's own reads, the per-request role resolution among
+ * account's identity record through IdentityManager's door (own under
+ * `profile-manage`, anyone else's under `identity-read`), and `getById` asks
+ * `identity-read`. Core's own reads, the per-request role resolution among
  * them, pass the system context, which is allowed without a policy evaluation.
  */
 /** The catalogue fields records written before #1431 step 1 carried (see stripCatalogueCopies). */
@@ -186,7 +186,7 @@ class RoleManager extends BaseManager {
     return this.provider;
   }
 
-  /** One role record by `@id`: its members are identity records, so `contact-read`, or core's own work (#2018). */
+  /** One role record by `@id`: its members are identity records, so `identity-read`, or core's own work (#2018). */
   async getById(ctx: ActorContext, id: string): Promise<Role | null> {
     await requireRecordAccess(this.engine, ctx, 'read');
     return this.requireProvider().getById(id);
@@ -254,7 +254,7 @@ class RoleManager extends BaseManager {
 
   // ── Membership (#1431 step 12) ───────────────────────────────────────────
   //
-  // A member is a Person `@id`; callers hold usernames, and PersonManager owns
+  // A member is a Person `@id`; callers hold usernames, and IdentityManager owns
   // the username → Person mapping. Moved from UserManager, behaviour kept.
 
   /**
@@ -264,22 +264,22 @@ class RoleManager extends BaseManager {
    * The pseudo-roles `'Authenticated'` and `'All'` are NOT added here — the
    * caller adds those when constructing `userContext.roles`.
    *
-   * Returns `[]` when PersonManager is unavailable, there is no account by
+   * Returns `[]` when IdentityManager is unavailable, there is no account by
    * that username, no record lists them, or the lookup throws. An account
    * missing its identity record gets it here (#2037).
    *
-   * `ctx` is who is asking (#2018), decided by PersonManager's door: a user
+   * `ctx` is who is asking (#2018), decided by IdentityManager's door: a user
    * about themselves under `profile-manage`, about anyone else under
-   * `contact-read`; core's own work passes the system context. A refusal is
+   * `identity-read`; core's own work passes the system context. A refusal is
    * thrown as `ContactRefusedError`, never answered as "no roles".
    */
   async resolveUserRoles(ctx: ActorContext, username: string): Promise<string[]> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) return [];
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) return [];
 
     try {
       // #2037: a user with no identity record gets it here; no account, no roles.
-      const person = await personManager.getByUserIdentifier(ctx, username);
+      const person = await identityManager.getByUserIdentifier(ctx, username);
       if (!person) return [];
       const roles = await this.listByMember(person['@id']);
       return roles.map((r) => r.namedPosition);
@@ -381,7 +381,7 @@ class RoleManager extends BaseManager {
    * All or nothing (#2015): when any change cannot be made, the ones already
    * made are undone and a `RoleChangeError` is thrown, after it is logged as
    * an error and admins are notified. That includes a change that cannot even
-   * be attempted: no PersonManager, no Person record for the username, or no
+   * be attempted: no IdentityManager, no Person record for the username, or no
    * anchor Organization.
    */
   async applyRoleDiff(username: string, oldRoles: string[], newRoles: string[]): Promise<void> {
@@ -446,9 +446,9 @@ class RoleManager extends BaseManager {
 
   /**
    * Move every membership held by one Person `@id` to another (#1930): when
-   * PersonManager joins an account to an existing person, the roles the
+   * IdentityManager joins an account to an existing person, the roles the
    * account's person held go with the account. Returns how many records
-   * changed. PersonManager's join records the change. All or nothing (#2015).
+   * changed. IdentityManager's join records the change. All or nothing (#2015).
    */
   async moveMemberships(fromPersonId: string, toPersonId: string): Promise<number> {
     const held = await this.listByMember(fromPersonId);
@@ -468,11 +468,11 @@ class RoleManager extends BaseManager {
    * role, so there is nothing to remove.
    */
   async removeAllMemberships(username: string): Promise<() => Promise<void>> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) {
-      throw await this.roleFailure(username, ['remove every role'], { reason: 'PersonManager is unavailable', notify: true });
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) {
+      throw await this.roleFailure(username, ['remove every role'], { reason: 'IdentityManager is unavailable', notify: true });
     }
-    const person = await personManager.getByIdentifier(systemContext(this.engine, `account lifecycle: remove every role of the deleted account ${username}`), username);
+    const person = await identityManager.getByIdentifier(systemContext(this.engine, `account lifecycle: remove every role of the deleted account ${username}`), username);
     if (!person) return async () => { /* nothing was removed */ };
     const memberOf = await this.listByMember(person['@id']);
     const done = await this.allOrNothing(username, memberOf.map((role) => this.memberChange(role, person['@id'], 'remove')), true);
@@ -504,12 +504,12 @@ class RoleManager extends BaseManager {
    * be left without the role it was given, nor keep one it was meant to lose.
    */
   private async membershipTarget(username: string, labels: string[], notify: boolean): Promise<{ personId: string; installOrg: Organization }> {
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!personManager) {
-      throw await this.roleFailure(username, labels, { reason: 'PersonManager is unavailable', notify });
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) {
+      throw await this.roleFailure(username, labels, { reason: 'IdentityManager is unavailable', notify });
     }
     // #2037: an account missing its identity record gets it here, so its roles can change.
-    const person = await personManager.getByUserIdentifier(systemContext(this.engine, `role change for account ${username}: ${labels.join(', ')}`), username);
+    const person = await identityManager.getByUserIdentifier(systemContext(this.engine, `role change for account ${username}: ${labels.join(', ')}`), username);
     if (!person) {
       throw await this.roleFailure(username, labels, { reason: 'there is no account by that username', notify });
     }

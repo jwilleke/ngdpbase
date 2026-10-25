@@ -11,7 +11,7 @@ import os from 'os';
 import path from 'path';
 import WikiEngine from '../WikiEngine';
 import type UserManager from '../managers/UserManager';
-import type PersonManager from '../managers/PersonManager';
+import type IdentityManager from '../managers/IdentityManager';
 import { systemPrincipalFromConfig } from '../security/PolicyInformationPoint';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword';
 import { becomeRunAsUser } from '../utils/runAsUser';
@@ -63,7 +63,7 @@ describe('required settings refuse before anything is written (#1953)', () => {
     await engine.initialize({});
 
     const users = engine.getManager<UserManager>('UserManager');
-    const persons = engine.getManager<PersonManager>('PersonManager');
+    const persons = engine.getManager<IdentityManager>('IdentityManager');
     expect(await users?.getUser('admin')).toBeTruthy();
     expect(await persons?.getByIdentifier(systemContext(engine, 'test: the bootstrap admin has its person'), 'admin')).toBeTruthy();
   }, 60_000);

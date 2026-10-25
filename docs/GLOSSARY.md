@@ -522,7 +522,7 @@ A digital identity with no credentials. A contact never acts and holds no roles;
 Preferred: __Identity record__
 Avoid: "person", "person record"
 
-What `IdentityManager` (today's `PersonManager`) keeps about every digital identity, user or contact: name, email, address, phones (`contactPoint`), affiliations. A record, never something that acts. Searching identities is `IdentityManager`'s.
+What `IdentityManager` (called `PersonManager` before #2038) keeps about every digital identity, user or contact: name, email, address, phones (`contactPoint`), affiliations. A record, never something that acts. Searching identities is `IdentityManager`'s.
 
 ### Role
 
@@ -548,7 +548,7 @@ An affiliation's name within its organization (Owner, Treasurer, Vendor), stored
 
 Preferred: __Profile__
 
-What a user reads and manages about themselves, at `/profile`, under `profile-manage`, which every user holds; it includes their own identity record. Reading anyone else's identity record needs `identity-read` (today `contact-read`), changing one `identity-manage` (today `contact-manage`).
+What a user reads and manages about themselves, at `/profile`, under `profile-manage`, which every user holds; it includes their own identity record. Reading anyone else's identity record needs `identity-read`, changing one `identity-manage` (called `contact-read` and `contact-manage` before #2038).
 
 ---
 

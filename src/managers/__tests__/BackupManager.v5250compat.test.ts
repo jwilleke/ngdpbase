@@ -28,7 +28,7 @@ import { gunzipSync } from 'node:zlib';
 import BackupManager from '../BackupManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import OrganizationManager from '../OrganizationManager';
-import PersonManager from '../PersonManager';
+import IdentityManager from '../IdentityManager';
 import RoleManager from '../RoleManager';
 import AttachmentManager from '../AttachmentManager';
 import CommentManager from '../CommentManager';
@@ -43,7 +43,9 @@ const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtu
 /** The test-only key the fixture is encrypted under. */
 const KEY = 'backup-key-not-a-secret';
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
-const CORE = ['BackgroundJobManager', 'OrganizationManager', 'PersonManager', 'RoleManager', 'AttachmentManager', 'CommentManager', 'FootnoteManager', 'AuthManager'] as const;
+const CORE = ['BackgroundJobManager', 'OrganizationManager', 'IdentityManager', 'RoleManager', 'AttachmentManager', 'CommentManager', 'FootnoteManager', 'AuthManager'] as const;
+/** The entries the core managers are recorded under: IdentityManager keeps v5.25.0's `PersonManager` entry (#2038). */
+const ENTRIES = CORE.map((name) => (name === 'IdentityManager' ? 'PersonManager' : name));
 const ADDONS = ['forms', 'calendar', 'feeds'] as const;
 
 let dir: string;
@@ -98,7 +100,7 @@ async function start(): Promise<{ backup: BackupManager; managers: Record<string
   };
   const order: string[] = [];
   const engine = { getManager: (n: string) => managers[n] ?? null, blockConfiguration: () => undefined, getRegisteredManagers: () => order };
-  const ctors = { BackgroundJobManager, OrganizationManager, PersonManager, RoleManager, AttachmentManager, CommentManager, FootnoteManager, AuthManager };
+  const ctors = { BackgroundJobManager, OrganizationManager, IdentityManager, RoleManager, AttachmentManager, CommentManager, FootnoteManager, AuthManager };
   for (const name of CORE) {
     const m = new ctors[name](engine);
     managers[name] = m;
@@ -163,7 +165,7 @@ describe('a v5.25.0 backup and the declared folders (#1985)', () => {
     const site = await start();
     const results = await site.backup.restoreFromFile(CTX, path.join(p.backups, fixtureDocument()));
     expect(results.failed).toEqual([]);
-    expect(results.success).toEqual(expect.arrayContaining([...CORE, 'FormsDataManager', 'CalendarDataManager', 'FeedManager']));
+    expect(results.success).toEqual(expect.arrayContaining([...ENTRIES, 'FormsDataManager', 'CalendarDataManager', 'FeedManager']));
     expect(notifications.map((n) => n.title)).toContain('A site restore is staged');
     await stop(site);
 
@@ -221,7 +223,7 @@ describe('a v5.25.0 backup and the declared folders (#1985)', () => {
 
     const now = await documentOf(file);
     const then = await documentOf(path.join(FIXTURE, fixtureDocument()));
-    for (const name of [...CORE, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']) {
+    for (const name of [...ENTRIES, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']) {
       expect({ name, ...(shapeOf(now.managers[name]) as object) }).toEqual({ name, ...(shapeOf(then.managers[name]) as object) });
     }
     expect(now.managers.RoleManager.data).toMatchObject({ format: 1, archive: `${stem(path.basename(file))}.roles.tar.enc`, files: 1 });
@@ -254,7 +256,7 @@ describe('the site restore record and v5.25.0 (#1986)', () => {
     const record = old.readSiteRestore(p.siteRestore);
     expect(record?.state).toBe('staged');
     const managers = record.parts.map((part) => part.manager);
-    expect(managers).toEqual(expect.arrayContaining([...CORE, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']));
+    expect(managers).toEqual(expect.arrayContaining([...ENTRIES, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']));
     for (const manager of managers) {
       expect(old.applyPartAtStart(p.siteRestore, manager, { allowed: () => true })).toMatchObject({ applied: expect.any(Array) });
     }
