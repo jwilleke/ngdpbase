@@ -1,0 +1,86 @@
+<%- include('header', { title: 'Set up your sign-in' }) %>
+
+<%# #2049 — where an invitation lands: a password or a passkey, the recovery words, the terms. %>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <h2 class="mb-3"><i class="fas fa-user-check"></i> Set up your sign-in</h2>
+      <p>Welcome, <strong><%= displayName %></strong>. Your username is <strong><%= username %></strong>. Choose how you will sign in from now on, then you are ready.</p>
+
+      <% if (success) { %>
+        <div class="alert alert-success" role="status" data-testid="setup-success"><%= success %></div>
+      <% } %>
+      <% if (error) { %>
+        <div class="alert alert-danger" role="alert" data-testid="setup-error"><%= error %></div>
+      <% } %>
+
+      <div class="card mb-3" data-testid="setup-sign-in">
+        <div class="card-header"><h5 class="mb-0">1. How you sign in</h5></div>
+        <div class="card-body">
+          <% if (isExternal) { %>
+            <p class="mb-0">You sign in through another service, so there is nothing to set up here.</p>
+          <% } else if (hasPassword) { %>
+            <p class="mb-0"><i class="fas fa-check text-success"></i> Your password is set. You can change it on your <a href="/profile">profile</a>.</p>
+          <% } else { %>
+            <% if (hasPasskey) { %>
+              <p><i class="fas fa-check text-success"></i> You have a passkey. You can also choose a password.</p>
+            <% } %>
+            <form action="/account/setup/password" method="POST">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="mb-3">
+                <label for="newPassword" class="form-label">Choose a password</label>
+                <input type="password" class="form-control" id="newPassword" name="newPassword" minlength="<%= minPasswordLength %>" autocomplete="new-password" required>
+                <div class="form-text">At least <%= minPasswordLength %> characters.</div>
+              </div>
+              <div class="mb-3">
+                <label for="confirmPassword" class="form-label">Type it again</label>
+                <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" minlength="<%= minPasswordLength %>" autocomplete="new-password" required>
+              </div>
+              <button type="submit" class="btn btn-primary" data-testid="setup-password-submit">Set my password</button>
+            </form>
+            <% if (passkeys) { %>
+              <hr>
+              <p class="mb-0">Or use a passkey instead of a password: your phone, computer or security key signs you in.
+                <a href="/profile#sign-in-methods" data-testid="setup-passkey">Add a passkey on your profile</a>.</p>
+            <% } %>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="card mb-3" data-testid="setup-recovery-words">
+        <div class="card-header"><h5 class="mb-0">2. Your recovery words</h5></div>
+        <div class="card-body">
+          <% if (sealedStores.length === 0) { %>
+            <p class="mb-0">This site keeps no encrypted private stores, so you have no recovery words to keep.</p>
+          <% } else { %>
+            <p>This site can keep your private pages encrypted. When you open an encrypted store for the first time, you are shown 12 recovery words, once. Write them down and keep them somewhere safe: if you forget your password, they are the only way back into your encrypted pages. Nobody else, not even an administrator, can open them for you.</p>
+            <% if (hasPassword) { %>
+              <ul class="mb-0">
+                <% sealedStores.forEach(function (id) { %>
+                  <li><a href="/stores/<%= encodeURIComponent(id) %>">Open your <%= id %> store and see your recovery words</a></li>
+                <% }); %>
+              </ul>
+            <% } else { %>
+              <p class="mb-0 text-muted">Choose a password first; your encrypted store opens with it.</p>
+            <% } %>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="card mb-3" data-testid="setup-terms">
+        <div class="card-header"><h5 class="mb-0">3. The site's terms</h5></div>
+        <div class="card-body">
+          <% if (termsPending) { %>
+            <p class="mb-0">There are terms for you to read and accept. <a href="/consent?returnTo=<%= encodeURIComponent('/account/setup') %>">Read and accept them</a>.</p>
+          <% } else { %>
+            <p class="mb-0"><i class="fas fa-check text-success"></i> Nothing is waiting for you to accept.</p>
+          <% } %>
+        </div>
+      </div>
+
+      <a href="/" class="btn btn-success" data-testid="setup-done">I'm done</a>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>

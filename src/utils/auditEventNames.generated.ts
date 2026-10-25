@@ -67,6 +67,14 @@ export const AUDIT_EVENT = {
   FOOTNOTE_EDIT: 'footnote-edit',
   /** Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values */
   IDENTITY_MANAGE: 'identity-manage',
+  /** Invitation cancelled (#2049): an administrator cancelled it or sent a new one, the email could not be sent, or the account was deleted; the link stops working */
+  INVITATION_CANCEL: 'invitation-cancel',
+  /** Invitation expired (#2049): the link was not used in time and was removed */
+  INVITATION_EXPIRE: 'invitation-expire',
+  /** Invitation sent (#2049): a one-time link emailed to a new user to set up their sign-in; user is who sent it, resource the account invited. A credential nobody knows exists is the worst case, so it is recorded before the link exists */
+  INVITATION_SEND: 'invitation-send',
+  /** Invitation used (#2049): the invited user opened their link and was signed in once; the link is spent */
+  INVITATION_USE: 'invitation-use',
   /** A background job finished successfully */
   JOB_COMPLETED: 'job-completed',
   /** A background job failed */

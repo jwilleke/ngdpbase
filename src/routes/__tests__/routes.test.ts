@@ -351,7 +351,9 @@ vi.mock('../../WikiEngine', () => {
           ExportManager: mockExportManager,
           ValidationManager: mockValidationManager,
           CacheManager: mockCacheManager,
-          BackgroundJobManager: mockBackgroundJobManager
+          BackgroundJobManager: mockBackgroundJobManager,
+          // #2049: the user list shows the invitations waiting.
+          AuthManager: { listInvitations: vi.fn().mockResolvedValue([]), invitationsUnavailable: vi.fn().mockReturnValue(null) }
         };
         return mockManagers[name] || {};
       }),

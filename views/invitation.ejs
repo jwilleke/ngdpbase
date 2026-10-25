@@ -1,0 +1,48 @@
+<%- include('header', { pageName: '' }) %>
+
+<%
+// #2049 — an invitation link. GET shows it and changes nothing; the button
+// POSTs with the session's CSRF token, which a mail scanner that opens the
+// link does not have (the magic-link rule, #1019). Never auto-submit.
+%>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card mt-5" data-testid="invitation">
+                <div class="card-header text-center">
+                    <h4>Welcome to <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></h4>
+                </div>
+                <div class="card-body">
+                    <% if (invitation) { %>
+                        <p>
+                            An account has been made for you, <strong><%= invitation.displayName %></strong>,
+                            with the username <strong><%= invitation.username %></strong>.
+                        </p>
+                        <p>
+                            Continue to sign in and choose how you will sign in from now on: a password or a passkey.
+                        </p>
+                        <form action="/invitation" method="POST">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="t" value="<%= token %>">
+                            <button type="submit" class="btn btn-primary w-100" data-testid="invitation-continue">
+                                <i class="fas fa-sign-in-alt"></i> Continue
+                            </button>
+                        </form>
+                        <p class="text-muted small text-center mt-3 mb-0">
+                            This link works once, until <time data-local-time datetime="<%= invitation.expiresAt %>"><%= invitation.expiresAt %></time>.
+                        </p>
+                    <% } else { %>
+                        <div class="alert alert-warning mb-0" role="alert" data-testid="invitation-dead">
+                            This invitation link has already been used, has expired, or was cancelled.
+                            Ask the person who invited you to send a new one. If you have already set up
+                            your sign-in, <a href="/login">sign in</a> as usual.
+                        </div>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>
