@@ -1023,7 +1023,10 @@ describe('a user sets their own contact details (#2073)', () => {
       expect(err).toMatchObject({ name: 'ContactDetailsInvalidError', part, field, message });
       expect(err.message).not.toContain('secret');
       expect(err.message).not.toContain('5550000');
+      // The same check with nothing written, for a caller that writes elsewhere first.
+      expect(() => site.persons.checkContactDetails(input)).toThrow(expect.objectContaining({ name: 'ContactDetailsInvalidError', part, field, message }));
     }
+    expect(() => site.persons.checkContactDetails({ phones: [phone('home', '(415) 555-2671')], address: { streetAddress: '1 Home St' } })).not.toThrow();
     expect((await site.persons.getById(pat, own['@id']))?.contactPoint).toEqual([{ '@type': 'ContactPoint', contactType: 'home', telephone: '+14155552671' }]);
     expect(site.contacts().length).toBe(before);
   });

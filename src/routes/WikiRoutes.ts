@@ -10607,27 +10607,38 @@ ${panes}
       }
       if (accountChanges.email !== undefined && !(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
 
+      // Everything is checked before anything is written; then the account, then the identity record,
+      // so a failure says exactly what was saved.
       const identities = this.engine.getManager('IdentityManager');
+      identities.checkContactDetails(details);
       const own = await identities.getByUserIdentifier(user, username);
-      if (!own) return answer('error', 'Your contact details could not be saved.');
-      await identities.updateContactDetails(user, own['@id'], details);
-      if (Object.keys(accountChanges).length > 0) {
+      if (!own) return answer('error', 'Your contact details could not be saved. Nothing was saved.');
+      const accountFields = Object.keys(accountChanges) as Array<'displayName' | 'email'>;
+      if (accountFields.length > 0) {
         try {
           await userManager.updateUser(username, accountChanges, user);
         } catch (err: unknown) {
           // #1748: one email, one account — said plainly, without naming the other account.
           if (err instanceof UserCreateError && err.reason === 'email-taken') {
-            return answer('error', 'Your other details were saved, but that email address is already used by another account. Please use another.');
+            return answer('error', 'That email address is already used by another account. Please use another. Nothing was saved.');
           }
           throw err;
         }
+      }
+      try {
+        await identities.updateContactDetails(user, own['@id'], details);
+      } catch (err: unknown) {
+        if (accountFields.length === 0) throw err;
+        logger.warn(`[profile] The name or email of ${username} was saved, but not the other contact details: ${getErrorMessage(err)}`);
+        const saved = accountFields.length === 2 ? 'name and email were' : accountFields[0] === 'email' ? 'email was' : 'name was';
+        return answer('error', `Your ${saved} saved, but your other contact details could not be saved. Try again.`);
       }
       answer('success', 'Contact details saved.');
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
       if (err instanceof ContactDetailsInvalidError) return answer('error', `${contactDetailLabel(err.part, err.field)} ${err.message}. Nothing was saved.`);
       logger.warn(`[profile] Saving the contact details of ${username} failed: ${getErrorMessage(err)}`);
-      answer('error', 'Your contact details could not be saved.');
+      answer('error', 'Your contact details could not be saved. Nothing was saved.');
     }
   }
 

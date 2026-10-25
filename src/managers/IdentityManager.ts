@@ -458,44 +458,7 @@ class IdentityManager extends BaseManager {
     const record = await this.cachedById(id);
     await requireRecordAccess(this.engine, ctx, 'manage', record);
     if (!record) return null;
-    const fallback = this.defaultCountry();
-    const given = input ?? {};
-    const next: Record<string, unknown> = {};
-
-    for (const key of ['givenName', 'familyName'] as const) {
-      if (given[key] !== undefined) next[key] = textOf(given[key], key, 'name') || undefined;
-    }
-    let entries = [...(record.contactPoint ?? [])];
-    for (const phone of given.phones ?? []) {
-      const contactType = textOf(phone?.contactType, 'phone', 'contactType');
-      if (!contactType || contactType === 'emergency') throw new ContactDetailsInvalidError(contactType, 'contactType', 'is not a kind of phone');
-      entries = withContactPoint(entries, contactType, phoneFields(contactType, phone, fallback));
-    }
-    if (given.emergency) {
-      const e = given.emergency;
-      const email = textOf(e.email, 'emergency', 'email');
-      if (email && !isEmail(email)) throw new ContactDetailsInvalidError('emergency', 'email', 'is not an email address');
-      entries = withContactPoint(entries, 'emergency', { name: textOf(e.name, 'emergency', 'name'), email, ...phoneFields('emergency', e.phone ?? {}, fallback) });
-    }
-    if (given.mailing) entries = withMailingAddress(entries, addressFields('mailing', given.mailing, fallback));
-    next.contactPoint = entries.length > 0 ? entries : undefined;
-    if (given.address) next.address = withAddress(record.address, addressFields('address', given.address, fallback));
-    if (given.knowsLanguage) {
-      const tags: string[] = [];
-      for (const language of given.knowsLanguage) {
-        const typed = textOf(language, 'knowsLanguage', 'language');
-        if (!typed) continue;
-        const tag = languageTag(typed);
-        if (!tag) throw new ContactDetailsInvalidError('knowsLanguage', 'language', 'has a language we do not know: use names such as English or Spanish');
-        if (!tags.includes(tag)) tags.push(tag);
-      }
-      next.knowsLanguage = tags.length > 0 ? tags : undefined;
-    }
-    if (given.image !== undefined) next.image = webAddress(given.image, 'image') || undefined;
-    if (given.sameAs) {
-      const links = given.sameAs.map((link) => webAddress(link, 'sameAs')).filter(Boolean);
-      next.sameAs = links.length > 0 ? [...new Set(links)] : undefined;
-    }
+    const next = contactDetailsChanges(record, input, this.defaultCountry());
 
     // Only what changed goes to the door, so the record names those fields alone.
     const patch: Record<string, unknown> = {};
@@ -504,6 +467,17 @@ class IdentityManager extends BaseManager {
     }
     if (Object.keys(patch).length === 0) return record;
     return this.update(ctx, id, patch);
+  }
+
+  /**
+   * Check `input` as {@link updateContactDetails} would, writing nothing
+   * (#2073): throws {@link ContactDetailsInvalidError} for a bad part. For a
+   * caller that writes something else first (the /profile card writes the
+   * account's name and email), so a bad detail refuses the whole save before
+   * anything is written.
+   */
+  checkContactDetails(input: ContactDetailsInput): void {
+    contactDetailsChanges({}, input, this.defaultCountry());
   }
 
   /** The country a phone or address is read with when none is chosen (#2073): `ngdpbase.application.persons.default-country`, `US` when unset or unknown. */
@@ -812,6 +786,52 @@ class IdentityManager extends BaseManager {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join('');
   }
+}
+
+/**
+ * What {@link IdentityManager.updateContactDetails} sets on `record` from
+ * `input` (#2073), every part checked: the new values by field, `undefined`
+ * for one removed. Throws {@link ContactDetailsInvalidError}; writes nothing.
+ */
+function contactDetailsChanges(record: Pick<Person, 'contactPoint' | 'address'>, input: ContactDetailsInput, fallback: string): Record<string, unknown> {
+  const given = input ?? {};
+  const next: Record<string, unknown> = {};
+
+  for (const key of ['givenName', 'familyName'] as const) {
+    if (given[key] !== undefined) next[key] = textOf(given[key], key, 'name') || undefined;
+  }
+  let entries = [...(record.contactPoint ?? [])];
+  for (const phone of given.phones ?? []) {
+    const contactType = textOf(phone?.contactType, 'phone', 'contactType');
+    if (!contactType || contactType === 'emergency') throw new ContactDetailsInvalidError(contactType, 'contactType', 'is not a kind of phone');
+    entries = withContactPoint(entries, contactType, phoneFields(contactType, phone, fallback));
+  }
+  if (given.emergency) {
+    const e = given.emergency;
+    const email = textOf(e.email, 'emergency', 'email');
+    if (email && !isEmail(email)) throw new ContactDetailsInvalidError('emergency', 'email', 'is not an email address');
+    entries = withContactPoint(entries, 'emergency', { name: textOf(e.name, 'emergency', 'name'), email, ...phoneFields('emergency', e.phone ?? {}, fallback) });
+  }
+  if (given.mailing) entries = withMailingAddress(entries, addressFields('mailing', given.mailing, fallback));
+  next.contactPoint = entries.length > 0 ? entries : undefined;
+  if (given.address) next.address = withAddress(record.address, addressFields('address', given.address, fallback));
+  if (given.knowsLanguage) {
+    const tags: string[] = [];
+    for (const language of given.knowsLanguage) {
+      const typed = textOf(language, 'knowsLanguage', 'language');
+      if (!typed) continue;
+      const tag = languageTag(typed);
+      if (!tag) throw new ContactDetailsInvalidError('knowsLanguage', 'language', 'has a language we do not know: use names such as English or Spanish');
+      if (!tags.includes(tag)) tags.push(tag);
+    }
+    next.knowsLanguage = tags.length > 0 ? tags : undefined;
+  }
+  if (given.image !== undefined) next.image = webAddress(given.image, 'image') || undefined;
+  if (given.sameAs) {
+    const links = given.sameAs.map((link) => webAddress(link, 'sameAs')).filter(Boolean);
+    next.sameAs = links.length > 0 ? [...new Set(links)] : undefined;
+  }
+  return next;
 }
 
 /** The fields whose presence keeps a contactPoint entry (#2073): with none left, it is dropped. */

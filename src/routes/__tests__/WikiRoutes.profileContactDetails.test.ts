@@ -17,7 +17,12 @@
  * - the shared-account lock skipped → "a shared account's name and email
  *   stay an administrator's" went red;
  * - the email sent to UserManager on every save → "an unchanged name and
- *   email are not sent" went red.
+ *   email are not sent" went red;
+ * - the identity record written before the account again → "the account is
+ *   written first" went red (the record was written though the account
+ *   change failed);
+ * - the checks run inside the write only → "a bad detail is refused before
+ *   the account is written" went red.
  */
 
 import WikiRoutes from '../WikiRoutes';
@@ -49,20 +54,26 @@ const createMockRes = () => ({
   send: vi.fn().mockReturnThis()
 });
 
-function makeRoutes(opts: { fail?: Error; accountFail?: Error; account?: Record<string, unknown> } = {}) {
+/**
+ * `fail`: what the identity door's check throws (a bad detail); `identityFail`: what its write
+ * rejects with; `lookupFail`: what reading the user's own record rejects with.
+ */
+function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown> } = {}) {
+  const order: string[] = [];
   const identityManager = {
-    getByUserIdentifier: vi.fn((_ctx: unknown, username: string) => Promise.resolve({ '@id': username === 'pat' ? OWN_ID : 'urn:uuid:other', identifier: username })),
-    updateContactDetails: vi.fn((..._args: unknown[]) => (opts.fail ? Promise.reject(opts.fail) : Promise.resolve({})))
+    checkContactDetails: vi.fn((..._args: unknown[]) => { order.push('check'); if (opts.fail) throw opts.fail; }),
+    getByUserIdentifier: vi.fn((_ctx: unknown, username: string) => (opts.lookupFail ? Promise.reject(opts.lookupFail) : Promise.resolve({ '@id': username === 'pat' ? OWN_ID : 'urn:uuid:other', identifier: username }))),
+    updateContactDetails: vi.fn((..._args: unknown[]) => { order.push('identity'); return opts.identityFail ? Promise.reject(opts.identityFail) : Promise.resolve({}); })
   };
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(opts.account ?? ACCOUNT)),
-    updateUser: vi.fn((..._args: unknown[]) => (opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT)))
+    updateUser: vi.fn((..._args: unknown[]) => { order.push('account'); return opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT); })
   };
   const policyDecisionPoint = { permits: vi.fn(() => Promise.resolve(true)) };
   const managers: Record<string, unknown> = { IdentityManager: identityManager, UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
   const engine = { getManager: vi.fn((name: string) => managers[name] ?? null) };
   const routes = new WikiRoutes(engine);
-  return { routes, identityManager, userManager };
+  return { routes, identityManager, userManager, order };
 }
 
 const target = (res: ReturnType<typeof createMockRes>): string => decodeURIComponent(String(res.redirect.mock.calls[0]?.[0] ?? ''));
@@ -226,11 +237,52 @@ describe('POST /profile/contact-details (#2073)', () => {
     const { routes } = makeRoutes({ accountFail: new UserCreateError('email-taken', 'taken') });
     const res = createMockRes();
     await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'theirs@example.org' }), res);
-    expect(target(res)).toBe('/profile?contactDetailsError=Your other details were saved, but that email address is already used by another account. Please use another.#contact-details');
+    expect(target(res)).toBe('/profile?contactDetailsError=That email address is already used by another account. Please use another. Nothing was saved.#contact-details');
+  });
+
+  test('a bad detail is refused before the account is written, so nothing is saved', async () => {
+    const { routes, identityManager, userManager } = makeRoutes({ fail: new ContactDetailsInvalidError('mobile', 'telephone', 'is not a phone number we can read: check it and the country beside it') });
+    const res = createMockRes();
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New', email: 'new@example.org', mobilePhone: 'call me' }), res);
+    expect(userManager.updateUser).not.toHaveBeenCalled();
+    expect(identityManager.updateContactDetails).not.toHaveBeenCalled();
+    expect(target(res)).toContain('Nothing was saved.');
+  });
+
+  test('the account is written first and the identity record only after it succeeds; a failure says exactly what was saved', async () => {
+    const ok = makeRoutes();
+    await ok.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New', homePhone: '(415) 555-2671' }), createMockRes());
+    expect(ok.order).toEqual(['check', 'account', 'identity']);
+
+    // The account change fails: the identity record is not written, and nothing was saved.
+    const accountDown = makeRoutes({ accountFail: new Error('disk full') });
+    const res = createMockRes();
+    await accountDown.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'new@example.org', homePhone: '(415) 555-2671' }), res);
+    expect(accountDown.identityManager.updateContactDetails).not.toHaveBeenCalled();
+    expect(target(res)).toBe('/profile?contactDetailsError=Your contact details could not be saved. Nothing was saved.#contact-details');
+
+    // The account is saved, then the identity record fails: the page says which part was saved.
+    for (const [body, saved] of [
+      [{ ...FORM, displayName: 'New', email: 'new@example.org' }, 'name and email were'],
+      [{ ...FORM, email: 'new@example.org' }, 'email was'],
+      [{ ...FORM, displayName: 'New' }, 'name was']
+    ] as const) {
+      const identityDown = makeRoutes({ identityFail: new Error('disk full') });
+      const out = createMockRes();
+      await identityDown.routes.updateOwnContactDetails(createMockReq('pat', { ...body }), out);
+      expect(identityDown.order).toEqual(['check', 'account', 'identity']);
+      expect(target(out)).toBe(`/profile?contactDetailsError=Your ${saved} saved, but your other contact details could not be saved. Try again.#contact-details`);
+    }
+
+    // No account change: an identity failure saved nothing.
+    const onlyDetails = makeRoutes({ identityFail: new Error('disk full') });
+    const out = createMockRes();
+    await onlyDetails.routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, homePhone: '(415) 555-2671' }), out);
+    expect(target(out)).toBe('/profile?contactDetailsError=Your contact details could not be saved. Nothing was saved.#contact-details');
   });
 
   test('a door refusal is answered as a refusal, never saved', async () => {
-    const { routes, userManager } = makeRoutes({ fail: new ContactRefusedError('profile-manage', { permit: false, applicable: true, reason: 'test' }) });
+    const { routes, userManager } = makeRoutes({ lookupFail: new ContactRefusedError('profile-manage', { permit: false, applicable: true, reason: 'test' }) });
     const refuse = vi.spyOn(routes as unknown as { refuse: (...a: unknown[]) => Promise<void> }, 'refuse').mockResolvedValue(undefined);
     const res = createMockRes();
     await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, displayName: 'New' }), res);
