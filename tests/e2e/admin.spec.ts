@@ -120,6 +120,13 @@ test.describe('Admin Dashboard', () => {
       // #1721: core's maintenance jobs are listed on every site.
       await expect(page.locator('code', { hasText: 'sessions.key-sweep' })).toHaveCount(1);
     });
+
+    test('the roles page has a Jobs part: a job no policy names runs with the system roles (#2067)', async ({ page }) => {
+      await page.goto('/admin/roles');
+      await expect(page.locator('h1')).toContainText('Roles and Permissions');
+      await expect(page.locator('#jobs h5')).toHaveText('Jobs');
+      await expect(page.locator('[data-job="sessions.key-sweep"]')).toContainText('Runs with the system roles');
+    });
   });
 
   test.describe('Admin Security', () => {

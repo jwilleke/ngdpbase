@@ -1,7 +1,7 @@
 /**
  * What each role is granted, for the admin user forms — #1521.
  */
-import { roleGrants } from '../roleGrants';
+import { jobGrants, roleGrants } from '../roleGrants';
 
 describe('roleGrants (#1521)', () => {
   test('collects what each role\'s policies allow, across policies', () => {
@@ -48,5 +48,22 @@ describe('roleGrants (#1521)', () => {
       { id: 'd', effect: 'deny', subjects: [{ type: 'role', value: 'demo-admin' }], actions: ['page-edit'] }
     ] as never);
     expect(grants['demo-admin']).toEqual({ allows: [], denies: ['page-edit'] });
+  });
+});
+
+describe('jobGrants (#2067)', () => {
+  test('what each job a policy names is granted, with the policies that grant it; role subjects are not jobs', () => {
+    const policies = [
+      { id: 'a', effect: 'allow', priority: 10, subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-read'] },
+      { id: 'b', effect: 'allow', priority: 20, subjects: [{ type: 'job', value: 'x.digest' }, { type: 'role', value: 'reader' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read', 'page-edit'] },
+      { id: 'c', effect: 'deny', priority: 30, subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-edit'] }
+    ] as never;
+    expect(jobGrants(policies)).toEqual({
+      'x.digest': { allows: [{ action: 'page-read', limited: false, where: [], by: ['a', 'b'] }], denies: ['page-edit'] }
+    });
+    // roleGrants reads role subjects only, in its own shape.
+    expect(roleGrants(policies)).toEqual({
+      reader: { allows: [{ action: 'page-edit', limited: false, where: [] }, { action: 'page-read', limited: false, where: [] }], denies: [] }
+    });
   });
 });

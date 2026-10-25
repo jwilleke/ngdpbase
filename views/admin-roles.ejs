@@ -125,5 +125,67 @@
     </div>
 </div>
 
+<%# #2067: scheduled jobs. A job an access policy names acts as itself (#1999) and may do only
+    what those policies give it; a job no policy names runs with the system roles. %>
+<div class="card mt-4" id="jobs">
+    <div class="card-header">
+        <h5 class="mb-0">Jobs</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted">
+            A scheduled job that an access policy names may do only what those policies give it.
+            A job no policy names runs with the system roles.
+        </p>
+        <% if (typeof jobs !== 'undefined' && jobs.length > 0) { %>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm" data-testid="roles-jobs">
+                <thead>
+                    <tr>
+                        <th style="width: 300px;">Job</th>
+                        <th>What it may do</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% jobs.forEach(job => { %>
+                    <tr data-job="<%= job.id %>">
+                        <td>
+                            <%= job.displayName %>
+                            <br><small class="text-muted"><code><%= job.id %></code></small>
+                            <% if (!job.scheduled) { %>
+                            <br><small class="text-muted">Not scheduled on this site</small>
+                            <% } %>
+                        </td>
+                        <td>
+                            <% if (!job.ownPermissions) { %>
+                            Runs with the system roles<% if (job.systemRoles.length > 0) { %> (<%= job.systemRoles.join(', ') %>)<% } %>
+                            <% } else if (job.grants.length === 0) { %>
+                            Holds no permissions
+                            <% } else { %>
+                            <ul class="list-unstyled mb-0">
+                                <% job.grants.forEach(g => { %>
+                                <li>
+                                    <i class="fas <%= g.limited ? 'fa-adjust text-info' : 'fa-check text-success' %>"<% if (g.limited) { %> title="Only on some pages"<% } %>></i>
+                                    <code class="text-primary"><%= g.key %></code>
+                                    <small class="text-muted"><%= g.label %></small>
+                                    <small>— granted by <%= g.policies.join(', ') %></small>
+                                </li>
+                                <% }); %>
+                            </ul>
+                            <% } %>
+                            <% if (job.denies.length > 0) { %>
+                            <div class="mt-1"><small class="text-muted">Refused by a policy: <%= job.denies.map(d => d.label).join(', ') %></small></div>
+                            <% } %>
+                        </td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+        <% } else { %>
+        <p class="mb-0">No scheduled jobs on this site.</p>
+        <% } %>
+    </div>
+</div>
+
 
 <%- include('footer') %>
