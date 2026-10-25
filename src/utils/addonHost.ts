@@ -21,6 +21,8 @@
  *   `createGuardedElasticsearchClient`, `refusedNodeMessage`), `isAtLeast`
  *   and `zonedParts` (#1998) are core's own pure functions, handed on
  *   unchanged, so an add-on never imports them from `dist/` (#1813);
+ * - `keyedSerial()` returns a new `KeyedSerial`, core's own per-key queue, so
+ *   an add-on's manager changes each of its records one at a time (#2065);
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -38,6 +40,7 @@ import { validateUrl } from '../http/ssrf.js';
 import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
 import { isAtLeast } from './version.js';
 import { zonedParts } from './availability.js';
+import { KeyedSerial } from './keyedSerial.js';
 import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
@@ -93,6 +96,12 @@ export interface AddonHost {
    * day the slot falls in. An unknown zone answers in UTC.
    */
   readonly zonedParts: typeof zonedParts;
+  /**
+   * #2065: a new `KeyedSerial` (core's own) at each call; take one per manager.
+   * Run each read-modify-write of one of your records inside `run(recordId, fn)`,
+   * the read included. Not re-entrant: `fn` must not `run` the same key again.
+   */
+  readonly keyedSerial: () => KeyedSerial;
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -214,6 +223,7 @@ export function buildAddonHost(
     createGuardedElasticsearchClient,
     refusedNodeMessage,
     isAtLeast,
-    zonedParts
+    zonedParts,
+    keyedSerial: () => new KeyedSerial()
   });
 }
