@@ -180,7 +180,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Security: [SECURITY.md](./SECURITY.md) — secrets, auth, dependencies
 - Authorization and audit in code: [docs/guides/security-developer-guide.md](docs/guides/security-developer-guide.md) — the practice; it applies [docs/security-posture.md](docs/security-posture.md) and [docs/audit-posture.md](docs/audit-posture.md). __Mandatory__ — see Critical Technical Mandates.
 - Testing: [docs/guides/testing-developer-guide.md](docs/guides/testing-developer-guide.md) — CRITICAL, read before modifying code. Also see [CODE_STANDARDS.md § Testing](./CODE_STANDARDS.md#testing).
-- Glossary: [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical terms (Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild)
+- Glossary: [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical terms, used exactly everywhere. Includes the server terms (Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild) and the __identity terms__ (digital identity, credentials, user, contact, identity record, role, affiliation, title). Never use "person" on its own, and never call an affiliation's title a "role".
+- Identity model: [docs/planning/identity-model.md](docs/planning/identity-model.md) — the operator-approved model for users, contacts, roles and affiliations (epic #2035). Read it before touching identities, roles or affiliations.
+- Who owns what: [docs/managers/Manager-SOT.md](docs/managers/Manager-SOT.md) — one owner per job; a manager's job is a method on that manager, no helpers or pass-throughs. Apply it to "who should own this" questions instead of asking.
+- Developer guides: [docs/guides/](docs/guides/README.md) — the source of truth developers follow. A change that alters behaviour updates the guide (rules and Known gaps) in the same change.
 
 ## Process
 
@@ -188,7 +191,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow, PRs
 - Commit message format: conventional commits (`type(scope): description`) per [CODE_STANDARDS.md § Git Commit Messages](./CODE_STANDARDS.md#git-commit-messages).
 - Commit workflow: every non-trivial code commit triggers the full [.claude/commands/session-commit.md](.claude/commands/session-commit.md) flow (jimstest pre-flight, semver decision, project_log entry, GH issue comments, TODO.md refresh, log push) — even when `/session-commit` was not explicitly invoked. Docs-only commits skip the build/test pre-flight but still get a project_log entry.
-- GitHub interactions: prefer the `gh` CLI for issues, PRs, checks, and releases. For new issues, always use `gh issue create --template <name>` against the templates in `.github/ISSUE_TEMPLATE/` (`bug_report.md`, `feature_request.md`, `epic.md`) — they set labels, assignees, and title prefixes correctly.
+- GitHub interactions: prefer the `gh` CLI for issues, PRs, checks, and releases. For new issues, always use the templates in `.github/ISSUE_TEMPLATE/` (`bug_report.md`, `feature_request.md`, `epic.md`): `gh issue create --template <name>` when writing interactively, or, with a prepared body, the template's headings in the body plus its labels, assignee and title prefix by hand (`--template` cannot be combined with `--body-file`; e.g. `-l bug -l P1 -a jwilleke`). Every bug gets P1 or P0.
 - Pre-commit: Husky runs ESLint + Markdownlint; see [CODE_STANDARDS.md § Pre-commit Hooks](./CODE_STANDARDS.md#pre-commit-hooks). Do not bypass with `--no-verify`.
 - Publishing contract: [RELEASES.md](./RELEASES.md) states explicitly what ngdpbase publishes for each release (git tag, Docker image at `ghcr.io/jwilleke/ngdpbase`, CHANGELOG, GH Release for minor/major) and what it deliberately does NOT do for downstream consumers (no notifications, no cross-repo pin updates, no consumer re-deploys). Reference when a consumer-side lag issue is filed (see #783).
 

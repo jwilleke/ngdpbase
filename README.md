@@ -1,39 +1,24 @@
 # ngdpbase
 
-A file-based wiki application built with __Node.js__, __Express__, __TypeScript__, and __Markdown__, inspired by [JSPWiki](https://github.com/apache/jspwiki).
+A general-purpose, file-based platform for pages, files and records, built with __Node.js__, __Express__, __TypeScript__ and __Markdown__. Its page syntax was inspired by [JSPWiki](https://github.com/apache/jspwiki). Add-ons build on it (health records, accounting, an association's units and owners, calendars, forms).
 
-📋 __See [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) for project vision, technical specifications, and feature priorities.__
+📋 __See [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) for project vision and priorities.__
 
 ## Features
 
-- Create, view, and edit wiki pages
-- Advanced search with multi-criteria filtering
-- JSPWiki-style link syntax with pipe notation
-- Category and keyword-based organization
-- Red link detection for non-existent pages
-- Three-state authentication system
-- Professional UI with Bootstrap styling
-- Pages are stored as Markdown files
-- __Inline image support with upload functionality__
-- __Plugin system for extensible functionality__
-- __Policy-Based Access Control__: Advanced permission system with JSON configuration
-- __Comprehensive Audit Trail__: Complete security monitoring and access logging
-- __Time-Based Permissions__: Context-aware permissions with scheduling and maintenance mode
-- __Admin Dashboard__: Full administrative interface for user management and system monitoring
-- __WikiDocument DOM Architecture__: Robust, JSPWiki-inspired parsing engine with DOM-based processing
-- __Conflict-Free Parsing__: JSPWiki syntax and Markdown coexist without interference
-- __📚 Page Version History__: Complete version control with diff comparison and restore capabilities
-  - View all previous versions of any page
-  - Compare versions side-by-side or unified diff
-  - Restore to any previous version
-  - Automatic delta storage for efficiency
-  - Full version metadata tracking
-- __🤖 Model Context Protocol (MCP) Server__: AI assistant integration for enhanced productivity
-  - Direct AI access to wiki content and metadata
-  - Full-text search with advanced filtering
-  - Metadata validation and generation
-  - 12 specialized tools for wiki operations
-  - Integration with Claude Desktop and Claude Code CLI
+- __Pages__ stored as Markdown files, with JSPWiki-style links, categories and keywords, red links for missing pages, and full version history (diff, compare, restore)
+- __Private and encrypted vaults__: a user's own pages and files, optionally encrypted, shareable by link
+- __Files and media__: attachments, a shared file pool, a media library with thumbnails
+- __Import__: a user-facing import screen and engine (`/import`) with add-on converters ("shims") and receivers, duplicate detection and kept originals
+- __Users and sign-in__: passwords, passkeys, outside sign-in (OIDC), recovery words, step-up for sensitive actions, proxy access (acting for another user), agent tokens
+- __Identities__: users and contacts with identity records, organizations and affiliations — terms defined in [docs/GLOSSARY.md](docs/GLOSSARY.md)
+- __Policy-based access control__: permissions and roles as configuration, decided in one place (PDP/PIP), page audiences and access rules
+- __Audit trail__: every security-relevant action recorded, tamper-evident chain
+- __Consent__: terms and privacy documents with versions; users accept, with a banner when terms change
+- __Add-ons__: a host API, manifest, own databases (encrypted when personal), profile sections, background jobs
+- __Backups__: whole-site backup and staged restore
+- __Admin dashboard__: users, roles, contacts, configuration, jobs, maintenance mode
+- __🤖 Model Context Protocol (MCP) server__ for AI assistants (Claude Desktop, Claude Code): search and read content and metadata
 
 📖 __Detailed technical documentation available in [docs/](docs/) folder.__
 
@@ -198,11 +183,11 @@ ngdpbase/
 │   ├── testing/          # Testing documentation
 │   └── managers/         # Manager documentation
 ├── scripts/               # Utility scripts
-├── templates/             # Wiki page templates
+├── templates/             # Page templates
 ├── themes/                # UI themes
 ├── required-pages/        # System pages seeded on first boot
 ├── data/                  # All instance-specific runtime data
-│   ├── pages/            # User-created wiki pages
+│   ├── pages/            # User-created pages
 │   ├── users/            # User accounts and profiles
 │   ├── attachments/      # Uploaded file storage
 │   ├── backups/          # System backups (BackupManager)
@@ -218,7 +203,7 @@ ngdpbase/
 
 ## Examples
 
-__Creating a Wiki Page Link (JSPWiki Syntax):__
+__Creating a Page Link (JSPWiki Syntax):__
 
 ```markdown
 [Link Text|PageName]  # Links to PageName with custom text
@@ -294,8 +279,6 @@ This project follows [Semantic Versioning](https://semver.org/) (SemVer). Use th
 
 ```bash
 npm run version:show
-# or
-node scripts/version.js
 ```
 
 ### Increment Version
@@ -309,7 +292,7 @@ npm run version:major    # Breaking changes (1.2.0 → 2.0.0)
 ### Set Specific Version
 
 ```bash
-node scripts/version.js set 1.2.3
+npx tsx src/utils/version.ts set 1.2.3
 ```
 
 ### Version Help
@@ -320,7 +303,7 @@ npm run version:help
 
 The version management script automatically:
 
-- Updates `package.json` version
+- Updates the version in `package.json`, `package-lock.json` and `config/app-default-config.json`
 - Updates `CHANGELOG.md` with release information
 - Validates version format
 - Provides semantic versioning guidance
