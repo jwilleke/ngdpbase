@@ -65,7 +65,7 @@
                                     <td><%= p.email || '—' %></td>
                                     <td>
                                         <% p.affiliations.forEach(a => { %>
-                                            <div><%= a.name %><% if (a.role) { %> <small class="text-muted">(<%= a.role %>)</small><% } %></div>
+                                            <div data-testid="contacts-affiliation"><%= a.name %><% if (a.title) { %> <small class="text-muted">(<%= a.title %>)</small><% } %><% if (a.startDate || a.endDate) { %> <small class="text-muted"><%= a.startDate || '…' %> – <%= a.endDate || 'now' %></small><% } %></div>
                                         <% }) %>
                                     </td>
                                     <td>

@@ -16246,7 +16246,12 @@ ${panes}
           name: typeof p.name === 'string' ? p.name : '',
           email: typeof p.email === 'string' ? p.email : '',
           account: p.identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX) ? null : p.identifier,
-          affiliations: (p.affiliation ?? []).map((a) => ({ name: orgNames[a.organization] ?? a.organization, role: a.role ?? '' }))
+          affiliations: (p.affiliation ?? []).map((a) => ({
+            name: orgNames[a.memberOf?.['@id']] ?? a.memberOf?.['@id'] ?? '',
+            title: a.roleName ?? '',
+            startDate: a.startDate ?? '',
+            endDate: a.endDate ?? ''
+          }))
         })),
         q,
         accountless,

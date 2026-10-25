@@ -1,6 +1,6 @@
 # Identity model: digital identities, credentials, roles and affiliations
 
-Status: APPROVED by the operator (2026-10-24). Nothing here is built yet. This page is the source of truth for identities; `docs/GLOSSARY.md` matches it, and an epic tracks the work.
+Status: APPROVED by the operator (2026-10-24). Built step by step; each step below says when it is built. This page is the source of truth for identities; `docs/GLOSSARY.md` matches it, and an epic tracks the work.
 
 ## The model (operator, 2026-10-24)
 
@@ -46,7 +46,7 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 - A group is an organization plus a `roleName`: "Owners" is every digital identity with an affiliation to the association whose `roleName` is "Owner". Never a unit; "who owns unit 12" stays with accommodation.
 - `startDate` / `endDate` give dated affiliations (absorbs #2003).
 - __`roleName` is not a Role.__ A Role is a set of permissions held by users. `roleName` is only the affiliation's title (Owner, Occupant, Vendor, Treasurer) and grants nothing. In prose and on screens it is called the affiliation's __title__, never "role". A separate, explicit rule may give a Role to users with a given affiliation.
-- Today's `affiliation: [{ organization, role? }]` maps onto this shape (organization → `memberOf`, role → `roleName`).
+- The shape before this, `affiliation: [{ organization, role? }]`, maps onto it (organization → `memberOf`, role → `roleName`); converted when read and once on disk at start-up ([#2039](https://github.com/jwilleke/ngdpbase/issues/2039)).
 
 ## Permission names (operator, 2026-10-24)
 
@@ -77,7 +77,7 @@ An affiliation follows schema.org `affiliation` with an `OrganizationRole`:
 - 1 Glossary and guides: digital identity, credentials, user, contact, identity record, role, affiliation, title; drop "person" in prose. No code.
 - 2 An account missing its identity record gets one at start-up, recorded (the paused fix; unblocks hand-made test users).
 - 3 Renames with one-release aliases: PersonManager → IdentityManager; `contact-read` / `contact-manage` → `identity-read` / `identity-manage`. Built in [#2038](https://github.com/jwilleke/ngdpbase/issues/2038).
-- 4 Affiliations: the `OrganizationRole` shape (memberOf, title as `roleName`, startDate/endDate), who may set them, search by affiliation; today's `affiliation: [{ organization, role? }]` converted.
+- 4 Affiliations: the `OrganizationRole` shape (memberOf, title as `roleName`, startDate/endDate), who may set them, search by affiliation; today's `affiliation: [{ organization, role? }]` converted. Built in [#2039](https://github.com/jwilleke/ngdpbase/issues/2039): `IdentityManager.search(ctx, { affiliation: { memberOf, title?, current? } })`; an ongoing affiliation has no `endDate` (core does not adopt a `"current"` marker, [#2003](https://github.com/jwilleke/ngdpbase/issues/2003)).
 - 5 A role member must have credentials: a contact is refused as a role member.
 - 6 Organizations get a `urn:uuid` `@id` (URL an ordinary field); every reference that stores a username for an identity switches to its `@id`.
 - 7 Add-ons switch: accounting to the new permission names; accommodation's owners/occupants to affiliations (so a contact can be an owner); association follows.

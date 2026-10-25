@@ -1,7 +1,7 @@
 ---
 name: OrganizationManager
 description: Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider
-dateModified: '2026-10-24'
+dateModified: '2026-10-25'
 category: managers
 code: src/managers/OrganizationManager.ts
 ---
@@ -32,7 +32,7 @@ Two things it never does: __write the config key back__ (instance config is a re
 
 ## The organizations door
 
-OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `identity-read` to read and `identity-manage` to change, and record each change as the `identity-manage` audit event. `people(ctx, id)` reads each identity record's `affiliation`; the organization stores no copy. `getById(ctx, id)` and `getByFile(ctx, filename)` take the caller's context too: `identity-read`, or the system context for core's own reads, without a policy evaluation ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). `getInstallOrg` (the site's own anchor Organization, named in configuration) and `seedFromConfig` (boot) take none. The rules are in the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
+OrganizationManager is the door for organizations ([#1930](https://github.com/jwilleke/ngdpbase/issues/1930)): `create`, `update`, `delete`, `get`, `list`, `search` and `people` take the caller's context first, ask `identity-read` to read and `identity-manage` to change, and record each change as the `identity-manage` audit event. `people(ctx, id)` returns `[{ person, affiliation }]`, one entry per affiliation with the organization, past and future ones included, each `affiliation` a schema.org `OrganizationRole` (title in `roleName`, dates) ([#2039](https://github.com/jwilleke/ngdpbase/issues/2039)). It asks `IdentityManager.search(ctx, { affiliation })`, which owns searching identities and answers who holds one today; the organization stores no copy. An affiliation with the organization `getInstallOrg` returns is a fact, set only under `identity-manage`. `getById(ctx, id)` and `getByFile(ctx, filename)` take the caller's context too: `identity-read`, or the system context for core's own reads, without a policy evaluation ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). `getInstallOrg` (the site's own anchor Organization, named in configuration) and `seedFromConfig` (boot) take none. The rules are in the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Provider Pattern
 
