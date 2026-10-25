@@ -110,6 +110,7 @@ Core's maintenance jobs: `media.folder-scan` (`ngdpbase.media.scaninterval`), `p
 - One run of a job at a time: run now and rerun are refused (409) while the job runs or has an unfinished run (waiting for a retry, or interrupted).
 - The manager methods are `listScheduledJobs`, `runNow`, `rerunSlot` and `retryNow`; a refusal is a `JobActionError` carrying its HTTP status.
 - Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the user who asked as the audit `user`; retry now as `job-retry`; pause as a configuration change.
+- Every job audit row carries the attribution of the context the run was queued under (`actorOf`), merged with the job's own fields: under a proxy grant `actor`, `metadata.delegated: 'proxy'` and `proxyGrantId`; under a token or share `metadata.delegated: 'token'` or `'share'`. Never the proxy's key handle ([#2059](https://github.com/jwilleke/ngdpbase/issues/2059)).
 
 ## When the application database is unavailable (#1892)
 

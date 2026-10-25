@@ -156,3 +156,93 @@ describe('#2047 — no key handle reaches a job or its run record', () => {
     expect(JSON.stringify(events)).not.toContain('h-jim');
   });
 });
+
+/**
+ * #2059 — a job's audit rows carry the attribution of the context it was
+ * queued under (`actorOf`), merged with the job's own fields. `recordJobEvent`
+ * wrote its own `metadata`, so under a proxy grant `delegated` and
+ * `proxyGrantId` were lost from `job-started` / `job-completed` / `job-failed`.
+ *
+ * Sabotaged once (then restored): the `...who.metadata` spread removed from
+ * `recordJobEvent` — the proxy, token and share tests went red; removed from
+ * `recordSchedulerEvent` — the scheduler-row test went red; the token/share
+ * `delegated` removed from `attributedTo` — the token and share tests went red.
+ */
+describe('#2059 — job audit rows keep the delegation they were queued under', () => {
+  const claim = { kind: 'proxy' as const, grantId: 'grant-1', actor: 'jim', scopes: ['page-read'], keyHandle: 'h-jim' };
+  const share = { id: 's1', issuer: 'jim', actions: ['page-read'], resources: [], expiresAt: null };
+
+  function managerWith(outcome: 'ok' | 'fail' | 'throw') {
+    const events: Record<string, unknown>[] = [];
+    const engine = {
+      getManager: (name: string) =>
+        (name === 'AuditManager' ? { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } } : null)
+    } as never;
+    const m = new BackgroundJobManager(engine);
+    m.registerJob({
+      id: 'test.job',
+      displayName: 'Test Job',
+      run: () => (outcome === 'throw' ? Promise.reject(new Error('boom'))
+        : Promise.resolve(outcome === 'ok' ? { success: true, summary: 'done' } : { success: false, error: 'nope' }))
+    });
+    return { m, events };
+  }
+  const meta = (e: Record<string, unknown> | undefined) => e?.metadata as Record<string, unknown>;
+
+  test.each([['ok', 'job-completed'], ['fail', 'job-failed'], ['throw', 'job-failed']] as const)(
+    'a proxy-queued job (%s): started and %s carry delegated, proxyGrantId, user and actor', async (outcome, ending) => {
+      const { m, events } = managerWith(outcome);
+      await m.enqueue('test.job', jobContextFromRequest({ username: 'mom', viaProxy: claim }));
+      await settle();
+      for (const type of ['job-started', ending]) {
+        const row = events.find(e => e.eventType === type);
+        expect(row, type).toBeDefined();
+        expect(row?.user).toBe('mom');
+        expect(row?.actor).toBe('jim');
+        expect(meta(row)).toMatchObject({ delegated: 'proxy', proxyGrantId: 'grant-1', jobId: 'test.job', origin: 'request' });
+      }
+      // #2047 still holds: no key handle on any row.
+      expect(JSON.stringify(events)).not.toContain('h-jim');
+      expect(JSON.stringify(events)).not.toContain('keyHandle');
+    });
+
+  test('a token-queued job keeps delegated token beside the token id and name', async () => {
+    const { m, events } = managerWith('ok');
+    await m.enqueue('test.job', jobContextFromRequest({ username: 'jim', viaToken: token }));
+    await settle();
+    for (const type of ['job-started', 'job-completed']) {
+      expect(meta(events.find(e => e.eventType === type)), type).toMatchObject({ delegated: 'token', viaTokenId: 'tok-1', viaTokenName: 'reader' });
+    }
+  });
+
+  test('a share-queued job keeps delegated share', async () => {
+    const { m, events } = managerWith('ok');
+    await m.enqueue('test.job', jobContextFromRequest({ username: 'guest', viaShare: share }));
+    await settle();
+    for (const type of ['job-started', 'job-completed']) {
+      expect(meta(events.find(e => e.eventType === type)), type).toMatchObject({ delegated: 'share' });
+    }
+  });
+
+  test('an ordinary job: no delegation fields and no actor, its own fields unchanged', async () => {
+    const { m, events } = managerWith('ok');
+    await m.enqueue('test.job', jobContextFromRequest({ username: 'jim' }));
+    await settle();
+    const started = events.find(e => e.eventType === 'job-started');
+    expect(started).not.toHaveProperty('actor');
+    expect(meta(started)).not.toHaveProperty('delegated');
+    expect(meta(started)).not.toHaveProperty('proxyGrantId');
+    expect(meta(started)).toMatchObject({ jobId: 'test.job', displayName: 'Test Job', origin: 'request', viaTokenId: null, detail: null });
+  });
+
+  test('a scheduler row (retry, skipped, interrupted) recorded under a proxy context keeps it too', async () => {
+    const { m, events } = managerWith('ok');
+    const by = jobContextFromRequest({ username: 'mom', viaProxy: claim });
+    const def = { id: 'test.job', displayName: 'Test Job' };
+    await (m as unknown as { recordSchedulerEvent: (...a: unknown[]) => Promise<void> })
+      .recordSchedulerEvent(def, 'job-retry', 'job-retry', { runId: 'r1' }, 'retried now by jim', by);
+    const row = events.find(e => e.eventType === 'job-retry');
+    expect(row?.actor).toBe('jim');
+    expect(meta(row)).toMatchObject({ delegated: 'proxy', proxyGrantId: 'grant-1', jobId: 'test.job', runId: 'r1', detail: 'retried now by jim' });
+  });
+});

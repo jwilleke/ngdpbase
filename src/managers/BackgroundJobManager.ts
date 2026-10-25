@@ -1041,14 +1041,16 @@ class BackgroundJobManager extends BaseManager {
   ): Promise<void> {
     const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
     if (!sink) return;
+    const who = actorOf(by);
     await recordAuditEvent(sink, {
       eventType,
       // #1762: spread, so a job queued under a proxy grant names its actor.
-      ...actorOf(by),
+      ...who,
       action,
       result: 'success',
       severity: 'low',
-      metadata: { jobId: def.id, displayName: def.displayName, origin: by.origin, ...fields, detail }
+      // #2059: the context's metadata (delegated, proxyGrantId) first, the job's own fields beside it.
+      metadata: { ...who.metadata, jobId: def.id, displayName: def.displayName, origin: by.origin, ...fields, detail }
     });
   }
 
@@ -1594,15 +1596,20 @@ class BackgroundJobManager extends BaseManager {
     if (!sink) return;
 
     const by = run.requestedBy;
+    const who = actorOf(by);
     await recordAuditEvent(sink, {
       eventType: JOB_EVENT[outcome],
       // #1667 / #1762: the address the requesting call came from, and the
       // actor under a proxy grant — spread from the job's context.
-      ...actorOf(by),
+      ...who,
       action: `job-${outcome}`,
       result: 'success',
       severity: outcome === 'failed' ? 'medium' : 'low',
       metadata: {
+        // #2059: the context's attribution — `delegated` and `proxyGrantId`
+        // under a proxy grant, `delegated` under a token or share — merged
+        // with the job's own fields, never replaced by them.
+        ...who.metadata,
         jobId: run.jobId,
         runId: run.runId,
         displayName: run.displayName,
