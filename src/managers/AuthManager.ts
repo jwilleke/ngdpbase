@@ -531,6 +531,11 @@ const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
 
 /** #2073: how long the link confirming a new email lasts, in minutes. */
 const EMAIL_CHANGE_TTL_KEY = 'ngdpbase.auth.email-change.ttl-minutes';
+/** #2073: the least time between two email-change links for one account, in seconds. */
+const EMAIL_CHANGE_COOLDOWN_KEY = 'ngdpbase.auth.email-change.cooldown-seconds';
+/** #2073: the most email-change links one account is sent in a window, and the window, in minutes. */
+const EMAIL_CHANGE_MAX_KEY = 'ngdpbase.auth.email-change.max-per-window';
+const EMAIL_CHANGE_WINDOW_KEY = 'ngdpbase.auth.email-change.window-minutes';
 
 /** #2073: an outside sign-in's verified email already belongs to one account here; it is connected only by signing in to that account. */
 const OUTSIDE_EMAIL_HELD = 'An account here already uses that email. Sign in to it another way, then connect this sign-in.';
@@ -3247,6 +3252,8 @@ class AuthManager extends BaseManager {
   private enrolTokens = new Map<string, { username: string; address: string; expiresAt: number }>();
   /** #2073: links confirming a user's new email, by token; one waiting per account. In memory: a restart drops them. */
   private emailChangeTokens = new Map<string, { username: string; address: string; expiresAt: number }>();
+  /** #2073: when each account's email-change links were sent, for the cooldown and the cap. In memory. */
+  private emailChangeSends = new Map<string, number[]>();
 
   /** Mail can carry an email-link factor: a mail transport and an explicit base-url for the link. */
   private mailForLinks(): EmailManager | null {
@@ -3640,9 +3647,12 @@ class AuthManager extends BaseManager {
    * registered). `unavailable`: this site cannot send email now, so nothing
    * is sent and an administrator can change it instead. `failed`: the send
    * failed and no link is waiting. `unchanged`: the address is the one the
-   * account already has.
+   * account already has. `throttled`: the account asked too soon after its
+   * last link (`ngdpbase.auth.email-change.cooldown-seconds`, 60) or too often
+   * in the window (`ngdpbase.auth.email-change.max-per-window` links per
+   * `ngdpbase.auth.email-change.window-minutes`, 5 per 60); no mail is sent.
    */
-  async requestEmailChange(ctx: ActorContext, username: string, newEmail: string, via: 'profile' | 'registration'): Promise<'sent' | 'unchanged' | 'unavailable' | 'failed'> {
+  async requestEmailChange(ctx: ActorContext, username: string, newEmail: string, via: 'profile' | 'registration'): Promise<'sent' | 'unchanged' | 'unavailable' | 'failed' | 'throttled'> {
     if (!ctx || !sameUsername(ctx.username, username)) throw new Error('Permission denied');
     const address = typeof newEmail === 'string' ? newEmail.trim() : '';
     if (!isEmail(address)) throw new Error('requestEmailChange: not an email address');
@@ -3653,6 +3663,20 @@ class AuthManager extends BaseManager {
     if (current.toLowerCase() === address.toLowerCase()) return 'unchanged';
     const mail = this.mailForLinks();
     if (!mail || (mail as { isDeliveryFailing?(): boolean }).isDeliveryFailing?.()) return 'unavailable';
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const setting = (key: string, fallback: number): number => {
+      const value = Number(cm?.getProperty(key, fallback));
+      return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+    const now = Date.now();
+    const windowMs = setting(EMAIL_CHANGE_WINDOW_KEY, 60) * 60_000;
+    const recent = (this.emailChangeSends.get(account.username) ?? []).filter((at) => now - at < windowMs);
+    const last = recent.at(-1);
+    if ((last !== undefined && now - last < setting(EMAIL_CHANGE_COOLDOWN_KEY, 60) * 1000) || recent.length >= setting(EMAIL_CHANGE_MAX_KEY, 5)) {
+      this.emailChangeSends.set(account.username, recent);
+      logger.info(`[email change] ${account.username} asked again too soon or too often; no link sent (#2073)`);
+      return 'throttled';
+    }
 
     for (const [t, entry] of this.emailChangeTokens) {
       if (entry.username === account.username || Date.now() > entry.expiresAt) this.emailChangeTokens.delete(t);
@@ -3675,6 +3699,7 @@ class AuthManager extends BaseManager {
       this.emailChangeTokens.delete(token);
       return 'failed';
     }
+    this.emailChangeSends.set(account.username, [...recent, now]);
     if (current) {
       await mail.send({
         to: current,

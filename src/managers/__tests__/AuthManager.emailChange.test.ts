@@ -11,7 +11,9 @@
  * - the expiry not checked → "expires";
  * - the confirm's re-check of a turned-off account removed → "the rules are checked again";
  * - the address put in the audit metadata → "audited with names only";
- * - mail-less sites sending anyway → "a site that cannot send email".
+ * - mail-less sites sending anyway → "a site that cannot send email";
+ * - the cooldown not checked → "a second link too soon is not sent";
+ * - the cap not checked → "no more than the cap in a window".
  */
 import AuthManager from '../AuthManager';
 import { UserCreateError } from '../../utils/userCreateError';
@@ -19,7 +21,7 @@ import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 interface Sent { to: string; subject: string; text: string }
 
-function setup(opts: { mail?: boolean; failing?: boolean; ttl?: number } = {}) {
+function setup(opts: { mail?: boolean; failing?: boolean; ttl?: number; settings?: Record<string, number> } = {}) {
   const accounts: Record<string, { username: string; email: string; isActive?: boolean; profileLocked?: boolean }> = {
     pat: { username: 'pat', email: 'pat@old.example' },
     dee: { username: 'dee', email: '' }
@@ -31,7 +33,9 @@ function setup(opts: { mail?: boolean; failing?: boolean; ttl?: number } = {}) {
   let refuseUpdate: Error | null = null;
   const managers: Record<string, unknown> = {
     ConfigurationManager: {
-      getProperty: (k: string, d: unknown) => (k === 'ngdpbase.auth.email-change.ttl-minutes' ? opts.ttl ?? d : k === 'ngdpbase.system.principal' ? 'svc' : d),
+      // The throttle is off unless a test sets it, so the other tests can ask more than once.
+      getProperty: (k: string, d: unknown) => (k === 'ngdpbase.auth.email-change.ttl-minutes' ? opts.ttl ?? d : k === 'ngdpbase.system.principal' ? 'svc'
+        : k in (opts.settings ?? {}) ? opts.settings?.[k] : k === 'ngdpbase.auth.email-change.cooldown-seconds' ? 0 : d),
       isBaseUrlExplicit: () => true,
       getBaseURL: () => 'https://site.example',
       getApplicationName: () => 'Test Site'
@@ -162,5 +166,44 @@ describe('a user\'s own email change waits for its link (#2073)', () => {
     expect(t.sent.map((m) => m.to)).toEqual(['dee@new.example']);
     await t.am.confirmEmailChange(t.tokenFrom(t.sent[0]));
     expect(t.offered).toEqual(['dee']);
+  });
+
+  describe('throttled per account (#2073)', () => {
+    const SETTINGS = { 'ngdpbase.auth.email-change.cooldown-seconds': 60, 'ngdpbase.auth.email-change.max-per-window': 3, 'ngdpbase.auth.email-change.window-minutes': 60 };
+
+    test('a second link too soon is not sent; after the cooldown it is', async () => {
+      vi.useFakeTimers();
+      try {
+        const t = setup({ settings: SETTINGS });
+        expect(await t.am.requestEmailChange(t.pat, 'pat', 'a@new.example', 'profile')).toBe('sent');
+        const mails = t.sent.length;
+        expect(await t.am.requestEmailChange(t.pat, 'pat', 'b@new.example', 'profile')).toBe('throttled');
+        expect(t.sent).toHaveLength(mails);
+        expect(t.am.pendingEmailChange('pat')).toBe('a@new.example');
+        vi.advanceTimersByTime(61_000);
+        expect(await t.am.requestEmailChange(t.pat, 'pat', 'b@new.example', 'profile')).toBe('sent');
+        // Another account is not held back by pat's.
+        t.accounts.sam = { username: 'sam', email: '' };
+        expect(await t.am.requestEmailChange({ username: 'sam', isAuthenticated: true, roles: [] }, 'sam', 's@new.example', 'profile')).toBe('sent');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test('no more than the cap in a window; the window passing lets one through again', async () => {
+      vi.useFakeTimers();
+      try {
+        const t = setup({ settings: { ...SETTINGS, 'ngdpbase.auth.email-change.cooldown-seconds': 0 } });
+        for (const n of [1, 2, 3]) expect(await t.am.requestEmailChange(t.pat, 'pat', `${n}@new.example`, 'profile')).toBe('sent');
+        const mails = t.sent.length;
+        expect(await t.am.requestEmailChange(t.pat, 'pat', '4@new.example', 'profile')).toBe('throttled');
+        expect(t.sent).toHaveLength(mails);
+        expect(t.audit.filter((e) => e.eventType === 'emailchange-request')).toHaveLength(3);
+        vi.advanceTimersByTime(61 * 60_000);
+        expect(await t.am.requestEmailChange(t.pat, 'pat', '4@new.example', 'profile')).toBe('sent');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

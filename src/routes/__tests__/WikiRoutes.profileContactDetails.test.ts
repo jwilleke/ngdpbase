@@ -28,7 +28,6 @@
 import WikiRoutes from '../WikiRoutes';
 import IdentityManager, { ContactDetailsInvalidError } from '../../managers/IdentityManager';
 import { ContactRefusedError } from '../../utils/contactAccess';
-import { UserCreateError } from '../../utils/userCreateError';
 
 const OWN_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const ACCOUNT = { username: 'pat', displayName: 'Pat', email: 'pat@example.org' };
@@ -58,7 +57,7 @@ const createMockRes = () => ({
  * `fail`: what the identity door's check throws (a bad detail); `identityFail`: what its write
  * rejects with; `lookupFail`: what reading the user's own record rejects with.
  */
-function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown>; mail?: boolean; sent?: string; adminShared?: boolean } = {}) {
+function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Error; accountFail?: Error; account?: Record<string, unknown>; mail?: boolean; sent?: string } = {}) {
   const order: string[] = [];
   const identityManager = {
     checkContactDetails: vi.fn((..._args: unknown[]) => { order.push('check'); if (opts.fail) throw opts.fail; }),
@@ -68,7 +67,8 @@ function makeRoutes(opts: { fail?: Error; identityFail?: Error; lookupFail?: Err
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(opts.account ?? ACCOUNT)),
     updateUser: vi.fn((..._args: unknown[]) => { order.push('account'); return opts.accountFail ? Promise.reject(opts.accountFail) : Promise.resolve(ACCOUNT); }),
-    assertAdminEmailUnshared: vi.fn((..._args: unknown[]) => { const refusal: Error = new UserCreateError('admin-email-shared', 'root holds it'); return opts.adminShared ? Promise.reject(refusal) : Promise.resolve(); })
+    // #2073: never asked by the form, so its answer cannot tell whose an address is.
+    assertAdminEmailUnshared: vi.fn((..._args: unknown[]) => Promise.resolve())
   };
   // #2073: a user's own new email is sent a link to confirm it; it is never written here.
   const authManager = {
@@ -259,14 +259,26 @@ describe('POST /profile/contact-details (#2073)', () => {
     expect(authManager.requestEmailChange).not.toHaveBeenCalled();
   });
 
-  test('an address that would make an administrator share is refused plainly, naming no account; nothing is saved (#2073)', async () => {
-    const { routes, identityManager, authManager } = makeRoutes({ adminShared: true });
+  test('the answer is the same whatever the address: the form never says whose an address is (#2073)', async () => {
+    // An administrator's address is refused only when its link is clicked (AuthManager.confirmEmailChange).
+    const answers: string[] = [];
+    for (const address of ['root@example.org', 'anyone@example.org']) {
+      const { routes, userManager, authManager } = makeRoutes();
+      const res = createMockRes();
+      await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: address }), res);
+      expect(userManager.assertAdminEmailUnshared).not.toHaveBeenCalled();
+      expect(authManager.requestEmailChange).toHaveBeenCalledWith(expect.anything(), 'pat', address, 'profile');
+      answers.push(target(res));
+    }
+    expect(answers).toEqual(['/profile?contactDetailsSaved=Contact details saved.#contact-details', '/profile?contactDetailsSaved=Contact details saved.#contact-details']);
+  });
+
+  test('asking too often is answered plainly; the other details are saved and no link is sent (#2073)', async () => {
+    const { routes, identityManager } = makeRoutes({ sent: 'throttled' });
     const res = createMockRes();
-    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'root@example.org' }), res);
-    expect(target(res)).toBe('/profile?contactDetailsError=That email address cannot be used, because an administrator\'s account never shares its email. Please use another. Nothing was saved.#contact-details');
-    expect(target(res)).not.toContain('root holds');
-    expect(identityManager.updateContactDetails).not.toHaveBeenCalled();
-    expect(authManager.requestEmailChange).not.toHaveBeenCalled();
+    await routes.updateOwnContactDetails(createMockReq('pat', { ...FORM, email: 'new@example.org', homePhone: '(415) 555-2671' }), res);
+    expect(identityManager.updateContactDetails).toHaveBeenCalled();
+    expect(target(res)).toBe('/profile?contactDetailsError=Your other details were saved, but your email was not changed: you asked to change it too often. Wait a while, then try again.#contact-details');
   });
 
   test('a link that cannot be sent leaves the other details saved and says the email was not changed (#2073)', async () => {

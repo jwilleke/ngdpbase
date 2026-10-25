@@ -149,6 +149,8 @@ describe('an ordinary account is unaffected (#1029)', () => {
     // #2073: the email itself is never written here; it waits for the link sent to it.
     expect((userManager.updateUser.mock.calls[0][1] as Record<string, unknown>).email).toBeUndefined();
     if ('email' in body) expect(authManager.requestEmailChange).toHaveBeenCalledWith(expect.anything(), 'jim', body.email, 'profile');
+    // Nothing about the address is checked by the form, so its answer never says whose it is.
+    expect(userManager.assertAdminEmailUnshared).not.toHaveBeenCalled();
   });
 });
 

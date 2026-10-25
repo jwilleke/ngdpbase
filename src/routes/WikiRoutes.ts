@@ -272,6 +272,9 @@ function getErrorMessage(error: unknown): string {
 /** Said when an email is saved that another account uses too (#2073, operator 2026-10-25): sharing is allowed, and sign-in by email asks which account. */
 const SHARED_EMAIL_NOTE = 'Another account uses this email too. Emailed sign-in links will ask which account.';
 
+/** Said when a user asks to change their email too often (#2073): no link is sent. */
+const EMAIL_CHANGE_THROTTLED = 'you asked to change it too often. Wait a while, then try again.';
+
 /** A checkbox or boolean from a form or JSON body: `true` or `'true'`, anything else false. */
 function formChecked(value: unknown): boolean {
   return value === true || value === 'true';
@@ -345,8 +348,6 @@ interface IUserManager {
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
-  /** #2073: refuses an email that would make an administrator's account share one. */
-  assertAdminEmailUnshared(username: string, email: unknown, ctx: ActorContext, roles?: readonly string[]): Promise<void>;
   /** #2073: the usernames of every account whose email another account holds too. */
   usernamesSharingAnEmail(): Promise<Set<string>>;
   /** #2073: whether an account other than `ownUsername` holds this email too. */
@@ -10550,7 +10551,7 @@ ${panes}
       }
       if (newEmail) {
         if (!isEmail(newEmail)) return res.redirect('/profile?error=' + encodeURIComponent('Email is not an email address. Nothing was saved.'));
-        const blocked = await this.ownEmailChangeBlocked(currentUser.username ?? '', newEmail, currentUser);
+        const blocked = this.ownEmailChangeBlocked();
         if (blocked) return res.redirect('/profile?error=' + encodeURIComponent(`${blocked} Nothing was saved.`));
       }
 
@@ -10649,6 +10650,9 @@ ${panes}
       // #2073: the new email waits for its link; the profile shows the address from the server, never the URL.
       if (newEmail) {
         const sent = await this.engine.getManager<AuthManager>('AuthManager')?.requestEmailChange(currentUser, currentUser.username ?? '', newEmail, 'profile') ?? 'unavailable';
+        if (sent === 'throttled') {
+          return res.redirect('/profile?error=' + encodeURIComponent(`Profile updated, but your email was not changed: ${EMAIL_CHANGE_THROTTLED}`));
+        }
         if (sent === 'unavailable' || sent === 'failed') {
           return res.redirect('/profile?error=' + encodeURIComponent('Profile updated, but your email was not changed: this site could not send the link to confirm it. An administrator can change it.'));
         }
@@ -10696,7 +10700,7 @@ ${panes}
       }
       if (newEmail) {
         if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
-        const blocked = await this.ownEmailChangeBlocked(username, newEmail, user);
+        const blocked = this.ownEmailChangeBlocked();
         if (blocked) return answer('error', `${blocked} Nothing was saved.`);
       }
 
@@ -10717,6 +10721,9 @@ ${panes}
       // #2073: the new email waits for its link; the card shows the address from the server, never the URL.
       if (newEmail) {
         const sent = await this.engine.getManager<AuthManager>('AuthManager')?.requestEmailChange(user, username, newEmail, 'profile') ?? 'unavailable';
+        if (sent === 'throttled') {
+          return answer('error', `Your other details were saved, but your email was not changed: ${EMAIL_CHANGE_THROTTLED}`);
+        }
         if (sent === 'unavailable' || sent === 'failed') {
           return answer('error', 'Your other details were saved, but your email was not changed: this site could not send the link to confirm it. An administrator can change it.');
         }
@@ -10763,21 +10770,17 @@ ${panes}
   }
 
   /**
-   * Why a user's own change to `email` cannot start (#2073), or null: this
-   * site cannot send the link (an administrator can change it instead), or
-   * the address would make an administrator's account share its email. Said
-   * plainly, never naming another account.
+   * Why a user's own email change cannot start (#2073), or null: this site
+   * cannot send the link that confirms it (an administrator can change it
+   * instead). Nothing about the address itself is checked here, so the answer
+   * never says whether an address belongs to another account (an
+   * administrator's included); the rules on the address are checked when the
+   * link is clicked, and only that page says no.
    */
-  private async ownEmailChangeBlocked(username: string, email: string, ctx: ActorContext): Promise<string | null> {
+  private ownEmailChangeBlocked(): string | null {
     const mail = this.engine.getManager('EmailManager') as { isDeliveryFailing?(): boolean } | null;
     if (!this.engine.getManager<AuthManager>('AuthManager')?.emailLinksAvailable() || mail?.isDeliveryFailing?.()) {
       return 'Your email cannot be changed here, because this site cannot send email to confirm it. An administrator can change it.';
-    }
-    try {
-      await this.engine.getManager('UserManager').assertAdminEmailUnshared(username, email, ctx);
-    } catch (err: unknown) {
-      if (err instanceof UserCreateError) return 'That email address cannot be used, because an administrator\'s account never shares its email. Please use another.';
-      throw err;
     }
     return null;
   }
