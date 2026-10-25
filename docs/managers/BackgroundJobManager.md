@@ -51,6 +51,8 @@ jobManager.registerJob({
 - A slot runs once: under a lock in the job state, as the system principal with origin `schedule`. A slot another server holds (a rolling update) is left to it.
 - State (next slot, last slot done, current run, history, locks) is kept by a `JobStateProvider` (`src/providers/jobState.ts`), chosen by `ngdpbase.jobs.state.provider`. `persist: false` keeps it in memory instead: no catch-up after a restart and no lock.
 - `ngdpbase.jobs.<jobId>.schedule` overrides a job's schedule and `ngdpbase.jobs.<jobId>.enabled: false` stops it; both are read on every look. A changed rule, at runtime or across a restart, counts slots from then, catches nothing up for the old rule, and is audited as `job-schedule-change`.
+- `scheduleTimeZone()` is the zone a schedule that names no `tz` runs in: `ngdpbase.default.timezone`, `UTC` when unset, read on each call. It is the scheduler's one source for that zone; an add-on's job passes it with `ctx.slot` to `host.zonedParts` to learn the slot's local year, month and day ([#1998](https://github.com/jwilleke/ngdpbase/issues/1998)).
+- An add-on ships a job paused with `ngdpbase.jobs.<jobId>.enabled: false` in its own `config/default-config.json`. The add-on config layer puts it under the site's own file, so Resume (which writes `true` to the site's file) turns it on. A turned-off add-on's key does not apply ([#1998](https://github.com/jwilleke/ngdpbase/issues/1998)).
 - The scheduler starts from `app.ts` once add-ons have loaded (`startScheduler()`).
 
 | Key | Default | |

@@ -30,8 +30,8 @@ export type { SimplePlugin } from '../../src/plugins/types.js';
 // Audit: the event shape `host.recordAuditEvent` takes.
 export type { AuditEvent } from '../../src/utils/auditEvents.js';
 
-// Background jobs.
-export type { JobRunContext } from '../../src/managers/BackgroundJobManager.js';
+// Background jobs. #1998: the manager, for `registerJob` and `scheduleTimeZone()`.
+export type { default as BackgroundJobManager, JobDefinition, JobResult, JobRunContext } from '../../src/managers/BackgroundJobManager.js';
 
 // The managers add-ons reach through `engine.getManager`, and what their add-on methods take.
 export type { default as DatabaseManager, AddonDatabaseOptions } from '../../src/managers/DatabaseManager.js';

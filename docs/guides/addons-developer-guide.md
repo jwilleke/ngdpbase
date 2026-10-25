@@ -560,6 +560,7 @@ async register(engine, config) {
 | `resolveEgressPolicy`, `validateUrl` | The site's egress policy, read through a `getProperty` reader at each call, and whether a URL may be fetched under it (before any socket) |
 | `createGuardedElasticsearchClient`, `refusedNodeMessage` | An Elasticsearch client whose every connection the egress policy judges (the only way to build one), and the one boot line for a refused node |
 | `isAtLeast` | Whether an `x.y.z` version is at least another; throws on anything else |
+| `zonedParts(instant, timeZone)` | An instant's local `year`, `month` (1–12), `date` (`YYYY-MM-DD`), `day` (weekday) and `minutes` since midnight in a time zone: core's own, so a job needs no Intl code ([A job that runs on a schedule](#a-job-that-runs-on-a-schedule), [#1998](https://github.com/jwilleke/ngdpbase/issues/1998)) |
 
 ```typescript
 async register(engine, config, host) {
@@ -1672,10 +1673,32 @@ __The schedule.__ An iCalendar recurrence rule (RFC 5545 RRULE), or one of these
 | `start-of-year` | 1 January |
 
 - An RRULE goes in as `FREQ=…`, or as `{ rrule, tz, dtstart }`. Interval rules (`every 30d`) count from `dtstart`, default `2000-01-01T00:00:00`, so their phase is the same on every start.
-- The time zone is `tz`, else `ngdpbase.default.timezone`. Daylight saving does what a user expects: a time skipped in spring runs at the next valid instant; a time repeated in autumn runs once.
+- The time zone is `tz`, else the site's: `ngdpbase.default.timezone` (default `UTC`), which `jobManager.scheduleTimeZone()` returns. Leave `tz` out so the job runs in the site's zone. Daylight saving does what a user expects: a time skipped in spring runs at the next valid instant; a time repeated in autumn runs once.
 - A date that does not exist is skipped, as RFC 5545 says: `BYMONTHDAY=31` skips short months. The last day of a month is `BYMONTHDAY=-1`.
 - `FREQ=SECONDLY` and slots closer than `ngdpbase.jobs.min-interval-ms` (default 60 s) are refused. A schedule that does not compile throws from `registerJob`, naming the job: it is your error at start, never a job that silently never runs.
 - Cron is not accepted.
+
+__Which local month or day the slot is.__ `ctx.slot` is a UTC instant: 00:30 on 1 November in Tokyo is 31 October in UTC. Ask core for the local parts, never `new Date(ctx.slot).getUTCMonth()` and never an `Intl` formatter of your own ([#1998](https://github.com/jwilleke/ngdpbase/issues/1998)):
+
+```javascript
+async run(reportProgress, ctx) {
+  const { year, month } = host.zonedParts(new Date(ctx.slot), jobManager.scheduleTimeZone());
+  await issueInvoicesFor(year, month, ctx);   // the local month the slot falls in
+  return { success: true, summary: `Invoices for ${year}-${String(month).padStart(2, '0')}` };
+}
+```
+
+If the job's schedule names its own `tz`, pass that zone instead. A run started by hand has `ctx.slot` `null`; use the time it runs.
+
+__Ship the job paused__ when a site must turn it on before it runs (an invoice run that sends mail): set its switch in your own `config/default-config.json`. The site then sees it paused on Admin → Scheduled Jobs, and Resume turns it on; the site's own value always wins over yours. While paused it runs no slot and records nothing; once resumed it counts slots from then and catches nothing up.
+
+```json
+{
+  "ngdpbase.jobs.my-addon.month-close.enabled": false
+}
+```
+
+Name only your own job's key: `ngdpbase.jobs.<your slug>.<job>.enabled`.
 
 __The job id__ is `<slug>.<job>`: lowercase letters and digits, joined by single dots or dashes. It names the job's state files and the operator's override keys.
 
@@ -1979,8 +2002,9 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 - [#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — [the store door](#core-owns-the-door) shows the kind's id, not a label or description the add-on declares: `renderStoreDoor` in `src/routes/WikiRoutes.ts` passes `storeLabel` and `storeBlurb` empty.
 - [#1965](https://github.com/jwilleke/ngdpbase/issues/1965) — [the listings](#the-manifest) name each add-on by its slug: the manifest has no display name. The description shown is the module's `description`, which is written for administrators, so the bundled journal's still says "wiki pages". Listings change on the page cache's account and configuration versions; turning an add-on on or off in Admin → Add-ons takes a restart, as loading does.
 - [#1974](https://github.com/jwilleke/ngdpbase/issues/1974) — [PDF](#make-a-pdf-and-email-it): the same HTML gives the same bytes only on the same provider and engine version; another site, provider or engine may differ. Core ships no font files of its own, so embed yours as `data:` URIs. `PdfUnavailableError` and `AttachmentRefusedError` are types only in `@jwilleke/ngdpbase-types`; test the error's `code`. A render waiting for a slot has no queue limit.
+- [#1998](https://github.com/jwilleke/ngdpbase/issues/1998) — [shipping a job paused](#a-job-that-runs-on-a-schedule): the add-on config layer does not check whose job a `ngdpbase.jobs.<id>.enabled` key names, so an add-on's file could pause core's or another add-on's job. Name only your own. `scheduleTimeZone()` is the site's zone; a job whose schedule names its own `tz` passes that zone to `zonedParts` itself.
 - [#1979](https://github.com/jwilleke/ngdpbase/issues/1979) — [import shims](#import-shims-and-receivers-ice-1979): only uploads are a source, and only inbound shims run; export (`out`), scheduled URL sources (feeds) and the takeout import come later. No core screen starts an engine run yet, so an addon starts its own from its route. The manifest's `shims` and `receivers` are checked by the host at registration, not yet by a manifest schema (#1966).
 
 ---
 
-Last updated: 2026-10-24
+Last updated: 2026-10-25

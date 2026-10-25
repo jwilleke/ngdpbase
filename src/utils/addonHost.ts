@@ -18,9 +18,9 @@
  * - `registerShim` and `registerReceiver` (#1979, ICE) register into the import
  *   engine under this add-on's slug, and only the names its manifest declares;
  * - the egress tools (`resolveEgressPolicy`, `validateUrl`,
- *   `createGuardedElasticsearchClient`, `refusedNodeMessage`) and `isAtLeast`
- *   are core's own pure functions, handed on unchanged, so an add-on never
- *   imports them from `dist/` (#1813);
+ *   `createGuardedElasticsearchClient`, `refusedNodeMessage`), `isAtLeast`
+ *   and `zonedParts` (#1998) are core's own pure functions, handed on
+ *   unchanged, so an add-on never imports them from `dist/` (#1813);
  * - the object is `Object.freeze`d, so no add-on can replace a value.
  *
  * Additive only: nothing here is removed or renamed without a major release.
@@ -37,6 +37,7 @@ import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { validateUrl } from '../http/ssrf.js';
 import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
 import { isAtLeast } from './version.js';
+import { zonedParts } from './availability.js';
 import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
@@ -84,6 +85,14 @@ export interface AddonHost {
   readonly refusedNodeMessage: typeof refusedNodeMessage;
   /** Whether an `x.y.z` version is at least another; throws on a version that is not `x.y.z`. */
   readonly isAtLeast: typeof isAtLeast;
+  /**
+   * #1998: an instant in a named time zone, as its local parts: `year`,
+   * `month` (1–12), `date` (`YYYY-MM-DD`), `day` (weekday name) and `minutes`
+   * since midnight. A scheduled job passes its `ctx.slot` and
+   * `BackgroundJobManager.scheduleTimeZone()` to learn which local month or
+   * day the slot falls in. An unknown zone answers in UTC.
+   */
+  readonly zonedParts: typeof zonedParts;
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -204,6 +213,7 @@ export function buildAddonHost(
     validateUrl,
     createGuardedElasticsearchClient,
     refusedNodeMessage,
-    isAtLeast
+    isAtLeast,
+    zonedParts
   });
 }

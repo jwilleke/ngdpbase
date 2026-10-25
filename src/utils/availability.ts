@@ -116,12 +116,14 @@ function text(value: unknown, fallback: string): string {
 
 /**
  * The instant, in a named time zone, as the parts a schedule compares:
- * the weekday and minutes since midnight, plus the ISO date for a holiday.
+ * the weekday and minutes since midnight, plus the ISO date for a holiday,
+ * and the local year and month (1–12), which a month boundary needs (#1998).
+ * An add-on reaches it as `host.zonedParts`.
  *
  * Uses `Intl` rather than arithmetic on the epoch so daylight saving is the
  * platform's problem, not ours.
  */
-export function zonedParts(now: Date, timeZone: string): { day: string; minutes: number; date: string } {
+export function zonedParts(now: Date, timeZone: string): { day: string; minutes: number; date: string; year: number; month: number } {
   let parts: Intl.DateTimeFormatPart[];
   try {
     parts = new Intl.DateTimeFormat('en-US', {
@@ -144,7 +146,9 @@ export function zonedParts(now: Date, timeZone: string): { day: string; minutes:
     day: find('weekday').toLowerCase(),
     // Intl renders midnight as 24 in some locales with hour12:false.
     minutes: (hour === 24 ? 0 : hour) * 60 + Number(find('minute')),
-    date: `${find('year')}-${find('month')}-${find('day')}`
+    date: `${find('year')}-${find('month')}-${find('day')}`,
+    year: Number(find('year')),
+    month: Number(find('month'))
   };
 }
 
