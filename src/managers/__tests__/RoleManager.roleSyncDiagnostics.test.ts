@@ -45,6 +45,7 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
     opts.person === null ? null : (opts.person ?? { '@id': PERSON_ID })
   );
   const identityManager = {
+    getById: vi.fn(async (_ctx: unknown, id: string) => ({ '@id': id, identifier: 'alice' })),
     getByIdentifier: lookup,
     getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),

@@ -1,7 +1,7 @@
 ---
 name: RoleManager
 description: Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up)
-dateModified: '2026-10-24'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/RoleManager.ts
 ---
@@ -36,6 +36,18 @@ A role change completes or it does not happen (operator, 2026-10-23, [#2015](htt
 - `UserManager.deleteUser`: `removeAllMemberships` goes first; refused, the account is not deleted and the delete is recorded as failed. It returns an undo that gives every role back when the delete fails afterwards. An account with no identity record holds no role, so there is nothing to remove.
 - `moveMemberships` (a contact join) is all or nothing and runs before the identity records change, so a refused move refuses the join.
 - `grantToEveryAccountOnce` (boot) gives the role to every account it can. Each one it cannot is recorded as a failed `user-edit`, and the misses are one error notification naming the accounts. Nobody asked, so the boot goes on, and the role is not tried again at the next start: an administrator assigns it by hand.
+
+## Only users are members
+
+A role member must have credentials ([#2040](https://github.com/jwilleke/ngdpbase/issues/2040), step 5 of the [identity model](../planning/identity-model.md)). Only users hold roles; a contact, an identity record with no credentials, never does. RoleManager decides it, for every way a member is added, so callers do not check:
+
+- __How it tells.__ A member is an identity record's `@id`. The identity has credentials when its record's `identifier` is the username of an account that exists (`UserManager.getUser`). A contact's identifier is `person:<uuid>` (`IdentityManager.isAccountless`), which no username can take. The record is read under the system context: this is RoleManager's own rule.
+- __Where.__ Every add goes through one place (`setMember`), before anything is written, the role record included: `assignRole`, `applyRoleDiff` (account create and edit, the admin user form, invitations, outside sign-ins, the bootstrap admin), `grantToEveryAccountOnce` and `moveMemberships`. An undo puts back what was there and is not checked.
+- __Refused.__ A contact is refused as any role change that cannot be made is: a `RoleChangeError` whose message says it is a contact, an identity record with no credentials, and only a user can hold a role; the rest of the change undone, an error in the log, an error notification for admins, and `assignRole` / `removeRole` recorded as a failed `user-edit`. An identity record naming an account that no longer exists is refused the same way. `grantToEveryAccountOnce` skips it as a miss.
+- __A join.__ When a contact is joined to an account (`IdentityManager.linkAccount`, the sign-up link), the account's roles move to the contact's identity record before it takes the username, while it is still a contact. The roles go with the credentials, so `moveMemberships` checks the identity they move from: a user's roles move, a contact's never do.
+- `create` and `update` write a role record as given, with no check: they are the record store, used by the membership methods above; nothing else in core calls them. Anything written past the membership methods is found by the start-up check.
+
+__At start-up__ (`reportContactMembersAtBoot`, once every manager is up), RoleManager reads every role record and counts, per role, the members that are contacts. Nothing is dropped or rewritten. When it finds any, it reports each role and how many: a needs-attention entry on the admin dashboard (`markNeedsAttention`), an error log line, and one error notification for the users holding `admin-system` (`PolicyDecisionPoint.usersHolding`), not sent again while one with the same title is still active. Nobody holds `admin-system`: the log line stands alone. A contact cannot sign in, so such a membership gives nothing; an administrator gives the contact an account (it then holds the role as a user) or takes it out of the role record.
 
 Membership changes to one role record run one at a time, the read included (`KeyedSerial`, `src/utils/keyedSerial.ts`), so concurrent changes all land. The caches are not refilled by a read that started before a write.
 

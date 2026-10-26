@@ -459,6 +459,10 @@ class WikiEngine extends Engine {
     // before a page's files went with it. Reported, never moved.
     await attachmentManager.reportVaultPagesUsingPoolFilesAtBoot();
 
+    // #2040: only users hold roles. Contacts found listed as role members are
+    // reported (dashboard, log, one admin notification), never dropped.
+    await roleManager.reportContactMembersAtBoot();
+
     // #1723: a staged database restore was applied (or refused) before any
     // database opened, and the backup key was checked, when the notifications
     // did not exist yet. Say so now.
