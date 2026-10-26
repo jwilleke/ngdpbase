@@ -11,7 +11,7 @@ import { knownCountry, toE164 } from '../utils/phoneNumbers.js';
 import { languageTag } from '../utils/languages.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
+import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isNoRecordedUser, isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { ContactRefusedError, recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
@@ -808,6 +808,72 @@ class IdentityManager extends BaseManager {
    */
   canAnswer(): boolean {
     return this.provider !== null;
+  }
+
+  /**
+   * {@link convertReference} for records that may hold a value meaning "no
+   * user was recorded" (#2097): `migrated`, `unknown`, `import`
+   * ({@link NO_RECORDED_USER}) become `orphan:<value>` without a lookup,
+   * outcome `no-user`, so an account that later takes one of those names
+   * gains nothing, and the caller does not count them as needing attention.
+   * Everything else is `convertReference`'s, and throws as it does.
+   */
+  async convertRecordedUser(ctx: ActorContext, stored: string): Promise<{ value: string; outcome: 'kept' | 'orphan' | 'converted' | 'orphaned' | 'no-user' }> {
+    if (typeof stored === 'string' && isNoRecordedUser(stored)) {
+      return { value: stored.startsWith(ORPHAN_PREFIX) ? stored : `${ORPHAN_PREFIX}${normalizeUsername(stored)}`, outcome: 'no-user' };
+    }
+    return this.convertReference(ctx, stored);
+  }
+
+  /**
+   * Whether a stored reference names the user `username` (#2097): it is their
+   * identity `@id`, or, on a record not yet converted, their username. An
+   * orphan (`orphan:<name>`) and a "no user recorded" value never match
+   * anyone, so a later account with the same name inherits nothing. The `@id`
+   * is looked up with {@link identityIdOf}: false when the store cannot answer.
+   */
+  async refersTo(ctx: ActorContext, stored: unknown, username: string | null | undefined): Promise<boolean> {
+    if (typeof stored !== 'string' || !stored || !username || stored.startsWith(ORPHAN_PREFIX)) return false;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return sameUsername(stored, username) && !isNoRecordedUser(stored);
+    const id = await this.identityIdOf(ctx, username);
+    return id !== null && id === stored;
+  }
+
+  /**
+   * The username a stored reference names (#2097), for code that needs the
+   * sign-in name (a vault path, a preference): an `@id` gives its account's
+   * username, an orphan gives null, anything else (a username not yet
+   * converted, `anonymous`, the system principal) is returned as it is. Null
+   * for an `@id` with no account (deleted, or a contact's) and when the store
+   * cannot answer, logged without the value; a refusal still throws.
+   */
+  async usernameOf(ctx: ActorContext, stored: unknown): Promise<string | null> {
+    if (typeof stored !== 'string' || !stored || stored.startsWith(ORPHAN_PREFIX)) return null;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return stored;
+    try {
+      const identifier = (await this.getById(ctx, stored))?.identifier;
+      return typeof identifier === 'string' && identifier && !identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX) ? identifier : null;
+    } catch (error) {
+      if (error instanceof ContactRefusedError) throw error;
+      logger.warn(`👤 The identity store could not look up the username of an identity @id: ${error instanceof Error ? error.message : String(error)} (#2097)`);
+      return null;
+    }
+  }
+
+  /**
+   * How a stored reference to a user is shown to people (#2097, operator
+   * 2026-10-26): the username followed by the id, `jim (urn:uuid:3f6c…)`. An
+   * orphan shows as `jim (no account)`, an `@id` whose account is gone as
+   * `urn:uuid:… (no account)`; anything else (a username not yet converted,
+   * `anonymous`, the system principal) as it is. Resolved when shown, never
+   * stored. Never throws for a store that is down.
+   */
+  async describeReference(ctx: ActorContext, stored: unknown): Promise<string> {
+    if (typeof stored !== 'string' || !stored) return '';
+    if (stored.startsWith(ORPHAN_PREFIX)) return `${stored.slice(ORPHAN_PREFIX.length)} (no account)`;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return stored;
+    const username = await this.usernameOf(ctx, stored);
+    return username ? `${username} (${stored})` : `${stored} (no account)`;
   }
 
   private requireProvider(): PersonProvider {

@@ -84,6 +84,22 @@ export const IDENTITY_ID_PREFIX = 'urn:';
  */
 export const ORPHAN_PREFIX = 'orphan:';
 
+/**
+ * Values older records hold where no user was recorded (#2096, #2097): the
+ * footnote migration's `migrated`, the editor fallback `unknown` (and the
+ * attachment pool's `Unknown`), the JSPWiki import's `import`. Never a
+ * username: a start-up conversion never looks them up (an account that later
+ * takes one of these names must not gain the records), stores them as
+ * `orphan:<value>` and does not count them as needing attention.
+ */
+export const NO_RECORDED_USER: readonly string[] = ['migrated', 'unknown', 'import'];
+
+/** True when `value` is one of {@link NO_RECORDED_USER}, bare or as its orphan form. */
+export function isNoRecordedUser(value: unknown): boolean {
+  const name = normalizeUsername(value);
+  return NO_RECORDED_USER.includes(name.startsWith(ORPHAN_PREFIX) ? name.slice(ORPHAN_PREFIX.length) : name);
+}
+
 /** True when the name belongs to a principal rather than a user, or has the contact, `@id` or orphan prefix. */
 export function isReservedUsername(username: unknown): boolean {
   const name = normalizeUsername(username);
