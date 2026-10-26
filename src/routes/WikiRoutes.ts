@@ -6865,8 +6865,8 @@ ${panes}
         // #1876: once per person with vault keys, a reminder to keep the recovery words safe.
         // #2041: addressed, and so deduplicated, by the user's identity @id.
         const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
-        void Promise.resolve(identities?.getByUserIdentifier(systemContext(this.engine, 'remind a user of their recovery words: their identity @id (#2041)'), username))
-          .then((identity) => remindRecoveryWords(this.engine.getManager('NotificationManager'), identity?.['@id'] ?? username, () => hasUserKeys(pagesDirectory, username)))
+        void Promise.resolve(identities?.identityIdOf(systemContext(this.engine, 'remind a user of their recovery words: their identity @id (#2041)'), username))
+          .then((id) => remindRecoveryWords(this.engine.getManager('NotificationManager'), id ?? username, () => hasUserKeys(pagesDirectory, username)))
           .catch((err: unknown) => logger.warn('[private-store] The recovery-words reminder could not be addressed:', err));
       }
     } catch {

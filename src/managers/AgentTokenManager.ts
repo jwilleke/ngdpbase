@@ -539,7 +539,7 @@ class AgentTokenManager extends BaseManager {
     // #2041: the token's owner is named by identity @id in the record.
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     const ownerId = identities
-      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token mint: the owner identity @id (#2041)'), owner))?.['@id'] ?? owner
+      ? (await identities.identityIdOf(systemContext(this.engine, 'record a token mint: the owner identity @id (#2041)'), owner)) ?? owner
       : owner;
     await recordAuditEvent(
       this.auditSink(),
@@ -549,6 +549,7 @@ class AgentTokenManager extends BaseManager {
         ipAddress: subject.ipAddress,
         id,
         owner: ownerId,
+        ownerUser: owner,
         name: record.name,
         scopes: record.scopes,
         expiresAt: record.expiresAt,
@@ -657,7 +658,7 @@ class AgentTokenManager extends BaseManager {
     // #2041: the token's owner is named by identity @id in the record.
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     const ownerId = identities
-      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token revoke: the owner identity @id (#2041)'), record.owner))?.['@id'] ?? record.owner
+      ? (await identities.identityIdOf(systemContext(this.engine, 'record a token revoke: the owner identity @id (#2041)'), record.owner)) ?? record.owner
       : record.owner;
     await recordAuditEvent(
       this.auditSink(),
@@ -667,6 +668,7 @@ class AgentTokenManager extends BaseManager {
         ipAddress: ctx.ipAddress,
         id,
         owner: ownerId,
+        ownerUser: record.owner,
         name: record.name,
         revokedBy: byUsername,
         viaProxy: ctx.viaProxy
@@ -739,7 +741,7 @@ class AgentTokenManager extends BaseManager {
     // #2041: the token's owner is named by identity @id in the record.
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     const ownerId = identities
-      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token extend: the owner identity @id (#2041)'), record.owner))?.['@id'] ?? record.owner
+      ? (await identities.identityIdOf(systemContext(this.engine, 'record a token extend: the owner identity @id (#2041)'), record.owner)) ?? record.owner
       : record.owner;
     await recordAuditEvent(
       this.auditSink(),
@@ -749,6 +751,7 @@ class AgentTokenManager extends BaseManager {
         ipAddress: undefined,
         id,
         owner: ownerId,
+        ownerUser: record.owner,
         name: record.name,
         previousExpiresAt: record.expiresAt,
         expiresAt,

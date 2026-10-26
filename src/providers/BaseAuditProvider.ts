@@ -207,16 +207,29 @@ export function recordOwner(record: Record<string, unknown>): string | null {
 }
 
 /**
+ * The username of the owner of the resource a record is about (#2041):
+ * `metadata.ownerUser`, written beside `metadata.owner` (the identity `@id`)
+ * so the rows about an account still list after it is deleted. Null when the
+ * record names none (every row written before #2041).
+ */
+export function recordOwnerUser(record: Record<string, unknown>): string | null {
+  const ownerUser = (record.metadata as Record<string, unknown> | undefined)?.ownerUser;
+  return typeof ownerUser === 'string' && ownerUser ? ownerUser : null;
+}
+
+/**
  * Whether a record is about the user `person` (#1537): the user is its `user`
  * (the account acted on, or the user represented under a proxy grant), its
  * `actor` (who actually did it, under a proxy grant), or the owner of the
  * resource it names ({@link recordOwner}). The owner is the user's identity
- * `@id` (`ownerId`) on rows written from #2041 on, and their username on
- * rows written before, which are never rewritten; either matches.
+ * `@id` (`ownerId`) on rows written from #2041 on, with their username
+ * beside it ({@link recordOwnerUser}), and their username on rows written
+ * before, which are never rewritten; any of them matches. The username
+ * beside the `@id` is what lists the rows of an account deleted since.
  */
 export function recordIsAbout(record: Record<string, unknown>, person: string, ownerId?: string): boolean {
   const owner = recordOwner(record);
-  return record.user === person || record.actor === person || owner === person || (Boolean(ownerId) && owner === ownerId);
+  return record.user === person || record.actor === person || owner === person || recordOwnerUser(record) === person || (Boolean(ownerId) && owner === ownerId);
 }
 
 /**

@@ -2378,7 +2378,7 @@ class VersioningFileProvider extends FileSystemProvider {
     for (const entry of purged) {
       // #2041: the owner is named by identity @id; a name with no account as written.
       const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
-        ?.getByUserIdentifier(systemContext(this.engine, 'record a vault trash purge: the owner identity @id (#2041)'), entry.creator))?.['@id'] ?? entry.creator;
+        ?.identityIdOf(systemContext(this.engine, 'record a vault trash purge: the owner identity @id (#2041)'), entry.creator)) ?? entry.creator;
       await recordSystemAction(this.engine, ctx, {
         eventType: AUDIT_EVENT.PAGE_DELETE,
         action: 'purge',
@@ -2389,6 +2389,7 @@ class VersioningFileProvider extends FileSystemProvider {
         metadata: {
           uuid: entry.uuid,
           owner,
+          ownerUser: entry.creator,
           store: entry.store,
           deletedAt: entry.deletedAt,
           retentionDays: this.deleteRetentionDays

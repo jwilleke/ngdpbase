@@ -9,9 +9,6 @@ import type IdentityManager from '../../../dist/src/managers/IdentityManager.js'
 import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 
-/** The prefix of an identity `@id` (core's `IDENTITY_ID_PREFIX`, #2041): no username starts with it. */
-const IDENTITY_ID_PREFIX = 'urn:';
-
 /**
  * CalendarEvent — internal storage shape.
  *
@@ -109,59 +106,72 @@ class CalendarDataManager {
 
   // ── Persistence ─────────────────────────────────────────────────────────────
 
-  /** Names that could not be converted to an identity @id at start-up (#2041). */
-  private unconvertedNames = 0;
+  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  private attention: string | null = null;
 
   /**
    * Once, at start-up (#2041): every event's `createdBy`, and a reservation's
    * `_private.requester` and `_private.submittedBy`, that is still a username
-   * becomes that user's identity `@id`, under the system context `ctx`; the
-   * events are saved once. A reservation filed through the forms add-on
-   * (it has `_private.submittedBy`) keeps its `requester`, which there is the
-   * name typed on the form, not an account. `anonymous`, the system
-   * principal and values already an `@id` are left alone, so a second start
-   * writes nothing. A username with no account is left as it is and reported:
-   * a log line and the admin dashboard's needs-attention list
-   * ({@link getManagerStatus}), counts only.
+   * gets `IdentityManager.convertReference`'s answer under the system context
+   * `ctx`, and the events are saved once: that user's identity `@id`, or
+   * `orphan:<name>` when the name has no account (nobody's from then on: a
+   * later account with that name never sees the private block or cancels).
+   * A reservation filed through the forms add-on (it has
+   * `_private.submittedBy`) keeps its `requester`, which there is the name
+   * typed on the form, not an account. `@id`s, orphans, `anonymous` and the
+   * system principal are left alone, so a second start writes nothing.
+   * Orphans are reported, counts only: a log line and the admin dashboard's
+   * needs-attention list ({@link getManagerStatus}). When the identity store
+   * cannot answer, nothing is changed and the pass is postponed to the next
+   * start, reported the same way.
    */
   async convertPeopleToIdentityIds(identities: IdentityManager | null | undefined, ctx: ActorContext): Promise<void> {
+    this.attention = null;
     if (!identities) return;
-    const ids = new Map<string, string | null>();
-    let converted = 0;
-    this.unconvertedNames = 0;
-    const convert = async (name: unknown): Promise<string | null> => {
-      if (typeof name !== 'string' || !name || name.startsWith(IDENTITY_ID_PREFIX) || name.toLowerCase() === 'anonymous' || name.toLowerCase() === ctx.username.toLowerCase()) return null;
-      if (!ids.has(name)) ids.set(name, (await identities.getByUserIdentifier(ctx, name))?.['@id'] ?? null);
-      const id = ids.get(name) ?? null;
-      if (id) converted++; else this.unconvertedNames++;
-      return id;
-    };
-    for (const event of this.events.values()) {
-      const createdBy = await convert(event.createdBy);
-      if (createdBy) event.createdBy = createdBy;
-      const priv = event._private;
-      if (!priv) continue;
-      const fromForm = typeof priv['submittedBy'] === 'string';
-      const submittedBy = fromForm ? await convert(priv['submittedBy']) : null;
-      if (submittedBy) priv['submittedBy'] = submittedBy;
-      const requester = fromForm ? null : await convert(priv['requester']);
-      if (requester) priv['requester'] = requester;
+    const postponed = 'Calendar references were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    if (!identities.canAnswer()) {
+      this.attention = postponed;
+      console.warn(`[CalendarDataManager] ${postponed}`);
+      return;
     }
-    if (converted > 0) {
+    const changes: Array<() => void> = [];
+    let converted = 0, orphans = 0;
+    const convert = async (holder: Record<string, unknown>, key: string): Promise<void> => {
+      const stored = holder[key];
+      if (typeof stored !== 'string') return;
+      const { value, outcome } = await identities.convertReference(ctx, stored);
+      if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+      if (outcome === 'converted') converted++;
+      if (value !== stored) changes.push(() => { holder[key] = value; });
+    };
+    try {
+      for (const event of this.events.values()) {
+        await convert(event as unknown as Record<string, unknown>, 'createdBy');
+        const priv = event._private;
+        if (!priv) continue;
+        if (typeof priv['submittedBy'] === 'string') await convert(priv, 'submittedBy');
+        else await convert(priv, 'requester');
+      }
+    } catch (error) {
+      this.attention = postponed;
+      console.warn(`[CalendarDataManager] ${postponed}: ${(error as Error).message}`);
+      return;
+    }
+    for (const apply of changes) apply();
+    if (changes.length > 0) {
       await this.save();
       console.info(`[CalendarDataManager] Converted ${converted} reference(s) from username to identity @id (#2041)`);
     }
-    if (this.unconvertedNames > 0) console.warn(`[CalendarDataManager] ${this.unconvertedReason()}`);
+    if (orphans > 0) {
+      this.attention = `${orphans} calendar reference(s) are orphaned: their username has no account, so only a calendar manager can act on those reservations (#2041)`;
+      console.warn(`[CalendarDataManager] ${this.attention}`);
+    }
   }
 
-  private unconvertedReason(): string {
-    return `${this.unconvertedNames} calendar reference(s) name a user by a username that has no account, so they cannot be converted to an identity @id; they are left as they are (#2041)`;
-  }
-
-  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while names could not be converted (#2041). */
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while references are orphaned or not converted (#2041). */
   getManagerStatus(): ManagerStatus {
-    return this.unconvertedNames > 0
-      ? { state: 'degraded', kind: 'attention', reason: this.unconvertedReason() }
+    return this.attention
+      ? { state: 'degraded', kind: 'attention', reason: this.attention }
       : { state: 'ready' };
   }
 
@@ -405,7 +415,8 @@ class CalendarDataManager {
   /**
    * Whether `viewer` made the reservation `event` (#2041): its requester is
    * the viewer's identity `@id`, or, on one stored before and not yet
-   * converted, their username.
+   * converted, their username. An orphan (`orphan:<name>`) matches nobody:
+   * no username or `@id` starts with that prefix.
    */
   private isRequester(event: CalendarEvent, viewer: CalendarViewer): boolean {
     const requester = event._private?.['requester'] as string | undefined;

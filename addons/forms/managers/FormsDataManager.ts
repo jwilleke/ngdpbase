@@ -10,9 +10,6 @@ import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionP
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
 
-/** The prefix of an identity `@id` (core's `IDENTITY_ID_PREFIX`, #2041): no username starts with it. */
-const IDENTITY_ID_PREFIX = 'urn:';
-
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
 const BaseFieldSchema = z.object({
@@ -299,8 +296,8 @@ export default class FormsDataManager {
   private engine: { getManager: (name: string) => unknown } | null;
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
-  /** Submissions whose submitter could not be converted to an identity @id at start-up (#2041). */
-  private unconvertedSubmitters = 0;
+  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  private attention: string | null = null;
 
   /** What core handed the forms add-on (#1813): `actorOf`, `systemContext`, `isAtLeast`. */
   private readonly host: AddonHost;
@@ -327,44 +324,57 @@ export default class FormsDataManager {
 
   /**
    * Once, at start-up (#2041): every submission whose `submittedBy` is still
-   * a username is rewritten with that user's identity `@id`, the username
-   * kept as `submitterName` for showing, one write per submission file, under
-   * the system context. `anonymous`, the system principal and values already
-   * an `@id` are left alone, so a second start writes nothing. A username
-   * with no account is left as it is and reported: a log line and the admin
-   * dashboard's needs-attention list ({@link getManagerStatus}), counts only.
+   * a username gets `IdentityManager.convertReference`'s answer, the name
+   * kept as `submitterName` for showing, one write per submission file,
+   * under the system context: that user's identity `@id`, or `orphan:<name>`
+   * when the name has no account (nobody's from then on: a later account
+   * with that name never takes it over). `@id`s, orphans, `anonymous` and
+   * the system principal are left alone, so a second start writes nothing.
+   * Orphans are reported, counts only: a log line and the admin dashboard's
+   * needs-attention list ({@link getManagerStatus}). When the identity store
+   * cannot answer, the pass is postponed to the next start, reported the same
+   * way.
    */
   private async convertSubmittersToIdentityIds(): Promise<void> {
     const identities = this.engine?.getManager('IdentityManager') as IdentityManager | null | undefined;
+    this.attention = null;
     if (!identities) return;
+    const postponed = 'Form submitters were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    if (!identities.canAnswer()) {
+      this.attention = postponed;
+      console.warn(`[FormsDataManager] ${postponed}`);
+      return;
+    }
     const ctx = this.host.systemContext('forms: convert submitters from username to identity @id (#2041)');
-    const ids = new Map<string, string | null>();
-    let converted = 0;
-    this.unconvertedSubmitters = 0;
-    for (const s of await this.getSubmissions()) {
-      const by = s.submittedBy;
-      if (typeof by !== 'string' || !by || by.startsWith(IDENTITY_ID_PREFIX) || by.toLowerCase() === 'anonymous' || by.toLowerCase() === ctx.username.toLowerCase()) continue;
-      if (!ids.has(by)) ids.set(by, (await identities.getByUserIdentifier(ctx, by))?.['@id'] ?? null);
-      const id = ids.get(by);
-      if (!id) { this.unconvertedSubmitters++; continue; }
-      const filePath = path.join(this.dataPath, 'submissions', s.formId, `${s.id}.json`);
-      const tmp = `${filePath}.tmp`;
-      await fsp.writeFile(tmp, JSON.stringify({ ...s, submittedBy: id, submitterName: s.submitterName ?? by }, null, 2), 'utf8');
-      await fsp.rename(tmp, filePath);
-      converted++;
+    let converted = 0, orphans = 0;
+    try {
+      for (const s of await this.getSubmissions()) {
+        if (typeof s.submittedBy !== 'string') continue;
+        const { value, outcome } = await identities.convertReference(ctx, s.submittedBy);
+        if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+        if (outcome === 'converted') converted++;
+        if (value === s.submittedBy) continue;
+        const filePath = path.join(this.dataPath, 'submissions', s.formId, `${s.id}.json`);
+        const tmp = `${filePath}.tmp`;
+        await fsp.writeFile(tmp, JSON.stringify({ ...s, submittedBy: value, submitterName: s.submitterName ?? s.submittedBy }, null, 2), 'utf8');
+        await fsp.rename(tmp, filePath);
+      }
+    } catch (error) {
+      this.attention = postponed;
+      console.warn(`[FormsDataManager] ${postponed}: ${(error as Error).message}`);
+      return;
     }
     if (converted > 0) console.info(`[FormsDataManager] Converted ${converted} submitter(s) from username to identity @id (#2041)`);
-    if (this.unconvertedSubmitters > 0) console.warn(`[FormsDataManager] ${this.unconvertedReason()}`);
+    if (orphans > 0) {
+      this.attention = `${orphans} form submission(s) are orphaned: their submitter's username has no account (#2041)`;
+      console.warn(`[FormsDataManager] ${this.attention}`);
+    }
   }
 
-  private unconvertedReason(): string {
-    return `${this.unconvertedSubmitters} form submission(s) name a submitter by a username that has no account, so it cannot be converted to an identity @id; they are left as they are (#2041)`;
-  }
-
-  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters could not be converted (#2041). */
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters are orphaned or not converted (#2041). */
   getManagerStatus(): ManagerStatus {
-    return this.unconvertedSubmitters > 0
-      ? { state: 'degraded', kind: 'attention', reason: this.unconvertedReason() }
+    return this.attention
+      ? { state: 'degraded', kind: 'attention', reason: this.attention }
       : { state: 'ready' };
   }
 

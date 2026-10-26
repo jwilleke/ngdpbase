@@ -75,8 +75,17 @@ export const ACCOUNTLESS_PERSON_PREFIX = 'person:';
  */
 export const IDENTITY_ID_PREFIX = 'urn:';
 
-/** True when the name belongs to a principal rather than a user, or has the contact or `@id` prefix. */
+/**
+ * The prefix a start-up conversion gives a stored username that has no
+ * account (#2041): `orphan:<name>`. The record is then nobody's: a later
+ * account with the same name never takes it over, no "is it mine" check
+ * matches it, and only an administrator can act on it. No username may
+ * start with it.
+ */
+export const ORPHAN_PREFIX = 'orphan:';
+
+/** True when the name belongs to a principal rather than a user, or has the contact, `@id` or orphan prefix. */
 export function isReservedUsername(username: unknown): boolean {
   const name = normalizeUsername(username);
-  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX);
+  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX) || name.startsWith(ORPHAN_PREFIX);
 }

@@ -75,6 +75,8 @@ describe('#1436 username normalization', () => {
       expect(isReservedUsername('urn:uuid:3f2b8a6e-1c4d-4e5f-8a9b-0c1d2e3f4a5b')).toBe(true);
       expect(isReservedUsername('URN:anything')).toBe(true);
       expect(isReservedUsername('urnie')).toBe(false);
+      // Sabotage check: without the `orphan:` prefix this is false, and an account could take an orphaned record.
+      expect(isReservedUsername('orphan:bob')).toBe(true);
     });
 
     test('an ordinary name is not reserved', () => {

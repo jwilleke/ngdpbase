@@ -15,18 +15,14 @@ import OidcManager from '../managers/OidcManager';
 import AttachmentManager from '../managers/AttachmentManager';
 import VersioningFileProvider from '../providers/VersioningFileProvider';
 import type { WikiEngine } from '../types/WikiEngine';
+import { fakeIdentityManager } from '../test-support/identities';
 
 const IDS: Record<string, string> = { jim: 'urn:uuid:11111111-1111-4111-8111-111111111111' };
 
-function engineWithSink(): { engine: WikiEngine; rows: Array<Record<string, unknown>>; lookups: unknown[] } {
+function engineWithSink(opts: { down?: boolean } = {}): { engine: WikiEngine; rows: Array<Record<string, unknown>>; lookups: unknown[] } {
   const rows: Array<Record<string, unknown>> = [];
   const lookups: unknown[] = [];
-  const identities = {
-    getByUserIdentifier: vi.fn(async (ctx: unknown, username: string) => {
-      lookups.push(ctx);
-      return IDS[username] ? { '@id': IDS[username], identifier: username } : null;
-    })
-  };
+  const identities = fakeIdentityManager(IDS, { ...opts, onLookup: (ctx) => lookups.push(ctx) });
   const audit = {
     logAuditEvent: vi.fn(async (e: Record<string, unknown>) => { rows.push(e); return 'id'; }),
     flushAuditQueue: vi.fn(async () => {})
@@ -51,6 +47,9 @@ describe('#2041 audit metadata.owner is the owner\'s identity @id', () => {
     await auth.auditInvitation('invitation-send', subject, invitation('jim'));
     await auth.recordInvitationUse({ ip: '203.0.113.1', get: () => 'ua' }, invitation('jim'));
     expect(rows.map((r) => (r.metadata as { owner: string }).owner)).toEqual([IDS.jim, IDS.jim]);
+    // The username beside the @id, so the rows still list after the account is deleted.
+    // Sabotage check: dropping `ownerUser: invitation.username` fails this.
+    expect(rows.map((r) => (r.metadata as { ownerUser: string }).ownerUser)).toEqual(['jim', 'jim']);
     // The lookup is core's own, under the system context.
     expect(lookups[0]).toMatchObject({ origin: 'boot' });
     // `user` is still the account that acted, by username.
@@ -69,7 +68,7 @@ describe('#2041 audit metadata.owner is the owner\'s identity @id', () => {
     const oidc = new OidcManager(engine) as unknown as { writeEvent(e: unknown, revoker: unknown): Promise<void> };
     await oidc.writeEvent({ event: 'oidcgrant-revoke', accountId: 'jim', grantId: 'g1' }, subject);
     expect(rows).toHaveLength(1);
-    expect((rows[0].metadata as { owner: string }).owner).toBe(IDS.jim);
+    expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, ownerUser: 'jim' });
   });
 
   test('a sealed-store file upload', async () => {
@@ -78,7 +77,7 @@ describe('#2041 audit metadata.owner is the owner\'s identity @id', () => {
       recordAttachmentEvent(op: string, ctx: unknown, detail: unknown): Promise<void>;
     };
     await attachments.recordAttachmentEvent('upload', subject, { attachmentId: 'a1', sealedStore: { owner: 'jim', store: 'health' } });
-    expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, store: 'health', sealed: true });
+    expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, ownerUser: 'jim', store: 'health', sealed: true });
   });
 
   test('a vault trash purge', async () => {
@@ -88,6 +87,14 @@ describe('#2041 audit metadata.owner is the owner\'s identity @id', () => {
     };
     const job = { username: 'system', origin: 'schedule', requestedAt: '2026-10-26T00:00:00Z', reason: 'test' };
     await provider.recordPrivateRetentionPurge(job, [{ uuid: 'p1', creator: 'jim', store: 'default', deletedAt: '2026-09-01T00:00:00Z' }]);
-    expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, store: 'default' });
+    expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, ownerUser: 'jim', store: 'default' });
+  });
+
+  test('the identity store down: the row is still written, the owner by username (#2041)', async () => {
+    const { engine, rows } = engineWithSink({ down: true });
+    const auth = new AuthManager(engine) as unknown as { auditInvitation(e: string, ctx: unknown, inv: unknown): Promise<void> };
+    // Sabotage check: calling getByUserIdentifier (which throws) in place of identityIdOf rejects this.
+    await auth.auditInvitation('invitation-send', subject, invitation('jim'));
+    expect(rows[0].metadata).toMatchObject({ owner: 'jim', ownerUser: 'jim' });
   });
 });

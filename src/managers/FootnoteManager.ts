@@ -22,8 +22,8 @@ import {
 } from '../utils/pageNotes.js';
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 import type IdentityManager from './IdentityManager.js';
-import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
-import { IDENTITY_ID_PREFIX, sameUsername } from '../utils/username.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 
 export interface PageFootnote {
   id: string;
@@ -83,56 +83,74 @@ export default class FootnoteManager extends BaseManager {
 
   /**
    * Once, at start-up (#2041): every public footnote whose `createdBy` is
-   * still a username is rewritten with that user's identity `@id`, one write
-   * per page file, under the system context. A value that is already an `@id`
-   * (`urn:`), `anonymous` or the system principal is left alone, so a second
-   * start writes nothing. A username with no account is left as it is and
-   * reported: a log line and the admin dashboard's needs-attention list,
-   * counts only. A vault page's footnotes are in its vault, sealed or not,
-   * which start-up does not open; they keep their username, and
-   * {@link isCreator} still matches it.
+   * still a username gets `IdentityManager.convertReference`'s answer, one
+   * write per page file, under the system context: that user's identity
+   * `@id`, or `orphan:<name>` when the name has no account (nobody's from
+   * then on: a later account with that name never takes it over, and only an
+   * administrator can delete it). `@id`s, orphans, `anonymous` and the system
+   * principal are left alone, so a second start writes nothing. Orphans are
+   * reported, counts only: a log line and the admin dashboard's
+   * needs-attention list. When the identity store cannot answer, the whole
+   * pass is postponed to the next start and reported the same way. A vault
+   * page's footnotes are in its vault, which start-up does not open; they
+   * keep their username, and {@link isCreator} still matches it.
    */
   private async convertCreatorsToIdentityIds(): Promise<void> {
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     if (!identities) return;
+    if (!identities.canAnswer()) {
+      this.postponeConversion('the identity store is unavailable');
+      return;
+    }
     const ctx = systemContext(this.engine, 'convert footnote creators from username to identity @id (#2041)');
-    const system = systemPrincipalOf(this.engine);
-    const ids = new Map<string, string | null>();
-    let files = 0, converted = 0, unknown = 0;
-    for (const name of (await fs.readdir(this.storageDir)).filter((f) => f.endsWith('.json'))) {
-      const file = path.join(this.storageDir, name);
-      let map: FootnoteMap;
-      try { map = JSON.parse(await fs.readFile(file, 'utf8')) as FootnoteMap; } catch { continue; }
-      let changed = false;
-      for (const note of Object.values(map)) {
-        const by = note?.createdBy;
-        if (typeof by !== 'string' || !by || by.startsWith(IDENTITY_ID_PREFIX) || sameUsername(by, 'anonymous') || sameUsername(by, system)) continue;
-        if (!ids.has(by)) ids.set(by, (await identities.getByUserIdentifier(ctx, by))?.['@id'] ?? null);
-        const id = ids.get(by);
-        if (id) { note.createdBy = id; converted++; changed = true; } else unknown++;
+    let files = 0, converted = 0, orphans = 0;
+    try {
+      for (const name of (await fs.readdir(this.storageDir)).filter((f) => f.endsWith('.json'))) {
+        const file = path.join(this.storageDir, name);
+        let map: FootnoteMap;
+        try { map = JSON.parse(await fs.readFile(file, 'utf8')) as FootnoteMap; } catch { continue; }
+        let changed = false;
+        for (const note of Object.values(map)) {
+          if (!note || typeof note.createdBy !== 'string') continue;
+          const { value, outcome } = await identities.convertReference(ctx, note.createdBy);
+          if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+          if (outcome === 'converted') converted++;
+          if (value !== note.createdBy) { note.createdBy = value; changed = true; }
+        }
+        if (changed) { await fs.writeFile(file, JSON.stringify(map, null, 2)); files++; }
       }
-      if (changed) { await fs.writeFile(file, JSON.stringify(map, null, 2)); files++; }
+    } catch (error) {
+      this.postponeConversion(error instanceof Error ? error.message : String(error));
+      return;
     }
     if (converted > 0) logger.info(`[FootnoteManager] Converted ${converted} footnote creator(s) in ${files} page file(s) from username to identity @id (#2041)`);
-    if (unknown > 0) {
-      const reason = `${unknown} footnote(s) name a creator by a username that has no account, so it cannot be converted to an identity @id; they are left as they are (#2041)`;
+    if (orphans > 0) {
+      const reason = `${orphans} footnote(s) are orphaned: their creator's username has no account, so only an administrator can delete them (#2041)`;
       logger.warn(`[FootnoteManager] ${reason}`);
       this.markNeedsAttention(reason);
     }
   }
 
+  /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2041). */
+  private postponeConversion(why: string): void {
+    const reason = 'Footnote creators were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    logger.warn(`[FootnoteManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
+  }
+
   /**
    * Whether `ctx` added `footnote` (#2041): its `createdBy` is the caller's
    * identity `@id`, or, on a footnote written before and not yet converted
-   * (a vault page's), the caller's username.
+   * (a vault page's), the caller's username. An orphan (`orphan:<name>`)
+   * is nobody's and never matches.
    */
   async isCreator(footnote: Pick<PageFootnote, 'createdBy'>, ctx: ActorContext): Promise<boolean> {
-    if (!ctx.username || !footnote.createdBy) return false;
+    if (!ctx.username || !footnote.createdBy || footnote.createdBy.startsWith(ORPHAN_PREFIX)) return false;
     if (footnote.createdBy === ctx.username) return true;
     if (!footnote.createdBy.startsWith(IDENTITY_ID_PREFIX)) return false;
-    const identity = await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'is this footnote the caller one: their identity @id (#2041)'), ctx.username);
-    return Boolean(identity) && identity!['@id'] === footnote.createdBy;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'is this footnote the caller one: their identity @id (#2041)'), ctx.username);
+    return Boolean(id) && id === footnote.createdBy;
   }
 
   /** `ngdpbase.footnotes.storagedir`, resolved, or the default when there is no configuration (a test). */
@@ -234,7 +252,7 @@ export default class FootnoteManager extends BaseManager {
     await this.refuseWhenOff(page, ctx);
     // #2041: the creator by identity @id; a name with no account as given.
     const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username))?.['@id'] ?? ctx.username;
+      ?.identityIdOf(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username)) ?? ctx.username;
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
 
@@ -283,7 +301,7 @@ export default class FootnoteManager extends BaseManager {
   private async putImported(page: PageRef, id: string, data: { display: string; url: string; note: string }, ctx: ActorContext): Promise<boolean> {
     // #2041: the creator by identity @id; a name with no account as given.
     const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username))?.['@id'] ?? ctx.username;
+      ?.identityIdOf(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username)) ?? ctx.username;
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
     if (map[id]) return false;

@@ -806,9 +806,9 @@ class AuditManager extends BaseManager {
     // #2041: rows from this release on name a resource's owner by identity
     // @id, rows before by username, and none is rewritten; both are the user's.
     // Core's own lookup, after the caller was decided above.
-    const identity = await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'list the audit entries about a user: their identity @id (#2041)'), person);
-    return await this.provider.searchEntriesAbout(person, identity ? { ...options, ownerId: identity['@id'] } : options);
+    const ownerId = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'list the audit entries about a user: their identity @id (#2041)'), person);
+    return await this.provider.searchEntriesAbout(person, ownerId ? { ...options, ownerId } : options);
   }
 
   /**

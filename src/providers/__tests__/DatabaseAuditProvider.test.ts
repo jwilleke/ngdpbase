@@ -420,6 +420,15 @@ describe('queries', () => {
     expect((await provider.searchEntriesAbout('jim')).results.map((r) => r.eventType).sort()).toEqual(['page-edit', 'token-revoke']);
     await provider.close();
   });
+
+  test('a row naming the owner by @id lists by the username beside it once the account (and its @id) is gone', async () => {
+    const provider = await seeded();
+    await provider.logAuditEvent(event('token-mint', { user: 'admin', metadata: { owner: 'urn:uuid:gone-1', ownerUser: 'gone' } }));
+    // The account is deleted: no @id to pass. Sabotage check: dropping `OR owner_user = ?` leaves this empty.
+    const rows = await provider.searchEntriesAbout('gone');
+    expect(rows.results.map((r) => r.eventType)).toEqual(['token-mint']);
+    await provider.close();
+  });
 });
 
 describe('recordIsAbout (#1537, #2041)', () => {
@@ -431,5 +440,8 @@ describe('recordIsAbout (#1537, #2041)', () => {
     expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1' } }, 'jim', 'urn:uuid:jim-1')).toBe(true);
     expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:ann-1' } }, 'jim', 'urn:uuid:jim-1')).toBe(false);
     expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1' } }, 'jim')).toBe(false);
+    // The username beside the @id: listed with no @id, as for a deleted account.
+    // Sabotage check: without the recordOwnerUser clause this is false.
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1', ownerUser: 'jim' } }, 'jim')).toBe(true);
   });
 });

@@ -3220,7 +3220,7 @@ class AuthManager extends BaseManager {
     const who = actorOf(ctx);
     // #2041: the invited account is the owner, named by identity @id; a name with no account as written.
     const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'record an invitation: the invited account identity @id (#2041)'), invitation.username))?.['@id'] ?? invitation.username;
+      ?.identityIdOf(systemContext(this.engine, 'record an invitation: the invited account identity @id (#2041)'), invitation.username)) ?? invitation.username;
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType,
       ...who,
@@ -3230,7 +3230,7 @@ class AuthManager extends BaseManager {
       resource: invitation.username,
       resourceType: 'user',
       ...(reason ? { reason } : {}),
-      metadata: { ...who.metadata, invitationId: invitation.id, owner, expiresAt: invitation.expiresAt, createdBy: invitation.createdBy }
+      metadata: { ...who.metadata, invitationId: invitation.id, owner, ownerUser: invitation.username, expiresAt: invitation.expiresAt, createdBy: invitation.createdBy }
     }, (err) => logger.warn(`[AuthManager] Audit record failed for ${eventType} of invitation ${invitation.id}:`, err));
   }
 
@@ -3238,7 +3238,7 @@ class AuthManager extends BaseManager {
   private async recordInvitationUse(req: Request, invitation: InvitationView): Promise<void> {
     // #2041: the invited account is the owner, named by identity @id; a name with no account as written.
     const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'record an invitation use: the invited account identity @id (#2041)'), invitation.username))?.['@id'] ?? invitation.username;
+      ?.identityIdOf(systemContext(this.engine, 'record an invitation use: the invited account identity @id (#2041)'), invitation.username)) ?? invitation.username;
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.INVITATION_USE,
       user: invitation.username,
@@ -3248,7 +3248,7 @@ class AuthManager extends BaseManager {
       severity: 'medium',
       resource: invitation.username,
       resourceType: 'user',
-      metadata: { invitationId: invitation.id, owner, createdBy: invitation.createdBy, userAgent: req.get?.('user-agent') }
+      metadata: { invitationId: invitation.id, owner, ownerUser: invitation.username, createdBy: invitation.createdBy, userAgent: req.get?.('user-agent') }
     }, (err) => logger.warn(`[AuthManager] Audit record failed for invitation-use of ${invitation.id}:`, err));
   }
 

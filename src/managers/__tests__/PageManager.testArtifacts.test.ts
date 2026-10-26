@@ -10,6 +10,7 @@
 vi.unmock('../PageManager');
 
 import PageManager from '../PageManager';
+import { fakeIdentityManager } from '../../test-support/identities';
 
 type Info = { title: string; uuid: string; metadata: Record<string, unknown> };
 
@@ -33,7 +34,7 @@ function makeManager(pages: Info[], { auditFails = false } = {}) {
     }),
     flushAuditQueue: vi.fn(() => Promise.resolve())
   };
-  const identities = { getByUserIdentifier: vi.fn(async (_ctx: unknown, u: string) => (u === 'e2e-ann' ? { '@id': 'urn:uuid:ann-1' } : null)) };
+  const identities = fakeIdentityManager({ 'e2e-ann': 'urn:uuid:ann-1' });
   const manager = new PageManager({
     getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : name === 'IdentityManager' ? identities : null))
   }) as unknown as {
@@ -94,6 +95,8 @@ describe('PageManager.deleteTestArtifacts (#2008)', () => {
     // Sabotage check: `owner: author` in place of the lookup turns the first red.
     const owners = Object.fromEntries(events.map((e) => [(e.metadata as { pageName: string }).pageName, (e.metadata as { owner: string }).owner]));
     expect(owners).toEqual({ 'Profile: e2e-ann': 'urn:uuid:ann-1', 'NGDPBASE-test-B': 'gone' });
+    // #2041: the username beside the @id, so the rows still list after the account is deleted.
+    expect(events.map((e) => (e.metadata as { ownerUser?: string }).ownerUser).sort()).toEqual(['e2e-ann', 'gone']);
   });
 
   test('a record that cannot be written refuses that delete', async () => {

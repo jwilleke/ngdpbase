@@ -4,9 +4,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { scheduleContext, systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import { scheduleContext, systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
-import { IDENTITY_ID_PREFIX, sameUsername } from '../utils/username.js';
+import { IDENTITY_ID_PREFIX } from '../utils/username.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
@@ -220,41 +220,60 @@ class NotificationManager extends BaseManager {
 
   /**
    * Once, at start-up (#2041): every stored `targetUsers` and `dismissedBy`
-   * entry that is still a username becomes that user's identity `@id`, under
-   * the system context, and the file is written once. Entries already an
-   * `@id` (`urn:`), `anonymous` and the system principal are left alone, so a
-   * second start writes nothing. A username with no account is left as it is
-   * and reported: a log line and the admin dashboard's needs-attention list,
-   * counts only.
+   * entry that is still a username gets `IdentityManager.convertReference`'s
+   * answer, under the system context, and the file is written once: that
+   * user's identity `@id`, or `orphan:<name>` when the name has no account
+   * (it then reaches nobody: a later account with that name is never
+   * addressed by it). `@id`s, orphans, `anonymous` and the system principal
+   * are left alone, so a second start writes nothing. Orphans are reported,
+   * counts only: a log line and the admin dashboard's needs-attention list.
+   * When the identity store cannot answer, nothing is changed and the pass is
+   * postponed to the next start, reported the same way.
    */
   private async convertRecipientsToIdentityIds(): Promise<void> {
     const identities = this.engine?.getManager<IdentityManager>('IdentityManager');
     if (!identities) return;
+    if (!identities.canAnswer()) {
+      this.postponeConversion('the identity store is unavailable');
+      return;
+    }
     const ctx = systemContext(this.engine, 'convert notification recipients from username to identity @id (#2041)');
-    const system = systemPrincipalOf(this.engine);
-    const ids = new Map<string, string | null>();
-    let converted = 0, unknown = 0;
-    for (const notification of this.notifications.values()) {
-      for (const field of ['targetUsers', 'dismissedBy'] as const) {
-        const list = Array.isArray(notification[field]) ? notification[field] : [];
-        for (let i = 0; i < list.length; i++) {
-          const name = list[i];
-          if (typeof name !== 'string' || !name || name.startsWith(IDENTITY_ID_PREFIX) || sameUsername(name, 'anonymous') || sameUsername(name, system)) continue;
-          if (!ids.has(name)) ids.set(name, (await identities.getByUserIdentifier(ctx, name))?.['@id'] ?? null);
-          const id = ids.get(name);
-          if (id) { list[i] = id; converted++; } else unknown++;
+    const changes: Array<{ list: string[]; at: number; value: string }> = [];
+    let converted = 0, orphans = 0;
+    try {
+      for (const notification of this.notifications.values()) {
+        for (const field of ['targetUsers', 'dismissedBy'] as const) {
+          const list = Array.isArray(notification[field]) ? notification[field] : [];
+          for (let at = 0; at < list.length; at++) {
+            if (typeof list[at] !== 'string') continue;
+            const { value, outcome } = await identities.convertReference(ctx, list[at]);
+            if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+            if (outcome === 'converted') converted++;
+            if (value !== list[at]) changes.push({ list, at, value });
+          }
         }
       }
+    } catch (error) {
+      this.postponeConversion(error instanceof Error ? error.message : String(error));
+      return;
     }
-    if (converted > 0) {
+    for (const { list, at, value } of changes) list[at] = value;
+    if (changes.length > 0) {
       await this.saveNotifications();
       this.logger.info(`Converted ${converted} notification recipient(s) from username to identity @id (#2041)`);
     }
-    if (unknown > 0) {
-      const reason = `${unknown} notification recipient(s) are named by a username that has no account, so they cannot be converted to an identity @id; they are left as they are (#2041)`;
+    if (orphans > 0) {
+      const reason = `${orphans} notification recipient(s) are orphaned: their username has no account, so the notice reaches nobody by it (#2041)`;
       this.logger.warn(reason);
       this.markNeedsAttention(reason);
     }
+  }
+
+  /** The identity store could not answer: nothing is converted this start, and the next start tries again (#2041). */
+  private postponeConversion(why: string): void {
+    const reason = 'Notification recipients were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    this.logger.warn(`${reason}: ${why}`);
+    this.markNeedsAttention(reason);
   }
 
   /**
@@ -293,7 +312,7 @@ class NotificationManager extends BaseManager {
     const targetUsers: string[] = [];
     for (const name of notification.targetUsers || []) {
       targetUsers.push(identities && !name.startsWith(IDENTITY_ID_PREFIX)
-        ? (await identities.getByUserIdentifier(systemContext(this.engine, 'address a notification: the recipient identity @id (#2041)'), name))?.['@id'] ?? name
+        ? (await identities.identityIdOf(systemContext(this.engine, 'address a notification: the recipient identity @id (#2041)'), name)) ?? name
         : name);
     }
     const id = `notification_${++this.notificationId}`;
@@ -376,9 +395,9 @@ class NotificationManager extends BaseManager {
    */
   async getUserNotifications(ctx: ActorContext, includeExpired: boolean = false): Promise<Notification[]> {
     const username = ctx.username;
-    const identity = await this.engine?.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'list notifications for a user: their identity @id (#2041)'), username);
-    const me = (who: string): boolean => who === username || (Boolean(identity) && who === identity!['@id']);
+    const id = await this.engine?.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'list notifications for a user: their identity @id (#2041)'), username);
+    const me = (who: string): boolean => who === username || (Boolean(id) && who === id);
     const now = new Date();
     const userNotifications: Notification[] = [];
 
@@ -419,7 +438,7 @@ class NotificationManager extends BaseManager {
     const username = ctx.username;
     // #2041: the dismisser by identity @id; a name with no account as given.
     const dismisser = (await this.engine?.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'record a notification dismissal: the user identity @id (#2041)'), username))?.['@id'] ?? username;
+      ?.identityIdOf(systemContext(this.engine, 'record a notification dismissal: the user identity @id (#2041)'), username)) ?? username;
     if (!notification.dismissedBy.includes(dismisser)) {
       notification.dismissedBy.push(dismisser);
       this.logger.info(`Notification ${notificationId} dismissed by ${username}`);

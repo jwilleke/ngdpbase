@@ -2183,7 +2183,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         sealedStore: {
           ...detail.sealedStore,
           owner: (await this.engine.getManager<IdentityManager>('IdentityManager')
-            ?.getByUserIdentifier(systemContext(this.engine, 'record a sealed-store file change: the owner identity @id (#2041)'), detail.sealedStore.owner))?.['@id'] ?? detail.sealedStore.owner
+            ?.identityIdOf(systemContext(this.engine, 'record a sealed-store file change: the owner identity @id (#2041)'), detail.sealedStore.owner)) ?? detail.sealedStore.owner,
+          ownerUser: detail.sealedStore.owner
         }
       }
       : detail;

@@ -17,6 +17,7 @@ import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 /** The host core hands the forms add-on (#1813); its ApiContext is the stub below. */
 const host = () => buildAddonHost('forms', {});
 import { TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
+import { fakeIdentityManager } from '../../../dist/src/test-support/identities.js';
 
 // Stub ApiContext.from so it doesn't need a real session in tests.
 // Must be at the top level — Vitest hoists vi.mock() but warns (and will
@@ -656,7 +657,7 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
         getProperty: (_key: string, def: unknown) => def,
         getResolvedDataPath: (key: string, def: string) => (key === 'ngdpbase.notifications.dir' ? tempDir : def)
       },
-      IdentityManager: { getByUserIdentifier: async (_ctx: unknown, username: string) => ({ '@id': `urn:person:${username}`, identifier: username }) }
+      IdentityManager: fakeIdentityManager(Object.fromEntries(['alice', 'root', 'tess', 'testuser'].map((u) => [u, `urn:person:${u}`])))
     };
     const engine = { getManager: (name: string) => managers[name], createRouter: () => express.Router() };
 
@@ -738,7 +739,7 @@ describe('POST /api/forms/submit/:formId — the submitter by identity @id (#204
     const saved: Array<Record<string, unknown>> = [];
     const engine = makeEngine({
       FormsDataManager: { getDefinition: () => testForm, saveSubmission: async (s: Record<string, unknown>) => { saved.push(s); return s; } },
-      IdentityManager: { getByUserIdentifier: async (_ctx: unknown, u: string) => (u === 'testuser' ? { '@id': 'urn:uuid:testuser-1' } : null) }
+      IdentityManager: fakeIdentityManager({ testuser: 'urn:uuid:testuser-1' })
     });
     const res = await request(makeContext(engine)).post('/api/forms/submit/test-form').send({ name: 'Alice' });
     expect(res.status).toBe(201);
@@ -750,7 +751,7 @@ describe('POST /api/forms/submit/:formId — the submitter by identity @id (#204
     const saved: Array<Record<string, unknown>> = [];
     const engine = makeEngine({
       FormsDataManager: { getDefinition: () => testForm, saveSubmission: async (s: Record<string, unknown>) => { saved.push(s); return s; } },
-      IdentityManager: { getByUserIdentifier: async () => null }
+      IdentityManager: fakeIdentityManager({})
     });
     await request(makeContext(engine)).post('/api/forms/submit/test-form').send({ name: 'Alice' });
     expect(saved[0]).toMatchObject({ submittedBy: 'testuser', submitterName: 'testuser' });

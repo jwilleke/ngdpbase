@@ -24,8 +24,8 @@ import {
 import { assertPathSegment } from '../utils/privateStorePath.js';
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 import type IdentityManager from './IdentityManager.js';
-import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
-import { IDENTITY_ID_PREFIX, sameUsername } from '../utils/username.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 
 /** One page's comment folder, and the I/O to read and write it there (#1839). */
 interface CommentPlace {
@@ -73,58 +73,75 @@ export default class CommentManager extends BaseManager {
 
   /**
    * Once, at start-up (#2041): every public comment whose `author` is still a
-   * username is rewritten with that user's identity `@id`, one write per
-   * comment file, under the system context. A value that is already an `@id`
-   * (`urn:`), `anonymous` or the system principal is left alone, so a second
-   * start writes nothing. A username with no account is left as it is and
-   * reported: a log line and the admin dashboard's needs-attention list,
-   * counts only. A vault page's comments are in its vault, which start-up
-   * does not open; they keep their username, and {@link isAuthor} still
-   * matches it. `authorDisplayName` and `deletedBy` are not touched.
+   * username gets `IdentityManager.convertReference`'s answer, one write per
+   * comment file, under the system context: that user's identity `@id`, or
+   * `orphan:<name>` when the name has no account (nobody's from then on: a
+   * later account with that name never takes it over, and only an
+   * administrator can delete it). `@id`s, orphans, `anonymous` and the system
+   * principal are left alone, so a second start writes nothing. Orphans are
+   * reported, counts only: a log line and the admin dashboard's
+   * needs-attention list. When the identity store cannot answer, the whole
+   * pass is postponed to the next start and reported the same way. A vault
+   * page's comments are in its vault, which start-up does not open; they keep
+   * their username, and {@link isAuthor} still matches it.
+   * `authorDisplayName` and `deletedBy` are not touched.
    */
   private async convertAuthorsToIdentityIds(): Promise<void> {
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     if (!identities) return;
+    if (!identities.canAnswer()) {
+      this.postponeConversion('the identity store is unavailable');
+      return;
+    }
     const ctx = systemContext(this.engine, 'convert comment authors from username to identity @id (#2041)');
-    const system = systemPrincipalOf(this.engine);
-    const ids = new Map<string, string | null>();
-    let converted = 0, unknown = 0;
-    for (const page of await fs.readdir(this.commentsDir)) {
-      const dir = path.join(this.commentsDir, page);
-      if (!(await fs.stat(dir)).isDirectory()) continue;
-      for (const name of (await fs.readdir(dir)).filter((f) => f.endsWith('.json'))) {
-        const file = path.join(dir, name);
-        let comment: PageComment;
-        try { comment = JSON.parse(await fs.readFile(file, 'utf8')) as PageComment; } catch { continue; }
-        const by = comment?.author;
-        if (typeof by !== 'string' || !by || by.startsWith(IDENTITY_ID_PREFIX) || sameUsername(by, 'anonymous') || sameUsername(by, system)) continue;
-        if (!ids.has(by)) ids.set(by, (await identities.getByUserIdentifier(ctx, by))?.['@id'] ?? null);
-        const id = ids.get(by);
-        if (!id) { unknown++; continue; }
-        await fs.writeFile(file, JSON.stringify({ ...comment, author: id }, null, 2));
-        converted++;
+    let converted = 0, orphans = 0;
+    try {
+      for (const page of await fs.readdir(this.commentsDir)) {
+        const dir = path.join(this.commentsDir, page);
+        if (!(await fs.stat(dir)).isDirectory()) continue;
+        for (const name of (await fs.readdir(dir)).filter((f) => f.endsWith('.json'))) {
+          const file = path.join(dir, name);
+          let comment: PageComment;
+          try { comment = JSON.parse(await fs.readFile(file, 'utf8')) as PageComment; } catch { continue; }
+          if (!comment || typeof comment.author !== 'string') continue;
+          const { value, outcome } = await identities.convertReference(ctx, comment.author);
+          if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+          if (outcome === 'converted') converted++;
+          if (value !== comment.author) await fs.writeFile(file, JSON.stringify({ ...comment, author: value }, null, 2));
+        }
       }
+    } catch (error) {
+      this.postponeConversion(error instanceof Error ? error.message : String(error));
+      return;
     }
     if (converted > 0) logger.info(`[CommentManager] Converted ${converted} comment author(s) from username to identity @id (#2041)`);
-    if (unknown > 0) {
-      const reason = `${unknown} comment(s) name an author by a username that has no account, so it cannot be converted to an identity @id; they are left as they are (#2041)`;
+    if (orphans > 0) {
+      const reason = `${orphans} comment(s) are orphaned: their author's username has no account, so only an administrator can delete them (#2041)`;
       logger.warn(`[CommentManager] ${reason}`);
       this.markNeedsAttention(reason);
     }
   }
 
+  /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2041). */
+  private postponeConversion(why: string): void {
+    const reason = 'Comment authors were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    logger.warn(`[CommentManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
+  }
+
   /**
    * Whether `ctx` wrote `comment` (#2041): its `author` is the caller's
    * identity `@id`, or, on a comment written before and not yet converted (a
-   * vault page's), the caller's username.
+   * vault page's), the caller's username. An orphan (`orphan:<name>`) is
+   * nobody's and never matches.
    */
   async isAuthor(comment: Pick<PageComment, 'author'>, ctx: ActorContext): Promise<boolean> {
-    if (!ctx.username || !comment.author) return false;
+    if (!ctx.username || !comment.author || comment.author.startsWith(ORPHAN_PREFIX)) return false;
     if (comment.author === ctx.username) return true;
     if (!comment.author.startsWith(IDENTITY_ID_PREFIX)) return false;
-    const identity = await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'is this comment the caller one: their identity @id (#2041)'), ctx.username);
-    return Boolean(identity) && identity!['@id'] === comment.author;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'is this comment the caller one: their identity @id (#2041)'), ctx.username);
+    return Boolean(id) && id === comment.author;
   }
 
   /** `ngdpbase.comments.storagedir`, resolved, or the default when there is no configuration (a test). */
@@ -220,7 +237,7 @@ export default class CommentManager extends BaseManager {
     const displayName = (ctx as { displayName?: string }).displayName;
     // #2041: the author by identity @id; a name with no account as given.
     const author = (await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(systemContext(this.engine, 'store a comment author: identity @id (#2041)'), ctx.username))?.['@id'] ?? ctx.username;
+      ?.identityIdOf(systemContext(this.engine, 'store a comment author: identity @id (#2041)'), ctx.username)) ?? ctx.username;
     const comment: PageComment = {
       id,
       pageUuid,

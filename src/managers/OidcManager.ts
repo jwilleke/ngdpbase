@@ -572,9 +572,9 @@ export class OidcManager extends BaseManager {
     if (revoker) {
       // #2041: the grant's owner is named by identity @id; a name with no account as given.
       const owner = event.accountId
-        ? (await this.engine.getManager<IdentityManager>('IdentityManager')?.getByUserIdentifier(systemContext(this.engine, 'record an app grant revoke: the owner identity @id (#2041)'), event.accountId))?.['@id'] ?? event.accountId
+        ? (await this.engine.getManager<IdentityManager>('IdentityManager')?.identityIdOf(systemContext(this.engine, 'record an app grant revoke: the owner identity @id (#2041)'), event.accountId)) ?? event.accountId
         : event.accountId;
-      Object.assign(metadata, { owner, revokedBy: revoker.viaProxy?.actor ?? revoker.username }, proxyMeta);
+      Object.assign(metadata, { owner, ...(event.accountId ? { ownerUser: event.accountId } : {}), revokedBy: revoker.viaProxy?.actor ?? revoker.username }, proxyMeta);
     }
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
       eventType: how.name,

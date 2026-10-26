@@ -16,6 +16,7 @@
  * @jest-environment node
  */
 
+import { fakeIdentityManager } from '../../test-support/identities';
 import fs from 'fs';
 import { pendingBootActions, recordSystemAction, resetBootActions, systemContext } from '../../context/bootActions';
 import path from 'path';
@@ -791,10 +792,11 @@ describe('#1537 searchEntriesAbout', () => {
 
   test('the user\'s identity @id is passed on, so rows naming the owner by @id are about them too (#2041)', async () => {
     const permits = vi.fn(async () => true);
-    const getByUserIdentifier = vi.fn(async (_ctx: unknown, username: string) => (username === 'jim' ? { '@id': 'urn:uuid:jim-1' } : null));
+    const lookups: unknown[] = [];
+    const identities = fakeIdentityManager({ jim: 'urn:uuid:jim-1' }, { onLookup: (ctx) => lookups.push(ctx) });
     const engine = {
       maintenance: new MaintenanceState(),
-      getManager: (name: string) => (name === 'PolicyDecisionPoint' ? { permits } : name === 'IdentityManager' ? { getByUserIdentifier } : null)
+      getManager: (name: string) => (name === 'PolicyDecisionPoint' ? { permits } : name === 'IdentityManager' ? identities : null)
     } as unknown as WikiEngine;
     const am = new AuditManager(engine);
     const searchEntriesAbout = vi.fn().mockResolvedValue(page);
@@ -804,7 +806,7 @@ describe('#1537 searchEntriesAbout', () => {
     await am.searchEntriesAbout('jim', { limit: 5 }, caller);
     expect(searchEntriesAbout).toHaveBeenCalledWith('jim', { limit: 5, ownerId: 'urn:uuid:jim-1' });
     // The lookup is core's own, under the system context, after the decision.
-    expect(getByUserIdentifier.mock.calls[0][0]).toMatchObject({ origin: 'boot' });
+    expect(lookups[0]).toMatchObject({ origin: 'boot' });
     // A name with no account still lists the rows by username.
     await am.searchEntriesAbout('gone', {}, { username: 'admin', roles: [], isAuthenticated: true });
     expect(searchEntriesAbout).toHaveBeenLastCalledWith('gone', {});

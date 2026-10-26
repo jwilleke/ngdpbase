@@ -15,13 +15,13 @@ import type IdentityManager from '../../../dist/src/managers/IdentityManager.js'
  * manager never reads a role name.
  */
 export async function viewerOf(ctx: ApiContext, engine: WikiEngine, host: AddonHost): Promise<CalendarViewer> {
-  const identity = ctx.isAuthenticated && ctx.username
+  const identityId = ctx.isAuthenticated && ctx.username
     ? await engine.getManager<IdentityManager>('IdentityManager')
-      ?.getByUserIdentifier(host.systemContext('calendar: the viewer identity @id (#2041)'), ctx.username)
+      ?.identityIdOf(host.systemContext('calendar: the viewer identity @id (#2041)'), ctx.username)
     : null;
   return {
     username: ctx.username ?? undefined,
-    identityId: identity?.['@id'],
+    identityId: identityId ?? undefined,
     isAuthenticated: ctx.isAuthenticated,
     canManage: await ctx.hasPermission('calendar-manage')
   };

@@ -37,7 +37,7 @@
  */
 import type Database from 'better-sqlite3-multiple-ciphers';
 import BaseAuditProvider, {
-  AUDIT_RETENTION_INTERVAL_MS, recordOwner, toStoredAuditRecord,
+  AUDIT_RETENTION_INTERVAL_MS, recordOwner, recordOwnerUser, toStoredAuditRecord,
   type AuditFilters, type AuditReport, type AuditSearchResults, type AuditStats, type PersonEntriesOptions
 } from './BaseAuditProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -74,8 +74,8 @@ interface DatabaseAuditConfig {
 
 /** A row's columns besides the record: copies of its fields, for the indexes. */
 const INSERT_SQL = `INSERT INTO audit_events
-  (id, seq, prev_hash, hash, timestamp, event_type, user, actor, owner, resource, action, result, severity, record)
-  VALUES (@id, @seq, @prevHash, @hash, @timestamp, @eventType, @user, @actor, @owner, @resource, @action, @result, @severity, @record)`;
+  (id, seq, prev_hash, hash, timestamp, event_type, user, actor, owner, owner_user, resource, action, result, severity, record)
+  VALUES (@id, @seq, @prevHash, @hash, @timestamp, @eventType, @user, @actor, @owner, @ownerUser, @resource, @action, @result, @severity, @record)`;
 
 /** The sortable fields, mapped to their columns; anything else sorts by time. */
 const SORT_COLUMNS = new Map<string, string>([
@@ -244,6 +244,7 @@ class DatabaseAuditProvider extends BaseAuditProvider {
             user: text(r.user),
             actor: text(r.actor),
             owner: recordOwner(r),
+            ownerUser: recordOwnerUser(r),
             resource: text(r.resource),
             action: text(r.action),
             result: text(r.result),
@@ -346,9 +347,11 @@ class DatabaseAuditProvider extends BaseAuditProvider {
       const offset = Math.max(0, Number(options.offset ?? 0) || 0);
       // #2041: the owner is the user's identity @id on new rows, their
       // username on rows written before; both match, nothing is rewritten.
+      // Rows from #2041 on also carry the owner's username (owner_user), so an
+      // account deleted since still lists.
       const where = options.ownerId
-        ? { sql: 'WHERE user = ? OR actor = ? OR owner = ? OR owner = ?', params: [person, person, person, options.ownerId] }
-        : { sql: 'WHERE user = ? OR actor = ? OR owner = ?', params: [person, person, person] };
+        ? { sql: 'WHERE user = ? OR actor = ? OR owner = ? OR owner_user = ? OR owner = ?', params: [person, person, person, person, options.ownerId] }
+        : { sql: 'WHERE user = ? OR actor = ? OR owner = ? OR owner_user = ?', params: [person, person, person, person] };
       return Promise.resolve(this.page(where, 'timestamp DESC, row_id DESC', limit, offset));
     } catch (err) {
       return Promise.reject(err instanceof Error ? err : new Error(String(err)));

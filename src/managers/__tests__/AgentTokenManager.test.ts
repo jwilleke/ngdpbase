@@ -4,6 +4,7 @@
  * Uses a per-test temp directory. Nothing here touches the live data dir.
  */
 
+import { fakeIdentityManager } from '../../test-support/identities';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -59,7 +60,7 @@ describe('#2041 — a token record names its owner by identity @id', () => {
     const rows: Array<Record<string, unknown>> = [];
     const m = await makeManager({
       __audit: { logAuditEvent: async (e: Record<string, unknown>) => { rows.push(e); return 'id'; }, flushAuditQueue: async () => {} },
-      __identities: { getByUserIdentifier: async (_ctx: unknown, u: string) => (u === 'jim' ? { '@id': 'urn:uuid:jim-1' } : null) }
+      __identities: fakeIdentityManager({ jim: 'urn:uuid:jim-1' })
     });
     // Sabotage check: `owner,` instead of `owner: ownerId,` in mint fails the first row.
     const { record } = await m.mint(subject('jim'), 'one', ['page-read']);
@@ -69,6 +70,7 @@ describe('#2041 — a token record names its owner by identity @id', () => {
     expect(tokenRows.length).toBeGreaterThanOrEqual(2);
     for (const r of tokenRows) {
       expect((r.metadata as { owner: string }).owner).toBe('urn:uuid:jim-1');
+      expect((r.metadata as { ownerUser: string }).ownerUser).toBe('jim');
       expect(r.user).toBe('jim');
     }
   });

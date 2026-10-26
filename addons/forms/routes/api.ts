@@ -110,7 +110,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         const submitterName = ctx.username ?? 'anonymous';
         const identities = engine.getManager<IdentityManager>('IdentityManager');
         const submittedBy = submitterName.toLowerCase() !== 'anonymous' && identities
-          ? (await identities.getByUserIdentifier(host.systemContext('forms: store a submitter as identity @id (#2041)'), submitterName))?.['@id'] ?? submitterName
+          ? (await identities.identityIdOf(host.systemContext('forms: store a submitter as identity @id (#2041)'), submitterName)) ?? submitterName
           : submitterName;
 
         let onBehalfOf: Record<string, string | undefined> | undefined;
