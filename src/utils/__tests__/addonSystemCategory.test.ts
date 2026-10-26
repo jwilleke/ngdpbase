@@ -72,7 +72,7 @@ interface Seen { blocked: string[]; notifications: Array<Record<string, unknown>
 
 function validationManagerFor(merged: Record<string, unknown>, seen: Seen = { blocked: [], notifications: [] }): Promise<ValidationManager> {
   const configManager = { getProperty: (key: string, def: unknown) => merged[key] ?? def };
-  const notificationManager = { addNotification: (n: Record<string, unknown>) => { seen.notifications.push(n); return Promise.resolve('id'); } };
+  const notificationManager = { notifyAdmins: (n: Record<string, unknown>) => { seen.notifications.push(n); return Promise.resolve('id'); } };
   const engine = {
     getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : name === 'NotificationManager' ? notificationManager : undefined),
     maintenance: { enter: (reason: string) => { seen.blocked.push(reason); } }
@@ -256,7 +256,7 @@ describe('#1559 a mistyped site entry warns, never forces', () => {
       expect(status).toMatchObject({ state: 'degraded', configKey: SC });
       expect(status.reason).toMatch(/system-category 'general': encrypt must be true or false, got "true"; it is read as false, so the vault is not sealed/);
       expect(seen.notifications).toHaveLength(1);
-      expect(seen.notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+      expect(seen.notifications[0]).toMatchObject({ level: 'error' });
       expect(String(seen.notifications[0].message)).toMatch(/encrypt.*"true".*read as false/);
       expect(error.mock.calls.some((c) => /encrypt must be true or false/.test(String(c[0])))).toBe(true);
     } finally {
@@ -291,14 +291,14 @@ describe('#1559 admins are told what was refused', () => {
       notifySystemCategoryProblems(cm: unknown): void;
     };
     manager.loadFailures = new Map(); // #1883: no add-on failed to load here
-    const createNotification = vi.fn().mockResolvedValue(undefined);
-    manager.engine = { getManager: (n: string) => (n === 'NotificationManager' ? { createNotification } : null) };
+    const notifyAdmins = vi.fn().mockResolvedValue(undefined);
+    manager.engine = { getManager: (n: string) => (n === 'NotificationManager' ? { notifyAdmins } : null) };
     addon('phr', { [SC]: { phr: { ...phrEntry, encrypt: 'true' } } });
     const { problems } = mergeConfigWithAddons(shipped, {}, root);
     manager.notifySystemCategoryProblems({ getSystemCategoryProblems: () => problems });
-    expect(createNotification).toHaveBeenCalledTimes(1);
-    expect(createNotification.mock.calls[0][0]).toMatchObject({ type: 'system', level: 'warning' });
-    expect(String(createNotification.mock.calls[0][0].message)).toMatch(/system-category 'phr' is refused/);
+    expect(notifyAdmins).toHaveBeenCalledTimes(1);
+    expect(notifyAdmins.mock.calls[0][0]).toMatchObject({ level: 'warning' });
+    expect(String(notifyAdmins.mock.calls[0][0].message)).toMatch(/system-category 'phr' is refused/);
   });
 });
 

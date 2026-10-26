@@ -93,7 +93,7 @@ async function start(): Promise<{ backup: BackupManager; managers: Record<string
       getBaseURL: () => 'https://site.example.com',
       setProperty: async (k: string, v: unknown) => { props[k] = v; }
     },
-    NotificationManager: { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; }, getAllNotifications: () => notifications },
+    NotificationManager: { notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; }, getAllNotifications: () => notifications },
     AuditManager: { logAuditEvent: async () => 'id', flushAuditQueue: async () => undefined },
     // The forms, calendar and feeds add-ons are loaded; their dataPath is their folder, and they write no backup code.
     AddonsManager: { addonBackupFolders: () => addonFolders }

@@ -32,6 +32,7 @@ import {
 } from './privateStorePath.js';
 import { listPrivateOwners } from './privateStoreTakeout.js';
 import logger from './logger.js';
+import type NotificationManager from '../managers/NotificationManager.js';
 
 export type PageNotesKind = 'footnotes' | 'comments';
 
@@ -408,8 +409,8 @@ export class VaultPageNotesCheck {
     this.reason = reason;
     if (this.state.markNeedsAttention(reason) && opts.notify) {
       try {
-        await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
-          ?.addNotification({ type: 'system', level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });
+        await this.engine.getManager<NotificationManager>('NotificationManager')
+          ?.notifyAdmins({ level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });
       } catch (err) {
         logger.error(`📄 The notification for vault pages' ${roots.kind} outside their vault could not be sent (#1839):`, err);
       }

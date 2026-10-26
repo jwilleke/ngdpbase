@@ -4,10 +4,10 @@
 
 import { notifyNcmConversion } from '../ncmNotify';
 
-function engineWith(addNotification?: (n: unknown) => Promise<string>) {
+function engineWith(notifyAdmins?: (n: unknown) => Promise<string>) {
   const calls: unknown[] = [];
-  const nm = addNotification
-    ? { addNotification: (n: unknown) => { calls.push(n); return addNotification(n); } }
+  const nm = notifyAdmins
+    ? { notifyAdmins: (n: unknown) => { calls.push(n); return notifyAdmins(n); } }
     : {};
   return {
     engine: { getManager: (name: string) => (name === 'NotificationManager' ? nm : null) },
@@ -32,7 +32,6 @@ describe('notifyNcmConversion', () => {
     notifyNcmConversion(engine, 'MCP update_page', 'My Page', ['link-externalized: https://x', 'img-rejected: type: https://y']);
     expect(calls).toHaveLength(1);
     const n = calls[0] as { type: string; level: string; title: string; message: string };
-    expect(n.type).toBe('system');
     expect(n.level).toBe('warning');
     expect(n.title).toBe('NCM conversion: MCP update_page');
     expect(n.message).toContain('My Page: 2 warning(s)');
@@ -48,7 +47,7 @@ describe('notifyNcmConversion', () => {
     expect(n.message).toContain('(+3 more)');
   });
 
-  test('addNotification rejection is swallowed (best-effort)', () => {
+  test('notifyAdmins rejection is swallowed (best-effort)', () => {
     const { engine } = engineWith(async () => { throw new Error('store down'); });
     expect(() => notifyNcmConversion(engine, 'Import html', 'P', ['x: y'])).not.toThrow();
   });

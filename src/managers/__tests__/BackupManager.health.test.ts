@@ -56,7 +56,7 @@ describe('backups never fail silently (#1563)', () => {
       },
       // Stored notifications outlive a restart, as NotificationManager's do.
       NotificationManager: {
-        addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
+        notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
         getAllNotifications: () => notifications
       },
       BackgroundJobManager: {

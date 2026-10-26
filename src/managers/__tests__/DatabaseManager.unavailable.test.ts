@@ -59,7 +59,7 @@ afterEach(() => {
 interface Booted {
   engine: Engine;
   database: DatabaseManager;
-  notifications: Array<{ type: string; level: string; title: string; message: string }>;
+  notifications: Array<{ level: string; title: string; message: string }>;
 }
 
 async function boot(provider: 'sqlite' | 'none' = 'sqlite'): Promise<Booted> {
@@ -76,7 +76,7 @@ async function boot(provider: 'sqlite' | 'none' = 'sqlite'): Promise<Booted> {
   });
   const notifications: Booted['notifications'] = [];
   engine.registerManager('NotificationManager', {
-    addNotification: (n: Booted['notifications'][number]) => { notifications.push(n); return Promise.resolve('id'); }
+    notifyAdmins: (n: Booted['notifications'][number]) => { notifications.push(n); return Promise.resolve('id'); }
   });
   const database = new DatabaseManager(engine as never);
   engine.registerManager('DatabaseManager', database);
@@ -158,7 +158,6 @@ describe('#1892 an application database that cannot be opened safely puts the si
     // A critical notification naming the problem and the fix.
     const critical = notifications.filter((n) => n.level === 'error' && /^Critical:/.test(n.title));
     expect(critical).toHaveLength(1);
-    expect(critical[0].type).toBe('system');
     expect(critical[0].message).toMatch(c.why);
     expect(critical[0].message).toMatch(c.fix);
 

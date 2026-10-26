@@ -58,6 +58,7 @@ import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
 import { ConsentRequiredError } from '../types/Consent.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
+import type NotificationManager from './NotificationManager.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -716,15 +717,12 @@ class AddonsManager extends BaseManager {
   /** Tell admins about an install problem (#1830). Best-effort, like recordSeedFailure. */
   private notifyInstallProblem(slug: string, message: string, level: 'warning' | 'error'): void {
     try {
-      const notificationManager = this.engine.getManager<{
-        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
-          }>('NotificationManager');
-      void notificationManager?.createNotification?.({
-        type: 'system',
+      const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
+      void notificationManager?.notifyAdmins({
         level,
         title: `Add-on install (${slug})`,
         message
-      })?.catch?.(() => { /* non-fatal */ });
+      }).catch(() => { /* non-fatal */ });
     } catch {
       // non-fatal
     }
@@ -998,10 +996,8 @@ class AddonsManager extends BaseManager {
   /** A notification to administrators; best-effort, like recordSeedFailure. */
   private notifyAdmins(level: 'warning' | 'error', title: string, message: string): void {
     try {
-      const notificationManager = this.engine.getManager<{
-        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
-          }>('NotificationManager');
-      void notificationManager?.createNotification?.({ type: 'system', level, title, message })?.catch?.(() => { /* non-fatal */ });
+      const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
+      void notificationManager?.notifyAdmins({ level, title, message }).catch(() => { /* non-fatal */ });
     } catch {
       // non-fatal
     }
@@ -1265,18 +1261,15 @@ class AddonsManager extends BaseManager {
     isDomain: boolean
   ): void {
     try {
-      const notificationManager = this.engine.getManager<{
-        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
-          }>('NotificationManager');
+      const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
 
-      void notificationManager?.createNotification?.({
-        type: 'system',
+      void notificationManager?.notifyAdmins({
         level: isDomain ? 'error' : 'warning',
         title: `Add-on page not seeded (${addonName})`,
         message:
           `${addonName}/pages/${file} was skipped: ${reason}. The page will not appear on this site.` +
           (isDomain ? ' This is a domain add-on, so the site may be incomplete.' : '')
-      })?.catch?.(() => { /* non-fatal */ });
+      }).catch(() => { /* non-fatal */ });
     } catch {
       // non-fatal
     }

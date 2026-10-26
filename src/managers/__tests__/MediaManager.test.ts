@@ -301,12 +301,12 @@ describe.skip('MediaManager.checkPrivatePageAccess (#634 — moved to PolicyInfo
 // #807: scan/rebuild anomalies are surfaced to /admin/notifications.
 describe('MediaManager — scan/rebuild notifications (#807)', () => {
   function makeManagerWithStubProvider(scanResult: import('../../providers/BaseMediaProvider').ScanResult) {
-    const addNotification = vi.fn(() => Promise.resolve('id'));
+    const notifyAdmins = vi.fn(() => Promise.resolve('id'));
     const cm = makeConfigManager();
     const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return cm;
-        if (name === 'NotificationManager') return { addNotification };
+        if (name === 'NotificationManager') return { notifyAdmins };
         return null;
       })
     } as unknown as WikiEngine;
@@ -315,44 +315,44 @@ describe('MediaManager — scan/rebuild notifications (#807)', () => {
       scan: vi.fn(() => Promise.resolve(scanResult)),
       rebuild: vi.fn(() => Promise.resolve(scanResult))
     };
-    return { mgr, addNotification };
+    return { mgr, notifyAdmins };
   }
 
   test('notifies admins (error level) when items have no capture date (#808)', async () => {
-    const { mgr, addNotification } = makeManagerWithStubProvider({
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
       scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 3
     });
     await mgr.scanFolders();
-    expect(addNotification).toHaveBeenCalledWith(
+    expect(notifyAdmins).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'error', title: 'Media files without a capture date' })
     );
   });
 
   test('notifies admins (warning level) for partial year-only capture dates (#808)', async () => {
-    const { mgr, addNotification } = makeManagerWithStubProvider({
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
       scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 0, partialCaptureDate: 4
     });
     await mgr.scanFolders();
-    expect(addNotification).toHaveBeenCalledWith(
+    expect(notifyAdmins).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'warning', title: 'Media files with a partial capture date' })
     );
   });
 
   test('notifies admins (error level) when files fail to process', async () => {
-    const { mgr, addNotification } = makeManagerWithStubProvider({
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
       scanned: 10, added: 8, updated: 0, errors: 2, noCaptureDate: 0
     });
     await mgr.rebuildIndex();
-    expect(addNotification).toHaveBeenCalledWith(
+    expect(notifyAdmins).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'error', title: 'Media files could not be processed' })
     );
   });
 
   test('no notification when scan is clean', async () => {
-    const { mgr, addNotification } = makeManagerWithStubProvider({
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
       scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 0
     });
     await mgr.scanFolders();
-    expect(addNotification).not.toHaveBeenCalled();
+    expect(notifyAdmins).not.toHaveBeenCalled();
   });
 });

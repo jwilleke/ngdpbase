@@ -58,7 +58,7 @@ describe('one backup at a time (#1563)', () => {
         setProperty: async (k: string, v: unknown) => { props[k] = v; }
       },
       NotificationManager: {
-        addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
+        notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
         getAllNotifications: () => notifications
       },
       BackgroundJobManager: {

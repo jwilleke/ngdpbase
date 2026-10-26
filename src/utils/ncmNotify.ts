@@ -36,13 +36,12 @@ export function notifyNcmConversion(
 ): void {
   if (!warnings.length) return;
   const nm = engine.getManager('NotificationManager') as
-    { addNotification?: (n: unknown) => Promise<string> } | null;
-  if (!nm?.addNotification) return;
+    { notifyAdmins?: (n: unknown) => Promise<string | null> } | null;
+  if (!nm?.notifyAdmins) return;
 
   const head = warnings.slice(0, 5).join('; ');
   const more = warnings.length > 5 ? ` (+${warnings.length - 5} more)` : '';
-  void nm.addNotification({
-    type: 'system',
+  void nm.notifyAdmins({
     level: 'warning',
     title: `NCM conversion: ${source}`,
     message: `${target}: ${warnings.length} warning(s) — ${head}${more}`

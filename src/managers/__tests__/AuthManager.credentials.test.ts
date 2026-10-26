@@ -48,7 +48,7 @@ describe('AuthManager credentials (#1524)', () => {
         hasPassword: (u: string) => Promise.resolve(Boolean(users[u] && !users[u].isExternal && users[u].password))
       },
       AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('evt'); } },
-      NotificationManager: { addNotification: (n: Record<string, unknown>) => { notices.push(n); return Promise.resolve('n1'); } }
+      NotificationManager: { notifyAdmins: (n: Record<string, unknown>) => { notices.push(n); return Promise.resolve('n1'); } }
     };
     const manager = new AuthManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();

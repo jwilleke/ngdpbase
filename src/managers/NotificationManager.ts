@@ -8,6 +8,7 @@ import { scheduleContext } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /**
@@ -42,6 +43,9 @@ export interface NotificationInput {
    */
   escalate?: boolean;
 }
+
+/** A notice for administrators: the type and the audience are not the caller's to choose. */
+export type AdminNoticeInput = Omit<NotificationInput, 'type' | 'targetUsers'>;
 
 /**
  * Notification statistics
@@ -279,6 +283,25 @@ class NotificationManager extends BaseManager {
     notification.message = message;
     await this.saveNotifications();
     return true;
+  }
+
+  /**
+   * The one way to tell administrators something (#2040): a `system`
+   * notification targeted at the users holding `admin-system`. A notification
+   * with no targetUsers reaches every user, so no admin notice is created any
+   * other way. Nobody holds admin-system: the log line stands alone and null is
+   * returned.
+   *
+   * @returns the notification id, or null when there was nobody to tell
+   */
+  async notifyAdmins(input: AdminNoticeInput): Promise<string | null> {
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    const admins = (await pdp?.usersHolding('admin-system')) ?? [];
+    if (admins.length === 0) {
+      this.logger.error(`No user holds admin-system; '${input.title ?? 'System Notification'}' is in the log only (#2040)`);
+      return null;
+    }
+    return this.createNotification({ ...input, type: 'system', targetUsers: admins });
   }
 
   /**

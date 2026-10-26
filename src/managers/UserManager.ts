@@ -35,6 +35,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
 import { USER_DATA_TOPIC } from '../cache/CacheDependencies.js';
+import type NotificationManager from './NotificationManager.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -534,8 +535,8 @@ class UserManager extends BaseManager {
     this.sessionCookieWithheldReported = true;
     logger.error(`🔐 ${SESSION_COOKIE_WITHHELD_MESSAGE}`);
     if (this.markNeedsAttention(SESSION_COOKIE_WITHHELD_MESSAGE, 'ngdpbase.session.secure')) {
-      void this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
-        type: 'system', level: 'error', title: 'Nobody can sign in over plain http', message: SESSION_COOKIE_WITHHELD_MESSAGE
+      void this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
+        level: 'error', title: 'Nobody can sign in over plain http', message: SESSION_COOKIE_WITHHELD_MESSAGE
       }).catch((err: unknown) => logger.warn('🔐 Could not post the session-cookie notification:', err));
     }
   }

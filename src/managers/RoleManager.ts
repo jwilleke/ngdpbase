@@ -7,7 +7,6 @@ import type { RoleProvider } from '../types/RoleProvider.js';
 import IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type UserManager from './UserManager.js';
-import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type NotificationManager from './NotificationManager.js';
 import type { Organization } from '../types/Organization.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
@@ -618,7 +617,7 @@ class RoleManager extends BaseManager {
   private async reportToAdmins(title: string, message: string): Promise<void> {
     logger.error(`❌ ${title}: ${message}`);
     try {
-      await this.notifyAdmins(title, message);
+      await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({ level: 'error', title, message });
     } catch (err) {
       logger.error('❌ The notification for a failed role change could not be sent (#2015):', err);
     }
@@ -772,30 +771,12 @@ class RoleManager extends BaseManager {
   private async notifyAdminsOnce(title: string, message: string): Promise<void> {
     try {
       const notifications = this.engine.getManager<NotificationManager>('NotificationManager');
-      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-      if (!notifications || !pdp) return;
+      if (!notifications) return;
       if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
-      await this.notifyAdmins(title, message);
+      await notifications.notifyAdmins({ level: 'error', title, message });
     } catch (err) {
       logger.error(`🔑 The notification '${title}' could not be sent (#2040):`, err);
     }
-  }
-
-  /**
-   * Send one error notification to the users holding `admin-system`. Nobody
-   * holds it: the log line stands alone, since an empty target list would tell
-   * every user.
-   */
-  private async notifyAdmins(title: string, message: string): Promise<void> {
-    const notifications = this.engine.getManager<NotificationManager>('NotificationManager');
-    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!notifications || !pdp) return;
-    const admins = (await pdp.usersHolding('admin-system')) ?? [];
-    if (admins.length === 0) {
-      logger.error(`🔑 No user holds admin-system; '${title}' is in the log only (#2040)`);
-      return;
-    }
-    await notifications.createNotification({ type: 'system', level: 'error', title, message, targetUsers: admins });
   }
 
   /** The account must exist; membership of a missing account is refused. */

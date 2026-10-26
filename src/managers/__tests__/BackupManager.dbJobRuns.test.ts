@@ -57,7 +57,7 @@ describe('job runs between the backup and the restore, on a database site (#1876
         getAddonDatabaseDeclarations: () => [],
         setProperty: async () => undefined
       },
-      NotificationManager: { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
+      NotificationManager: { notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
       AuditManager: { logAuditEvent: async () => 'evt', flushAuditQueue: async () => undefined }
     };
     const engine = {

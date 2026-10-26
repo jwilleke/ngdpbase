@@ -254,25 +254,25 @@ describe('BackgroundJobManager', () => {
 
   describe('notification integration', () => {
     test('posts notification on successful job completion', async () => {
-      const addNotification = vi.fn().mockResolvedValue('notif-id');
-      const mgr = await makeManager({ addNotification });
+      const notifyAdmins = vi.fn().mockResolvedValue('notif-id');
+      const mgr = await makeManager({ notifyAdmins });
       mgr.registerJob({ id: 'notify.job', displayName: 'Notify', run: async () => ({ success: true, summary: 'all good' }) });
       await mgr.enqueue('notify.job', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
-      expect(addNotification).toHaveBeenCalledWith(
+      expect(notifyAdmins).toHaveBeenCalledWith(
         expect.objectContaining({ level: 'info', title: 'Notify complete' })
       );
     });
 
     test('posts error notification on failed job', async () => {
-      const addNotification = vi.fn().mockResolvedValue('notif-id');
-      const mgr = await makeManager({ addNotification });
+      const notifyAdmins = vi.fn().mockResolvedValue('notif-id');
+      const mgr = await makeManager({ notifyAdmins });
       mgr.registerJob({ id: 'fail.notify', displayName: 'Fail Notify', run: async () => ({ success: false, error: 'oops' }) });
       await mgr.enqueue('fail.notify', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
-      expect(addNotification).toHaveBeenCalledWith(
+      expect(notifyAdmins).toHaveBeenCalledWith(
         expect.objectContaining({ level: 'error' })
       );
     });

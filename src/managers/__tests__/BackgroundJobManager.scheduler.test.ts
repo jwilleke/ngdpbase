@@ -49,7 +49,7 @@ function manager(state = provider(), options: { checkpointThrottleMs?: number } 
     getManager: (name: string) => {
       if (name === 'AuditManager') return { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } };
       if (name === 'ConfigurationManager') return { getProperty: (key: string, fallback: unknown) => (key in settings ? settings[key] : fallback) };
-      if (name === 'NotificationManager') return { addNotification: (n: { level: string; title: string; message: string }) => { notes.push(n); return Promise.resolve('n'); } };
+      if (name === 'NotificationManager') return { notifyAdmins: (n: { level: string; title: string; message: string }) => { notes.push(n); return Promise.resolve('n'); } };
       if (name === 'PolicyDecisionPoint') return { holds: (subject: { username: string }, action: string) => Promise.resolve((held[subject.username] ?? []).includes(action)) };
       return null;
     }

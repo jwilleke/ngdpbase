@@ -34,6 +34,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
 import { MEDIA_DATA_TOPIC } from '../cache/CacheDependencies.js';
+import type NotificationManager from './NotificationManager.js';
 import type {
   CatalogSource,
   CatalogQuery,
@@ -317,13 +318,9 @@ class MediaManager extends BaseManager implements CatalogSource {
    * @param label  - "Scan" or "Rebuild", for notification wording.
    */
   private surfaceScanNotifications(result: ScanResult, label: string): void {
-    const nm = this.engine.getManager('NotificationManager') as
-      | { addNotification?: (n: unknown) => Promise<string> }
-      | null;
+    const nm = this.engine.getManager<NotificationManager>('NotificationManager');
     const notify = (n: { level: string; title: string; message: string }): void => {
-      if (nm?.addNotification) {
-        nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
-      }
+      nm?.notifyAdmins({ ...n, level: n.level as 'info' | 'warning' | 'error' | 'success' }).catch(() => { /* ignore */ });
     };
 
     // #1167: every scan re-judges the folders, so a remounted volume clears the state.

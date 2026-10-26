@@ -60,10 +60,10 @@ describe('a role member must have credentials (#2040)', () => {
       // requireAccount (assignRole) finds every name; the rule itself asks about the record's identifier.
       UserManager: { getUser: (u: string) => Promise.resolve(ACCOUNTS.has(u) || u === 'carol' ? { username: u } : undefined) },
       NotificationManager: {
-        createNotification: (n: Record<string, unknown>) => { created.push(n); return Promise.resolve('n'); },
+        // Admin notices go through notifyAdmins, which owns the targeting (NotificationManager.test.ts); any other route would reach every user.
+        notifyAdmins: (n: Record<string, unknown>) => { created.push(n); return Promise.resolve('n'); },
         getAllNotifications: () => created
-      },
-      PolicyDecisionPoint: { usersHolding: (action: string) => Promise.resolve(action === 'admin-system' ? ['admin'] : []) }
+      }
     };
     manager = new RoleManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -92,9 +92,9 @@ describe('a role member must have credentials (#2040)', () => {
     expect((failure as Error).message).toContain('only a user (an identity with credentials) can hold a role');
     // Nothing written: not even an empty role record.
     expect(await manager.getByOrgAndPosition(ORG['@id'], 'editor')).toBeNull();
-    // Only the admins: an empty or missing targetUsers would reach every user (#2040).
+    // Told through notifyAdmins, the one admins-only route (#2040).
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ type: 'system', level: 'error', targetUsers: ['admin'] });
+    expect(created[0]).toMatchObject({ level: 'error' });
   });
 
   test('applyRoleDiff (account create and edit) refuses a contact and undoes the rest of the change', async () => {
@@ -134,12 +134,6 @@ describe('a role member must have credentials (#2040)', () => {
     delete records[other];
   });
 
-  test('with nobody holding admin-system, a failed role change is in the log only', async () => {
-    managers.PolicyDecisionPoint = { usersHolding: () => Promise.resolve([]) };
-    await manager.assignRole('carol', 'editor', ADMIN).catch(() => undefined);
-    expect(created).toHaveLength(0);
-  });
-
   describe('the start-up check', () => {
     const seed = async (namedPosition: string, ids: string[]) =>
       manager.create({ '@context': 'https://schema.org', '@type': 'OrganizationRole', '@id': `${ORG['@id']}roles/${namedPosition}#role`, namedPosition, organization: { '@id': ORG['@id'] }, member: ids.map((id) => ({ '@id': id })) });
@@ -157,7 +151,7 @@ describe('a role member must have credentials (#2040)', () => {
       expect(status.reason).not.toContain('reader');
       expect(errors.mock.calls.some(([line]) => String(line).includes("'editor' lists 1"))).toBe(true);
       expect(created).toHaveLength(1);
-      expect(created[0]).toMatchObject({ type: 'system', level: 'error', title: CONTACT_MEMBERS_TITLE, targetUsers: ['admin'] });
+      expect(created[0]).toMatchObject({ level: 'error', title: CONTACT_MEMBERS_TITLE });
       // Never silently dropped or rewritten.
       expect(await members('editor')).toEqual([userId('alice'), CONTACT]);
 

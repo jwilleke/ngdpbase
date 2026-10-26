@@ -76,7 +76,7 @@ describe('AddonsManager — installed add-ons (#1830)', () => {
       getCustomProperty: vi.fn(() => null),
       setRuntimeProperty: vi.fn()
     };
-    const notificationManager = { createNotification: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); }) };
+    const notificationManager = { notifyAdmins: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); }) };
     const engine = { getManager: (n: string) => (n === 'ConfigurationManager' ? cm : n === 'NotificationManager' ? notificationManager : null) };
     const manager = new AddonsManager(engine);
     await manager.initialize();
@@ -164,7 +164,7 @@ describe('AddonsManager — installed add-ons (#1830)', () => {
     expect(manager.isInitialized()).toBe(true);
     expect(manager.getAddonNames()).not.toContain('ledger');
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(notifications[0]).toMatchObject({ level: 'error' });
     expect(String(notifications[0].message)).toMatch(/^ledger not installed: registry unreachable/);
     expect(await recorded()).toEqual([]);
   });
