@@ -694,6 +694,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         throw new Error('Permission denied: You do not have permission to upload attachments');
       }
       const author = AttachmentManager.uploaderOf(ctx);
+      // #2097: the uploader is recorded by identity @id (the username when there is none).
+      const authorRef = await this.userReference(author);
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(
@@ -736,7 +738,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             originalName: fileInfo.originalName,
             mimeType: fileInfo.mimeType,
             description: options.description || '',
-            author,
+            author: authorRef,
             ...(pageName ? { pageName } : {}),
             ...(keep ? { keptOriginal: { types: keep.types } } : {})
           }
@@ -756,8 +758,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       }
     }
 
-    // #1926: the uploader is recorded by username, never an email.
-    const uploader = { username: AttachmentManager.uploaderOf(ctx) };
+    // #1926: the uploader is recorded by username, never an email; #2097: by
+    // identity @id, the username only when there is none.
+    const uploader = { username: await this.userReference(AttachmentManager.uploaderOf(ctx)) };
 
     // Create metadata (include privacy flags for provider). Destination is the
     // page store (#1386); ciphertext of those bytes is later.
@@ -800,6 +803,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * with no person behind it are refused. A refusal reads 'Permission denied'
    * so the route answers it as one (401 for an anonymous caller).
    */
+  /**
+   * What a file record stores for the user `username` (#2097): their identity
+   * @id, or the username when there is none or the identity store cannot answer.
+   */
+  private async userReference(username: string): Promise<string> {
+    if (!username) return username;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'store a file uploader or editor as identity @id (#2097)'), username);
+    return id ?? username;
+  }
+
   private static uploaderOf(ctx: ActorContext): string {
     const username = typeof ctx.username === 'string' ? ctx.username.trim() : '';
     if (!username || username === ANONYMOUS_USERNAME) {
@@ -2258,10 +2272,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // below is this door's own doing, not one of them.
     const fields = Object.keys(updates);
 
-    // The editor, from the context (#1179).
+    // The editor, from the context (#1179), by identity @id (#2097).
     updates.editor = {
       '@type': 'Person',
-      name: context.username,
+      name: await this.userReference(context.username ?? ''),
       email: (context as { email?: string }).email || undefined
     };
 

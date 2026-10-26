@@ -59,6 +59,7 @@ import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pa
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { isReservedUsername, sameUsername } from '../utils/username.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -1918,6 +1919,19 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * What a page stores for the user `name` (#2097): their identity `@id`
+   * (`IdentityManager.identityIdOf`), or `name` itself when it names no
+   * account, a principal, an `@id` or an orphan, or the identity store cannot
+   * answer.
+   */
+  private async referenceTo(name: string): Promise<string> {
+    if (typeof name !== 'string' || !name || isReservedUsername(name) || sameUsername(name, systemPrincipalOf(this.engine))) return name;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'store a page author or editor as identity @id (#2097)'), name);
+    return id ?? name;
+  }
+
+  /**
    * The frontmatter a save writes, from the frontmatter it was given (#1462).
    *
    * Everything a write must not be able to forget about metadata, in one
@@ -2002,6 +2016,13 @@ class PageManager extends BaseManager implements CatalogSource {
     } else {
       rawMetadata.editor = actingUser || metadata.editor || rawMetadata.author;
     }
+
+    // #2097: the author and the editor are stored as the user's identity @id
+    // (operator, 2026-10-26). A username with no account, a principal
+    // (`system`, `anonymous`), an @id or an orphan is stored as it is; the
+    // start-up conversion orphans an unknown name.
+    if (rawMetadata.author) rawMetadata.author = await this.referenceTo(rawMetadata.author);
+    if (rawMetadata.editor) rawMetadata.editor = await this.referenceTo(rawMetadata.editor);
 
     // Strip caller-supplied provenance before stamping our own.
     delete (rawMetadata as Record<string, unknown>)['via-token'];

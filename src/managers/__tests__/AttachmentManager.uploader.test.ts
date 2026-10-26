@@ -15,10 +15,11 @@ import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
 import { clearUnlockedPrivateStores } from '../../utils/privateStoreUnlock';
 import { vaultCategories } from '../../test-support/vaults';
+import { fakeIdentityManager } from '../../test-support/identities';
 
 const FILE = { originalName: 'notes.txt', mimeType: 'text/plain', size: 1 };
 
-function makeManager(pagesDir: string) {
+function makeManager(pagesDir: string, identities: unknown = null) {
   const stored: unknown[][] = [];
   const storeStored: unknown[][] = [];
   const engine = {
@@ -39,6 +40,7 @@ function makeManager(pagesDir: string) {
         };
       }
       if (name === 'PageManager') return { getPrivatePageOwner: vi.fn().mockResolvedValue(null) };
+      if (name === 'IdentityManager') return identities;
       return null;
     }
   } as never;
@@ -47,6 +49,10 @@ function makeManager(pagesDir: string) {
     storeAttachment: (...args: unknown[]) => {
       stored.push(args);
       return Promise.resolve({ identifier: 'att-1', name: FILE.originalName });
+    },
+    updateAttachmentMetadata: (...args: unknown[]) => {
+      stored.push(args);
+      return Promise.resolve(true);
     },
     storeFileInStore: (...args: unknown[]) => {
       storeStored.push(args);
@@ -131,5 +137,33 @@ describe('AttachmentManager.uploadAttachment records the uploader by username (#
     expect(storeStored).toHaveLength(0);
     // No vault folder was created for "Anonymous".
     expect(await fs.readdir(pagesDir)).toEqual([]);
+  });
+
+  // #2097: with an identity record, the uploader and editor are stored by identity @id.
+  // Sabotage: each userReference call replaced by the bare username went red.
+  const JIM = 'urn:uuid:11111111-1111-4111-8111-111111111111';
+
+  test('#2097 a public upload records the uploader identity @id', async () => {
+    const { m, stored } = makeManager(pagesDir, fakeIdentityManager({ jim: JIM }));
+    await m.uploadAttachment(Buffer.from('x'), FILE, signedIn, { pageName: 'Main' });
+    expect(stored[0][3]).toEqual({ username: JIM });
+  });
+
+  test('#2097 a vault upload records the uploader identity @id', async () => {
+    const { m, storeStored } = makeManager(pagesDir, fakeIdentityManager({ jim: JIM }));
+    await m.uploadAttachment(Buffer.from('x'), FILE, signedIn, { private: true });
+    expect((storeStored[0][2] as { author?: string }).author).toBe(JIM);
+  });
+
+  test('#2097 a metadata edit records the editor identity @id', async () => {
+    const { m, stored } = makeManager(pagesDir, fakeIdentityManager({ jim: JIM }));
+    await m.updateAttachmentMetadata('att-1', { description: 'd' }, signedIn);
+    expect((stored[0][1] as { editor?: { name?: string } }).editor?.name).toBe(JIM);
+  });
+
+  test('#2097 the identity store down: the username is recorded and the upload works', async () => {
+    const { m, stored } = makeManager(pagesDir, fakeIdentityManager({ jim: JIM }, { failLookups: true }));
+    await m.uploadAttachment(Buffer.from('x'), FILE, signedIn, { pageName: 'Main' });
+    expect(stored[0][3]).toEqual({ username: 'jim' });
   });
 });

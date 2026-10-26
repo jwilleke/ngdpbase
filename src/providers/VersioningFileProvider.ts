@@ -135,7 +135,7 @@ interface PageIndexEntry {
 interface DeletedPageEntry extends PageIndexEntry {
   /** When the page was deleted (ISO 8601) */
   deletedAt: string;
-  /** Username that deleted it, or 'unknown' when the caller supplied no context */
+  /** Who deleted it: their identity @id (#2097); a username on a tombstone written before, or one with no account */
   deletedBy: string;
   /** Absolute path the page file occupied before deletion — where restore puts it back */
   deletedFrom: string;
@@ -2037,7 +2037,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Where the page is now: its store (found through the caller's context) or
     // the public index. The global index holds no private page.
     const previous = this.resolvePageInfo(currentName, ctx);
-    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx, options?.moveFrom);
+    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx, options?.moveFrom, await this.authorUsername(md.author));
     const isPrivate = placement !== null;
     const newCreator = placement?.owner;
     const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';
@@ -2236,11 +2236,13 @@ class VersioningFileProvider extends FileSystemProvider {
    * retention window expires.
    *
    * @param identifier - Page UUID or title
-   * @param deletedBy - Username performing the delete (audit trail)
    * @returns True if deleted, false if not found
    */
   async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
-    const deletedBy = actorOf(ctx).user;
+    // #2097: the tombstone names who deleted it by identity @id (the username
+    // when there is none); the log line keeps naming the acting user as before.
+    const deleter = actorOf(ctx).user;
+    const deletedBy = await this.userReference(deleter);
     // Get page info before deleting
     const pageData = await this.getPage(identifier, ctx);
     if (!pageData) {
@@ -2301,7 +2303,7 @@ class VersioningFileProvider extends FileSystemProvider {
           logger.warn(`[VersioningFileProvider] Deleted private page ${uuid} had no store index entry; no tombstone was recorded (#1459)`);
         }
         // #1461: a private page is logged by uuid, never by title.
-        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deletedBy}; kept in its store's own trash (#1459)`);
+        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deleter}; kept in its store's own trash (#1459)`);
         return true;
       }
 
@@ -2333,7 +2335,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
 
       logger.info(
-        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deletedBy}; ` +
+        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deleter}; ` +
         'versions retained for restore'
       );
       return true;

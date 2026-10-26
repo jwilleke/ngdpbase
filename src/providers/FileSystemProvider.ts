@@ -46,6 +46,9 @@ import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
 import { installCompletePath } from '../utils/configFiles.js';
+import type IdentityManager from '../managers/IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 
 /**
  * Page cache info (internal)
@@ -795,7 +798,7 @@ class FileSystemProvider extends BasePageProvider {
     // name is public unless the box was ticked (a move into the author's
     // default store). The owner is the path's, never frontmatter's.
     const privateName = parsePrivatePageName(pageName);
-    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx, options?.moveFrom);
+    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx, options?.moveFrom, await this.authorUsername(md.author));
     const isPrivate = placement !== null;
     const pageCreator = placement?.owner;
     const pageStore = placement?.store;
@@ -834,6 +837,8 @@ class FileSystemProvider extends BasePageProvider {
 
     // A private title is unique within its store; a public one among public pages (#1456).
     const storePages = storeLocation ? await this.readStorePages(this.pagesDirectory, storeLocation) : null;
+    // #2097: a vault page's author is its owner, stored as the owner's identity @id.
+    const ownerRef = storeLocation ? await this.userReference(storeLocation.owner) : null;
     if (storePages) {
       const clash = Object.values(storePages).find((p) => p.uuid !== uuid && p.title.toLowerCase() === finalTitle.toLowerCase());
       // #1461: the message reaches logs, so it names no private title.
@@ -877,7 +882,7 @@ class FileSystemProvider extends BasePageProvider {
       // unique among its owner's stores; the owner is the path's.
       ...(storeLocation ? {
         private: true,
-        author: storeLocation.owner,
+        author: ownerRef ?? storeLocation.owner,
         slug: this.privateSlugFor(storeLocation, finalTitle, uuid, ctx)
       } : oldPageInfo?.fromStore ? {
         // Out of a store into the public space: a public slug again.
@@ -911,7 +916,7 @@ class FileSystemProvider extends BasePageProvider {
         lastModified: String(now),
         created: String(created),
         editor: String(updatedMetadata.editor ?? updatedMetadata.author ?? 'unknown'),
-        author: storeLocation.owner,
+        author: ownerRef ?? storeLocation.owner,
         hasVersions: previous?.hasVersions ?? false,
         isPrivate: true
       };
@@ -963,6 +968,32 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
+   * The username a page's stored author names (#2097): an identity @id is
+   * resolved through `IdentityManager.usernameOf`, an orphan names nobody,
+   * a username not yet converted is itself. For the store a Private box moves
+   * a page into, which is named by its owner's username.
+   */
+  protected async authorUsername(author: unknown): Promise<string | undefined> {
+    if (typeof author !== 'string' || !author) return undefined;
+    if (!author.startsWith(IDENTITY_ID_PREFIX) && !author.startsWith(ORPHAN_PREFIX)) return author;
+    const name = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#2097)'), author);
+    return name ?? undefined;
+  }
+
+  /**
+   * What a page record stores for the user `username` (#2097): a vault page's
+   * author (its owner), a tombstone's `deletedBy`. Their identity @id, or the
+   * username when there is none or the identity store cannot answer.
+   */
+  protected async userReference(username: string): Promise<string> {
+    if (!username) return username;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'store a user on a page record as identity @id (#2097)'), username);
+    return id ?? username;
+  }
+
+  /**
    * Where a save puts a private page (#1456), or null for a public one. A page
    * at a private name is private until the save says `private: false`; a plain
    * name is public until it says `private: true` (the Private box — a move into
@@ -975,6 +1006,10 @@ class FileSystemProvider extends BasePageProvider {
    *
    * `moveFrom` (#1505) is an explicit move from another of the same owner's
    * stores: the page's name then names the store it goes to.
+   *
+   * `authorName` is the username the page's author names ({@link authorUsername},
+   * #2097): the author is stored as an identity @id, and a store is named by
+   * its owner's username.
    */
   protected privatePlacement(
     pageName: string,
@@ -982,12 +1017,13 @@ class FileSystemProvider extends BasePageProvider {
     uuid: string,
     previous: PageCacheInfo | null,
     ctx: ActorContext,
-    moveFrom?: string
+    moveFrom?: string,
+    authorName?: string
   ): { owner: string; store: string } | null {
     const privateName = parsePrivatePageName(pageName);
     const isPrivate = md.private === true || (privateName !== null && md.private !== false);
     if (!isPrivate) return null;
-    const owner = privateName?.owner ?? (typeof md.author === 'string' && md.author ? md.author : undefined);
+    const owner = privateName?.owner ?? authorName;
     if (!owner) throw new Error('A private page needs an owner');
     if (privateName && typeof md.store === 'string' && md.store && md.store !== privateName.store) {
       throw new Error(`Cannot save '${pageName}' into private store '${md.store}': a private page's store is in its name`);
@@ -1213,7 +1249,8 @@ class FileSystemProvider extends BasePageProvider {
             lastModified: text(md.lastModified) ?? was.lastModified ?? new Date().toISOString(),
             ...(created ? { created } : {}),
             editor: text(md.editor) ?? was.editor ?? user.name,
-            author: user.name,
+            // #2097: the index mirrors the page's author (the owner's identity @id once converted).
+            author: text(md.author) ?? user.name,
             hasVersions: was.hasVersions ?? false,
             isPrivate: true
           };
