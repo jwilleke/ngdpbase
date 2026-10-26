@@ -539,7 +539,7 @@ interface IOrganizationManager {
   list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
   getById(ctx: ActorContext, id: string): Promise<IOrganizationRecord | null>;
   getByFile(ctx: ActorContext, filename: string): Promise<IOrganizationRecord | null>;
-  create(ctx: ActorContext, org: IOrganizationRecord & { name: string }, filename?: string): Promise<IOrganizationRecord>;
+  create(ctx: ActorContext, org: Omit<IOrganizationRecord, '@id'> & { name: string }, filename?: string): Promise<IOrganizationRecord>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<IOrganizationRecord | null>;
   delete(ctx: ActorContext, id: string): Promise<boolean>;
   getInstallOrg(): Promise<IOrganizationRecord | null>;
@@ -6863,7 +6863,11 @@ ${panes}
         await unlockPrivateStoresWithPassword({ handle: privateStoreHandle, username, password, pagesDirectory });
         await this.adoptSealedPages(username, privateStoreHandle);
         // #1876: once per person with vault keys, a reminder to keep the recovery words safe.
-        void remindRecoveryWords(this.engine.getManager('NotificationManager'), username, () => hasUserKeys(pagesDirectory, username));
+        // #2041: addressed, and so deduplicated, by the user's identity @id.
+        const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
+        void Promise.resolve(identities?.identityIdOf(systemContext(this.engine, 'remind a user of their recovery words: their identity @id (#2041)'), username))
+          .then((id) => remindRecoveryWords(this.engine.getManager('NotificationManager'), id ?? username, () => hasUserKeys(pagesDirectory, username)))
+          .catch((err: unknown) => logger.warn('[private-store] The recovery-words reminder could not be addressed:', err));
       }
     } catch {
       logger.warn('[private-store] could not unlock stores after login');
@@ -11559,7 +11563,8 @@ ${panes}
       }
 
       const isAdmin = await wikiContext.hasPermission('admin-system');
-      if (!isAdmin && comment.author !== currentUser.username) {
+      // #2041: whose comment it is, by identity @id (or the username on one not yet converted), is the manager's answer.
+      if (!isAdmin && !(await commentManager.isAuthor(comment, currentUser))) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
 
@@ -11651,7 +11656,7 @@ ${panes}
         this.formatters,
         comments,
         await wikiContext.hasPermission('comment-create'),
-        wikiContext.userContext?.username ?? '',
+        (c: { author: string }) => commentManager.isAuthor(c, req.userContext ?? ANONYMOUS_SUBJECT),
         await wikiContext.hasPermission('admin-system'),
         pageUuid,
         this.engine
@@ -11790,7 +11795,8 @@ ${panes}
       if (!target) return res.status(404).json({ success: false, error: 'Footnote not found' });
 
       const isAdmin = await wikiContext.hasPermission('admin-system');
-      if (!isAdmin && target.createdBy !== currentUser.username) {
+      // #2041: whose footnote it is, by identity @id (or the username on one not yet converted), is the manager's answer.
+      if (!isAdmin && !(await footnoteManager.isCreator(target, currentUser))) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
 
@@ -16808,22 +16814,9 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const organizationData = req.body as Record<string, unknown>;
 
-      // #624: ensure the JSON-LD type fields are present even if the form
-      // submitted only the user-editable fields.
-      const nameForSlug = ((organizationData.name as string) || 'organization')
-        .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80);
-      const orgRecord: IOrganizationRecord = {
-        '@context': 'https://schema.org',
-        '@type': 'Organization',
-        ...organizationData,
-        '@id': (organizationData['@id'] as string) || (organizationData.url as string) || `urn:ngdpbase:org:${nameForSlug}`
-      };
-
-      const newOrganization = await organizationManager.create(userContext, { ...orgRecord, name: String(orgRecord.name ?? '') });
+      // #2041: the manager gives the new organization its `urn:uuid:` id; the
+      // form's web address stays the ordinary `url` field.
+      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: typeof organizationData.name === 'string' ? organizationData.name : '' });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });

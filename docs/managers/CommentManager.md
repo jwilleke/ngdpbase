@@ -1,7 +1,7 @@
 ---
 name: CommentManager
 description: Per-page comment storage + CRUD; sidecar JSON keyed by page UUID
-dateModified: '2026-10-22'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/CommentManager.ts
 ---
@@ -15,15 +15,19 @@ Stores per-page comments in sidecar JSON files keyed by page UUID. Independent o
 - Public page: `data/comments/{pageUuid}/{commentId}.json` (configurable via `ngdpbase.comments.storagedir`).
 - Vault page (`vaults/{owner}/{vault}/{title}`): `pages/vaults/{owner}/{vault}/comments/{pageUuid}/{commentId}.json`, read and written through the vault's store I/O, so sealed exactly when the page is, and refused when the vault is locked or not yet opened ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). See [private-stores.md](../private-stores.md#footnotes-and-comments).
 - A page that moves into or out of a vault takes its comments with it (`movePageComments`, called by the page door).
-- Format: one `PageComment` record per file (id, author, authorDisplayName, content, createdAt).
+- Format: one `PageComment` record per file (id, author, authorDisplayName, content, createdAt). `author` is the writer's identity `@id` ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041)); `authorDisplayName` is what is shown, and `deletedBy` records the account that deleted it, by username.
 - Enabled flag: `ngdpbase.comments.allow` (default `true`).
 
 ## Authorization
 
 - Anyone authenticated can post.
-- Comment authors and admins can delete their own; admins can delete any.
+- Comment authors and admins can delete their own; admins can delete any. Whether the caller wrote a comment is `isAuthor(comment, ctx)`: the caller's identity `@id`, or their username on a comment written before and not yet converted.
 - Reading, posting and deleting are gated exactly like reading the page: the routes read the page first (`PageManager.readPage`, as the requester) and answer 404 when they may not ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). Until #1839 the comment routes asked nothing about the page.
 - Every call names the page as `{ name, uuid }` and carries the caller's context.
+
+## Authors by identity @id
+
+From [#2041](https://github.com/jwilleke/ngdpbase/issues/2041) (step 6 of the [identity model](../planning/identity-model.md)) a new comment's `author` is the writer's identity `@id`, from `IdentityManager.identityIdOf(ctx, username)` under the system context; a name with no account, or any name while the identity store cannot answer, is stored as given. At start-up the manager converts the public folder once: each comment whose `author` is still a username is given that user's `@id`, one write per comment file, under the system context, and the count is logged. Values already an `@id` (`urn:`), `anonymous` and the system principal are left alone, so a second start writes nothing. A username with no account becomes `orphan:<name>` (nobody's from then on: a later account with the same name never takes it over, no "is it mine" check matches it, and only an administrator can act on it); the orphans are reported, counts only, at every start: a log line and the admin dashboard's "needs your attention" list. An orphan is never looked up again. When the identity store cannot answer, nothing is converted, the dashboard says "identity store unavailable, conversion postponed", and the next start tries again. A vault page's comments are in its vault, which start-up does not open, so they keep their username until written again; `isAuthor` still matches them.
 
 ## Backup and restore
 

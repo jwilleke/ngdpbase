@@ -124,6 +124,20 @@ const DATABASE_MIGRATIONS: Migration[] = [
       db.exec('CREATE INDEX review_requests_by_status ON review_requests (status, filed_at)');
       db.exec('CREATE INDEX review_requests_by_decided ON review_requests (decided_at)');
     }
+  },
+  {
+    // #2041: a row names the owner of its resource by identity @id in
+    // `metadata.owner` and by username in `metadata.ownerUser`, so the rows
+    // about an account can still be listed after the account (and its
+    // identity record) is deleted. This column is the copy of `ownerUser`
+    // for the index; rows written before it are null, and their `owner` is
+    // the username anyway.
+    id: '20261026120000',
+    description: 'audit log: audit_events.owner_user',
+    up: (db) => {
+      db.exec('ALTER TABLE audit_events ADD COLUMN owner_user TEXT');
+      db.exec('CREATE INDEX audit_events_by_owner_user ON audit_events (owner_user, timestamp)');
+    }
   }
 ];
 

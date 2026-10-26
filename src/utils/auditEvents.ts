@@ -161,8 +161,10 @@ export interface TokenInput extends CommonInput {
   op: TokenOp;
   /** Token id — the handle every later question about this credential uses. */
   id: string;
-  /** Whose token it is, which is not always who acted: an admin may revoke. */
+  /** Whose token it is, which is not always who acted (an admin may revoke): their identity @id (#2041), or a name with no account as given. */
   owner: string;
+  /** The token owner's username, written beside `owner` (#2041) so the rows still list after the account is deleted. */
+  ownerUser?: string;
   /** Operator-supplied label. Optional; a token need not be named. */
   name?: string | null;
   /** Only meaningful for `mint`; ignored otherwise. */
@@ -182,7 +184,8 @@ export interface TokenInput extends CommonInput {
  */
 export type AttachmentDetail =
   | { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null }
-  | { attachmentId: string; sealedStore: { owner: string; store: string } };
+  /** A sealed store's file: `owner` is the store owner's identity @id in the record, `ownerUser` their username beside it (#2041). */
+  | { attachmentId: string; sealedStore: { owner: string; store: string; ownerUser?: string } };
 
 export type AttachmentInput = CommonInput & { op: AttachmentOp } & AttachmentDetail;
 
@@ -289,7 +292,7 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
   const who = whoOf(input);
 
   const metadata: Record<string, unknown> = 'sealedStore' in input
-    ? { attachmentId, owner: input.sealedStore.owner, store: input.sealedStore.store, sealed: true, ...tokenMetadata(viaToken), ...who.metadata }
+    ? { attachmentId, owner: input.sealedStore.owner, ...(input.sealedStore.ownerUser ? { ownerUser: input.sealedStore.ownerUser } : {}), store: input.sealedStore.store, sealed: true, ...tokenMetadata(viaToken), ...who.metadata }
     : { attachmentId, filename: input.filename, ...tokenMetadata(viaToken), ...who.metadata };
   if (!('sealedStore' in input)) {
     if (input.pageName) metadata.pageName = input.pageName;
@@ -490,12 +493,13 @@ export async function recordAuditEvent(
  * every event is useless as a filter.
  */
 export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
-  const { op, id, owner, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
+  const { op, id, owner, ownerUser, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
   const who = whoOf(input);
 
   const metadata: Record<string, unknown> = {
     id,
     owner,
+    ...(ownerUser ? { ownerUser } : {}),
     name: name ?? null,
     ...tokenMetadata(viaToken),
     ...who.metadata

@@ -34,7 +34,9 @@ const makeFootnoteManager = (footnotes: unknown[] = []) => ({
   isEnabled: () => true,
   // #1951: footnotes are on for the page unless a test turns them off.
   isAllowedOn: vi.fn().mockResolvedValue(true),
-  getFootnotes: vi.fn().mockResolvedValue(footnotes)
+  getFootnotes: vi.fn().mockResolvedValue(footnotes),
+  // #2041: "is it mine" is the manager's answer; here, by username as the fixtures store it.
+  isCreator: vi.fn(async (f: { createdBy: string }, ctx: { username?: string }) => f.createdBy === ctx.username)
 });
 
 describe('FootnotesPlugin', () => {

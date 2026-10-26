@@ -28,6 +28,8 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import BaseManager, { type BackupData } from './BaseManager.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
 import FileOidcAdapterStore from '../providers/FileOidcAdapter.js';
 import { ensureInstanceEnvSecret, nodeInstanceEnvFs } from '../utils/instanceEnvSecret.js';
 import logger from '../utils/logger.js';
@@ -567,7 +569,13 @@ export class OidcManager extends BaseManager {
       if (event[key] !== undefined) metadata[key] = event[key];
     }
     const { metadata: proxyMeta, ...proxy } = proxyAttribution(revoker?.viaProxy);
-    if (revoker) Object.assign(metadata, { owner: event.accountId, revokedBy: revoker.viaProxy?.actor ?? revoker.username }, proxyMeta);
+    if (revoker) {
+      // #2041: the grant's owner is named by identity @id; a name with no account as given.
+      const owner = event.accountId
+        ? (await this.engine.getManager<IdentityManager>('IdentityManager')?.identityIdOf(systemContext(this.engine, 'record an app grant revoke: the owner identity @id (#2041)'), event.accountId)) ?? event.accountId
+        : event.accountId;
+      Object.assign(metadata, { owner, ...(event.accountId ? { ownerUser: event.accountId } : {}), revokedBy: revoker.viaProxy?.actor ?? revoker.username }, proxyMeta);
+    }
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
       eventType: how.name,
       user: revoker?.username ?? event.accountId ?? 'anonymous',

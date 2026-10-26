@@ -7,6 +7,8 @@ import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { AuditEventSink } from '../../../dist/src/utils/auditEvents.js';
 import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionPoint.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
+import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -87,7 +89,10 @@ export const SubmissionSchema = z.object({
   id:          z.string(),
   formId:      z.string(),
   submittedAt: z.string(),
+  // Who submitted it: their identity @id (#2041); `anonymous`, or a name with no account, as given
   submittedBy: z.string(),
+  // The submitter's name as shown, kept with the submission (#2041): the @id is not for showing
+  submitterName: z.string().optional(),
   onBehalfOf:  z.object({
     name:    z.string().optional(),
     email:   z.string().optional(),
@@ -291,6 +296,8 @@ export default class FormsDataManager {
   private engine: { getManager: (name: string) => unknown } | null;
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
+  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  private attention: string | null = null;
 
   /** What core handed the forms add-on (#1813): `actorOf`, `systemContext`, `isAtLeast`. */
   private readonly host: AddonHost;
@@ -312,6 +319,63 @@ export default class FormsDataManager {
     await fsp.mkdir(path.join(this.dataPath, 'definitions'), { recursive: true });
     await fsp.mkdir(path.join(this.dataPath, 'submissions'), { recursive: true });
     await this.loadDefinitions();
+    await this.convertSubmittersToIdentityIds();
+  }
+
+  /**
+   * Once, at start-up (#2041): every submission whose `submittedBy` is still
+   * a username gets `IdentityManager.convertReference`'s answer, the name
+   * kept as `submitterName` for showing, one write per submission file,
+   * under the system context: that user's identity `@id`, or `orphan:<name>`
+   * when the name has no account (nobody's from then on: a later account
+   * with that name never takes it over). `@id`s, orphans, `anonymous` and
+   * the system principal are left alone, so a second start writes nothing.
+   * Orphans are reported, counts only: a log line and the admin dashboard's
+   * needs-attention list ({@link getManagerStatus}). When the identity store
+   * cannot answer, the pass is postponed to the next start, reported the same
+   * way.
+   */
+  private async convertSubmittersToIdentityIds(): Promise<void> {
+    const identities = this.engine?.getManager('IdentityManager') as IdentityManager | null | undefined;
+    this.attention = null;
+    if (!identities) return;
+    const postponed = 'Form submitters were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    if (!identities.canAnswer()) {
+      this.attention = postponed;
+      console.warn(`[FormsDataManager] ${postponed}`);
+      return;
+    }
+    const ctx = this.host.systemContext('forms: convert submitters from username to identity @id (#2041)');
+    let converted = 0, orphans = 0;
+    try {
+      for (const s of await this.getSubmissions()) {
+        if (typeof s.submittedBy !== 'string') continue;
+        const { value, outcome } = await identities.convertReference(ctx, s.submittedBy);
+        if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+        if (outcome === 'converted') converted++;
+        if (value === s.submittedBy) continue;
+        const filePath = path.join(this.dataPath, 'submissions', s.formId, `${s.id}.json`);
+        const tmp = `${filePath}.tmp`;
+        await fsp.writeFile(tmp, JSON.stringify({ ...s, submittedBy: value, submitterName: s.submitterName ?? s.submittedBy }, null, 2), 'utf8');
+        await fsp.rename(tmp, filePath);
+      }
+    } catch (error) {
+      this.attention = postponed;
+      console.warn(`[FormsDataManager] ${postponed}: ${(error as Error).message}`);
+      return;
+    }
+    if (converted > 0) console.info(`[FormsDataManager] Converted ${converted} submitter(s) from username to identity @id (#2041)`);
+    if (orphans > 0) {
+      this.attention = `${orphans} form submission(s) are orphaned: their submitter's username has no account (#2041)`;
+      console.warn(`[FormsDataManager] ${this.attention}`);
+    }
+  }
+
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters are orphaned or not converted (#2041). */
+  getManagerStatus(): ManagerStatus {
+    return this.attention
+      ? { state: 'degraded', kind: 'attention', reason: this.attention }
+      : { state: 'ready' };
   }
 
   private async loadDefinitions(): Promise<void> {

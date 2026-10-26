@@ -4,6 +4,7 @@
  * Uses a per-test temp directory. Nothing here touches the live data dir.
  */
 
+import { fakeIdentityManager } from '../../test-support/identities';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -32,6 +33,8 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
           getResolvedDataPath: () => tmpDir
         };
       }
+      if (name === 'AuditManager' && overrides.__audit) return overrides.__audit;
+      if (name === 'IdentityManager' && overrides.__identities) return overrides.__identities;
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint' && !overrides.__noDecisionPoint) {
         return { permits: async (_s: PermissionSubject, action: string) => !lackingScopes.includes(action) };
@@ -50,6 +53,27 @@ async function makeManager(overrides: Record<string, unknown> = {}): Promise<Age
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdp-agent-tokens-'));
   lackingScopes = [];
+});
+
+describe('#2041 — a token record names its owner by identity @id', () => {
+  test('mint, extend and revoke rows carry the owner\'s @id in metadata.owner; `user` stays the username', async () => {
+    const rows: Array<Record<string, unknown>> = [];
+    const m = await makeManager({
+      __audit: { logAuditEvent: async (e: Record<string, unknown>) => { rows.push(e); return 'id'; }, flushAuditQueue: async () => {} },
+      __identities: fakeIdentityManager({ jim: 'urn:uuid:jim-1' })
+    });
+    // Sabotage check: `owner,` instead of `owner: ownerId,` in mint fails the first row.
+    const { record } = await m.mint(subject('jim'), 'one', ['page-read']);
+    await m.extend(record.id, subject('jim'), 1).catch(() => { /* already at the longest: its row is not written */ });
+    await m.revoke(record.id, subject('jim'));
+    const tokenRows = rows.filter((r) => String(r.eventType).startsWith('token-'));
+    expect(tokenRows.length).toBeGreaterThanOrEqual(2);
+    for (const r of tokenRows) {
+      expect((r.metadata as { owner: string }).owner).toBe('urn:uuid:jim-1');
+      expect((r.metadata as { ownerUser: string }).ownerUser).toBe('jim');
+      expect(r.user).toBe('jim');
+    }
+  });
 });
 
 describe('#1178 — a token carries only what its owner holds', () => {

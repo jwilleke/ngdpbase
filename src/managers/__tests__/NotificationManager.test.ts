@@ -1,3 +1,4 @@
+import { fakeIdentityManager } from '../../test-support/identities';
 import { promises as fs } from 'fs';
 import path from 'path';
 import NotificationManager from '../NotificationManager';
@@ -15,8 +16,12 @@ vi.mock('../../utils/logger', () => ({
       warn: vi.fn(),
       error: vi.fn(),
       debug: vi.fn()
-    })
-
+    }),
+    // IdentityManager logs at the top level (#2041: the identity store down).
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
   }
 }));
 
@@ -440,13 +445,13 @@ describe('NotificationManager', () => {
       });
 
       // Test getting notifications for different users
-      const johnNotifications = notificationManager.getUserNotifications('john');
+      const johnNotifications = await notificationManager.getUserNotifications({ username: 'john', roles: [], isAuthenticated: true });
       expect(johnNotifications).toHaveLength(2); // Global + user specific
 
-      const adminNotifications = notificationManager.getUserNotifications('admin');
+      const adminNotifications = await notificationManager.getUserNotifications({ username: 'admin', roles: [], isAuthenticated: true });
       expect(adminNotifications).toHaveLength(2); // Global + admin specific
 
-      const otherUserNotifications = notificationManager.getUserNotifications('other');
+      const otherUserNotifications = await notificationManager.getUserNotifications({ username: 'other', roles: [], isAuthenticated: true });
       expect(otherUserNotifications).toHaveLength(1); // Only global
     });
 
@@ -459,14 +464,14 @@ describe('NotificationManager', () => {
       });
 
       // Initially user should see the notification
-      let userNotifications = notificationManager.getUserNotifications('testuser');
+      let userNotifications = await notificationManager.getUserNotifications({ username: 'testuser', roles: [], isAuthenticated: true });
       expect(userNotifications).toHaveLength(1);
 
       // Dismiss the notification
       await notificationManager.dismissNotification(id, TESTUSER);
 
       // Now user should not see the notification
-      userNotifications = notificationManager.getUserNotifications('testuser');
+      userNotifications = await notificationManager.getUserNotifications({ username: 'testuser', roles: [], isAuthenticated: true });
       expect(userNotifications).toHaveLength(0);
     });
 
@@ -487,13 +492,105 @@ describe('NotificationManager', () => {
       });
 
       // By default, should not include expired
-      const activeNotifications = notificationManager.getUserNotifications('testuser');
+      const activeNotifications = await notificationManager.getUserNotifications({ username: 'testuser', roles: [], isAuthenticated: true });
       expect(activeNotifications).toHaveLength(1);
       expect(activeNotifications[0].title).toBe('Active Notification');
 
       // With includeExpired=true, should include both
-      const allNotifications = notificationManager.getUserNotifications('testuser', true);
+      const allNotifications = await notificationManager.getUserNotifications({ username: 'testuser', roles: [], isAuthenticated: true }, true);
       expect(allNotifications).toHaveLength(2);
+    });
+  });
+
+  describe('#2041 recipients by identity @id', () => {
+    const IDS = { john: 'urn:uuid:11111111-1111-4111-8111-111111111111', testuser: 'urn:uuid:22222222-2222-4222-8222-222222222222' };
+    let lookups: string[];
+
+    async function managerWithIdentities(dir: string, accounts: Record<string, string> = IDS, opts: { down?: boolean; failLookups?: boolean } = {}): Promise<NotificationManager> {
+      const engine = createMockEngine(dir);
+      const base = engine.getManager.getMockImplementation();
+      engine.getManager.mockImplementation((name: string) => name === 'IdentityManager'
+        ? fakeIdentityManager(accounts, { ...opts, onLookup: (_ctx, u) => lookups.push(u) })
+        : base(name));
+      const m = new NotificationManager(engine);
+      await m.initialize({});
+      return m;
+    }
+
+    beforeEach(() => { lookups = []; });
+
+    test('a new notification is addressed, and dismissed, by identity @id; a name with no account as given', async () => {
+      const m = await managerWithIdentities(tempDir);
+      // Sabotage check: storing `notification.targetUsers` unchanged fails the first expectation.
+      const id = await m.createNotification({ title: 'For john', targetUsers: ['john', 'nobody', IDS.testuser] });
+      const stored = (m as unknown as { notifications: Map<string, { targetUsers: string[]; dismissedBy: string[] }> }).notifications.get(id);
+      expect(stored.targetUsers).toEqual([IDS.john, 'nobody', IDS.testuser]);
+      expect(await m.getUserNotifications({ username: 'john', roles: [], isAuthenticated: true })).toHaveLength(1);
+      await m.dismissNotification(id, { username: 'john', roles: [], isAuthenticated: true });
+      expect(stored.dismissedBy).toEqual([IDS.john]);
+      expect(await m.getUserNotifications({ username: 'john', roles: [], isAuthenticated: true })).toHaveLength(0);
+      await m.shutdown();
+    });
+
+    const store = async (dir: string, targetUsers: string[], dismissedBy: string[] = []) => {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'notifications.json'), JSON.stringify({
+        lastSaved: 'x',
+        notifications: {
+          notification_1: { id: 'notification_1', type: 'user', title: 't', message: '', level: 'info', targetUsers, createdAt: new Date().toISOString(), expiresAt: null, dismissedBy }
+        }
+      }));
+    };
+    const saved = async (dir: string) => JSON.parse(await fs.readFile(path.join(dir, 'notifications.json'), 'utf8')).notifications.notification_1 as { targetUsers: string[]; dismissedBy: string[] };
+
+    test('start-up converts stored usernames once, orphans and reports one with no account, and is safe to run twice', async () => {
+      const dir = path.join(tempDir, 'convert');
+      await store(dir, ['john', 'gone'], ['testuser', 'anonymous']);
+      const first = await managerWithIdentities(dir);
+      await first.shutdown();
+      expect((await saved(dir)).targetUsers).toEqual([IDS.john, 'orphan:gone']);
+      expect((await saved(dir)).dismissedBy).toEqual([IDS.testuser, 'anonymous']);
+      // Sabotage check: dropping markNeedsAttention leaves the manager ready.
+      expect(first.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 notification recipient\(s\) are orphaned/) });
+      expect(first.getManagerStatus().reason).not.toContain('gone');
+
+      lookups = [];
+      const second = await managerWithIdentities(dir);
+      await second.shutdown();
+      // Nothing is looked up again: an @id and an orphan are both final.
+      expect(lookups).toEqual([]);
+      expect(second.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 notification recipient\(s\) are orphaned/) });
+    });
+
+    test('a deleted account\'s notices never reach a new account with the same name', async () => {
+      const dir = path.join(tempDir, 'reuse');
+      await store(dir, ['bob']);
+      // bob's account is deleted before the conversion runs.
+      const accounts: Record<string, string> = { ...IDS };
+      const first = await managerWithIdentities(dir, accounts);
+      await first.shutdown();
+      expect((await saved(dir)).targetUsers).toEqual(['orphan:bob']);
+      // A new account named bob, and a restart.
+      accounts.bob = 'urn:uuid:33333333-3333-4333-8333-333333333333';
+      const second = await managerWithIdentities(dir, accounts);
+      // Sabotage check: dropping the orphan prefix (leaving 'bob') makes the new bob receive it after a restart.
+      expect((await saved(dir)).targetUsers).toEqual(['orphan:bob']);
+      expect(await second.getUserNotifications({ username: 'bob', roles: [], isAuthenticated: true })).toHaveLength(0);
+      await second.shutdown();
+    });
+
+    test.each([{ down: true }, { failLookups: true }])('the identity store down (%o): start-up converts nothing and says so, and a new notice is still created', async (opts) => {
+      const dir = path.join(tempDir, `down-${Object.keys(opts)[0]}`);
+      await store(dir, ['john']);
+      const m = await managerWithIdentities(dir, IDS, opts);
+      // Sabotage check: rethrowing in the conversion's catch stops initialize.
+      expect((await saved(dir)).targetUsers).toEqual(['john']);
+      expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+      const id = await m.createNotification({ title: 'still works', targetUsers: ['john'] });
+      const stored = (m as unknown as { notifications: Map<string, { targetUsers: string[] }> }).notifications.get(id);
+      expect(stored?.targetUsers).toEqual(['john']);
+      await m.dismissNotification(id, { username: 'john', roles: [], isAuthenticated: true });
+      await m.shutdown();
     });
   });
 

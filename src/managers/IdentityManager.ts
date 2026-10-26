@@ -11,10 +11,10 @@ import { knownCountry, toE164 } from '../utils/phoneNumbers.js';
 import { languageTag } from '../utils/languages.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { ACCOUNTLESS_PERSON_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
-import { recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
+import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
+import { ContactRefusedError, recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
-import { systemContext } from '../context/bootActions.js';
+import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 
 interface PersonProviderConstructor {
   new (engine: WikiEngine): PersonProvider;
@@ -755,6 +755,59 @@ class IdentityManager extends BaseManager {
       logger.info(`👤 Made the missing identity record of account ${user.username} (#2037)`);
       return created;
     });
+  }
+
+  /**
+   * The `@id` of the user `username`'s identity record, or null (#2041): null
+   * when there is no account by that name, and null when the identity store
+   * cannot answer (degraded, unreadable), logged without the name. The door
+   * for a write or a record that refers to a user: it then keeps working as
+   * it does for a name with no account, and never fails because the identity
+   * store is down. Read as {@link getByUserIdentifier}, which a caller that
+   * must tell "no account" from "cannot answer" uses instead (a start-up
+   * conversion, with {@link canAnswer}). A refusal still throws.
+   */
+  async identityIdOf(ctx: ActorContext, username: string): Promise<string | null> {
+    try {
+      return (await this.getByUserIdentifier(ctx, username))?.['@id'] ?? null;
+    } catch (error) {
+      if (error instanceof ContactRefusedError) throw error;
+      logger.warn(`👤 The identity store could not look up a user's identity @id: ${error instanceof Error ? error.message : String(error)} (#2041)`);
+      return null;
+    }
+  }
+
+  /**
+   * What a stored reference to a user should become, for a start-up
+   * conversion (#2041). `stored` is what a record holds today:
+   *
+   * - an `@id` (`urn:`), an orphan (`orphan:<name>`), `anonymous`, the
+   *   system principal or an empty value: `kept` (`orphan` when it is an
+   *   orphan, so the caller can count them);
+   * - a username with an account: that identity's `@id`, `converted`;
+   * - a username with no account: `orphan:<name>`, `orphaned`. The record is
+   *   then nobody's: a later account with the same name never takes it over,
+   *   and no "is it mine" check matches it.
+   *
+   * Throws when the identity store cannot answer (and so does nothing to the
+   * record): the caller postpones its whole pass to the next start, rather
+   * than orphan a name it could not look up. Ask {@link canAnswer} first.
+   */
+  async convertReference(ctx: ActorContext, stored: string): Promise<{ value: string; outcome: 'kept' | 'orphan' | 'converted' | 'orphaned' }> {
+    if (typeof stored !== 'string' || !stored || stored.startsWith(IDENTITY_ID_PREFIX)) return { value: stored, outcome: 'kept' };
+    if (stored.startsWith(ORPHAN_PREFIX)) return { value: stored, outcome: 'orphan' };
+    if (sameUsername(stored, 'anonymous') || sameUsername(stored, systemPrincipalOf(this.engine))) return { value: stored, outcome: 'kept' };
+    const identity = await this.getByUserIdentifier(ctx, stored);
+    return identity ? { value: identity['@id'], outcome: 'converted' } : { value: `${ORPHAN_PREFIX}${stored}`, outcome: 'orphaned' };
+  }
+
+  /**
+   * Whether the identity store can answer lookups now (#2041): false when it
+   * started degraded (no provider). A start-up conversion asks this first and
+   * postpones the whole pass when it is false.
+   */
+  canAnswer(): boolean {
+    return this.provider !== null;
   }
 
   private requireProvider(): PersonProvider {

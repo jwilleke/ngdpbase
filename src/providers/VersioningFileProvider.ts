@@ -2,6 +2,7 @@ import FileSystemProvider, { type BackupData } from './FileSystemProvider.js';
 import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
+import type IdentityManager from '../managers/IdentityManager.js';
 import fs from 'fs-extra';
 import path from 'path';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
@@ -2375,6 +2376,9 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   private async recordPrivateRetentionPurge(ctx: JobContext, purged: StoreDeletedEntry[]): Promise<void> {
     for (const entry of purged) {
+      // #2041: the owner is named by identity @id; a name with no account as written.
+      const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
+        ?.identityIdOf(systemContext(this.engine, 'record a vault trash purge: the owner identity @id (#2041)'), entry.creator)) ?? entry.creator;
       await recordSystemAction(this.engine, ctx, {
         eventType: AUDIT_EVENT.PAGE_DELETE,
         action: 'purge',
@@ -2384,7 +2388,8 @@ class VersioningFileProvider extends FileSystemProvider {
         severity: 'medium',
         metadata: {
           uuid: entry.uuid,
-          owner: entry.creator,
+          owner,
+          ownerUser: entry.creator,
           store: entry.store,
           deletedAt: entry.deletedAt,
           retentionDays: this.deleteRetentionDays

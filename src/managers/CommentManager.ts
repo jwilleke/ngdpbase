@@ -23,6 +23,9 @@ import {
 } from '../utils/pageNotes.js';
 import { assertPathSegment } from '../utils/privateStorePath.js';
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 
 /** One page's comment folder, and the I/O to read and write it there (#1839). */
 interface CommentPlace {
@@ -62,9 +65,83 @@ export default class CommentManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.commentsDir, { recursive: true });
+      await this.convertAuthorsToIdentityIds();
       await this.outsideCheck.run({ notify: true });
       logger.debug('CommentManager initialized');
     }
+  }
+
+  /**
+   * Once, at start-up (#2041): every public comment whose `author` is still a
+   * username gets `IdentityManager.convertReference`'s answer, one write per
+   * comment file, under the system context: that user's identity `@id`, or
+   * `orphan:<name>` when the name has no account (nobody's from then on: a
+   * later account with that name never takes it over, and only an
+   * administrator can delete it). `@id`s, orphans, `anonymous` and the system
+   * principal are left alone, so a second start writes nothing. Orphans are
+   * reported, counts only: a log line and the admin dashboard's
+   * needs-attention list. When the identity store cannot answer, the whole
+   * pass is postponed to the next start and reported the same way. A vault
+   * page's comments are in its vault, which start-up does not open; they keep
+   * their username, and {@link isAuthor} still matches it.
+   * `authorDisplayName` and `deletedBy` are not touched.
+   */
+  private async convertAuthorsToIdentityIds(): Promise<void> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return;
+    if (!identities.canAnswer()) {
+      this.postponeConversion('the identity store is unavailable');
+      return;
+    }
+    const ctx = systemContext(this.engine, 'convert comment authors from username to identity @id (#2041)');
+    let converted = 0, orphans = 0;
+    try {
+      for (const page of await fs.readdir(this.commentsDir)) {
+        const dir = path.join(this.commentsDir, page);
+        if (!(await fs.stat(dir)).isDirectory()) continue;
+        for (const name of (await fs.readdir(dir)).filter((f) => f.endsWith('.json'))) {
+          const file = path.join(dir, name);
+          let comment: PageComment;
+          try { comment = JSON.parse(await fs.readFile(file, 'utf8')) as PageComment; } catch { continue; }
+          if (!comment || typeof comment.author !== 'string') continue;
+          const { value, outcome } = await identities.convertReference(ctx, comment.author);
+          if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+          if (outcome === 'converted') converted++;
+          if (value !== comment.author) await fs.writeFile(file, JSON.stringify({ ...comment, author: value }, null, 2));
+        }
+      }
+    } catch (error) {
+      this.postponeConversion(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (converted > 0) logger.info(`[CommentManager] Converted ${converted} comment author(s) from username to identity @id (#2041)`);
+    if (orphans > 0) {
+      const reason = `${orphans} comment(s) are orphaned: their author's username has no account, so only an administrator can delete them (#2041)`;
+      logger.warn(`[CommentManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2041). */
+  private postponeConversion(why: string): void {
+    const reason = 'Comment authors were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    logger.warn(`[CommentManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
+  }
+
+  /**
+   * Whether `ctx` wrote `comment` (#2041): its `author` is the caller's
+   * identity `@id`, or, on a comment written before and not yet converted (a
+   * vault page's), the caller's username. An orphan (`orphan:<name>`) is
+   * nobody's and never matches.
+   */
+  async isAuthor(comment: Pick<PageComment, 'author'>, ctx: ActorContext): Promise<boolean> {
+    if (!ctx.username || !comment.author || comment.author.startsWith(ORPHAN_PREFIX)) return false;
+    if (comment.author === ctx.username) return true;
+    if (!comment.author.startsWith(IDENTITY_ID_PREFIX)) return false;
+    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'is this comment the caller one: their identity @id (#2041)'), ctx.username);
+    return Boolean(id) && id === comment.author;
   }
 
   /** `ngdpbase.comments.storagedir`, resolved, or the default when there is no configuration (a test). */
@@ -158,10 +235,13 @@ export default class CommentManager extends BaseManager {
     const place = await this.place(page, ctx);
     const id = randomUUID();
     const displayName = (ctx as { displayName?: string }).displayName;
+    // #2041: the author by identity @id; a name with no account as given.
+    const author = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'store a comment author: identity @id (#2041)'), ctx.username)) ?? ctx.username;
     const comment: PageComment = {
       id,
       pageUuid,
-      author: ctx.username,
+      author,
       authorDisplayName: displayName && displayName.trim() ? displayName : ctx.username,
       content,
       createdAt: new Date().toISOString()
@@ -217,7 +297,7 @@ export default class CommentManager extends BaseManager {
       severity: 'low',
       resource: commentId,
       resourceType: 'comment',
-      metadata: { ...who.metadata, pageUuid, commentId, author: comment.author, ownComment: comment.author === ctx.username }
+      metadata: { ...who.metadata, pageUuid, commentId, author: comment.author, ownComment: await this.isAuthor(comment, ctx) }
     }, (err) => logger.warn(`[CommentManager] Audit record failed for comment-delete ${commentId}:`, err));
 
     return true;

@@ -517,7 +517,7 @@ class FileAuditProvider extends BaseAuditProvider {
     const limit = options.limit ?? 100;
     const offset = options.offset ?? 0;
     const about = this.auditLogs
-      .filter((log) => recordIsAbout(log as unknown as Record<string, unknown>, person))
+      .filter((log) => recordIsAbout(log as unknown as Record<string, unknown>, person, options.ownerId))
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     return Promise.resolve({
       results: about.slice(offset, offset + limit) as unknown as AuditEvent[],

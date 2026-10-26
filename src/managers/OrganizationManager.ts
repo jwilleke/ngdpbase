@@ -398,18 +398,21 @@ class OrganizationManager extends BaseManager {
   }
 
   /**
-   * Create an organization. `name` is required; `@id` defaults to the `url`,
-   * else a new `urn:uuid:`. `filename` is for the install anchor (seeding);
-   * other records take one from the url or name.
+   * Create an organization. `name` is required. Its `@id` is always a new
+   * `urn:uuid:` (#2041): the web address stays the ordinary `url` field, and
+   * an `@id` the caller gives is ignored. `filename` is for the install
+   * anchor (seeding); other records take one from the url or name.
    */
   async create(ctx: ActorContext, org: OrganizationInput, filename?: string): Promise<Organization> {
     await requireContactPermission(this.engine, ctx, 'manage');
     if (!org || typeof org.name !== 'string' || !org.name.trim()) throw new Error('OrganizationManager.create: an organization needs a name');
+    const fields: Record<string, unknown> = { ...org };
+    delete fields['@id'];
     const record: Organization = {
-      ...org,
+      ...fields,
       '@context': 'https://schema.org',
       '@type': 'Organization',
-      '@id': (typeof org['@id'] === 'string' && org['@id']) || (typeof org.url === 'string' && org.url) || `urn:uuid:${randomUUID()}`,
+      '@id': `urn:uuid:${randomUUID()}`,
       name: org.name
     };
     const result = await this.requireProvider().create(record, filename);
@@ -478,16 +481,16 @@ class OrganizationManager extends BaseManager {
       return existing;
     }
 
-    const id = data.orgUrl
-      || (configManager.getProperty('ngdpbase.application.base-url', '') as string)
-      || `urn:ngdpbase:org:${slugify(data.orgName)}`;
+    // #2041: the anchor gets a `urn:uuid:` id like every new organization;
+    // its web address is the ordinary `url` field.
+    const url = data.orgUrl || (configManager.getProperty('ngdpbase.application.base-url', '') as string);
 
     const org: Organization = {
       '@context': 'https://schema.org',
       '@type': 'Organization',
-      '@id': id,
+      '@id': `urn:uuid:${randomUUID()}`,
       name: data.orgName,
-      url: data.orgUrl || id,
+      ...(url ? { url } : {}),
       ...(data.orgLegalName ? { legalName: data.orgLegalName } : {}),
       ...(data.orgDescription ? { description: data.orgDescription } : {}),
       ...(data.orgFoundingDate ? { foundingDate: data.orgFoundingDate } : {}),
@@ -550,16 +553,6 @@ function buildContactPoints(seed: OrganizationSeedData): ContactPoint[] | undefi
       email: seed.adminEmail
     }
   ];
-}
-
-function slugify(name: string): string {
-  return (name || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'organization';
 }
 
 async function fileExists(p: string): Promise<boolean> {

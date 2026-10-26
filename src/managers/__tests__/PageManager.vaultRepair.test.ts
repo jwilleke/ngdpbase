@@ -18,6 +18,7 @@ vi.unmock('../PageManager');
 vi.unmock('../../providers/FileSystemProvider');
 vi.unmock('../../providers/BasicAttachmentProvider');
 
+import { fakeIdentityManager } from '../../test-support/identities';
 import crypto from 'crypto';
 import fs from 'fs-extra';
 import os from 'os';
@@ -123,6 +124,8 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
       ConfigurationManager: configManager,
       SearchManager: { updatePageInIndex: vi.fn(), removePageFromIndex: vi.fn() },
       NotificationManager: { addNotification: vi.fn(async () => 'id') },
+      // #2041: the vault owner is named by identity @id in the repair record.
+      IdentityManager: fakeIdentityManager({ molly: 'urn:uuid:molly-1' }),
       AuditManager: {
         logAuditEvent: vi.fn(async (e: Record<string, unknown>) => {
           if (failAudit) throw new Error('disk full');
@@ -269,7 +272,8 @@ describe('moving a vault page\'s leftovers into its vault (#1842)', () => {
       action: 'repair',
       resource: UUID,
       resourceType: 'page',
-      metadata: expect.objectContaining({ owner: 'molly', vault: 'notes', pageUuid: UUID, as: 'admin', filesMoved: 1, filesCopied: 0, footnotes: 1, comments: 1 })
+      // #2041: the owner by identity @id (sabotaged once: `owner` in place of `owner: ownerId` turned this red).
+      metadata: expect.objectContaining({ owner: 'urn:uuid:molly-1', ownerUser: 'molly', vault: 'notes', pageUuid: UUID, as: 'admin', filesMoved: 1, filesCopied: 0, footnotes: 1, comments: 1 })
     });
     expect(JSON.stringify(records[0])).not.toContain('Lab Results');
     expect(JSON.stringify(records[0])).not.toContain('labs.txt');

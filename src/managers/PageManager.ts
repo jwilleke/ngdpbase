@@ -1,5 +1,6 @@
 import path from 'path';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import type IdentityManager from './IdentityManager.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
@@ -2881,6 +2882,11 @@ class PageManager extends BaseManager implements CatalogSource {
     const who = actorOf(ctx);
     for (const info of candidates) {
       try {
+        // #2041: the page's owner is named by identity @id; a name with no account as written.
+        const author = (info.metadata as { author?: string } | undefined)?.author ?? null;
+        const owner = author
+          ? (await this.engine.getManager<IdentityManager>('IdentityManager')?.identityIdOf(systemContext(this.engine, 'record a test-artifact page delete: the author identity @id (#2041)'), author)) ?? author
+          : null;
         await recordAuditEvent(this.engine.getManager('AuditManager'), {
           eventType: AUDIT_EVENT.PAGE_DELETE,
           ...who,
@@ -2893,7 +2899,8 @@ class PageManager extends BaseManager implements CatalogSource {
             ...who.metadata,
             pageName: info.title,
             uuid: info.uuid,
-            owner: (info.metadata as { author?: string } | undefined)?.author ?? null,
+            owner,
+            ...(author ? { ownerUser: author } : {}),
             outcome: 'attempted',
             reason: 'test-artifact'
           }
@@ -4224,6 +4231,9 @@ class PageManager extends BaseManager implements CatalogSource {
     if (counts.filesMoved + counts.filesCopied + counts.footnotes + counts.comments > 0) {
       // Recorded first (on-failure refuse): a repair that can't be recorded doesn't happen.
       const who = actorOf(ctx);
+      // #2041: the vault's owner is named by identity @id; a name with no account as written.
+      const ownerId = (await this.engine.getManager<IdentityManager>('IdentityManager')
+        ?.identityIdOf(systemContext(this.engine, 'record a vault repair: the owner identity @id (#2041)'), owner)) ?? owner;
       await recordAuditEvent(this.engine.getManager('AuditManager'), {
         eventType: AUDIT_EVENT.VAULT_REPAIR,
         ...who,
@@ -4232,7 +4242,7 @@ class PageManager extends BaseManager implements CatalogSource {
         severity: 'medium',
         resource: page ?? `${owner}/${vault}`,
         resourceType: page ? 'page' : 'vault',
-        metadata: { ...who.metadata, owner, vault, pageUuid: page, as: decided.as, sealed: decided.sealed, pages: work.length, ...counts }
+        metadata: { ...who.metadata, owner: ownerId, ownerUser: owner, vault, pageUuid: page, as: decided.as, sealed: decided.sealed, pages: work.length, ...counts }
       });
       counts = await run(false);
       // #1461: owner, vault and uuid; never a title or a file name.

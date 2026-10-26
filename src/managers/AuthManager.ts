@@ -108,6 +108,7 @@ import { isEmail } from '../types/guards.js';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import type NotificationManager from './NotificationManager.js';
+import type IdentityManager from './IdentityManager.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -3217,6 +3218,9 @@ class AuthManager extends BaseManager {
   /** An invitation record: `user` who acted (the sender, the canceller, the system), `resource` the account invited. Never the token. */
   private async auditInvitation(eventType: AuditEventName, ctx: ActorContext, invitation: InvitationView, reason?: string): Promise<void> {
     const who = actorOf(ctx);
+    // #2041: the invited account is the owner, named by identity @id; a name with no account as written.
+    const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'record an invitation: the invited account identity @id (#2041)'), invitation.username)) ?? invitation.username;
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType,
       ...who,
@@ -3226,12 +3230,15 @@ class AuthManager extends BaseManager {
       resource: invitation.username,
       resourceType: 'user',
       ...(reason ? { reason } : {}),
-      metadata: { ...who.metadata, invitationId: invitation.id, owner: invitation.username, expiresAt: invitation.expiresAt, createdBy: invitation.createdBy }
+      metadata: { ...who.metadata, invitationId: invitation.id, owner, ownerUser: invitation.username, expiresAt: invitation.expiresAt, createdBy: invitation.createdBy }
     }, (err) => logger.warn(`[AuthManager] Audit record failed for ${eventType} of invitation ${invitation.id}:`, err));
   }
 
   /** `invitation-use`: the invited user, before any session exists, from the request's address and browser. */
   private async recordInvitationUse(req: Request, invitation: InvitationView): Promise<void> {
+    // #2041: the invited account is the owner, named by identity @id; a name with no account as written.
+    const owner = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'record an invitation use: the invited account identity @id (#2041)'), invitation.username)) ?? invitation.username;
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.INVITATION_USE,
       user: invitation.username,
@@ -3241,7 +3248,7 @@ class AuthManager extends BaseManager {
       severity: 'medium',
       resource: invitation.username,
       resourceType: 'user',
-      metadata: { invitationId: invitation.id, owner: invitation.username, createdBy: invitation.createdBy, userAgent: req.get?.('user-agent') }
+      metadata: { invitationId: invitation.id, owner, ownerUser: invitation.username, createdBy: invitation.createdBy, userAgent: req.get?.('user-agent') }
     }, (err) => logger.warn(`[AuthManager] Audit record failed for invitation-use of ${invitation.id}:`, err));
   }
 

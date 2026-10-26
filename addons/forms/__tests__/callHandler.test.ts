@@ -4,7 +4,6 @@
  * one way any route sends a refusal (#1749) — status, message and, for a
  * step-up, the way to re-authenticate (#1745).
  */
-import { ApiError } from '../../../dist/src/context/ApiContext.js';
 import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 import formsAddon from '../index';
 
@@ -14,7 +13,9 @@ describe('formsAddon.callHandler', () => {
   afterEach(() => { formsAddon._handlers.clear(); formsAddon._host = null; });
 
   test('an ApiError from the handler is passed through unchanged', async () => {
-    const refusal = new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fview%2FBooks');
+    // The handler throws the ApiError core handed the add-on, as an add-on's own code does (#1813).
+    // (Imported from dist instead, vitest's --changed run, the pre-push hook, can load a second copy of the class.)
+    const refusal = new formsAddon._host!.ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fview%2FBooks');
     formsAddon.registerHandler('x', async () => { throw refusal; });
     await expect(formsAddon.callHandler('x', {}, { engine: {} as never, req: {} })).rejects.toBe(refusal);
   });

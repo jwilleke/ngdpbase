@@ -23,7 +23,7 @@ function makeComment(overrides: Partial<PageComment> = {}): PageComment {
 
 describe('renderCommentListHtml (#590)', () => {
   test('returns no-comments paragraph when list is empty', async () => {
-    const html = await renderCommentListHtml(TEST_FORMATTERS, [], false, '', false, 'page-1');
+    const html = await renderCommentListHtml(TEST_FORMATTERS, [], false, async () => false, false, 'page-1');
     expect(html).toContain('no-comments');
     expect(html).toContain('No comments yet');
   });
@@ -32,7 +32,7 @@ describe('renderCommentListHtml (#590)', () => {
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ id: 'c1', authorDisplayName: 'Alice', content: 'Hi' })],
-      true, 'bob', false, 'page-1'
+      true, async (c) => c.author === 'bob', false, 'page-1'
     );
     expect(html).toContain('comment-list');
     expect(html).toContain('Alice');
@@ -43,7 +43,7 @@ describe('renderCommentListHtml (#590)', () => {
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
-      true, 'alice', false, 'page-1'
+      true, async (c) => c.author === 'alice', false, 'page-1'
     );
     expect(html).toContain('comment-delete-btn');
   });
@@ -52,7 +52,7 @@ describe('renderCommentListHtml (#590)', () => {
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
-      true, 'bob', true, 'page-1'
+      true, async (c) => c.author === 'bob', true, 'page-1'
     );
     expect(html).toContain('comment-delete-btn');
   });
@@ -61,7 +61,7 @@ describe('renderCommentListHtml (#590)', () => {
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
-      true, 'bob', false, 'page-1'
+      true, async (c) => c.author === 'bob', false, 'page-1'
     );
     expect(html).not.toContain('comment-delete-btn');
   });
@@ -70,7 +70,7 @@ describe('renderCommentListHtml (#590)', () => {
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ content: '<script>alert(1)</script>' })],
-      false, '', false, 'page-1'
+      false, async () => false, false, 'page-1'
     );
     expect(html).not.toContain('<script>alert');
     expect(html).toContain('&lt;script&gt;');
@@ -91,7 +91,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ content: 'Some **bold** and `code`' })],
-      false, '', false, 'page-1', engine
+      false, async () => false, false, 'page-1', engine
     );
     expect(html).toContain('<strong>bold</strong>');
     expect(html).toContain('<code>code</code>');
@@ -101,7 +101,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ content: '<script>alert(1)</script> <iframe src="//evil"></iframe> fine' })],
-      false, '', false, 'page-1', engine
+      false, async () => false, false, 'page-1', engine
     );
     expect(html).not.toContain('<script');
     expect(html).not.toContain('<iframe');
@@ -112,7 +112,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
     const html = await renderCommentListHtml(
       TEST_FORMATTERS,
       [makeComment({ content: '[{SearchPlugin query=secret}]' })],
-      false, '', false, 'page-1', engine
+      false, async () => false, false, 'page-1', engine
     );
     expect(html).toContain('[{SearchPlugin query=secret}]');
   });

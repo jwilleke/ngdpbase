@@ -16,6 +16,7 @@
  * @jest-environment node
  */
 
+import { fakeIdentityManager } from '../../test-support/identities';
 import fs from 'fs';
 import { pendingBootActions, recordSystemAction, resetBootActions, systemContext } from '../../context/bootActions';
 import path from 'path';
@@ -787,6 +788,28 @@ describe('#1537 searchEntriesAbout', () => {
     const { am, permits } = managerWith({ admin: ['admin-system'] });
     await am.searchEntriesAbout('ann', {}, { username: 'admin', roles: ['admin'], isAuthenticated: true });
     expect(permits).toHaveBeenCalledWith(expect.objectContaining({ username: 'admin' }), 'admin-system');
+  });
+
+  test('the user\'s identity @id is passed on, so rows naming the owner by @id are about them too (#2041)', async () => {
+    const permits = vi.fn(async () => true);
+    const lookups: unknown[] = [];
+    const identities = fakeIdentityManager({ jim: 'urn:uuid:jim-1' }, { onLookup: (ctx) => lookups.push(ctx) });
+    const engine = {
+      maintenance: new MaintenanceState(),
+      getManager: (name: string) => (name === 'PolicyDecisionPoint' ? { permits } : name === 'IdentityManager' ? identities : null)
+    } as unknown as WikiEngine;
+    const am = new AuditManager(engine);
+    const searchEntriesAbout = vi.fn().mockResolvedValue(page);
+    (am as unknown as { provider: unknown }).provider = { searchEntriesAbout, getProviderInfo: () => ({ name: 'P' }) };
+    const caller = { username: 'jim', roles: [], isAuthenticated: true };
+    // Sabotage check: passing `options` unchanged fails this expectation.
+    await am.searchEntriesAbout('jim', { limit: 5 }, caller);
+    expect(searchEntriesAbout).toHaveBeenCalledWith('jim', { limit: 5, ownerId: 'urn:uuid:jim-1' });
+    // The lookup is core's own, under the system context, after the decision.
+    expect(lookups[0]).toMatchObject({ origin: 'boot' });
+    // A name with no account still lists the rows by username.
+    await am.searchEntriesAbout('gone', {}, { username: 'admin', roles: [], isAuthenticated: true });
+    expect(searchEntriesAbout).toHaveBeenLastCalledWith('gone', {});
   });
 
   test('no caller, or a refusal, never reaches the provider', async () => {

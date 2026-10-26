@@ -72,8 +72,8 @@ forms/routes/api.ts
   ├─ time range check (end > start)       400 on failure
   │
   ├─ build FormSubmission {
-  │    id, formId, submittedAt, submittedBy,
-  │    onBehalfOf?, data, status: 'pending'
+  │    id, formId, submittedAt, submittedBy (identity @id, #2041),
+  │    submitterName, onBehalfOf?, data, status: 'pending'
   │  }
   │
   ├─ FormsDataManager.save(submission)

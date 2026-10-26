@@ -5,16 +5,23 @@ import type { IcsEvent } from 'ts-ics';
 import type { ApiContext } from '../../../dist/src/context/ApiContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
 /**
  * Who is looking, as the manager needs to know it (#1198/#1220): identity for
- * "is this the requester", and whether policy grants calendar-manage. The
- * policy question is asked here, at the door, once per request; the manager
- * never reads a role name.
+ * "is this the requester" (the identity @id, #2041, and the username for a
+ * reservation not yet converted), and whether policy grants calendar-manage.
+ * The policy question is asked here, at the door, once per request; the
+ * manager never reads a role name.
  */
-async function viewerOf(ctx: ApiContext): Promise<CalendarViewer> {
+export async function viewerOf(ctx: ApiContext, engine: WikiEngine, host: AddonHost): Promise<CalendarViewer> {
+  const identityId = ctx.isAuthenticated && ctx.username
+    ? await engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(host.systemContext('calendar: the viewer identity @id (#2041)'), ctx.username)
+    : null;
   return {
     username: ctx.username ?? undefined,
+    identityId: identityId ?? undefined,
     isAuthenticated: ctx.isAuthenticated,
     canManage: await ctx.hasPermission('calendar-manage')
   };
@@ -68,7 +75,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      const viewer = await viewerOf(ctx);
+      const viewer = await viewerOf(ctx, engine, host);
       const events = m.query({
         start:      qs(req.query['start']),
         end:        qs(req.query['end']),
@@ -85,7 +92,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
     try {
       const m = mgr();
       const ctx = ApiContext.from(req, engine);
-      const viewer = await viewerOf(ctx);
+      const viewer = await viewerOf(ctx, engine, host);
       const q = qs(req.query['q']) ?? '';
       const results = m ? m.search(q).map(e => m.toFullCalendar(e, viewer)) : [];
       res.json({ results });
@@ -100,7 +107,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      const viewer = await viewerOf(ctx);
+      const viewer = await viewerOf(ctx, engine, host);
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
@@ -115,7 +122,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      const viewer = await viewerOf(ctx);
+      const viewer = await viewerOf(ctx, engine, host);
       const event = m.getById(String(req.params['id']));
       if (!event) { res.status(404).json({ error: 'Event not found' }); return; }
       res.json(m.toFullCalendar(event, viewer));
@@ -130,7 +137,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      const viewer = await viewerOf(ctx);
+      const viewer = await viewerOf(ctx, engine, host);
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.update(String(req.params['id']), req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));

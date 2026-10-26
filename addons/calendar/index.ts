@@ -40,6 +40,7 @@ import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type { default as FormsAddon } from '../forms/index.js';
 import type { AddonHost } from '../../dist/src/utils/addonHost.js';
+import type IdentityManager from '../../dist/src/managers/IdentityManager.js';
 import CalendarDataManager from './managers/CalendarDataManager.js';
 import CalendarPlugin from './plugins/CalendarPlugin.js';
 import apiRoutes from './routes/api.js';
@@ -70,6 +71,10 @@ const calendarAddon = {
       : (cm?.resolveDataPath('calendar') ?? './data/calendar');
     dataManager = new CalendarDataManager(dataPath);
     await dataManager.load();
+    await dataManager.convertPeopleToIdentityIds(
+      engine.getManager<IdentityManager>('IdentityManager'),
+      host.systemContext('calendar: convert people from username to identity @id (#2041)')
+    );
     engine.registerManager('CalendarDataManager', dataManager);
 
     // ── 2. Register markup plugin ────────────────────────────────────────────

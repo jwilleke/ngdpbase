@@ -74,12 +74,15 @@ describe('OrganizationManager (#617)', () => {
 
     expect(org).not.toBeNull();
     expect(org!['@type']).toBe('Organization');
-    expect(org!['@id']).toBe('https://example.com/');
+    // #2041: a new organization gets a urn:uuid id; its web address is the url field.
+    expect(org!['@id']).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(org!.url).toBe('https://example.com/');
     expect(org!.name).toBe('Acme Corporation');
     expect(org!.contactPoint?.[0]?.email).toBe('tech@example.com');
 
     const written = await fs.readJson(path.join(tmpDir, 'organizations', 'acme-corporation.json'));
-    expect(written['@id']).toBe('https://example.com/');
+    expect(written['@id']).toBe(org!['@id']);
+    expect(written.url).toBe('https://example.com/');
   });
 
   test('seedFromConfig is idempotent — second call returns existing org without rewrite', async () => {
@@ -108,7 +111,7 @@ describe('OrganizationManager (#617)', () => {
     });
 
     expect((second).marker).toBe('tampered');
-    expect((second)['@id']).toBe('https://acme.test/');
+    expect((second)['@id']).toBe(first!['@id']);
   });
 
   test('getInstallOrg returns the org named by the .file config key', async () => {
@@ -140,22 +143,31 @@ describe('OrganizationManager (#617)', () => {
     const manager = new OrganizationManager(engine);
     await manager.initialize();
 
-    await manager.create(CTX, {
-      '@context': 'https://schema.org',
-      '@type': 'Organization',
-      '@id': 'https://one.test/',
-      name: 'One'
-    });
-    await manager.create(CTX, {
-      '@context': 'https://schema.org',
-      '@type': 'Organization',
-      '@id': 'https://two.test/',
-      name: 'Two'
-    });
+    await manager.create(CTX, { url: 'https://one.test/', name: 'One' });
+    await manager.create(CTX, { url: 'https://two.test/', name: 'Two' });
 
     const all = await manager.list(CTX);
     expect(all).toHaveLength(2);
-    expect(all.map((o: any) => o['@id']).sort()).toEqual(['https://one.test/', 'https://two.test/']);
+    expect(all.map((o: any) => o.url).sort()).toEqual(['https://one.test/', 'https://two.test/']);
+  });
+
+  test('create gives every new organization a urn:uuid @id and keeps the web address as url (#2041)', async () => {
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': path.join(tmpDir, 'organizations')
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+
+    // Sabotage check (#2041): with create taking `org['@id'] || org.url` as
+    // before, the first two expectations fail (the id is the URL).
+    const fromUrl = await manager.create(CTX, { url: 'https://acme.test/', name: 'Acme' });
+    expect(fromUrl['@id']).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(fromUrl.url).toBe('https://acme.test/');
+
+    // A caller's own @id is never used: nothing is keyed by a chosen id or a URL.
+    const given = await manager.create(CTX, { ...({ '@id': 'https://chosen.test/' } as object), name: 'Chosen' });
+    expect(given['@id']).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(given['@id']).not.toBe(fromUrl['@id']);
   });
 
   test('install round-trip — seedFromConfig satisfies the startup invariant on next boot', async () => {
@@ -184,7 +196,8 @@ describe('OrganizationManager (#617)', () => {
     const second = new OrganizationManager(engine);
     await expect(second.initialize()).resolves.toBeUndefined();
     const anchor = await second.getInstallOrg();
-    expect(anchor!['@id']).toBe('https://fairways.example.com/');
+    expect(anchor!['@id']).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(anchor!.url).toBe('https://fairways.example.com/');
   });
 
   test('create rejects duplicate filename (#617, locked decision #10)', async () => {
@@ -209,30 +222,6 @@ describe('OrganizationManager (#617)', () => {
       '@id': 'https://two.test/',
       name: 'Two'
     }, 'shared.json')).rejects.toThrow(/file already exists at shared\.json/);
-  });
-
-  test('create rejects duplicate @id even with a different filename (#617, locked decision #10)', async () => {
-    const configManager = makeConfigManager({
-      'ngdpbase.application.organization.storagedir': path.join(tmpDir, 'organizations')
-    });
-    const engine = makeEngine(configManager);
-
-    const manager = new OrganizationManager(engine);
-    await manager.initialize();
-
-    await manager.create(CTX, {
-      '@context': 'https://schema.org',
-      '@type': 'Organization',
-      '@id': 'https://shared-id.test/',
-      name: 'First'
-    }, 'first.json');
-
-    await expect(manager.create(CTX, {
-      '@context': 'https://schema.org',
-      '@type': 'Organization',
-      '@id': 'https://shared-id.test/',
-      name: 'Second'
-    }, 'second.json')).rejects.toThrow(/already uses that @id/);
   });
 
   test('seedFromConfig stays idempotent under uniqueness checks (rerun on existing file does not throw)', async () => {

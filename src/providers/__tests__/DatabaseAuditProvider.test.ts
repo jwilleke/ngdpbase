@@ -17,6 +17,7 @@ import SqliteDatabaseProvider, { type SqliteHandle } from '../SqliteDatabaseProv
 import DATABASE_MIGRATIONS from '../databaseMigrations';
 import DatabaseAuditProvider, { readAuditChain } from '../DatabaseAuditProvider';
 import { verifyLog } from '../../utils/auditChain';
+import { recordIsAbout } from '../BaseAuditProvider';
 import logger from '../../utils/logger';
 
 const NEVER = 10 * 60 * 1000;
@@ -403,5 +404,44 @@ describe('queries', () => {
     const paged = await provider.searchEntriesAbout('jim', { limit: 1 });
     expect(paged).toMatchObject({ total: 2, limit: 1, hasMore: true });
     await provider.close();
+  });
+
+  test('the owner is matched by identity @id on new rows and by username on old ones, none rewritten (#2041)', async () => {
+    const provider = await seeded();
+    // A row written from #2041 on names jim's resource by his identity @id.
+    await provider.logAuditEvent(event('token-mint', { user: 'admin', metadata: { owner: 'urn:uuid:jim-1' } }));
+    // Sabotage check: dropping the `OR owner = ?` for ownerId leaves token-mint out.
+    const jim = await provider.searchEntriesAbout('jim', { ownerId: 'urn:uuid:jim-1' });
+    expect(jim.results.map((r) => r.eventType).sort()).toEqual(['page-edit', 'token-mint', 'token-revoke']);
+    // The older row keeps its username owner: read back exactly as written.
+    const old = (await provider.searchAuditLogs({ eventType: 'token-revoke' })).results[0] as unknown as { metadata: { owner: string } };
+    expect(old.metadata.owner).toBe('jim');
+    // Without the @id only the username rows match.
+    expect((await provider.searchEntriesAbout('jim')).results.map((r) => r.eventType).sort()).toEqual(['page-edit', 'token-revoke']);
+    await provider.close();
+  });
+
+  test('a row naming the owner by @id lists by the username beside it once the account (and its @id) is gone', async () => {
+    const provider = await seeded();
+    await provider.logAuditEvent(event('token-mint', { user: 'admin', metadata: { owner: 'urn:uuid:gone-1', ownerUser: 'gone' } }));
+    // The account is deleted: no @id to pass. Sabotage check: dropping `OR owner_user = ?` leaves this empty.
+    const rows = await provider.searchEntriesAbout('gone');
+    expect(rows.results.map((r) => r.eventType)).toEqual(['token-mint']);
+    await provider.close();
+  });
+});
+
+describe('recordIsAbout (#1537, #2041)', () => {
+  test('a row is about a user by username, actor, owner username or owner @id', () => {
+    expect(recordIsAbout({ user: 'jim' }, 'jim')).toBe(true);
+    expect(recordIsAbout({ user: 'x', actor: 'jim' }, 'jim')).toBe(true);
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'jim' } }, 'jim', 'urn:uuid:jim-1')).toBe(true);
+    // Sabotage check: without the ownerId clause in recordIsAbout this is false.
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1' } }, 'jim', 'urn:uuid:jim-1')).toBe(true);
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:ann-1' } }, 'jim', 'urn:uuid:jim-1')).toBe(false);
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1' } }, 'jim')).toBe(false);
+    // The username beside the @id: listed with no @id, as for a deleted account.
+    // Sabotage check: without the recordOwnerUser clause this is false.
+    expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1', ownerUser: 'jim' } }, 'jim')).toBe(true);
   });
 });

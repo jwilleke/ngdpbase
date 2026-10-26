@@ -5,6 +5,9 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { areIntervalsOverlapping, parseISO, addDays, format } from 'date-fns';
 import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
+import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -23,6 +26,7 @@ export interface CalendarEvent {
   url?: string;
   calendarId: string;
   color?: string;
+  /** Who made it: their identity `@id` (#2041); a name with no account as given. */
   createdBy?: string;
   created: string;    // ISO 8601 — record created
   updated: string;    // ISO 8601 — record last updated
@@ -69,6 +73,8 @@ export interface QueryOptions {
  */
 export interface CalendarViewer {
   username?: string;
+  /** The viewer's identity `@id` (#2041): a reservation's requester is stored by it. */
+  identityId?: string;
   isAuthenticated?: boolean;
   canManage: boolean;
 }
@@ -99,6 +105,75 @@ class CalendarDataManager {
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────────
+
+  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  private attention: string | null = null;
+
+  /**
+   * Once, at start-up (#2041): every event's `createdBy`, and a reservation's
+   * `_private.requester` and `_private.submittedBy`, that is still a username
+   * gets `IdentityManager.convertReference`'s answer under the system context
+   * `ctx`, and the events are saved once: that user's identity `@id`, or
+   * `orphan:<name>` when the name has no account (nobody's from then on: a
+   * later account with that name never sees the private block or cancels).
+   * A reservation filed through the forms add-on (it has
+   * `_private.submittedBy`) keeps its `requester`, which there is the name
+   * typed on the form, not an account. `@id`s, orphans, `anonymous` and the
+   * system principal are left alone, so a second start writes nothing.
+   * Orphans are reported, counts only: a log line and the admin dashboard's
+   * needs-attention list ({@link getManagerStatus}). When the identity store
+   * cannot answer, nothing is changed and the pass is postponed to the next
+   * start, reported the same way.
+   */
+  async convertPeopleToIdentityIds(identities: IdentityManager | null | undefined, ctx: ActorContext): Promise<void> {
+    this.attention = null;
+    if (!identities) return;
+    const postponed = 'Calendar references were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    if (!identities.canAnswer()) {
+      this.attention = postponed;
+      console.warn(`[CalendarDataManager] ${postponed}`);
+      return;
+    }
+    const changes: Array<() => void> = [];
+    let converted = 0, orphans = 0;
+    const convert = async (holder: Record<string, unknown>, key: string): Promise<void> => {
+      const stored = holder[key];
+      if (typeof stored !== 'string') return;
+      const { value, outcome } = await identities.convertReference(ctx, stored);
+      if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+      if (outcome === 'converted') converted++;
+      if (value !== stored) changes.push(() => { holder[key] = value; });
+    };
+    try {
+      for (const event of this.events.values()) {
+        await convert(event as unknown as Record<string, unknown>, 'createdBy');
+        const priv = event._private;
+        if (!priv) continue;
+        if (typeof priv['submittedBy'] === 'string') await convert(priv, 'submittedBy');
+        else await convert(priv, 'requester');
+      }
+    } catch (error) {
+      this.attention = postponed;
+      console.warn(`[CalendarDataManager] ${postponed}: ${(error as Error).message}`);
+      return;
+    }
+    for (const apply of changes) apply();
+    if (changes.length > 0) {
+      await this.save();
+      console.info(`[CalendarDataManager] Converted ${converted} reference(s) from username to identity @id (#2041)`);
+    }
+    if (orphans > 0) {
+      this.attention = `${orphans} calendar reference(s) are orphaned: their username has no account, so only a calendar manager can act on those reservations (#2041)`;
+      console.warn(`[CalendarDataManager] ${this.attention}`);
+    }
+  }
+
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while references are orphaned or not converted (#2041). */
+  getManagerStatus(): ManagerStatus {
+    return this.attention
+      ? { state: 'degraded', kind: 'attention', reason: this.attention }
+      : { state: 'ready' };
+  }
 
   /**
    * Load all `*.json` calendar files from dataPath.
@@ -238,9 +313,7 @@ class CalendarDataManager {
 
     const isPrivileged = viewer.canManage === true;
 
-    const isRequester = viewer.isAuthenticated === true &&
-      viewer.username != null &&
-      viewer.username === (event._private['requester'] as string | undefined);
+    const isRequester = this.isRequester(event, viewer);
 
     if (isPrivileged || isRequester) return event;
 
@@ -340,6 +413,18 @@ class CalendarDataManager {
   }
 
   /**
+   * Whether `viewer` made the reservation `event` (#2041): its requester is
+   * the viewer's identity `@id`, or, on one stored before and not yet
+   * converted, their username. An orphan (`orphan:<name>`) matches nobody:
+   * no username or `@id` starts with that prefix.
+   */
+  private isRequester(event: CalendarEvent, viewer: CalendarViewer): boolean {
+    const requester = event._private?.['requester'] as string | undefined;
+    if (viewer.isAuthenticated !== true || !requester) return false;
+    return (viewer.identityId != null && requester === viewer.identityId) || (viewer.username != null && requester === viewer.username);
+  }
+
+  /**
    * Cancel a reservation. Only the original requester, or a viewer policy
    * grants `calendar-manage`, may cancel.
    */
@@ -349,9 +434,7 @@ class CalendarDataManager {
 
     const isPrivileged = viewer.canManage === true;
 
-    const isRequester = viewer.isAuthenticated === true &&
-      viewer.username != null &&
-      viewer.username === (event._private?.['requester'] as string | undefined);
+    const isRequester = this.isRequester(event, viewer);
 
     if (!isPrivileged && !isRequester) {
       throw new Error('Forbidden: not authorised to cancel this reservation');
