@@ -15,6 +15,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isNoRecordedUser, isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { ContactRefusedError, recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
+import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 
 interface PersonProviderConstructor {
@@ -831,16 +832,40 @@ class IdentityManager extends BaseManager {
   }
 
   /**
+   * What a new record stores for the user `username` (#2097): their identity
+   * `@id`; a "no user recorded" value (`migrated`, `unknown`, `import`) as
+   * its orphan form, so no account ever gains it; a principal (`anonymous`,
+   * the system principal), an `@id` or an orphan as it is; a name with no
+   * account, or any name when the store cannot answer ({@link identityIdOf}),
+   * as given. The one rule for page authors and editors, tombstones and file
+   * uploaders.
+   */
+  async storedReferenceOf(ctx: ActorContext, username: string): Promise<string> {
+    if (typeof username !== 'string' || !username) return username;
+    if (isNoRecordedUser(username)) return username.startsWith(ORPHAN_PREFIX) ? username : `${ORPHAN_PREFIX}${normalizeUsername(username)}`;
+    if (isReservedUsername(username) || sameUsername(username, systemPrincipalOf(this.engine))) return username;
+    return (await this.identityIdOf(ctx, username)) ?? username;
+  }
+
+  /**
    * One start-up conversion pass over stored references (#2097): `convert`
    * is {@link convertRecordedUser}'s value, and `counts` tallies its outcomes
    * (values converted to an @id, orphans found or made, "no user recorded"
-   * values) for the caller's counts-only report. Throws as
-   * `convertRecordedUser` does when the store cannot answer.
+   * values) for the caller's counts-only report. When the store cannot
+   * answer it throws `IdentityStoreUnavailableError`, so the caller postpones
+   * its pass rather than skip a record.
    */
   conversionPass(ctx: ActorContext): { convert: (stored: string) => Promise<string>; counts: { converted: number; orphans: number; noUser: number } } {
     const counts = { converted: 0, orphans: 0, noUser: 0 };
     const convert = async (stored: string): Promise<string> => {
-      const { value, outcome } = await this.convertRecordedUser(ctx, stored);
+      let answer: Awaited<ReturnType<IdentityManager['convertRecordedUser']>>;
+      try {
+        answer = await this.convertRecordedUser(ctx, stored);
+      } catch (error) {
+        // Told apart from a record's own failure: the whole pass waits for the store.
+        throw new IdentityStoreUnavailableError(error);
+      }
+      const { value, outcome } = answer;
       if (outcome === 'converted') counts.converted++;
       else if (outcome === 'orphan' || outcome === 'orphaned') counts.orphans++;
       else if (outcome === 'no-user') counts.noUser++;

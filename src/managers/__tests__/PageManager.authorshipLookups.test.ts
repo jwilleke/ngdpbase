@@ -53,4 +53,12 @@ describe('#2097 PageManager lookups by identity @id', () => {
     const { deleted } = await pm.deleteTestArtifacts(actor('admin'), { author: 'jim', systemCategory: 'user-profile' });
     expect(deleted.map((d) => d.title)).toEqual(['Profile']);
   });
+
+  // Review fix 5. Sabotage: not adding the @id to the listing's principals turned this red.
+  test('shared with me lists a page whose audience names me by @id', async () => {
+    const pm = site.pageManager;
+    await pm.savePage('For Bob', 'one', { audience: ['bob'] }, actor('jim'));
+    const shared = await pm.getPagesSharedWith(['bob'], { username: 'bob' });
+    expect(shared.map((e) => e.title)).toEqual(['For Bob']);
+  });
 });

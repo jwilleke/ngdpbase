@@ -50,6 +50,7 @@ import type IdentityManager from '../managers/IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import { rewriteFrontmatterFields } from '../utils/frontmatterFieldRewrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 
 /**
  * Page cache info (internal)
@@ -968,6 +969,20 @@ class FileSystemProvider extends BasePageProvider {
     return { name: finalTitle, uuid };
   }
 
+  /** One write at a time per page (#2097); see {@link withPageWrite}. */
+  private readonly pageWriteSerial = new KeyedSerial();
+
+  /**
+   * Run `task` as the only write on page `key`, a uuid (#2097). PageManager's
+   * saves, deletes and authorship conversion take it, and so do this
+   * provider's restores and purges of deleted pages, so the conversion never
+   * writes a file back that a purge removed or a restore moved. Not
+   * re-entrant: a task never takes the same key again.
+   */
+  withPageWrite<T>(key: string, task: () => Promise<T>): Promise<T> {
+    return this.pageWriteSerial.run(key, task);
+  }
+
   /**
    * The public pages' stored author and editor, as the provider holds them in
    * memory (#2097): the start-up conversion's list of pages to look at. A
@@ -1001,14 +1016,20 @@ class FileSystemProvider extends BasePageProvider {
   async convertPageReferences(
     ctx: ActorContext,
     identifier: string,
-    convert: (stored: string) => Promise<string>
-  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string }> {
+    convert: (stored: string) => Promise<string>,
+    convertPrincipal?: (entry: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string; audience?: string[] }> {
     const info = this.resolvePageInfo(identifier, ctx);
     if (!info) return { file: 'missing' };
     const io = await this.fileIOFor(ctx, info.filePath);
-    const outcome = await this.convertFileAuthorship(io, info.filePath, convert);
+    const outcome = await this.convertFileAuthorship(io, info.filePath, convert, convertPrincipal);
     if (outcome.file !== 'changed') return { ...outcome, uuid: info.uuid };
-    const now = { ...(outcome.author ? { author: outcome.author } : {}), ...(outcome.editor ? { editor: outcome.editor } : {}) };
+    const now = {
+      ...(outcome.author ? { author: outcome.author } : {}),
+      ...(outcome.editor ? { editor: outcome.editor } : {}),
+      ...(outcome.audience ? { audience: outcome.audience } : {}),
+      ...(outcome.access ? { access: outcome.access } : {})
+    };
 
     if (info.fromStore && this.pagesDirectory) {
       // A vault page's entry in its store's own index mirrors the file.
@@ -1026,22 +1047,36 @@ class FileSystemProvider extends BasePageProvider {
       }
     } else {
       const cached = this.pageCache.get(info.title);
-      if (cached) cached.metadata = { ...cached.metadata, ...now };
+      if (cached) cached.metadata = { ...cached.metadata, ...now } as PageFrontmatter;
     }
-    return { file: 'changed', uuid: info.uuid, ...now, ...(outcome.category ? { category: outcome.category } : {}), ...(outcome.addon ? { addon: outcome.addon } : {}) };
+    return {
+      file: 'changed', uuid: info.uuid,
+      ...(now.author ? { author: now.author } : {}),
+      ...(now.editor ? { editor: now.editor } : {}),
+      ...(now.audience ? { audience: now.audience } : {}),
+      ...(outcome.category ? { category: outcome.category } : {}),
+      ...(outcome.addon ? { addon: outcome.addon } : {})
+    };
   }
 
   /**
-   * One page file's frontmatter `author` and `editor` through `convert`
-   * (#2097), rewritten line by line ({@link rewriteFrontmatterFields}) and
-   * nothing else; the values it holds afterwards. A file that is not there
-   * is `missing`; one whose lines cannot be rewritten is left alone, `refused`.
+   * One page file's frontmatter `author` and `editor` through `convert`, and
+   * the entries of its `audience` and `access[action]` lists through
+   * `convertPrincipal` (#2097), rewritten line by line
+   * ({@link rewriteFrontmatterFields}) and nothing else; the values it holds
+   * afterwards. A file that is not there is `missing`; one whose lines cannot
+   * be rewritten is left alone, `refused`.
    */
   protected async convertFileAuthorship(
     io: StoreFileIO,
     file: string,
-    convert: (stored: string) => Promise<string>
-  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; category?: string; addon?: string }> {
+    convert: (stored: string) => Promise<string>,
+    convertPrincipal?: (entry: string) => Promise<string>
+  ): Promise<{
+    file: 'changed' | 'unchanged' | 'refused' | 'missing';
+    author?: string; editor?: string; category?: string; addon?: string;
+    audience?: string[]; access?: Record<string, unknown>;
+  }> {
     let raw: string;
     try {
       raw = await io.readText(file, this.encoding);
@@ -1063,8 +1098,22 @@ class FileSystemProvider extends BasePageProvider {
       now[field] = to;
       if (to !== stored) changes[field] = { from: stored, to };
     }
-    if (Object.keys(changes).length === 0) return { file: 'unchanged', ...now, ...origin };
-    const rewritten = rewriteFrontmatterFields(raw, changes);
+    // The user entries of the access lists (#2097): a role or other kind is kept by `convertPrincipal`.
+    const entries = new Map<string, string>();
+    if (convertPrincipal) {
+      const lists: unknown[] = [data.audience];
+      if (data.access && typeof data.access === 'object' && !Array.isArray(data.access)) lists.push(...Object.values(data.access as Record<string, unknown>));
+      for (const list of lists) {
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+          if (typeof entry !== 'string' || entries.has(entry)) continue;
+          const to = await convertPrincipal(entry);
+          if (to !== entry) entries.set(entry, to);
+        }
+      }
+    }
+    if (Object.keys(changes).length === 0 && entries.size === 0) return { file: 'unchanged', ...now, ...origin };
+    const rewritten = rewriteFrontmatterFields(raw, changes, entries);
     if (rewritten === null) {
       return {
         file: 'refused',
@@ -1074,7 +1123,12 @@ class FileSystemProvider extends BasePageProvider {
       };
     }
     await io.writeText(file, rewritten, this.encoding);
-    return { file: 'changed', ...now, ...origin };
+    const written = parsePageFrontmatter(rewritten).data;
+    return {
+      file: 'changed', ...now, ...origin,
+      ...(Array.isArray(written.audience) ? { audience: written.audience as string[] } : {}),
+      ...(written.access && typeof written.access === 'object' ? { access: written.access as Record<string, unknown> } : {})
+    };
   }
 
   /**
@@ -1097,10 +1151,9 @@ class FileSystemProvider extends BasePageProvider {
    * username when there is none or the identity store cannot answer.
    */
   protected async userReference(username: string): Promise<string> {
-    if (!username) return username;
-    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.identityIdOf(systemContext(this.engine, 'store a user on a page record as identity @id (#2097)'), username);
-    return id ?? username;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.storedReferenceOf !== 'function') return username;
+    return identities.storedReferenceOf(systemContext(this.engine, 'store a user on a page record as identity @id (#2097)'), username);
   }
 
   /**

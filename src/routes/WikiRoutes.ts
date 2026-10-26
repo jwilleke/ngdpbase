@@ -3745,7 +3745,13 @@ ${panes}
         // #2097: the author is stored as an identity @id; the view is told
         // whether this user is the author, and shows the author as people see it.
         isPageAuthor: await this.isPageAuthorOf(pageData.metadata?.author, req.userContext?.username),
-        pageAuthorShown: await this.describeUser(pageData.metadata?.author)
+        pageAuthorShown: await this.describeUser(pageData.metadata?.author),
+        // #2097: audience users are stored by @id; each chip shows the username and id.
+        audienceLabels: Object.fromEntries(await Promise.all(
+          (Array.isArray(pageData.metadata?.audience) ? pageData.metadata.audience as unknown[] : [])
+            .filter((entry): entry is string => typeof entry === 'string')
+            .map(async (entry) => [entry, await this.describeUser(entry)] as const)
+        ))
       });
     } catch (err: unknown) {
       logger.error('Error loading edit page:', err);

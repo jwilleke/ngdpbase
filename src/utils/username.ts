@@ -100,8 +100,13 @@ export function isNoRecordedUser(value: unknown): boolean {
   return NO_RECORDED_USER.includes(name.startsWith(ORPHAN_PREFIX) ? name.slice(ORPHAN_PREFIX.length) : name);
 }
 
-/** True when the name belongs to a principal rather than a user, or has the contact, `@id` or orphan prefix. */
+/**
+ * True when the name belongs to a principal rather than a user, is a "no user
+ * recorded" value ({@link NO_RECORDED_USER}, #2097: an account by that name
+ * would take over the records that hold it), or has the contact, `@id` or
+ * orphan prefix.
+ */
 export function isReservedUsername(username: unknown): boolean {
   const name = normalizeUsername(username);
-  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX) || name.startsWith(ORPHAN_PREFIX);
+  return RESERVED_USERNAMES.includes(name) || NO_RECORDED_USER.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX) || name.startsWith(ORPHAN_PREFIX);
 }

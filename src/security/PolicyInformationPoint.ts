@@ -19,6 +19,7 @@ import { ANONYMOUS_SUBJECT, SYSTEM_PRINCIPAL_KEY, SYSTEM_ROLES_KEY } from '../ma
 import type UserManager from '../managers/UserManager.js';
 import type RoleManager from '../managers/RoleManager.js';
 import type IdentityManager from '../managers/IdentityManager.js';
+import { isReservedUsername } from '../utils/username.js';
 import type { Request } from 'express';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -132,11 +133,18 @@ interface AccessDecisionLog {
   context?: Record<string, unknown>;
 }
 
-/** A subject as Tier 1 matches it: its roles, then its username. */
+/**
+ * A subject as Tier 1 matches it: its roles, then its username, then (#2097)
+ * its identity @id when {@link PolicyInformationPoint.matchableNow} resolved
+ * one, so an `audience` or `access` entry stored as the @id matches, and one
+ * not yet converted still matches the username. An orphan entry matches
+ * nobody: no principal ever starts `orphan:`.
+ */
 function principalsOf(userContext: UserContext | null | undefined): string[] {
   const roles = userContext?.roles ?? [];
   const username = userContext?.username ?? '';
-  return username ? [...roles, username] : [...roles];
+  const identityId = (userContext as { identityId?: unknown } | null | undefined)?.identityId;
+  return [...roles, ...(username ? [username] : []), ...(typeof identityId === 'string' && identityId ? [identityId] : [])];
 }
 
 /**
@@ -343,11 +351,28 @@ class PolicyInformationPoint extends BaseManager {
    * a role its user holds left the job out.
    */
   private async matchableNow(userContext: UserContext | null | undefined): Promise<UserContext | null | undefined> {
-    if (!(userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow || !userContext) return userContext;
+    if (!(userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow || !userContext) return this.withIdentityId(userContext);
     // permission-subject-ignore: matching only — the roles are resolved now, from the store.
     const now = await this.resolveSubjectNow(userContext.username, jobOf(userContext));
     // #1999: a job that acts as itself is matched as `job:<id>`, never as the system principal.
-    return { username: now.job ? now.username : userContext.username, roles: now.roles ?? [], ...(now.job ? { job: now.job } : {}) } as UserContext;
+    if (now.job) return { username: now.username, roles: now.roles ?? [], job: now.job } as unknown as UserContext;
+    return this.withIdentityId({ username: userContext.username, roles: now.roles ?? [] } as UserContext);
+  }
+
+  /**
+   * The subject as matched, carrying its identity @id (#2097): page access
+   * lists name users by @id. Matching only: the subject is never changed for
+   * any other use. No lookup for nobody or a reserved name; null when the
+   * identity store cannot answer, and then only entries not yet converted match.
+   */
+  private async withIdentityId(userContext: UserContext | null | undefined): Promise<UserContext | null | undefined> {
+    const username = userContext?.username;
+    if (!userContext || !username || isReservedUsername(username)) return userContext;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.identityIdOf !== 'function') return userContext;
+    const identityId = await identities.identityIdOf(systemContext(this.engine, 'match a page access list: the subject identity @id (#2097)'), username);
+    // permission-subject-ignore: matching only — the same subject, with the @id its account holds.
+    return identityId ? { ...userContext, identityId } : userContext;
   }
 
   /**

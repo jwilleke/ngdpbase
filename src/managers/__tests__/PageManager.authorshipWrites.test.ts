@@ -126,6 +126,29 @@ describe('#2097 page writes store identity @ids', () => {
     }
   });
 
+  // Review fix 2: `migrated`, `unknown` and `import` are reserved usernames, and a page
+  // holding one keeps it as an orphan on every write. Sabotage: dropping the
+  // placeholder branch in storedReferenceOf turned this red.
+  test('an edit of a page whose author is a "no user recorded" value never gives it to anyone', async () => {
+    const pm = site.pageManager;
+    const { uuid } = await pm.savePage('Migrated', 'one', {}, actor('jim'));
+    const file = path.join(site.pagesDir, `${uuid}.md`);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, author: 'migrated' }));
+    site.accounts.migrated = 'urn:uuid:99999999-9999-4999-8999-999999999999';
+    const restarted = await site.restart();
+    await restarted.savePage('Migrated', 'two', { uuid }, actor('ann'));
+    expect((await frontmatter(site, uuid)).author).toBe('orphan:migrated');
+    expect(await site.identities.refersTo({ username: 'system' }, 'orphan:migrated', 'migrated')).toBe(false);
+  });
+
+  // Review fix 5. Sabotage: removing convertAccessListsForSave from the save door turned this red.
+  test('a save stores the user entries of audience and access by @id, roles as written', async () => {
+    const pm = site.pageManager;
+    const { uuid } = await pm.savePage('Listed', 'one', { audience: ['jim', 'editor'], access: { edit: ['ann', 'admin'] } }, actor('jim'));
+    expect(await frontmatter(site, uuid)).toMatchObject({ audience: [JIM, 'editor'], access: { edit: [ANN, 'admin'] } });
+  });
+
   test('a tombstone names who deleted the page by @id', async () => {
     const pm = site.pageManager;
     const { uuid } = await pm.savePage('Doomed', 'one', {}, actor('jim'));

@@ -11,6 +11,9 @@
       non-role entries are pre-rendered here as chips.
     - availableRoles — needed to identify which audience entries are roles
       vs usernames. Iterated via `.some(r => r.name === entry)`.
+    - audienceLabels (optional, #2097) — stored entry → how it is shown: a
+      user is stored by identity @id and shown as "jim (urn:uuid:…)"; the
+      chip's hidden input keeps the stored value.
 %>
 <%
   var _existingAudience = (typeof pageData !== 'undefined' && pageData && pageData.metadata && Array.isArray(pageData.metadata.audience))
@@ -29,7 +32,7 @@
     <% _userAudience.forEach(function (username) { %>
       <span class="badge bg-info-subtle text-dark border d-inline-flex align-items-center me-1 mb-1" style="font-weight:normal;">
         <i class="fas fa-user me-1" aria-hidden="true"></i>
-        <span class="audience-chip-label"><%= username %></span>
+        <span class="audience-chip-label"><%= (typeof audienceLabels !== 'undefined' && audienceLabels && audienceLabels[username]) || username %></span>
         <input type="hidden" name="audience" value="<%= username %>">
         <button type="button" class="btn-close btn-close-sm ms-2 audience-user-remove" aria-label="Remove <%= username %> from audience"></button>
       </span>

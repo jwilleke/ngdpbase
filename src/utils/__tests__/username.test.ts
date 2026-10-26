@@ -91,3 +91,13 @@ describe('#1436 username normalization', () => {
     });
   });
 });
+
+// #2097 review fix 2: the "no user recorded" values are reserved usernames.
+// Sabotage: dropping NO_RECORDED_USER from isReservedUsername turned this red.
+describe('#2097 placeholders are reserved', () => {
+  test('migrated, unknown and import cannot be usernames', async () => {
+    const { isReservedUsername } = await import('../username');
+    for (const name of ['migrated', 'Unknown', 'import']) expect(isReservedUsername(name)).toBe(true);
+    expect(isReservedUsername('jim')).toBe(false);
+  });
+});

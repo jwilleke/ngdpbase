@@ -146,7 +146,10 @@ describe('#2097 page authorship conversion', () => {
     site.managers.set('IdentityManager', fakeIdentityManager(site.accounts, { failLookups: true }));
     expect(await site.pageManager.convertAuthorship(SYS)).toMatchObject({ status: 'postponed' });
     expect(await fs.readFile(pageFile(site, uuids.a), 'utf8')).toBe(before);
-    expect(await fs.pathExists(path.join(site.dir, 'site-migrations.json'))).toBe(false);
+    // The pass is not recorded as done (a search-rebuild mark may be).
+    const recordFile = path.join(site.dir, 'site-migrations.json');
+    const record = await fs.pathExists(recordFile) ? await fs.readJson(recordFile) : {};
+    expect(record.migrations?.['authorship-identity-ids']).toBeUndefined();
 
     site.managers.set('IdentityManager', fakeIdentityManager(site.accounts));
     expect(await site.pageManager.convertAuthorship(SYS)).toMatchObject({ status: 'done', full: true });
@@ -224,6 +227,114 @@ describe('#2097 page authorship conversion', () => {
     expect(result).toMatchObject({ orphans: 0 });
     expect(result?.shippedOrphans).toBeGreaterThan(0);
     expect(attention).not.toHaveBeenCalled();
+  });
+
+  // Review fix 1. Sabotage: running the tombstone conversion outside withPageWrite
+  // (or without the "still there" check) turned this red: the purged trash
+  // file came back.
+  test('a purge during the pass leaves nothing on disk', async () => {
+    const identities = site.managers.get('IdentityManager') as { getByUserIdentifier(ctx: unknown, u: string): Promise<unknown> };
+    const lookup = identities.getByUserIdentifier.bind(identities);
+    identities.getByUserIdentifier = async (ctx: unknown, u: string) => {
+      if ((ctx as { reason?: string }).reason === 'test') await new Promise((resolve) => setTimeout(resolve, 10));
+      return lookup(ctx, u);
+    };
+    type Provider = {
+      purgeDeletedPage(uuid: string): Promise<boolean>;
+      finishAuthorshipConversion(...args: unknown[]): Promise<unknown>;
+    };
+    const provider = (site.pageManager as unknown as { provider: Provider }).provider;
+    // The purge lands while the tombstone is being converted: after its
+    // fields (three slow lookups) and its file have been read, before the
+    // file's two lookups end and it is written.
+    let purging: Promise<boolean> | null = null;
+    const finish = provider.finishAuthorshipConversion.bind(provider);
+    provider.finishAuthorshipConversion = (...args: unknown[]) => {
+      setTimeout(() => { purging = provider.purgeDeletedPage(uuids.c); }, 40);
+      return finish(...args);
+    };
+    await site.pageManager.convertAuthorship(SYS);
+    await purging;
+    expect(purging).not.toBeNull();
+    expect(await fs.pathExists(path.join(site.pagesDir, 'deleted', `${uuids.c}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(site.pagesDir, 'versions', uuids.c))).toBe(false);
+    expect((await fs.readJson(site.indexFile)).deletedPages?.[uuids.c]).toBeUndefined();
+  });
+
+  // Review fix 3. Sabotage: letting a page's own error end the pass turned the
+  // first red; not rebuilding when an earlier run left the search stale turned the second.
+  test('a page that fails for its own reason is skipped and named by its error class; the rest convert', async () => {
+    const provider = (site.pageManager as unknown as { provider: { convertPageReferences(...args: unknown[]): Promise<unknown> } }).provider;
+    const real = provider.convertPageReferences.bind(provider);
+    provider.convertPageReferences = async (...args: unknown[]) => {
+      if (args[1] === uuids.a) throw Object.assign(new Error(`EACCES: permission denied, open '${site.pagesDir}/x.md'`), { code: 'EACCES' });
+      return real(...args);
+    };
+    const attention = vi.spyOn(site.pageManager as unknown as { markNeedsAttention(r: string): void }, 'markNeedsAttention');
+    const result = await site.pageManager.convertAuthorship(SYS);
+    expect(result).toMatchObject({ status: 'done', pagesSkipped: 1, skipErrors: ['EACCES'] });
+    expect(matter(await fs.readFile(pageFile(site, uuids.b), 'utf8')).data.author).toBe('orphan:bob');
+    const reasons = attention.mock.calls.map((c) => c[0]).join('\n');
+    expect(reasons).toContain('EACCES');
+    expect(reasons).not.toContain(site.pagesDir);
+    // Not recorded as complete: the next start visits every page again.
+    const record = await fs.readJson(path.join(site.dir, 'site-migrations.json'));
+    expect(record.migrations?.['authorship-identity-ids']).toBeUndefined();
+  });
+
+  test('the search index is rebuilt after an earlier run converted pages and never rebuilt it', async () => {
+    site.managers.set('SearchManager', { rebuildFromDisk: vi.fn(async () => undefined) });
+    await site.pageManager.convertAuthorship(SYS); // the full pass, recorded
+    // A page written meanwhile with no identity store to answer, converted by a
+    // quick pass whose search rebuild fails.
+    const identities = site.managers.get('IdentityManager');
+    site.managers.delete('IdentityManager');
+    await site.pageManager.savePage('Late', 'late', {}, actor('jim'));
+    site.managers.set('IdentityManager', identities);
+    const failing = vi.fn(async () => { throw new Error('search down'); });
+    site.managers.set('SearchManager', { rebuildFromDisk: failing });
+    expect(await site.pageManager.convertAuthorship(SYS)).toMatchObject({ full: false, pagesChanged: 1 });
+    expect(failing).toHaveBeenCalledTimes(1);
+    // Nothing left to convert, but the search index is still stale: rebuilt now, once.
+    const ok = vi.fn(async () => undefined);
+    site.managers.set('SearchManager', { rebuildFromDisk: ok });
+    expect(await site.pageManager.convertAuthorship(SYS)).toMatchObject({ full: false, pagesChanged: 0 });
+    expect(ok).toHaveBeenCalledTimes(1);
+    await site.pageManager.convertAuthorship(SYS);
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
+
+  // Review fix 5. Sabotage: not passing convertPrincipal to the provider turned this red.
+  test('access lists: user entries convert, roles and add-on entries are kept, a deleted user is orphaned', async () => {
+    const file = pageFile(site, uuids.a);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, audience: ['jim', 'editor', 'bob', 'addon:phr'], access: { edit: ['bob', 'admin'] } }));
+    const restarted = await site.restart();
+    await restarted.convertAuthorship(SYS);
+    const data = matter(await fs.readFile(file, 'utf8')).data;
+    expect(data.audience).toEqual([JIM, 'editor', 'orphan:bob', 'addon:phr']);
+    expect(data.access).toEqual({ edit: ['orphan:bob', 'admin'] });
+  });
+
+  // Sabotage: removing the catalogue guard in accessListConverter turned this red (every role orphaned).
+  test('without the role catalogue no access-list entry is converted', async () => {
+    delete site.config['ngdpbase.roles.definitions'];
+    const file = pageFile(site, uuids.a);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, audience: ['editor', 'bob'] }));
+    const restarted = await site.restart();
+    await restarted.convertAuthorship(SYS);
+    expect(matter(await fs.readFile(file, 'utf8')).data.audience).toEqual(['editor', 'bob']);
+  });
+
+  // The window before the pass reaches a page (documented in the PR and the storage guide):
+  // an author still held as a username matches whoever holds that username now, and
+  // the pass then maps it to that account's @id.
+  test('a page not yet reached by the pass: an unconverted username matches a new account with that name', async () => {
+    site.accounts.bob = BOB_NEW; // the old bob had no account; a new bob registers before the pass
+    expect((await site.pageManager.getPagesByCreator('bob', actor('bob'))).map((e) => e.title)).toEqual(['Bobs']);
+    await site.pageManager.convertAuthorship(SYS);
+    expect(matter(await fs.readFile(pageFile(site, uuids.b), 'utf8')).data.author).toBe(BOB_NEW);
   });
 
   test('batches of the configured size reach every page', async () => {

@@ -296,6 +296,38 @@ describe('PolicyInformationPoint', () => {
       }
     });
 
+    // #2097 review fix 5: audience and access entries stored as @ids. Sabotage:
+    // leaving the @id out of principalsOf turned the first red.
+    test('#2097 an audience or edit-access entry stored as an @id admits its own account only', async () => {
+      const { fakeIdentityManager } = await import('../../test-support/identities');
+      mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1', bob: 'urn:uuid:bob-1' });
+      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['urn:uuid:alice-1'], access: { edit: ['urn:uuid:alice-1'] } };
+      const alice = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
+      const bob = makeWikiContext({ pageMetadata: page, userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true } });
+      expect(await policyInformationPoint.checkPagePermissionWithContext(alice, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(bob, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(bob, 'edit')).toBe(false);
+    });
+
+    test('#2097 a reused username gets no audience or edit access: an orphan or an old @id matches nobody', async () => {
+      const { fakeIdentityManager } = await import('../../test-support/identities');
+      mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-new' });
+      for (const entry of ['orphan:alice', 'urn:uuid:alice-old']) {
+        const page = { title: 'Test', uuid: 'x', lastModified: '', audience: [entry], access: { edit: [entry] } };
+        const ctx = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
+        expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+        expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+      }
+    });
+
+    test('#2097 an entry not yet converted still matches the username', async () => {
+      const { fakeIdentityManager } = await import('../../test-support/identities');
+      mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1' });
+      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['alice'], access: { edit: ['alice'] } };
+      const ctx = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+
     // The author-lock override tests spy on the PDP's permits; put it back even when one fails.
     afterEach(() => { vi.restoreAllMocks(); });
 

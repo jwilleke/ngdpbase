@@ -5,6 +5,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
+import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -826,7 +827,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     try {
       changed = await this.writeAttachments(provider.convertPoolReferences(convert));
     } catch (err) {
-      this.postponeUploaderConversion(err instanceof Error ? err.message : String(err));
+      if (err instanceof IdentityStoreUnavailableError) {
+        this.postponeUploaderConversion(err.message);
+        return;
+      }
+      // The pool's own failure (a metadata file it cannot write, a full disk): named by class, tried at the next start.
+      const reason = `File uploaders were not converted to identity @ids (${errorClassOf(err)}); the next start tries again (#2097)`;
+      logger.warn(`[AttachmentManager] ${reason}`);
+      this.markNeedsAttention(reason);
       return;
     }
     this.reportUploaderConversion(changed, counts, 'shared file');
@@ -849,7 +857,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         changed += await this.writeAttachments(provider.convertStoreReferences(location, convert));
       }
     } catch (err) {
-      logger.warn(`[AttachmentManager] Vault file uploader conversion postponed: ${err instanceof Error ? err.message : String(err)} (#2097)`);
+      logger.warn(`[AttachmentManager] Vault file uploader conversion postponed: ${err instanceof IdentityStoreUnavailableError ? 'identity store unavailable' : errorClassOf(err)} (#2097)`);
       return changed;
     }
     this.reportUploaderConversion(changed, counts, 'vault file');
@@ -879,10 +887,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @id, or the username when there is none or the identity store cannot answer.
    */
   private async userReference(username: string): Promise<string> {
-    if (!username) return username;
-    const id = await this.engine.getManager<IdentityManager>('IdentityManager')
-      ?.identityIdOf(systemContext(this.engine, 'store a file uploader or editor as identity @id (#2097)'), username);
-    return id ?? username;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.storedReferenceOf !== 'function') return username;
+    return identities.storedReferenceOf(systemContext(this.engine, 'store a file uploader or editor as identity @id (#2097)'), username);
   }
 
   private static uploaderOf(ctx: ActorContext): string {

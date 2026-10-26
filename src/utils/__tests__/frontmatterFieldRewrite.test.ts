@@ -53,4 +53,29 @@ describe('#2097 rewriteFrontmatterFields', () => {
     expect(rewriteFrontmatterFields(page, { author: { from: 'jim', to: 'urn:uuid:1' } }))
       .toBe('---\r\nauthor: urn:uuid:1\r\ntitle: T\r\n---\r\nbody\r\n');
   });
+
+  // Review fix 4. Sabotage: not stripping the BOM turned this red (the `^---` check refused the file).
+  test('a file with a UTF-8 byte-order mark converts and keeps the mark', () => {
+    const page = '\uFEFF---\nauthor: jim\n---\nbody\n';
+    expect(rewriteFrontmatterFields(page, { author: { from: 'jim', to: 'urn:uuid:1' } }))
+      .toBe('\uFEFF---\nauthor: urn:uuid:1\n---\nbody\n');
+  });
+
+  // Review fix 5: the user entries of `audience` and `access[action]`. Sabotage:
+  // skipping block items turned the first red; skipping flow lists the second.
+  test('access-list entries convert in block lists, roles and other entries untouched', () => {
+    const page = '---\ntitle: T\naudience:\n  - bob\n  - editor\naccess:\n  edit:\n    - bob\n    - addon:phr\n---\nbody\n';
+    const out = rewriteFrontmatterFields(page, {}, new Map([['bob', 'urn:uuid:bob-1']]));
+    expect(out).toBe('---\ntitle: T\naudience:\n  - urn:uuid:bob-1\n  - editor\naccess:\n  edit:\n    - urn:uuid:bob-1\n    - addon:phr\n---\nbody\n');
+  });
+
+  test('access-list entries convert in one-line flow lists', () => {
+    const page = '---\naudience: [bob, editor]\naccess:\n  view: [bob]\n---\nbody\n';
+    expect(rewriteFrontmatterFields(page, {}, new Map([['bob', 'orphan:bob']])))
+      .toBe('---\naudience: [orphan:bob, editor]\naccess:\n  view: [orphan:bob]\n---\nbody\n');
+  });
+
+  test('a flow mapping for access is refused', () => {
+    expect(rewriteFrontmatterFields('---\naccess: { view: [bob] }\n---\nb\n', {}, new Map([['bob', 'x']]))).toBeNull();
+  });
 });

@@ -49,6 +49,8 @@ export async function authorshipSite(opts: {
     'ngdpbase.page.provider.versioning.indexfile': indexFile,
     'ngdpbase.page.provider.versioning.deltastorage': true,
     'ngdpbase.page.provider.versioning.checkpointinterval': 10,
+    // The role catalogue an access list's role entries are told apart by (#2097).
+    'ngdpbase.roles.definitions': { admin: { name: 'admin' }, editor: { name: 'editor' }, reader: { name: 'reader' }, anonymous: { name: 'anonymous' } },
     ...(opts.config ?? {})
   };
   const configManager = {
