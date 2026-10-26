@@ -69,6 +69,14 @@ describe('#1436 username normalization', () => {
       expect(isReservedUsername('Asserted')).toBe(true);
     });
 
+    test('a name that looks like an identity @id is reserved (#2041)', () => {
+      // Sabotage check: without the `urn:` prefix in isReservedUsername this is
+      // false, and a username could pass for an already-converted reference.
+      expect(isReservedUsername('urn:uuid:3f2b8a6e-1c4d-4e5f-8a9b-0c1d2e3f4a5b')).toBe(true);
+      expect(isReservedUsername('URN:anything')).toBe(true);
+      expect(isReservedUsername('urnie')).toBe(false);
+    });
+
     test('an ordinary name is not reserved', () => {
       expect(isReservedUsername('jim')).toBe(false);
       expect(isReservedUsername('anonymous-coward')).toBe(false);

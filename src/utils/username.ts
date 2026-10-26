@@ -67,8 +67,16 @@ export const RESERVED_USERNAMES: readonly string[] = ['anonymous', 'asserted'];
  */
 export const ACCOUNTLESS_PERSON_PREFIX = 'person:';
 
-/** True when the name belongs to a principal rather than a person, or has the account-less person prefix. */
+/**
+ * The prefix of an identity's `@id` (#2041): `urn:uuid:<v4>`, and older
+ * organizations' `urn:…` ids. No username may start with it, so a stored
+ * reference is always told apart: a value starting `urn:` is an `@id`,
+ * anything else a username not yet converted.
+ */
+export const IDENTITY_ID_PREFIX = 'urn:';
+
+/** True when the name belongs to a principal rather than a user, or has the contact or `@id` prefix. */
 export function isReservedUsername(username: unknown): boolean {
   const name = normalizeUsername(username);
-  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX);
+  return RESERVED_USERNAMES.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX);
 }
