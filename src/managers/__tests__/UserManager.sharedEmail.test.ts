@@ -199,3 +199,16 @@ describe('accounts may share an email (#2073)', () => {
     expect(asked).toHaveLength(1);
   });
 });
+
+// #2097 review fix 2: an account named like a "no user recorded" value would take
+// over every record holding it. Sabotage: dropping NO_RECORDED_USER from
+// isReservedUsername turned this red.
+describe('#2097 placeholder usernames are refused', () => {
+  test('migrated, unknown and import cannot be created', async () => {
+    const { manager, store } = makeManager();
+    for (const name of ['migrated', 'unknown', 'Import']) {
+      await expect(manager.createUser(person(name, `${name}@example.com`), ACTOR)).rejects.toBeInstanceOf(UserCreateError);
+    }
+    expect(store.size).toBe(0);
+  });
+});

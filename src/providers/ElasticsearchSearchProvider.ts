@@ -339,12 +339,13 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       filter.push({ terms: { systemKeywords: systemKeywords } });
     }
 
-    if (author) {
-      filter.push({ term: { author } });
+    // #2097: a list matches any of its values (a user's identity @id and username).
+    if (author && author.length > 0) {
+      filter.push({ terms: { author: Array.isArray(author) ? author : [author] } });
     }
 
-    if (editor) {
-      filter.push({ term: { editor } });
+    if (editor && editor.length > 0) {
+      filter.push({ terms: { editor: Array.isArray(editor) ? editor : [editor] } });
     }
 
     if (dateRange?.from || dateRange?.to) {

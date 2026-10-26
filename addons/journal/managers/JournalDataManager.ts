@@ -4,6 +4,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type SearchManager from '../../../dist/src/managers/SearchManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type { JournalAuthorCounter } from '../../../dist/src/types/Journal.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,9 +68,23 @@ export interface JournalQueryOptions {
 class JournalDataManager implements JournalAuthorCounter {
   readonly description = 'Journal entry query helpers over SearchManager + PageManager';
   private readonly engine: WikiEngine;
+  /** Core's system context maker (#1813), for reading an author's username (#2097). */
+  private readonly host: { systemContext(reason: string): ActorContext } | null;
 
-  constructor(engine: WikiEngine) {
+  constructor(engine: WikiEngine, host: { systemContext(reason: string): ActorContext } | null = null) {
     this.engine = engine;
+    this.host = host;
+  }
+
+  /**
+   * The username an entry's stored author names (#2097): pages store the
+   * author's identity @id, and the journal compares authors, reads their
+   * preferences and shows them by username. An orphan names nobody ('').
+   */
+  private async authorName(stored: string): Promise<string> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!stored || !identities || !this.host) return stored;
+    return (await identities.usernameOf(this.host.systemContext('journal: an entry author username (#2097)'), stored)) ?? '';
   }
 
   // ── Persistence (retired — no-ops kept for back-compat) ──────────────────────
@@ -110,7 +125,7 @@ class JournalDataManager implements JournalAuthorCounter {
       page: await pm.getPage(name, ctx)
     })));
 
-    return pages
+    const entries = pages
       .flatMap(({ name, page: p }) => {
         if (!p) return [];
         const m = (p.metadata ?? {}) as Record<string, unknown>;
@@ -135,6 +150,8 @@ class JournalDataManager implements JournalAuthorCounter {
         } satisfies JournalIndexEntry];
       })
       .filter(e => e.journalDate);
+    for (const entry of entries) entry.author = await this.authorName(entry.author);
+    return entries;
   }
 
   // ── Read operations ──────────────────────────────────────────────────────────

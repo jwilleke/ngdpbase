@@ -484,3 +484,26 @@ describe('JournalDataManager', () => {
     });
   });
 });
+
+// #2097: a page's author is stored as an identity @id; the journal compares,
+// counts and shows authors by username. Sabotage: not resolving the author in
+// loadAllEntries turned this red.
+describe('JournalDataManager — authors stored as identity @ids (#2097)', () => {
+  it('an @id author lists and counts under its username; an orphan under nobody', async () => {
+    const pages = [
+      makeMockPage({ author: 'urn:uuid:alice-1', journalDate: '2026-01-01', slug: 'j1' }),
+      makeMockPage({ author: 'alice', journalDate: '2026-01-02', slug: 'j2' }),
+      makeMockPage({ author: 'orphan:alice', journalDate: '2026-01-03', slug: 'j3' })
+    ];
+    const { engine } = makeMockEngine(pages);
+    const identities = {
+      usernameOf: async (_ctx: unknown, stored: string) =>
+        (stored === 'urn:uuid:alice-1' ? 'alice' : stored.startsWith('orphan:') || stored.startsWith('urn:') ? null : stored)
+    };
+    const base = (engine as unknown as { getManager: (n: string) => unknown }).getManager;
+    const withIdentities = { getManager: (n: string) => (n === 'IdentityManager' ? identities : base(n)) } as never;
+    const m = new JournalDataManager(withIdentities, { systemContext: (reason: string) => ({ username: 'system', reason }) as never });
+    expect(await m.countByAuthor('alice', alice)).toBe(2);
+    expect((await m.listAll(alice)).map((e) => e.author).sort()).toEqual(['', 'alice', 'alice']);
+  });
+});

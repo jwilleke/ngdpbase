@@ -86,7 +86,7 @@ const journalAddon = {
     voiceToTextEnabled = !(v === false || v === 'false' || v === 'off' || v === '0');
 
     // ── 1. JournalDataManager ────────────────────────────────────────────────
-    dataManager = new JournalDataManager(engine);
+    dataManager = new JournalDataManager(engine, host);
     await dataManager.load();
     engine.registerManager('JournalDataManager', dataManager);
 

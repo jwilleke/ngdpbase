@@ -5,6 +5,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
+import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -694,6 +695,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         throw new Error('Permission denied: You do not have permission to upload attachments');
       }
       const author = AttachmentManager.uploaderOf(ctx);
+      // #2097: the uploader is recorded by identity @id (the username when there is none).
+      const authorRef = await this.userReference(author);
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(
@@ -736,7 +739,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             originalName: fileInfo.originalName,
             mimeType: fileInfo.mimeType,
             description: options.description || '',
-            author,
+            author: authorRef,
             ...(pageName ? { pageName } : {}),
             ...(keep ? { keptOriginal: { types: keep.types } } : {})
           }
@@ -756,8 +759,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       }
     }
 
-    // #1926: the uploader is recorded by username, never an email.
-    const uploader = { username: AttachmentManager.uploaderOf(ctx) };
+    // #1926: the uploader is recorded by username, never an email; #2097: by
+    // identity @id, the username only when there is none.
+    const uploader = { username: await this.userReference(AttachmentManager.uploaderOf(ctx)) };
 
     // Create metadata (include privacy flags for provider). Destination is the
     // page store (#1386); ciphertext of those bytes is later.
@@ -800,6 +804,94 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * with no person behind it are refused. A refusal reads 'Permission denied'
    * so the route answers it as one (401 for an anonymous caller).
    */
+  /**
+   * Once, at start-up (#2097): the shared pool's uploaders and editors become
+   * identity @ids (`IdentityManager.convertRecordedUser`: an orphan for a
+   * name with no account, `orphan:unknown` for the pool's `Unknown`), written
+   * once through the provider, under the system context. A second start
+   * writes nothing. Counts only in the log; orphans on the dashboard. When the
+   * identity store cannot answer, nothing is written and the next start tries
+   * again. A vault's files convert when the vault is opened
+   * ({@link convertVaultUploaders}).
+   */
+  async convertUploadersAtBoot(): Promise<void> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider = this.attachmentProvider as { convertPoolReferences?(convert: (stored: string) => Promise<string>): Promise<number> } | null;
+    if (!identities || !provider?.convertPoolReferences) return;
+    if (!identities.canAnswer()) {
+      this.postponeUploaderConversion('the identity store is unavailable');
+      return;
+    }
+    const { convert, counts } = identities.conversionPass(systemContext(this.engine, 'convert file uploaders and editors from username to identity @id (#2097)'));
+    let changed: number;
+    try {
+      changed = await this.writeAttachments(provider.convertPoolReferences(convert));
+    } catch (err) {
+      if (err instanceof IdentityStoreUnavailableError) {
+        this.postponeUploaderConversion(err.message);
+        return;
+      }
+      // The pool's own failure (a metadata file it cannot write, a full disk): named by class, tried at the next start.
+      const reason = `File uploaders were not converted to identity @ids (${errorClassOf(err)}); the next start tries again (#2097)`;
+      logger.warn(`[AttachmentManager] ${reason}`);
+      this.markNeedsAttention(reason);
+      return;
+    }
+    this.reportUploaderConversion(changed, counts, 'shared file');
+  }
+
+  /**
+   * The uploaders in the vaults of the context's own user that it can open
+   * (#2097), when they are opened: at sign-in and unlock. Each vault's files
+   * index, through its own I/O. Nothing is written when the identity store
+   * cannot answer; the next opening tries again.
+   */
+  async convertVaultUploaders(ctx: ActorContext): Promise<number> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider = this.attachmentProvider as { convertStoreReferences?(location: StoreFileLocation, convert: (stored: string) => Promise<string>): Promise<number> } | null;
+    if (!identities || !provider?.convertStoreReferences || !identities.canAnswer()) return 0;
+    const { convert, counts } = identities.conversionPass(ctx);
+    let changed = 0;
+    try {
+      for (const location of await this.ownPrivateStores(ctx)) {
+        changed += await this.writeAttachments(provider.convertStoreReferences(location, convert));
+      }
+    } catch (err) {
+      logger.warn(`[AttachmentManager] Vault file uploader conversion postponed: ${err instanceof IdentityStoreUnavailableError ? 'identity store unavailable' : errorClassOf(err)} (#2097)`);
+      return changed;
+    }
+    this.reportUploaderConversion(changed, counts, 'vault file');
+    return changed;
+  }
+
+  /** Counts only, never a name (#2097). */
+  private reportUploaderConversion(changed: number, counts: { converted: number; orphans: number; noUser: number }, what: string): void {
+    if (changed > 0) logger.info(`[AttachmentManager] Converted ${changed} ${what} uploader/editor value(s) to identity @ids (#2097)`);
+    if (counts.noUser > 0) logger.info(`[AttachmentManager] ${counts.noUser} ${what} uploader value(s) record no user (Unknown) (#2097)`);
+    if (counts.orphans > 0) {
+      const reason = `${counts.orphans} ${what} uploader/editor value(s) are orphaned: their username has no account (#2097)`;
+      logger.warn(`[AttachmentManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /** The identity store could not answer: nothing is converted this start, and the next start tries again (#2097). */
+  private postponeUploaderConversion(why: string): void {
+    const reason = 'File uploaders were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097)';
+    logger.warn(`[AttachmentManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
+  }
+
+  /**
+   * What a file record stores for the user `username` (#2097): their identity
+   * @id, or the username when there is none or the identity store cannot answer.
+   */
+  private async userReference(username: string): Promise<string> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.storedReferenceOf !== 'function') return username;
+    return identities.storedReferenceOf(systemContext(this.engine, 'store a file uploader or editor as identity @id (#2097)'), username);
+  }
+
   private static uploaderOf(ctx: ActorContext): string {
     const username = typeof ctx.username === 'string' ? ctx.username.trim() : '';
     if (!username || username === ANONYMOUS_USERNAME) {
@@ -2258,10 +2350,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // below is this door's own doing, not one of them.
     const fields = Object.keys(updates);
 
-    // The editor, from the context (#1179).
+    // The editor, from the context (#1179), by identity @id (#2097).
     updates.editor = {
       '@type': 'Person',
-      name: context.username,
+      name: await this.userReference(context.username ?? ''),
       email: (context as { email?: string }).email || undefined
     };
 

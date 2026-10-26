@@ -122,11 +122,15 @@ export interface SearchCriteria {
   /** Fields to search in (title, content, category, keywords, or all) */
   searchIn?: string[];
 
-  /** Author to filter by (page creator — matches metadata.author) */
-  author?: string;
+  /**
+   * Author to filter by (page creator — matches metadata.author). A list
+   * matches any of its values: SearchManager turns a username into the
+   * values that name that user, their identity @id and the username (#2097).
+   */
+  author?: string | string[];
 
-  /** Editor to filter by (last modifier — matches metadata.editor) */
-  editor?: string;
+  /** Editor to filter by (last modifier — matches metadata.editor); a list as for `author`. */
+  editor?: string | string[];
 
   /** Date range */
   dateRange?: {

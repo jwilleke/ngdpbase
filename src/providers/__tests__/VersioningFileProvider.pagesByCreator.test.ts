@@ -470,3 +470,64 @@ describe('VersioningFileProvider.getPagesSharedWith (#640 Phase 2)', () => {
     expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
   });
 });
+
+// ─── #2097: the author and editor are stored as identity @ids ─────────────
+// Sabotage checks (each turned a test red once): matching `author` against the
+// bare username instead of `references`; the `isPrivateEntry` guard on
+// `creator`; `references` dropped from getPagesByEditor and getPagesSharedWith.
+describe('VersioningFileProvider lookups by identity @id (#2097)', () => {
+  const ALICE = 'urn:uuid:alice-1';
+  const refs = [ALICE, 'alice'];
+  type Lookup = (u: string, ctx: unknown, o?: Record<string, unknown>) => Promise<{ title: string }[]>;
+
+  test('getPagesByCreator matches the @id and an unconverted username, never an orphan', async () => {
+    const p = makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'Converted', author: ALICE, editor: ALICE }),
+      u2: baseEntry({ uuid: 'u2', title: 'NotYet', author: 'alice', editor: 'alice' }),
+      u3: baseEntry({ uuid: 'u3', title: 'OldAlice', author: 'orphan:alice' }),
+      u4: baseEntry({ uuid: 'u4', title: 'Someone', author: 'urn:uuid:other' })
+    });
+    const result = await (p as unknown as { getPagesByCreator: Lookup }).getPagesByCreator('alice', TEST_ACTOR, { references: refs });
+    expect(result.map(e => e.title).sort()).toEqual(['Converted', 'NotYet']);
+  });
+
+  test('a public page legacy creator no longer makes it the user page; a private one still does', async () => {
+    const p = makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'LegacyPublic', author: 'urn:uuid:other', creator: 'alice' }),
+      u2: baseEntry({ uuid: 'u2', title: 'Private', author: 'urn:uuid:other', creator: 'alice', isPrivate: true })
+    });
+    const result = await (p as unknown as { getPagesByCreator: Lookup }).getPagesByCreator('alice', TEST_ACTOR, { references: refs });
+    expect(result.map(e => e.title)).toEqual(['Private']);
+  });
+
+  test('getPagesByEditor matches the editor @id', async () => {
+    const p = makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'ById', author: 'x', editor: ALICE }),
+      u2: baseEntry({ uuid: 'u2', title: 'Orphan', author: 'x', editor: 'orphan:alice' })
+    });
+    const result = await (p as unknown as { getPagesByEditor: Lookup }).getPagesByEditor('alice', TEST_ACTOR, { references: refs });
+    expect(result.map(e => e.title)).toEqual(['ById']);
+  });
+
+  test('getPagesSharedWith leaves out a page whose author is the user @id', async () => {
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'Mine', author: ALICE }),
+      u2: baseEntry({ uuid: 'u2', title: 'Theirs', author: 'urn:uuid:other' })
+    }), { u1: { audience: ['alice'] }, u2: { audience: ['alice'] } });
+    const result = await (p as unknown as { getPagesSharedWith: (ps: string[], o?: Record<string, unknown>) => Promise<{ title: string }[]> })
+      .getPagesSharedWith(['alice'], { references: refs });
+    expect(result.map(e => e.title)).toEqual(['Theirs']);
+  });
+});
+
+// #2097: a legacy private index entry is not converted (its move into a vault finds
+// its old folder by the author's username). Sabotage: dropping the filter turned this red.
+describe('VersioningFileProvider.listAuthorshipRefs (#2097)', () => {
+  test('leaves out legacy private entries', () => {
+    const p = makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', author: 'alice' }),
+      u2: baseEntry({ uuid: 'u2', author: 'alice', location: 'private' as never, creator: 'alice' })
+    });
+    expect((p as unknown as { listAuthorshipRefs(): Array<{ uuid: string }> }).listAuthorshipRefs().map((r) => r.uuid)).toEqual(['u1']);
+  });
+});

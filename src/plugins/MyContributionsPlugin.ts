@@ -41,7 +41,7 @@ interface ExtendedPluginContext extends PluginContext {
 interface PageManagerLike {
   getPagesByCreator?: (u: string, ctx: unknown, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
   getPagesByEditor?: (u: string, ctx: unknown) => Promise<unknown[]>;
-  getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
+  getPagesSharedWith?: (principals: string[], o?: { username?: string }) => Promise<unknown[]>;
   listOwnDeletedPrivatePages?: (ctx: unknown) => Promise<unknown[]>;
 }
 
@@ -176,7 +176,7 @@ async function getContributionCounts(
     }
     if (pageManager?.getPagesSharedWith && viewerForSelfView) {
       const principals = [...(viewerForSelfView.roles ?? []), target];
-      const shared = await pageManager.getPagesSharedWith(principals);
+      const shared = await pageManager.getPagesSharedWith(principals, { username: target });
       counts.shared = shared.length;
     }
   } catch (err) {

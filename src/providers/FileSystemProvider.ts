@@ -46,6 +46,11 @@ import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
 import { installCompletePath } from '../utils/configFiles.js';
+import type IdentityManager from '../managers/IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
+import { rewriteFrontmatterFields } from '../utils/frontmatterFieldRewrite.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 
 /**
  * Page cache info (internal)
@@ -795,7 +800,7 @@ class FileSystemProvider extends BasePageProvider {
     // name is public unless the box was ticked (a move into the author's
     // default store). The owner is the path's, never frontmatter's.
     const privateName = parsePrivatePageName(pageName);
-    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx, options?.moveFrom);
+    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx, options?.moveFrom, await this.authorUsername(md.author));
     const isPrivate = placement !== null;
     const pageCreator = placement?.owner;
     const pageStore = placement?.store;
@@ -834,6 +839,8 @@ class FileSystemProvider extends BasePageProvider {
 
     // A private title is unique within its store; a public one among public pages (#1456).
     const storePages = storeLocation ? await this.readStorePages(this.pagesDirectory, storeLocation) : null;
+    // #2097: a vault page's author is its owner, stored as the owner's identity @id.
+    const ownerRef = storeLocation ? await this.userReference(storeLocation.owner) : null;
     if (storePages) {
       const clash = Object.values(storePages).find((p) => p.uuid !== uuid && p.title.toLowerCase() === finalTitle.toLowerCase());
       // #1461: the message reaches logs, so it names no private title.
@@ -877,7 +884,7 @@ class FileSystemProvider extends BasePageProvider {
       // unique among its owner's stores; the owner is the path's.
       ...(storeLocation ? {
         private: true,
-        author: storeLocation.owner,
+        author: ownerRef ?? storeLocation.owner,
         slug: this.privateSlugFor(storeLocation, finalTitle, uuid, ctx)
       } : oldPageInfo?.fromStore ? {
         // Out of a store into the public space: a public slug again.
@@ -911,7 +918,7 @@ class FileSystemProvider extends BasePageProvider {
         lastModified: String(now),
         created: String(created),
         editor: String(updatedMetadata.editor ?? updatedMetadata.author ?? 'unknown'),
-        author: storeLocation.owner,
+        author: ownerRef ?? storeLocation.owner,
         hasVersions: previous?.hasVersions ?? false,
         isPrivate: true
       };
@@ -962,6 +969,193 @@ class FileSystemProvider extends BasePageProvider {
     return { name: finalTitle, uuid };
   }
 
+  /** One write at a time per page (#2097); see {@link withPageWrite}. */
+  private readonly pageWriteSerial = new KeyedSerial();
+
+  /**
+   * Run `task` as the only write on page `key`, a uuid (#2097). PageManager's
+   * saves, deletes and authorship conversion take it, and so do this
+   * provider's restores and purges of deleted pages, so the conversion never
+   * writes a file back that a purge removed or a restore moved. Not
+   * re-entrant: a task never takes the same key again.
+   */
+  withPageWrite<T>(key: string, task: () => Promise<T>): Promise<T> {
+    return this.pageWriteSerial.run(key, task);
+  }
+
+  /**
+   * The public pages' stored author and editor, as the provider holds them in
+   * memory (#2097): the start-up conversion's list of pages to look at. A
+   * page whose metadata is not loaded yet comes back without them.
+   */
+  listAuthorshipRefs(): Array<{ uuid: string; author?: string; editor?: string }> {
+    return [...this.pageCache.values()].map((info) => {
+      const md = (info.metadata ?? {}) as { author?: unknown; editor?: unknown };
+      return {
+        uuid: info.uuid,
+        ...(typeof md.author === 'string' ? { author: md.author } : {}),
+        ...(typeof md.editor === 'string' ? { editor: md.editor } : {})
+      };
+    });
+  }
+
+  /**
+   * Convert one page's stored `author` and `editor` (#2097), in its file and
+   * in what the provider keeps about it, and nothing else: the body, every
+   * other frontmatter field and `lastModified` stay byte-identical
+   * ({@link rewriteFrontmatterFields}), and no version is made.
+   *
+   * `convert` answers what a stored value becomes (PageManager asks
+   * IdentityManager); it may throw (the identity store cannot answer), and
+   * then nothing of this page is written. A page whose frontmatter cannot be
+   * rewritten line by line is left alone and reported `refused`.
+   *
+   * @param identifier - A public page's uuid or title, or a vault page's name
+   * @returns What happened to the file, and the author and editor it now holds
+   */
+  async convertPageReferences(
+    ctx: ActorContext,
+    identifier: string,
+    convert: (stored: string) => Promise<string>,
+    convertPrincipal?: (entry: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string; audience?: string[] }> {
+    const info = this.resolvePageInfo(identifier, ctx);
+    if (!info) return { file: 'missing' };
+    const io = await this.fileIOFor(ctx, info.filePath);
+    const outcome = await this.convertFileAuthorship(io, info.filePath, convert, convertPrincipal);
+    if (outcome.file !== 'changed') return { ...outcome, uuid: info.uuid };
+    const now = {
+      ...(outcome.author ? { author: outcome.author } : {}),
+      ...(outcome.editor ? { editor: outcome.editor } : {}),
+      ...(outcome.audience ? { audience: outcome.audience } : {}),
+      ...(outcome.access ? { access: outcome.access } : {})
+    };
+
+    if (info.fromStore && this.pagesDirectory) {
+      // A vault page's entry in its store's own index mirrors the file.
+      const where: StoreFileLocation = {
+        ...info.fromStore,
+        io: await storeFileIO(ctx, { pagesDirectory: this.pagesDirectory, owner: info.fromStore.owner, store: info.fromStore.store, layout: this.privateStoreLayout })
+      };
+      const entry = await this.findStorePage(this.pagesDirectory, where, info.uuid);
+      if (entry) {
+        await this.putStorePage(this.pagesDirectory, where, {
+          ...entry,
+          ...(now.author ? { author: now.author } : {}),
+          ...(now.editor ? { editor: now.editor } : {})
+        });
+      }
+    } else {
+      const cached = this.pageCache.get(info.title);
+      if (cached) cached.metadata = { ...cached.metadata, ...now } as PageFrontmatter;
+    }
+    return {
+      file: 'changed', uuid: info.uuid,
+      ...(now.author ? { author: now.author } : {}),
+      ...(now.editor ? { editor: now.editor } : {}),
+      ...(now.audience ? { audience: now.audience } : {}),
+      ...(outcome.category ? { category: outcome.category } : {}),
+      ...(outcome.addon ? { addon: outcome.addon } : {})
+    };
+  }
+
+  /**
+   * One page file's frontmatter `author` and `editor` through `convert`, and
+   * the entries of its `audience` and `access[action]` lists through
+   * `convertPrincipal` (#2097), rewritten line by line
+   * ({@link rewriteFrontmatterFields}) and nothing else; the values it holds
+   * afterwards. A file that is not there is `missing`; one whose lines cannot
+   * be rewritten is left alone, `refused`.
+   */
+  protected async convertFileAuthorship(
+    io: StoreFileIO,
+    file: string,
+    convert: (stored: string) => Promise<string>,
+    convertPrincipal?: (entry: string) => Promise<string>
+  ): Promise<{
+    file: 'changed' | 'unchanged' | 'refused' | 'missing';
+    author?: string; editor?: string; category?: string; addon?: string;
+    audience?: string[]; access?: Record<string, unknown>;
+  }> {
+    let raw: string;
+    try {
+      raw = await io.readText(file, this.encoding);
+    } catch {
+      return { file: 'missing' };
+    }
+    const { data } = parsePageFrontmatter(raw);
+    // Where the page came from, for the caller's report: a shipped or add-on page's author is upstream's, not a site user.
+    const origin = {
+      ...(typeof data['system-category'] === 'string' ? { category: data['system-category'] } : {}),
+      ...(typeof data.addon === 'string' && data.addon ? { addon: data.addon } : {})
+    };
+    const now: { author?: string; editor?: string } = {};
+    const changes: Record<string, { from: string; to: string }> = {};
+    for (const field of ['author', 'editor'] as const) {
+      const stored = data[field];
+      if (typeof stored !== 'string' || !stored) continue;
+      const to = await convert(stored);
+      now[field] = to;
+      if (to !== stored) changes[field] = { from: stored, to };
+    }
+    // The user entries of the access lists (#2097): a role or other kind is kept by `convertPrincipal`.
+    const entries = new Map<string, string>();
+    if (convertPrincipal) {
+      const lists: unknown[] = [data.audience];
+      if (data.access && typeof data.access === 'object' && !Array.isArray(data.access)) lists.push(...Object.values(data.access as Record<string, unknown>));
+      for (const list of lists) {
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+          if (typeof entry !== 'string' || entries.has(entry)) continue;
+          const to = await convertPrincipal(entry);
+          if (to !== entry) entries.set(entry, to);
+        }
+      }
+    }
+    if (Object.keys(changes).length === 0 && entries.size === 0) return { file: 'unchanged', ...now, ...origin };
+    const rewritten = rewriteFrontmatterFields(raw, changes, entries);
+    if (rewritten === null) {
+      return {
+        file: 'refused',
+        ...origin,
+        ...(typeof data.author === 'string' ? { author: data.author } : {}),
+        ...(typeof data.editor === 'string' ? { editor: data.editor } : {})
+      };
+    }
+    await io.writeText(file, rewritten, this.encoding);
+    const written = parsePageFrontmatter(rewritten).data;
+    return {
+      file: 'changed', ...now, ...origin,
+      ...(Array.isArray(written.audience) ? { audience: written.audience as string[] } : {}),
+      ...(written.access && typeof written.access === 'object' ? { access: written.access as Record<string, unknown> } : {})
+    };
+  }
+
+  /**
+   * The username a page's stored author names (#2097): an identity @id is
+   * resolved through `IdentityManager.usernameOf`, an orphan names nobody,
+   * a username not yet converted is itself. For the store a Private box moves
+   * a page into, which is named by its owner's username.
+   */
+  protected async authorUsername(author: unknown): Promise<string | undefined> {
+    if (typeof author !== 'string' || !author) return undefined;
+    if (!author.startsWith(IDENTITY_ID_PREFIX) && !author.startsWith(ORPHAN_PREFIX)) return author;
+    const name = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#2097)'), author);
+    return name ?? undefined;
+  }
+
+  /**
+   * What a page record stores for the user `username` (#2097): a vault page's
+   * author (its owner), a tombstone's `deletedBy`. Their identity @id, or the
+   * username when there is none or the identity store cannot answer.
+   */
+  protected async userReference(username: string): Promise<string> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.storedReferenceOf !== 'function') return username;
+    return identities.storedReferenceOf(systemContext(this.engine, 'store a user on a page record as identity @id (#2097)'), username);
+  }
+
   /**
    * Where a save puts a private page (#1456), or null for a public one. A page
    * at a private name is private until the save says `private: false`; a plain
@@ -975,6 +1169,10 @@ class FileSystemProvider extends BasePageProvider {
    *
    * `moveFrom` (#1505) is an explicit move from another of the same owner's
    * stores: the page's name then names the store it goes to.
+   *
+   * `authorName` is the username the page's author names ({@link authorUsername},
+   * #2097): the author is stored as an identity @id, and a store is named by
+   * its owner's username.
    */
   protected privatePlacement(
     pageName: string,
@@ -982,12 +1180,13 @@ class FileSystemProvider extends BasePageProvider {
     uuid: string,
     previous: PageCacheInfo | null,
     ctx: ActorContext,
-    moveFrom?: string
+    moveFrom?: string,
+    authorName?: string
   ): { owner: string; store: string } | null {
     const privateName = parsePrivatePageName(pageName);
     const isPrivate = md.private === true || (privateName !== null && md.private !== false);
     if (!isPrivate) return null;
-    const owner = privateName?.owner ?? (typeof md.author === 'string' && md.author ? md.author : undefined);
+    const owner = privateName?.owner ?? authorName;
     if (!owner) throw new Error('A private page needs an owner');
     if (privateName && typeof md.store === 'string' && md.store && md.store !== privateName.store) {
       throw new Error(`Cannot save '${pageName}' into private store '${md.store}': a private page's store is in its name`);
@@ -1213,7 +1412,8 @@ class FileSystemProvider extends BasePageProvider {
             lastModified: text(md.lastModified) ?? was.lastModified ?? new Date().toISOString(),
             ...(created ? { created } : {}),
             editor: text(md.editor) ?? was.editor ?? user.name,
-            author: user.name,
+            // #2097: the index mirrors the page's author (the owner's identity @id once converted).
+            author: text(md.author) ?? user.name,
             hasVersions: was.hasVersions ?? false,
             isPrivate: true
           };
@@ -1686,14 +1886,14 @@ class FileSystemProvider extends BasePageProvider {
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const wantedSystemKeywords = FileSystemProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
+    // #2097: `author` is matched against the values that name this user (their
+    // identity @id, and the username on a page not yet converted).
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
       const md = info.metadata ?? {} as PageFrontmatter;
       const author = (md as { author?: string }).author;
       const creator = (md as { creator?: string }).creator;
-      if (author !== username && creator !== username) continue;
-
-      if (wantedSystemKeywords && !FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
 
       // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
       // `system-location` retired. User-keywords:[private] read fallback
@@ -1702,6 +1902,11 @@ class FileSystemProvider extends BasePageProvider {
       const userKeywordsArr = Array.isArray(userKeywords) ? userKeywords.map(String) : [];
       const isPrivate = (md as { private?: boolean }).private === true
         || userKeywordsArr.includes('private');
+      // A private page's `creator` is its container owner, a username (#2097).
+      const owned = (author !== undefined && references.includes(author)) || (isPrivate && creator === username);
+      if (!owned) continue;
+
+      if (wantedSystemKeywords && !FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
       if (onlyPrivate && !isPrivate) continue;
 
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
@@ -1749,10 +1954,12 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
 
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
       const md = info.metadata ?? {} as PageFrontmatter;
-      if ((md as { editor?: string }).editor !== username) continue;
+      const editor = (md as { editor?: string }).editor;
+      if (editor === undefined || !references.includes(editor)) continue;
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
       entries.push({
         title: info.title,
@@ -1767,7 +1974,7 @@ class FileSystemProvider extends BasePageProvider {
 
     // #1456: the editor's own private pages, when the requester is the editor.
     if (ctx.username === username) {
-      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor !== undefined && references.includes(e.editor)));
     }
 
     if (sortBy === 'title-asc') {
@@ -1780,7 +1987,8 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * Pages whose frontmatter audience contains any of the given principals
-   * (#640 Phase 2). Walks pageCache. Excludes pages owned by any principal.
+   * (#640 Phase 2). Walks pageCache. Excludes pages owned by any principal
+   * (or, #2097, authored by one of `options.references`).
    */
   async getPagesSharedWith(
     principals: string[],
@@ -1790,6 +1998,7 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const principalSet = new Set(principals);
+    const references = new Set(options.references ?? []);
 
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
@@ -1800,7 +2009,7 @@ class FileSystemProvider extends BasePageProvider {
       if (!audience.some((r) => principalSet.has(r))) continue;
       const author = (md as { author?: string }).author;
       const creator = (md as { creator?: string }).creator;
-      if ((author && principalSet.has(author)) || (creator && principalSet.has(creator))) continue;
+      if ((author && (principalSet.has(author) || references.has(author))) || (creator && principalSet.has(creator))) continue;
 
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
       entries.push({

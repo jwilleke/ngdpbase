@@ -189,6 +189,8 @@
   "ngdpbase.page.provider.filesystem.autosave": true,
   "_comment_page_delete": "Days a soft-deleted page stays restorable before it is purged along with its version history (#947). Set 0 to keep deleted pages forever.",
   "ngdpbase.page.delete.retentiondays": 30,
+  "_comment_page_authorship_conversion": "Pages the start-up conversion of page authorship to identity @ids (#2097) takes between yields to the server. It runs while the site serves; a larger batch finishes sooner, a smaller one keeps requests quicker meanwhile.",
+  "ngdpbase.page.authorship-conversion.batch-size": 200,
   "_comment_page_chrome": "Pages excluded from tab injection or footer rendering",
   "ngdpbase.page.notabs": [
     "LeftMenu",

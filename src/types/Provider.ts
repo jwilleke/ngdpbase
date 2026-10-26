@@ -134,6 +134,12 @@ export interface GetPagesByCreatorOptions {
    * failure mode). Frontmatter is the source of truth and needs no back-fill.
    */
   systemKeywords?: string[];
+  /**
+   * The stored values that name the user (#2097): their identity @id and,
+   * for pages not yet converted, their username (`IdentityManager.referencesOf`).
+   * Set by PageManager; a provider compares `author` against these. Default `[username]`.
+   */
+  references?: string[];
 }
 
 /**
@@ -144,6 +150,12 @@ export interface PagesScanOptions {
   limit?: number;
   /** Sort order. Default `lastModified-desc`. */
   sortBy?: 'lastModified-desc' | 'title-asc';
+  /**
+   * The stored values that name the user (#2097), as {@link GetPagesByCreatorOptions.references}:
+   * `getPagesByEditor` compares `editor` against them, `getPagesSharedWith` leaves out pages
+   * whose `author` is one of them. Set by PageManager.
+   */
+  references?: string[];
 }
 
 /**
@@ -413,8 +425,8 @@ export interface PageProvider extends BaseProvider {
   /**
    * Return pages owned by the given user (#640).
    *
-   * "Owned" matches by `author` or `creator` field — pageIndex keeps these in
-   * lockstep on save. The visibility filter is intentionally NOT applied here
+   * "Owned" matches by `author` (any of `options.references`, #2097) or, on a
+   * private page, by `creator`, its container owner's username. The visibility filter is intentionally NOT applied here
    * because by definition a user can see their own pages: the route handler
    * verifies that `username === currentUser.username` before calling this.
    *

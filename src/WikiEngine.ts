@@ -459,6 +459,14 @@ class WikiEngine extends Engine {
     // before a page's files went with it. Reported, never moved.
     await attachmentManager.reportVaultPagesUsingPoolFilesAtBoot();
 
+    // #2097: page authorship and file uploaders are stored as identity @ids.
+    // The shared pool's uploaders convert here (one file). The public pages
+    // convert in the background, in batches, one page at a time with the
+    // saves, so a large site is ready to serve meanwhile; a vault's pages and
+    // files convert when the vault is opened (WikiRoutes.adoptSealedPages).
+    await attachmentManager.convertUploadersAtBoot();
+    void pageManager.convertAuthorshipAtBoot();
+
     // #2040: only users hold roles. Contacts found listed as role members are
     // reported (dashboard, log, one admin notification), never dropped.
     await roleManager.reportContactMembersAtBoot();

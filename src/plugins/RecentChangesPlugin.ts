@@ -256,6 +256,16 @@ const RecentChangesPlugin: SimplePlugin = {
         shown = recentChanges.slice(0, limit);
       }
 
+      // #2097: the editor is stored as an identity @id; shown as the username followed by the id.
+      const identities = context.engine?.getManager?.('IdentityManager') as
+        | { describeReference?: (ctx: unknown, stored: unknown) => Promise<string> }
+        | undefined;
+      if (identities?.describeReference) {
+        const describe = identities.describeReference.bind(identities);
+        shown = await Promise.all(shown.map(async (page) =>
+          (page.editor ? { ...page, editor: await describe(context.userContext, page.editor) } : page)));
+      }
+
       // With pageSize the whole set is in hand, so the count can state it. With
       // the flat cap the total is known only when the result came in UNDER the
       // cap, which means the set was exhausted; at the cap the manager stopped

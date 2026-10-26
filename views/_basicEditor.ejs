@@ -71,8 +71,10 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                     // Author Lock visibility: admin OR the page author may set/clear it.
                     // The /save handler at WikiRoutes.ts:2627 already enforces this; this
                     // is the UI half so authors can actually see the toggle.
+                    // #2097: the route decides whether this user is the author (the
+                    // author is stored as an identity @id) and passes isPageAuthor.
                     const _canEditAuthorLock = (typeof can === 'function' && can('admin-system'))
-                        || (user && metadata.author && user.username === metadata.author);
+                        || (typeof isPageAuthor !== 'undefined' && isPageAuthor === true);
                 %>
                 <!-- System Category (Admin only) + Author Lock (Admin or Author) + Private + User Keywords -->
                 <div class="row mb-3">
@@ -150,7 +152,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                     <% } %>
                     <% if (metadata['author-lock']) { %>
                     <div class="col-12 mt-1">
-                        <small class="text-warning"><i class="fas fa-lock"></i> <strong>Author Lock</strong> — only the page author (<%= metadata.author %>) and admins can edit this page.</small>
+                        <small class="text-warning"><i class="fas fa-lock"></i> <strong>Author Lock</strong> — only the page author (<%= typeof pageAuthorShown !== 'undefined' && pageAuthorShown ? pageAuthorShown : metadata.author %>) and admins can edit this page.</small>
                     </div>
                     <% } %>
                     <div class="col-md-2">

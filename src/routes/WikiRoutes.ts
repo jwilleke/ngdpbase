@@ -465,6 +465,8 @@ interface IPageManager {
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
   /** At unlock (#1457): `[Title]` becomes `[store/Title]` in this owner's stores. */
   migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
+  /** #2097: a vault's page authorship to identity @ids, at its opening. */
+  convertVaultAuthorship?(ctx: ActorContext, owner: string): Promise<unknown>;
   /** At unlock (#1458): a sealed store with no saved search index gets one. */
   buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
@@ -2629,6 +2631,51 @@ class WikiRoutes {
     return true;
   }
 
+  /**
+   * How a page's or file's author, editor, uploader or deleter is shown to
+   * people (#2097, operator 2026-10-26): `IdentityManager.describeReference`,
+   * the username followed by the identity @id, `jim (urn:uuid:…)`, or
+   * `bob (no account)` for an orphan. Resolved when shown, never stored.
+   */
+  private async describeUser(stored: unknown): Promise<string> {
+    if (typeof stored !== 'string' || !stored) return '';
+    const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
+    if (typeof identities?.describeReference !== 'function') return stored;
+    return identities.describeReference(systemContext(this.engine, 'show a page or file author, editor or deleter (#2097)'), stored);
+  }
+
+  /**
+   * The bare username a stored author or editor names (#2097), for machine
+   * metadata (JSON-LD, social cards): an @id gives its account's username, an
+   * orphan its old name; an @id whose account is gone gives nothing.
+   */
+  private async usernameShown(stored: unknown): Promise<string | undefined> {
+    if (typeof stored !== 'string' || !stored) return undefined;
+    if (stored.startsWith('orphan:')) return stored.slice('orphan:'.length);
+    const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
+    if (typeof identities?.usernameOf !== 'function') return stored;
+    return (await identities.usernameOf(systemContext(this.engine, 'page metadata for crawlers: the author username (#2097)'), stored)) ?? undefined;
+  }
+
+  /** Whether `username` is the author a page stores (#2097): `IdentityManager.refersTo`. */
+  private async isPageAuthorOf(author: unknown, username: string | undefined): Promise<boolean> {
+    if (!username || typeof author !== 'string' || !author) return false;
+    const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
+    if (typeof identities?.refersTo !== 'function') return author === username;
+    return identities.refersTo(systemContext(this.engine, 'page editor: is this user the page author (#2097)'), author, username);
+  }
+
+  /** {@link describeUser} for the named fields of each item (a page list, a trash list), as shown. */
+  private async describeUsersIn<T extends object>(items: T[], fields: string[]): Promise<T[]> {
+    return Promise.all(items.map(async (item) => {
+      const shown: Record<string, unknown> = { ...(item as Record<string, unknown>) };
+      for (const field of fields) {
+        if (typeof shown[field] === 'string' && shown[field]) shown[field] = await this.describeUser(shown[field]);
+      }
+      return shown as T;
+    }));
+  }
+
   private _isPagePrivate(pageName: string): boolean {
     // #1456: a private page is named by its path — private whether or not it
     // exists yet, and never found in the global index.
@@ -3039,8 +3086,15 @@ ${panes}
           opts?: { baseUrl?: string; autoTaggedKeywords?: string[] }
         ) => Article;
       };
+      // #2097: the JSON-LD and social cards name the author and editor by
+      // username (a crawler card is no place for an identity @id).
+      const publishedMetadata = metadata ? {
+        ...metadata,
+        ...(metadata.author ? { author: await this.usernameShown(metadata.author) } : {}),
+        ...(metadata.editor ? { editor: await this.usernameShown(metadata.editor) } : {})
+      } : metadata;
       const article = typeof pageManagerCatalog.toCreativeWork === 'function'
-        ? pageManagerCatalog.toCreativeWork(pageName, metadata, {
+        ? pageManagerCatalog.toCreativeWork(pageName, publishedMetadata, {
           baseUrl: baseUrl || undefined,
           autoTaggedKeywords
         })
@@ -3098,7 +3152,7 @@ ${panes}
       const socialMeta = (_seoEnabled && !_pageIsPrivate)
         ? buildSocialMeta({
           pageName,
-          metadata,
+          metadata: publishedMetadata,
           contentHtml: html,
           baseUrl: this.engine.getManager('ConfigurationManager')?.getBaseURL?.() ?? '',
           applicationName: templateData.applicationName ?? ''
@@ -3687,7 +3741,17 @@ ${panes}
         csrfToken: req.session.csrfToken,
         isRequiredPage: pageIsRequired,
         sectionIndex: sectionIndex,
-        extraFrontmatterFields: extraFrontmatterFields
+        extraFrontmatterFields: extraFrontmatterFields,
+        // #2097: the author is stored as an identity @id; the view is told
+        // whether this user is the author, and shows the author as people see it.
+        isPageAuthor: await this.isPageAuthorOf(pageData.metadata?.author, req.userContext?.username),
+        pageAuthorShown: await this.describeUser(pageData.metadata?.author),
+        // #2097: audience users are stored by @id; each chip shows the username and id.
+        audienceLabels: Object.fromEntries(await Promise.all(
+          (Array.isArray(pageData.metadata?.audience) ? pageData.metadata.audience as unknown[] : [])
+            .filter((entry): entry is string => typeof entry === 'string')
+            .map(async (entry) => [entry, await this.describeUser(entry)] as const)
+        ))
       });
     } catch (err: unknown) {
       logger.error('Error loading edit page:', err);
@@ -3864,7 +3928,8 @@ ${panes}
       // admin role holds, and a delegated token without it does not.
       const isAdmin = await wikiContext.hasPermission('admin-system');
       const existingCreator = existingPage?.metadata?.author;
-      const isPageAuthor = currentUser?.username === existingCreator;
+      // #2097: the author is stored as an identity @id; IdentityManager says whether it is this user's.
+      const isPageAuthor = await this.isPageAuthorOf(existingCreator, currentUser?.username);
       let authorLock: boolean;
       if (isAdmin || isPageAuthor) {
         // Privileged user — honour the checkbox (present = true, absent = false)
@@ -3902,8 +3967,8 @@ ${panes}
       // out of its store to the public space — the owner's move alone. Where
       // the page lands is its name after the save.
       const movesStore = privateName ? !privateFlag : privateFlag;
-      const pageOwner = privateName?.owner ?? pageAuthor;
-      if (movesStore && existingPage && currentUser?.username !== pageOwner) {
+      const isPageOwner = privateName ? currentUser?.username === privateName.owner : isPageAuthor;
+      if (movesStore && existingPage && !isPageOwner) {
         return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
       }
       // #1504: making a page public is `page-public`, decided by policy on the
@@ -4102,7 +4167,7 @@ ${panes}
           pageName,
           submittedContent: content ?? '',
           currentBaseToken: versionTokenOf(existingPage.metadata) ?? '',
-          conflictAuthor: existingPage.metadata?.author ?? null,
+          conflictAuthor: existingPage.metadata?.author ? await this.describeUser(existingPage.metadata.author) : null,
           conflictLastModified: versionTokenOf(existingPage.metadata),
           resubmitFields: WikiRoutes.buildConflictResubmitFields(req.body),
           csrfToken: req.session.csrfToken
@@ -8979,7 +9044,7 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager') as unknown as {
         getPagesByCreator?: (u: string, ctx: ActorContext, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
         getPagesByEditor?: (u: string, ctx: ActorContext) => Promise<unknown[]>;
-        getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
+        getPagesSharedWith?: (principals: string[], o?: { username?: string }) => Promise<unknown[]>;
       };
       if (pageManager?.getPagesByCreator) {
         // #1456: private pages are counted from the user's own stores.
@@ -9000,7 +9065,7 @@ ${panes}
       }
       if (pageManager?.getPagesSharedWith) {
         const principals = [...(user?.roles ?? []), username];
-        const shared = await pageManager.getPagesSharedWith(principals);
+        const shared = await pageManager.getPagesSharedWith(principals, { username });
         counts.shared = shared.length;
       }
     } catch (err) {
@@ -9666,6 +9731,18 @@ ${panes}
     if (!subject) throw new Error(`No active account '${username}' to unlock stores for`);
     const ctx = { ...subject, privateStoreHandle: handle };
     await pageManager.adoptUserPageCatalog(ctx);
+    // #2097: the vault's page authorship and file uploaders become identity
+    // @ids now that its key is live; once per vault, never failing the unlock.
+    try {
+      await pageManager.convertVaultAuthorship?.(ctx, username);
+    } catch (err) {
+      logger.warn('[private-store] Vault page authorship was not converted:', err);
+    }
+    try {
+      await this.engine.getManager('AttachmentManager')?.convertVaultUploaders?.(ctx);
+    } catch (err) {
+      logger.warn('[private-store] Vault file uploaders were not converted:', err);
+    }
     await pageManager.migratePrivateLinks(ctx, username);
     await pageManager.buildMissingStoreSearchIndexes(ctx, username);
     await pageManager.purgeExpiredOwnPrivateTrash(ctx);
@@ -9816,7 +9893,8 @@ ${panes}
         ...commonData,
         title: spec.title,
         icon: spec.icon,
-        items: pagedList.items,
+        // #2097: the editor as people see it, username and identity @id.
+        items: await this.describeUsersIn(pagedList.items, ['editor']),
         totalItems: pagedList.totalItems,
         paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
@@ -10333,7 +10411,7 @@ ${panes}
         ...commonData,
         title: 'My Recent Edits',
         icon: 'fa-history',
-        items: pagedList.items,
+        items: await this.describeUsersIn(pagedList.items, ['editor']),
         totalItems: pagedList.totalItems,
         paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
@@ -10357,12 +10435,12 @@ ${panes}
       if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
       const principals = [...(currentUser.roles ?? []), currentUser.username];
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesSharedWith?: (p: string[]) => Promise<Array<{
+        getPagesSharedWith?: (p: string[], o?: { username?: string }) => Promise<Array<{
           title: string; uuid: string; lastModified: string; isPrivate?: boolean; editor?: string
         }>>;
       };
       const items = pageManager?.getPagesSharedWith
-        ? await pageManager.getPagesSharedWith(principals)
+        ? await pageManager.getPagesSharedWith(principals, { username: currentUser.username })
         : [];
       const commonData = await this.getCommonTemplateData(req);
       const pagedList = this.pageOfList(items, req, 25, 'List pagination');
@@ -10370,7 +10448,7 @@ ${panes}
         ...commonData,
         title: 'Pages Shared With Me',
         icon: 'fa-share-alt',
-        items: pagedList.items,
+        items: await this.describeUsersIn(pagedList.items, ['editor']),
         totalItems: pagedList.totalItems,
         paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
@@ -14326,7 +14404,8 @@ ${panes}
         uuid,
         title,
         category,
-        author: typeof md.author === 'string' ? md.author : '',
+        // #2097: shown as the username followed by the identity @id.
+        author: typeof md.author === 'string' ? await this.describeUser(md.author) : '',
         lastModified: typeof md.lastModified === 'string' ? md.lastModified : ''
       });
     }
@@ -14991,7 +15070,8 @@ ${panes}
       return res.render('admin-attachments', {
         ...commonData,
         title: 'Attachments',
-        attachments
+        // #2097: the uploader as people see it, username and identity @id.
+        attachments: await this.describeUsersIn(attachments, ['uploadedBy'])
       });
     } catch (err: unknown) {
       logger.error('Error loading admin attachments:', err);
@@ -15021,7 +15101,9 @@ ${panes}
       if (!attachmentManager?.getHealthReport) {
         return res.status(503).json({ success: false, error: 'AttachmentManager unavailable' });
       }
-      const report = await attachmentManager.getHealthReport(wikiContext.userContext);
+      const report = await attachmentManager.getHealthReport(wikiContext.userContext) as { orphans?: Array<{ author?: string }> } | null;
+      // #2097: an orphaned file's uploader as people see it.
+      if (report && Array.isArray(report.orphans)) report.orphans = await this.describeUsersIn(report.orphans, ['author']);
       return res.json({ success: true, report });
     } catch (err: unknown) {
       logger.error('Error building attachment health report:', err);
@@ -18461,7 +18543,7 @@ ${panes}
             versionInfo = {
               currentVersion: currentVersion.version,
               totalVersions: versions.length,
-              lastAuthor: currentVersion.author,
+              lastAuthor: currentVersion.author ? await this.describeUser(currentVersion.author) : currentVersion.author,
               lastModified: currentVersion.timestamp,
               changeType: currentVersion.changeType,
               comment: currentVersion.comment
@@ -18474,8 +18556,8 @@ ${panes}
                 contributorMap[v.author] = (contributorMap[v.author] || 0) + 1;
               }
             }
-            topContributors = Object.entries(contributorMap)
-              .map(([author, editCount]) => ({ author, editCount }))
+            topContributors = (await Promise.all(Object.entries(contributorMap)
+              .map(async ([author, editCount]) => ({ author: await this.describeUser(author), editCount }))))
               .sort((a, b) => b.editCount - a.editCount);
 
             // Average days between edits
@@ -18531,7 +18613,8 @@ ${panes}
 
         // Additional metadata - author is the immutable original creator (from frontmatter);
         // editor is the last person to modify (from version history).
-        author: metadata.author || null,
+        // #2097: shown as the username followed by the identity @id.
+        author: metadata.author ? await this.describeUser(metadata.author) : null,
         editor: versionInfo?.lastAuthor || null,
         description: metadata.description || null,
         version: versionInfo ? `v${versionInfo.currentVersion} of ${versionInfo.totalVersions}` : metadata.version || null,
@@ -19141,7 +19224,8 @@ ${panes}
         title: 'Trash',
         supported: true,
         retentionDays,
-        pages: pagedTrash.items,
+        // #2097: who deleted each page, as people see it.
+        pages: await this.describeUsersIn(pagedTrash.items, ['deletedBy']),
         totalPages: pagedTrash.totalItems,
         paginationHtml: pagedTrash.paginationHtml,
         csrfToken: req.session?.csrfToken || ''
@@ -19300,7 +19384,8 @@ ${panes}
         ...templateData,
         pageName: pageName,
         pageUuid: pageMetadata?.uuid,
-        versions: pagedVersions.items,
+        // #2097: each version's editor as people see it, username and identity @id.
+        versions: await this.describeUsersIn(pagedVersions.items, ['editor', 'author']),
         versionCount: versions.length,
         paginationHtml: pagedVersions.paginationHtml
       });
@@ -19387,8 +19472,9 @@ ${panes}
         ...templateData,
         leftMenu,
         pageUuid: pageMetadata?.uuid,
-        version1: comparison.version1,
-        version2: comparison.version2,
+        // #2097: each version's editor as people see it.
+        version1: (await this.describeUsersIn([comparison.version1 as object], ['author', 'editor']))[0],
+        version2: (await this.describeUsersIn([comparison.version2 as object], ['author', 'editor']))[0],
         diff: comparison.diff,
         stats: comparison.stats
       });

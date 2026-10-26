@@ -867,21 +867,24 @@ class LunrSearchProvider extends BaseSearchProvider {
       });
     }
 
-    // Filter by author if specified (case-insensitive exact match against metadata.author)
-    if (author) {
-      const authorLower = author.toLowerCase();
+    // Filter by author if specified (case-insensitive exact match against
+    // metadata.author; a list matches any of its values, #2097)
+    const wanted = (value: string | string[]): Set<string> =>
+      new Set((Array.isArray(value) ? value : [value]).filter(Boolean).map((v) => v.toLowerCase()));
+    if (author && author.length > 0) {
+      const authors = wanted(author);
       results = results.filter(result => {
         const docAuthor = typeof result.metadata.author === 'string' ? result.metadata.author : '';
-        return docAuthor.toLowerCase() === authorLower;
+        return authors.has(docAuthor.toLowerCase());
       });
     }
 
-    // Filter by editor if specified (case-insensitive exact match against metadata.editor)
-    if (editor) {
-      const editorLower = editor.toLowerCase();
+    // Filter by editor if specified (as for author)
+    if (editor && editor.length > 0) {
+      const editors = wanted(editor);
       results = results.filter(result => {
         const docEditor = typeof result.metadata.editor === 'string' ? result.metadata.editor : '';
-        return docEditor.toLowerCase() === editorLower;
+        return editors.has(docEditor.toLowerCase());
       });
     }
 

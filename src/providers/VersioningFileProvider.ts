@@ -1,4 +1,5 @@
 import FileSystemProvider, { type BackupData } from './FileSystemProvider.js';
+import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
@@ -135,7 +136,7 @@ interface PageIndexEntry {
 interface DeletedPageEntry extends PageIndexEntry {
   /** When the page was deleted (ISO 8601) */
   deletedAt: string;
-  /** Username that deleted it, or 'unknown' when the caller supplied no context */
+  /** Who deleted it: their identity @id (#2097); a username on a tombstone written before, or one with no account */
   deletedBy: string;
   /** Absolute path the page file occupied before deletion — where restore puts it back */
   deletedFrom: string;
@@ -897,6 +898,180 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
+   * The public pages' stored author and editor, from the page index (#2097).
+   * A legacy `private` entry (a private page from before vaults, still
+   * waiting to move into its owner's vault) is left out: the move finds its
+   * old folder by the author's username.
+   */
+  override listAuthorshipRefs(): Array<{ uuid: string; author?: string; editor?: string }> {
+    if (!this.pageIndex) return super.listAuthorshipRefs();
+    return Object.values(this.pageIndex.pages).filter((entry) => entry.location !== 'private').map((entry) => ({
+      uuid: entry.uuid,
+      ...(entry.author ? { author: entry.author } : {}),
+      ...(entry.editor ? { editor: entry.editor } : {})
+    }));
+  }
+
+  /**
+   * {@link FileSystemProvider.convertPageReferences}, plus what this provider
+   * keeps about the page (#2097): its page index entry (saved by
+   * {@link finishAuthorshipConversion}) or its vault's index entry, and its
+   * version history's editors (`manifest.json`), rewritten in place: no
+   * version is added, and every other field of every version is kept.
+   * `versions` counts the version editors converted.
+   */
+  override async convertPageReferences(
+    ctx: ActorContext,
+    identifier: string,
+    convert: (stored: string) => Promise<string>,
+    convertPrincipal?: (entry: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string; audience?: string[]; versions?: number }> {
+    const info = this.resolvePageInfo(identifier, ctx);
+    const result = await super.convertPageReferences(ctx, identifier, convert, convertPrincipal);
+    if (!info || result.file === 'missing') return result;
+
+    const entry = info.fromStore ? undefined : this.pageIndex?.pages[info.uuid];
+    if (entry && result.file !== 'refused') {
+      if (result.author) entry.author = result.author;
+      if (result.editor) entry.editor = result.editor;
+      // The index's copy of the audience (a fallback for a private page) follows the file.
+      if (result.audience && entry.audienceRoles) entry.audienceRoles = result.audience;
+    }
+
+    const location: 'pages' | 'required-pages' | 'private' = info.fromStore ? 'private' : (entry?.location ?? 'pages');
+    const versions = await this.versionTarget(info.uuid, location, ctx, info.fromStore?.owner, info.fromStore?.store);
+    return { ...result, versions: await this.convertHistoryEditors(info.uuid, location, versions, convert) };
+  }
+
+  /**
+   * A page's version history editors (#2097): each version's `editor` and the
+   * manifest's own `editor`/`author`, rewritten in place; no version is added
+   * and every other field is kept. Returns how many values changed.
+   */
+  private async convertHistoryEditors(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    versions: VersionTarget,
+    convert: (stored: string) => Promise<string>
+  ): Promise<number> {
+    const manifest = await this.loadManifest(uuid, location, versions);
+    if (!manifest) return 0;
+    let changed = 0;
+    for (const version of manifest.versions) {
+      if (typeof version.editor !== 'string' || !version.editor) continue;
+      const to = await convert(version.editor);
+      if (to !== version.editor) { version.editor = to; changed++; }
+    }
+    for (const field of ['editor', 'author'] as const) {
+      const stored = manifest[field];
+      if (typeof stored !== 'string' || !stored) continue;
+      const to = await convert(stored);
+      if (to !== stored) { manifest[field] = to; changed++; }
+    }
+    if (changed > 0) await this.saveManifest(uuid, location, manifest, versions);
+    return changed;
+  }
+
+  /**
+   * The public tombstones' `author`, `editor` and `deletedBy` (#2097), on the
+   * full pass also each deleted page's file and history, then the page index,
+   * saved once. Each tombstone is converted as the only write on its page
+   * ({@link withPageWrite}), and only when it is still there, so a restore or
+   * a purge meanwhile is never undone. A tombstone that fails for its own
+   * reason is skipped and its error class counted; the identity store not
+   * answering (`IdentityStoreUnavailableError`) stops the pass.
+   */
+  async finishAuthorshipConversion(
+    convert: (stored: string) => Promise<string>,
+    opts: { full?: boolean } = {}
+  ): Promise<{ changed: number; skipped: number; errors: string[] }> {
+    const outcome = { changed: 0, skipped: 0, errors: [] as string[] };
+    if (!this.pageIndex) return outcome;
+    for (const uuid of Object.keys(this.pageIndex.deletedPages ?? {})) {
+      try {
+        outcome.changed += await this.withPageWrite(uuid, async () => {
+          const entry = this.pageIndex?.deletedPages?.[uuid];
+          if (!entry) return 0; // restored or purged meanwhile
+          let changed = 0;
+          for (const field of ['author', 'editor', 'deletedBy'] as const) {
+            const stored = entry[field];
+            if (typeof stored !== 'string' || !stored) continue;
+            const to = await convert(stored);
+            if (to !== stored) { entry[field] = to; changed++; }
+          }
+          // The deleted page's file and history, so a restore brings it back
+          // converted: on the full pass only (they are read, not in memory).
+          if (opts.full) {
+            const trashFile = path.join(this.getDeletedDirectory(entry.location), `${entry.uuid}.md`);
+            if ((await this.convertFileAuthorship(PLAIN_FILE_IO, trashFile, convert)).file === 'changed') changed++;
+            changed += await this.convertHistoryEditors(entry.uuid, entry.location, await this.versionTarget(entry.uuid, entry.location), convert);
+          }
+          return changed;
+        });
+      } catch (error) {
+        if (error instanceof IdentityStoreUnavailableError) throw error;
+        outcome.skipped++;
+        outcome.errors.push(errorClassOf(error));
+      }
+    }
+    await this.savePageIndex();
+    return outcome;
+  }
+
+  /**
+   * The tombstones in one owner's vaults this context can open (#2097):
+   * `author`, `editor` and `deletedBy`, each deleted page's file and history.
+   * A vault this context holds no key for is skipped. Each tombstone is
+   * converted as the only write on its page, re-read from the vault's trash
+   * index inside that lock and written only when it is still there. A
+   * tombstone that fails for its own reason is skipped and counted.
+   */
+  async convertStoreDeletedReferences(
+    ctx: ActorContext,
+    owner: string,
+    convert: (stored: string) => Promise<string>
+  ): Promise<{ changed: number; skipped: number; errors: string[] }> {
+    const outcome = { changed: 0, skipped: 0, errors: [] as string[] };
+    if (!this.pagesDirectory) return outcome;
+    const pagesDirectory = this.pagesDirectory;
+    for (const store of await this.storeIdsOf(owner)) {
+      let location: StoreFileLocation;
+      try {
+        location = await this.storeTrashLocation(ctx, owner, store);
+      } catch {
+        continue; // sealed, and this context holds no key for it
+      }
+      for (const uuid of Object.keys(await this.readStoreDeleted(pagesDirectory, location))) {
+        try {
+          outcome.changed += await this.withPageWrite(uuid, async () => {
+            const deleted = await this.readStoreDeleted(pagesDirectory, location);
+            const entry = deleted[uuid] as unknown as Record<string, unknown> | undefined;
+            if (!entry) return 0; // restored or purged meanwhile
+            let changed = 0;
+            for (const field of ['author', 'editor', 'deletedBy'] as const) {
+              const stored = entry[field];
+              if (typeof stored !== 'string' || !stored) continue;
+              const to = await convert(stored);
+              if (to !== stored) { entry[field] = to; changed++; }
+            }
+            if (changed > 0) await this.writeStoreDeleted(pagesDirectory, location, deleted);
+            const trashFile = path.join(privateDeletedDirectory(pagesDirectory, owner, store, this.privateStoreLayout), `${uuid}.md`);
+            if ((await this.convertFileAuthorship(location.io, trashFile, convert)).file === 'changed') changed++;
+            const versions = await this.versionTarget(uuid, 'private', ctx, owner, store);
+            changed += await this.convertHistoryEditors(uuid, 'private', versions, convert);
+            return changed;
+          });
+        } catch (error) {
+          if (error instanceof IdentityStoreUnavailableError) throw error;
+          outcome.skipped++;
+          outcome.errors.push(errorClassOf(error));
+        }
+      }
+    }
+    return outcome;
+  }
+
+  /**
    * Await any pending page-index writes. Call before process exit to prevent data loss.
    */
   async flushWriteQueue(): Promise<void> {
@@ -1024,8 +1199,8 @@ class VersioningFileProvider extends FileSystemProvider {
 
   /**
    * Pages owned by a user — backed by pageIndex (#640). Match by `author`
-   * (canonical) OR `creator` (denormalised for private pages, kept in lockstep
-   * with author at write time per #634 audit). Visibility filter intentionally
+   * (canonical; any of `options.references`, #2097) OR, on a private page,
+   * `creator` (its container owner's username). Visibility filter intentionally
    * skipped — caller is asking about their own pages.
    */
   async getPagesByCreator(
@@ -1042,9 +1217,14 @@ class VersioningFileProvider extends FileSystemProvider {
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const wantedSystemKeywords = VersioningFileProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
+    // #2097: `author` is matched against the values that name this user (their
+    // identity @id, and the username on a page not yet converted); `creator`,
+    // a private page's container owner, is a username and counts only there.
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
-      const matches = idx.author === username || idx.creator === username;
+      const isPrivateEntry = idx.isPrivate === true || idx.location === 'private';
+      const matches = (idx.author !== undefined && references.includes(idx.author)) || (isPrivateEntry && idx.creator === username);
       if (!matches) continue;
       if (onlyPrivate && !idx.isPrivate) continue;
 
@@ -1102,9 +1282,10 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
 
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
-      if (idx.editor !== username) continue;
+      if (!references.includes(idx.editor)) continue;
       entries.push({
         title: idx.title,
         uuid: idx.uuid,
@@ -1120,7 +1301,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1456: the editor's own private pages, when the requester is the editor.
     if (ctx.username === username) {
-      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor !== undefined && references.includes(e.editor)));
     }
 
     if (sortBy === 'title-asc') {
@@ -1154,13 +1335,15 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const principalSet = new Set(principals);
+    const references = new Set(options.references ?? []);
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
       // Exclude pages the user already owns first — cheap, index-only, and it
       // avoids a metadata read for every page the caller would discard anyway
-      // (avoids duplication with /my/pages).
-      if ((idx.author && principalSet.has(idx.author))
+      // (avoids duplication with /my/pages). #2097: an author stored as the
+      // user's identity @id is theirs too.
+      if ((idx.author && (principalSet.has(idx.author) || references.has(idx.author)))
         || (idx.creator && principalSet.has(idx.creator))) continue;
 
       // A page is "shared with me" when frontmatter states a view rule AND the
@@ -2037,7 +2220,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Where the page is now: its store (found through the caller's context) or
     // the public index. The global index holds no private page.
     const previous = this.resolvePageInfo(currentName, ctx);
-    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx, options?.moveFrom);
+    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx, options?.moveFrom, await this.authorUsername(md.author));
     const isPrivate = placement !== null;
     const newCreator = placement?.owner;
     const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';
@@ -2236,11 +2419,13 @@ class VersioningFileProvider extends FileSystemProvider {
    * retention window expires.
    *
    * @param identifier - Page UUID or title
-   * @param deletedBy - Username performing the delete (audit trail)
    * @returns True if deleted, false if not found
    */
   async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
-    const deletedBy = actorOf(ctx).user;
+    // #2097: the tombstone names who deleted it by identity @id (the username
+    // when there is none); the log line keeps naming the acting user as before.
+    const deleter = actorOf(ctx).user;
+    const deletedBy = await this.userReference(deleter);
     // Get page info before deleting
     const pageData = await this.getPage(identifier, ctx);
     if (!pageData) {
@@ -2301,7 +2486,7 @@ class VersioningFileProvider extends FileSystemProvider {
           logger.warn(`[VersioningFileProvider] Deleted private page ${uuid} had no store index entry; no tombstone was recorded (#1459)`);
         }
         // #1461: a private page is logged by uuid, never by title.
-        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deletedBy}; kept in its store's own trash (#1459)`);
+        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deleter}; kept in its store's own trash (#1459)`);
         return true;
       }
 
@@ -2333,7 +2518,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
 
       logger.info(
-        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deletedBy}; ` +
+        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deleter}; ` +
         'versions retained for restore'
       );
       return true;
@@ -2492,7 +2677,12 @@ class VersioningFileProvider extends FileSystemProvider {
     return Boolean(this.pageIndex?.deletedPages?.[uuid]);
   }
 
+  /** {@link restoreDeletedPageNow} as the only write on the page (#2097, {@link withPageWrite}). */
   async restoreDeletedPage(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
+    return this.withPageWrite(uuid, () => this.restoreDeletedPageNow(uuid));
+  }
+
+  private async restoreDeletedPageNow(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
     const entry = this.pageIndex?.deletedPages?.[uuid];
     if (!entry || !this.pageIndex) {
       return { ok: false, reason: 'not-found' };
@@ -2574,7 +2764,12 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param uuid - UUID of the deleted page
    * @returns True when something was purged
    */
+  /** {@link purgeDeletedPageNow} as the only write on the page (#2097, {@link withPageWrite}). */
   async purgeDeletedPage(uuid: string): Promise<boolean> {
+    return this.withPageWrite(uuid, () => this.purgeDeletedPageNow(uuid));
+  }
+
+  private async purgeDeletedPageNow(uuid: string): Promise<boolean> {
     const entry = this.pageIndex?.deletedPages?.[uuid];
     if (!entry || !this.pageIndex) return false;
 
@@ -2721,7 +2916,12 @@ class VersioningFileProvider extends FileSystemProvider {
    * store's search index is put back by the page door, which is the one place
    * a page change reconciles its indexes (#1462).
    */
+  /** {@link restoreStorePageNow} as the only write on the page (#2097, {@link withPageWrite}). */
   async restoreStorePage(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<StoreRestoreResult> {
+    return this.withPageWrite(uuid, () => this.restoreStorePageNow(ctx, owner, store, uuid));
+  }
+
+  private async restoreStorePageNow(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<StoreRestoreResult> {
     if (!this.pagesDirectory) return { ok: false, reason: 'error', detail: 'not initialized' };
     let location: StoreFileLocation;
     try {
@@ -2772,7 +2972,12 @@ class VersioningFileProvider extends FileSystemProvider {
    * version history in the store, and the tombstone. Nothing else in the store
    * refers to it — it left the page index and the search index at delete.
    */
+  /** {@link purgeStorePageNow} as the only write on the page (#2097, {@link withPageWrite}). */
   async purgeStorePage(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean> {
+    return this.withPageWrite(uuid, () => this.purgeStorePageNow(ctx, owner, store, uuid));
+  }
+
+  private async purgeStorePageNow(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean> {
     if (!this.pagesDirectory) return false;
     let location: StoreFileLocation;
     try {

@@ -174,3 +174,35 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     expect(readablePrivateTitles).not.toHaveBeenCalled();
   });
 });
+
+describe('MarkupParser — a public page whose author is an identity @id (#2097)', () => {
+  // Sabotage checks (each turned a test red once): not setting
+  // parseContext.pageOwner from resolveAuthorOwner; DOMLinkHandler's fallback
+  // returning an @id author unchanged.
+  const JIM_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
+  function engineWithIdentities() {
+    const base = makeEngine();
+    const identities = {
+      usernameOf: async (_ctx: unknown, stored: string) =>
+        (stored === JIM_ID ? 'jim' : stored.startsWith('urn:') || stored.startsWith('orphan:') ? null : stored)
+    };
+    return { getManager: (name: string) => (name === 'IdentityManager' ? identities : base.getManager(name)) };
+  }
+
+  test('[vault/Diary] resolves in the author vault, named by username', async () => {
+    const html = await render('See [vault/Diary].', { pageName: 'HomePage', pageMetadata: { author: JIM_ID } }, engineWithIdentities() as never);
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
+    expect(html).not.toContain('urn:uuid');
+  });
+
+  test('an orphaned author owns no vault: no private URL, no id in the page', async () => {
+    const html = await render('See [vault/Diary].', { pageName: 'HomePage', pageMetadata: { author: 'orphan:bob' } }, engineWithIdentities() as never);
+    expect(html).not.toContain('/vaults/');
+    expect(html).not.toContain('orphan:');
+  });
+
+  test('an author not yet converted still names the vault', async () => {
+    const html = await render('See [vault/Diary].', { pageName: 'HomePage', pageMetadata: { author: 'jim' } }, engineWithIdentities() as never);
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
+  });
+});

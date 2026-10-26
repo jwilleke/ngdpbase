@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -11,9 +12,10 @@ import { knownCountry, toE164 } from '../utils/phoneNumbers.js';
 import { languageTag } from '../utils/languages.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
+import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isNoRecordedUser, isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { ContactRefusedError, recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
+import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 
 interface PersonProviderConstructor {
@@ -169,6 +171,9 @@ class IdentityManager extends BaseManager {
       logger.warn('👤 IdentityManager initialized in degraded mode (storage path unavailable)');
       return;
     }
+    // Read-only (an operator command, #2097): a site with no records folder has
+    // no records to read, and the folder is not made.
+    if (config.readOnly === true && !fs.existsSync(storageDir)) return;
 
     const defaultProvider = configManager.getProperty(
       'ngdpbase.application.persons.provider.default',
@@ -184,7 +189,8 @@ class IdentityManager extends BaseManager {
     const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: PersonProviderConstructor };
     this.provider = new mod.default(this.engine);
     await this.provider.initialize();
-    await this.convertLegacyAffiliations();
+    // An operator command opens the records read-only (#2097): nothing is converted or written.
+    if (config.readOnly !== true) await this.convertLegacyAffiliations();
 
     logger.info(`👤 IdentityManager initialized (${(await this.provider.list()).length} persons)`);
   }
@@ -808,6 +814,134 @@ class IdentityManager extends BaseManager {
    */
   canAnswer(): boolean {
     return this.provider !== null;
+  }
+
+  /**
+   * {@link convertReference} for records that may hold a value meaning "no
+   * user was recorded" (#2097): `migrated`, `unknown`, `import`
+   * ({@link NO_RECORDED_USER}) become `orphan:<value>` without a lookup,
+   * outcome `no-user`, so an account that later takes one of those names
+   * gains nothing, and the caller does not count them as needing attention.
+   * Everything else is `convertReference`'s, and throws as it does.
+   */
+  async convertRecordedUser(ctx: ActorContext, stored: string): Promise<{ value: string; outcome: 'kept' | 'orphan' | 'converted' | 'orphaned' | 'no-user' }> {
+    if (typeof stored === 'string' && isNoRecordedUser(stored)) {
+      return { value: stored.startsWith(ORPHAN_PREFIX) ? stored : `${ORPHAN_PREFIX}${normalizeUsername(stored)}`, outcome: 'no-user' };
+    }
+    return this.convertReference(ctx, stored);
+  }
+
+  /**
+   * What a new record stores for the user `username` (#2097): their identity
+   * `@id`; a "no user recorded" value (`migrated`, `unknown`, `import`) as
+   * its orphan form, so no account ever gains it; a principal (`anonymous`,
+   * the system principal), an `@id` or an orphan as it is; a name with no
+   * account, or any name when the store cannot answer ({@link identityIdOf}),
+   * as given. The one rule for page authors and editors, tombstones and file
+   * uploaders.
+   */
+  async storedReferenceOf(ctx: ActorContext, username: string): Promise<string> {
+    if (typeof username !== 'string' || !username) return username;
+    if (isNoRecordedUser(username)) return username.startsWith(ORPHAN_PREFIX) ? username : `${ORPHAN_PREFIX}${normalizeUsername(username)}`;
+    if (isReservedUsername(username) || sameUsername(username, systemPrincipalOf(this.engine))) return username;
+    return (await this.identityIdOf(ctx, username)) ?? username;
+  }
+
+  /**
+   * One start-up conversion pass over stored references (#2097): `convert`
+   * is {@link convertRecordedUser}'s value, and `counts` tallies its outcomes
+   * (values converted to an @id, orphans found or made, "no user recorded"
+   * values) for the caller's counts-only report. When the store cannot
+   * answer it throws `IdentityStoreUnavailableError`, so the caller postpones
+   * its pass rather than skip a record.
+   */
+  conversionPass(ctx: ActorContext): { convert: (stored: string) => Promise<string>; counts: { converted: number; orphans: number; noUser: number } } {
+    const counts = { converted: 0, orphans: 0, noUser: 0 };
+    const convert = async (stored: string): Promise<string> => {
+      let answer: Awaited<ReturnType<IdentityManager['convertRecordedUser']>>;
+      try {
+        answer = await this.convertRecordedUser(ctx, stored);
+      } catch (error) {
+        // Told apart from a record's own failure: the whole pass waits for the store.
+        throw new IdentityStoreUnavailableError(error);
+      }
+      const { value, outcome } = answer;
+      if (outcome === 'converted') counts.converted++;
+      else if (outcome === 'orphan' || outcome === 'orphaned') counts.orphans++;
+      else if (outcome === 'no-user') counts.noUser++;
+      return value;
+    };
+    return { convert, counts };
+  }
+
+  /**
+   * Whether a stored reference names the user `username` (#2097): it is their
+   * identity `@id`, or, on a record not yet converted, their username. An
+   * orphan (`orphan:<name>`) and a "no user recorded" value never match
+   * anyone, so a later account with the same name inherits nothing. The `@id`
+   * is looked up with {@link identityIdOf}: false when the store cannot answer.
+   */
+  async refersTo(ctx: ActorContext, stored: unknown, username: string | null | undefined): Promise<boolean> {
+    if (typeof stored !== 'string' || !stored || !username || stored.startsWith(ORPHAN_PREFIX)) return false;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return sameUsername(stored, username) && !isNoRecordedUser(stored);
+    const id = await this.identityIdOf(ctx, username);
+    return id !== null && id === stored;
+  }
+
+  /**
+   * The stored values that name the user `username` (#2097): their identity
+   * `@id` and, for records not yet converted, their username — the batch form
+   * of {@link refersTo}, for a list filter that compares many records (the
+   * page index, the search index). A "no user recorded" name is left out, and
+   * no orphan is ever in it. Only the username when the store cannot answer.
+   */
+  async referencesOf(ctx: ActorContext, username: string | null | undefined): Promise<string[]> {
+    if (!username) return [];
+    const id = await this.identityIdOf(ctx, username);
+    return [...(id ? [id] : []), ...(isNoRecordedUser(username) ? [] : [username])];
+  }
+
+  /**
+   * The username a stored reference names (#2097), for code that needs the
+   * sign-in name (a vault path, a preference): an `@id` gives its account's
+   * username, an orphan gives null, anything else (a username not yet
+   * converted, `anonymous`, the system principal) is returned as it is. Null
+   * for an `@id` with no account (deleted, or a contact's) and when the store
+   * cannot answer, logged without the value; a refusal still throws.
+   */
+  async usernameOf(ctx: ActorContext, stored: unknown): Promise<string | null> {
+    if (typeof stored !== 'string' || !stored || stored.startsWith(ORPHAN_PREFIX)) return null;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return stored;
+    try {
+      const identifier = (await this.getById(ctx, stored))?.identifier;
+      return typeof identifier === 'string' && identifier && !identifier.startsWith(ACCOUNTLESS_PERSON_PREFIX) ? identifier : null;
+    } catch (error) {
+      if (error instanceof ContactRefusedError) throw error;
+      logger.warn(`👤 The identity store could not look up the username of an identity @id: ${error instanceof Error ? error.message : String(error)} (#2097)`);
+      return null;
+    }
+  }
+
+  /**
+   * How a stored reference to a user is shown to people (#2097, operator
+   * 2026-10-26): the username followed by the id, `jim (urn:uuid:3f6c…)`. An
+   * orphan shows as `jim (no account)`, an `@id` whose account is gone as
+   * `urn:uuid:… (no account)`; anything else (a username not yet converted,
+   * `anonymous`, the system principal) as it is. Resolved when shown, never
+   * stored. Never throws for a store that is down.
+   *
+   * `ctx` is whoever the name is shown to. Showing who wrote a page needs no
+   * `identity-read`: only the username and the id are shown, as a page always
+   * showed its author's username, so the record is read as core's own lookup
+   * (the system context, naming the caller in its reason).
+   */
+  async describeReference(ctx: ActorContext, stored: unknown): Promise<string> {
+    if (typeof stored !== 'string' || !stored) return '';
+    if (stored.startsWith(ORPHAN_PREFIX)) return `${stored.slice(ORPHAN_PREFIX.length)} (no account)`;
+    if (!stored.startsWith(IDENTITY_ID_PREFIX)) return stored;
+    const lookup = systemContext(this.engine, `show who a page or file names: their username (#2097; shown to ${actorOf(ctx).user})`);
+    const username = await this.usernameOf(lookup, stored);
+    return username ? `${username} (${stored})` : `${stored} (no account)`;
   }
 
   private requireProvider(): PersonProvider {

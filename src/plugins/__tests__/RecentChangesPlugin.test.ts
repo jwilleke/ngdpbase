@@ -163,6 +163,19 @@ describe('RecentChangesPlugin', () => {
     });
   });
 
+  // #2097: the editor is stored as an identity @id and shown as the username followed by it.
+  // Sabotage: dropping the describeReference pass turned this red.
+  test('#2097 the full table shows an @id editor as username and id', async () => {
+    const pm = makePageManager([
+      { title: 'ById', uuid: 'u-id', lastModified: new Date().toISOString(), editor: 'urn:uuid:bob-1', currentVersion: 1 }
+    ]);
+    const { fakeIdentityManager } = await import('../../test-support/identities');
+    const identities = fakeIdentityManager({ bob: 'urn:uuid:bob-1' });
+    const engine = { getManager: vi.fn((name: string) => (name === 'PageManager' ? pm : name === 'IdentityManager' ? identities : null)) };
+    const result = await RecentChangesPlugin.execute!({ engine, pageName: 'X', linkGraph: {}, userContext: ANON }, { since: '30', format: 'full' });
+    expect(result).toContain('bob (urn:uuid:bob-1)');
+  });
+
   describe('visibility — requester + principals forwarding', () => {
     test('anonymous request: principals are only the anonymous subject\'s facts', async () => {
       const pm = makePageManager([]);
