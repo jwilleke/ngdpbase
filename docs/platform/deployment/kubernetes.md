@@ -44,7 +44,8 @@ The deployment is yours to author on top of those starters. The project's own re
 ### 1. Pick an image
 
 - __Direct upstream__: `ghcr.io/jwilleke/ngdpbase:X.Y.Z` (pin a version; avoid `:latest` in production manifests). See [available tags](https://github.com/jwilleke/ngdpbase/pkgs/container/ngdpbase).
-- __Wrapper image__: build your own `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` with addons baked in. Push to whatever registry the cluster can pull from. [GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) is the reference example.
+- __Wrapper image__: build your own `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` with addons baked in. Push to whatever registry the cluster can pull from.
+- __Stock image + installed add-on__: run the direct upstream image and name a published add-on in the site's config; core installs and verifies it at start. No image of your own. geohazardwatch.com runs this way: [`domain-site.md`](./domain-site.md).
 
 If your wrapper Dockerfile uses `npm ci --omit=dev`, also add `--ignore-scripts` to bypass the husky `prepare` lifecycle. See [Headless §6](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#6-npm-ci---omitdev-fails-on-prepare--husky).
 
@@ -255,7 +256,7 @@ ngdpbase doesn't ship GitOps manifests, but the project's own reference cluster 
 
 ### Auto-rebuild from satellite (subscriber pattern)
 
-For derivative images (the wrapper-image pattern from step 1), the satellite repo can watch ngdpbase's GHCR tags via Renovate and auto-rebuild its own image when ngdpbase ships a patch. See [#680](https://github.com/jwilleke/ngdpbase/issues/680) for the design and [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch) for a working `renovate.json` + GitHub Action that self-hosts Renovate. The satellite repo, not ngdpbase, owns the rebuild trigger — keeps the loop fully under the operator's control.
+For derivative images (the wrapper-image pattern from step 1), the satellite repo can watch ngdpbase's GHCR tags via Renovate and auto-rebuild its own image when ngdpbase ships a patch. See [#680](https://github.com/jwilleke/ngdpbase/issues/680) for the design. geohazardwatch used this pattern until it moved to the stock image with an installed add-on ([`domain-site.md`](./domain-site.md)), which needs no rebuild at all. The satellite repo, not ngdpbase, owns the rebuild trigger — keeps the loop fully under the operator's control.
 
 ### Wrapper image vs. runtime-mounted addons
 

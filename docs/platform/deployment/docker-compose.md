@@ -114,7 +114,7 @@ Two patterns. Pick based on whether you want a single self-contained image (bake
 
 Build your own image `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` and `COPY` addon code in. The image is self-contained, reproducible, and tagged independently from ngdpbase.
 
-This is what [GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) does — its `Dockerfile` is a working example you can read and adapt.
+GeoHazardWatch used this pattern until 2026-10-26. A published add-on no longer needs an image of its own: the stock image can install it through the site's config ([`domain-site.md`](./domain-site.md)).
 
 Skeleton:
 
