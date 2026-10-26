@@ -40,8 +40,9 @@ describe('NotificationManager.notifyAdmins', () => {
     const id = await mgr.notifyAdmins({ level: 'error', title: 'T', message: 'M' });
     const n = mgr.getAllNotifications(false).find((x) => x.id === id);
     expect(n).toMatchObject({ type: 'system', level: 'error', targetUsers: ['alice', 'bob'] });
-    expect(mgr.getUserNotifications('alice')).toHaveLength(1);
-    expect(mgr.getUserNotifications('carol')).toHaveLength(0);
+    // #2041: read with the user's context (no IdentityManager here, so stored by username).
+    expect(await mgr.getUserNotifications({ username: 'alice', roles: [], isAuthenticated: true })).toHaveLength(1);
+    expect(await mgr.getUserNotifications({ username: 'carol', roles: [], isAuthenticated: true })).toHaveLength(0);
     await mgr.shutdown();
   });
 
