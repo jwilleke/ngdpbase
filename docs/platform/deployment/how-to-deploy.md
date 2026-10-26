@@ -28,11 +28,12 @@ Pin an __exact version__ in production (`:3.62.1`), not `:latest`. Renovate can 
 
 ## 3. Deliver addons
 
-Addons reach the instance in one of three ways — full detail in [`../addon-architecture.md`](../addon-architecture.md#distribution-models):
+Addons reach the instance in one of four ways — bundled, drop-in and packaged in detail in [`../addon-architecture.md`](../addon-architecture.md#distribution-models):
 
 - __bundled__ — first-party addons already inside the image (`feeds`, `calendar`, `journal`, `forms`, `elasticsearch`). Nothing to install; just enable in config.
 - __drop-in__ — a directory listed in `addons-path`. Fine for development and simple/private cases.
-- __packaged__ — an npm package installed into the image. __The recommended model for production distribution of independent / `type: 'domain'` addons__ (e.g. geohazardwatch) — versioned, lockfile-pinned, Renovate-tracked. Full guide + the drop-in→packaged migration: [`addon-packaged.md`](./addon-packaged.md).
+- __installed__ — the site's configuration names an npm package, a version and its repository, and core installs and verifies it into the data volume at start. No image of your own. This is how a domain site such as geohazardwatch.com runs: [`domain-site.md`](./domain-site.md).
+- __packaged__ — an npm package installed into a site image you build. For a site that builds its own image anyway — versioned, lockfile-pinned, Renovate-tracked. Full guide + the drop-in→packaged migration: [`addon-packaged.md`](./addon-packaged.md).
 
 For a packaged addon, a thin image is just the base plus an install line:
 
@@ -84,6 +85,7 @@ The two axes are independent and each lockfile/tag-pinned — the drift that cau
 ## Related
 
 - [`../addon-architecture.md`](../addon-architecture.md) — distribution models, load order.
-- [`addon-packaged.md`](./addon-packaged.md) — the recommended production addon model + migration.
+- [`domain-site.md`](./domain-site.md) — a domain site: the stock image plus an add-on installed through the site's config.
+- [`addon-packaged.md`](./addon-packaged.md) — the packaged addon model + migration.
 - [`../addon-page-handling.md`](../addon-page-handling.md) — page seeding/reseed.
 - [`direct-install.md`](./direct-install.md) · [`docker-compose.md`](./docker-compose.md) · [`kubernetes.md`](./kubernetes.md) — per-target detail.

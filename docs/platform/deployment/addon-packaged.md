@@ -120,7 +120,7 @@ The image you deploy therefore contains no npm at all — the security property 
 
 Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the addon version and the ngdpbase base-image version bump __independently__, each lockfile/tag-pinned. No cross-repo build context, no directory drift.
 
-> This is the pattern `jwilleke/geohazardwatch` uses; its `Dockerfile` is the working reference implementation.
+> geohazardwatch used this pattern until 2026-10-26. It now runs the stock image with the add-on installed through the site's configuration, which needs no site image at all: [domain-site.md](./domain-site.md).
 
 ### Installing from a private registry
 

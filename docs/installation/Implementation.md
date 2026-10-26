@@ -12,21 +12,21 @@ Read this first. If a question is "where does this value go so that instance X g
 |---|---|---|---|---|---|
 | [1. Direct install](#1-direct-install) | `git clone` of this repo, built on the host | `.env` in the checkout, and `<FAST_STORAGE>/.env` | `<FAST_STORAGE>/config/app-custom-config.json` | `git pull`, `npm ci`, `npm run build`, `./server.sh restart` — by hand | jimstest, The Fairways, `ngdp-temp-builds` |
 | [2. Container from the published image](#2-container-from-the-published-image) | `docker pull ghcr.io/jwilleke/ngdpbase:<tag>` | `ENV` baked in the image, plus the compose `environment:` block, plus an optional `.env` on the data volume | `/app/data/config/app-custom-config.json` on the mounted volume | pull the new tag and recreate the container | none of ours in production; the CI image smoke |
-| [3. Kubernetes with the published image](#3-kubernetes-with-the-published-image) | the same image, pulled by the cluster | `ENV` baked in the image, plus a ConfigMap and a Secret injected with `envFrom:` | `app-custom-config.json` on the persistent volume | image tag bump in the manifest — Renovate, Flux image automation, or a PR | `ngdpbase-demo` on deby |
-| [4. Downstream image](#4-downstream-image) | a second repository whose Dockerfile is `FROM ghcr.io/jwilleke/ngdpbase:<version>` and adds its own addons | everything method 3 has, inherited through `FROM` | on the persistent volume, as method 3 | Renovate bumps the `FROM` version, the downstream repo publishes its own image, the cluster deploys it | geohazardwatch |
+| [3. Kubernetes with the published image](#3-kubernetes-with-the-published-image) | the same image, pulled by the cluster | `ENV` baked in the image, plus a ConfigMap and a Secret injected with `envFrom:` | `app-custom-config.json` on the persistent volume | image tag bump in the manifest — Renovate, Flux image automation, or a PR | `ngdpbase-demo` on deby; geohazardwatch.com, with its add-on installed through its config |
+| [4. Downstream image](#4-downstream-image) | a second repository whose Dockerfile is `FROM ghcr.io/jwilleke/ngdpbase:<version>` and adds its own addons | everything method 3 has, inherited through `FROM` | on the persistent volume, as method 3 | Renovate bumps the `FROM` version, the downstream repo publishes its own image, the cluster deploys it | none today; geohazardwatch until 2026-10-26 |
 
-Two of these are what this project calls an __implementation__ of ngdpbase — an instance that is ngdpbase plus domain addons, under its own name — and they are built two different ways. The Fairways is method 1 with an addons directory from a second repository. geohazardwatch is method 4 deployed by method 3. That difference decides which files reach them, so it is worth being exact about.
+Two of these are what this project calls an __implementation__ of ngdpbase — an instance that is ngdpbase plus domain addons, under its own name — and they are built two different ways. The Fairways is method 1 with an addons directory from a second repository. geohazardwatch is method 3 with its add-on installed through the site's configuration ([domain-site.md](../platform/deployment/domain-site.md)). That difference decides which files reach them, so it is worth being exact about.
 
 ## Known implementations
 
 | Implementation | Repository | Method | Shape |
 |---|---|---|---|
 | The Fairways | [jwilleke/fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | __1. Direct install__ | The repository holds only the `fairways` addon and the content-migration tools. ngdpbase itself is a separate clone, `fairways-base`, built on the host and run by PM2 on port 2121; its `app-custom-config.json` points `addons-path` at this repository's `addons/`. Environment is `fairways-base/.env`; nothing arrives from the ngdpbase image. Upgrades are a `git pull` and rebuild of the base clone, by hand. |
-| geohazardwatch | [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) | __4. Downstream image__, deployed by __3. Kubernetes__ | The repository holds its addons and a Dockerfile `FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}`. Renovate bumps that version, `auto-tag.yml` and `publish-image.yml` publish `ghcr.io/jwilleke/geohazardwatch:<tag>`, and `mj-infra-flux` deploys it on deby. Environment is the ngdpbase image `ENV` plus the Deployment's `env:` block; configuration is `app-custom-config.json` on the persistent volume. Upgrades arrive without hands. |
+| geohazardwatch | [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) | __3. Kubernetes__, with an installed add-on | The repository holds the add-on only, published to npm with provenance as `@jwilleke/geohazardwatch-addon`. The site runs the stock `ghcr.io/jwilleke/ngdpbase` image from `mj-infra-flux` on deby, and `ngdpbase.addons.install` in its `app-custom-config.json` on the persistent volume names the add-on, which core installs and verifies at start. Environment is the ngdpbase image `ENV` plus the Deployment's `env:` block. Core upgrades arrive without hands (Flux image automation); an add-on upgrade is a version change in the config and a restart. The worked example in [domain-site.md](../platform/deployment/domain-site.md). |
 | ngdpbase-demo | this repository, stock | __3. Kubernetes__ | The published ngdpbase image with no downstream layer, deployed on deby from `mj-infra-flux`. The reference for what method 3 looks like with nothing added. |
 | jimstest | this repository | __1. Direct install__ | The development instance: this checkout, run by PM2 from `./server.sh`, with `FAST_STORAGE` and `SLOW_STORAGE` on separate drives. Every release is built and restarted here first. |
 
-The two implementations differ in exactly the way the inheritance table below predicts. A required environment variable reaches geohazardwatch through the image on the next base bump; it reaches The Fairways only when someone adds the line to `fairways-base/.env`. Configuration is per instance in both.
+The two implementations differ in exactly the way the inheritance table below predicts. A required environment variable reaches geohazardwatch through the image on the next core bump; it reaches The Fairways only when someone adds the line to `fairways-base/.env`. Configuration is per instance in both.
 
 ## What each method inherits from this repository
 
@@ -73,7 +73,7 @@ The same image, pulled by a cluster. `docker/k8s/` ships example manifests; `doc
 - __Configuration.__ `app-custom-config.json` on the persistent volume, never in a ConfigMap: a subPath ConfigMap mount is read-only and every save from the admin UI fails on it.
 - __Upgrades.__ The image tag in the manifest moves — by Renovate, by a Flux image-automation controller, or by a PR — and the pod restarts on the new image.
 
-`ngdpbase-demo` on deby is this method, managed from `mj-infra-flux`. Detail pages: [docker/k8s/README.md](../../docker/k8s/README.md), [HEADLESS-DEPLOYMENT-NOTES.md](../../docker/HEADLESS-DEPLOYMENT-NOTES.md).
+`ngdpbase-demo` on deby is this method, managed from `mj-infra-flux`. So is geohazardwatch.com, which adds a domain add-on through its configuration and no image of its own: [domain-site.md](../platform/deployment/domain-site.md). Detail pages: [docker/k8s/README.md](../../docker/k8s/README.md), [HEADLESS-DEPLOYMENT-NOTES.md](../../docker/HEADLESS-DEPLOYMENT-NOTES.md).
 
 ## 4. Downstream image
 
@@ -83,16 +83,17 @@ A second repository whose Dockerfile begins `FROM ghcr.io/jwilleke/ngdpbase:${NG
 - __How a release reaches it.__ Renovate in the downstream repository watches the base image and bumps the `ARG`; that commit triggers the downstream tag and image build; the cluster picks up the new image. No hands, and the steps that can miss are listed in [RELEASES.md — Consumer guidance](../../RELEASES.md#consumer-guidance-informational-not-promised).
 - __What ngdpbase promises it.__ Only what [RELEASES.md](../../RELEASES.md) states: the tag, the image, the changelog. No notifications, no cross-repository pin updates, no redeploys.
 
-geohazardwatch is this method. Detail pages: [RELEASES.md](../../RELEASES.md), [DEPLOYMENT.md — Published Image](../../docker/DEPLOYMENT.md#published-image), [addons-developer-guide.md](../guides/addons-developer-guide.md) for the Renovate recipe.
+geohazardwatch was this method until 2026-10-26; it is now method 3 with an installed add-on. Detail pages: [RELEASES.md](../../RELEASES.md), [DEPLOYMENT.md — Published Image](../../docker/DEPLOYMENT.md#published-image), [addons-developer-guide.md](../guides/addons-developer-guide.md) for the Renovate recipe.
 
 ## Choosing
 
 - One machine you administer by hand, or development: method 1.
 - A single host with Docker and no orchestrator: method 2.
 - A cluster, running stock ngdpbase: method 3.
-- A cluster, running ngdpbase plus your own addons under your own name: method 4.
+- A cluster, running ngdpbase plus your own published add-on under your own name: method 3 with the add-on installed through the site's configuration ([domain-site.md](../platform/deployment/domain-site.md)).
+- A cluster, running ngdpbase plus addons that must be in an image of your own: method 4.
 
-A domain implementation can be either 1 or 4. The Fairways and geohazardwatch show both. The choice decides one thing above all: whether the image's `ENV` reaches the instance on its own, or an operator has to write every required variable into `.env`.
+A domain implementation can be 1, 3 with an installed add-on, or 4. The Fairways and geohazardwatch show the first two. The choice decides one thing above all: whether the image's `ENV` reaches the instance on its own, or an operator has to write every required variable into `.env`.
 
 ## Related
 
