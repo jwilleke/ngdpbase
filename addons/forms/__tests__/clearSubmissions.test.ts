@@ -223,11 +223,11 @@ describe('the clear and export routes (#1973)', () => {
     expect(res.headers['content-type']).toMatch(/^text\/csv/);
     expect(res.headers['content-disposition']).toBe('attachment; filename="ours-submissions.csv"');
     const lines = res.text.trimEnd().split('\r\n');
-    expect(lines[0]).toBe('id,submittedAt,submittedBy,status,formVersion,onBehalfOf.name,onBehalfOf.email,onBehalfOf.phone,onBehalfOf.address,notes,note');
+    expect(lines[0]).toBe('id,submittedAt,submittedBy,submitterName,status,formVersion,onBehalfOf.name,onBehalfOf.email,onBehalfOf.phone,onBehalfOf.address,notes,note');
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toContain(',u0,pending,');
+    expect(lines[1]).toContain(',u0,,pending,');
     expect(lines[1].endsWith(',note 0')).toBe(true);
-    expect(lines[2]).toContain(',u1,pending,');
+    expect(lines[2]).toContain(',u1,,pending,');
   });
 });
 

@@ -16,10 +16,10 @@ export function submissionsTable(form: FormDefinition, submissions: FormSubmissi
   for (const s of submissions) {
     for (const key of Object.keys(s.data)) if (!names.includes(key)) names.push(key);
   }
-  const headers = ['id', 'submittedAt', 'submittedBy', 'status', 'formVersion',
+  const headers = ['id', 'submittedAt', 'submittedBy', 'submitterName', 'status', 'formVersion',
     'onBehalfOf.name', 'onBehalfOf.email', 'onBehalfOf.phone', 'onBehalfOf.address', 'notes', ...names];
   const rows = submissions.map(s => [
-    s.id, s.submittedAt, s.submittedBy, s.status, s.formVersion,
+    s.id, s.submittedAt, s.submittedBy, s.submitterName, s.status, s.formVersion,
     s.onBehalfOf?.name, s.onBehalfOf?.email, s.onBehalfOf?.phone, s.onBehalfOf?.address, s.notes,
     ...names.map(n => s.data[n])
   ]);

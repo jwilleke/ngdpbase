@@ -139,6 +139,7 @@ const formsAddon = {
     // ── 1. FormsDataManager ──────────────────────────────────────────────────
     dataManager = new FormsDataManager(engine, dataPath, host);
     await dataManager.initialize();
+    await dataManager.convertSubmittersToIdentityIds();
     engine.registerManager('FormsDataManager', dataManager);
 
     // ── 2. Register self as FormsAddon so other addons can call registerHandler

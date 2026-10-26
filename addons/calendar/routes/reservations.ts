@@ -5,6 +5,7 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
+import { viewerOf } from './api.js';
 
 /**
  * Reservation routes for the calendar add-on.
@@ -53,7 +54,7 @@ export default function reservationRoutes(
 
       // 1. Authentication required
       const ctx = ApiContext.from(req, engine);
-      const viewer = { username: ctx.username ?? undefined, isAuthenticated: ctx.isAuthenticated, canManage: await ctx.hasPermission('calendar-manage') };
+      const viewer = await viewerOf(ctx, engine, host);
       await ctx.requirePermission('calendar-reserve'); // #1430: policy, not a signed-in check
       ctx.actingUsername();
 
@@ -95,9 +96,10 @@ export default function reservationRoutes(
         class:       'CONFIDENTIAL',
         transp:      'OPAQUE',
         status:      'CONFIRMED',
-        createdBy:   ctx.username ?? undefined,
+        // #2041: the requester by identity @id; a name with no account as given.
+        createdBy:   viewer.identityId ?? ctx.username ?? undefined,
         _private: {
-          requester:      ctx.username,
+          requester:      viewer.identityId ?? ctx.username,
           requesterEmail: ctx.email,
           notes:          typeof body['notes'] === 'string' ? body['notes'] : undefined
         }
@@ -157,11 +159,7 @@ export default function reservationRoutes(
 
       // #1198/#1220: the manager asks "may this viewer manage?" — answered by
       // policy here, never by a role name inside the manager.
-      await m.cancelReservation(String(req.params['id']), {
-        isAuthenticated: ctx.isAuthenticated,
-        username: ctx.username ?? undefined,
-        canManage: await ctx.hasPermission('calendar-manage')
-      });
+      await m.cancelReservation(String(req.params['id']), await viewerOf(ctx, engine, host));
 
       res.status(204).end();
     } catch (err) {

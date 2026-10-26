@@ -25,7 +25,7 @@
         <dd class="col-sm-9"><%= new Date(submission.submittedAt).toLocaleString() %></dd>
 
         <dt class="col-sm-3">Submitted by</dt>
-        <dd class="col-sm-9"><%= submission.submittedBy %></dd>
+        <dd class="col-sm-9"><%= submission.submitterName || submission.submittedBy %></dd>
 
         <% if (submission.onBehalfOf) { %>
           <dt class="col-sm-3">On behalf of</dt>

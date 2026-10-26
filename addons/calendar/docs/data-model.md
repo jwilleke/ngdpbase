@@ -17,7 +17,7 @@ interface CalendarEvent {
   url?:        string;   // link opened on event click
   calendarId:  string;   // logical calendar identifier
   color?:      string;   // CSS colour string
-  createdBy?:  string;   // username of creator
+  createdBy?:  string;   // identity @id of creator (#2041); a name with no account as given
 
   // Timestamps
   created:  string;      // ISO 8601 — record created
@@ -34,7 +34,7 @@ interface CalendarEvent {
 
   // Private reservation metadata
   _private?: {
-    requester?:      string;   // username
+    requester?:      string;   // identity @id of the requester (#2041); through forms, the name typed on the form
     requesterEmail?: string;
     notes?:          string;
     [key: string]:   unknown;
@@ -140,7 +140,9 @@ unless the caller satisfies one of:
 
 1. Has role `admin`
 2. Has role `clubhouse-manager`
-3. `ctx.username === event._private.requester` (owner sees their own)
+3. `event._private.requester` is the caller's identity `@id`, or their username on a reservation stored before [#2041](https://github.com/jwilleke/ngdpbase/issues/2041) and not yet converted (owner sees their own)
 
 Stripping is performed by `CalendarDataManager.stripPrivate(event, userCtx)`.
+
+At start-up the add-on converts stored usernames once ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041)): every `createdBy`, and a reservation's `_private.requester` and `_private.submittedBy`, that is still a username becomes the user's identity `@id`, under the system context, and the events are saved once. A reservation filed through forms keeps its `requester` (the name typed on the form). Values already an `@id`, `anonymous` and the system principal are left alone, so a second start writes nothing. A username with no account is left as it is and reported, counts only: a log line and the admin dashboard's "needs your attention" list.
 The `.ics` feed always excludes `CONFIDENTIAL` events entirely.

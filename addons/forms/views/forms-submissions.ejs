@@ -48,7 +48,7 @@
           <% submissions.forEach(sub => { %>
             <tr>
               <td class="text-nowrap"><small><%= new Date(sub.submittedAt).toLocaleString() %></small></td>
-              <td><small><%= sub.submittedBy %></small></td>
+              <td><small><%= sub.submitterName || sub.submittedBy %></small></td>
               <td><small><%= sub.onBehalfOf ? (sub.onBehalfOf.name || sub.onBehalfOf.email || '—') : '—' %></small></td>
               <td>
                 <span class="badge bg-<%= sub.status === 'processed' ? 'success' : sub.status === 'rejected' ? 'danger' : 'warning text-dark' %>">

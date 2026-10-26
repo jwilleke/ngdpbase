@@ -5,6 +5,12 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { areIntervalsOverlapping, parseISO, addDays, format } from 'date-fns';
 import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
+import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+
+/** The prefix of an identity `@id` (core's `IDENTITY_ID_PREFIX`, #2041): no username starts with it. */
+const IDENTITY_ID_PREFIX = 'urn:';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -23,6 +29,7 @@ export interface CalendarEvent {
   url?: string;
   calendarId: string;
   color?: string;
+  /** Who made it: their identity `@id` (#2041); a name with no account as given. */
   createdBy?: string;
   created: string;    // ISO 8601 — record created
   updated: string;    // ISO 8601 — record last updated
@@ -69,6 +76,8 @@ export interface QueryOptions {
  */
 export interface CalendarViewer {
   username?: string;
+  /** The viewer's identity `@id` (#2041): a reservation's requester is stored by it. */
+  identityId?: string;
   isAuthenticated?: boolean;
   canManage: boolean;
 }
@@ -99,6 +108,62 @@ class CalendarDataManager {
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────────
+
+  /** Names that could not be converted to an identity @id at start-up (#2041). */
+  private unconvertedNames = 0;
+
+  /**
+   * Once, at start-up (#2041): every event's `createdBy`, and a reservation's
+   * `_private.requester` and `_private.submittedBy`, that is still a username
+   * becomes that user's identity `@id`, under the system context `ctx`; the
+   * events are saved once. A reservation filed through the forms add-on
+   * (it has `_private.submittedBy`) keeps its `requester`, which there is the
+   * name typed on the form, not an account. `anonymous`, the system
+   * principal and values already an `@id` are left alone, so a second start
+   * writes nothing. A username with no account is left as it is and reported:
+   * a log line and the admin dashboard's needs-attention list
+   * ({@link getManagerStatus}), counts only.
+   */
+  async convertPeopleToIdentityIds(identities: IdentityManager | null | undefined, ctx: ActorContext): Promise<void> {
+    if (!identities) return;
+    const ids = new Map<string, string | null>();
+    let converted = 0;
+    this.unconvertedNames = 0;
+    const convert = async (name: unknown): Promise<string | null> => {
+      if (typeof name !== 'string' || !name || name.startsWith(IDENTITY_ID_PREFIX) || name.toLowerCase() === 'anonymous' || name.toLowerCase() === ctx.username.toLowerCase()) return null;
+      if (!ids.has(name)) ids.set(name, (await identities.getByUserIdentifier(ctx, name))?.['@id'] ?? null);
+      const id = ids.get(name) ?? null;
+      if (id) converted++; else this.unconvertedNames++;
+      return id;
+    };
+    for (const event of this.events.values()) {
+      const createdBy = await convert(event.createdBy);
+      if (createdBy) event.createdBy = createdBy;
+      const priv = event._private;
+      if (!priv) continue;
+      const fromForm = typeof priv['submittedBy'] === 'string';
+      const submittedBy = fromForm ? await convert(priv['submittedBy']) : null;
+      if (submittedBy) priv['submittedBy'] = submittedBy;
+      const requester = fromForm ? null : await convert(priv['requester']);
+      if (requester) priv['requester'] = requester;
+    }
+    if (converted > 0) {
+      await this.save();
+      console.info(`[CalendarDataManager] Converted ${converted} reference(s) from username to identity @id (#2041)`);
+    }
+    if (this.unconvertedNames > 0) console.warn(`[CalendarDataManager] ${this.unconvertedReason()}`);
+  }
+
+  private unconvertedReason(): string {
+    return `${this.unconvertedNames} calendar reference(s) name a user by a username that has no account, so they cannot be converted to an identity @id; they are left as they are (#2041)`;
+  }
+
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while names could not be converted (#2041). */
+  getManagerStatus(): ManagerStatus {
+    return this.unconvertedNames > 0
+      ? { state: 'degraded', kind: 'attention', reason: this.unconvertedReason() }
+      : { state: 'ready' };
+  }
 
   /**
    * Load all `*.json` calendar files from dataPath.
@@ -238,9 +303,7 @@ class CalendarDataManager {
 
     const isPrivileged = viewer.canManage === true;
 
-    const isRequester = viewer.isAuthenticated === true &&
-      viewer.username != null &&
-      viewer.username === (event._private['requester'] as string | undefined);
+    const isRequester = this.isRequester(event, viewer);
 
     if (isPrivileged || isRequester) return event;
 
@@ -340,6 +403,17 @@ class CalendarDataManager {
   }
 
   /**
+   * Whether `viewer` made the reservation `event` (#2041): its requester is
+   * the viewer's identity `@id`, or, on one stored before and not yet
+   * converted, their username.
+   */
+  private isRequester(event: CalendarEvent, viewer: CalendarViewer): boolean {
+    const requester = event._private?.['requester'] as string | undefined;
+    if (viewer.isAuthenticated !== true || !requester) return false;
+    return (viewer.identityId != null && requester === viewer.identityId) || (viewer.username != null && requester === viewer.username);
+  }
+
+  /**
    * Cancel a reservation. Only the original requester, or a viewer policy
    * grants `calendar-manage`, may cancel.
    */
@@ -349,9 +423,7 @@ class CalendarDataManager {
 
     const isPrivileged = viewer.canManage === true;
 
-    const isRequester = viewer.isAuthenticated === true &&
-      viewer.username != null &&
-      viewer.username === (event._private?.['requester'] as string | undefined);
+    const isRequester = this.isRequester(event, viewer);
 
     if (!isPrivileged && !isRequester) {
       throw new Error('Forbidden: not authorised to cancel this reservation');

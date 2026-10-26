@@ -7,6 +7,11 @@ import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { AuditEventSink } from '../../../dist/src/utils/auditEvents.js';
 import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionPoint.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
+import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
+
+/** The prefix of an identity `@id` (core's `IDENTITY_ID_PREFIX`, #2041): no username starts with it. */
+const IDENTITY_ID_PREFIX = 'urn:';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -87,7 +92,10 @@ export const SubmissionSchema = z.object({
   id:          z.string(),
   formId:      z.string(),
   submittedAt: z.string(),
+  // Who submitted it: their identity @id (#2041); `anonymous`, or a name with no account, as given
   submittedBy: z.string(),
+  // The submitter's name as shown, kept with the submission (#2041): the @id is not for showing
+  submitterName: z.string().optional(),
   onBehalfOf:  z.object({
     name:    z.string().optional(),
     email:   z.string().optional(),
@@ -291,6 +299,8 @@ export default class FormsDataManager {
   private engine: { getManager: (name: string) => unknown } | null;
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
+  /** Submissions whose submitter could not be converted to an identity @id at start-up (#2041). */
+  private unconvertedSubmitters = 0;
 
   /** What core handed the forms add-on (#1813): `actorOf`, `systemContext`, `isAtLeast`. */
   private readonly host: AddonHost;
@@ -312,6 +322,49 @@ export default class FormsDataManager {
     await fsp.mkdir(path.join(this.dataPath, 'definitions'), { recursive: true });
     await fsp.mkdir(path.join(this.dataPath, 'submissions'), { recursive: true });
     await this.loadDefinitions();
+  }
+
+  /**
+   * Once, at start-up (#2041): every submission whose `submittedBy` is still
+   * a username is rewritten with that user's identity `@id`, the username
+   * kept as `submitterName` for showing, one write per submission file, under
+   * the system context. `anonymous`, the system principal and values already
+   * an `@id` are left alone, so a second start writes nothing. A username
+   * with no account is left as it is and reported: a log line and the admin
+   * dashboard's needs-attention list ({@link getManagerStatus}), counts only.
+   */
+  async convertSubmittersToIdentityIds(): Promise<void> {
+    const identities = this.engine?.getManager('IdentityManager') as IdentityManager | null | undefined;
+    if (!identities) return;
+    const ctx = this.host.systemContext('forms: convert submitters from username to identity @id (#2041)');
+    const ids = new Map<string, string | null>();
+    let converted = 0;
+    this.unconvertedSubmitters = 0;
+    for (const s of await this.getSubmissions()) {
+      const by = s.submittedBy;
+      if (typeof by !== 'string' || !by || by.startsWith(IDENTITY_ID_PREFIX) || by.toLowerCase() === 'anonymous' || by.toLowerCase() === ctx.username.toLowerCase()) continue;
+      if (!ids.has(by)) ids.set(by, (await identities.getByUserIdentifier(ctx, by))?.['@id'] ?? null);
+      const id = ids.get(by);
+      if (!id) { this.unconvertedSubmitters++; continue; }
+      const filePath = path.join(this.dataPath, 'submissions', s.formId, `${s.id}.json`);
+      const tmp = `${filePath}.tmp`;
+      await fsp.writeFile(tmp, JSON.stringify({ ...s, submittedBy: id, submitterName: s.submitterName ?? by }, null, 2), 'utf8');
+      await fsp.rename(tmp, filePath);
+      converted++;
+    }
+    if (converted > 0) console.info(`[FormsDataManager] Converted ${converted} submitter(s) from username to identity @id (#2041)`);
+    if (this.unconvertedSubmitters > 0) console.warn(`[FormsDataManager] ${this.unconvertedReason()}`);
+  }
+
+  private unconvertedReason(): string {
+    return `${this.unconvertedSubmitters} form submission(s) name a submitter by a username that has no account, so it cannot be converted to an identity @id; they are left as they are (#2041)`;
+  }
+
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters could not be converted (#2041). */
+  getManagerStatus(): ManagerStatus {
+    return this.unconvertedSubmitters > 0
+      ? { state: 'degraded', kind: 'attention', reason: this.unconvertedReason() }
+      : { state: 'ready' };
   }
 
   private async loadDefinitions(): Promise<void> {

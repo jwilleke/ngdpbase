@@ -679,7 +679,8 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
   }
 
   const form = { id: 'test-form', title: 'Repair request', proxySubmission: false, fields: [{ name: 'name', type: 'text', label: 'Name', required: true }] };
-  const titles = (username: string) => notifications.getUserNotifications(username).map((n) => n.title);
+  // #2041: notifications are read with the user's context and matched by identity @id.
+  const titles = async (username: string) => (await notifications.getUserNotifications({ username, roles: [], isAuthenticated: true })).map((n) => n.title);
 
   beforeEach(async () => {
     searched = [];
@@ -695,10 +696,11 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
   test('the default notifyRole (admin): an admin gets the notice, a reader gets nothing', async () => {
     const res = await request(await app({ ...form, notifyRole: 'admin' })).post('/api/forms/submit/test-form').send({ name: 'Pat' });
     expect(res.status).toBe(201);
-    await vi.waitFor(() => expect(titles('root')).toEqual(['New form submission: Repair request']));
-    expect(titles('alice')).toEqual([]);
-    expect(titles('tess')).toEqual([]);
-    expect(notifications.getAllNotifications().map((n) => n.targetUsers)).toEqual([['root']]);
+    await vi.waitFor(async () => expect(await titles('root')).toEqual(['New form submission: Repair request']));
+    expect(await titles('alice')).toEqual([]);
+    expect(await titles('tess')).toEqual([]);
+    // #2041: the recipients are stored by identity @id.
+    expect(notifications.getAllNotifications().map((n) => n.targetUsers)).toEqual([['urn:person:root']]);
     // Finding the recipients is core's own work (#2018): the system context
     // with a reason, never the submitter's, so it needs no search-user of
     // theirs. This site has no decision point at all, so a submitter's
@@ -709,9 +711,9 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
 
   test('a custom notifyRole is honoured: only its holders are told', async () => {
     await request(await app({ ...form, notifyRole: 'treasurer' })).post('/api/forms/submit/test-form').send({ name: 'Pat' });
-    await vi.waitFor(() => expect(titles('tess')).toEqual(['New form submission: Repair request']));
-    expect(titles('root')).toEqual([]);
-    expect(titles('alice')).toEqual([]);
+    await vi.waitFor(async () => expect(await titles('tess')).toEqual(['New form submission: Repair request']));
+    expect(await titles('root')).toEqual([]);
+    expect(await titles('alice')).toEqual([]);
   });
 
   test('a role nobody holds sends nothing — never a notice to everyone', async () => {
@@ -720,14 +722,38 @@ describe('POST /api/forms/submit/:formId — who gets the notice (#1957)', () =>
     await vi.waitFor(() => expect(searched).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(notifications.getAllNotifications()).toEqual([]);
-    for (const u of ['alice', 'root', 'tess']) expect(titles(u)).toEqual([]);
+    for (const u of ['alice', 'root', 'tess']) expect(await titles(u)).toEqual([]);
   });
 
   test('a definition that leaves notifyRole out notifies admins (the schema default)', async () => {
     const { FormDefinitionSchema } = await import('../managers/FormsDataManager');
     await request(await app(FormDefinitionSchema.parse(form))).post('/api/forms/submit/test-form').send({ name: 'Pat' });
-    await vi.waitFor(() => expect(titles('root')).toHaveLength(1));
-    expect(titles('alice')).toEqual([]);
+    await vi.waitFor(async () => expect(await titles('root')).toHaveLength(1));
+    expect(await titles('alice')).toEqual([]);
+  });
+});
+
+describe('POST /api/forms/submit/:formId — the submitter by identity @id (#2041)', () => {
+  test('submittedBy is the submitter\'s @id and their name is kept for showing', async () => {
+    const saved: Array<Record<string, unknown>> = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => testForm, saveSubmission: async (s: Record<string, unknown>) => { saved.push(s); return s; } },
+      IdentityManager: { getByUserIdentifier: async (_ctx: unknown, u: string) => (u === 'testuser' ? { '@id': 'urn:uuid:testuser-1' } : null) }
+    });
+    const res = await request(makeContext(engine)).post('/api/forms/submit/test-form').send({ name: 'Alice' });
+    expect(res.status).toBe(201);
+    // Sabotage check: storing `submitterName` as submittedBy fails this.
+    expect(saved[0]).toMatchObject({ submittedBy: 'urn:uuid:testuser-1', submitterName: 'testuser' });
+  });
+
+  test('a name with no account is stored as given', async () => {
+    const saved: Array<Record<string, unknown>> = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => testForm, saveSubmission: async (s: Record<string, unknown>) => { saved.push(s); return s; } },
+      IdentityManager: { getByUserIdentifier: async () => null }
+    });
+    await request(makeContext(engine)).post('/api/forms/submit/test-form').send({ name: 'Alice' });
+    expect(saved[0]).toMatchObject({ submittedBy: 'testuser', submitterName: 'testuser' });
   });
 });
 

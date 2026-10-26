@@ -16,6 +16,7 @@ import type { FormDefinition } from '../managers/FormsDataManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import { FORMS_REVIEW_HANDLER, REVIEW_FORM_KEY, REVIEW_SUBMISSION_KEY } from '../managers/review.js';
 import type PluginManager from '../../../dist/src/managers/PluginManager.js';
+import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
 type AddonRef = { callHandler(formId: string, submission: FormSubmission, ctx: { engine: WikiEngine; req: unknown; decider: ActorContext | null }): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
@@ -49,7 +50,8 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
     if (submission.onBehalfOf?.name) details['Submitted for'] = submission.onBehalfOf.name;
     details[REVIEW_FORM_KEY] = form.id;
     details[REVIEW_SUBMISSION_KEY] = submission.id;
-    const from = submission.onBehalfOf?.name ?? (submission.submittedBy.toLowerCase() !== 'anonymous' ? submission.submittedBy : 'someone not signed in');
+    const shown = submission.submitterName ?? submission.submittedBy;
+    const from = submission.onBehalfOf?.name ?? (shown.toLowerCase() !== 'anonymous' ? shown : 'someone not signed in');
     try {
       await host.reviews.fileRequest(filer, {
         kind: FORMS_REVIEW_HANDLER,
@@ -103,7 +105,13 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         }
 
         // ── 4. Build submission ────────────────────────────────────────────
-        const submittedBy = ctx.username ?? 'anonymous';
+        // #2041: the submitter by identity @id, their name kept for showing;
+        // `anonymous`, or a name with no account, as given.
+        const submitterName = ctx.username ?? 'anonymous';
+        const identities = engine.getManager<IdentityManager>('IdentityManager');
+        const submittedBy = submitterName.toLowerCase() !== 'anonymous' && identities
+          ? (await identities.getByUserIdentifier(host.systemContext('forms: store a submitter as identity @id (#2041)'), submitterName))?.['@id'] ?? submitterName
+          : submitterName;
 
         let onBehalfOf: Record<string, string | undefined> | undefined;
         if (form.proxySubmission && body['onBehalfOf'] && typeof body['onBehalfOf'] === 'object') {
@@ -132,6 +140,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
           formId,
           submittedAt: new Date().toISOString(),
           submittedBy,
+          submitterName,
           onBehalfOf,
           // The add-on version the form came from (#1973); a site-built form has none.
           ...(form.providedBy ? { formVersion: form.providedBy.version } : {}),
@@ -214,7 +223,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         if (notify && !form.review && nm && users && ctx.subject) {
           const notice = {
             title:   `New form submission: ${form.title}`,
-            message: `Submitted by ${submittedBy}${onBehalfOf?.name ? ` on behalf of ${onBehalfOf.name}` : ''}`,
+            message: `Submitted by ${submitterName}${onBehalfOf?.name ? ` on behalf of ${onBehalfOf.name}` : ''}`,
             level:   'info' as const
           };
           // Core's role lookup (RoleManager membership, active accounts only);
