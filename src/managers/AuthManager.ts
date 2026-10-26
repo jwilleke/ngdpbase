@@ -107,6 +107,7 @@ import { sameUsername } from '../utils/username.js';
 import { isEmail } from '../types/guards.js';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import type NotificationManager from './NotificationManager.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -1620,9 +1621,8 @@ class AuthManager extends BaseManager {
       reason: message,
       metadata: { securityEventType: 'credential-rejected', rows: rejected.map(r => ({ id: r.row.id, username: r.row.username, kind: r.row.kind, reason: r.reason })) }
     });
-    const nm = this.engine.getManager('NotificationManager') as { addNotification?: (n: unknown) => Promise<string> } | null;
-    nm?.addNotification?.({
-      type: 'system',
+    const nm = this.engine.getManager<NotificationManager>('NotificationManager');
+    nm?.notifyAdmins({
       level: 'error',
       title: 'Security alert: credential rows rejected',
       message

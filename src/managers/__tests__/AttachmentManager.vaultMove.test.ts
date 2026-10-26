@@ -103,7 +103,7 @@ describe('a page\'s files go where the page goes (#1842)', () => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
       SearchManager: { updatePageInIndex: vi.fn(), removePageFromIndex: vi.fn() },
-      NotificationManager: { addNotification: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) },
+      NotificationManager: { notifyAdmins: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) },
       PolicyDecisionPoint: { decide: () => Promise.resolve({ permit: true }) },
       // The container rule itself — owner or delegate, never a role.
       PolicyInformationPoint: {
@@ -332,7 +332,7 @@ describe('a page\'s files go where the page goes (#1842)', () => {
     expect(status.reason).not.toContain('Old Secret');
     expect(status.reason).not.toContain('labs.txt');
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(notifications[0]).toMatchObject({ level: 'error' });
     expect((await filesUnder(testDir)).sort()).toEqual(before);
   });
 

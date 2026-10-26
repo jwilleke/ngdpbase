@@ -73,7 +73,7 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
         (key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : fallback)),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    const notificationManager = { addNotification: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) };
+    const notificationManager = { notifyAdmins: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) };
     const searchManager = { updatePageInIndex: vi.fn(), removePageFromIndex: vi.fn() };
     let validation: unknown = null;
     const engine = {
@@ -194,7 +194,7 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
     expect(status.reason).not.toContain('carol');
     expect(status.reason).not.toContain('dave');
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(notifications[0]).toMatchObject({ level: 'error' });
     expect(String(notifications[0].message)).toContain('molly/phr');
 
     // Read only: no file moved, sealed, indexed or deleted.

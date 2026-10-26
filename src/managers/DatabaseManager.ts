@@ -59,6 +59,7 @@ import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO
 
 // The environment variable holding the SQLCipher key: one declaration, `src/utils/databaseKey.ts`.
 import { DATABASE_KEY_ENV } from '../utils/databaseKey.js';
+import type NotificationManager from './NotificationManager.js';
 export { DATABASE_KEY_ENV };
 
 // #1723, #1876: the backup key has one declaration (`src/utils/backupKey.ts`); re-exported for the callers that import it from here.
@@ -796,8 +797,8 @@ class DatabaseManager extends BaseManager {
 
   private async notify(level: 'success' | 'warning' | 'error', title: string, message: string): Promise<void> {
     try {
-      await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
-        ?.addNotification({ type: 'system', level, title, message });
+      await this.engine.getManager<NotificationManager>('NotificationManager')
+        ?.notifyAdmins({ level, title, message });
     } catch (err) {
       logger.error(`[DatabaseManager] The notification '${title}' could not be sent (#1723):`, err);
     }

@@ -35,7 +35,7 @@ describe('RoleManager.grantToEveryAccountOnce (#1539)', () => {
       },
       IdentityManager: { getById: (_ctx: unknown, id: string) => Promise.resolve({ '@id': id, identifier: id.split(':').pop() }), getByUserIdentifier: (_ctx: unknown, u: string) => Promise.resolve(u === 'ghost' ? null : { '@id': personId(u) }) },
       OrganizationManager: { getInstallOrg: () => Promise.resolve(ORG) },
-      NotificationManager: { addNotification: (n: Record<string, unknown>) => { notifications.push(n); return Promise.resolve('n'); } }
+      NotificationManager: { notifyAdmins: (n: Record<string, unknown>) => { notifications.push(n); return Promise.resolve('n'); } }
     };
     manager = new RoleManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -76,7 +76,7 @@ describe('RoleManager.grantToEveryAccountOnce (#1539)', () => {
     const recorded = pendingBootActions().map((a) => a.event);
     expect(recorded.map((e) => [e.resource, e.result])).toEqual([['alice', 'success'], ['ghost', 'failure'], ['bob', 'success']]);
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(notifications[0]).toMatchObject({ level: 'error' });
     expect(String(notifications[0].message)).toContain('ghost');
   });
 });

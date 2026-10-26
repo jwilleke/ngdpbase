@@ -101,7 +101,7 @@ describe('a site restore stages every part together (#1876)', () => {
     };
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      NotificationManager: { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
+      NotificationManager: { notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } },
       AuditManager: {
         logAuditEvent: async (e: Record<string, unknown>) => { if (auditDown) throw new Error('audit sink down'); audits.push(e); return 'id'; },
         flushAuditQueue: async () => undefined

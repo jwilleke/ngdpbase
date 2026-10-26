@@ -23,6 +23,7 @@ function isUsableContext(value: unknown): value is JobContext {
 }
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
+import type NotificationManager from './NotificationManager.js';
 
 const JOB_EVENT: Record<'started' | 'completed' | 'failed', AuditEventName> = {
   started: AUDIT_EVENT.JOB_STARTED,
@@ -1658,9 +1659,9 @@ class BackgroundJobManager extends BaseManager {
     message: string
   ): Promise<void> {
     try {
-      const notificationManager = this.engine.getManager<{ addNotification: (n: object) => Promise<string> }>('NotificationManager');
+      const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
       if (notificationManager) {
-        await notificationManager.addNotification({ type: 'system', title, message, level });
+        await notificationManager.notifyAdmins({ title, message, level });
       }
     } catch (err) {
       logger.warn('[BackgroundJobManager] Failed to post notification:', err);

@@ -12,7 +12,7 @@ function makeManager() {
   const notes: Array<{ level: string; title: string; message: string }> = [];
   const managers: Record<string, unknown> = {
     NotificationManager: {
-      addNotification: (n: { level: string; title: string; message: string }) => { notes.push(n); return Promise.resolve('n'); }
+      notifyAdmins: (n: { level: string; title: string; message: string }) => { notes.push(n); return Promise.resolve('n'); }
     }
   };
   const manager = new UserManager({ getManager: (n: string) => managers[n] ?? null });

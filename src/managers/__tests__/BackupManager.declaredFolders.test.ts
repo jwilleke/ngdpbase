@@ -104,7 +104,7 @@ async function start(): Promise<{ backup: BackupManager; notes: NotesManager; ma
       setProperty: async (key: string, value: unknown) => { props[key] = value; }
     },
     NotificationManager: {
-      addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
+      notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
       getAllNotifications: () => notifications
     },
     AuditManager: { logAuditEvent: async () => 'evt', flushAuditQueue: async () => undefined }

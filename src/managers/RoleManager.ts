@@ -7,7 +7,6 @@ import type { RoleProvider } from '../types/RoleProvider.js';
 import IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type UserManager from './UserManager.js';
-import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type NotificationManager from './NotificationManager.js';
 import type { Organization } from '../types/Organization.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
@@ -614,12 +613,11 @@ class RoleManager extends BaseManager {
     return error;
   }
 
-  /** An error notification for admins; a notification that cannot be sent is logged, never thrown. */
+  /** An error notification for the users holding `admin-system`; a notification that cannot be sent is logged, never thrown. */
   private async reportToAdmins(title: string, message: string): Promise<void> {
     logger.error(`❌ ${title}: ${message}`);
     try {
-      await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
-        ?.addNotification({ type: 'system', level: 'error', title, message });
+      await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({ level: 'error', title, message });
     } catch (err) {
       logger.error('❌ The notification for a failed role change could not be sent (#2015):', err);
     }
@@ -773,15 +771,9 @@ class RoleManager extends BaseManager {
   private async notifyAdminsOnce(title: string, message: string): Promise<void> {
     try {
       const notifications = this.engine.getManager<NotificationManager>('NotificationManager');
-      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-      if (!notifications || !pdp) return;
+      if (!notifications) return;
       if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
-      const admins = (await pdp.usersHolding('admin-system')) ?? [];
-      if (admins.length === 0) {
-        logger.error(`🔑 No user holds admin-system; '${title}' is in the log only (#2040)`);
-        return;
-      }
-      await notifications.createNotification({ type: 'system', level: 'error', title, message, targetUsers: admins });
+      await notifications.notifyAdmins({ level: 'error', title, message });
     } catch (err) {
       logger.error(`🔑 The notification '${title}' could not be sent (#2040):`, err);
     }

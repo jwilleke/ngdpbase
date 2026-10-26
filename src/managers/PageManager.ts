@@ -628,8 +628,8 @@ class PageManager extends BaseManager implements CatalogSource {
       // Closed vaults are down; open ones holding plaintext work and need an admin (#1946).
       if (found.length > 0 ? this.markDegraded(reason) : this.markNeedsAttention(reason)) {
         try {
-          await this.engine.getManager<NotificationManager>('NotificationManager')?.addNotification({
-            type: 'system', level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
+          await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
+            level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
           });
         } catch (err) {
           logger.warn('📄 Could not post the unsealed-vault notification:', err);
@@ -1257,14 +1257,13 @@ class PageManager extends BaseManager implements CatalogSource {
         const lines = authoringErrors.map((f) => `${f.title} (${f.file}): ${f.reason}`);
         logger.warn(`[PageManager] Required pages not seeded: ${lines.join('; ')}`);
         const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
-        await notificationManager?.createNotification?.({
-          type: 'system',
+        await notificationManager?.notifyAdmins({
           level: 'warning',
           title: 'Required pages not seeded',
           message:
             `${authoringErrors.length} required page${authoringErrors.length === 1 ? '' : 's'} could not be added: ` +
             `${authoringErrors.map((f) => f.title).join(', ')}. See Admin → Required Pages Sync.`
-        })?.catch?.(() => { /* non-fatal */ });
+        }).catch(() => { /* non-fatal */ });
       }
     } catch (err) {
       logger.error('[PageManager] Failed to seed required pages:', err);

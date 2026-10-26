@@ -68,7 +68,7 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       getInstanceDataFolder: () => dataDir,
       setProperty: async (key: string, value: unknown) => { props[key] = value; }
     };
-    const notificationManager = { addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } };
+    const notificationManager = { notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; } };
     const auditManager = { logAuditEvent: async (e: Record<string, unknown>) => { if (auditFails) throw new Error('audit sink down'); audits.push(e); }, flushAuditQueue: async () => undefined };
     const managers: Record<string, unknown> = { ConfigurationManager: configManager, NotificationManager: notificationManager, AuditManager: auditManager, ...extra };
     return {

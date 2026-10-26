@@ -213,7 +213,6 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         // A form that needs review: core tells the holders of its permission instead (#2072).
         if (notify && !form.review && nm && users && ctx.subject) {
           const notice = {
-            type:    'system' as const,
             title:   `New form submission: ${form.title}`,
             message: `Submitted by ${submittedBy}${onBehalfOf?.name ? ` on behalf of ${onBehalfOf.name}` : ''}`,
             level:   'info' as const
@@ -229,7 +228,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
               logger.debug(`[forms] nobody holds '${form.notifyRole}'; no notice for a submission to '${formId}'`);
               return;
             }
-            return nm.createNotification({ ...notice, targetUsers });
+            return nm.createNotification({ ...notice, type: 'system', targetUsers });
           }).catch((err: unknown) => logger.warn(`[forms] could not notify '${form.notifyRole}' of a submission to '${formId}':`, err));
         }
 

@@ -17,6 +17,7 @@ import { SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from '../utils/syste
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
+import type NotificationManager from './NotificationManager.js';
 
 /**
  * Validation result interface
@@ -296,8 +297,8 @@ class ValidationManager extends BaseManager {
     logger.error(`[ValidationManager] ${reason}`);
     if (this.markNeedsAttention(reason, SYSTEM_CATEGORY_KEY)) {
       try {
-        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
-          type: 'system', level: 'error', title: 'A system-category value has the wrong type', message: `${reason}.`
+        await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
+          level: 'error', title: 'A system-category value has the wrong type', message: `${reason}.`
         });
       } catch (err) {
         logger.warn('[ValidationManager] Could not post the system-category notification:', err);

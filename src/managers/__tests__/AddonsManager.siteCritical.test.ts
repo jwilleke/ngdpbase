@@ -105,7 +105,7 @@ async function boot(custom: Record<string, unknown>, options: { database?: boole
   const engine = new Engine();
   engine.registerManager('ConfigurationManager', configManager);
   engine.registerManager('NotificationManager', {
-    createNotification: (n: Booted['notifications'][number]) => { notifications.push(n); return Promise.resolve('id'); }
+    notifyAdmins: (n: Booted['notifications'][number]) => { notifications.push(n); return Promise.resolve('id'); }
   });
   const databaseManager = new DatabaseManager(engine as never);
   await databaseManager.initialize();

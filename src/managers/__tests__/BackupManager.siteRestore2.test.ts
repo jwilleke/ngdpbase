@@ -75,7 +75,7 @@ describe('slice 2 of the site restore (#1876)', () => {
       },
       // Stored notifications outlive a restart, as NotificationManager's do: the one-time backup-key notice is deduplicated against them.
       NotificationManager: {
-        addNotification: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
+        notifyAdmins: async (n: { level: string; title: string; message: string }) => { notifications.push(n); return 'id'; },
         getAllNotifications: () => notifications
       },
       AuditManager: { logAuditEvent: async (e: Record<string, unknown>) => { audits.push(e); return 'evt'; }, flushAuditQueue: async () => undefined },

@@ -52,6 +52,7 @@ import { ATTACHMENT_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { keepAllowsInto } from '../ice/originalKeep.js';
 import type { OriginalKeep } from '../ice/types.js';
 import { storeKindFromConfig } from '../utils/privateStoreDoor.js';
+import type NotificationManager from './NotificationManager.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -1957,8 +1958,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     this.poolFileReason = reason;
     if (this.markNeedsAttention(reason) && opts.notify) {
       try {
-        await this.engine.getManager<{ addNotification(n: { type: 'system'; level: 'error'; title: string; message: string }): Promise<string> }>('NotificationManager')
-          ?.addNotification({ type: 'system', level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });
+        await this.engine.getManager<NotificationManager>('NotificationManager')
+          ?.notifyAdmins({ level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });
       } catch (err) {
         logger.error('📎 The notification for vault pages using shared-pool files could not be sent (#1842):', err);
       }
@@ -2912,8 +2913,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       const message = `The backup holds files of vaults this site no longer has (${skippedVaults.join(', ')}), so they were not staged. Their pages are not on this site either.`;
       logger.error(`📎 [AttachmentManager] ${message}`);
       try {
-        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
-          ?.addNotification({ type: 'system', level: 'error', title: 'Some vault files in the backup were not restored', message });
+        await this.engine.getManager<NotificationManager>('NotificationManager')
+          ?.notifyAdmins({ level: 'error', title: 'Some vault files in the backup were not restored', message });
       } catch (err) {
         logger.error('📎 [AttachmentManager] The notification could not be sent:', err);
       }

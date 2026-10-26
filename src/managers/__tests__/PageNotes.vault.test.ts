@@ -92,7 +92,7 @@ describe('a vault page\'s footnotes and comments live in its vault (#1839)', () 
       }),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    const notificationManager = { addNotification: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) };
+    const notificationManager = { notifyAdmins: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) };
     const searchManager = { updatePageInIndex: vi.fn(), removePageFromIndex: vi.fn() };
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,

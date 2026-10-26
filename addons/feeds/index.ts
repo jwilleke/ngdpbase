@@ -96,10 +96,10 @@ const feedsAddon = {
 
     // Start the poll scheduler; stale-feed warnings route to /admin/notifications.
     const nm = engine.getManager('NotificationManager') as
-      | { addNotification?: (n: unknown) => Promise<string> }
+      | { notifyAdmins?: (n: unknown) => Promise<string | null> }
       | null;
     const notify = (n: { level: string; title: string; message: string }): void => {
-      if (nm?.addNotification) nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
+      if (nm?.notifyAdmins) nm.notifyAdmins(n).catch(() => { /* ignore */ });
     };
     feedManager.startScheduler({ notify, maxConcurrent: settings.maxConcurrentIngests });
   },

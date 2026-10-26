@@ -36,6 +36,7 @@ import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
+import type NotificationManager from './NotificationManager.js';
 
 const gzip = promisify(zlib.gzip);
 
@@ -1487,8 +1488,8 @@ class BackupManager extends BaseManager {
 
   private async notifyAdmins(level: 'error' | 'warning' | 'success', title: string, message: string): Promise<void> {
     try {
-      await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')
-        ?.addNotification({ type: 'system', level, title, message });
+      await this.engine.getManager<NotificationManager>('NotificationManager')
+        ?.notifyAdmins({ level, title, message });
     } catch (err) {
       logger.error(`❌ The notification '${title}' could not be sent:`, err);
     }
@@ -2367,8 +2368,8 @@ class BackupManager extends BaseManager {
     } catch (err) {
       jobs.registerJob(def);
       logger.error(`❌ Automatic backups are ON but NOT scheduled: ${(err as Error).message}. Fix the setting in Admin → Backup.`);
-      void this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
-        type: 'system', level: 'error', title: 'Automatic backups are not running',
+      void this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
+        level: 'error', title: 'Automatic backups are not running',
         message: `${(err as Error).message}. Fix the setting in Admin → Backup.`
       }).catch(() => undefined);
     }

@@ -80,7 +80,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     return {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return cm;
-        if (name === 'NotificationManager') return { createNotification: notify };
+        if (name === 'NotificationManager') return { notifyAdmins: notify };
         return null;
       })
     };

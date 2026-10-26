@@ -4126,9 +4126,8 @@ ${panes}
         const editor = currentUser?.username || 'unknown';
         try {
           const notificationManager = this.engine.getManager('NotificationManager');
-          if (notificationManager?.createNotification) {
-            await notificationManager.createNotification({
-              type: 'system',
+          if (notificationManager?.notifyAdmins) {
+            await notificationManager.notifyAdmins({
               level: 'warning',
               title: 'Required page edited in wiki UI',
               message: `"${pageTitle}" was edited by ${editor}. Visit <a href="/admin/required-pages">Required Pages Sync</a> to review.`
