@@ -59,7 +59,7 @@ import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pa
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
-import { isReservedUsername, sameUsername } from '../utils/username.js';
+import { IDENTITY_ID_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -2889,11 +2889,13 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
+    // #2097: the author may be stored as the user's identity @id or, not yet converted, the username.
+    const authorReferences = only.author !== undefined ? await this.referencesOf(only.author) : null;
     const candidates = (await this.provider.getAllPageInfo()).filter((info) => {
       const md = (info.metadata ?? {}) as Record<string, unknown>;
       const keywords = Array.isArray(md['system-keywords']) ? md['system-keywords'] as unknown[] : [];
       if (!keywords.some((k) => String(k).trim().toLowerCase() === 'test-artifact')) return false;
-      if (only.author !== undefined && md.author !== only.author) return false;
+      if (authorReferences && !(typeof md.author === 'string' && authorReferences.includes(md.author))) return false;
       if (only.systemCategory !== undefined && md['system-category'] !== only.systemCategory) return false;
       return true;
     });
@@ -2904,10 +2906,14 @@ class PageManager extends BaseManager implements CatalogSource {
     for (const info of candidates) {
       try {
         // #2041: the page's owner is named by identity @id; a name with no account as written.
+        // #2097: the page's author may already be that @id; ownerUser is the username it names.
         const author = (info.metadata as { author?: string } | undefined)?.author ?? null;
+        const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+        const lookup = systemContext(this.engine, 'record a test-artifact page delete: the author identity @id and username (#2041, #2097)');
         const owner = author
-          ? (await this.engine.getManager<IdentityManager>('IdentityManager')?.identityIdOf(systemContext(this.engine, 'record a test-artifact page delete: the author identity @id (#2041)'), author)) ?? author
+          ? (author.startsWith(IDENTITY_ID_PREFIX) ? author : (await identities?.identityIdOf(lookup, author)) ?? author)
           : null;
+        const ownerUser = author ? (identities ? await identities.usernameOf(lookup, author) : author) : null;
         await recordAuditEvent(this.engine.getManager('AuditManager'), {
           eventType: AUDIT_EVENT.PAGE_DELETE,
           ...who,
@@ -2921,7 +2927,7 @@ class PageManager extends BaseManager implements CatalogSource {
             pageName: info.title,
             uuid: info.uuid,
             owner,
-            ...(author ? { ownerUser: author } : {}),
+            ...(ownerUser ? { ownerUser } : {}),
             outcome: 'attempted',
             reason: 'test-artifact'
           }
@@ -3554,7 +3560,19 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPagesByCreator(username, ctx, options);
+    return this.provider.getPagesByCreator(username, ctx, { ...options, references: await this.referencesOf(username) });
+  }
+
+  /**
+   * The stored values that name `username` (#2097): their identity @id and, for
+   * pages not yet converted, the username (`IdentityManager.referencesOf`), so
+   * "my pages" lists converted and unconverted pages alike and an orphan never.
+   */
+  private async referencesOf(username: string | null | undefined): Promise<string[]> {
+    if (!username) return [];
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return [username];
+    return identities.referencesOf(systemContext(this.engine, 'list a user own pages: the values that name them (#2097)'), username);
   }
 
   /**
@@ -3564,18 +3582,21 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPagesByEditor(username, ctx, options);
+    return this.provider.getPagesByEditor(username, ctx, { ...options, references: await this.referencesOf(username) });
   }
 
   /**
    * Pages whose frontmatter audience matches any of the caller's principals,
-   * excluding pages the caller already owns (#640 Phase 2).
+   * excluding pages the caller already owns (#640 Phase 2). `options.username`
+   * names the caller, so a page whose author is their identity @id counts as
+   * theirs (#2097).
    */
-  async getPagesSharedWith(principals: string[], options: PagesScanOptions = {}): Promise<RecentChangeEntry[]> {
+  async getPagesSharedWith(principals: string[], options: PagesScanOptions & { username?: string } = {}): Promise<RecentChangeEntry[]> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPagesSharedWith(principals, options);
+    const { username, ...scan } = options;
+    return this.provider.getPagesSharedWith(principals, username ? { ...scan, references: await this.referencesOf(username) } : scan);
   }
 
   /**

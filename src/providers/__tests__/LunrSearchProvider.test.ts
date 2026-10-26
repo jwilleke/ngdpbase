@@ -568,3 +568,16 @@ describe('LunrSearchProvider.getAllSystemKeywords (#893)', () => {
     expect(await provider.getAllSystemKeywords()).toEqual([]);
   });
 });
+
+// #2097: SearchManager hands a list (a user's identity @id and username); any of them matches.
+// Sabotage: matching only the first value of the list turned this red.
+describe('LunrSearchProvider.advancedSearch — author and editor lists (#2097)', () => {
+  test('a list matches any of its values, an @id included', async () => {
+    provider['documents']['ById'] = makeDoc('ById', { author: 'urn:uuid:jim-1', editor: 'urn:uuid:jim-1', systemCategory: 'general', userKeywords: 'foo' });
+    provider['documents']['Orphan'] = makeDoc('Orphan', { author: 'orphan:jim', editor: 'orphan:jim', systemCategory: 'general', userKeywords: 'foo' });
+    const byAuthor = (await provider.advancedSearch({ author: ['urn:uuid:jim-1', 'jim'] })).map(r => r.name).sort();
+    expect(byAuthor).toEqual(['ById', 'JimPage1', 'JimPage2']);
+    const byEditor = (await provider.advancedSearch({ editor: ['urn:uuid:jim-1', 'jim'] })).map(r => r.name).sort();
+    expect(byEditor).toEqual(['ById', 'JimPage1']);
+  });
+});

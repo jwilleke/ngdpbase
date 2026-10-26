@@ -1024,8 +1024,8 @@ class VersioningFileProvider extends FileSystemProvider {
 
   /**
    * Pages owned by a user — backed by pageIndex (#640). Match by `author`
-   * (canonical) OR `creator` (denormalised for private pages, kept in lockstep
-   * with author at write time per #634 audit). Visibility filter intentionally
+   * (canonical; any of `options.references`, #2097) OR, on a private page,
+   * `creator` (its container owner's username). Visibility filter intentionally
    * skipped — caller is asking about their own pages.
    */
   async getPagesByCreator(
@@ -1042,9 +1042,14 @@ class VersioningFileProvider extends FileSystemProvider {
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const wantedSystemKeywords = VersioningFileProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
+    // #2097: `author` is matched against the values that name this user (their
+    // identity @id, and the username on a page not yet converted); `creator`,
+    // a private page's container owner, is a username and counts only there.
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
-      const matches = idx.author === username || idx.creator === username;
+      const isPrivateEntry = idx.isPrivate === true || idx.location === 'private';
+      const matches = (idx.author !== undefined && references.includes(idx.author)) || (isPrivateEntry && idx.creator === username);
       if (!matches) continue;
       if (onlyPrivate && !idx.isPrivate) continue;
 
@@ -1102,9 +1107,10 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
 
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
-      if (idx.editor !== username) continue;
+      if (!references.includes(idx.editor)) continue;
       entries.push({
         title: idx.title,
         uuid: idx.uuid,
@@ -1120,7 +1126,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1456: the editor's own private pages, when the requester is the editor.
     if (ctx.username === username) {
-      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor !== undefined && references.includes(e.editor)));
     }
 
     if (sortBy === 'title-asc') {
@@ -1154,13 +1160,15 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const principalSet = new Set(principals);
+    const references = new Set(options.references ?? []);
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
       // Exclude pages the user already owns first — cheap, index-only, and it
       // avoids a metadata read for every page the caller would discard anyway
-      // (avoids duplication with /my/pages).
-      if ((idx.author && principalSet.has(idx.author))
+      // (avoids duplication with /my/pages). #2097: an author stored as the
+      // user's identity @id is theirs too.
+      if ((idx.author && (principalSet.has(idx.author) || references.has(idx.author)))
         || (idx.creator && principalSet.has(idx.creator))) continue;
 
       // A page is "shared with me" when frontmatter states a view rule AND the

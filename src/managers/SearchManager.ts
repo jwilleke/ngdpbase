@@ -5,6 +5,8 @@ import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { StoreSearchMatch, StoreSearchQuery } from '../utils/storeSearchIndex.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
 
 /**
  * Search result structure
@@ -50,6 +52,10 @@ interface AdvancedSearchOptions {
   dateRange?: { from?: string; to?: string };
   /** #774: which date field `dateRange` filters on. Default `'modified'`. */
   dateField?: 'modified' | 'created';
+  /** A username, or several: pages whose author is that user (#2097: their identity @id or, not yet converted, the username). */
+  author?: string | string[];
+  /** As `author`, for the last editor. */
+  editor?: string | string[];
   [key: string]: unknown;
 }
 
@@ -580,9 +586,16 @@ class SearchManager extends BaseManager {
       // #1962: and only pages this reader may open, decided before the limit.
       const provider = this.provider;
       const wanted = this.resultLimit(options.maxResults);
+      // #2097: a page's author and editor are stored as identity @ids; a search
+      // for a username matches that user's @id and, on a page not yet
+      // converted, the username — never an orphan.
+      const people = {
+        ...(options.author ? { author: await this.referencesOf(options.author) } : {}),
+        ...(options.editor ? { editor: await this.referencesOf(options.editor) } : {})
+      };
       const results = await this.hitsVisibleTo(
         wikiContext,
-        (limit) => provider.advancedSearch({ ...options, maxResults: limit, wikiContext }),
+        (limit) => provider.advancedSearch({ ...options, ...people, maxResults: limit, wikiContext }),
         wanted
       );
       // #1458: the same merge as the text path — the requester's own private
@@ -599,6 +612,19 @@ class SearchManager extends BaseManager {
       logger.error(`[SearchManager] Advanced search failed user=${username}:`, err);
       return [];
     }
+  }
+
+  /**
+   * The stored values a search for `who` matches (#2097): for each username,
+   * that user's identity @id and the username (`IdentityManager.referencesOf`).
+   * Without IdentityManager, the values as given.
+   */
+  private async referencesOf(who: string | string[]): Promise<string[]> {
+    const names = (Array.isArray(who) ? who : [who]).filter((n) => typeof n === 'string' && n);
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return names;
+    const ctx = systemContext(this.engine, 'search by author or editor: the values that name the user (#2097)');
+    return [...new Set((await Promise.all(names.map((n) => identities.referencesOf(ctx, n)))).flat())];
   }
 
   /**

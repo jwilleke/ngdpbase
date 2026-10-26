@@ -158,6 +158,25 @@ describe('FileManager — today\'s attachments as file records (#1852)', () => {
     }]);
   });
 
+  // #2097: the uploader is stored as an identity @id; the owner is the username it names.
+  // Sabotage: ownerOf returning the recorded value unchanged went red.
+  test('#2097 an uploader stored as an identity @id: the owner is its username; an orphan has none', async () => {
+    const { fakeIdentityManager } = await import('../../test-support/identities');
+    (files as unknown as { engine: { getManager(n: string): unknown } }).engine.getManager = ((orig) => (name: string) =>
+      name === 'IdentityManager' ? fakeIdentityManager({ molly: 'urn:uuid:molly-1' }) : orig(name))(
+      (files as unknown as { engine: { getManager(n: string): unknown } }).engine.getManager);
+    await seedPool([
+      { id: 'i1', name: 'a.png', author: 'urn:uuid:molly-1' },
+      { id: 'i2', name: 'b.png', author: 'orphan:bob' },
+      { id: 'i3', name: 'c.png', author: 'urn:uuid:gone' }
+    ]);
+    expect((await files.list(MOLLY)).map((r) => [r.id, r.owner])).toEqual(expect.arrayContaining([
+      ['i1', 'molly'],
+      ['i2', null],
+      ['i3', null]
+    ]));
+  });
+
   test('a public record that names no user has no owner', async () => {
     // As legacy records were stored: `Unknown`, an email used as a name, or no author at all.
     await seedPool([

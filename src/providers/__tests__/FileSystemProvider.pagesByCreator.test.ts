@@ -123,3 +123,19 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
     expect(privateOnly.map(e => e.title)).toEqual(['PrivateCapture']);
   });
 });
+
+// #2097: the author is stored as an identity @id. Sabotage: matching `author`
+// against the bare username instead of `references` turned this red.
+describe('FileSystemProvider.getPagesByCreator by identity @id (#2097)', () => {
+  test('matches the @id and an unconverted username, never an orphan or a public legacy creator', async () => {
+    const p = seed(makeProvider(), [
+      { uuid: 'u1', title: 'Converted', author: 'urn:uuid:alice-1' },
+      { uuid: 'u2', title: 'NotYet', author: 'alice' },
+      { uuid: 'u3', title: 'OldAlice', author: 'orphan:alice' },
+      { uuid: 'u4', title: 'LegacyCreator', author: 'urn:uuid:other', creator: 'alice' },
+      { uuid: 'u5', title: 'PrivateCreator', author: 'urn:uuid:other', creator: 'alice', isPrivate: true }
+    ]);
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { references: ['urn:uuid:alice-1', 'alice'] });
+    expect(result.map((e) => e.title).sort()).toEqual(['Converted', 'NotYet', 'PrivateCreator']);
+  });
+});

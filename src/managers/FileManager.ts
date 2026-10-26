@@ -21,6 +21,9 @@
 import BaseManager from './BaseManager.js';
 import ConfigurationManager from './ConfigurationManager.js';
 import AttachmentManager from './AttachmentManager.js';
+import IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { UNKNOWN_UPLOADER, type AssetRecord } from '../types/Asset.js';
@@ -62,6 +65,10 @@ class FileManager extends BaseManager {
     const config = new ConfigurationManager(engine);
     managers.set('ConfigurationManager', config);
     await config.initialize();
+    // #2097: uploaders are stored as identity @ids; the dry run names owners by username.
+    const identities = new IdentityManager(engine);
+    managers.set('IdentityManager', identities);
+    await identities.initialize({ readOnly: true });
     const attachments = new AttachmentManager(engine);
     managers.set('AttachmentManager', attachments);
     await attachments.initialize({ readOnly: true });
@@ -94,6 +101,19 @@ class FileManager extends BaseManager {
     return (await this.list(ctx, place ? { place } : {})).filter((f) => f.filename === filename);
   }
 
+  /**
+   * The username a public record's uploader names (#2097): the uploader is
+   * stored as an identity @id, resolved through IdentityManager; an orphan,
+   * an @id with no account, `Unknown` or an email names no owner.
+   */
+  private async ownerOf(author: string | undefined): Promise<string | null> {
+    const recorded = recordedOwner(author);
+    if (!recorded || (!recorded.startsWith(IDENTITY_ID_PREFIX) && !recorded.startsWith(ORPHAN_PREFIX))) return recorded;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return null;
+    return identities.usernameOf(systemContext(this.engine, 'a file record owner: the uploader username (#2097)'), recorded);
+  }
+
   private async readable(ctx: ActorContext): Promise<FileRecord[]> {
     const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
     if (!attachments || !ctx) return [];
@@ -101,7 +121,7 @@ class FileManager extends BaseManager {
     if (await this.mayReadPublic(ctx)) {
       const category = this.defaultCategory();
       for (const asset of await attachments.sharedPoolAssetRecords()) {
-        out.push(FileManager.toFileRecord(asset, { kind: 'public' }, recordedOwner(asset.author), category));
+        out.push(FileManager.toFileRecord(asset, { kind: 'public' }, await this.ownerOf(asset.author), category));
       }
     }
     for (const v of await attachments.readableVaultAssetRecords(ctx)) {
@@ -135,8 +155,10 @@ class FileManager extends BaseManager {
     const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
     if (!attachments) return { publicFiles: [], vaults: [] };
     const category = this.defaultCategory();
-    const publicFiles = (await attachments.sharedPoolAssetRecords())
-      .map((asset) => FileManager.toFileRecord(asset, { kind: 'public' }, recordedOwner(asset.author), category));
+    const publicFiles: FileRecord[] = [];
+    for (const asset of await attachments.sharedPoolAssetRecords()) {
+      publicFiles.push(FileManager.toFileRecord(asset, { kind: 'public' }, await this.ownerOf(asset.author), category));
+    }
     const digits = this.suffixDigits();
     const vaults = (await attachments.vaultFileInventory()).map((v) => ({
       owner: v.owner,

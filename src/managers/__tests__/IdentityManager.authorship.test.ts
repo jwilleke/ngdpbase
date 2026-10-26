@@ -88,4 +88,14 @@ describe('#2097 IdentityManager reference methods', () => {
     expect(await im.convertRecordedUser(SYSTEM, 'jim')).toEqual({ value: 'urn:uuid:jim-1', outcome: 'converted' });
     expect(await im.convertRecordedUser(SYSTEM, 'bob')).toEqual({ value: 'orphan:bob', outcome: 'orphaned' });
   });
+
+  test('referencesOf: the @id and the username, never a placeholder', async () => {
+    const im = fakeIdentityManager({ jim: 'urn:uuid:jim-1', unknown: 'urn:uuid:u' });
+    expect(await im.referencesOf(SYSTEM, 'jim')).toEqual(['urn:uuid:jim-1', 'jim']);
+    expect(await im.referencesOf(SYSTEM, 'ghost')).toEqual(['ghost']);
+    expect(await im.referencesOf(SYSTEM, 'unknown')).toEqual(['urn:uuid:u']);
+    expect(await im.referencesOf(SYSTEM, '')).toEqual([]);
+    const down = fakeIdentityManager({ jim: 'urn:uuid:jim-1' }, { failLookups: true });
+    expect(await down.referencesOf(SYSTEM, 'jim')).toEqual(['jim']);
+  });
 });

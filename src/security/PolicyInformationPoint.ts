@@ -18,6 +18,7 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { ANONYMOUS_SUBJECT, SYSTEM_PRINCIPAL_KEY, SYSTEM_ROLES_KEY } from '../managers/UserManager.js';
 import type UserManager from '../managers/UserManager.js';
 import type RoleManager from '../managers/RoleManager.js';
+import type IdentityManager from '../managers/IdentityManager.js';
 import type { Request } from 'express';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -769,14 +770,16 @@ class PolicyInformationPoint extends BaseManager {
       if (decision === false) return { allowed: false, reason: 'private_deny' };
       if (decision === true) vault = parsePrivatePageName(pageName)?.store;
     } else if (metadata?.private === true) {
-      const allowed = userContext ? mayActInPrivateContainer(userContext, metadata.author ?? '') : false;
+      // #2097: the author is stored as an identity @id; a container is named by username.
+      const owner = await this.authorUsername(metadata.author);
+      const allowed = userContext && owner ? mayActInPrivateContainer(userContext, owner) : false;
       if (!allowed) return { allowed: false, reason: 'private_deny' };
       vault = 'default';
     }
 
     // Tier 0.5: author-lock denies a non-author edit; it grants nothing.
     if (action.toLowerCase() === 'edit' && metadata?.['author-lock'] === true) {
-      const isAuthor = (userContext?.username ?? '') === (metadata.author ?? '');
+      const isAuthor = await this.isPageAuthor(metadata.author, userContext?.username);
       if (!isAuthor && !(await args.holdsAdminSystem())) {
         return { allowed: false, reason: 'author_lock_deny' };
       }
@@ -799,6 +802,26 @@ class PolicyInformationPoint extends BaseManager {
     if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason };
 
     return { allowed: false, reason: 'default_deny' };
+  }
+
+  /**
+   * Whether `username` is the page's author (#2097): `IdentityManager.refersTo`,
+   * so an author stored as an identity @id matches only its own account, one
+   * not yet converted matches its username, and an orphan matches nobody.
+   */
+  private async isPageAuthor(author: unknown, username: string | undefined): Promise<boolean> {
+    if (!username || typeof author !== 'string' || !author) return false;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return author === username;
+    return identities.refersTo(systemContext(this.engine, 'author-lock: is this subject the page author (#2097)'), author, username);
+  }
+
+  /** The username a page's stored author names (#2097), for the private-container fallback. */
+  private async authorUsername(author: unknown): Promise<string | null> {
+    if (typeof author !== 'string' || !author) return null;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return author;
+    return identities.usernameOf(systemContext(this.engine, 'private page fallback: the author username (#2097)'), author);
   }
 
   /**

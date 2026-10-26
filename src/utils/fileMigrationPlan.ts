@@ -96,7 +96,8 @@ export function planClashRenames(
 }
 
 function plannedOwner(file: FileRecord, opts: FileMigrationOptions): Pick<PlannedOwner, 'owner' | 'how'> {
-  const mapped = file.author ? opts.ownerMap[file.author] : undefined;
+  // #2097: the recorded uploader may be an identity @id; the map is keyed by username, so its owner's name is tried too.
+  const mapped = (file.author ? opts.ownerMap[file.author] : undefined) ?? (file.owner ? opts.ownerMap[file.owner] : undefined);
   if (mapped) return { owner: mapped, how: 'mapped' };
   if (file.owner) return { owner: file.owner, how: 'kept' };
   return { owner: opts.defaultOwner, how: 'default' };

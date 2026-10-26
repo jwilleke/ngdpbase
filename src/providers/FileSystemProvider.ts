@@ -1723,14 +1723,14 @@ class FileSystemProvider extends BasePageProvider {
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const wantedSystemKeywords = FileSystemProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
+    // #2097: `author` is matched against the values that name this user (their
+    // identity @id, and the username on a page not yet converted).
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
       const md = info.metadata ?? {} as PageFrontmatter;
       const author = (md as { author?: string }).author;
       const creator = (md as { creator?: string }).creator;
-      if (author !== username && creator !== username) continue;
-
-      if (wantedSystemKeywords && !FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
 
       // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
       // `system-location` retired. User-keywords:[private] read fallback
@@ -1739,6 +1739,11 @@ class FileSystemProvider extends BasePageProvider {
       const userKeywordsArr = Array.isArray(userKeywords) ? userKeywords.map(String) : [];
       const isPrivate = (md as { private?: boolean }).private === true
         || userKeywordsArr.includes('private');
+      // A private page's `creator` is its container owner, a username (#2097).
+      const owned = (author !== undefined && references.includes(author)) || (isPrivate && creator === username);
+      if (!owned) continue;
+
+      if (wantedSystemKeywords && !FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
       if (onlyPrivate && !isPrivate) continue;
 
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
@@ -1786,10 +1791,12 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
 
+    const references = options.references ?? [username];
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
       const md = info.metadata ?? {} as PageFrontmatter;
-      if ((md as { editor?: string }).editor !== username) continue;
+      const editor = (md as { editor?: string }).editor;
+      if (editor === undefined || !references.includes(editor)) continue;
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
       entries.push({
         title: info.title,
@@ -1804,7 +1811,7 @@ class FileSystemProvider extends BasePageProvider {
 
     // #1456: the editor's own private pages, when the requester is the editor.
     if (ctx.username === username) {
-      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor !== undefined && references.includes(e.editor)));
     }
 
     if (sortBy === 'title-asc') {
@@ -1817,7 +1824,8 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * Pages whose frontmatter audience contains any of the given principals
-   * (#640 Phase 2). Walks pageCache. Excludes pages owned by any principal.
+   * (#640 Phase 2). Walks pageCache. Excludes pages owned by any principal
+   * (or, #2097, authored by one of `options.references`).
    */
   async getPagesSharedWith(
     principals: string[],
@@ -1827,6 +1835,7 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const sortBy = options.sortBy ?? 'lastModified-desc';
     const principalSet = new Set(principals);
+    const references = new Set(options.references ?? []);
 
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
@@ -1837,7 +1846,7 @@ class FileSystemProvider extends BasePageProvider {
       if (!audience.some((r) => principalSet.has(r))) continue;
       const author = (md as { author?: string }).author;
       const creator = (md as { creator?: string }).creator;
-      if ((author && principalSet.has(author)) || (creator && principalSet.has(creator))) continue;
+      if ((author && (principalSet.has(author) || references.has(author))) || (creator && principalSet.has(creator))) continue;
 
       const lastModified = (md as { lastModified?: string }).lastModified ?? '';
       entries.push({

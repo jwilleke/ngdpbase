@@ -4,7 +4,7 @@
  * The accounts are a mutable map of username to identity `@id`: delete a key
  * to delete the account, set it again for a new account with the same name.
  * `identityIdOf`, `convertReference`, `canAnswer` and the #2097 reference
- * methods (`convertRecordedUser`, `refersTo`, `usernameOf`, `describeReference`) are IdentityManager's own
+ * methods (`convertRecordedUser`, `refersTo`, `referencesOf`, `usernameOf`, `describeReference`) are IdentityManager's own
  * methods, run against this stand-in, so the rule (what a stored reference
  * becomes, an orphan included) has one home and the tests exercise it.
  * `down: true` is an identity store that cannot answer; `failLookups: true`
@@ -18,6 +18,7 @@ export interface FakeIdentities {
   canAnswer: IdentityManager['canAnswer'];
   convertRecordedUser: IdentityManager['convertRecordedUser'];
   refersTo: IdentityManager['refersTo'];
+  referencesOf: IdentityManager['referencesOf'];
   usernameOf: IdentityManager['usernameOf'];
   describeReference: IdentityManager['describeReference'];
   getById(ctx: unknown, id: string): Promise<{ '@id': string; identifier: string } | null>;
@@ -53,6 +54,7 @@ export function fakeIdentityManager(accounts: Record<string, string>, opts: { do
     canAnswer: proto.canAnswer,
     convertRecordedUser: proto.convertRecordedUser,
     refersTo: proto.refersTo,
+    referencesOf: proto.referencesOf,
     usernameOf: proto.usernameOf,
     describeReference: proto.describeReference
   }) as unknown as FakeIdentities;

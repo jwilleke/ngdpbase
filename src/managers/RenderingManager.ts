@@ -6,6 +6,8 @@ import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import BaseManager from './BaseManager.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
 import type PluginManager from './PluginManager.js';
 import type NotificationManager from './NotificationManager.js';
 import type MarkupParser from '../parsers/MarkupParser.js';
@@ -304,7 +306,12 @@ class RenderingManager extends BaseManager {
     if (!pageManager) return undefined;
     try {
       const metadata = await pageManager.getPageMetadata(pageName, ANONYMOUS_SUBJECT);
-      return typeof metadata?.author === 'string' && metadata.author ? metadata.author : undefined;
+      const author = typeof metadata?.author === 'string' && metadata.author ? metadata.author : undefined;
+      if (!author) return undefined;
+      // #2097: the author is stored as an identity @id; a vault is named by its owner's username.
+      const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+      if (!identities) return author;
+      return (await identities.usernameOf(systemContext(this.engine, 'resolve [vault/Title] links: the page author username (#2097)'), author)) ?? undefined;
     } catch (error) {
       logger.warn(`Could not resolve page owner for ${pageName}:`, getErrorMessage(error));
       return undefined;

@@ -37,6 +37,9 @@ import { BASE_RENDER_TOPICS } from '../cache/CacheDependencies.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
+import { IDENTITY_ID_PREFIX } from '../utils/username.js';
+import { systemContext } from '../context/bootActions.js';
+import type IdentityManager from '../managers/IdentityManager.js';
 
 // ============================================================================
 // Type Definitions
@@ -1134,6 +1137,25 @@ class MarkupParser extends BaseManager {
       logger.warn('Could not resolve private link targets:', getErrorMessage(error));
       return null;
     }
+  }
+
+  /**
+   * The username a PUBLIC page's author names, for a `[store/Title]` link on
+   * it (#1457, #2097): the author is stored as an identity @id, and a vault is
+   * named by its owner's username, so the @id is resolved once per parse
+   * through IdentityManager. Null when a caller already said who the owner
+   * is, on a private page (its name carries the owner), on a page with no
+   * such link, and for an author that names no account.
+   */
+  private async resolveAuthorOwner(content: string, context: ParseContext): Promise<string | null> {
+    const told = (context.pageContext as { pageOwner?: unknown } | undefined)?.pageOwner;
+    if (typeof told === 'string' && told) return null;
+    if (parsePrivatePageName(context.wikiContext.pageName) || !mayContainPrivateLink(content)) return null;
+    const author = context.wikiContext.pageMetadata?.author;
+    if (typeof author !== 'string' || !author.startsWith(IDENTITY_ID_PREFIX)) return null;
+    const identities = this.engine?.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return null;
+    return identities.usernameOf(systemContext(this.engine, 'resolve [vault/Title] links: the page author username (#2097)'), author);
   }
 
   generateCacheKey(content: string, context: ParseContextData): string {
@@ -2765,6 +2787,7 @@ class MarkupParser extends BaseManager {
     // Create ParseContext to properly extract nested userContext/requestInfo
     const parseContext = new ParseContext(content, context, this.engine);
     parseContext.privateLinkTitles = await this.resolvePrivateLinkTitles(content, parseContext);
+    parseContext.pageOwner = await this.resolveAuthorOwner(content, parseContext);
 
     // Phase 1: Extract JSPWiki syntax
     const { sanitized, jspwikiElements, uuid } = this.extractJSPWikiSyntax(content, parseContext as unknown as Record<string, unknown>);

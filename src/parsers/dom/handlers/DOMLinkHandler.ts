@@ -29,6 +29,7 @@ import PageNameMatcher from '../../../utils/PageNameMatcher.js';
 import { headingSlug } from '../../../utils/SectionUtils.js';
 import { formatPrivatePageName, parsePrivateLinkTarget, parsePrivatePageName } from '../../../utils/privateStorePath.js';
 import { pageUrl } from '../../../utils/pageUrl.js';
+import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../../../utils/username.js';
 import type WikiDocument from '../WikiDocument.js';
 import type { LinkedomElement } from '../WikiDocument.js';
 
@@ -187,7 +188,10 @@ function readPageOwner(context: RenderContext): string | null {
 
   const metadata = (context as { pageMetadata?: { author?: unknown } | null })?.pageMetadata
     ?? pageContext.pageMetadata;
-  return text(metadata?.author);
+  // #2097: an author stored as an identity @id (or an orphan) is no vault
+  // owner's name; MarkupParser resolves the @id to a username (`pageOwner`).
+  const author = text(metadata?.author);
+  return author && !author.startsWith(IDENTITY_ID_PREFIX) && !author.startsWith(ORPHAN_PREFIX) ? author : null;
 }
 
 /**

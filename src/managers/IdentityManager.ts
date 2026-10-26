@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import BaseManager, { type BackupFolder, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -169,6 +170,9 @@ class IdentityManager extends BaseManager {
       logger.warn('👤 IdentityManager initialized in degraded mode (storage path unavailable)');
       return;
     }
+    // Read-only (an operator command, #2097): a site with no records folder has
+    // no records to read, and the folder is not made.
+    if (config.readOnly === true && !fs.existsSync(storageDir)) return;
 
     const defaultProvider = configManager.getProperty(
       'ngdpbase.application.persons.provider.default',
@@ -184,7 +188,8 @@ class IdentityManager extends BaseManager {
     const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: PersonProviderConstructor };
     this.provider = new mod.default(this.engine);
     await this.provider.initialize();
-    await this.convertLegacyAffiliations();
+    // An operator command opens the records read-only (#2097): nothing is converted or written.
+    if (config.readOnly !== true) await this.convertLegacyAffiliations();
 
     logger.info(`👤 IdentityManager initialized (${(await this.provider.list()).length} persons)`);
   }
@@ -837,6 +842,19 @@ class IdentityManager extends BaseManager {
     if (!stored.startsWith(IDENTITY_ID_PREFIX)) return sameUsername(stored, username) && !isNoRecordedUser(stored);
     const id = await this.identityIdOf(ctx, username);
     return id !== null && id === stored;
+  }
+
+  /**
+   * The stored values that name the user `username` (#2097): their identity
+   * `@id` and, for records not yet converted, their username — the batch form
+   * of {@link refersTo}, for a list filter that compares many records (the
+   * page index, the search index). A "no user recorded" name is left out, and
+   * no orphan is ever in it. Only the username when the store cannot answer.
+   */
+  async referencesOf(ctx: ActorContext, username: string | null | undefined): Promise<string[]> {
+    if (!username) return [];
+    const id = await this.identityIdOf(ctx, username);
+    return [...(id ? [id] : []), ...(isNoRecordedUser(username) ? [] : [username])];
   }
 
   /**

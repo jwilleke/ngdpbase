@@ -293,6 +293,13 @@ class ParseContext {
   privateLinkTitles: Map<string, Set<string>> | null;
 
   /**
+   * The username of a public page's author, when the author is stored as an
+   * identity @id (#2097): what a `[store/Title]` link on it resolves in.
+   * Resolved once per parse by MarkupParser; null when not needed.
+   */
+  pageOwner: string | null;
+
+  /**
    * Hand finished HTML from a syntax handler to MarkupParser; write the
    * returned placeholder into the content instead (#1623). The HTML is merged
    * after markdown-it, so it is not mistaken for HTML the author typed and
@@ -348,6 +355,7 @@ class ParseContext {
 
     // Processing state
     this.privateLinkTitles = null;
+    this.pageOwner = null;
     this.protectHtml = null;
     this.protectedBlocks = [];
     this.syntaxTokens = [];
@@ -508,6 +516,7 @@ class ParseContext {
 
     // Copy current state
     newContext.privateLinkTitles = this.privateLinkTitles;
+    newContext.pageOwner = this.pageOwner;
     newContext.protectedBlocks = [...this.protectedBlocks];
     newContext.syntaxTokens = [...this.syntaxTokens];
     newContext.variables = new Map(this.variables);

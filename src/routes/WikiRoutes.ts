@@ -3864,7 +3864,12 @@ ${panes}
       // admin role holds, and a delegated token without it does not.
       const isAdmin = await wikiContext.hasPermission('admin-system');
       const existingCreator = existingPage?.metadata?.author;
-      const isPageAuthor = currentUser?.username === existingCreator;
+      // #2097: the author is stored as an identity @id; IdentityManager says whether it is this user's.
+      const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
+      const authorCtx = systemContext(this.engine, 'page save: is this user the page author (#2097)');
+      const isPageAuthor = identities
+        ? await identities.refersTo(authorCtx, existingCreator, currentUser?.username)
+        : Boolean(currentUser?.username) && currentUser?.username === existingCreator;
       let authorLock: boolean;
       if (isAdmin || isPageAuthor) {
         // Privileged user — honour the checkbox (present = true, absent = false)
@@ -3902,8 +3907,8 @@ ${panes}
       // out of its store to the public space — the owner's move alone. Where
       // the page lands is its name after the save.
       const movesStore = privateName ? !privateFlag : privateFlag;
-      const pageOwner = privateName?.owner ?? pageAuthor;
-      if (movesStore && existingPage && currentUser?.username !== pageOwner) {
+      const isPageOwner = privateName ? currentUser?.username === privateName.owner : isPageAuthor;
+      if (movesStore && existingPage && !isPageOwner) {
         return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
       }
       // #1504: making a page public is `page-public`, decided by policy on the
@@ -8979,7 +8984,7 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager') as unknown as {
         getPagesByCreator?: (u: string, ctx: ActorContext, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
         getPagesByEditor?: (u: string, ctx: ActorContext) => Promise<unknown[]>;
-        getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
+        getPagesSharedWith?: (principals: string[], o?: { username?: string }) => Promise<unknown[]>;
       };
       if (pageManager?.getPagesByCreator) {
         // #1456: private pages are counted from the user's own stores.
@@ -9000,7 +9005,7 @@ ${panes}
       }
       if (pageManager?.getPagesSharedWith) {
         const principals = [...(user?.roles ?? []), username];
-        const shared = await pageManager.getPagesSharedWith(principals);
+        const shared = await pageManager.getPagesSharedWith(principals, { username });
         counts.shared = shared.length;
       }
     } catch (err) {
@@ -10357,12 +10362,12 @@ ${panes}
       if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
       const principals = [...(currentUser.roles ?? []), currentUser.username];
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesSharedWith?: (p: string[]) => Promise<Array<{
+        getPagesSharedWith?: (p: string[], o?: { username?: string }) => Promise<Array<{
           title: string; uuid: string; lastModified: string; isPrivate?: boolean; editor?: string
         }>>;
       };
       const items = pageManager?.getPagesSharedWith
-        ? await pageManager.getPagesSharedWith(principals)
+        ? await pageManager.getPagesSharedWith(principals, { username: currentUser.username })
         : [];
       const commonData = await this.getCommonTemplateData(req);
       const pagedList = this.pageOfList(items, req, 25, 'List pagination');
