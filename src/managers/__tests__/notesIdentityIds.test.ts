@@ -20,7 +20,9 @@
  * isAuthor's @id branch; skipping `this.markNeedsAttention(reason)`; leaving
  * the name in place instead of `orphan:<name>` in convertReference (the new
  * bob then owns old bob's notes); rethrowing in the conversion's catch (a
- * lookup that fails mid-pass then stops the manager starting).
+ * lookup that fails mid-pass then stops the manager starting); removing the
+ * `migrated` special case in the footnote conversion (17k orphans, and an account
+ * named migrated gains them).
  */
 import fs from 'fs';
 import os from 'os';
@@ -103,6 +105,33 @@ describe('#2041 footnotes', () => {
     await second.initialize();
     expect(fs.statSync(file).mtimeMs).toBe(mtime);
     expect(identities.lookups).toEqual([]);
+  });
+
+  test('the legacy "migrated" creator is orphan:migrated, not counted as needs-attention, not looked up, and never an account named migrated', async () => {
+    const file = path.join(tmpDir, 'p-mig.json');
+    const note = (id: string, createdBy: string) => ({ id, display: '', url: '', note: id, createdBy, createdAt: 't' });
+    fs.writeFileSync(file, JSON.stringify({ 1: note('1', 'migrated'), 2: note('2', 'orphan:migrated'), 3: note('3', 'alice') }));
+    // Someone registered the username "migrated".
+    const accounts = { ...IDS, migrated: 'urn:uuid:dddddddd-dddd-4ddd-8ddd-dddddddddddd' };
+    const identities = fakeIdentityManager(accounts);
+    const fm = new FootnoteManager(engine(identities));
+    await fm.initialize();
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, { createdBy: string }>;
+    expect(Object.values(after).map((n) => n.createdBy)).toEqual(['orphan:migrated', 'orphan:migrated', IDS.alice]);
+    expect(identities.lookups).toEqual(['alice']);
+    expect(status(fm).state).not.toBe('degraded');
+    expect(await fm.isCreator(after[1] as never, subject('migrated'))).toBe(false);
+    // Not yet converted (a vault page's): still nobody's.
+    expect(await fm.isCreator({ createdBy: 'migrated' }, subject('migrated'))).toBe(false);
+  });
+
+  test('a real orphan still counts as needs-attention beside migrated ones', async () => {
+    const file = path.join(tmpDir, 'p-mix.json');
+    const note = (id: string, createdBy: string) => ({ id, display: '', url: '', note: id, createdBy, createdAt: 't' });
+    fs.writeFileSync(file, JSON.stringify({ 1: note('1', 'migrated'), 2: note('2', 'gone') }));
+    const fm = new FootnoteManager(engine(fakeIdentityManager(IDS)));
+    await fm.initialize();
+    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 footnote\(s\) are orphaned/) });
   });
 
   test('the identity store down: start-up converts nothing and says so; a new footnote is still written', async () => {

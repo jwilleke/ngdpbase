@@ -25,6 +25,11 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 
+/** Legacy `createdBy` written when footnotes were migrated out of page markup (#128): "no recorded creator", not a username. */
+const LEGACY_NO_CREATOR = 'migrated';
+/** What it becomes: an orphan sentinel, so `isCreator` never matches it and `isReservedUsername` refuses the prefix; not counted as needing attention. */
+const NO_CREATOR = `${ORPHAN_PREFIX}${LEGACY_NO_CREATOR}`;
+
 export interface PageFootnote {
   id: string;
   display: string;
@@ -89,7 +94,8 @@ export default class FootnoteManager extends BaseManager {
    * then on: a later account with that name never takes it over, and only an
    * administrator can delete it). `@id`s, orphans, `anonymous` and the system
    * principal are left alone, so a second start writes nothing. Orphans are
-   * reported, counts only: a log line and the admin dashboard's
+   * reported, counts only (the legacy `migrated` placeholder is `orphan:migrated`
+   * and only logged at info, not counted: it has no recorded creator): a log line and the admin dashboard's
    * needs-attention list. When the identity store cannot answer, the whole
    * pass is postponed to the next start and reported the same way. A vault
    * page's footnotes are in its vault, which start-up does not open; they
@@ -103,7 +109,7 @@ export default class FootnoteManager extends BaseManager {
       return;
     }
     const ctx = systemContext(this.engine, 'convert footnote creators from username to identity @id (#2041)');
-    let files = 0, converted = 0, orphans = 0;
+    let files = 0, converted = 0, orphans = 0, noCreator = 0;
     try {
       for (const name of (await fs.readdir(this.storageDir)).filter((f) => f.endsWith('.json'))) {
         const file = path.join(this.storageDir, name);
@@ -112,6 +118,13 @@ export default class FootnoteManager extends BaseManager {
         let changed = false;
         for (const note of Object.values(map)) {
           if (!note || typeof note.createdBy !== 'string') continue;
+          // The legacy placeholder is "no recorded creator", not a username: never looked up
+          // (an account named "migrated" must not gain these), never counted as an orphan.
+          if (note.createdBy === LEGACY_NO_CREATOR || note.createdBy === NO_CREATOR) {
+            noCreator++;
+            if (note.createdBy !== NO_CREATOR) { note.createdBy = NO_CREATOR; changed = true; }
+            continue;
+          }
           const { value, outcome } = await identities.convertReference(ctx, note.createdBy);
           if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
           if (outcome === 'converted') converted++;
@@ -124,6 +137,7 @@ export default class FootnoteManager extends BaseManager {
       return;
     }
     if (converted > 0) logger.info(`[FootnoteManager] Converted ${converted} footnote creator(s) in ${files} page file(s) from username to identity @id (#2041)`);
+    if (noCreator > 0) logger.info(`[FootnoteManager] ${noCreator} footnote(s) have no recorded creator (migrated before creators were kept); only an administrator can delete them`);
     if (orphans > 0) {
       const reason = `${orphans} footnote(s) are orphaned: their creator's username has no account, so only an administrator can delete them (#2041)`;
       logger.warn(`[FootnoteManager] ${reason}`);
@@ -142,10 +156,11 @@ export default class FootnoteManager extends BaseManager {
    * Whether `ctx` added `footnote` (#2041): its `createdBy` is the caller's
    * identity `@id`, or, on a footnote written before and not yet converted
    * (a vault page's), the caller's username. An orphan (`orphan:<name>`)
-   * is nobody's and never matches.
+   * is nobody's and never matches; neither does the legacy `migrated`
+   * placeholder (no recorded creator), on a footnote not yet converted.
    */
   async isCreator(footnote: Pick<PageFootnote, 'createdBy'>, ctx: ActorContext): Promise<boolean> {
-    if (!ctx.username || !footnote.createdBy || footnote.createdBy.startsWith(ORPHAN_PREFIX)) return false;
+    if (!ctx.username || !footnote.createdBy || footnote.createdBy.startsWith(ORPHAN_PREFIX) || footnote.createdBy === LEGACY_NO_CREATOR) return false;
     if (footnote.createdBy === ctx.username) return true;
     if (!footnote.createdBy.startsWith(IDENTITY_ID_PREFIX)) return false;
     const id = await this.engine.getManager<IdentityManager>('IdentityManager')
