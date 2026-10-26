@@ -1,7 +1,7 @@
 ---
 name: PageManager
 description: Page CRUD and storage facade over the PageProvider registry
-dateModified: 2026-10-23
+dateModified: 2026-10-26
 category: managers
 code: src/managers/PageManager.ts
 relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
@@ -91,6 +91,16 @@ await pageManager.deletePage('My Page');
   filePath: string      // File path (FileSystemProvider)
 }
 ```
+
+## Authorship: identity @ids (#2097)
+
+A page's `author` and `editor`, its version history's editors, its index entries, its tombstones' `deletedBy` and the search documents store the user's identity `@id` (operator, 2026-10-26; [identity model](../planning/identity-model.md)). The rules, in one place each:
+
+- __Writes.__ `savePage` (`normalizeSaveMetadata`) stores the author of a new page and the editor of every save as `IdentityManager.identityIdOf(...) ?? the name`; an edit also converts an author still held as a username. A principal (`system`, `anonymous`), an `@id`, an orphan or a name with no account is stored as it is, and a save never fails because the identity store is down. A vault page's author is its owner's `@id`; the vault is still named by the owner's username, so the Private box resolves an `@id` author to the username (`IdentityManager.usernameOf`) before naming the vault. A tombstone's `deletedBy` is the deleter's `@id`.
+- __Lookups.__ "Is this the author" is `IdentityManager.refersTo` (author-lock in PolicyInformationPoint, the save route, the editor's author-lock box). `getPagesByCreator`, `getPagesByEditor` and `getPagesSharedWith` (with `options.username`) pass the provider `IdentityManager.referencesOf(username)`, the `@id` and the username, so converted and unconverted pages both match and an orphan never does. A private page's `creator` (its container owner, a username) still matches; a public page's legacy index `creator` no longer does. `deleteTestArtifacts` matches its `author` the same way. Search by author or editor: `SearchManager` passes the same values to the provider.
+- __Display.__ Wherever a page's author or editor is shown, the routes and plugins show `IdentityManager.describeReference`: `jim (urn:uuid:…)`, `bob (no account)`. JSON-LD and social cards name the author by username only. A `[vault/Title]` link on a public page resolves in its author's vaults by username (`RenderingManager`, `MarkupParser`); an `@id` or orphan never reaches a URL.
+- __Existing pages.__ `convertAuthorshipAtBoot` (WikiEngine, not awaited: the site serves meanwhile) runs `convertAuthorship(ctx)` under the system context: each public page's frontmatter `author`/`editor` rewritten line by line (`rewriteFrontmatterFields`: the body, every other field and `lastModified` byte-identical, no version made), its index entry, its history's editors (`manifest.json`, in place), the tombstones (and, on the full pass, each deleted page's file and history), then the search index rebuilt from the pages once. Values get `IdentityManager.convertRecordedUser`'s answer through `conversionPass`: an account's name becomes its `@id`; a name with no account `orphan:<name>` (counted, on the dashboard); `migrated`, `unknown`, `import` `orphan:<value>` (counted apart, admin-only, not needing attention). The first complete pass visits every page and is recorded as `authorship-identity-ids` in `site-migrations.json`; later passes open only pages whose index entry still names something to convert. Batches of `ngdpbase.page.authorship-conversion.batch-size` (200), yielding between batches; each page's write is serialised with saves and deletes (`pageWrites`, a `KeyedSerial` by uuid), so a save during the pass is never written over. The identity store down (`canAnswer()` false, or a lookup failing mid-pass): the pass stops, "identity store unavailable, conversion postponed" on the dashboard, and the next start tries again. Logs counts only.
+- __Vault pages__ convert when the vault is opened (`convertVaultAuthorship(ctx, owner)`, from `WikiRoutes.adoptSealedPages` at sign-in and unlock, where the keys are live): each vault's pages, its own page index, histories and the owner's vault trash, recorded per vault (`authorship-identity-ids` in the vault's migrations record). Start-up never opens a vault.
 
 ## Configuration
 
