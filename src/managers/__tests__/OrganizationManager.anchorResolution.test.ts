@@ -111,7 +111,9 @@ describe('getInstallOrg — anchor resolution tiers (#1027)', () => {
 
     expect(org).not.toBeNull();
     expect(org!.name).toBe('Demo ngdpbase');
-    expect(org!['@id']).toBe('https://demo.example.com/');
+    // #2041: a new organization's id is a urn:uuid; the web address is its url.
+    expect(org!['@id']).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(org!.url).toBe('https://demo.example.com/');
 
     // Written to the storage directory like any other record — which is what
     // makes it editable afterwards, unlike a mounted file.

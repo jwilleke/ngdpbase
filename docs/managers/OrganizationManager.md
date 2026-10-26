@@ -1,7 +1,7 @@
 ---
 name: OrganizationManager
 description: Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider
-dateModified: '2026-10-25'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/OrganizationManager.ts
 ---
@@ -14,6 +14,10 @@ Canonical core record for Organization entities (#617). One file per organizatio
 
 Pre-#617, organization records were ad-hoc (sometimes a list in config, sometimes derived from users). Centralizing them as first-class records lets `Role`, identity records (`Person`), and per-organization audit trails reference a stable Organization ID instead of a string name.
 
+## The organization's id
+
+An organization is a digital identity ([glossary](../GLOSSARY.md#identities)), so its id works like every identity's ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 6 of the [identity model](../planning/identity-model.md)): `create` and `seedFromConfig` give every new organization a random `urn:uuid:<v4>` `@id`, its id for life. Its web address is the ordinary `url` field, never the id; an `@id` a caller passes to `create` is ignored. An organization made before #2041 keeps the `@id` it was given, often its URL, because role records, affiliations and add-ons already refer to it by that id; nothing rewrites it. From #2041 on, nothing refers to an organization by its URL: a reference stores its `@id`.
+
 ## The install anchor
 
 One organization is the __anchor__: `UserManager` resolves `Person.memberOf` and every Role membership through `getInstallOrg()`. Without an anchor, `syncRoleAdd` cannot attach an identity record to a Role, so __no user can hold any role__ — including `admin` on the default admin account.
@@ -22,7 +26,7 @@ One organization is the __anchor__: `UserManager` resolves `Person.memberOf` and
 
 1. __`ngdpbase.application.organization.file` names it.__ What the install wizard writes.
 2. __No key, exactly one record exists → adopt it.__ A single-organization install has no ambiguity about which one anchors it; requiring a config key to state the obvious is what left headless deployments silently unable to assign roles.
-3. __Nothing at all → seed one__ from `ngdpbase.application.base-url` and `ngdpbase.application-name`, via `seedFromConfig()` — the same path the install wizard uses, so a seeded instance and a wizard-installed one are indistinguishable afterwards. Minimal by design: no address or contact points, because inventing them would put fabricated data on a possibly-public instance.
+3. __Nothing at all → seed one__ from `ngdpbase.application.base-url` (its `url`) and `ngdpbase.application-name`, via `seedFromConfig()`, with a new `urn:uuid:` `@id` — the same path the install wizard uses, so a seeded instance and a wizard-installed one are indistinguishable afterwards. Minimal by design: no address or contact points, because inventing them would put fabricated data on a possibly-public instance.
 
 __Several records and no key resolves to `null`, deliberately.__ Choosing arbitrarily could bind every role to the wrong organization, and seeding another would add to the ambiguity. It warns and declines.
 

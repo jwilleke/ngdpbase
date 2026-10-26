@@ -539,7 +539,7 @@ interface IOrganizationManager {
   list(ctx: ActorContext): Promise<IOrganizationRecord[]>;
   getById(ctx: ActorContext, id: string): Promise<IOrganizationRecord | null>;
   getByFile(ctx: ActorContext, filename: string): Promise<IOrganizationRecord | null>;
-  create(ctx: ActorContext, org: IOrganizationRecord & { name: string }, filename?: string): Promise<IOrganizationRecord>;
+  create(ctx: ActorContext, org: Omit<IOrganizationRecord, '@id'> & { name: string }, filename?: string): Promise<IOrganizationRecord>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<IOrganizationRecord | null>;
   delete(ctx: ActorContext, id: string): Promise<boolean>;
   getInstallOrg(): Promise<IOrganizationRecord | null>;
@@ -16808,22 +16808,9 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const organizationData = req.body as Record<string, unknown>;
 
-      // #624: ensure the JSON-LD type fields are present even if the form
-      // submitted only the user-editable fields.
-      const nameForSlug = ((organizationData.name as string) || 'organization')
-        .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80);
-      const orgRecord: IOrganizationRecord = {
-        '@context': 'https://schema.org',
-        '@type': 'Organization',
-        ...organizationData,
-        '@id': (organizationData['@id'] as string) || (organizationData.url as string) || `urn:ngdpbase:org:${nameForSlug}`
-      };
-
-      const newOrganization = await organizationManager.create(userContext, { ...orgRecord, name: String(orgRecord.name ?? '') });
+      // #2041: the manager gives the new organization its `urn:uuid:` id; the
+      // form's web address stays the ordinary `url` field.
+      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: typeof organizationData.name === 'string' ? organizationData.name : '' });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });

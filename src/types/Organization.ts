@@ -5,9 +5,12 @@
  * org under `ngdpbase.application.organization.storagedir`. The install's
  * anchor org is identified by `ngdpbase.application.organization.file`.
  *
- * `@id` is the organization's canonical URL (e.g. https://example.com/),
- * NOT a synthetic urn. Use the schema.org `identifier` field for any
- * legacy slug compatibility.
+ * `@id` is a `urn:uuid:<v4>` made with the record, the organization's id for
+ * life (#2041, identity model step 6). Its web address is the ordinary `url`
+ * field, never the id. Organizations made before #2041 keep the `@id` they
+ * were given (often their URL); nothing refers to an organization by URL as
+ * its id from then on. Use the schema.org `identifier` field for any legacy
+ * slug compatibility.
  *
  * @see https://schema.org/Organization
  */
@@ -65,13 +68,13 @@ export type ContactPointEntry = ContactPoint | PostalAddress;
 export interface Organization {
   '@context': 'https://schema.org';
   '@type': 'Organization';
-  /** Canonical URL of the organization (the JSON-LD subject IRI) */
+  /** The organization's id for life: `urn:uuid:<v4>` (#2041); an organization made before #2041 keeps its own, often its URL */
   '@id': string;
   /** Human-readable name */
   name: string;
   /** Legal/registered name if different from `name` */
   legalName?: string;
-  /** Public web URL — usually the same as `@id` */
+  /** Public web address: an ordinary field, never the id (#2041) */
   url?: string;
   /** Logo URL */
   logo?: string;
@@ -92,10 +95,10 @@ export interface Organization {
 }
 
 /**
- * What a caller gives `OrganizationManager.create` (#1930): the fields, with
- * `@id` optional (it defaults to the `url`, else a new `urn:uuid:`).
+ * What a caller gives `OrganizationManager.create` (#1930): the fields. The
+ * `@id` is never the caller's: `create` makes a new `urn:uuid:` (#2041).
  */
-export type OrganizationInput = Partial<Organization> & { name: string };
+export type OrganizationInput = Partial<Omit<Organization, '@id'>> & { name: string };
 
 /**
  * Patch shape for update operations.

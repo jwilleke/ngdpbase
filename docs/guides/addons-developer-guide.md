@@ -884,7 +884,7 @@ Donors, members and suppliers an add-on keeps are core's identity records and or
 | `persons.delete(ctx, id)` | `identity-manage` | Remove an identity record |
 | `organizations.search(ctx, query, { limit? })` | `identity-read` | Organizations whose name, legal name, email or a contact point's email contains `query` |
 | `organizations.get(ctx, id)` / `organizations.list(ctx)` | `identity-read` | One organization, or all |
-| `organizations.create(ctx, { name, url?, … })` | `identity-manage` | `@id` is the `url`, else a new `urn:uuid:` |
+| `organizations.create(ctx, { name, url?, … })` | `identity-manage` | `@id` is always a new `urn:uuid:` ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041)); the web address is the ordinary `url` field. Refer to an organization by its `@id`, never its URL |
 | `organizations.update(ctx, id, patch)` / `organizations.delete(ctx, id)` | `identity-manage` | Change or remove |
 | `organizations.people(ctx, orgId)` | `identity-read` | `[{ person, affiliation }]`, one per affiliation with it, past and future ones included; `affiliation` is the `OrganizationRole` (title in `roleName`) |
 
