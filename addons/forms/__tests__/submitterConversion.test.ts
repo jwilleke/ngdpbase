@@ -1,5 +1,5 @@
 /**
- * #2041 (identity model step 6): at start-up the forms add-on converts every
+ * #2041 (identity model step 6): at start-up (FormsDataManager.initialize) the forms add-on converts every
  * stored submission's `submittedBy` username to the submitter's identity
  * `@id`, keeping the name as `submitterName`, under the system context, one
  * write per submission file. `anonymous`, the system principal and values
@@ -54,7 +54,6 @@ test('known usernames become @ids with the name kept, unknown ones stay and are 
 
   const first = manager();
   await first.initialize();
-  await first.convertSubmittersToIdentityIds();
   expect(await read(known)).toMatchObject({ submittedBy: IDS.ann, submitterName: 'ann' });
   expect(await read(unknown)).toMatchObject({ submittedBy: 'gone' });
   expect((await read(anon)).submittedBy).toBe('anonymous');
@@ -66,7 +65,6 @@ test('known usernames become @ids with the name kept, unknown ones stay and are 
   const mtime = (await fsp.stat(known)).mtimeMs;
   const second = manager();
   await second.initialize();
-  await second.convertSubmittersToIdentityIds();
   expect(lookups).toEqual(['gone']);
   expect((await fsp.stat(known)).mtimeMs).toBe(mtime);
 });
@@ -75,6 +73,5 @@ test('with nothing left to convert the add-on is ready', async () => {
   await store('b1', 'ann');
   const m = manager();
   await m.initialize();
-  await m.convertSubmittersToIdentityIds();
   expect(m.getManagerStatus()).toEqual({ state: 'ready' });
 });

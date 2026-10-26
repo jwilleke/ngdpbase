@@ -322,6 +322,7 @@ export default class FormsDataManager {
     await fsp.mkdir(path.join(this.dataPath, 'definitions'), { recursive: true });
     await fsp.mkdir(path.join(this.dataPath, 'submissions'), { recursive: true });
     await this.loadDefinitions();
+    await this.convertSubmittersToIdentityIds();
   }
 
   /**
@@ -333,7 +334,7 @@ export default class FormsDataManager {
    * with no account is left as it is and reported: a log line and the admin
    * dashboard's needs-attention list ({@link getManagerStatus}), counts only.
    */
-  async convertSubmittersToIdentityIds(): Promise<void> {
+  private async convertSubmittersToIdentityIds(): Promise<void> {
     const identities = this.engine?.getManager('IdentityManager') as IdentityManager | null | undefined;
     if (!identities) return;
     const ctx = this.host.systemContext('forms: convert submitters from username to identity @id (#2041)');
