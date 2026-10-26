@@ -335,7 +335,8 @@ class DatabaseAuditProvider extends BaseAuditProvider {
 
   /**
    * The entries about one person (#1537): the person is the row's `user`,
-   * its `actor`, or the owner of the resource it names (`metadata.owner`).
+   * its `actor`, or the owner of the resource it names (`metadata.owner`:
+   * their identity `@id` from #2041 on, their username before).
    * Each is an indexed column. Newest first, a page at a time.
    */
   override searchEntriesAbout(person: string, options: PersonEntriesOptions = {}): Promise<AuditSearchResults> {
@@ -343,7 +344,11 @@ class DatabaseAuditProvider extends BaseAuditProvider {
       this.flushBeforeRead();
       const limit = this.clampLimit(options.limit);
       const offset = Math.max(0, Number(options.offset ?? 0) || 0);
-      const where = { sql: 'WHERE user = ? OR actor = ? OR owner = ?', params: [person, person, person] };
+      // #2041: the owner is the user's identity @id on new rows, their
+      // username on rows written before; both match, nothing is rewritten.
+      const where = options.ownerId
+        ? { sql: 'WHERE user = ? OR actor = ? OR owner = ? OR owner = ?', params: [person, person, person, options.ownerId] }
+        : { sql: 'WHERE user = ? OR actor = ? OR owner = ?', params: [person, person, person] };
       return Promise.resolve(this.page(where, 'timestamp DESC, row_id DESC', limit, offset));
     } catch (err) {
       return Promise.reject(err instanceof Error ? err : new Error(String(err)));

@@ -33,8 +33,9 @@ function makeManager(pages: Info[], { auditFails = false } = {}) {
     }),
     flushAuditQueue: vi.fn(() => Promise.resolve())
   };
+  const identities = { getByUserIdentifier: vi.fn(async (_ctx: unknown, u: string) => (u === 'e2e-ann' ? { '@id': 'urn:uuid:ann-1' } : null)) };
   const manager = new PageManager({
-    getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : null))
+    getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : name === 'IdentityManager' ? identities : null))
   }) as unknown as {
     provider: unknown;
     deleteTestArtifacts: (ctx: unknown, only?: { author?: string; systemCategory?: string }) => Promise<{
@@ -82,6 +83,17 @@ describe('PageManager.deleteTestArtifacts (#2008)', () => {
       resource: 'u-NGDPBASE-test-A',
       metadata: expect.objectContaining({ pageName: 'NGDPBASE-test-A', reason: 'test-artifact' })
     });
+  });
+
+  test('the record names the page\'s author by identity @id, a name with no account as written (#2041)', async () => {
+    const { manager, events } = makeManager([
+      artifact('Profile: e2e-ann', { author: 'e2e-ann' }),
+      artifact('NGDPBASE-test-B', { author: 'gone' })
+    ]);
+    await manager.deleteTestArtifacts(ADMIN);
+    // Sabotage check: `owner: author` in place of the lookup turns the first red.
+    const owners = Object.fromEntries(events.map((e) => [(e.metadata as { pageName: string }).pageName, (e.metadata as { owner: string }).owner]));
+    expect(owners).toEqual({ 'Profile: e2e-ann': 'urn:uuid:ann-1', 'NGDPBASE-test-B': 'gone' });
   });
 
   test('a record that cannot be written refuses that delete', async () => {

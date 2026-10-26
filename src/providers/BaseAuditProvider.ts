@@ -110,6 +110,12 @@ export interface AuditStats {
 export interface PersonEntriesOptions {
   limit?: number;
   offset?: number;
+  /**
+   * The user's identity `@id` (#2041). From that release on a row names the
+   * owner of its resource by `@id` in `metadata.owner`; rows written before
+   * name the owner's username. A row is about the user under either.
+   */
+  ownerId?: string;
 }
 
 /** Where the chain head is published (#1138), shared by every storing provider. */
@@ -201,13 +207,16 @@ export function recordOwner(record: Record<string, unknown>): string | null {
 }
 
 /**
- * Whether a record is about `person` (#1537): the person is its `user` (the
- * account acted on, or the person represented under a proxy grant), its
+ * Whether a record is about the user `person` (#1537): the user is its `user`
+ * (the account acted on, or the user represented under a proxy grant), its
  * `actor` (who actually did it, under a proxy grant), or the owner of the
- * resource it names ({@link recordOwner}).
+ * resource it names ({@link recordOwner}). The owner is the user's identity
+ * `@id` (`ownerId`) on rows written from #2041 on, and their username on
+ * rows written before, which are never rewritten; either matches.
  */
-export function recordIsAbout(record: Record<string, unknown>, person: string): boolean {
-  return record.user === person || record.actor === person || recordOwner(record) === person;
+export function recordIsAbout(record: Record<string, unknown>, person: string, ownerId?: string): boolean {
+  const owner = recordOwner(record);
+  return record.user === person || record.actor === person || owner === person || (Boolean(ownerId) && owner === ownerId);
 }
 
 /**

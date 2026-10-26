@@ -161,7 +161,7 @@ export interface TokenInput extends CommonInput {
   op: TokenOp;
   /** Token id — the handle every later question about this credential uses. */
   id: string;
-  /** Whose token it is, which is not always who acted: an admin may revoke. */
+  /** Whose token it is, which is not always who acted (an admin may revoke): their identity @id (#2041), or a name with no account as given. */
   owner: string;
   /** Operator-supplied label. Optional; a token need not be named. */
   name?: string | null;
@@ -182,6 +182,7 @@ export interface TokenInput extends CommonInput {
  */
 export type AttachmentDetail =
   | { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null }
+  /** A sealed store's file: `owner` is the store owner's identity @id in the record (#2041). */
   | { attachmentId: string; sealedStore: { owner: string; store: string } };
 
 export type AttachmentInput = CommonInput & { op: AttachmentOp } & AttachmentDetail;

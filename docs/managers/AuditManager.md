@@ -1,7 +1,7 @@
 ---
 name: AuditManager
 description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
-dateModified: '2026-10-23'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/AuditManager.ts
 ---
@@ -730,7 +730,7 @@ __Returns:__ `Promise<Object>`
 
 #### searchEntriesAbout(person, options, caller)
 
-The entries about one user, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the user when the user is its `user` (the account acted on, or the user represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). Reading it removes nothing.
+The entries about one user, newest first, a page at a time ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)): the one audit log, filtered, never a second store. A row is about the user when the user is its `user` (the account acted on, or the user represented under a proxy grant), its `actor` (who actually did it under a proxy grant), or the owner of the resource it names, `metadata.owner` (where token, private-store and share rows carry it today; an add-on's rows carry it once [#1823](https://github.com/jwilleke/ngdpbase/issues/1823) lands). From [#2041](https://github.com/jwilleke/ngdpbase/issues/2041) on, `metadata.owner` is the owner's identity `@id`; older rows name the owner by username and are never rewritten. The manager looks up the user's `@id` (`IdentityManager.getByUserIdentifier`, system context, after the caller is decided) and hands it to the provider as `ownerId`, so both match. Reading it removes nothing.
 
 ```javascript
 const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0 }, ctx.subject);

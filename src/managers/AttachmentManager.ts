@@ -4,6 +4,7 @@ import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
+import type IdentityManager from './IdentityManager.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -2174,11 +2175,23 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // WikiContext's request IP remains as the fallback for a caller whose
     // subject predates the address riding on it.
     const who = actorOf(context);
+    // #2041: a sealed store's owner is named by identity @id in the record; a
+    // name with no account as given.
+    const named: AttachmentDetail = 'sealedStore' in detail
+      ? {
+        ...detail,
+        sealedStore: {
+          ...detail.sealedStore,
+          owner: (await this.engine.getManager<IdentityManager>('IdentityManager')
+            ?.getByUserIdentifier(systemContext(this.engine, 'record a sealed-store file change: the owner identity @id (#2041)'), detail.sealedStore.owner))?.['@id'] ?? detail.sealedStore.owner
+        }
+      }
+      : detail;
     const event = buildAttachmentAuditEvent({
       op,
       username: who.user,
       ipAddress: who.ipAddress ?? wikiContext?.request?.ip,
-      ...detail,
+      ...named,
       // Forwarded, never rebuilt — the delegation rides on the caller's
       // context (P1). Without it a token-driven upload records as its owner
       // with no sign a token was involved.

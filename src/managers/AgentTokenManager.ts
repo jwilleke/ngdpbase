@@ -70,6 +70,8 @@ import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION, PROXY_G
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
 import { RETIRED_PERMISSIONS } from '../utils/permissionCatalog.js';
 
 /** Configuration namespace. See the extraction note in the file header. */
@@ -534,6 +536,11 @@ class AgentTokenManager extends BaseManager {
     // failure this rule exists to prevent. Audit-first inverts the residual
     // risk to an audit record for a token that does not exist: a puzzle rather
     // than a vulnerability.
+    // #2041: the token's owner is named by identity @id in the record.
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const ownerId = identities
+      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token mint: the owner identity @id (#2041)'), owner))?.['@id'] ?? owner
+      : owner;
     await recordAuditEvent(
       this.auditSink(),
       buildTokenAuditEvent({
@@ -541,7 +548,7 @@ class AgentTokenManager extends BaseManager {
         username: owner,
         ipAddress: subject.ipAddress,
         id,
-        owner,
+        owner: ownerId,
         name: record.name,
         scopes: record.scopes,
         expiresAt: record.expiresAt,
@@ -647,6 +654,11 @@ class AgentTokenManager extends BaseManager {
     // #1121: critical, and audited before the state reaches disk for the same
     // reason as mint — a revocation the caller is told failed, while the token
     // is in fact revoked, is a different lie but a lie all the same.
+    // #2041: the token's owner is named by identity @id in the record.
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const ownerId = identities
+      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token revoke: the owner identity @id (#2041)'), record.owner))?.['@id'] ?? record.owner
+      : record.owner;
     await recordAuditEvent(
       this.auditSink(),
       buildTokenAuditEvent({
@@ -654,7 +666,7 @@ class AgentTokenManager extends BaseManager {
         username: ctx.username ?? 'system',
         ipAddress: ctx.ipAddress,
         id,
-        owner: record.owner,
+        owner: ownerId,
         name: record.name,
         revokedBy: byUsername,
         viaProxy: ctx.viaProxy
@@ -724,6 +736,11 @@ class AgentTokenManager extends BaseManager {
     }
     const expiresAt = new Date(next).toISOString();
 
+    // #2041: the token's owner is named by identity @id in the record.
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const ownerId = identities
+      ? (await identities.getByUserIdentifier(systemContext(this.engine, 'record a token extend: the owner identity @id (#2041)'), record.owner))?.['@id'] ?? record.owner
+      : record.owner;
     await recordAuditEvent(
       this.auditSink(),
       buildTokenAuditEvent({
@@ -731,7 +748,7 @@ class AgentTokenManager extends BaseManager {
         username: owner,
         ipAddress: undefined,
         id,
-        owner: record.owner,
+        owner: ownerId,
         name: record.name,
         previousExpiresAt: record.expiresAt,
         expiresAt,

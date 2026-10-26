@@ -47,6 +47,7 @@ import { auditDeclarationsFrom, auditEventDeclarations, bindAuditEvents } from '
 import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type IdentityManager from './IdentityManager.js';
 import type { ReportedValues } from './AuthManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
 import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
@@ -219,7 +220,7 @@ interface BaseAuditProvider {
   close(): Promise<void>;
   isHealthy(): Promise<boolean>;
   getProviderInfo(): ProviderInfo;
-  searchEntriesAbout?(person: string, options: { limit?: number; offset?: number }): Promise<AuditSearchResults>;
+  searchEntriesAbout?(person: string, options: { limit?: number; offset?: number; ownerId?: string }): Promise<AuditSearchResults>;
 }
 
 /**
@@ -779,8 +780,9 @@ class AuditManager extends BaseManager {
    * (#1537): the one audit log, filtered to the rows where the person is the
    * `user` (the account acted on, or the person represented under a proxy
    * grant), the `actor` (who actually did it under a proxy grant), or the
-   * owner of the resource the row names (`metadata.owner`). Nothing is
-   * removed from the log by reading it.
+   * owner of the resource the row names (`metadata.owner`: the user's
+   * identity `@id` on rows from #2041 on, their username on older rows).
+   * Nothing is removed from the log by reading it.
    *
    * Decided by the PDP with the caller's subject: a person asking about
    * themselves needs `profile-manage` (granted to every account); asking about
@@ -801,7 +803,12 @@ class AuditManager extends BaseManager {
     if (!this.provider.searchEntriesAbout) {
       throw new Error(`The audit provider ${this.provider.getProviderInfo().name} cannot list the entries about one person`);
     }
-    return await this.provider.searchEntriesAbout(person, options);
+    // #2041: rows from this release on name a resource's owner by identity
+    // @id, rows before by username, and none is rewritten; both are the user's.
+    // Core's own lookup, after the caller was decided above.
+    const identity = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'list the audit entries about a user: their identity @id (#2041)'), person);
+    return await this.provider.searchEntriesAbout(person, identity ? { ...options, ownerId: identity['@id'] } : options);
   }
 
   /**
