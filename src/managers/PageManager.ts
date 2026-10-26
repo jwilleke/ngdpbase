@@ -59,6 +59,7 @@ import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pa
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { KeyedSerial } from '../utils/keyedSerial.js';
 import { IDENTITY_ID_PREFIX, isReservedUsername, sameUsername } from '../utils/username.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
@@ -365,6 +366,37 @@ export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
 /** Private slugs from `private--…` to `vaults--…` (#1507). */
 export const VAULT_SLUG_MIGRATION = 'vault-slugs';
+/** Page authorship stored as identity @ids (#2097): every page and its history visited once; recorded per site and per vault. */
+export const AUTHORSHIP_ID_MIGRATION = 'authorship-identity-ids';
+
+type PrivateStorePageRefs = Array<{ owner: string; store: string; title: string; uuid: string }>;
+
+/** What a page provider offers the authorship conversion (#2097); FileSystemProvider and VersioningFileProvider. */
+interface AuthorshipProvider {
+  listAuthorshipRefs?(): Array<{ uuid: string; author?: string; editor?: string }>;
+  convertPageReferences?(ctx: ActorContext, identifier: string, convert: (stored: string) => Promise<string>): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; versions?: number }>;
+  finishAuthorshipConversion?(convert: (stored: string) => Promise<string>, opts?: { full?: boolean }): Promise<number>;
+  convertStoreDeletedReferences?(ctx: ActorContext, owner: string, convert: (stored: string) => Promise<string>): Promise<number>;
+  listPrivateStorePages?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRefs>;
+}
+
+/** What one authorship conversion pass did (#2097), counts only. */
+export interface AuthorshipConversion {
+  /** `done`, or `postponed` when the identity store could not answer. */
+  status: 'done' | 'postponed';
+  /** Every page visited (`full`), or only those whose index entry still names a username. */
+  full: boolean;
+  pagesVisited: number;
+  pagesChanged: number;
+  /** Pages whose frontmatter could not be rewritten line by line, left as they are. */
+  pagesRefused: number;
+  versionsChanged: number;
+  tombstonesChanged: number;
+  converted: number;
+  orphans: number;
+  noUser: number;
+  ms: number;
+}
 
 /**
  * Minimal WikiContext interface for type safety
@@ -488,6 +520,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * #754 backfill (v3.33.0).
    */
   readonly types: readonly SchemaType[] = ['Article'];
+
+  /** One write at a time per page, by uuid (#2097): saves, deletes and the authorship conversion. */
+  private readonly pageWrites = new KeyedSerial();
 
   /**
    * On-disk schema version for the page-frontmatter shape (Decision 6).
@@ -2333,9 +2368,13 @@ class PageManager extends BaseManager implements CatalogSource {
       ...(options.preserveLastModified ? { preserveLastModified: true } : {}),
       ...(options.moveFrom ? { moveFrom: options.moveFrom } : {})
     };
-    const saved = Object.keys(providerOptions).length > 0
-      ? await this.provider.savePage(pageName, content, enrichedMetadata, ctx, providerOptions)
-      : await this.provider.savePage(pageName, content, enrichedMetadata, ctx);
+    // #2097: one write at a time per page, so the start-up authorship
+    // conversion (which runs while the site serves) never writes over a save.
+    const provider = this.provider;
+    const writeKey = existingPage?.uuid ?? ((enrichedMetadata as Record<string, unknown>).uuid as string | undefined) ?? pageName;
+    const saved = await this.pageWrites.run(writeKey, () => (Object.keys(providerOptions).length > 0
+      ? provider.savePage(pageName, content, enrichedMetadata, ctx, providerOptions)
+      : provider.savePage(pageName, content, enrichedMetadata, ctx)));
 
     // #1462: the shared indexes follow the save here, and nowhere else.
     const previousName = existingPage ? this.nameOf(options.moveFrom ?? pageName, existingPage) : null;
@@ -2849,7 +2888,9 @@ class PageManager extends BaseManager implements CatalogSource {
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
     // #1964: nobody outside a page's audience deletes it.
     if (before) await this.assertAudienceAdmits(identifier, before.metadata, ctx);
-    const deleted = await this.provider.deletePage(identifier, ctx);
+    // #2097: one write at a time per page, with the authorship conversion.
+    const provider = this.provider;
+    const deleted = await this.pageWrites.run(before?.uuid ?? identifier, () => provider.deletePage(identifier, ctx));
     if (deleted && before) {
       await this.reconcileSharedIndexes({
         ctx,
@@ -3802,6 +3843,205 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
     return vaults;
+  }
+
+  /**
+   * The page-authorship conversion at start-up (#2097), on the public pages:
+   * best-effort, never throws, and runs while the site serves (WikiEngine does
+   * not wait for it). See {@link convertAuthorship}.
+   */
+  async convertAuthorshipAtBoot(): Promise<AuthorshipConversion | null> {
+    try {
+      return await this.convertAuthorship(systemContext(this.engine, 'convert page authors, editors and history from username to identity @id (#2097)'));
+    } catch (err) {
+      logger.warn(`[PageManager] Page authorship was not converted: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Convert the public pages' authorship to identity @ids (#2097, operator
+   * 2026-10-26), through this door's own write path, one page at a time
+   * with the saves ({@link pageWrites}):
+   *
+   * - each page's frontmatter `author` and `editor`, written without
+   *   touching its body, its other fields or its `lastModified`, and without
+   *   a new version; its page index entry follows;
+   * - its version history's editors (`manifest.json`), in place;
+   * - the tombstones' `author`, `editor` and `deletedBy`;
+   * - then the search index, rebuilt from the pages once if anything changed.
+   *
+   * Each value gets `IdentityManager.convertRecordedUser`'s answer: a
+   * username with an account becomes its @id; one with none `orphan:<name>`
+   * (counted, and on the dashboard: only an administrator acts on those
+   * pages); `migrated`, `unknown` and `import` `orphan:<value>` without a
+   * lookup (counted apart, not needing attention); @ids, orphans and
+   * principals are kept, so a second run writes nothing.
+   *
+   * The first complete pass visits every page and its history, and is then
+   * recorded in the site's migrations record; later passes visit only pages
+   * whose index entry still holds a value to convert. Pages are taken in
+   * batches of `ngdpbase.page.authorship-conversion.batch-size`, yielding
+   * between batches. When the identity store cannot answer (`canAnswer()`
+   * false, or a lookup fails mid-pass) the pass stops, says so on the
+   * dashboard, and the next start tries again. Logs counts only. Vault pages
+   * convert when their vault is opened ({@link convertVaultAuthorship}).
+   */
+  async convertAuthorship(ctx: ActorContext): Promise<AuthorshipConversion | null> {
+    if (!ctx) throw new Error('PageManager.convertAuthorship requires an ActorContext');
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider: AuthorshipProvider | null = this.provider;
+    if (!identities || !provider?.convertPageReferences || !provider.listAuthorshipRefs) return null;
+    const started = Date.now();
+    const result: AuthorshipConversion = {
+      status: 'done', full: false, pagesVisited: 0, pagesChanged: 0, pagesRefused: 0,
+      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, noUser: 0, ms: 0
+    };
+    if (!identities.canAnswer()) {
+      this.postponeAuthorshipConversion('the identity store is unavailable');
+      return { ...result, status: 'postponed', ms: Date.now() - started };
+    }
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const recordFile = configManager ? path.join(configManager.getInstanceDataFolder(), SITE_MIGRATIONS_FILE) : null;
+    const record = (recordFile && await fse.pathExists(recordFile) ? await fse.readJson(recordFile) : {}) as { migrations?: Record<string, string> };
+    result.full = !record.migrations?.[AUTHORSHIP_ID_MIGRATION];
+    const batchSize = this.authorshipBatchSize();
+    const { convert, counts } = identities.conversionPass(ctx);
+
+    try {
+      // After the first complete pass, only pages whose index entry still
+      // names something to convert are opened; asking costs no file read.
+      const refs = provider.listAuthorshipRefs();
+      const candidates: string[] = [];
+      for (const ref of refs) {
+        if (result.full || await this.authorshipNeedsConversion(identities, ctx, ref)) candidates.push(ref.uuid);
+      }
+      for (let i = 0; i < candidates.length; i += batchSize) {
+        for (const uuid of candidates.slice(i, i + batchSize)) {
+          const outcome = await this.pageWrites.run(uuid, () => provider.convertPageReferences!(ctx, uuid, convert));
+          result.pagesVisited++;
+          if (outcome.file === 'changed') result.pagesChanged++;
+          if (outcome.file === 'refused') result.pagesRefused++;
+          result.versionsChanged += outcome.versions ?? 0;
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      result.tombstonesChanged = (await provider.finishAuthorshipConversion?.(convert, { full: result.full })) ?? 0;
+    } catch (err) {
+      this.postponeAuthorshipConversion(err instanceof Error ? err.message : String(err));
+      return { ...result, ...counts, status: 'postponed', ms: Date.now() - started };
+    }
+
+    if (result.full && recordFile) {
+      record.migrations = { ...record.migrations, [AUTHORSHIP_ID_MIGRATION]: new Date().toISOString() };
+      await fse.writeJson(recordFile, record, { spaces: 2 });
+    }
+    Object.assign(result, counts, { ms: Date.now() - started });
+    this.reportAuthorshipConversion(result, 'public page');
+    if (result.pagesChanged > 0) {
+      // The shared search index holds the pages' authors and editors; it is
+      // rebuilt from the pages once, so a search by author finds the @ids.
+      await this.engine.getManager<SearchManager>('SearchManager')?.rebuildFromDisk()
+        .catch((err: unknown) => logger.warn(`[PageManager] The search index was not rebuilt after the authorship conversion: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    return result;
+  }
+
+  /**
+   * The authorship conversion for the vaults of `owner` this context can open
+   * (#2097), when they are opened: at sign-in and unlock, where the owner's
+   * keys are live. Each vault's pages (frontmatter, its own page index entry,
+   * history) and the owner's vault trash; each vault is recorded as done in
+   * its own migrations record and skipped from then on. Postponed, and tried
+   * at the next opening, when the identity store cannot answer.
+   */
+  async convertVaultAuthorship(ctx: ActorContext, owner: string): Promise<AuthorshipConversion | null> {
+    if (!ctx) throw new Error('PageManager.convertVaultAuthorship requires an ActorContext');
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider: AuthorshipProvider | null = this.provider;
+    if (!identities || !provider?.convertPageReferences || !provider.listPrivateStorePages) return null;
+    const started = Date.now();
+    const result: AuthorshipConversion = {
+      status: 'done', full: true, pagesVisited: 0, pagesChanged: 0, pagesRefused: 0,
+      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, noUser: 0, ms: 0
+    };
+    if (!identities.canAnswer()) return { ...result, status: 'postponed', ms: Date.now() - started };
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return null;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const { convert, counts } = identities.conversionPass(ctx);
+
+    const byVault = new Map<string, PrivateStorePageRefs>();
+    for (const page of await provider.listPrivateStorePages(ctx, owner)) {
+      byVault.set(page.store, [...(byVault.get(page.store) ?? []), page]);
+    }
+    try {
+      for (const [store, pages] of byVault) {
+        const where = { pagesDirectory, owner, store, layout };
+        if (await storeMigrationDone(ctx, where, AUTHORSHIP_ID_MIGRATION)) continue;
+        for (const page of pages) {
+          const outcome = await this.pageWrites.run(page.uuid, () =>
+            provider.convertPageReferences!(ctx, formatPrivatePageName(page.owner, page.store, page.title), convert));
+          result.pagesVisited++;
+          if (outcome.file === 'changed') result.pagesChanged++;
+          if (outcome.file === 'refused') result.pagesRefused++;
+          result.versionsChanged += outcome.versions ?? 0;
+        }
+        await recordStoreMigration(ctx, where, AUTHORSHIP_ID_MIGRATION);
+      }
+      result.tombstonesChanged = (await provider.convertStoreDeletedReferences?.(ctx, owner, convert)) ?? 0;
+    } catch (err) {
+      // #1461: no store or page is named; the next opening tries again.
+      logger.warn(`[PageManager] Vault page authorship conversion postponed: ${err instanceof Error ? err.message : String(err)} (#2097)`);
+      return { ...result, ...counts, status: 'postponed', ms: Date.now() - started };
+    }
+    Object.assign(result, counts, { ms: Date.now() - started });
+    this.reportAuthorshipConversion(result, 'vault page');
+    return result;
+  }
+
+  /** Whether an index entry still holds an author or editor the conversion would change (#2097). No lookup is written. */
+  private async authorshipNeedsConversion(identities: IdentityManager, ctx: ActorContext, ref: { author?: string; editor?: string }): Promise<boolean> {
+    for (const stored of [ref.author, ref.editor]) {
+      if (typeof stored === 'string' && stored && (await identities.convertRecordedUser(ctx, stored)).value !== stored) return true;
+    }
+    return false;
+  }
+
+  /** `ngdpbase.page.authorship-conversion.batch-size`: pages converted between yields (#2097). */
+  private authorshipBatchSize(): number {
+    const configured = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.page.authorship-conversion.batch-size', 200));
+    return Number.isInteger(configured) && configured > 0 ? configured : 200;
+  }
+
+  /** Counts only, never a name (#2097): the log, and the dashboard for orphans and refused pages. */
+  private reportAuthorshipConversion(result: AuthorshipConversion, what: string): void {
+    if (result.pagesChanged > 0 || result.versionsChanged > 0 || result.tombstonesChanged > 0) {
+      logger.info(`[PageManager] Converted ${what} authorship to identity @ids: ${result.pagesChanged} of ${result.pagesVisited} page(s), ${result.versionsChanged} version editor(s), ${result.tombstonesChanged} tombstone value(s), in ${result.ms} ms (#2097)`);
+    }
+    if (result.noUser > 0) {
+      logger.info(`[PageManager] ${result.noUser} ${what} author/editor value(s) record no user (migrated, unknown, import); only an administrator acts on those pages (#2097)`);
+    }
+    if (result.orphans > 0) {
+      const reason = `${result.orphans} ${what} author/editor value(s) are orphaned: their username has no account, so only an administrator can act as those pages' author (#2097)`;
+      logger.warn(`[PageManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+    if (result.pagesRefused > 0) {
+      const reason = `${result.pagesRefused} ${what}(s) kept their username author/editor: their frontmatter could not be rewritten line by line (#2097)`;
+      logger.warn(`[PageManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2097). */
+  private postponeAuthorshipConversion(why: string): void {
+    const reason = 'Page authorship was not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097)';
+    logger.warn(`[PageManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
   }
 
   /**

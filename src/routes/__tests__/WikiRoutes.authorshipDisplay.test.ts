@@ -58,4 +58,24 @@ describe('#2097 WikiRoutes shows and decides authorship by identity @id', () => 
   test('without IdentityManager the stored value is shown as it is', async () => {
     expect(await routes(false).describeUser('urn:uuid:jim-1')).toBe('urn:uuid:jim-1');
   });
+
+  // Sabotage: removing the two conversion calls from adoptSealedPages turned this red.
+  test('opening a vault converts its page authorship and file uploaders, and a failure never stops the unlock', async () => {
+    const calls: string[] = [];
+    const pageManager = {
+      adoptUserPageCatalog: async () => { calls.push('adopt'); },
+      convertVaultAuthorship: async (_ctx: unknown, owner: string) => { calls.push(`pages:${owner}`); throw new Error('identity store down'); },
+      migratePrivateLinks: async () => { calls.push('links'); },
+      buildMissingStoreSearchIndexes: async () => { calls.push('search'); },
+      purgeExpiredOwnPrivateTrash: async () => { calls.push('trash'); }
+    };
+    const managers: Record<string, unknown> = {
+      PolicyInformationPoint: { subjectFor: async (u: string) => ({ username: u, roles: [], isAuthenticated: true }) },
+      PageManager: pageManager,
+      AttachmentManager: { convertVaultUploaders: async () => { calls.push('files'); return 0; } }
+    };
+    const r = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null }) as unknown as { adoptSealedPages(u: string, h: string): Promise<void> };
+    await r.adoptSealedPages('jim', 'handle-1');
+    expect(calls).toEqual(['adopt', 'pages:jim', 'files', 'links', 'search', 'trash']);
+  });
 });

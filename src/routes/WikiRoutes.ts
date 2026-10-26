@@ -465,6 +465,8 @@ interface IPageManager {
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
   /** At unlock (#1457): `[Title]` becomes `[store/Title]` in this owner's stores. */
   migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
+  /** #2097: a vault's page authorship to identity @ids, at its opening. */
+  convertVaultAuthorship?(ctx: ActorContext, owner: string): Promise<unknown>;
   /** At unlock (#1458): a sealed store with no saved search index gets one. */
   buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
@@ -9723,6 +9725,18 @@ ${panes}
     if (!subject) throw new Error(`No active account '${username}' to unlock stores for`);
     const ctx = { ...subject, privateStoreHandle: handle };
     await pageManager.adoptUserPageCatalog(ctx);
+    // #2097: the vault's page authorship and file uploaders become identity
+    // @ids now that its key is live; once per vault, never failing the unlock.
+    try {
+      await pageManager.convertVaultAuthorship?.(ctx, username);
+    } catch (err) {
+      logger.warn('[private-store] Vault page authorship was not converted:', err);
+    }
+    try {
+      await this.engine.getManager('AttachmentManager')?.convertVaultUploaders?.(ctx);
+    } catch (err) {
+      logger.warn('[private-store] Vault file uploaders were not converted:', err);
+    }
     await pageManager.migratePrivateLinks(ctx, username);
     await pageManager.buildMissingStoreSearchIndexes(ctx, username);
     await pageManager.purgeExpiredOwnPrivateTrash(ctx);

@@ -17,6 +17,7 @@ export interface FakeIdentities {
   convertReference: IdentityManager['convertReference'];
   canAnswer: IdentityManager['canAnswer'];
   convertRecordedUser: IdentityManager['convertRecordedUser'];
+  conversionPass: IdentityManager['conversionPass'];
   refersTo: IdentityManager['refersTo'];
   referencesOf: IdentityManager['referencesOf'];
   usernameOf: IdentityManager['usernameOf'];
@@ -53,6 +54,7 @@ export function fakeIdentityManager(accounts: Record<string, string>, opts: { do
     convertReference: proto.convertReference,
     canAnswer: proto.canAnswer,
     convertRecordedUser: proto.convertRecordedUser,
+    conversionPass: proto.conversionPass,
     refersTo: proto.refersTo,
     referencesOf: proto.referencesOf,
     usernameOf: proto.usernameOf,

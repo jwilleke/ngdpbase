@@ -896,6 +896,137 @@ class VersioningFileProvider extends FileSystemProvider {
     }
   }
 
+  /** The public pages' stored author and editor, from the page index (#2097). */
+  override listAuthorshipRefs(): Array<{ uuid: string; author?: string; editor?: string }> {
+    if (!this.pageIndex) return super.listAuthorshipRefs();
+    return Object.values(this.pageIndex.pages).map((entry) => ({
+      uuid: entry.uuid,
+      ...(entry.author ? { author: entry.author } : {}),
+      ...(entry.editor ? { editor: entry.editor } : {})
+    }));
+  }
+
+  /**
+   * {@link FileSystemProvider.convertPageReferences}, plus what this provider
+   * keeps about the page (#2097): its page index entry (saved by
+   * {@link finishAuthorshipConversion}) or its vault's index entry, and its
+   * version history's editors (`manifest.json`), rewritten in place: no
+   * version is added, and every other field of every version is kept.
+   * `versions` counts the version editors converted.
+   */
+  override async convertPageReferences(
+    ctx: ActorContext,
+    identifier: string,
+    convert: (stored: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; versions?: number }> {
+    const info = this.resolvePageInfo(identifier, ctx);
+    const result = await super.convertPageReferences(ctx, identifier, convert);
+    if (!info || result.file === 'missing') return result;
+
+    const entry = info.fromStore ? undefined : this.pageIndex?.pages[info.uuid];
+    if (entry && result.file !== 'refused') {
+      if (result.author) entry.author = result.author;
+      if (result.editor) entry.editor = result.editor;
+    }
+
+    const location: 'pages' | 'required-pages' | 'private' = info.fromStore ? 'private' : (entry?.location ?? 'pages');
+    const versions = await this.versionTarget(info.uuid, location, ctx, info.fromStore?.owner, info.fromStore?.store);
+    return { ...result, versions: await this.convertHistoryEditors(info.uuid, location, versions, convert) };
+  }
+
+  /**
+   * A page's version history editors (#2097): each version's `editor` and the
+   * manifest's own `editor`/`author`, rewritten in place; no version is added
+   * and every other field is kept. Returns how many values changed.
+   */
+  private async convertHistoryEditors(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    versions: VersionTarget,
+    convert: (stored: string) => Promise<string>
+  ): Promise<number> {
+    const manifest = await this.loadManifest(uuid, location, versions);
+    if (!manifest) return 0;
+    let changed = 0;
+    for (const version of manifest.versions) {
+      if (typeof version.editor !== 'string' || !version.editor) continue;
+      const to = await convert(version.editor);
+      if (to !== version.editor) { version.editor = to; changed++; }
+    }
+    for (const field of ['editor', 'author'] as const) {
+      const stored = manifest[field];
+      if (typeof stored !== 'string' || !stored) continue;
+      const to = await convert(stored);
+      if (to !== stored) { manifest[field] = to; changed++; }
+    }
+    if (changed > 0) await this.saveManifest(uuid, location, manifest, versions);
+    return changed;
+  }
+
+  /**
+   * The public tombstones' `author`, `editor` and `deletedBy` (#2097), on the
+   * full pass also each deleted page's file and history, then the page index,
+   * saved once, with every entry the pass changed. Returns how many values changed.
+   */
+  async finishAuthorshipConversion(convert: (stored: string) => Promise<string>, opts: { full?: boolean } = {}): Promise<number> {
+    if (!this.pageIndex) return 0;
+    let changed = 0;
+    for (const entry of Object.values(this.pageIndex.deletedPages ?? {})) {
+      for (const field of ['author', 'editor', 'deletedBy'] as const) {
+        const stored = entry[field];
+        if (typeof stored !== 'string' || !stored) continue;
+        const to = await convert(stored);
+        if (to !== stored) { entry[field] = to; changed++; }
+      }
+      // The deleted page's file and history, so a restore brings it back
+      // converted: on the full pass only (they are read, not in memory).
+      if (!opts.full) continue;
+      const trashFile = path.join(this.getDeletedDirectory(entry.location), `${entry.uuid}.md`);
+      if ((await this.convertFileAuthorship(PLAIN_FILE_IO, trashFile, convert)).file === 'changed') changed++;
+      changed += await this.convertHistoryEditors(entry.uuid, entry.location, await this.versionTarget(entry.uuid, entry.location), convert);
+    }
+    await this.savePageIndex();
+    return changed;
+  }
+
+  /**
+   * The tombstones in one owner's vaults this context can open (#2097):
+   * `author`, `editor` and `deletedBy`. A vault this context holds no key
+   * for is skipped. Returns how many values changed.
+   */
+  async convertStoreDeletedReferences(ctx: ActorContext, owner: string, convert: (stored: string) => Promise<string>): Promise<number> {
+    if (!this.pagesDirectory) return 0;
+    let changed = 0;
+    for (const store of await this.storeIdsOf(owner)) {
+      let location: StoreFileLocation;
+      try {
+        location = await this.storeTrashLocation(ctx, owner, store);
+      } catch {
+        continue; // sealed, and this context holds no key for it
+      }
+      const deleted = await this.readStoreDeleted(this.pagesDirectory, location);
+      let here = 0;
+      for (const entry of Object.values(deleted)) {
+        for (const field of ['author', 'editor', 'deletedBy'] as const) {
+          const stored = (entry as unknown as Record<string, unknown>)[field];
+          if (typeof stored !== 'string' || !stored) continue;
+          const to = await convert(stored);
+          if (to !== stored) { (entry as unknown as Record<string, unknown>)[field] = to; here++; }
+        }
+      }
+      if (here > 0) await this.writeStoreDeleted(this.pagesDirectory, location, deleted);
+      changed += here;
+      // The deleted pages' files and histories in this vault's own trash.
+      for (const entry of Object.values(deleted)) {
+        const trashFile = path.join(privateDeletedDirectory(this.pagesDirectory, owner, store, this.privateStoreLayout), `${entry.uuid}.md`);
+        if ((await this.convertFileAuthorship(location.io, trashFile, convert)).file === 'changed') changed++;
+        const versions = await this.versionTarget(entry.uuid, 'private', ctx, owner, store);
+        changed += await this.convertHistoryEditors(entry.uuid, 'private', versions, convert);
+      }
+    }
+    return changed;
+  }
+
   /**
    * Await any pending page-index writes. Call before process exit to prevent data loss.
    */

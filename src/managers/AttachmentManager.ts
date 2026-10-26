@@ -804,6 +804,77 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * so the route answers it as one (401 for an anonymous caller).
    */
   /**
+   * Once, at start-up (#2097): the shared pool's uploaders and editors become
+   * identity @ids (`IdentityManager.convertRecordedUser`: an orphan for a
+   * name with no account, `orphan:unknown` for the pool's `Unknown`), written
+   * once through the provider, under the system context. A second start
+   * writes nothing. Counts only in the log; orphans on the dashboard. When the
+   * identity store cannot answer, nothing is written and the next start tries
+   * again. A vault's files convert when the vault is opened
+   * ({@link convertVaultUploaders}).
+   */
+  async convertUploadersAtBoot(): Promise<void> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider = this.attachmentProvider as { convertPoolReferences?(convert: (stored: string) => Promise<string>): Promise<number> } | null;
+    if (!identities || !provider?.convertPoolReferences) return;
+    if (!identities.canAnswer()) {
+      this.postponeUploaderConversion('the identity store is unavailable');
+      return;
+    }
+    const { convert, counts } = identities.conversionPass(systemContext(this.engine, 'convert file uploaders and editors from username to identity @id (#2097)'));
+    let changed: number;
+    try {
+      changed = await this.writeAttachments(provider.convertPoolReferences(convert));
+    } catch (err) {
+      this.postponeUploaderConversion(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    this.reportUploaderConversion(changed, counts, 'shared file');
+  }
+
+  /**
+   * The uploaders in the vaults of the context's own user that it can open
+   * (#2097), when they are opened: at sign-in and unlock. Each vault's files
+   * index, through its own I/O. Nothing is written when the identity store
+   * cannot answer; the next opening tries again.
+   */
+  async convertVaultUploaders(ctx: ActorContext): Promise<number> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const provider = this.attachmentProvider as { convertStoreReferences?(location: StoreFileLocation, convert: (stored: string) => Promise<string>): Promise<number> } | null;
+    if (!identities || !provider?.convertStoreReferences || !identities.canAnswer()) return 0;
+    const { convert, counts } = identities.conversionPass(ctx);
+    let changed = 0;
+    try {
+      for (const location of await this.ownPrivateStores(ctx)) {
+        changed += await this.writeAttachments(provider.convertStoreReferences(location, convert));
+      }
+    } catch (err) {
+      logger.warn(`[AttachmentManager] Vault file uploader conversion postponed: ${err instanceof Error ? err.message : String(err)} (#2097)`);
+      return changed;
+    }
+    this.reportUploaderConversion(changed, counts, 'vault file');
+    return changed;
+  }
+
+  /** Counts only, never a name (#2097). */
+  private reportUploaderConversion(changed: number, counts: { converted: number; orphans: number; noUser: number }, what: string): void {
+    if (changed > 0) logger.info(`[AttachmentManager] Converted ${changed} ${what} uploader/editor value(s) to identity @ids (#2097)`);
+    if (counts.noUser > 0) logger.info(`[AttachmentManager] ${counts.noUser} ${what} uploader value(s) record no user (Unknown) (#2097)`);
+    if (counts.orphans > 0) {
+      const reason = `${counts.orphans} ${what} uploader/editor value(s) are orphaned: their username has no account (#2097)`;
+      logger.warn(`[AttachmentManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /** The identity store could not answer: nothing is converted this start, and the next start tries again (#2097). */
+  private postponeUploaderConversion(why: string): void {
+    const reason = 'File uploaders were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097)';
+    logger.warn(`[AttachmentManager] ${reason}: ${why}`);
+    this.markNeedsAttention(reason);
+  }
+
+  /**
    * What a file record stores for the user `username` (#2097): their identity
    * @id, or the username when there is none or the identity store cannot answer.
    */

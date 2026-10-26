@@ -177,6 +177,62 @@ describe('FileManager — today\'s attachments as file records (#1852)', () => {
     ]));
   });
 
+  /** Give the shared engine an IdentityManager stand-in (#2097). */
+  async function withIdentities(accounts: Record<string, string>, opts: { down?: boolean; failLookups?: boolean } = {}) {
+    const { fakeIdentityManager } = await import('../../test-support/identities');
+    const identities = fakeIdentityManager(accounts, opts);
+    const engine = (files as unknown as { engine: { getManager(n: string): unknown } }).engine;
+    const orig = engine.getManager.bind(engine);
+    engine.getManager = (name: string) => (name === 'IdentityManager' ? identities : orig(name));
+    return identities;
+  }
+
+  const metadataFile = () => path.join(storageDir, 'attachment-metadata.json');
+  const poolAuthors = async () => ((await fs.readJson(metadataFile())).attachments as Array<{ identifier: string; author?: { name: string }; editor?: { name: string } }>)
+    .map((r) => [r.identifier, r.author?.name ?? null, r.editor?.name ?? null]);
+
+  // #2097: the start-up conversion of file uploaders. Sabotage checks (each
+  // turned a test red once): convertPoolReferences applying nothing; the
+  // postpone catch in convertUploadersAtBoot rethrowing; convertVaultUploaders
+  // skipping its vaults.
+  test('#2097 the shared pool uploaders convert once: @id, orphan, "Unknown"', async () => {
+    await seedPool([
+      { id: 'p1', name: 'a.png', author: 'molly', editor: 'bob' },
+      { id: 'p2', name: 'b.png', author: 'gone' },
+      { id: 'p3', name: 'c.png', author: 'Unknown' }
+    ]);
+    await withIdentities({ molly: 'urn:uuid:molly-1', bob: 'urn:uuid:bob-1', unknown: 'urn:uuid:u' });
+    await attachments.convertUploadersAtBoot();
+    expect(await poolAuthors()).toEqual(expect.arrayContaining([
+      ['p1', 'urn:uuid:molly-1', 'urn:uuid:bob-1'],
+      ['p2', 'orphan:gone', null],
+      ['p3', 'orphan:unknown', null]
+    ]));
+    const bytes = await fs.readFile(metadataFile(), 'utf8');
+    await attachments.convertUploadersAtBoot();
+    expect(await fs.readFile(metadataFile(), 'utf8')).toBe(bytes);
+  });
+
+  test('#2097 the identity store down: nothing written, postponed', async () => {
+    await seedPool([{ id: 'p1', name: 'a.png', author: 'molly' }]);
+    const before = await fs.readFile(metadataFile(), 'utf8');
+    await withIdentities({ molly: 'urn:uuid:molly-1' }, { failLookups: true });
+    await attachments.convertUploadersAtBoot();
+    expect(await fs.readFile(metadataFile(), 'utf8')).toBe(before);
+  });
+
+  test('#2097 a vault files index converts when the vault is opened', async () => {
+    const labs = await attachments.uploadAttachment(PDF, { originalName: 'labs.pdf', mimeType: 'application/pdf', size: PDF.length }, MOLLY, {
+      private: true, store: 'phr'
+    });
+    expect((await files.get(labs.identifier, MOLLY))?.author).toBe('molly');
+    await withIdentities({ molly: 'urn:uuid:molly-1' });
+    expect(await attachments.convertVaultUploaders(MOLLY)).toBe(1);
+    expect((await files.get(labs.identifier, MOLLY))?.author).toBe('urn:uuid:molly-1');
+    expect((await files.get(labs.identifier, MOLLY))?.owner).toBe('molly');
+    expect(await attachments.convertVaultUploaders(MOLLY)).toBe(0);
+  });
+
   test('a public record that names no user has no owner', async () => {
     // As legacy records were stored: `Unknown`, an email used as a name, or no author at all.
     await seedPool([

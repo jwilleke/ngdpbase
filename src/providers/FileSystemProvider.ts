@@ -49,6 +49,7 @@ import { installCompletePath } from '../utils/configFiles.js';
 import type IdentityManager from '../managers/IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
+import { rewriteFrontmatterFields } from '../utils/frontmatterFieldRewrite.js';
 
 /**
  * Page cache info (internal)
@@ -965,6 +966,109 @@ class FileSystemProvider extends BasePageProvider {
 
     logger.info(`[FileSystemProvider] Page '${finalTitle}' saved successfully to ${path.basename(filePath)}.`);
     return { name: finalTitle, uuid };
+  }
+
+  /**
+   * The public pages' stored author and editor, as the provider holds them in
+   * memory (#2097): the start-up conversion's list of pages to look at. A
+   * page whose metadata is not loaded yet comes back without them.
+   */
+  listAuthorshipRefs(): Array<{ uuid: string; author?: string; editor?: string }> {
+    return [...this.pageCache.values()].map((info) => {
+      const md = (info.metadata ?? {}) as { author?: unknown; editor?: unknown };
+      return {
+        uuid: info.uuid,
+        ...(typeof md.author === 'string' ? { author: md.author } : {}),
+        ...(typeof md.editor === 'string' ? { editor: md.editor } : {})
+      };
+    });
+  }
+
+  /**
+   * Convert one page's stored `author` and `editor` (#2097), in its file and
+   * in what the provider keeps about it, and nothing else: the body, every
+   * other frontmatter field and `lastModified` stay byte-identical
+   * ({@link rewriteFrontmatterFields}), and no version is made.
+   *
+   * `convert` answers what a stored value becomes (PageManager asks
+   * IdentityManager); it may throw (the identity store cannot answer), and
+   * then nothing of this page is written. A page whose frontmatter cannot be
+   * rewritten line by line is left alone and reported `refused`.
+   *
+   * @param identifier - A public page's uuid or title, or a vault page's name
+   * @returns What happened to the file, and the author and editor it now holds
+   */
+  async convertPageReferences(
+    ctx: ActorContext,
+    identifier: string,
+    convert: (stored: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string }> {
+    const info = this.resolvePageInfo(identifier, ctx);
+    if (!info) return { file: 'missing' };
+    const io = await this.fileIOFor(ctx, info.filePath);
+    const outcome = await this.convertFileAuthorship(io, info.filePath, convert);
+    if (outcome.file !== 'changed') return { ...outcome, uuid: info.uuid };
+    const now = { ...(outcome.author ? { author: outcome.author } : {}), ...(outcome.editor ? { editor: outcome.editor } : {}) };
+
+    if (info.fromStore && this.pagesDirectory) {
+      // A vault page's entry in its store's own index mirrors the file.
+      const where: StoreFileLocation = {
+        ...info.fromStore,
+        io: await storeFileIO(ctx, { pagesDirectory: this.pagesDirectory, owner: info.fromStore.owner, store: info.fromStore.store, layout: this.privateStoreLayout })
+      };
+      const entry = await this.findStorePage(this.pagesDirectory, where, info.uuid);
+      if (entry) {
+        await this.putStorePage(this.pagesDirectory, where, {
+          ...entry,
+          ...(now.author ? { author: now.author } : {}),
+          ...(now.editor ? { editor: now.editor } : {})
+        });
+      }
+    } else {
+      const cached = this.pageCache.get(info.title);
+      if (cached) cached.metadata = { ...cached.metadata, ...now };
+    }
+    return { file: 'changed', uuid: info.uuid, ...now };
+  }
+
+  /**
+   * One page file's frontmatter `author` and `editor` through `convert`
+   * (#2097), rewritten line by line ({@link rewriteFrontmatterFields}) and
+   * nothing else; the values it holds afterwards. A file that is not there
+   * is `missing`; one whose lines cannot be rewritten is left alone, `refused`.
+   */
+  protected async convertFileAuthorship(
+    io: StoreFileIO,
+    file: string,
+    convert: (stored: string) => Promise<string>
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string }> {
+    let raw: string;
+    try {
+      raw = await io.readText(file, this.encoding);
+    } catch {
+      return { file: 'missing' };
+    }
+    const { data } = parsePageFrontmatter(raw);
+    const now: { author?: string; editor?: string } = {};
+    const changes: Record<string, { from: string; to: string }> = {};
+    for (const field of ['author', 'editor'] as const) {
+      const stored = data[field];
+      if (typeof stored !== 'string' || !stored) continue;
+      const to = await convert(stored);
+      now[field] = to;
+      if (to !== stored) changes[field] = { from: stored, to };
+    }
+    if (Object.keys(changes).length === 0) return { file: 'unchanged', ...now };
+    const rewritten = rewriteFrontmatterFields(raw, changes);
+    if (rewritten === null) {
+      return {
+        file: 'refused',
+        ...(typeof data.author === 'string' ? { author: data.author } : {}),
+        ...(typeof data.editor === 'string' ? { editor: data.editor } : {})
+      };
+    }
+    await io.writeText(file, rewritten, this.encoding);
+    return { file: 'changed', ...now };
   }
 
   /**

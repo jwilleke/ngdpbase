@@ -831,6 +831,25 @@ class IdentityManager extends BaseManager {
   }
 
   /**
+   * One start-up conversion pass over stored references (#2097): `convert`
+   * is {@link convertRecordedUser}'s value, and `counts` tallies its outcomes
+   * (values converted to an @id, orphans found or made, "no user recorded"
+   * values) for the caller's counts-only report. Throws as
+   * `convertRecordedUser` does when the store cannot answer.
+   */
+  conversionPass(ctx: ActorContext): { convert: (stored: string) => Promise<string>; counts: { converted: number; orphans: number; noUser: number } } {
+    const counts = { converted: 0, orphans: 0, noUser: 0 };
+    const convert = async (stored: string): Promise<string> => {
+      const { value, outcome } = await this.convertRecordedUser(ctx, stored);
+      if (outcome === 'converted') counts.converted++;
+      else if (outcome === 'orphan' || outcome === 'orphaned') counts.orphans++;
+      else if (outcome === 'no-user') counts.noUser++;
+      return value;
+    };
+    return { convert, counts };
+  }
+
+  /**
    * Whether a stored reference names the user `username` (#2097): it is their
    * identity `@id`, or, on a record not yet converted, their username. An
    * orphan (`orphan:<name>`) and a "no user recorded" value never match

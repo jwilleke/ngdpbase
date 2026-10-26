@@ -575,6 +575,50 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
+   * The shared pool's uploaders and editors (#2097): each record's
+   * `author.name` and `editor.name` become what `convert` answers (the
+   * identity @id), and the metadata file is written once when anything
+   * changed. `convert` may throw (the identity store cannot answer); then
+   * nothing is written. Returns how many values changed.
+   */
+  async convertPoolReferences(convert: (stored: string) => Promise<string>): Promise<number> {
+    const updates: Array<() => void> = [];
+    for (const record of this.attachmentMetadata.values()) {
+      for (const field of ['author', 'editor'] as const) {
+        const person = record[field];
+        const stored = person?.name;
+        if (!person || typeof stored !== 'string' || !stored) continue;
+        const to = await convert(stored);
+        if (to !== stored) updates.push(() => { person.name = to; });
+      }
+    }
+    if (updates.length === 0) return 0;
+    for (const apply of updates) apply();
+    await this.saveMetadata();
+    return updates.length;
+  }
+
+  /**
+   * One vault's uploaders (#2097): each entry's `author` in the vault's own
+   * files index, through the vault's I/O. Written once when anything
+   * changed; nothing when `convert` throws. Returns how many values changed.
+   */
+  async convertStoreReferences(location: StoreFileLocation, convert: (stored: string) => Promise<string>): Promise<number> {
+    const files = await this.readStoreIndex(location);
+    const updates: Array<() => void> = [];
+    for (const entry of Object.values(files)) {
+      const stored = entry.author;
+      if (typeof stored !== 'string' || !stored) continue;
+      const to = await convert(stored);
+      if (to !== stored) updates.push(() => { entry.author = to; });
+    }
+    if (updates.length === 0) return 0;
+    for (const apply of updates) apply();
+    await this.writeStoreIndex(location, files);
+    return updates.length;
+  }
+
+  /**
    * Generate unique attachment ID using SHA-256 hash of content
    * @param buffer - File data
    * @returns Attachment ID (hash)
