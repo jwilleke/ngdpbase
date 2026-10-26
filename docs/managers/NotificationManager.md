@@ -1,7 +1,7 @@
 ---
 name: NotificationManager
 description: "System and per-user notifications — toast popups, persistent inbox, scheduled expiry"
-dateModified: '2026-10-19'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/NotificationManager.ts
 ---
@@ -38,16 +38,22 @@ const id = await notifyManager.createNotification({
   title: 'Scheduled Maintenance',
   message: 'Wiki will be down for maintenance at 2:00 AM',
   level: 'warning',
-  targetUsers: [],  // Empty = all users
+  targetUsers: [],  // Empty = all users; usernames or identity @ids, stored as @ids
   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)  // 24 hours
 });
 
-// Get notifications for a user
-const userNotifications = notifyManager.getUserNotifications('alice');
+// Get notifications for a user: their context, matched by identity @id
+const userNotifications = await notifyManager.getUserNotifications(ctx);
 
-// Dismiss notification
-await notifyManager.dismissNotification(id, 'alice');
+// Dismiss notification: the caller's context
+await notifyManager.dismissNotification(id, ctx);
 ```
+
+## Recipients by identity @id
+
+A notification names its recipients (`targetUsers`) and who dismissed it (`dismissedBy`) by identity `@id` ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 6 of the [identity model](../planning/identity-model.md)). `createNotification` takes usernames or `@id`s and stores each username as the user's `@id`, from `IdentityManager.getByUserIdentifier(ctx, username)['@id']` under the system context; a name with no account is stored as given. `dismissNotification(id, ctx)` stores the caller's `@id`, and `getUserNotifications(ctx)` matches the caller's `@id` or username.
+
+At start-up the manager converts the stored file once: each `targetUsers` and `dismissedBy` entry that is still a username becomes the user's `@id`, and the file is written once. Entries already an `@id` (`urn:`), `anonymous` and the system principal are left alone, so a second start writes nothing. A username with no account is left as it is and reported, counts only: a log line and the admin dashboard's "needs your attention" list.
 
 ## One notice with a running count
 

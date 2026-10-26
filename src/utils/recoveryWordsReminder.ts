@@ -28,23 +28,25 @@ interface NotificationsLike {
 }
 
 /**
- * Send `username` the reminder, once, when they have vault keys. Never
- * throws: it runs on the way through sign-in, which it must not stop.
+ * Send `recipient` the reminder, once, when they have vault keys. The
+ * recipient is the user's identity `@id`, as notifications store it (#2041),
+ * or the username of an account with no identity record. Never throws: it
+ * runs on the way through sign-in, which it must not stop.
  */
 export async function remindRecoveryWords(
   notifications: NotificationsLike | null | undefined,
-  username: string,
+  recipient: string,
   hasKeys: () => Promise<boolean>
 ): Promise<boolean> {
   try {
-    if (!notifications || !username) return false;
+    if (!notifications || !recipient) return false;
     const already = notifications.getAllNotifications?.(true)
-      .some((n) => n.title === RECOVERY_WORDS_TITLE && n.targetUsers.length === 1 && n.targetUsers[0] === username) ?? false;
+      .some((n) => n.title === RECOVERY_WORDS_TITLE && n.targetUsers.length === 1 && n.targetUsers[0] === recipient) ?? false;
     if (already || !(await hasKeys())) return false;
-    await notifications.addNotification({ type: 'user', level: 'warning', title: RECOVERY_WORDS_TITLE, message: RECOVERY_WORDS_MESSAGE, targetUsers: [username] });
+    await notifications.addNotification({ type: 'user', level: 'warning', title: RECOVERY_WORDS_TITLE, message: RECOVERY_WORDS_MESSAGE, targetUsers: [recipient] });
     return true;
   } catch (err) {
-    logger.warn(`[private-store] The recovery-words reminder for ${username} could not be sent:`, err);
+    logger.warn(`[private-store] The recovery-words reminder for ${recipient} could not be sent:`, err);
     return false;
   }
 }

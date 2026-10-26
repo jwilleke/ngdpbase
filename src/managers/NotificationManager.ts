@@ -4,7 +4,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { scheduleContext } from '../context/bootActions.js';
+import { scheduleContext, systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import type IdentityManager from './IdentityManager.js';
+import { IDENTITY_ID_PREFIX, sameUsername } from '../utils/username.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
@@ -20,9 +22,11 @@ export interface Notification {
   title: string;
   message: string;
   level: 'info' | 'warning' | 'error' | 'success';
+  /** Who it is for, by identity `@id` (#2041); empty means every user. A name with no account is kept as given. */
   targetUsers: string[];
   createdAt: Date;
   expiresAt: Date | null;
+  /** Who dismissed it, by identity `@id` (#2041); a name with no account as given. */
   dismissedBy: string[];
 }
 
@@ -34,6 +38,7 @@ export interface NotificationInput {
   title?: string;
   message?: string;
   level?: 'info' | 'warning' | 'error' | 'success';
+  /** Usernames or identity `@id`s; stored as `@id`s (#2041). Empty or absent: every user. */
   targetUsers?: string[];
   expiresAt?: Date | null;
   /**
@@ -159,6 +164,7 @@ class NotificationManager extends BaseManager {
 
     // Load existing notifications
     await this.loadNotifications();
+    await this.convertRecipientsToIdentityIds();
 
     // Set up periodic save
     if (this.saveInterval) clearInterval(this.saveInterval);
@@ -213,6 +219,45 @@ class NotificationManager extends BaseManager {
   }
 
   /**
+   * Once, at start-up (#2041): every stored `targetUsers` and `dismissedBy`
+   * entry that is still a username becomes that user's identity `@id`, under
+   * the system context, and the file is written once. Entries already an
+   * `@id` (`urn:`), `anonymous` and the system principal are left alone, so a
+   * second start writes nothing. A username with no account is left as it is
+   * and reported: a log line and the admin dashboard's needs-attention list,
+   * counts only.
+   */
+  private async convertRecipientsToIdentityIds(): Promise<void> {
+    const identities = this.engine?.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return;
+    const ctx = systemContext(this.engine, 'convert notification recipients from username to identity @id (#2041)');
+    const system = systemPrincipalOf(this.engine);
+    const ids = new Map<string, string | null>();
+    let converted = 0, unknown = 0;
+    for (const notification of this.notifications.values()) {
+      for (const field of ['targetUsers', 'dismissedBy'] as const) {
+        const list = Array.isArray(notification[field]) ? notification[field] : [];
+        for (let i = 0; i < list.length; i++) {
+          const name = list[i];
+          if (typeof name !== 'string' || !name || name.startsWith(IDENTITY_ID_PREFIX) || sameUsername(name, 'anonymous') || sameUsername(name, system)) continue;
+          if (!ids.has(name)) ids.set(name, (await identities.getByUserIdentifier(ctx, name))?.['@id'] ?? null);
+          const id = ids.get(name);
+          if (id) { list[i] = id; converted++; } else unknown++;
+        }
+      }
+    }
+    if (converted > 0) {
+      await this.saveNotifications();
+      this.logger.info(`Converted ${converted} notification recipient(s) from username to identity @id (#2041)`);
+    }
+    if (unknown > 0) {
+      const reason = `${unknown} notification recipient(s) are named by a username that has no account, so they cannot be converted to an identity @id; they are left as they are (#2041)`;
+      this.logger.warn(reason);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /**
    * Save notifications to storage
    */
   private async saveNotifications(): Promise<void> {
@@ -243,6 +288,14 @@ class NotificationManager extends BaseManager {
    * @returns {Promise<string>} Notification ID
    */
   async createNotification(notification: NotificationInput): Promise<string> {
+    // #2041: recipients by identity @id; a name with no account as given.
+    const identities = this.engine?.getManager<IdentityManager>('IdentityManager');
+    const targetUsers: string[] = [];
+    for (const name of notification.targetUsers || []) {
+      targetUsers.push(identities && !name.startsWith(IDENTITY_ID_PREFIX)
+        ? (await identities.getByUserIdentifier(systemContext(this.engine, 'address a notification: the recipient identity @id (#2041)'), name))?.['@id'] ?? name
+        : name);
+    }
     const id = `notification_${++this.notificationId}`;
     const fullNotification: Notification = {
       id,
@@ -250,7 +303,7 @@ class NotificationManager extends BaseManager {
       title: notification.title || 'System Notification',
       message: notification.message || '',
       level: notification.level || 'info',
-      targetUsers: notification.targetUsers || [],
+      targetUsers,
       createdAt: new Date(),
       expiresAt: notification.expiresAt || null,
       dismissedBy: []
@@ -314,12 +367,18 @@ class NotificationManager extends BaseManager {
   }
 
   /**
-   * Get notifications for a specific user
-   * @param {string} username - Username to get notifications for
+   * The notifications for the caller: addressed to every user, or to them by
+   * identity `@id` (#2041), or by username on one with no account; never one
+   * they dismissed.
+   * @param ctx - Who is asking: the request's subject, forwarded
    * @param {boolean} includeExpired - Include expired notifications
-   * @returns {Notification[]} Array of notifications
+   * @returns Array of notifications
    */
-  getUserNotifications(username: string, includeExpired: boolean = false): Notification[] {
+  async getUserNotifications(ctx: ActorContext, includeExpired: boolean = false): Promise<Notification[]> {
+    const username = ctx.username;
+    const identity = await this.engine?.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'list notifications for a user: their identity @id (#2041)'), username);
+    const me = (who: string): boolean => who === username || (Boolean(identity) && who === identity!['@id']);
     const now = new Date();
     const userNotifications: Notification[] = [];
 
@@ -330,9 +389,9 @@ class NotificationManager extends BaseManager {
       }
 
       // Check if notification is for this user or all users
-      if (notification.targetUsers.length === 0 || notification.targetUsers.includes(username)) {
+      if (notification.targetUsers.length === 0 || notification.targetUsers.some(me)) {
         // Check if user has dismissed this notification
-        if (!notification.dismissedBy.includes(username)) {
+        if (!notification.dismissedBy.some(me)) {
           userNotifications.push(notification);
         }
       }
@@ -358,8 +417,11 @@ class NotificationManager extends BaseManager {
     }
 
     const username = ctx.username;
-    if (!notification.dismissedBy.includes(username)) {
-      notification.dismissedBy.push(username);
+    // #2041: the dismisser by identity @id; a name with no account as given.
+    const dismisser = (await this.engine?.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'record a notification dismissal: the user identity @id (#2041)'), username))?.['@id'] ?? username;
+    if (!notification.dismissedBy.includes(dismisser)) {
+      notification.dismissedBy.push(dismisser);
       this.logger.info(`Notification ${notificationId} dismissed by ${username}`);
 
       // Save to storage
