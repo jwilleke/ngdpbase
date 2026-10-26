@@ -885,12 +885,18 @@ class IdentityManager extends BaseManager {
    * `urn:uuid:… (no account)`; anything else (a username not yet converted,
    * `anonymous`, the system principal) as it is. Resolved when shown, never
    * stored. Never throws for a store that is down.
+   *
+   * `ctx` is whoever the name is shown to. Showing who wrote a page needs no
+   * `identity-read`: only the username and the id are shown, as a page always
+   * showed its author's username, so the record is read as core's own lookup
+   * (the system context, naming the caller in its reason).
    */
   async describeReference(ctx: ActorContext, stored: unknown): Promise<string> {
     if (typeof stored !== 'string' || !stored) return '';
     if (stored.startsWith(ORPHAN_PREFIX)) return `${stored.slice(ORPHAN_PREFIX.length)} (no account)`;
     if (!stored.startsWith(IDENTITY_ID_PREFIX)) return stored;
-    const username = await this.usernameOf(ctx, stored);
+    const lookup = systemContext(this.engine, `show who a page or file names: their username (#2097; shown to ${actorOf(ctx).user})`);
+    const username = await this.usernameOf(lookup, stored);
     return username ? `${username} (${stored})` : `${stored} (no account)`;
   }
 
