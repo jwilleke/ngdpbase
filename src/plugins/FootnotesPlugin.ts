@@ -183,7 +183,8 @@ export async function renderFootnoteListHtml(
 
   const rows: string[] = ['<ol class="footnote-list">'];
   for (const fn of footnotes) {
-    const canDelete = writable && (isAdmin || (isAuthenticated && fn.createdBy === userContext?.username));
+    // #2041: whose footnote it is, by identity @id (or the username on one not yet converted), is the manager's answer.
+    const canDelete = writable && (isAdmin || (isAuthenticated && await footnoteManager.isCreator(fn, userContext as ActorContext)));
     rows.push(renderFootnoteRow(f, fn, isEditor, canDelete, pageUuid));
   }
   rows.push('</ol>');

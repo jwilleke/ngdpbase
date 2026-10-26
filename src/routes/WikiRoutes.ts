@@ -11559,7 +11559,8 @@ ${panes}
       }
 
       const isAdmin = await wikiContext.hasPermission('admin-system');
-      if (!isAdmin && comment.author !== currentUser.username) {
+      // #2041: whose comment it is, by identity @id (or the username on one not yet converted), is the manager's answer.
+      if (!isAdmin && !(await commentManager.isAuthor(comment, currentUser))) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
 
@@ -11651,7 +11652,7 @@ ${panes}
         this.formatters,
         comments,
         await wikiContext.hasPermission('comment-create'),
-        wikiContext.userContext?.username ?? '',
+        (c: { author: string }) => commentManager.isAuthor(c, req.userContext ?? ANONYMOUS_SUBJECT),
         await wikiContext.hasPermission('admin-system'),
         pageUuid,
         this.engine
@@ -11790,7 +11791,8 @@ ${panes}
       if (!target) return res.status(404).json({ success: false, error: 'Footnote not found' });
 
       const isAdmin = await wikiContext.hasPermission('admin-system');
-      if (!isAdmin && target.createdBy !== currentUser.username) {
+      // #2041: whose footnote it is, by identity @id (or the username on one not yet converted), is the manager's answer.
+      if (!isAdmin && !(await footnoteManager.isCreator(target, currentUser))) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
 

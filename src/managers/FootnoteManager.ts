@@ -21,12 +21,16 @@ import {
   type PageRef
 } from '../utils/pageNotes.js';
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import { IDENTITY_ID_PREFIX, sameUsername } from '../utils/username.js';
 
 export interface PageFootnote {
   id: string;
   display: string;
   url: string;
   note: string;
+  /** Who added it: their identity `@id` (#2041); a username on a note written before and not yet converted (a vault page's), or one with no account. */
   createdBy: string;
   createdAt: string;
 }
@@ -71,9 +75,64 @@ export default class FootnoteManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.storageDir, { recursive: true });
+      await this.convertCreatorsToIdentityIds();
       await this.outsideCheck.run({ notify: true });
       logger.debug('FootnoteManager initialized');
     }
+  }
+
+  /**
+   * Once, at start-up (#2041): every public footnote whose `createdBy` is
+   * still a username is rewritten with that user's identity `@id`, one write
+   * per page file, under the system context. A value that is already an `@id`
+   * (`urn:`), `anonymous` or the system principal is left alone, so a second
+   * start writes nothing. A username with no account is left as it is and
+   * reported: a log line and the admin dashboard's needs-attention list,
+   * counts only. A vault page's footnotes are in its vault, sealed or not,
+   * which start-up does not open; they keep their username, and
+   * {@link isCreator} still matches it.
+   */
+  private async convertCreatorsToIdentityIds(): Promise<void> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return;
+    const ctx = systemContext(this.engine, 'convert footnote creators from username to identity @id (#2041)');
+    const system = systemPrincipalOf(this.engine);
+    const ids = new Map<string, string | null>();
+    let files = 0, converted = 0, unknown = 0;
+    for (const name of (await fs.readdir(this.storageDir)).filter((f) => f.endsWith('.json'))) {
+      const file = path.join(this.storageDir, name);
+      let map: FootnoteMap;
+      try { map = JSON.parse(await fs.readFile(file, 'utf8')) as FootnoteMap; } catch { continue; }
+      let changed = false;
+      for (const note of Object.values(map)) {
+        const by = note?.createdBy;
+        if (typeof by !== 'string' || !by || by.startsWith(IDENTITY_ID_PREFIX) || sameUsername(by, 'anonymous') || sameUsername(by, system)) continue;
+        if (!ids.has(by)) ids.set(by, (await identities.getByUserIdentifier(ctx, by))?.['@id'] ?? null);
+        const id = ids.get(by);
+        if (id) { note.createdBy = id; converted++; changed = true; } else unknown++;
+      }
+      if (changed) { await fs.writeFile(file, JSON.stringify(map, null, 2)); files++; }
+    }
+    if (converted > 0) logger.info(`[FootnoteManager] Converted ${converted} footnote creator(s) in ${files} page file(s) from username to identity @id (#2041)`);
+    if (unknown > 0) {
+      const reason = `${unknown} footnote(s) name a creator by a username that has no account, so it cannot be converted to an identity @id; they are left as they are (#2041)`;
+      logger.warn(`[FootnoteManager] ${reason}`);
+      this.markNeedsAttention(reason);
+    }
+  }
+
+  /**
+   * Whether `ctx` added `footnote` (#2041): its `createdBy` is the caller's
+   * identity `@id`, or, on a footnote written before and not yet converted
+   * (a vault page's), the caller's username.
+   */
+  async isCreator(footnote: Pick<PageFootnote, 'createdBy'>, ctx: ActorContext): Promise<boolean> {
+    if (!ctx.username || !footnote.createdBy) return false;
+    if (footnote.createdBy === ctx.username) return true;
+    if (!footnote.createdBy.startsWith(IDENTITY_ID_PREFIX)) return false;
+    const identity = await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'is this footnote the caller one: their identity @id (#2041)'), ctx.username);
+    return Boolean(identity) && identity!['@id'] === footnote.createdBy;
   }
 
   /** `ngdpbase.footnotes.storagedir`, resolved, or the default when there is no configuration (a test). */
@@ -172,8 +231,10 @@ export default class FootnoteManager extends BaseManager {
     ctx: ActorContext
   ): Promise<PageFootnote> {
     const pageUuid = page.uuid;
-    const createdBy = ctx.username;
     await this.refuseWhenOff(page, ctx);
+    // #2041: the creator by identity @id; a name with no account as given.
+    const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username))?.['@id'] ?? ctx.username;
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
 
@@ -220,7 +281,9 @@ export default class FootnoteManager extends BaseManager {
 
   /** The write behind `importFootnote` and `transferFromContent`; the callers record it, once each. */
   private async putImported(page: PageRef, id: string, data: { display: string; url: string; note: string }, ctx: ActorContext): Promise<boolean> {
-    const createdBy = ctx.username;
+    // #2041: the creator by identity @id; a name with no account as given.
+    const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.getByUserIdentifier(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username))?.['@id'] ?? ctx.username;
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
     if (map[id]) return false;
@@ -324,6 +387,7 @@ export default class FootnoteManager extends BaseManager {
     const map = await this.readMap(place);
     if (!map[id]) return false;
     const createdBy = map[id].createdBy;
+    const ownFootnote = await this.isCreator(map[id], ctx);
 
     delete map[id];
 
@@ -334,7 +398,7 @@ export default class FootnoteManager extends BaseManager {
       await this.writeMap(place, map);
     }
     this.invalidateHandlerCache(pageUuid);
-    await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote: createdBy === ctx.username });
+    await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote });
     return true;
   }
 

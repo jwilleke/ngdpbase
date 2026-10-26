@@ -28,7 +28,8 @@ export async function renderCommentListHtml(
   f: PluginFormatters,
   comments: PageComment[],
   isAuthenticated: boolean,
-  username: string,
+  /** Whether the viewer wrote a comment: `CommentManager.isAuthor` with their context (#2041). */
+  isOwn: (comment: PageComment) => Promise<boolean>,
   isAdmin: boolean,
   pageUuid: string,
   engine?: WikiEngineLike
@@ -39,7 +40,7 @@ export async function renderCommentListHtml(
   }
   const parts: string[] = ['<div class="comment-list">'];
   for (const c of comments) {
-    const canDelete = isAdmin || (isAuthenticated && c.author === username);
+    const canDelete = isAdmin || (isAuthenticated && await isOwn(c));
     // #1123: comment bodies render through the untrusted-inline profile —
     // CommonMark formatting, plugin/variable syntax inert, SecurityFilter
     // forced on. Without an engine (or on any failure inside the profile)
@@ -114,7 +115,7 @@ const CommentsPlugin: SimplePlugin = {
     // Wrap the list in a stable container so #590 can swap its innerHTML
     // after add/delete instead of doing a full page reload.
     parts.push(`<div id="comment-list-host" data-page-uuid="${escapeHtml(pageUuid)}" data-page-name="${escapeHtml(pageName)}">`);
-    parts.push(await renderCommentListHtml(context.formatters, comments, isAuthenticated, username, isAdmin, pageUuid, engine));
+    parts.push(await renderCommentListHtml(context.formatters, comments, isAuthenticated, (c) => commentManager.isAuthor(c, (userContext ?? ANONYMOUS_SUBJECT) as ActorContext), isAdmin, pageUuid, engine));
     parts.push('</div>');
 
     // #1198: the add-comment form is offered to whoever policy lets comment.
