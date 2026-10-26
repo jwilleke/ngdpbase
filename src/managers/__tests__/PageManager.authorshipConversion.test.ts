@@ -114,6 +114,54 @@ describe('#2097 page authorship conversion', () => {
     expect((await manifest(site, uuids.c)).versions.map((v: { editor: string }) => v.editor)).toEqual([JIM]);
   });
 
+  // Gate fix (#2097): orphans are the intended final state. Sabotage: marking
+  // them needs-attention again turned this red.
+  test('orphans are logged, never needs-attention', async () => {
+    const attention = vi.spyOn(site.pageManager as unknown as { markNeedsAttention(r: string): void }, 'markNeedsAttention');
+    const result = await site.pageManager.convertAuthorship(SYS);
+    expect(result?.orphans).toBeGreaterThan(0);
+    expect(attention).not.toHaveBeenCalled();
+  });
+
+  // Gate fix: a legacy private tombstone (a private page deleted before vaults:
+  // an owner, no store) failed with "needs its owner and store" on every start.
+  // Sabotage: dropping the legacyPrivate guard turned this red (one skip, class Error).
+  test('a legacy private tombstone converts its fields and is never skipped', async () => {
+    await site.pageManager.flushWriteQueue();
+    const index = await fs.readJson(site.indexFile);
+    index.deletedPages['legacy-private-1'] = {
+      title: 'Old Private', uuid: 'legacy-private-1', location: 'private', creator: 'jim', currentVersion: 1,
+      lastModified: '2026-01-01T00:00:00.000Z', editor: 'jim', author: 'jim', hasVersions: true,
+      deletedAt: '2026-01-02T00:00:00.000Z', deletedBy: 'jim', deletedFrom: '/nowhere/vaults/jim/old.md'
+    };
+    await fs.writeJson(site.indexFile, index);
+    const restarted = await site.restart();
+    const result = await restarted.convertAuthorship(SYS);
+    expect(result).toMatchObject({ pagesSkipped: 0, skipErrors: [] });
+    await restarted.flushWriteQueue();
+    expect((await fs.readJson(site.indexFile)).deletedPages['legacy-private-1']).toMatchObject({ author: JIM, editor: JIM, deletedBy: JIM });
+  });
+
+  // Gate fix: a page whose file has no `editor` kept the history's username in
+  // its index entry, so every later start opened it again. Sabotage: dropping the
+  // index-only conversion turned this red.
+  test('an index entry whose file has no editor of its own is converted too', async () => {
+    const file = pageFile(site, uuids.a);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    const { editor: _gone, ...rest } = parsed.data;
+    await fs.writeFile(file, matter.stringify(parsed.content, rest));
+    await site.pageManager.flushWriteQueue();
+    const index = await fs.readJson(site.indexFile);
+    index.pages[uuids.a].editor = 'ann';
+    await fs.writeJson(site.indexFile, index);
+    const restarted = await site.restart();
+    await restarted.convertAuthorship(SYS);
+    await restarted.flushWriteQueue();
+    expect((await fs.readJson(site.indexFile)).pages[uuids.a].editor).toBe(ANN);
+    // Nothing left: the next start opens no page.
+    expect((await restarted.convertAuthorship(SYS))?.pagesVisited).toBe(0);
+  });
+
   test('a second run writes nothing', async () => {
     await site.pageManager.convertAuthorship(SYS);
     const bytes = await fs.readFile(pageFile(site, uuids.a), 'utf8');

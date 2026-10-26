@@ -4199,9 +4199,8 @@ class PageManager extends BaseManager implements CatalogSource {
       logger.info(`[PageManager] ${result.noUser} ${what} author/editor value(s) record no user (migrated, unknown, import); only an administrator acts on those pages (#2097)`);
     }
     if (result.orphans > 0) {
-      const reason = `${result.orphans} ${what} author/editor value(s) are orphaned: their username has no account, so only an administrator can act as those pages' author (#2097)`;
-      logger.warn(`[PageManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      // An orphan is the intended final state and needs nothing from an administrator: info, never needs-attention.
+      logger.info(`[PageManager] ${result.orphans} ${what} author/editor/access value(s) are orphaned: their username has no account, so they name nobody (#2097)`);
     }
     if (result.pagesSkipped > 0) {
       const classes = [...new Set(result.skipErrors)].sort().join(', ');
@@ -4210,9 +4209,7 @@ class PageManager extends BaseManager implements CatalogSource {
       this.markNeedsAttention(reason);
     }
     if (result.pagesRefused > 0) {
-      const reason = `${result.pagesRefused} ${what}(s) kept their username author/editor: their frontmatter could not be rewritten line by line (#2097)`;
-      logger.warn(`[PageManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      logger.info(`[PageManager] ${result.pagesRefused} ${what}(s) kept their username author/editor: their frontmatter could not be rewritten line by line (#2097)`);
     }
   }
 

@@ -296,7 +296,7 @@ export default class FormsDataManager {
   private engine: { getManager: (name: string) => unknown } | null;
   /** The form ids each add-on registered this boot (#1973): what it still provides. */
   private registeredThisBoot: Map<string, Set<string>> = new Map();
-  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  /** What the admin dashboard is told about the start-up conversion (#2041): a postponed pass (orphans are not, #2097); null when nothing. */
   private attention: string | null = null;
 
   /** What core handed the forms add-on (#1813): `actorOf`, `systemContext`, `isAtLeast`. */
@@ -366,12 +366,12 @@ export default class FormsDataManager {
     }
     if (converted > 0) console.info(`[FormsDataManager] Converted ${converted} submitter(s) from username to identity @id (#2041)`);
     if (orphans > 0) {
-      this.attention = `${orphans} form submission(s) are orphaned: their submitter's username has no account (#2041)`;
-      console.warn(`[FormsDataManager] ${this.attention}`);
+      // #2097: an orphan is the intended final state and needs nothing from an administrator, so it is logged at info and never marked needs-attention.
+      console.info(`[FormsDataManager] ${orphans} form submission(s) are orphaned: their submitter's username has no account (#2041)`);
     }
   }
 
-  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters are orphaned or not converted (#2041). */
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while submitters are not converted (#2041); orphans are not (#2097). */
   getManagerStatus(): ManagerStatus {
     return this.attention
       ? { state: 'degraded', kind: 'attention', reason: this.attention }

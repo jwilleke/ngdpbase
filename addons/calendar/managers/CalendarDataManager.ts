@@ -106,7 +106,7 @@ class CalendarDataManager {
 
   // ── Persistence ─────────────────────────────────────────────────────────────
 
-  /** What the admin dashboard is told about the start-up conversion (#2041): orphans, or a postponed pass; null when nothing. */
+  /** What the admin dashboard is told about the start-up conversion (#2041): a postponed pass (orphans are not, #2097); null when nothing. */
   private attention: string | null = null;
 
   /**
@@ -163,12 +163,12 @@ class CalendarDataManager {
       console.info(`[CalendarDataManager] Converted ${converted} reference(s) from username to identity @id (#2041)`);
     }
     if (orphans > 0) {
-      this.attention = `${orphans} calendar reference(s) are orphaned: their username has no account, so only a calendar manager can act on those reservations (#2041)`;
-      console.warn(`[CalendarDataManager] ${this.attention}`);
+      // #2097: an orphan is the intended final state and needs nothing from an administrator, so it is logged at info and never marked needs-attention.
+      console.info(`[CalendarDataManager] ${orphans} calendar reference(s) are orphaned: their username has no account, so only a calendar manager can act on those reservations (#2041)`);
     }
   }
 
-  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while references are orphaned or not converted (#2041). */
+  /** Read by the admin dashboard (`Engine.getDegradedManagers`): needs attention while references are not converted (#2041); orphans are not (#2097). */
   getManagerStatus(): ManagerStatus {
     return this.attention
       ? { state: 'degraded', kind: 'attention', reason: this.attention }

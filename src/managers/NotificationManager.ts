@@ -263,9 +263,8 @@ class NotificationManager extends BaseManager {
       this.logger.info(`Converted ${converted} notification recipient(s) from username to identity @id (#2041)`);
     }
     if (orphans > 0) {
-      const reason = `${orphans} notification recipient(s) are orphaned: their username has no account, so the notice reaches nobody by it (#2041)`;
-      this.logger.warn(reason);
-      this.markNeedsAttention(reason);
+      // #2097: an orphan is the intended final state and needs nothing from an administrator, so it is logged at info and never marked needs-attention.
+      this.logger.info(`${orphans} notification recipient(s) are orphaned: their username has no account, so the notice reaches nobody by it (#2041)`);
     }
   }
 

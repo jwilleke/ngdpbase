@@ -56,8 +56,8 @@ test('known usernames become @ids and unknown ones orphans, the name kept; repor
   expect(await read(unknown)).toMatchObject({ submittedBy: 'orphan:gone', submitterName: 'gone' });
   expect((await read(anon)).submittedBy).toBe('anonymous');
   expect((await read(sys)).submittedBy).toBe('system');
-  expect(first.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/^1 form submission\(s\) are orphaned/) });
-  expect(first.getManagerStatus().reason).not.toContain('gone');
+  // #2097: an orphan is the intended final state: logged at info, never needs-attention.
+  expect(first.getManagerStatus()).toEqual({ state: 'ready' });
 
   const identities = fakeIdentityManager(IDS);
   const mtime = (await fsp.stat(known)).mtimeMs;

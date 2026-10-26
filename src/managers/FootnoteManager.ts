@@ -139,9 +139,8 @@ export default class FootnoteManager extends BaseManager {
     if (converted > 0) logger.info(`[FootnoteManager] Converted ${converted} footnote creator(s) in ${files} page file(s) from username to identity @id (#2041)`);
     if (noCreator > 0) logger.info(`[FootnoteManager] ${noCreator} footnote(s) have no recorded creator (migrated before creators were kept); only an administrator can delete them`);
     if (orphans > 0) {
-      const reason = `${orphans} footnote(s) are orphaned: their creator's username has no account, so only an administrator can delete them (#2041)`;
-      logger.warn(`[FootnoteManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      // #2097: an orphan is the intended final state and needs nothing from an administrator, so it is logged at info and never marked needs-attention.
+      logger.info(`[FootnoteManager] ${orphans} footnote(s) are orphaned: their creator's username has no account, so only an administrator can delete them (#2041)`);
     }
   }
 

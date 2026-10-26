@@ -116,9 +116,8 @@ export default class CommentManager extends BaseManager {
     }
     if (converted > 0) logger.info(`[CommentManager] Converted ${converted} comment author(s) from username to identity @id (#2041)`);
     if (orphans > 0) {
-      const reason = `${orphans} comment(s) are orphaned: their author's username has no account, so only an administrator can delete them (#2041)`;
-      logger.warn(`[CommentManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      // #2097: an orphan is the intended final state and needs nothing from an administrator, so it is logged at info and never marked needs-attention.
+      logger.info(`[CommentManager] ${orphans} comment(s) are orphaned: their author's username has no account, so only an administrator can delete them (#2041)`);
     }
   }
 

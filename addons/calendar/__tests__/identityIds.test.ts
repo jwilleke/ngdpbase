@@ -78,7 +78,8 @@ test('start-up converts once, orphans a name with no account, leaves a form-file
   expect(byId.e2).toMatchObject({ createdBy: IDS.ann, _private: { requester: 'Ann Smith', submittedBy: IDS.ann } });
   expect(byId.e3.createdBy).toBe('orphan:gone');
   expect(byId.e4.createdBy).toBe('system');
-  expect(first.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/^1 calendar reference\(s\) are orphaned/) });
+  // #2097: an orphan is the intended final state: logged at info, never needs-attention.
+  expect(first.getManagerStatus()).toEqual({ state: 'ready' });
 
   const mtime = (await fsp.stat(path.join(dir, 'clubhouse.json'))).mtimeMs;
   const { identities } = await started(IDS);
