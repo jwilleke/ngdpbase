@@ -374,7 +374,7 @@ type PrivateStorePageRefs = Array<{ owner: string; store: string; title: string;
 /** What a page provider offers the authorship conversion (#2097); FileSystemProvider and VersioningFileProvider. */
 interface AuthorshipProvider {
   listAuthorshipRefs?(): Array<{ uuid: string; author?: string; editor?: string }>;
-  convertPageReferences?(ctx: ActorContext, identifier: string, convert: (stored: string) => Promise<string>): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; versions?: number }>;
+  convertPageReferences?(ctx: ActorContext, identifier: string, convert: (stored: string) => Promise<string>): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; versions?: number; category?: string; addon?: string }>;
   finishAuthorshipConversion?(convert: (stored: string) => Promise<string>, opts?: { full?: boolean }): Promise<number>;
   convertStoreDeletedReferences?(ctx: ActorContext, owner: string, convert: (stored: string) => Promise<string>): Promise<number>;
   listPrivateStorePages?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRefs>;
@@ -394,6 +394,8 @@ export interface AuthorshipConversion {
   tombstonesChanged: number;
   converted: number;
   orphans: number;
+  /** Orphans on shipped (documentation, system) and add-on pages: their author is upstream's, not a site user; not needing attention. */
+  shippedOrphans: number;
   noUser: number;
   ms: number;
 }
@@ -3895,7 +3897,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const started = Date.now();
     const result: AuthorshipConversion = {
       status: 'done', full: false, pagesVisited: 0, pagesChanged: 0, pagesRefused: 0,
-      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, noUser: 0, ms: 0
+      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, shippedOrphans: 0, noUser: 0, ms: 0
     };
     if (!identities.canAnswer()) {
       this.postponeAuthorshipConversion('the identity store is unavailable');
@@ -3908,6 +3910,7 @@ class PageManager extends BaseManager implements CatalogSource {
     result.full = !record.migrations?.[AUTHORSHIP_ID_MIGRATION];
     const batchSize = this.authorshipBatchSize();
     const { convert, counts } = identities.conversionPass(ctx);
+    const shipped = this.shippedCategories();
 
     try {
       // After the first complete pass, only pages whose index entry still
@@ -3919,7 +3922,14 @@ class PageManager extends BaseManager implements CatalogSource {
       }
       for (let i = 0; i < candidates.length; i += batchSize) {
         for (const uuid of candidates.slice(i, i + batchSize)) {
+          const orphansBefore = counts.orphans;
           const outcome = await this.pageWrites.run(uuid, () => provider.convertPageReferences!(ctx, uuid, convert));
+          // A shipped or add-on page names upstream's author (often no account
+          // here): orphaned like any other, but counted apart, not needing attention.
+          if (outcome.addon || (outcome.category && shipped.has(outcome.category.toLowerCase()))) {
+            result.shippedOrphans += counts.orphans - orphansBefore;
+            counts.orphans = orphansBefore;
+          }
           result.pagesVisited++;
           if (outcome.file === 'changed') result.pagesChanged++;
           if (outcome.file === 'refused') result.pagesRefused++;
@@ -3964,7 +3974,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const started = Date.now();
     const result: AuthorshipConversion = {
       status: 'done', full: true, pagesVisited: 0, pagesChanged: 0, pagesRefused: 0,
-      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, noUser: 0, ms: 0
+      versionsChanged: 0, tombstonesChanged: 0, converted: 0, orphans: 0, shippedOrphans: 0, noUser: 0, ms: 0
     };
     if (!identities.canAnswer()) return { ...result, status: 'postponed', ms: Date.now() - started };
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -4010,6 +4020,15 @@ class PageManager extends BaseManager implements CatalogSource {
     return false;
   }
 
+  /** The system-categories whose pages are shipped with the code (source `shipped`), lower-cased (#2097). */
+  private shippedCategories(): Set<string> {
+    const categories = (this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; source?: string }>;
+    return new Set(Object.entries(categories)
+      .filter(([, cfg]) => categorySource(cfg) === 'shipped')
+      .flatMap(([key, cfg]) => [key.toLowerCase(), (cfg.label || key).toLowerCase()]));
+  }
+
   /** `ngdpbase.page.authorship-conversion.batch-size`: pages converted between yields (#2097). */
   private authorshipBatchSize(): number {
     const configured = Number(this.engine.getManager<ConfigurationManager>('ConfigurationManager')
@@ -4021,6 +4040,9 @@ class PageManager extends BaseManager implements CatalogSource {
   private reportAuthorshipConversion(result: AuthorshipConversion, what: string): void {
     if (result.pagesChanged > 0 || result.versionsChanged > 0 || result.tombstonesChanged > 0) {
       logger.info(`[PageManager] Converted ${what} authorship to identity @ids: ${result.pagesChanged} of ${result.pagesVisited} page(s), ${result.versionsChanged} version editor(s), ${result.tombstonesChanged} tombstone value(s), in ${result.ms} ms (#2097)`);
+    }
+    if (result.shippedOrphans > 0) {
+      logger.info(`[PageManager] ${result.shippedOrphans} shipped or add-on ${what} author/editor value(s) name an author with no account on this site; only an administrator acts on those pages (#2097)`);
     }
     if (result.noUser > 0) {
       logger.info(`[PageManager] ${result.noUser} ${what} author/editor value(s) record no user (migrated, unknown, import); only an administrator acts on those pages (#2097)`);

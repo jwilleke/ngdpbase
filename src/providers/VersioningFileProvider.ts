@@ -923,7 +923,7 @@ class VersioningFileProvider extends FileSystemProvider {
     ctx: ActorContext,
     identifier: string,
     convert: (stored: string) => Promise<string>
-  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; versions?: number }> {
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string; versions?: number }> {
     const info = this.resolvePageInfo(identifier, ctx);
     const result = await super.convertPageReferences(ctx, identifier, convert);
     if (!info || result.file === 'missing') return result;

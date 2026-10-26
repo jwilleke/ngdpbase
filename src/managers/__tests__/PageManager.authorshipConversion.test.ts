@@ -208,6 +208,24 @@ describe('#2097 page authorship conversion', () => {
     expect(page.data).toMatchObject({ author: JIM, editor: JIM });
   });
 
+  // Sabotage: dropping the shipped/add-on branch turned this red (the orphan counted as needing attention).
+  test('a shipped page whose author has no account here is orphaned but counted apart, not needing attention', async () => {
+    site.config['ngdpbase.system-category'] = {
+      ...vaultCategories(),
+      documentation: { label: 'documentation', source: 'shipped', storageLocation: { defaultstore: 'pages/' } }
+    };
+    const file = pageFile(site, uuids.b);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, author: 'upstream', editor: 'upstream', 'system-category': 'documentation' }));
+    const restarted = await site.restart();
+    const attention = vi.spyOn(restarted as unknown as { markNeedsAttention(r: string): void }, 'markNeedsAttention');
+    const result = await restarted.convertAuthorship(SYS);
+    expect(matter(await fs.readFile(file, 'utf8')).data.author).toBe('orphan:upstream');
+    expect(result).toMatchObject({ orphans: 0 });
+    expect(result?.shippedOrphans).toBeGreaterThan(0);
+    expect(attention).not.toHaveBeenCalled();
+  });
+
   test('batches of the configured size reach every page', async () => {
     site.config['ngdpbase.page.authorship-conversion.batch-size'] = 1;
     const result = await site.pageManager.convertAuthorship(SYS);

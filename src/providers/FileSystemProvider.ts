@@ -1002,7 +1002,7 @@ class FileSystemProvider extends BasePageProvider {
     ctx: ActorContext,
     identifier: string,
     convert: (stored: string) => Promise<string>
-  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string }> {
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; uuid?: string; category?: string; addon?: string }> {
     const info = this.resolvePageInfo(identifier, ctx);
     if (!info) return { file: 'missing' };
     const io = await this.fileIOFor(ctx, info.filePath);
@@ -1028,7 +1028,7 @@ class FileSystemProvider extends BasePageProvider {
       const cached = this.pageCache.get(info.title);
       if (cached) cached.metadata = { ...cached.metadata, ...now };
     }
-    return { file: 'changed', uuid: info.uuid, ...now };
+    return { file: 'changed', uuid: info.uuid, ...now, ...(outcome.category ? { category: outcome.category } : {}), ...(outcome.addon ? { addon: outcome.addon } : {}) };
   }
 
   /**
@@ -1041,7 +1041,7 @@ class FileSystemProvider extends BasePageProvider {
     io: StoreFileIO,
     file: string,
     convert: (stored: string) => Promise<string>
-  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string }> {
+  ): Promise<{ file: 'changed' | 'unchanged' | 'refused' | 'missing'; author?: string; editor?: string; category?: string; addon?: string }> {
     let raw: string;
     try {
       raw = await io.readText(file, this.encoding);
@@ -1049,6 +1049,11 @@ class FileSystemProvider extends BasePageProvider {
       return { file: 'missing' };
     }
     const { data } = parsePageFrontmatter(raw);
+    // Where the page came from, for the caller's report: a shipped or add-on page's author is upstream's, not a site user.
+    const origin = {
+      ...(typeof data['system-category'] === 'string' ? { category: data['system-category'] } : {}),
+      ...(typeof data.addon === 'string' && data.addon ? { addon: data.addon } : {})
+    };
     const now: { author?: string; editor?: string } = {};
     const changes: Record<string, { from: string; to: string }> = {};
     for (const field of ['author', 'editor'] as const) {
@@ -1058,17 +1063,18 @@ class FileSystemProvider extends BasePageProvider {
       now[field] = to;
       if (to !== stored) changes[field] = { from: stored, to };
     }
-    if (Object.keys(changes).length === 0) return { file: 'unchanged', ...now };
+    if (Object.keys(changes).length === 0) return { file: 'unchanged', ...now, ...origin };
     const rewritten = rewriteFrontmatterFields(raw, changes);
     if (rewritten === null) {
       return {
         file: 'refused',
+        ...origin,
         ...(typeof data.author === 'string' ? { author: data.author } : {}),
         ...(typeof data.editor === 'string' ? { editor: data.editor } : {})
       };
     }
     await io.writeText(file, rewritten, this.encoding);
-    return { file: 'changed', ...now };
+    return { file: 'changed', ...now, ...origin };
   }
 
   /**
