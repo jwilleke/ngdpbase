@@ -100,7 +100,9 @@ describe('a role member must have credentials, on a real engine (#2040)', () => 
     expect(status.reason).toContain("'editor' lists 1");
     const notices = () => engine.getManager<NotificationManager>('NotificationManager')!.getAllNotifications(false).filter((n) => n.title === CONTACT_MEMBERS_TITLE);
     expect(notices()).toHaveLength(1);
-    expect(notices()[0].targetUsers).toContain('admin');
+    // #2041: notification recipients are stored by identity @id.
+    const adminId = (await engine.getManager<IdentityManager>('IdentityManager')!.getByUserIdentifier(systemContext(engine, 'test: admin identity @id'), 'admin'))!['@id'];
+    expect(notices()[0].targetUsers).toContain(adminId);
     expect(notices()[0].targetUsers).not.toHaveLength(0);
     await stop();
 

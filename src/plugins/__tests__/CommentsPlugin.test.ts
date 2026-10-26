@@ -22,7 +22,9 @@ const makeCommentManager = (enabled = true, comments: unknown[] = []) => ({
   isEnabled: () => enabled,
   // #1951: comments are on for the page unless a test turns them off.
   isAllowedOn: vi.fn().mockResolvedValue(true),
-  getComments: vi.fn().mockResolvedValue(comments)
+  getComments: vi.fn().mockResolvedValue(comments),
+  // #2041: "is it mine" is the manager's answer; here, by username as the fixtures store it.
+  isAuthor: vi.fn(async (c: { author: string }, ctx: { username?: string }) => c.author === ctx.username)
 });
 
 // #1198: the plugin asks policy, not a role name. This stand-in answers as the
