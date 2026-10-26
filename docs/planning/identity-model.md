@@ -28,6 +28,9 @@ User = has credentials.  Contact = has none.  Organization = a digital identity,
 - Every digital identity's id is its `@id`, a random `urn:uuid:<v4>` created with the record. It is globally unique and never changes. It is the identity's id for life, before and after it gains credentials.
 - Anything that refers to an identity (role membership, affiliations, an add-on's donor, payer, owner or member) stores that `@id`. Never a username: a username is only the sign-in name on the account.
 - Organizations always get a `urn:uuid` `@id` too. Their web address is an ordinary field (`url`), never the id. (Today an organization's `@id` defaults to its URL; existing ones keep their id, new ones get a uuid — see steps.)
+- What people see (operator, 2026-10-26): wherever a user is named, the site shows the username followed by the id, e.g. `author jim (urn:uuid:3f6c2a9e-…)`. Indexes may store the id in whatever form works, as long as lookups (author lock, "my pages", search) work.
+- Page authorship (operator, 2026-10-26): a page's author and editors, its version history, file uploaders and the indexes store the `@id`. Existing pages convert once at start-up, as every other reference does in step 6.
+- A deleted account's username (operator, 2026-10-26): records that still name a username with no account are marked orphaned on the first conversion. An orphan is never converted later and never matches anyone, so a new account that takes the same username inherits nothing. Only administrators can act on orphaned records.
 
 ## Affiliation shape (operator, 2026-10-24)
 
