@@ -4,9 +4,11 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { Role, RoleUpdate } from '../types/Role.js';
 import type { RoleProvider } from '../types/RoleProvider.js';
-import type IdentityManager from './IdentityManager.js';
+import IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type UserManager from './UserManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type NotificationManager from './NotificationManager.js';
 import type { Organization } from '../types/Organization.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -50,6 +52,17 @@ const CATALOGUE_COPY_FIELDS = ['roleName', 'description', 'issystem', 'icon', 'c
 
 /** A role record, by the pair that names it. */
 type RoleRef = { organization: { '@id': string }; namedPosition: string };
+
+/** The title of the one notification for contacts found holding roles at start-up (#2040). */
+export const CONTACT_MEMBERS_TITLE = 'Contacts are listed as role members';
+
+/** #2040: why an identity may not be added to a role; its message is the plain reason. */
+class RoleMemberRefusal extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'RoleMemberRefusal';
+  }
+}
 
 /** One membership change and its inverse (#2015); each resolves true when it changed the record. */
 interface MemberChange {
@@ -455,12 +468,17 @@ class RoleManager extends BaseManager {
    * IdentityManager joins an account to an existing person, the roles the
    * account's person held go with the account. Returns how many records
    * changed. IdentityManager's join records the change. All or nothing (#2015).
+   *
+   * #2040: the roles go only with credentials. The join gives the account
+   * (`fromPersonId`'s credentials) to `toPersonId`, which is still a contact
+   * while the roles move, so the check is that `fromPersonId` is a user: a
+   * contact's memberships never move to anyone.
    */
   async moveMemberships(fromPersonId: string, toPersonId: string): Promise<number> {
     const held = await this.listByMember(fromPersonId);
     const changes = held.flatMap((role) => [
       this.memberChange(role, fromPersonId, 'remove'),
-      this.memberChange(role, toPersonId, 'add')
+      this.memberChange(role, toPersonId, 'add', undefined, fromPersonId)
     ]);
     await this.allOrNothing(toPersonId, changes, true);
     return held.length;
@@ -529,12 +547,17 @@ class RoleManager extends BaseManager {
     return { personId: person['@id'], installOrg };
   }
 
-  /** One member change and its inverse. */
-  private memberChange(role: RoleRef, personId: string, op: 'add' | 'remove', createIn?: Organization): MemberChange {
+  /**
+   * One member change and its inverse. An add is checked: the member must be a
+   * user (#2040), judged by `credentialsOf` when the credentials come from
+   * another identity in the same change (a join). An undo puts back what was
+   * there and is not checked.
+   */
+  private memberChange(role: RoleRef, personId: string, op: 'add' | 'remove', createIn?: Organization, credentialsOf?: string): MemberChange {
     return {
       label: `${op} ${role.namedPosition}`,
-      apply: () => this.setMember(role, personId, op === 'add', createIn),
-      undo: () => this.setMember(role, personId, op !== 'add', createIn)
+      apply: () => this.setMember(role, personId, op === 'add', createIn, op === 'add' ? (credentialsOf ?? personId) : null),
+      undo: () => this.setMember(role, personId, op !== 'add', createIn, null)
     };
   }
 
@@ -552,7 +575,9 @@ class RoleManager extends BaseManager {
         }
       } catch (error) {
         const notUndone = await this.undoAll(subject, done);
-        throw await this.roleFailure(subject, [change.label], { cause: error, notUndone, notify });
+        // #2040: a member refused for having no credentials is a reason an administrator can act on.
+        const reason = error instanceof RoleMemberRefusal ? error.message : undefined;
+        throw await this.roleFailure(subject, [change.label], { reason, cause: reason ? undefined : error, notUndone, notify });
       }
     }
     return done;
@@ -612,10 +637,19 @@ class RoleManager extends BaseManager {
    * record is created in `createIn` for an add; with no `createIn` an add to a
    * missing record throws, and a removal from one changes nothing. False,
    * writing nothing, when the person already is (or is not) a member.
+   *
+   * `mustBeUser` (#2040): the identity whose credentials an add needs, or null
+   * for an undo, which puts back what was there. Only a user holds a role; a
+   * contact is refused with {@link RoleMemberRefusal} before anything is
+   * written, the role record included.
    */
-  private setMember(role: RoleRef, personId: string, member: boolean, createIn?: Organization): Promise<boolean> {
+  private setMember(role: RoleRef, personId: string, member: boolean, createIn: Organization | undefined, mustBeUser: string | null): Promise<boolean> {
     const orgId = role.organization['@id'];
     return this.membership.run(this.membershipKey(orgId, role.namedPosition), async () => {
+      if (member && mustBeUser) {
+        const refusal = await this.notAUserReason(mustBeUser);
+        if (refusal) throw new RoleMemberRefusal(refusal);
+      }
       const current = member && createIn
         ? await this.getOrCreateRoleRecord(createIn, role.namedPosition)
         : await this.getByOrgAndPosition(orgId, role.namedPosition);
@@ -667,6 +701,90 @@ class RoleManager extends BaseManager {
       organization: { '@id': installOrg['@id'] },
       member: []
     });
+  }
+
+  /**
+   * Why the identity `personId` may not hold a role, or null when it may
+   * (#2040). Only a user holds a role: an identity with credentials, whose
+   * identity record's `identifier` is the username of an account that exists.
+   * A contact's identifier is `person:<uuid>` and it has no account.
+   * Read under the system context: this is RoleManager's own rule.
+   */
+  private async notAUserReason(personId: string): Promise<string | null> {
+    const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identityManager) return 'IdentityManager is unavailable, so it cannot be told whether the member has credentials';
+    const record = await identityManager.getById(systemContext(this.engine, `role membership: does ${personId} have credentials (#2040)`), personId);
+    if (!record) return 'there is no identity record with that id';
+    const onlyUsers = 'only a user (an identity with credentials) can hold a role';
+    if (typeof record.identifier !== 'string' || IdentityManager.isAccountless({ identifier: record.identifier })) {
+      return `it is a contact, an identity record with no credentials, and ${onlyUsers}. Give it an account first`;
+    }
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    if (userManager && !(await userManager.getUser(record.identifier))) {
+      return `its identity record names the account "${record.identifier}", which does not exist, so it has no credentials, and ${onlyUsers}`;
+    }
+    return null;
+  }
+
+  /**
+   * Check the role records for members that are contacts (#2040), once at
+   * start-up when every manager is up. Nothing is dropped or rewritten: each
+   * role holding contacts is named, with how many, in a needs-attention entry
+   * on the dashboard and a log line, and administrators get one notification
+   * (not a second while the first is still active). A contact cannot sign in,
+   * so such a membership gives nothing; an administrator decides what to do.
+   *
+   * @returns role name → how many of its members are contacts
+   */
+  async reportContactMembersAtBoot(): Promise<Record<string, number>> {
+    const found: Record<string, number> = {};
+    try {
+      const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
+      if (!identityManager || !this.provider) return found;
+      const ctx = systemContext(this.engine, 'start-up check: are any role members contacts (#2040)');
+      for (const role of await this.provider.list()) {
+        let contacts = 0;
+        for (const m of role.member ?? []) {
+          const record = await identityManager.getById(ctx, m['@id']);
+          if (record && IdentityManager.isAccountless(record)) contacts++;
+        }
+        if (contacts > 0) found[role.namedPosition] = contacts;
+      }
+    } catch (err) {
+      logger.error('🔑 The start-up check for contacts listed as role members could not run (#2040):', err);
+      return found;
+    }
+    const roles = Object.entries(found);
+    if (roles.length === 0) return found;
+    const detail = roles.map(([name, n]) => `'${name}' lists ${n}`).join(', ');
+    const reason = `Some roles list contacts as members (${detail}). A contact is an identity record with no credentials, and only users hold roles, so these memberships give nothing. ` +
+      'They were left as they are: give each contact an account (it then holds the role as a user, and can be taken out of it like any user), or remove it from the role\'s file in the roles folder';
+    logger.error(`🔑 ${reason} (#2040)`);
+    this.markNeedsAttention(reason);
+    await this.notifyAdminsOnce(CONTACT_MEMBERS_TITLE, `${reason}.`);
+    return found;
+  }
+
+  /**
+   * One error notification for the users holding `admin-system`, unless one
+   * with this title is still active. Nobody to tell: the log line stands
+   * alone, since an empty target list would tell every user.
+   */
+  private async notifyAdminsOnce(title: string, message: string): Promise<void> {
+    try {
+      const notifications = this.engine.getManager<NotificationManager>('NotificationManager');
+      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      if (!notifications || !pdp) return;
+      if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
+      const admins = (await pdp.usersHolding('admin-system')) ?? [];
+      if (admins.length === 0) {
+        logger.error(`🔑 No user holds admin-system; '${title}' is in the log only (#2040)`);
+        return;
+      }
+      await notifications.createNotification({ type: 'system', level: 'error', title, message, targetUsers: admins });
+    } catch (err) {
+      logger.error(`🔑 The notification '${title}' could not be sent (#2040):`, err);
+    }
   }
 
   /** The account must exist; membership of a missing account is refused. */

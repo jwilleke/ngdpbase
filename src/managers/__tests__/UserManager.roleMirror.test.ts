@@ -118,6 +118,7 @@ function makeMocks(opts: {
 } = {}) {
   const lookup = vi.fn(async () => opts.person ?? null);
   const identityManager = {
+    getById: lookup,
     getByIdentifier: lookup,
     getByUserIdentifier: lookup,
     create: vi.fn(async (p: unknown) => p),
@@ -185,6 +186,8 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue([]);
       userManager.provider.createUser = vi.fn().mockResolvedValue(undefined);
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
+      // #2040: the account exists once written, so its identity record has credentials.
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'alice' });
       // Stub createUserPage path to avoid PageManager dependency
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
@@ -478,6 +481,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue([]);
       userManager.provider.createUser = vi.fn().mockResolvedValue(undefined);
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'alice' });
       userManager.createUserPage = vi.fn().mockResolvedValue(false);
 
       await userManager.createUser({

@@ -1,7 +1,7 @@
 ---
 name: IdentityManager
 description: Identity records (#617) for every user and contact — kept apart from sign-in, shared across addons
-dateModified: '2026-10-25'
+dateModified: '2026-10-26'
 category: managers
 code: src/managers/IdentityManager.ts
 ---
@@ -32,7 +32,7 @@ Every lookup takes the caller's context first too ([#2018](https://github.com/jw
 
 __A user missing its identity record__ ([#2037](https://github.com/jwilleke/ngdpbase/issues/2037)). Every user has exactly one identity record, made when `UserManager.createUser` makes the account. `getByUserIdentifier(ctx, username)` returns it and, when the user has none, makes it: the caller's read is decided as above, then the record is made through `create` under the system context (the reason names the account and the caller), from the account's display name and email, and recorded as `identity-manage` (`person-create`). One at a time per username, so lookups at once make one record. Null when there is no account by that name. It never makes a second record: one is made only when no identity record has the username as its `identifier`, and a contact with the same email is left alone for an administrator to link (`linkAccount`). RoleManager's role reads and writes, and UserManager's start-up repair, use it.
 
-"Own" is decided by comparing the context's username with the record, never from a role. A refusal throws `ContactRefusedError`. Reads are not recorded; changes are, as `identity-manage`. `update` follows the same rule: a user changes their own identity record under `profile-manage`; `delete` always asks `identity-manage`. A contact's identity record has the identifier `person:<uuid>`. Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
+"Own" is decided by comparing the context's username with the record, never from a role. A refusal throws `ContactRefusedError`. Reads are not recorded; changes are, as `identity-manage`. `update` follows the same rule: a user changes their own identity record under `profile-manage`; `delete` always asks `identity-manage`. A contact's identity record has the identifier `person:<uuid>`. Only users hold roles: a contact is refused as a role member, decided by RoleManager from this identifier and the account it names ([#2040](https://github.com/jwilleke/ngdpbase/issues/2040), [RoleManager](RoleManager.md#only-users-are-members)). Joining a later sign-up (`offerSignUpLink`, `signUpLinkOffer`, `confirmSignUpLink`, `declineSignUpLink`) and the rules for all of it are in the [managers guide](../guides/managers-developer-guide.md#identity-records-have-one-door); the calls an add-on makes are in the [add-ons guide](../guides/addons-developer-guide.md#contacts-and-identity-records).
 
 ## Affiliations
 
