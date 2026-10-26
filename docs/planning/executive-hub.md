@@ -10,6 +10,7 @@ Executive work is scattered today: some of it under `/admin`, which is for runni
 
 - A core role, `executive`, made from permissions that already exist.
 - It is read-only to everything the organization keeps. Nothing the organization holds is hidden from it: donor names and amounts, every unit's account, folios, liens and write-offs, occupancy forms, owner-change requests, the treasurer's pages and the ledger.
+- It includes accounting's CSV downloads (`ledger-export`): a download only reads the books, and the board answers for them (operator, 2026-10-26).
 - Its one kind of action: approving or rejecting the requests waiting for the board, through core's reviews ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072), `/reviews`). Nothing else, for now.
 - Who holds it is a site role for now. Governance (board, officers, members) is a deferred add-on (ngdpbase-addons#24).
 
