@@ -8,10 +8,11 @@ vi.mock('../../utils/logger', () => ({
 
 /** #2040: the one way to tell administrators. A notice with no targetUsers reaches every user. */
 describe('NotificationManager.notifyAdmins', () => {
-  let tempDir: string;
+  const tempDirs: string[] = [];
 
   const managerWith = async (holders: string[] | null) => {
-    tempDir = path.join(__dirname, 'temp', `admins-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    const tempDir = path.join(__dirname, 'temp', `admins-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    tempDirs.push(tempDir);
     await fs.mkdir(tempDir, { recursive: true });
     const config = {
       getProperty: vi.fn((_key: string, d: unknown) => d),
@@ -31,7 +32,7 @@ describe('NotificationManager.notifyAdmins', () => {
 
   afterEach(async () => {
     // Only this test's own temp directory.
-    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+    for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
   });
 
   test('targets the users holding admin-system, as a system notification, and only them', async () => {
