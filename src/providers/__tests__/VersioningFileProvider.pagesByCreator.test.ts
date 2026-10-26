@@ -519,3 +519,15 @@ describe('VersioningFileProvider lookups by identity @id (#2097)', () => {
     expect(result.map(e => e.title)).toEqual(['Theirs']);
   });
 });
+
+// #2097: a legacy private index entry is not converted (its move into a vault finds
+// its old folder by the author's username). Sabotage: dropping the filter turned this red.
+describe('VersioningFileProvider.listAuthorshipRefs (#2097)', () => {
+  test('leaves out legacy private entries', () => {
+    const p = makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', author: 'alice' }),
+      u2: baseEntry({ uuid: 'u2', author: 'alice', location: 'private' as never, creator: 'alice' })
+    });
+    expect((p as unknown as { listAuthorshipRefs(): Array<{ uuid: string }> }).listAuthorshipRefs().map((r) => r.uuid)).toEqual(['u1']);
+  });
+});

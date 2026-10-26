@@ -896,10 +896,15 @@ class VersioningFileProvider extends FileSystemProvider {
     }
   }
 
-  /** The public pages' stored author and editor, from the page index (#2097). */
+  /**
+   * The public pages' stored author and editor, from the page index (#2097).
+   * A legacy `private` entry (a private page from before vaults, still
+   * waiting to move into its owner's vault) is left out: the move finds its
+   * old folder by the author's username.
+   */
   override listAuthorshipRefs(): Array<{ uuid: string; author?: string; editor?: string }> {
     if (!this.pageIndex) return super.listAuthorshipRefs();
-    return Object.values(this.pageIndex.pages).map((entry) => ({
+    return Object.values(this.pageIndex.pages).filter((entry) => entry.location !== 'private').map((entry) => ({
       uuid: entry.uuid,
       ...(entry.author ? { author: entry.author } : {}),
       ...(entry.editor ? { editor: entry.editor } : {})
