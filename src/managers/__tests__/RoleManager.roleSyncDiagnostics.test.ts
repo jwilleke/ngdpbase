@@ -60,7 +60,8 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
   notifications.length = 0;
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'NotificationManager') return { addNotification: async (n: Record<string, unknown>) => { notifications.push(n); return 'n1'; } };
+      if (name === 'NotificationManager') return { createNotification: async (n: Record<string, unknown>) => { notifications.push(n); return 'n1'; } };
+      if (name === 'PolicyDecisionPoint') return { usersHolding: async () => ['admin'] };
       if (name === 'ConfigurationManager') return makeConfigManager();
       if (name === 'IdentityManager') return identityManager;
       if (name === 'OrganizationManager') return organizationManager;
@@ -116,7 +117,7 @@ describe('role assignment with no anchor Organization (#1027, #2015)', () => {
     const manager = makeEngine({ installOrg: null });
     await manager.applyRoleDiff('admin', [], ['admin']).catch(() => undefined);
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error', targetUsers: ['admin'] });
     expect(String(notifications[0].message)).toContain('admin');
   });
 });

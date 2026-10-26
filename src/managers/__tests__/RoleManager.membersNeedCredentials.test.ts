@@ -38,16 +38,15 @@ describe('a role member must have credentials (#2040)', () => {
   let manager: RoleManager;
   /** username → identity record the lookup answers; 'carol' is made to answer the contact. */
   let byUsername: Record<string, string>;
-  const notifications: Record<string, unknown>[] = [];
+  let managers: Record<string, unknown>;
   const created: Record<string, unknown>[] = [];
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-credentials-'));
     resetBootActions();
-    notifications.length = 0;
     created.length = 0;
     byUsername = { alice: userId('alice'), bob: userId('bob'), admin: userId('admin'), carol: CONTACT, gone: STALE };
-    const managers: Record<string, unknown> = {
+    managers = {
       ConfigurationManager: {
         getProperty: (key: string, d: unknown) => key === 'ngdpbase.roles.definitions' ? { reader: {}, editor: {} } : d,
         getResolvedDataPath: () => path.join(tmpDir, 'roles')
@@ -61,7 +60,6 @@ describe('a role member must have credentials (#2040)', () => {
       // requireAccount (assignRole) finds every name; the rule itself asks about the record's identifier.
       UserManager: { getUser: (u: string) => Promise.resolve(ACCOUNTS.has(u) || u === 'carol' ? { username: u } : undefined) },
       NotificationManager: {
-        addNotification: (n: Record<string, unknown>) => { notifications.push(n); return Promise.resolve('n'); },
         createNotification: (n: Record<string, unknown>) => { created.push(n); return Promise.resolve('n'); },
         getAllNotifications: () => created
       },
@@ -94,8 +92,9 @@ describe('a role member must have credentials (#2040)', () => {
     expect((failure as Error).message).toContain('only a user (an identity with credentials) can hold a role');
     // Nothing written: not even an empty role record.
     expect(await manager.getByOrgAndPosition(ORG['@id'], 'editor')).toBeNull();
-    expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+    // Only the admins: an empty or missing targetUsers would reach every user (#2040).
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ type: 'system', level: 'error', targetUsers: ['admin'] });
   });
 
   test('applyRoleDiff (account create and edit) refuses a contact and undoes the rest of the change', async () => {
@@ -116,7 +115,7 @@ describe('a role member must have credentials (#2040)', () => {
     expect(await manager.grantToEveryAccountOnce('reader', ['alice', 'carol', 'bob'], ctx)).toBe(2);
     expect(await members('reader')).toEqual([userId('alice'), userId('bob')]);
     expect(pendingBootActions().map((a) => [a.event.resource, a.event.result])).toEqual([['alice', 'success'], ['carol', 'failure'], ['bob', 'success']]);
-    expect(String(notifications[0].message)).toContain('carol');
+    expect(String(created[0].message)).toContain('carol');
   });
 
   test('moveMemberships (a contact joined to an account): the roles go with the account\'s credentials', async () => {
@@ -133,6 +132,12 @@ describe('a role member must have credentials (#2040)', () => {
     await expect(manager.moveMemberships(CONTACT, other)).rejects.toThrow(/is a contact/);
     expect(await members('editor')).toEqual([CONTACT]);
     delete records[other];
+  });
+
+  test('with nobody holding admin-system, a failed role change is in the log only', async () => {
+    managers.PolicyDecisionPoint = { usersHolding: () => Promise.resolve([]) };
+    await manager.assignRole('carol', 'editor', ADMIN).catch(() => undefined);
+    expect(created).toHaveLength(0);
   });
 
   describe('the start-up check', () => {
