@@ -95,9 +95,8 @@ describe('#2041 footnotes', () => {
     await first.initialize();
     const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, { createdBy: string }>;
     expect(Object.values(after).map((n) => n.createdBy)).toEqual([IDS.alice, 'orphan:gone', 'anonymous', 'system', IDS.bob]);
-    expect(status(first)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 footnote\(s\) are orphaned/) });
-    // Counts only: the name is not in the report.
-    expect(status(first).reason).not.toContain('gone');
+    // #2097: an orphan is the intended final state: logged at info, never needs-attention.
+    expect(status(first).state).not.toBe('degraded');
 
     const identities = fakeIdentityManager(IDS);
     const mtime = fs.statSync(file).mtimeMs;
@@ -125,13 +124,13 @@ describe('#2041 footnotes', () => {
     expect(await fm.isCreator({ createdBy: 'migrated' }, subject('migrated'))).toBe(false);
   });
 
-  test('a real orphan still counts as needs-attention beside migrated ones', async () => {
+  test('a real orphan is not needs-attention either (#2097: the intended final state)', async () => {
     const file = path.join(tmpDir, 'p-mix.json');
     const note = (id: string, createdBy: string) => ({ id, display: '', url: '', note: id, createdBy, createdAt: 't' });
     fs.writeFileSync(file, JSON.stringify({ 1: note('1', 'migrated'), 2: note('2', 'gone') }));
     const fm = new FootnoteManager(engine(fakeIdentityManager(IDS)));
     await fm.initialize();
-    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 footnote\(s\) are orphaned/) });
+    expect(status(fm).state).not.toBe('degraded');
   });
 
   test('the identity store down: start-up converts nothing and says so; a new footnote is still written', async () => {
@@ -182,7 +181,8 @@ describe('#2041 comments', () => {
     expect(read('c1')).toMatchObject({ author: IDS.alice, authorDisplayName: 'Shown', deletedBy: 'alice' });
     expect(read('c2').author).toBe('orphan:gone');
     expect(read('c3').author).toBe(IDS.bob);
-    expect(status(first)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 comment\(s\) are orphaned/) });
+    // #2097: an orphan is the intended final state: logged at info, never needs-attention.
+    expect(status(first).state).not.toBe('degraded');
 
     const identities = fakeIdentityManager(IDS);
     const second = new CommentManager(engine(identities));
@@ -231,7 +231,7 @@ describe('#2041 a deleted account\'s notes are never a new same-named account\'s
     expect(comment.author).toBe('orphan:bob');
     expect(await fm2.isCreator(footnote, newBob)).toBe(false);
     expect(await cm2.isAuthor(comment, newBob)).toBe(false);
-    expect(status(fm2).reason).toMatch(/^1 footnote\(s\) are orphaned/);
-    expect(status(cm2).reason).toMatch(/^1 comment\(s\) are orphaned/);
+    expect(status(fm2).state).not.toBe('degraded');
+    expect(status(cm2).state).not.toBe('degraded');
   });
 });

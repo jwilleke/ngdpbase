@@ -550,16 +550,16 @@ describe('NotificationManager', () => {
       await first.shutdown();
       expect((await saved(dir)).targetUsers).toEqual([IDS.john, 'orphan:gone']);
       expect((await saved(dir)).dismissedBy).toEqual([IDS.testuser, 'anonymous']);
-      // Sabotage check: dropping markNeedsAttention leaves the manager ready.
-      expect(first.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 notification recipient\(s\) are orphaned/) });
-      expect(first.getManagerStatus().reason).not.toContain('gone');
+      // #2097: an orphan is the intended final state: logged at info, never needs-attention.
+      // Sabotage check: marking it needs-attention again turned this red.
+      expect(first.getManagerStatus().state).not.toBe('degraded');
 
       lookups = [];
       const second = await managerWithIdentities(dir);
       await second.shutdown();
       // Nothing is looked up again: an @id and an orphan are both final.
       expect(lookups).toEqual([]);
-      expect(second.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^1 notification recipient\(s\) are orphaned/) });
+      expect(second.getManagerStatus().state).not.toBe('degraded');
     });
 
     test('a deleted account\'s notices never reach a new account with the same name', async () => {

@@ -934,6 +934,10 @@ class VersioningFileProvider extends FileSystemProvider {
     if (entry && result.file !== 'refused') {
       if (result.author) entry.author = result.author;
       if (result.editor) entry.editor = result.editor;
+      // A file with no `author`/`editor` of its own: the index keeps the value
+      // it took from the history (the last version's editor), converted the same way.
+      if (!result.author && entry.author) entry.author = await convert(entry.author);
+      if (!result.editor && entry.editor) entry.editor = await convert(entry.editor);
       // The index's copy of the audience (a fallback for a private page) follows the file.
       if (result.audience && entry.audienceRoles) entry.audienceRoles = result.audience;
     }
@@ -1001,7 +1005,11 @@ class VersioningFileProvider extends FileSystemProvider {
           }
           // The deleted page's file and history, so a restore brings it back
           // converted: on the full pass only (they are read, not in memory).
-          if (opts.full) {
+          // A legacy private tombstone (a private page deleted before vaults,
+          // with an owner but no store) has no file or history this provider
+          // can name: its index fields are all there is to convert.
+          const legacyPrivate = entry.location === 'private' && !(entry.creator && entry.store);
+          if (opts.full && !legacyPrivate) {
             const trashFile = path.join(this.getDeletedDirectory(entry.location), `${entry.uuid}.md`);
             if ((await this.convertFileAuthorship(PLAIN_FILE_IO, trashFile, convert)).file === 'changed') changed++;
             changed += await this.convertHistoryEditors(entry.uuid, entry.location, await this.versionTarget(entry.uuid, entry.location), convert);

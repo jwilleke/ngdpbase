@@ -869,9 +869,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (changed > 0) logger.info(`[AttachmentManager] Converted ${changed} ${what} uploader/editor value(s) to identity @ids (#2097)`);
     if (counts.noUser > 0) logger.info(`[AttachmentManager] ${counts.noUser} ${what} uploader value(s) record no user (Unknown) (#2097)`);
     if (counts.orphans > 0) {
-      const reason = `${counts.orphans} ${what} uploader/editor value(s) are orphaned: their username has no account (#2097)`;
-      logger.warn(`[AttachmentManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      // An orphan is the intended final state and needs nothing from an administrator: info, never needs-attention.
+      logger.info(`[AttachmentManager] ${counts.orphans} ${what} uploader/editor value(s) are orphaned: their username has no account (#2097)`);
     }
   }
 

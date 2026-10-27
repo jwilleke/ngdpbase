@@ -208,6 +208,8 @@ describe('FileManager — today\'s attachments as file records (#1852)', () => {
       ['p2', 'orphan:gone', null],
       ['p3', 'orphan:unknown', null]
     ]));
+    // Gate fix: an orphan is the intended final state: logged, never needs-attention.
+    expect((attachments as unknown as { getManagerStatus(): { state: string } }).getManagerStatus().state).not.toBe('degraded');
     const bytes = await fs.readFile(metadataFile(), 'utf8');
     await attachments.convertUploadersAtBoot();
     expect(await fs.readFile(metadataFile(), 'utf8')).toBe(bytes);
