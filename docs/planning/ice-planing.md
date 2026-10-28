@@ -4,7 +4,7 @@ Epic: [#1979](https://github.com/jwilleke/ngdpbase/issues/1979)
 
 The source of truth for the ICE epic: one engine that brings data in, converts it, and sends it out, with add-ons supplying the format-specific pieces ("shims"). Decisions here are the operator's; development follows this page. Change it when a decision changes, in the same change that ships the code.
 
-Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The user-facing import screen, `/import`, is built ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), 2026-10-24). The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). A plugin as a receiver and how export is picked stay open.
+Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The user-facing import screen, `/import`, is built ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), 2026-10-24). The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). Every open question is now decided (operator, 2026-10-28).
 
 ## Where this came from
 
@@ -108,7 +108,8 @@ The smallest piece that proves the engine:
 - D11 on the screen: a receiver states the original choices it offers, `originals: { allowed, default }` on `IceReceiver`; the engine refuses any other. `core.files` offers only `none`.
 - Status: each run's per-file report from `getImportRun`, refreshing until done, to its own user only; the screen lists the user's runs this process holds (`importRunsFor`).
 - Limits: `ngdpbase.import.engine.upload-max-files` (20) and `upload-max-bytes` (256 MB, equal to `zip-max-bytes`).
-- Still open from the issue: whether a receiver may hide file names from the status view, and a "your recent imports" list from the ledger across restarts.
+- A receiver cannot hide file names from the status view: only the user who uploaded sees it, and they need the names to see which file failed. The audit log keeps the file name; application logs, notices and admin screens do not show it to anyone else (operator, 2026-10-28).
+- "Your recent imports" is read from the ledger, so it survives a restart: the user's own recent files, newest first, with each file's result and what it went into. How many it shows is a configuration key with a default (operator, 2026-10-28). Not built yet.
 
 ### Keeping an original in an encrypted vault ([#2034](https://github.com/jwilleke/ngdpbase/issues/2034), built 2026-10-24)
 
@@ -141,18 +142,20 @@ Later, once the engine has proven itself:
 
 ## Open questions
 
-Answers marked __decided__ were proposed by the first slice (PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981)) and accepted by the operator on 2026-10-23 ([#1979](https://github.com/jwilleke/ngdpbase/issues/1979)). The rest are still open.
+Answers marked __decided__ were proposed by the first slice (PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981)) and accepted by the operator on 2026-10-23 ([#1979](https://github.com/jwilleke/ngdpbase/issues/1979)); the rest were decided on 2026-10-28.
 
 - The engine's name: keep `ImportManager`, or rename it since it also exports.
   - __Decided (operator, 2026-10-23): keep `ImportManager`.__ Renaming touches every caller, route and doc for no behaviour; export can live on it, or a rename can come with export.
-- A plugin as a receiver (D4): previews only, or not at all. (Not needed by the first slice; still open.)
+- A plugin as a receiver (D4): previews only, or not at all.
+  - __Decided (operator, 2026-10-28): not at all, for now.__ Plugins display and never store, and the ledger and retries assume a receiver stores. A preview can come later if asked for.
 - Where the engine keeps fingerprints and per-file status (a core database table, or the files layer), and how phr's existing `phr_source_files` history moves over.
   - __Decided (operator, 2026-10-23): the engine's own ledger behind an `IceLedger` interface__, first stored as one JSON file per scope under `ngdpbase.import.engine.ledger-dir` (FAST_STORAGE). The application database is off by default (`ngdpbase.database.provider: none`), and the files layer (#1851) has no write door yet. A database table implements the same interface when the database is on. A scope is bound to the receiver and the user (by identity `@id`) since [#2013](https://github.com/jwilleke/ngdpbase/issues/2013); a caller's own scope (phr's source id) narrows within it. phr's `phr_source_files` rows map one to one onto a ledger entry (name, SHA-256, size, status, message, time, references), so moving them over is a one-time copy into phr's scope.
 - How a shim is registered on `host` (the exact call and types), and how the manifest declares it (with #1966).
   - __Decided (operator, 2026-10-23):__ `host.registerShim(shim: IceShim): string` and `host.registerReceiver(receiver: IceReceiver): string`, registering `<slug>.<name>`, types in `@jwilleke/ngdpbase-types` (`src/ice/types.ts`). The manifest declares names on the existing `AddonManifest`: `"ngdpbase": { "shims": ["ccda", "fhir"], "receivers": ["health-records"] }`; the host refuses any other name. #1966's schema should check the same two fields.
 - Keeping originals through the files layer (D11).
   - __Decided (operator, 2026-10-23):__ `keep` goes to the receiver's own `keepOriginal` when it has one (phr stores the original in its encrypted database beside the records); otherwise the original becomes an ordinary attachment on what was created, under the normal upload rules, through the `core.files` receiver, which is AttachmentManager's upload door today because FileManager (#1851) only reads so far. It moves to FileManager's write door when that exists.
-- Export: how a person picks what to export, and to which shim. (Not needed by the first slice; still open.)
+- Export: how a user picks what to export, and to which shim.
+  - __Decided (operator, 2026-10-28): export starts from the thing being exported.__ A page, a search result or an add-on's list (health records, the ledger) offers an Export action listing only the `out` shims that can produce from that kind of data. The owner of the data checks the user's existing read permission (D5). There is no general export screen.
 
 ## Related
 
