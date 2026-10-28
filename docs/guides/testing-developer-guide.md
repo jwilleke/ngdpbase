@@ -90,6 +90,15 @@ The admin password has one source:
 - `npm run lint`
 - E2E (`npm run test:e2e`) only when the change touches `views/`, `public/`, `src/plugins/`, `addons/`, or `tests/e2e/`
 
+## The image smoke test installs an add-on from config
+
+`.github/workflows/docker-build.yml` starts the built image and checks it before anything is published ([#2101](https://github.com/jwilleke/ngdpbase/issues/2101)). The step "Smoke test — an add-on installed from config" is the check for the domain-site model ([domain-site.md](../platform/deployment/domain-site.md)): a data volume whose `app-custom-config.json` names `@jwilleke/geohazardwatch-addon` in `ngdpbase.addons.install` (range `^1`, repository `github.com/jwilleke/geohazardwatch`) and enables it.
+
+- First start: it must log `Installed add-on geohazardwatch@…` and `Add-on loaded: geohazardwatch`, answer readiness and `/login`, and leave `addons/addons-lock.json` with the package, a version, a `sha512-` integrity and provenance naming the repository. This one uses the real registry, so it needs npm to be reachable from the runner.
+- Second start: the same volume, with `--network none`, so any npm request fails. It must log `verified against the lock file`, never `Installed add-on` for an install, load the add-on, and leave the lock byte for byte unchanged.
+
+The local release smoke (`/semver` Step 4a) runs the same step by name, by extracting it from the workflow. The older packaged-model step (the `-devtools` image) stays until [#2102](https://github.com/jwilleke/ngdpbase/issues/2102) decides whether it is retired.
+
 ## See also
 
 - [CODE_STANDARDS.md](../../CODE_STANDARDS.md) testing section

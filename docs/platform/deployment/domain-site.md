@@ -58,6 +58,10 @@ To confirm an install, read the lock entry: `version` is what runs, and `provena
 
 The add-on folder is core's: a folder that differs from its tarball is rewritten at the next start. Data the add-on writes belongs under its own data path on the persistent volume, never inside `<FAST_STORAGE>/addons/<slug>/`.
 
+## The release pipeline proves it
+
+Every image build starts the stock image with a data volume whose configuration names a published add-on (`@jwilleke/geohazardwatch-addon`) and checks that it installs with its provenance verified, loads, and that a second start with no network loads it from the pinned copy without asking npm ([#2101](https://github.com/jwilleke/ngdpbase/issues/2101)). The step is "Smoke test — an add-on installed from config" in `.github/workflows/docker-build.yml`, and the local release smoke runs it too. A core change that breaks this shape stops the image from being published.
+
 ## The admin-save trap
 
 Core reads `app-custom-config.json` once, at start, and every save from the admin UI writes the whole file back from that in-memory copy. A key added to the file by hand while the site is running is therefore lost if anyone saves a setting in the admin UI before the next restart.
