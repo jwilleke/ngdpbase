@@ -24,6 +24,7 @@ import WikiRoutes from '../WikiRoutes';
 import ImportManager from '../../managers/ImportManager';
 import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
+import { boundScope } from '../../ice/runImport';
 
 /** Who holds what. `profile-manage` is every user's; an anonymous visitor holds nothing. */
 const GRANTS: Record<string, string[]> = {
@@ -183,7 +184,7 @@ describe('POST /import (#2021)', () => {
     await jobs.whenIdle();
     await vi.waitFor(() => expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.state).toBe('done'));
     const run = importManager.getImportRun(res.body.runId, USERS.molly);
-    expect(run?.scope).toBe('core.pages/molly');
+    expect(run?.scope).toBe(boundScope('core.pages', 'molly'));
     expect(run?.files[0].status).toBe('imported');
     expect(saved).toEqual(['Garden']);
   });

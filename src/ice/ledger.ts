@@ -19,7 +19,16 @@ import fs from 'fs-extra';
 import type { IceLedger, LedgerFileEntry } from './types.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 
+/**
+ * The ledger file form (#2013). A scope is bound to its receiver and user
+ * (`boundScope`); a file without this form was written before that binding,
+ * under a scope any caller could name, so it belongs to nobody: it is read
+ * as empty, never as anyone's history, and its files are imported once more.
+ */
+export const LEDGER_FORM = 2;
+
 interface ScopeFile {
+  form?: number;
   scope: string;
   files: LedgerFileEntry[];
   items: string[];
@@ -97,6 +106,7 @@ export class FileIceLedger extends ScopedLedger {
     const file = this.fileFor(scope);
     if (!await fs.pathExists(file)) return { scope, files: [], items: [] };
     const data = await fs.readJson(file) as Partial<ScopeFile>;
+    if (data.form !== LEDGER_FORM || data.scope !== scope) return { scope, files: [], items: [] };
     return { scope, files: Array.isArray(data.files) ? data.files : [], items: Array.isArray(data.items) ? data.items : [] };
   }
 
@@ -104,7 +114,7 @@ export class FileIceLedger extends ScopedLedger {
     await fs.ensureDir(this.dir);
     const file = this.fileFor(data.scope);
     const tmp = `${file}.${process.pid}.tmp`;
-    await fs.writeJson(tmp, data);
+    await fs.writeJson(tmp, { ...data, form: LEDGER_FORM });
     await fs.move(tmp, file, { overwrite: true });
   }
 }
