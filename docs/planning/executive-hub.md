@@ -42,7 +42,7 @@ A user's own personal records are not the organization's and stay private from t
 - Owned by the organization, not by a person, so access follows the role when the board changes.
 - Everyone holding the executive role can read it.
 - Adding and editing need a separate permission, given to a secretary role or to whoever the site chooses. Every change is recorded in the audit log.
-- It holds board papers: minutes, the Declaration and Bylaws, filed financial summaries and CSVs, accountant letters, and board-only unit files. Live figures stay in the add-ons; the vault holds filed copies.
+- It holds board papers: minutes, the Declaration and Bylaws, filed financial summaries and CSVs, accountant letters, and board-only unit files. Live figures stay in the add-ons; the shared folder holds filed copies.
 - It is `/shared/executive`, the first org shared folder ([#1775](https://github.com/jwilleke/ngdpbase/issues/1775)), and is called a shared folder, never a vault (operator, 2026-10-28). Today a vault opens only to its owner and the people they delegate to, never to a role; shared folders are the new kind that opens by role.
 
 ## Steps (each its own issue)
