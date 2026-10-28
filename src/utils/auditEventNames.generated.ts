@@ -67,6 +67,8 @@ export const AUDIT_EVENT = {
   EMAILCHANGE_CONFIRM: 'emailchange-confirm',
   /** A user asked to change their own email: a confirmation link was sent to the new address (#2073). Names only, never an address */
   EMAILCHANGE_REQUEST: 'emailchange-request',
+  /** Executive Hub read; not recorded, read volume */
+  EXECUTIVE_READ: 'executive-read',
   /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
   FOOTNOTE_EDIT: 'footnote-edit',
   /** Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values */

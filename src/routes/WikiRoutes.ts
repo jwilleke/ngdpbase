@@ -847,7 +847,9 @@ export const VIEW_PERMISSIONS = [
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
   'config-manage', 'secret-reveal', 'account-security',
   // #1930: the dashboard's Contacts entry (read) and the contacts page's change controls.
-  'identity-read', 'identity-manage'
+  'identity-read', 'identity-manage',
+  // #2093: the header's Executive Hub entry.
+  'executive-read'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
@@ -16795,6 +16797,38 @@ ${panes}
     });
   }
 
+  /**
+   * GET /executive — the Executive Hub (#2093): the requests waiting for the
+   * board and the add-ons' executive cards, for holders of `executive-read`.
+   * The pending list is ReviewManager's `listOpen`, asked with the viewer's
+   * context, so it is exactly what `/reviews` shows them; deciding posts to
+   * `/reviews/:id/decide`, which sends the viewer back here. The cards are
+   * AddonsManager's `executiveCardsFor`, each shown only to a viewer its
+   * permission admits. Outcome messages are built as on `/reviews`.
+   */
+  async executivePage(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'executive-read', req, res, 'page'))) return;
+    const reviews = this.engine.getManager<ReviewManager>('ReviewManager');
+    const unavailable = !reviews || reviews.getUnavailableReason() !== null;
+    const requests = unavailable ? [] : await reviews.listOpen(wikiContext.userContext);
+    const outcome = unavailable ? { success: '', error: '' } : await this.reviewOutcome(reviews, wikiContext.userContext, req.query.done, req.query.id);
+    const addons = this.engine.getManager<AddonsManager>('AddonsManager');
+    const cards = addons ? await addons.executiveCardsFor(wikiContext.userContext) : [];
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('executive', {
+      ...commonData,
+      title: 'Executive Hub',
+      requests,
+      unavailable,
+      cards,
+      success: outcome.success,
+      error: outcome.error,
+      csrfToken: req.session?.csrfToken || ''
+    });
+  }
+
   /** The message for a decision's outcome code (#2072): fixed words, plus the request read from the store under the viewer's check. */
   private async reviewOutcome(reviews: ReviewManager, viewer: ActorContext, code: unknown, id: unknown): Promise<{ success: string; error: string }> {
     const none = { success: '', error: '' };
@@ -16832,8 +16866,11 @@ ${panes}
     if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const id = String(req.params.id);
+    // #2093: the Executive Hub decides through this same route and asks to be
+    // sent back to itself. Only the two fixed paths, never a URL from the form.
+    const returnTo = body.return === 'executive' ? '/executive' : '/reviews';
     const back = (code: string, withId = false): void =>
-      res.redirect(`/reviews?done=${code}${withId && REVIEW_ID.test(id) ? `&id=${id}` : ''}`);
+      res.redirect(`${returnTo}?done=${code}${withId && REVIEW_ID.test(id) ? `&id=${id}` : ''}`);
     const decision = body.decision === 'approve' ? 'approve' : body.decision === 'reject' ? 'reject' : null;
     if (!decision) { back('choose'); return; }
     const reviews = this.engine.getManager<ReviewManager>('ReviewManager');
@@ -17727,6 +17764,8 @@ ${panes}
     // #2072: one screen for every request waiting for review.
     app.get('/reviews', (req: Request, res: Response) => void this.reviewsPage(req, res));
     app.post('/reviews/:id/decide', (req: Request, res: Response) => void this.decideReview(req, res));
+    // #2093: the Executive Hub, for holders of executive-read.
+    app.get('/executive', (req: Request, res: Response) => void this.executivePage(req, res));
 
     // #1546: the idle-timeout warning. The status poll is not activity (the
     // session middleware skips it), so it can never keep a session alive on its

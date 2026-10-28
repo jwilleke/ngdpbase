@@ -29,6 +29,8 @@ export type CorePermission =
   | 'comment-create'
   /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
   | 'config-manage'
+  /** Open the Executive Hub (/executive): the organization's summary cards and the requests waiting for the board (#2093). Held by the executive role; deciding a request still needs that request's own permission */
+  | 'executive-read'
   /** Create, edit, delete and link identity records, of users and contacts alike, and organizations, and an identity's affiliations, through IdentityManager and OrganizationManager (#1930). Reading them is identity-read. Was contact-manage until #2038; a policy naming that is still read as this for one release. Admins by default; an add-on grants it to its own roles in its own policy */
   | 'identity-manage'
   /** List, search and view identity records, of users and contacts alike, and organizations, and their affiliations, through IdentityManager and OrganizationManager, and the /admin/contacts and /admin/organizations views (#1930). Was contact-read until #2038; a policy naming that is still read as this for one release. Admins and demo admins by default; an add-on grants it to its own roles in its own policy */
@@ -99,6 +101,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'audit-export',
   'comment-create',
   'config-manage',
+  'executive-read',
   'identity-manage',
   'identity-read',
   'media-read',

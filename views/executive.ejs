@@ -1,0 +1,61 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #2093 — the Executive Hub, for holders of executive-read. Locals: requests (ReviewRequest[],
+    ReviewManager.listOpen asked with the viewer's context: what /reviews shows them), unavailable
+    (bool), cards (ExecutiveCardView[], AddonsManager.executiveCardsFor: only the cards the viewer's
+    permissions admit), success, error, csrfToken. Each request is views/_review-request.ejs and
+    decides through /reviews/:id/decide, which sends the viewer back here. No script of its own. %>
+
+<div class="container py-4" data-testid="executive-page">
+    <h1 class="h3 mb-3"><i class="fas fa-landmark"></i> Executive Hub <%- include('_help-icon', { slug: 'executive-hub', label: 'Executive Hub' }) %></h1>
+    <p class="text-muted">What the organization keeps, in one place, and the requests waiting for the board.</p>
+
+    <% if (success) { %><div class="alert alert-success" role="status" data-testid="executive-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-danger" role="alert" data-testid="executive-error"><%= error %></div><% } %>
+
+    <h2 class="h5 mt-4 mb-3">Waiting for a decision</h2>
+    <% if (unavailable) { %>
+        <div class="alert alert-secondary" data-testid="executive-reviews-unavailable">Reviews are not turned on for this site, so no requests can wait here. An administrator can see why on the admin dashboard.</div>
+    <% } else if (requests.length === 0) { %>
+        <p data-testid="executive-pending-empty">Nothing is waiting for a decision.</p>
+    <% } else { %>
+        <% requests.forEach(function (r) { %>
+        <%- include('_review-request', { r: r, csrfToken: csrfToken, returnTo: 'executive' }) %>
+        <% }) %>
+    <% } %>
+
+    <h2 class="h5 mt-4 mb-3">Summaries</h2>
+    <% if (cards.length === 0) { %>
+        <p class="text-muted" data-testid="executive-cards-empty">No summaries yet. They appear here when the site's add-ons provide them.</p>
+    <% } else { %>
+        <div class="row g-3" data-testid="executive-cards">
+            <% cards.forEach(function (c) { %>
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100" data-testid="executive-card" data-addon="<%= c.addonName %>">
+                    <div class="card-header"><i class="<%= c.icon %> me-2"></i><strong><%= c.title %></strong></div>
+                    <div class="card-body">
+                        <% if (c.failed) { %>
+                            <p class="text-warning small mb-0" data-testid="executive-card-failed">These figures could not be read just now. Try again later, or ask an administrator.</p>
+                        <% } else { %>
+                            <% if (c.figures.length > 0) { %>
+                            <dl class="row mb-2 small">
+                                <% c.figures.forEach(function (f) { %>
+                                <dt class="col-7 fw-normal"><%= f.label %></dt>
+                                <dd class="col-5 text-end mb-1"><%= f.value %></dd>
+                                <% }) %>
+                            </dl>
+                            <% } %>
+                            <% if (c.message) { %><p class="small text-muted mb-0"><%= c.message %></p><% } %>
+                        <% } %>
+                    </div>
+                    <% if (c.adminUrl) { %>
+                    <div class="card-footer bg-transparent"><a href="<%= c.adminUrl %>" class="small">Details</a></div>
+                    <% } %>
+                </div>
+            </div>
+            <% }) %>
+        </div>
+    <% } %>
+</div>
+
+<%- include('footer') %>

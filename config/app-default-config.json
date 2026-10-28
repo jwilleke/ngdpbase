@@ -2067,6 +2067,17 @@
         "description": "Admin dashboard read; not recorded, read volume"
       }
     },
+    "executive-read": {
+      "description": "Open the Executive Hub (/executive): the organization's summary cards and the requests waiting for the board (#2093). Held by the executive role; deciding a request still needs that request's own permission",
+      "label": "Open the Executive Hub",
+      "icon": "landmark",
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Executive Hub read; not recorded, read volume"
+      }
+    },
     "admin-system": {
       "description": "System administration",
       "label": "Administer the site",
@@ -2661,6 +2672,15 @@
       "icon": "eye",
       "color": "#6c757d"
     },
+    "executive": {
+      "name": "executive",
+      "required-aal": 1,
+      "displayname": "Executive",
+      "description": "The board or the president: reads everything the organization keeps and decides the requests waiting for the board. Changes nothing else; users' own vaults, health records and sign-in credentials stay private",
+      "issystem": true,
+      "icon": "landmark",
+      "color": "#6f42c1"
+    },
     "vault-owner": {
       "name": "vault-owner",
       "required-aal": 1,
@@ -2990,6 +3010,36 @@
         "store-create",
         "proxy-grant",
         "vault-proxy"
+      ]
+    },
+    {
+      "id": "executive-permissions",
+      "name": "Executive (read-only)",
+      "description": "The executive role reads the organization's pages, files, accounts and identity records and opens the Executive Hub (#2093). It writes nothing; add-ons grant it their own read and board-decide permissions in their own policies",
+      "priority": 75,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "executive"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "page-read",
+        "asset-read",
+        "media-read",
+        "search-page",
+        "page-export",
+        "identity-read",
+        "user-read",
+        "search-user",
+        "executive-read"
       ]
     },
     {

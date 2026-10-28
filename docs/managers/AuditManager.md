@@ -494,6 +494,7 @@ audited.
 | `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
 | `identity-manage` | Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values | continue | yes |
 | `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
+| `executive-read` | Executive Hub read; not recorded, read volume | continue | no |
 | `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
 | `vault-repair` | A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system | refuse | yes |
 | `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |

@@ -36,10 +36,12 @@ const as = (role: string) => ({ username: 'u', roles: [role], isAuthenticated: r
 // vault-owner grants only inside the person's own vaults (and self-service); it is
 // never an account's only role except while a site role has stepped down.
 // demo-admin may not mint (operator, 2026-10-12): a demo visitor changes nothing lasting.
-const signedInRoles = roles.filter((r) => r !== 'anonymous' && r !== 'vault-owner' && r !== 'demo-admin');
+// executive is read-only by its approved list (#2093, operator 2026-10-28), which has no token-mint;
+// a board member who also holds a site role mints through that role.
+const signedInRoles = roles.filter((r) => r !== 'anonymous' && r !== 'vault-owner' && r !== 'demo-admin' && r !== 'executive');
 
 describe('agent-token permissions as shipped (#1734)', () => {
-  test('every signed-in role except demo-admin may mint', async () => {
+  test('every signed-in role except demo-admin and executive may mint', async () => {
     const lacking: string[] = [];
     for (const role of signedInRoles) if (!(await pdp.permits(as(role), 'token-mint'))) lacking.push(role);
     expect(lacking).toEqual([]);

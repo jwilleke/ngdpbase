@@ -79,7 +79,8 @@ describe('#2038 the catalogue', () => {
 describe('#2038 the shipped policies grant the new names to the same roles as before', () => {
   test('identity-read and identity-manage are held by exactly v5.29.1\'s holders of contact-read and contact-manage', () => {
     const before = Object.fromEntries(Object.entries(HELD_BEFORE).map(([role, names]) => [role, names.map((n) => RENAMED[n]).sort()]));
-    expect(identityHolders(pdpOver(shippedPolicies))).toEqual(before);
+    // #2093 (operator, 2026-10-28): the executive role, added after the rename, reads identity records.
+    expect(identityHolders(pdpOver(shippedPolicies))).toEqual({ ...before, executive: ['identity-read'] });
   });
 
   test('the shipped policies written with the old names grant the same as with the new ones', () => {
