@@ -9,12 +9,30 @@
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
+
+/**
+ * The lock file's writes, made to fail on demand: `fail` throws before
+ * anything is written, `crash-after` writes and then throws, as a process
+ * stopping right after the write would leave things.
+ */
+const lockWrite = vi.hoisted((): { mode: 'ok' | 'fail' | 'crash-after' } => ({ mode: 'ok' }));
+vi.mock('../atomicWrite', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../atomicWrite')>();
+  const writeFileAtomic = async (file: string, data: string | Buffer): Promise<void> => {
+    if (file.endsWith('addons-lock.json') && lockWrite.mode === 'fail') throw new Error('disk full');
+    await real.writeFileAtomic(file, data);
+    if (file.endsWith('addons-lock.json') && lockWrite.mode === 'crash-after') throw new Error('process stopped');
+  };
+  return { ...real, writeFileAtomic, default: writeFileAtomic };
+});
+
 import {
   checkForUpdates,
   confirmUpdate,
   installConfiguredAddons,
   rollBackUpdate,
   stageUpdate,
+  FINISH_LAST_UPDATE,
   type InstallerOptions,
   type InstallRecord
 } from '../addonInstaller';
@@ -37,6 +55,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  lockWrite.mode = 'ok';
   await fs.remove(tmp);
 });
 
@@ -295,5 +314,53 @@ describe('the next start, and the fall-back (#2100)', () => {
 
     expect(outcome).toMatchObject({ status: 'verified', version: '1.0.0', notice: expect.stringMatching(/no longer matches/) });
     expect(readLockSync(addonsDir).addons.ledger.pending).toBeUndefined();
+  });
+  test('confirm: a crash right after the lock is written leaves the new release running at the next start', async () => {
+    const reg = await staged();
+    await installConfiguredAddons(SPEC, options(reg.fetch));
+    lockWrite.mode = 'crash-after';
+
+    await expect(confirmUpdate(addonsDir, 'ledger')).rejects.toThrow('process stopped');
+    lockWrite.mode = 'ok';
+    const [outcome] = await installConfiguredAddons(SPEC, options(reg.fetch));
+
+    // Sabotage: writing the lock before dropping `previous` from it made this start fall back to 1.0.0 (red).
+    expect(outcome).toMatchObject({ status: 'verified', version: '1.1.0' });
+    expect(outcome.rolledBack).toBeUndefined();
+    expect(await installedVersion()).toBe('1.1.0');
+    expect(reg.calls).toEqual([]);
+  });
+
+  test('confirm: a lock write that fails keeps the previous release whole, so the next start falls back to a release it can run', async () => {
+    const reg = await staged();
+    await installConfiguredAddons(SPEC, options(reg.fetch));
+    lockWrite.mode = 'fail';
+
+    await expect(confirmUpdate(addonsDir, 'ledger')).rejects.toThrow('disk full');
+    lockWrite.mode = 'ok';
+    // Nothing on disk says the switch was confirmed, so it is undone: never skipped.
+    expect(await fs.pathExists(path.join(addonsDir, '.previous-ledger'))).toBe(true);
+    expect(await fs.pathExists(tgz('1.0.0'))).toBe(true);
+    const [outcome] = await installConfiguredAddons(SPEC, options(reg.fetch));
+
+    // Sabotage: the old order (files first, then the lock) left `previous` naming deleted files; this start skipped the add-on (red).
+    expect(outcome).toMatchObject({ status: 'verified', version: '1.0.0', rolledBack: { from: '1.1.0', to: '1.0.0' } });
+    expect(await installedVersion()).toBe('1.0.0');
+  });
+
+  test('an Update is refused while the last one is not settled, so the next start cannot drop it', async () => {
+    const reg = await installedAt100({ '1.1.0': release('1.1.0'), '1.2.0': release('1.2.0') });
+    expect((await stageUpdate('ledger', SPEC.ledger, '1.1.0', options(reg.fetch))).status).toBe('staged');
+    await installConfiguredAddons(SPEC, options(reg.fetch));   // switched to 1.1.0; `previous` set, not yet confirmed
+    reg.calls.length = 0;
+
+    const outcome = await stageUpdate('ledger', SPEC.ledger, '1.2.0', options(reg.fetch));
+
+    // Sabotage: without the `previous` check 1.2.0 was staged, then dropped by the fall-back at the next start (red).
+    expect(outcome).toMatchObject({ status: 'refused', reason: FINISH_LAST_UPDATE });
+    expect(reg.calls).toEqual([]);
+    expect(readLockSync(addonsDir).addons.ledger.pending).toBeUndefined();
+    const [check] = await checkForUpdates(SPEC, options(reg.fetch));
+    expect(check).toMatchObject({ pinned: '1.1.0', blocked: FINISH_LAST_UPDATE });
   });
 });

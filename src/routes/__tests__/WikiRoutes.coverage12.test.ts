@@ -663,6 +663,17 @@ describe('WikiRoutes — coverage batch 12', () => {
     });
   });
 
+  describe('POST /admin/addons/:name/update while the last update is unsettled (#2100)', () => {
+    test('the page says to finish the last update first', async () => {
+      mockAddonsManager.updateInstalledAddon.mockResolvedValue({ slug: 'ledger', status: 'refused', reason: 'finish the last update first: restart the site' });
+      const res = await request(app)
+        .post('/admin/addons/ledger/update')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ version: '1.2.0' });
+      expect(decodeURIComponent(res.headers.location)).toContain('error=ledger was not updated: finish the last update first: restart the site');
+    });
+  });
+
   describe('GET /admin/addons — installed add-ons (#2100)', () => {
     test('asks the manager with the caller\'s context when the page is opened', async () => {
       const res = await request(app).get('/admin/addons');

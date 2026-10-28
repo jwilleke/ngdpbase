@@ -563,10 +563,15 @@ export async function confirmUpdate(addonsDir: string, slug: string): Promise<vo
   const lock = readLockSync(addonsDir);
   const entry = lock.addons[slug];
   if (!entry?.previous) return;
-  await fs.remove(previousDir(addonsDir, slug));
-  if (entry.previous.version !== entry.version) await fs.remove(tarballPath(addonsDir, slug, entry.previous.version)).catch(() => {});
+  // The lock first: until it no longer names `previous`, the next start falls
+  // back to it, so its folder and tarball must still be there. Once it is
+  // written, they are leftovers, removed best-effort (a stale `.previous-<slug>`
+  // is dot-named, so discovery skips it, and the next switch clears it).
+  const old = entry.previous.version;
   delete entry.previous;
   await writeLock(addonsDir, lock);
+  await fs.remove(previousDir(addonsDir, slug)).catch(() => {});
+  if (old !== entry.version) await fs.remove(tarballPath(addonsDir, slug, old)).catch(() => {});
 }
 
 /**
@@ -577,6 +582,9 @@ export async function confirmUpdate(addonsDir: string, slug: string): Promise<vo
 export async function rollBackUpdate(addonsDir: string, slug: string, now: Date = new Date()): Promise<{ from: string; to: string } | undefined> {
   return undoSwitch(addonsDir, slug, readLockSync(addonsDir), now.toISOString());
 }
+
+/** Why an Update is refused while the last one is not settled (`previous` still in the lock). */
+export const FINISH_LAST_UPDATE = 'finish the last update first: restart the site';
 
 /** What the admin page shows for one add-on in `ngdpbase.addons.install`. */
 export interface UpdateCheck {
@@ -597,6 +605,8 @@ export interface UpdateCheck {
   registryUnreachable?: boolean;
   /** Why there is nothing to compare: not installed, or a configuration problem. */
   problem?: string;
+  /** The last update is not settled (the lock still names the release it replaced): no Update until a restart. */
+  blocked?: string;
 }
 
 /**
@@ -617,6 +627,7 @@ export async function checkForUpdates(specs: Record<string, unknown>, opts: Inst
     if (!lockAnswers(entry, spec)) return { ...base, problem: 'not installed yet: it is installed at the next start' };
     base.pinned = entry.version;
     if (entry.pending) base.pending = entry.pending.version;
+    if (entry.previous) base.blocked = FINISH_LAST_UPDATE;
     try {
       const fetched = await fetchVersions(spec, opts);
       if ('skip' in fetched) return { ...base, problem: fetched.skip };
@@ -671,6 +682,9 @@ export async function stageUpdate(slug: string, rawSpec: unknown, version: strin
   if (!semver.satisfies(version, spec.version)) return refused(`${version} is outside the configured range '${spec.version}'`);
   if (!semver.gt(version, entry.version)) return refused(`${version} is not newer than ${entry.version}, the installed version`);
   if (entry.pending?.version === version) return refused(`${version} is already downloaded; restart the site to use it`);
+  // A switch this process made and has not confirmed: the next start falls back
+  // to `previous`, which would drop anything staged now.
+  if (entry.previous) return refused(FINISH_LAST_UPDATE);
 
   try {
     const fetched = await fetchVersions(spec, opts);

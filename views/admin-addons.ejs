@@ -222,7 +222,10 @@
                                     <% if (item.pending) { %>
                                         <div class="small text-primary mb-1" data-pending="<%= item.pending %>"><i class="fas fa-redo"></i> Restart the site to use version <%= item.pending %></div>
                                     <% } %>
-                                    <% if (item.available) { %>
+                                    <% if (item.blocked) { %>
+                                        <div class="small text-warning mb-1" data-blocked="true"><i class="fas fa-exclamation-triangle"></i> To update again, <%= item.blocked %>.</div>
+                                    <% } %>
+                                    <% if (item.available && !item.blocked) { %>
                                         <form method="POST" action="/admin/addons/<%= encodeURIComponent(item.slug) %>/update" class="d-inline">
                                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                             <input type="hidden" name="version" value="<%= item.available %>">
@@ -236,7 +239,7 @@
                                     <% if (item.needsCore) { %>
                                         <span class="badge bg-warning text-dark" title="<%= item.slug + ' ' + item.needsCore.version + ' needs a newer ngdpbase' %>"><%= item.needsCore.version %> needs ngdpbase ≥ <%= item.needsCore.minVersion %></span>
                                     <% } %>
-                                    <% if (!item.available && !item.needsCore && !item.pending && !item.registryUnreachable) { %>
+                                    <% if (!item.available && !item.needsCore && !item.pending && !item.registryUnreachable && !item.blocked) { %>
                                         <span class="badge bg-success">Up to date</span>
                                     <% } %>
                                 <% } %>
