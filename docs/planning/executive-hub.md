@@ -47,7 +47,7 @@ A user's own personal records are not the organization's and stay private from t
 
 ## Steps (each its own issue)
 
-- 1 The executive role and the `/executive` page: add-on cards and the pending-decisions list ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093)).
+- 1 The executive role and the `/executive` page: add-on cards and the pending-decisions list ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093)). Built: the page asks `executive-read`, a new permission the role alone holds; the role's policy grants `page-read`, `asset-read`, `media-read`, `search-page`, `page-export`, `identity-read`, `user-read`, `search-user` and `executive-read` (operator, 2026-10-28). Cards use `registerDashboardCard` with `surface: 'executive'` ([add-ons guide](../guides/addons-developer-guide.md#register-an-executive-hub-card)).
 - 2 Add-ons grant their read and board-decide permissions to `executive` in their own policies, and contribute their cards ([#2094](https://github.com/jwilleke/ngdpbase/issues/2094)).
 - 3 The Executive shared folder, `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)).
 

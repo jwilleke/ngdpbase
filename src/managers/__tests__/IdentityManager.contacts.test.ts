@@ -175,7 +175,8 @@ describe('contacts in core (#1930)', () => {
       return out.sort();
     };
     expect(await holders('identity-manage')).toEqual(['admin']);
-    expect(await holders('identity-read')).toEqual(['admin', 'demo-admin']);
+    // #2093 (operator, 2026-10-28): the executive role reads identity records too.
+    expect(await holders('identity-read')).toEqual(['admin', 'demo-admin', 'executive']);
   });
 
   test('demo-admin reads contacts but cannot change them', async () => {
@@ -631,7 +632,7 @@ describe('searchUsers decides search-user (#2018)', () => {
     for (const role of roleNames) {
       if (await pdp.permits({ username: 'u', roles: [role], isAuthenticated: role !== 'anonymous' }, 'search-user')) holders.push(role);
     }
-    expect(holders.sort()).toEqual(['admin', 'contributor', 'demo-admin', 'editor', 'reader', 'user-admin', 'vault-owner']);
+    expect(holders.sort()).toEqual(['admin', 'contributor', 'demo-admin', 'editor', 'executive', 'reader', 'user-admin', 'vault-owner']);
 
     // #2033: what a search shows beyond username and display name needs
     // user-read (UserLookupPlugin, /api/users/search); every user may search,

@@ -1043,6 +1043,33 @@ async register(engine, config) {
 
 Cards render inside the Add-ons section on `/admin`. Page Management is the first row; Add-ons, with its cards, is below that. The card body displays `status().message` automatically.
 
+### Register an Executive Hub card
+
+The Executive Hub (`/executive`) is the board's page: everything the organization keeps, in one place, and the requests waiting for the board ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093); design in [executive-hub.md](../planning/executive-hub.md)). An add-on whose figures the board answers for registers a card there with the same `registerDashboardCard`, adding `surface: 'executive'`. An add-on may have one `/admin` card and one executive card.
+
+```typescript
+import type { AddonDashboardCard, ActorContext } from '@jwilleke/ngdpbase-types';
+
+addonsManager.registerDashboardCard({
+  addonName: 'accounting',
+  title: 'Accounting',
+  icon: 'fas fa-book',
+  adminUrl: '/accounting',           // the page with the detail; the card links to it
+  surface: 'executive',
+  permission: 'ledger-summary-read', // your own read permission; required
+  summary: async (ctx: ActorContext) => ({
+    figures: [{ label: 'Funds', value: '$12,400.00' }, { label: 'Units owing', value: 3 }],
+    message: 'Last locked month: September'
+  })
+});
+```
+
+- __Who sees the card is a permission.__ `permission` is required on an executive card, and the card is shown only to a viewer the PDP permits it, asked with their context. Name your own read permission, and grant it to the `executive` role in your own policy ([Permissions](#permissions)). Holding `executive-read` opens the page; it does not open your card.
+- __Figures are read as the viewer.__ `summary(ctx)` is called with the viewer's context on every visit; read through your own doors with it, as any route does. Format each value yourself (money, dates in the viewer's local time). Throw when the figures cannot be read: the card says so, and core logs your add-on's name only, never your message.
+- __Keep it quick.__ The hub waits for every card's summary, so read totals you already keep; never work through every record on a page view.
+- The requests waiting for the board are core's: file them with [Ask for a review](#ask-for-a-review), with a decide permission you grant to `executive`. They are listed on the hub without a card of your own.
+- A card with no `surface` is an `/admin` card, as before.
+
 ### Seed Wiki Pages
 
 Place `.md` files in your add-on's `pages/` directory. `AddonsManager` will copy them into the instance's pages directory automatically on startup.
@@ -1942,6 +1969,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Routers from `engine.createRouter()`, static assets from `engine.serveStatic()`, both mounted via `engine.app.use()` in `register()`; `express` imported for types only
 - [ ] `engine.setCapability('my-addon', true)` called if you have admin UI sections
 - [ ] `addonsManager.registerDashboardCard(...)` called if you have an admin UI page
+- [ ] An Executive Hub card (`surface: 'executive'`, with your own read `permission` granted to `executive`) if the board answers for your figures
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
 - [ ] `shutdown()` closes any open connections or file handles
 - [ ] Recurring work is a scheduled job with an id `<slug>.<job>`, safe to run again for the same slot, honouring `ctx.signal` — no `setInterval`
@@ -2053,6 +2081,7 @@ A site that bakes an add-on into its own image (a `FROM ghcr.io/jwilleke/ngdpbas
 - [#1974](https://github.com/jwilleke/ngdpbase/issues/1974) — [PDF](#make-a-pdf-and-email-it): the same HTML gives the same bytes only on the same provider and engine version; another site, provider or engine may differ. Core ships no font files of its own, so embed yours as `data:` URIs. `PdfUnavailableError` and `AttachmentRefusedError` are types only in `@jwilleke/ngdpbase-types`; test the error's `code`. A render waiting for a slot has no queue limit.
 - [#1998](https://github.com/jwilleke/ngdpbase/issues/1998) — [shipping a job paused](#a-job-that-runs-on-a-schedule): the add-on config layer does not check whose job a `ngdpbase.jobs.<id>.enabled` key names, so an add-on's file could pause core's or another add-on's job. Name only your own. `scheduleTimeZone()` is the site's zone; a job whose schedule names its own `tz` passes that zone to `zonedParts` itself.
 - [#1999](https://github.com/jwilleke/ngdpbase/issues/1999) — [a job's own permissions](#permissions): the job's policies are not yet shown in the admin roles matrix (it lists roles); read them in Configuration (`ngdpbase.access.policies`). A job id's `<slug>.` prefix is checked in an add-on's policies, but not when the job registers: `registerJob` cannot tell which add-on calls it, and a second registration of an id still replaces the first with a warning.
+- [#2093](https://github.com/jwilleke/ngdpbase/issues/2093) — [Executive Hub cards](#register-an-executive-hub-card): no add-on registers one yet, and none grants its read or board-decide permissions to `executive`; that is [#2094](https://github.com/jwilleke/ngdpbase/issues/2094), so the hub shows no cards and lists only requests whose decide permission a site grants to `executive` itself. A card's summary is not cached or time-limited: a slow one slows the page. Cards stay registered when their add-on is turned off until the next restart, as `/admin` cards do.
 - [#1979](https://github.com/jwilleke/ngdpbase/issues/1979) — [import shims](#import-shims-and-receivers-ice-1979): only uploads are a source, and only inbound shims run; export (`out`), scheduled URL sources (feeds) and the takeout import come later. No core screen starts an engine run yet, so an addon starts its own from its route. The manifest's `shims` and `receivers` are checked by the host at registration, not yet by a manifest schema (#1966).
 
 ---

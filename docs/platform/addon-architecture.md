@@ -232,6 +232,9 @@ export interface AddonDashboardCard {
   title: string;      // card header text
   icon: string;       // Font Awesome class, e.g. 'fas fa-calendar-alt'
   adminUrl: string;   // link target for the "Manage" button
+  surface?: 'admin' | 'executive';                      // #2093; omitted = 'admin'
+  permission?: string;                                  // executive cards: required
+  summary?: (ctx: ActorContext) => Promise<AddonCardSummary>; // executive cards: the viewer's figures
 }
 ```
 
@@ -248,6 +251,8 @@ if (addonsManager) {
 ```
 
 `adminDashboard()` in `WikiRoutes.ts` calls `getDashboardCards()` and enriches each card with the addon's live `AddonStatusDetails` (the `message` field is displayed on the card). No template editing is needed — registering the card is sufficient.
+
+The same call registers a card on the Executive Hub (`/executive`, [#2093](https://github.com/jwilleke/ngdpbase/issues/2093)) when the card carries `surface: 'executive'`, a required `permission` and an optional `summary(ctx)`. `AddonsManager.executiveCardsFor(ctx)` returns the cards whose permission the PDP permits the viewer, with the figures `summary` read under their context. The rules are in the [add-ons guide](../guides/addons-developer-guide.md#register-an-executive-hub-card).
 
 ---
 

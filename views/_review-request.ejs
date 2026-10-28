@@ -1,0 +1,40 @@
+<%# #2072, #2093 — one request waiting for review, with Approve, Reject and a note. Shared by
+    /reviews and the Executive Hub. Locals: r (ReviewRequest), csrfToken, returnTo ('' or
+    'executive': where the decision sends the viewer back to). Times go out as
+    <time datetime data-local-time> with the UTC text as the fallback; /js/local-time.js
+    (loaded by header.ejs) shows them in the viewer's own zone. %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+%>
+<div class="card mb-3" data-testid="review-request" data-review-id="<%= r.id %>">
+    <div class="card-header d-flex justify-content-between flex-wrap gap-2">
+        <strong><%= r.subject %></strong>
+        <span class="text-muted small">Asked <time datetime="<%= r.filedAt %>" data-local-time><%= utc(r.filedAt) %></time><% if (r.filedBy && r.filedBy !== 'anonymous') { %> by <%= r.filedBy %><% } %></span>
+    </div>
+    <div class="card-body">
+        <p class="mb-2"><%= r.summary %></p>
+        <% const keys = Object.keys(r.details || {}); if (keys.length > 0) { %>
+        <dl class="row mb-2 small">
+            <% keys.forEach(function (k) { %>
+            <dt class="col-sm-4"><%= k %></dt>
+            <dd class="col-sm-8"><%= r.details[k] === null ? '' : String(r.details[k]) %></dd>
+            <% }) %>
+        </dl>
+        <% } %>
+        <% if (r.failure) { %>
+        <div class="alert alert-warning small" data-testid="review-failure">
+            Approved <time datetime="<%= r.failedAt %>" data-local-time><%= utc(r.failedAt) %></time>, but it was not carried out: <%= r.failure %>. It is still open; you can approve it again once that is fixed.
+        </div>
+        <% } %>
+        <form action="/reviews/<%= encodeURIComponent(r.id) %>/decide" method="POST">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <% if (returnTo === 'executive') { %><input type="hidden" name="return" value="executive"><% } %>
+            <label class="form-label small" for="note-<%= r.id %>">Note (optional)</label>
+            <textarea class="form-control mb-2" id="note-<%= r.id %>" name="note" rows="2" maxlength="2000"></textarea>
+            <div class="d-flex gap-2">
+                <button type="submit" name="decision" value="approve" class="btn btn-primary" data-testid="review-approve">Approve</button>
+                <button type="submit" name="decision" value="reject" class="btn btn-outline-danger" data-testid="review-reject">Reject</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -417,9 +417,30 @@ interface AddonEntry {
   backupFolders?: { dataPath: string | null; folders: BackupFolder[] };
 }
 
+/** The pages an add-on's card can be shown on: `/admin` (the default) and the Executive Hub, `/executive` (#2093). */
+export type AddonCardSurface = 'admin' | 'executive';
+
+/** One labelled figure on an Executive Hub card (`Funds`, `$12,400.00`). The add-on formats the value. */
+export interface AddonCardFigure {
+  label: string;
+  value: string | number;
+}
+
+/** What an Executive Hub card shows a viewer: its figures, and an optional line under them. */
+export interface AddonCardSummary {
+  figures?: AddonCardFigure[];
+  message?: string;
+}
+
 /**
- * Card registered by an add-on for display on the admin dashboard.
- * The card's live stats are sourced from the add-on's existing status() method.
+ * Card registered by an add-on for display on the admin dashboard, or, with
+ * `surface: 'executive'`, on the Executive Hub (#2093). An add-on registers
+ * at most one card per surface.
+ *
+ * An admin card's live stats come from the add-on's existing status() method.
+ * An executive card names the `permission` a viewer must hold to see it, and
+ * its figures come from `summary(ctx)`, called with the viewer's context, so
+ * the add-on's own doors decide what it reads.
  */
 export interface AddonDashboardCard {
   /** Must match the add-on's registered name */
@@ -428,8 +449,26 @@ export interface AddonDashboardCard {
   title: string;
   /** Font Awesome class, e.g. 'fas fa-wpforms' */
   icon: string;
-  /** URL of the add-on's admin page */
+  /** The page the card links to: the add-on's admin page, or for an executive card the page with the detail */
   adminUrl: string;
+  /** Where the card is shown; omitted means `/admin` */
+  surface?: AddonCardSurface;
+  /** Executive cards: the permission a viewer must hold to see the card (the add-on's own read permission). Required there */
+  permission?: string;
+  /** Executive cards: the card's figures for this viewer, read with their context. Throw to say they could not be read */
+  summary?: (ctx: ActorContext) => Promise<AddonCardSummary>;
+}
+
+/** An executive card as the hub shows it to one viewer: the figures read for them, or that they could not be. */
+export interface ExecutiveCardView {
+  addonName: string;
+  title: string;
+  icon: string;
+  adminUrl: string;
+  figures: AddonCardFigure[];
+  message: string;
+  /** True when the add-on's summary threw; the card says its figures could not be read. */
+  failed: boolean;
 }
 
 /** #2100: the PDP refused an administrator's add-on Update or Check. */
@@ -2443,16 +2482,61 @@ class AddonsManager extends BaseManager {
    * Live stats shown on the card are sourced from the add-on's existing status() method.
    */
   registerDashboardCard(card: AddonDashboardCard): void {
-    this.dashboardCards.set(card.addonName, card);
-    logger.debug(`[AddonsManager] Dashboard card registered by ${card.addonName}`);
+    const surface: AddonCardSurface = card.surface ?? 'admin';
+    if (surface !== 'admin' && surface !== 'executive') {
+      throw new Error(`Add-on '${card.addonName}' registered a card for '${String(surface)}'; a card is shown on 'admin' or 'executive'`);
+    }
+    if (surface === 'executive' && (typeof card.permission !== 'string' || card.permission.trim() === '')) {
+      // #2093: an executive card shows the organization's figures, so it names
+      // the permission a viewer must hold; without one it would show them to anyone who opens the hub.
+      throw new Error(`Add-on '${card.addonName}' registered an Executive Hub card with no permission; name the read permission a viewer must hold`);
+    }
+    this.dashboardCards.set(`${surface}:${card.addonName}`, { ...card, surface });
+    logger.debug(`[AddonsManager] ${surface} card registered by ${card.addonName}`);
   }
 
   /**
-   * Return all registered dashboard cards in registration order.
-   * Called by the admin dashboard route to populate the addon cards row.
+   * Return the registered cards for one surface, in registration order.
+   * The admin dashboard route calls it with no argument for the `/admin` cards.
    */
-  getDashboardCards(): AddonDashboardCard[] {
-    return Array.from(this.dashboardCards.values());
+  getDashboardCards(surface: AddonCardSurface = 'admin'): AddonDashboardCard[] {
+    return Array.from(this.dashboardCards.values()).filter(card => (card.surface ?? 'admin') === surface);
+  }
+
+  /**
+   * The Executive Hub's cards for one viewer (#2093): each card whose
+   * permission the PDP permits `ctx`, asked with that context, with the
+   * figures its add-on's `summary(ctx)` reads for them. A card the viewer may
+   * not see is left out; a summary that throws shows the card with its
+   * figures marked as not read, and is logged by add-on name only. No
+   * context, or no PDP, shows no cards.
+   */
+  async executiveCardsFor(ctx: ActorContext): Promise<ExecutiveCardView[]> {
+    if (!ctx) return [];
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) return [];
+    const out: ExecutiveCardView[] = [];
+    for (const card of this.getDashboardCards('executive')) {
+      if (!card.permission || !(await pdp.permits(ctx, card.permission))) continue;
+      const view: ExecutiveCardView = {
+        addonName: card.addonName, title: card.title, icon: card.icon, adminUrl: card.adminUrl,
+        figures: [], message: '', failed: false
+      };
+      if (typeof card.summary === 'function') {
+        try {
+          const summary = await card.summary(ctx);
+          view.figures = Array.isArray(summary?.figures)
+            ? summary.figures.filter(f => f && typeof f.label === 'string').map(f => ({ label: f.label, value: typeof f.value === 'number' ? f.value : String(f.value ?? '') }))
+            : [];
+          view.message = typeof summary?.message === 'string' ? summary.message : '';
+        } catch (err) {
+          view.failed = true;
+          logger.warn(`[AddonsManager] the Executive Hub card of '${card.addonName}' could not read its figures: ${err instanceof Error ? err.name : 'error'}`);
+        }
+      }
+      out.push(view);
+    }
+    return out;
   }
 
   /**

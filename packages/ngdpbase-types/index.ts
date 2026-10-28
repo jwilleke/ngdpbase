@@ -14,6 +14,8 @@
 
 // The module an add-on exports, and what `register` is handed.
 export type { AddonModule, AddonManifest, AddonListing } from '../../src/managers/AddonsManager.js';
+// Cards on /admin and the Executive Hub (#2093): what `registerDashboardCard` takes.
+export type { AddonDashboardCard, AddonCardSurface, AddonCardSummary, AddonCardFigure } from '../../src/managers/AddonsManager.js';
 export type { AddonHost, AddonIceDeclaration, PersonSwitchSetter } from '../../src/utils/addonHost.js';
 export type { WikiEngine } from '../../src/types/WikiEngine.js';
 

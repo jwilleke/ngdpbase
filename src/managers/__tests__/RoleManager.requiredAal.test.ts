@@ -21,7 +21,7 @@ describe('RoleManager.roleRequiredAal (#1523)', () => {
   test('the shipped catalogue: admin and user-admin at AAL2 (since passkeys, #448), the rest AAL1, anonymous none', () => {
     const shipped = (require('../../../config/app-default-config.json') as Record<string, unknown>)['ngdpbase.roles.definitions'] as Record<string, unknown>;
     expect(withDefinitions(shipped).roleRequiredAal()).toEqual({
-      admin: 2, 'user-admin': 2, editor: 1, contributor: 1, 'demo-admin': 1, 'vault-owner': 1, reader: 1
+      admin: 2, 'user-admin': 2, editor: 1, contributor: 1, 'demo-admin': 1, executive: 1, 'vault-owner': 1, reader: 1
     });
   });
 
