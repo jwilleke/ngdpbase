@@ -637,7 +637,9 @@ standing rules of ngdpbase's [addons developer guide](${GUIDE_URL}#standing-rule
 
 Drop this directory into an ngdpbase instance's \`addons/\` (or point
 \`ngdpbase.managers.addons-manager.addons-path\` at its parent), enable it, and
-restart. For production, see the platform's \`packaged\` distribution model.
+restart. That is for local development only. For production, publish the
+package to npm and name it in the site's \`ngdpbase.addons.install\` (see
+\`docs/platform/deployment/domain-site.md\` in ngdpbase).
 `;
 }
 

@@ -12,7 +12,7 @@ The useful distinction is not "which repo" but __what each one consumes, and how
 |---|---|---|
 | [ngdpbase-demo.example.com](https://ngdpbase-demo.example.com) | the published image, unmodified | pulled by tag, deployed by Flux |
 | [geohazardwatch](https://github.com/jwilleke/geohazardwatch) | the published image, unmodified, plus core's add-on installer | stock image deployed by Flux; the add-on installed from npm through the site's config |
-| [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | the source, cloned and run | direct install on a host |
+| [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | the source, cloned and run | a development copy on a host, loading add-ons from local checkouts |
 | [ngdpbase-addon-template](https://github.com/jwilleke/ngdpbase-addon-template) (retired) | nothing at runtime | replaced by `npm run create:addon -- --repo` |
 | jimstest | this working tree | run in place from the checkout |
 
@@ -40,15 +40,15 @@ So the coupling is two pins on two axes: the image tag for core, the configured 
 
 Because the add-on is a published package that core unpacks as published, with no `npm install`, its `package.json` is the only place its requirements are stated. Anything the host supplies — Express, for one — comes from the host and is never a runtime dependency of the add-on.
 
-## fairways-gen2-website — an addon consumed by a direct install
+## fairways-gen2-website — a development copy
 
 <https://github.com/jwilleke/fairways-gen2-website>
 
-The Fairways Condominiums site. Also ngdpbase plus one domain addon, and from the outside that makes it sound like geohazardwatch. It is not: __there is no image, no published package and no version pin__. No `Dockerfile`, no `NGDPBASE_VERSION`, and no npm dependency on ngdpbase anywhere in the repository.
+A development copy of ngdpbase used to test add-ons against realistic data; it is not a deployed site. It is ngdpbase plus domain add-ons, which from the outside makes it sound like geohazardwatch. It is not: __there is no image, no published package and no version pin__. No `Dockerfile`, no `NGDPBASE_VERSION`, and no npm dependency on ngdpbase anywhere in the repository.
 
 Instead ngdpbase is cloned separately and run on the host, and that clone is pointed at this repository's `addons/` directory. The addon installs nothing of its own — it uses Express from the instance it is running inside. Its `ngdpbase.domainDefaults` block sets the application name and session-cookie policy, so the deployment's identity travels with the addon rather than living in host configuration. [Implementation.md — Known implementations](installation/Implementation.md#known-implementations) has the operational specifics.
 
-The practical consequence is that this consumer has __no automatic upgrade path__. A geohazardwatch core upgrade arrives through Flux image automation; a Fairways upgrade is someone pulling a newer ngdpbase into the base clone by hand. Nothing announces that a release happened, by design — see the explicit non-promises in [RELEASES.md](../RELEASES.md).
+The practical consequence is that this copy has __no automatic upgrade path__. A geohazardwatch core upgrade arrives through Flux image automation; a Fairways upgrade is someone pulling a newer ngdpbase into the base clone by hand. Nothing announces that a release happened, by design — see the explicit non-promises in [RELEASES.md](../RELEASES.md).
 
 The sharpest form of that difference is environment: a value baked into `docker/Dockerfile` reaches geohazardwatch on its next core bump and never reaches The Fairways at all, because a direct install inherits nothing from the image. That is the single row worth remembering from Implementation.md's inheritance table.
 
