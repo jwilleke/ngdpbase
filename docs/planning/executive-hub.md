@@ -37,19 +37,19 @@ A user's own personal records are not the organization's and stay private from t
   - accommodation: owner-change requests waiting, units with no current owner, units with no usable billing address, recent changes owners made;
   - association: occupancy forms waiting.
 
-## The Executive vault (operator, 2026-10-26)
+## The Executive shared folder (operator, 2026-10-26; built as the first org shared folder, 2026-10-28)
 
 - Owned by the organization, not by a person, so access follows the role when the board changes.
 - Everyone holding the executive role can read it.
 - Adding and editing need a separate permission, given to a secretary role or to whoever the site chooses. Every change is recorded in the audit log.
 - It holds board papers: minutes, the Declaration and Bylaws, filed financial summaries and CSVs, accountant letters, and board-only unit files. Live figures stay in the add-ons; the vault holds filed copies.
-- This is new for core. Today a vault opens only to its owner and the people they delegate to, never to a role.
+- It is `/shared/executive`, the first org shared folder ([#1775](https://github.com/jwilleke/ngdpbase/issues/1775)), and is called a shared folder, never a vault (operator, 2026-10-28). Today a vault opens only to its owner and the people they delegate to, never to a role; shared folders are the new kind that opens by role.
 
 ## Steps (each its own issue)
 
 - 1 The executive role and the `/executive` page: add-on cards and the pending-decisions list ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093)).
 - 2 Add-ons grant their read and board-decide permissions to `executive` in their own policies, and contribute their cards ([#2094](https://github.com/jwilleke/ngdpbase/issues/2094)).
-- 3 The organization-owned Executive vault ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)).
+- 3 The Executive shared folder, `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)).
 
 ## Still open
 
