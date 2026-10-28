@@ -1,6 +1,6 @@
 # Addons developer guide
 
-> This is the document an addon author starts from. Load order, the full slug inventory, page sync, and the packaged image are depth: [architecture](../platform/addon-architecture.md), [identity contract](../platform/addon-identity-contract.md), [page handling](../platform/addon-page-handling.md), [packaged distribution](../platform/deployment/addon-packaged.md).
+> This is the document an addon author starts from. Load order, the full slug inventory and page sync are depth: [architecture](../platform/addon-architecture.md), [identity contract](../platform/addon-identity-contract.md), [page handling](../platform/addon-page-handling.md). Deploying an add-on to a site is [domain-site.md](../platform/deployment/domain-site.md).
 
 ## Start here
 
@@ -13,7 +13,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 - __An account whose password you set.__ The shipped `admin` password is `admin123`. Change it on first login, or set `NGDPBASE_ADMIN_PASSWORD` and point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` before the first boot ([SETUP.md](../../SETUP.md)). Do not build or test an addon against the shipped password.
 - __A place for the code.__
   - A first-party addon ships in this repository. Fork, branch, and open a pull request that adds `addons/<slug>/`.
-  - An addon you own lives in its own repository. Develop it as a drop-in directory. Ship production as a packaged npm addon, or as the wrapper image in [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image).
+  - An addon you own lives in its own repository. Develop it as a drop-in directory, local to your machine. Ship it by publishing to npm and installing it from the site's configuration ([Shipping Your Addon](#12-shipping-your-addon)).
 
 ### Choose a starting point
 
@@ -115,21 +115,21 @@ The listings are `[{ConfigAccessor type='addons'}]` (the site's enabled add-ons,
 
 ## Where it is loaded
 
-Three ways an addon reaches a running instance. The slug, the module, and `register()` are the same. Pick by who owns the addon.
+One model, three ways an addon reaches a running instance. The slug, the module, and `register()` are the same. Pick by who owns the addon.
 
 | Model | Use it when | Minimum to load |
 | --- | --- | --- |
 | __bundled__ | First-party, released with ngdpbase | `addons/<slug>/` in this repo, with `index.ts` or `index.js`. Set `ngdpbase.addons.<slug>.enabled` to `true` in the operator file ([Configuration](#configuration)). The default `ngdpbase.managers.addons-manager.addons-path` is `./addons`. |
-| __drop-in__ | Your own repo, edited in place | The same directory. Add its parent to `addons-path` (a string, or an array that also keeps `./addons`). Set the same enable key. `./server.sh restart`. |
-| __packaged__ | Production of an independent addon | An npm package named `@scope/<slug>-addon`, with `ngdpbase.slug`, `main` pointing at `index.js`, and module `name` equal to the slug. Add `node_modules:@scope/*-addon` to `addons-path`, and set the same enable key. |
+| __drop-in__ | Local development only: your own repo, edited in place. Not a way to deploy | The same directory. Add its parent to `addons-path` (a string, or an array that also keeps `./addons`). Set the same enable key. `./server.sh restart`. |
+| __installed__ | Production of an independent addon | The site's `ngdpbase.addons.install` names an npm package, a version range and its repository. See [Installed add-ons](#installed-add-ons). |
 
-`addons-path` is a string or an array. Directory entries are scanned first. A `node_modules:<glob>` entry is expanded after that, and a directory addon of the same slug wins a collision. The runtime image has no npm, so a packaged install is a two-stage copy of `node_modules` — that recipe is [addon-packaged.md](../platform/deployment/addon-packaged.md). The `FROM` image in [section 12](#12-shipping-your-addon-as-a-container-image) is the drop-in wrapper, not the packaged model.
+`addons-path` is a string or an array of directories, scanned in order; a directory addon is a development convenience. An installed add-on needs no `addons-path` entry: core unpacks it into the data folder and loads it from there.
 
 Enabled defaults to false for every addon, on every path. An addon copied into a non-default directory stays off until the enable key is set ([#686](https://github.com/jwilleke/ngdpbase/issues/686) is the open request to change that for non-default paths). The keys, the file they live in, and what `register()` is handed are [Configuration](#configuration).
 
 ## Installed add-ons
 
-A fourth way in ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)): the site's configuration names an npm package, a version range and the repository it is built from, and ngdpbase installs it into the data folder. Nothing in the code tree changes. A domain site built this way, the stock image plus an installed add-on, is [domain-site.md](../platform/deployment/domain-site.md), with geohazardwatch.com as the worked example: where the config goes, the admin-save trap, updating and rollback.
+The way in for production ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)): the site's configuration names an npm package, a version range and the repository it is built from, and ngdpbase installs it into the data folder. Nothing in the code tree changes. A domain site built this way, the stock image plus an installed add-on, is [domain-site.md](../platform/deployment/domain-site.md), with geohazardwatch.com as the worked example: where the config goes, the admin-save trap, updating and rollback.
 
 ```json
 "ngdpbase.addons.install": {
@@ -202,7 +202,7 @@ The instance data folder is `FAST_STORAGE`, otherwise `INSTANCE_DATA_FOLDER`, ot
 ### The enable key and `addons-path`
 
 - `ngdpbase.addons.<slug>.enabled` — default `false`, on every discovery path. Set it to `true` in the operator file. The copy of this key inside `default-config.json` does not turn the addon on: that file is read only after the shipped-plus-operator view already says enabled.
-- `ngdpbase.managers.addons-manager.addons-path` — where discovery looks. Shipped value `./addons`. A string or an array of directory paths, plus `node_modules:<glob>` entries for packaged addons. See [Where it is loaded](#where-it-is-loaded).
+- `ngdpbase.managers.addons-manager.addons-path` — where discovery looks. Shipped value `./addons`. A string or an array of directory paths, a development setting; a site installs add-ons with `ngdpbase.addons.install`. See [Where it is loaded](#where-it-is-loaded).
 - `ngdpbase.managers.addons-manager.enabled` — shipped `true`. `false` discovers nothing.
 
 ### Secrets
@@ -453,7 +453,7 @@ The addon lands at `addons/volcano-watch/`, byte-for-byte what the command write
 
 There is no rename step: every name comes from `--id`, `--plugins` and `--managers`. The repository replaces the retired `ngdpbase-addon-template`.
 
-The repository holds nothing deployment-specific ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)): no `Dockerfile`, no `.dockerignore`, no Renovate rule for the ngdpbase image. Those belong to the site repo that builds and deploys the site, described in [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image); the generated `README.md` points there. For production prefer the packaged model in [addon-packaged.md](../platform/deployment/addon-packaged.md).
+The repository holds nothing deployment-specific ([#1829](https://github.com/jwilleke/ngdpbase/issues/1829)): no `Dockerfile`, no `.dockerignore`, no Renovate rule for the ngdpbase image. A site needs none of them: it runs the stock image and installs the add-on from its configuration, described in [Shipping Your Addon](#12-shipping-your-addon) and [domain-site.md](../platform/deployment/domain-site.md).
 
 The scaffolder needs no `.env` and no run-as user (`PUID`/`PGID`): it reads only this checkout's `package.json` and `LICENSE`, so it runs in a fresh clone.
 
@@ -487,7 +487,7 @@ Use [`addons/journal/`](../../addons/journal/) and [`addons/calendar/`](../../ad
 
 ## 2. Wire into Your Running Instance
 
-This is the drop-in wire-up. A bundled addon uses the default `./addons` path and only needs the enable key. A packaged addon uses a `node_modules:<glob>` entry. See [Where it is loaded](#where-it-is-loaded). The file below is the operator file from [Configuration](#configuration): `<instance data folder>/config/app-custom-config.json`.
+This is the local drop-in wire-up, for development. A bundled addon uses the default `./addons` path and only needs the enable key. A site installs your add-on from its configuration instead ([domain-site.md](../platform/deployment/domain-site.md)). See [Where it is loaded](#where-it-is-loaded). The file below is the operator file from [Configuration](#configuration): `<instance data folder>/config/app-custom-config.json`.
 
 Add to that file:
 
@@ -1957,117 +1957,29 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ---
 
-## 12. Shipping Your Addon as a Container Image
+## 12. Shipping Your Addon
 
-This section is the drop-in wrapper: an addon in __its own repo__, layered onto the published ngdpbase image. The Dockerfile, `.dockerignore` and Renovate config below live in the __site repo__, the one that builds and deploys the site image. That can be the add-on's own repo (geohazardwatch is both), or a separate repo that builds from the add-on's source, which keeps the add-on repo free of anything deployment-specific (ngdp-accounting-addons works this way). It does not apply to bundled addons, which are already in `ghcr.io/jwilleke/ngdpbase`. The packaged model (an npm package, no `COPY addons`) is [Where it is loaded](#where-it-is-loaded) and [addon-packaged.md](../platform/deployment/addon-packaged.md).
+An add-on reaches a production site one way: it is published to npm and the site's configuration installs it. The site runs the stock ngdpbase image unmodified; there is no derived image, no Dockerfile and no Renovate rule to write for the add-on. The whole recipe (the two config keys, what core verifies, updating from Admin → Add-ons, rollback) is [domain-site.md](../platform/deployment/domain-site.md); how to publish the package is [Installed add-ons](#installed-add-ons).
 
-### What ngdpbase publishes for you
+- Bundled add-ons ship with ngdpbase and are enabled by config.
+- Your own add-on is published to npm with provenance (the generated `publish.yml` does this) and named in the site's `ngdpbase.addons.install`.
+- A drop-in folder is for local development only: a dev copy that loads add-ons from local checkouts is fine, and it is not a way to deploy.
 
-On every `v*` tag, `.github/workflows/docker-build.yml` in `jwilleke/ngdpbase` builds and pushes a container image:
-
-| Tag | Example | Stability |
-|---|---|---|
-| `<major>.<minor>.<patch>` | `ghcr.io/jwilleke/ngdpbase:3.11.3` | Pinned to a specific release — recommended for production |
-| `<major>.<minor>` | `ghcr.io/jwilleke/ngdpbase:3.11` | Floats with patch releases — picks up CVE patches automatically |
-| `<major>` | `ghcr.io/jwilleke/ngdpbase:3` | Floats with minor releases — features land without you opting in |
-| `latest` | `ghcr.io/jwilleke/ngdpbase:latest` | Default-branch tip — fine for evaluation, never for production |
-
-The image is the only container artifact ngdpbase produces. There is no published Dockerfile template, no codegen, no platform-side hook system. You consume the image via `FROM` in your own Dockerfile.
-
-### Recommended Dockerfile pattern
-
-The runtime image has no npm (removed for its vulnerability scans, #956), so nothing can be installed or compiled in it. Build the add-on in a stage based on the `-devtools` image, which is the same image with npm, then copy the result into the runtime image:
-
-```dockerfile
-# renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase
-ARG NGDPBASE_VERSION=5.8.0
-
-FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}-devtools AS build
-WORKDIR /app/addons/<slug>
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
-COPY . .
-RUN npm run build && npm prune --omit=dev
-
-FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
-LABEL org.opencontainers.image.title="my-addon-site"
-LABEL org.opencontainers.image.source="https://github.com/<you>/<your-site-repo>"
-COPY --from=build /app/addons/<slug> /app/addons/<slug>
-```
-
-Give the build an ignore file (where it goes is under Key points), so `COPY . .` does not copy your machine's installed packages and build output over what `npm ci` just installed in the image. Host `node_modules` built on a Mac are darwin-arm64; a native dependency among them breaks or misbehaves on Linux.
-
-```text
-node_modules
-.git
-*.js.map
-*.tsbuildinfo
-```
-
-Key points:
-
-- The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG. Both `FROM` lines use the same ARG, so the add-on is compiled against exactly the core it runs on.
-- The build context is the add-on's folder: `docker build -f <site-repo>/Dockerfile <path-to-addon>`. The `.dockerignore` sits at the root of that context, which is how Docker finds it; from the site repo, use `<site-repo>/Dockerfile.dockerignore` (a Dockerfile-specific ignore file) instead.
-- The add-on is built at `/app/addons/<slug>`, the same place it runs from. Its `../../dist/...` imports then resolve to the image's own `/app/dist`, and `express`, `tslib` and the other host packages resolve from `/app/node_modules`. Building anywhere else compiles against, or loads, a second copy of core.
-- `npm ci` installs devDependencies too (the compiler); `npm prune --omit=dev` drops them before the copy. `--ignore-scripts` skips `prepare` (husky).
-- `/app/addons` is scanned by default, so no `addons-path` setting is needed. Add-ons there load in discovery order (alphabetical) unless they declare `dependencies` or `optionalDependencies` ([Dependency Example](#9-dependency-example)).
-- The final stage is the plain runtime image, so the deployed artifact carries no npm. Its `CMD`, `ENTRYPOINT` and `WORKDIR /app` are inherited unchanged.
-- The image is published for `linux/amd64` only. It runs on Apple Silicon under emulation, which works but is slow.
-
-### Auto-bump with Renovate
-
-Without automation, the `ARG NGDPBASE_VERSION` default rots. ngdpbase ships `v3.11.3` → your image still pulls `v3.10.3` → your container is missing CVE patches.
-
-Add `renovate.json` to your site repo:
-
-```json
-{
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "packageRules": [
-    {
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/jwilleke/ngdpbase"],
-      "automerge": false,
-      "labels": ["dependencies", "ngdpbase-bump"],
-      "commitMessageTopic": "ngdpbase",
-      "groupName": "ngdpbase upstream"
-    }
-  ]
-}
-```
-
-Enable Renovate on the repo (GitHub App or self-hosted). On every ngdpbase release, Renovate opens a PR that:
-
-- 1 Bumps the `ARG NGDPBASE_VERSION=...` default in your Dockerfile.
-- 2 Includes the upstream changelog/release notes from `ghcr.io/jwilleke/ngdpbase`'s OCI labels.
-- 3 Triggers your CI to rebuild the image against the new base.
-
-Reviewer merges → CI publishes a fresh combined image → your container is current. This is the __deterministic method for container deployment builds__ referenced in [#668](https://github.com/jwilleke/ngdpbase/issues/668): the platform handles publishing, Renovate handles propagation, no codegen required on either side.
-
-If you prefer Dependabot, the equivalent `.github/dependabot.yml` entry is:
-
-```yaml
-version: 2
-updates:
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "daily"
-```
-
-Renovate is recommended over Dependabot here because Renovate's `datasource=docker` annotation in the Dockerfile lets it find the ARG without the file being a literal `FROM image:tag` line — Dependabot only inspects literal `FROM` lines and won't pick up an ARG-driven version.
+ngdpbase publishes one container image per release, `ghcr.io/jwilleke/ngdpbase:<version>`, and the site runs it as it is. Image tags and how a cluster picks them up are in [kubernetes.md](../platform/deployment/kubernetes.md).
 
 ### What lives where
 
 | Concern | Where it's owned |
 |---|---|
-| Building/publishing the ngdpbase image | `jwilleke/ngdpbase` (`.github/workflows/docker-build.yml`) — fully automated |
-| Building/publishing the combined addon-site image | Your site repo (your own Dockerfile + your own CI workflow) |
-| Bumping the `FROM` version | Renovate/Dependabot in your site repo — fully automated |
-| Runtime addon registration | `addons-path` config on the deployed instance (ConfigMap, `.env`, etc.) |
+| Building and publishing the ngdpbase image | `jwilleke/ngdpbase` |
+| Building and publishing the add-on package | The add-on's repository (its `publish.yml`) |
+| Which core version and which add-on version a site runs | The site: the image tag in its deployment, and `ngdpbase.addons.install` in its configuration |
 
-ngdpbase does not need to know your addon exists. Your site repo does not need to know how ngdpbase is built. The only contract between them is: ngdpbase publishes images at `ghcr.io/jwilleke/ngdpbase:<version>`; you consume them with `FROM`.
+ngdpbase does not need to know your add-on exists, and the add-on repository holds nothing deployment-specific.
+
+### Sites still on a site image
+
+A site that bakes an add-on into its own image (a `FROM ghcr.io/jwilleke/ngdpbase` Dockerfile, or an npm install copied into the image) should move to the installed model. See [Moving off a site image](../platform/deployment/addon-packaged.md).
 
 ---
 
@@ -2081,7 +1993,7 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 | [`docs/platform/addon-architecture.md`](../platform/addon-architecture.md) | Load order and the module contract |
 | [`docs/platform/addon-identity-contract.md`](../platform/addon-identity-contract.md) | Every place a slug is written |
 | [`docs/platform/addon-page-handling.md`](../platform/addon-page-handling.md) | What syncs to an existing instance |
-| [`docs/platform/deployment/addon-packaged.md`](../platform/deployment/addon-packaged.md) | npm discovery and the two-stage image |
+| [`docs/platform/deployment/domain-site.md`](../platform/deployment/domain-site.md) | The stock image plus an installed add-on: config, updating, rollback |
 | [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview and roadmap |
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
 | [`docs/private-stores.md`](../private-stores.md) | Private stores: layout, store kinds and the door, keys and recovery words, access, pages, links, search, trash and files |
@@ -2095,9 +2007,9 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 | [`docs/system-category.md`](../system-category.md#system-categories-that-add-ons-bring) | System categories an addon brings |
 | [`docs/platform/page-overrides.md`](../platform/page-overrides.md#how-add-ons-ship-default-overrides) | How an addon ships default overrides of special pages |
 | [`docs/theming.md`](../theming.md#add-on-stylesheet-registration) | Registering an addon stylesheet |
-| [`docs/platform/deployment/how-to-deploy.md`](../platform/deployment/how-to-deploy.md#3-deliver-addons) | Delivering addons to a deployment: bundled, drop-in, packaged |
-| [`docs/platform/deployment/docker-compose.md`](../platform/deployment/docker-compose.md#adding-addons) | Addons under Docker Compose: derivative image or volume |
-| [`docs/platform/deployment/kubernetes.md`](../platform/deployment/kubernetes.md#wrapper-image-vs-runtime-mounted-addons) | Addons under Kubernetes: wrapper image or runtime mount |
+| [`docs/platform/deployment/how-to-deploy.md`](../platform/deployment/how-to-deploy.md#3-deliver-addons) | Delivering addons to a deployment: bundled, installed, drop-in (development) |
+| [`docs/platform/deployment/docker-compose.md`](../platform/deployment/docker-compose.md#adding-addons) | Addons under Docker Compose: installed from config, or a volume for development |
+| [`docs/platform/deployment/kubernetes.md`](../platform/deployment/kubernetes.md#installed-add-ons-vs-mounted-folders) | Addons under Kubernetes: installed from config, or a mounted folder for development |
 | [`docs/platform/deployment/direct-install.md`](../platform/deployment/direct-install.md#addon-discovery-failures) | Addon discovery failures on a direct install |
 | [`docs/related-repositories.md`](../related-repositories.md) | Repositories and deployments that ship addons |
 | [`docs/Forms-to-Calendar.md`](../Forms-to-Calendar.md) | One addon feeding another: forms to calendar |

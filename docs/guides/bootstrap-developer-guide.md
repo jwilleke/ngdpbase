@@ -259,7 +259,6 @@ ngdpbase has one environment mechanism, `bootstrap-env.ts`. It does not know or 
 | Bare metal (`server.sh`) | `server.sh` sources `<checkout>/.env`, then `<FAST_STORAGE>/.env`, into the shell | both, already in the environment | edit the file, `./server.sh restart` |
 | Docker (compose or `docker run`) | compose `environment:`, `docker run -e`, and the image's own `ENV` lines | `<FAST_STORAGE>/.env` on the mounted data volume (`/app/data/.env`) | edit the volume's `.env` or the compose file, restart the container |
 | Kubernetes | the Deployment: `envFrom:` a ConfigMap and a Secret, or `env:` entries (`secretKeyRef` for secrets) | `/app/data/.env` on the persistent volume | edit the volume's `.env` and restart the pod, or change the ConfigMap/Secret and roll the deployment |
-| Downstream image (`FROM ngdpbase`) | as Kubernetes or Docker, plus anything its own Dockerfile sets with `ENV` | as above | as above |
 
 Rules that follow from this, for every implementation:
 
@@ -381,7 +380,7 @@ The detail pages, each under one of the four implementation methods:
 
 | Document | What it is for |
 | --- | --- |
-| [Implementation.md](../installation/Implementation.md) | The four ways an instance runs (direct install, container, Kubernetes, downstream image), what each inherits from this repository, and where its environment, configuration and data live. Read it to know which method you are on |
+| [Implementation.md](../installation/Implementation.md) | The three ways an instance runs (direct install, container, Kubernetes), what each inherits from this repository, and where its environment, configuration and data live. Read it to know which method you are on |
 | [startup-process.md](../installation/startup-process.md) | What happens, in order, from `server.sh` / `node dist/src/app.js` to serving requests |
 | [installation-system.md](../installation/installation-system.md) | The first-run wizard and the headless install |
 | [install-complete.md](../installation/install-complete.md) | The `.install-complete` marker file |

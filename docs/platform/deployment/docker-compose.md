@@ -108,30 +108,11 @@ If you skipped step 3 you'll land on the install wizard. Otherwise the front pag
 
 ## Adding addons
 
-Two patterns. Pick based on whether you want a single self-contained image (bake-in) or a faster iteration loop (mount-at-runtime).
+Bundled add-ons are in the image; enable them in config. To add a published add-on, name it in the site's `app-custom-config.json` under `ngdpbase.addons.install`; core installs and verifies it into the data volume at start, and the stock image is used unmodified ([`domain-site.md`](./domain-site.md)). There is no image of your own to build.
 
-### Pattern A — bake addons into a derivative image (recommended for production)
+### Mount an add-on from a local folder (development only)
 
-Build your own image `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` and `COPY` addon code in. The image is self-contained, reproducible, and tagged independently from ngdpbase.
-
-GeoHazardWatch used this pattern until 2026-10-26. A published add-on no longer needs an image of its own: the stock image can install it through the site's config ([`domain-site.md`](./domain-site.md)).
-
-Skeleton:
-
-```dockerfile
-FROM ghcr.io/jwilleke/ngdpbase:3.13.2
-USER root
-COPY ./my-addons/ /app/addons-extra/
-RUN chown -R node:node /app/addons-extra
-USER node
-ENV NGDPBASE_MANAGERS_ADDONS_MANAGER_ADDONS_PATH='["/app/addons","/app/addons-extra"]'
-```
-
-The `addons-path` env var is JSON-encoded because it's an array. See [Headless gotchas §4](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#4-addons-path-string-replaces-array-supplements) — using a bare string here silently kills the built-in addons because the string form *replaces* the default rather than *supplementing* it.
-
-### Pattern B — mount addons as a volume
-
-Simpler for local iteration, no rebuild needed. Mount the addon directory into the container and extend `addons-path`:
+For iterating on an add-on you are writing, mount its folder and extend `addons-path`. This is a development setup, not a way to deploy:
 
 ```yaml
 services:
@@ -143,13 +124,12 @@ services:
       NGDPBASE_MANAGERS_ADDONS_MANAGER_ADDONS_PATH: '["/app/addons","/app/addons-extra"]'
 ```
 
-Trade-offs: the addon directory has to live somewhere the compose host can see, the image isn't self-contained for cross-host moves, and you have to remember to mount it on every host.
+The `addons-path` env var is JSON-encoded because it's an array. See [Headless gotchas §4](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#4-addons-path-string-replaces-array-supplements) — using a bare string here silently kills the built-in addons because the string form *replaces* the default rather than *supplementing* it.
 
-### Common gotchas for both patterns
+### Common gotchas
 
 - __UUIDs must be real v4__ — placeholder UUIDs in seed-page frontmatter silently fail. See [§7](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#7-addonsmanager-validates-seed-page-uuids-strictly).
 - __Theme / front-page / page-provider are operator settings__ — addons can't override them. Set in `app-custom-config.json`. See [§3](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#3-theme-front-page-page-provider-are-not-auto-set-by-addons).
-- __Tracked in [#673](https://github.com/jwilleke/ngdpbase/issues/673)__ — a "packaged" addon distribution model (npm install) is under discussion as a third pattern. Not shipped yet.
 
 ## Updating
 

@@ -24,7 +24,7 @@ A general-purpose, file-based platform for pages, files and records, built with 
 
 ## Getting Started
 
-There are four ways to run ngdpbase — a direct install from a clone, a container from the published image, Kubernetes, or a downstream image with your own addons. [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document: it says what each method inherits from this repository and where its environment and configuration live. The steps below are the direct install.
+There are three ways to run ngdpbase — a direct install from a clone, a container from the published image, or Kubernetes. Add-ons are bundled, or installed from npm through the site's configuration; no image of your own is needed. [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document: it says what each method inherits from this repository and where its environment and configuration live. The steps below are the direct install.
 
 ### For Users
 

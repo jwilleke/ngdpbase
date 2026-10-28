@@ -9,7 +9,7 @@ A __domain site__ is ngdpbase plus a domain add-on, under its own name. It is bu
 
 There is no derived image, no Dockerfile and no build step for the site. Core and the add-on move on separate version axes: the image tag moves core, a config value moves the add-on. The add-on's repository holds the add-on only (code, tests, docs, demo pages and its publish workflow); the site's deployment lives with the rest of the site's infrastructure.
 
-This replaces the earlier shapes for a domain add-on in production: the derived image built `FROM` ngdpbase, and the [packaged](./addon-packaged.md) two-stage copy of `node_modules` into a site image.
+This is the one way to deploy an add-on that is not bundled. The earlier shapes (an image built `FROM` ngdpbase, with the add-on copied or npm-installed into it) are retired; a site still on one moves with [`addon-packaged.md`](./addon-packaged.md). A drop-in folder in `addons-path` is for local development only.
 
 ## Worked example: geohazardwatch.com
 
@@ -95,5 +95,5 @@ Installed copies are not yet in the site backup ([#1830](https://github.com/jwil
 - [Installed add-ons](../../guides/addons-developer-guide.md#installed-add-ons) — the installer's checks, the lock, and publishing with `create:addon --repo`'s `publish.yml`.
 - [`kubernetes.md`](./kubernetes.md) — running the stock image on a cluster, and why config never goes in a ConfigMap.
 - [`how-to-deploy.md`](./how-to-deploy.md) — the deployment walkthrough.
-- [`addon-packaged.md`](./addon-packaged.md) — the older packaged model (an add-on copied into a site image).
+- [`addon-packaged.md`](./addon-packaged.md) — moving a site off a site image.
 - [#2053](https://github.com/jwilleke/ngdpbase/issues/2053) — the geohazardwatch switch to this shape.

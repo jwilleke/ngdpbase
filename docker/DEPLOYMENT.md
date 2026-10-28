@@ -13,7 +13,7 @@ ngdpbase publishes a container image to `ghcr.io/jwilleke/ngdpbase:<version>` on
 This image is the single canonical container artifact for ngdpbase. It's intended for:
 
 - __Container deployments__ — `docker run`, `docker-compose`, Kubernetes manifests pulling the image directly.
-- __Downstream domain-addon images__ that layer on top using `FROM ghcr.io/jwilleke/ngdpbase:<version>` and add their own addon code (e.g. [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch)). These consumers should add a [Renovate](https://docs.renovatebot.com/) (or Dependabot) annotation so the `FROM` tag auto-bumps when ngdpbase ships a new version — see [`docs/guides/addons-developer-guide.md`](../docs/guides/addons-developer-guide.md) for the recipe.
+- __Domain sites__ that run this image unmodified and install their add-on from npm through the site's configuration (e.g. [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch)); see [`docs/platform/deployment/domain-site.md`](../docs/platform/deployment/domain-site.md). The site's deployment bumps the image tag (Renovate, Flux image automation, or a PR) when ngdpbase ships a new version.
 
 It is __not__ consumed by host-deployed instances managed via `./server.sh` and PM2 (jimstest, fairways-base, ngdp-temp-builds, etc.). Those run from a git checkout against Node directly; they pull source on every release, build locally with `npm run build`, and never touch the image. Sister-site working copies do contain `.github/workflows/docker-build.yml` because it's tracked in upstream master, but the workflow only fires in the canonical `jwilleke/ngdpbase` repo — clones never trigger it.
 

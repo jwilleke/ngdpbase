@@ -12,7 +12,7 @@ See [../Deployment.md](../Deployment.md) for project-scope context and how this 
 
 - An existing Kubernetes cluster. Could be managed (EKS, GKE, AKS, DigitalOcean Kubernetes, etc.) or self-hosted (k3s, RKE2, kubeadm).
 - `kubectl` configured against the cluster and the operational habit of applying manifests.
-- A container registry the cluster can pull from. The upstream `ghcr.io/jwilleke/ngdpbase` is public; if you build a wrapper image with your own addons, you'll need somewhere to push it.
+- A container registry the cluster can pull from. The upstream `ghcr.io/jwilleke/ngdpbase` is public; if you build an image of your own, you'll need somewhere to push it.
 - A persistent-volume storage class for the data directory. ngdpbase keeps pages, users, sessions, and addon data on disk — a stateless deployment will lose everything on a pod restart.
 - An ingress controller (Traefik, nginx-ingress, the cloud provider's load balancer) and a way to provision TLS — cert-manager + Let's Encrypt, a Cloudflare Tunnel, or terminating TLS at an upstream proxy.
 - (Optional) GitOps tooling like __Flux__ or __ArgoCD__ if you want pull-based deploys instead of `kubectl apply`-from-laptop.
@@ -44,10 +44,7 @@ The deployment is yours to author on top of those starters. The project's own re
 ### 1. Pick an image
 
 - __Direct upstream__: `ghcr.io/jwilleke/ngdpbase:X.Y.Z` (pin a version; avoid `:latest` in production manifests). See [available tags](https://github.com/jwilleke/ngdpbase/pkgs/container/ngdpbase).
-- __Wrapper image__: build your own `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` with addons baked in. Push to whatever registry the cluster can pull from.
 - __Stock image + installed add-on__: run the direct upstream image and name a published add-on in the site's config; core installs and verifies it at start. No image of your own. geohazardwatch.com runs this way: [`domain-site.md`](./domain-site.md).
-
-If your wrapper Dockerfile uses `npm ci --omit=dev`, also add `--ignore-scripts` to bypass the husky `prepare` lifecycle. See [Headless §6](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#6-npm-ci---omitdev-fails-on-prepare--husky).
 
 ### 2. Copy and adapt the starter manifests
 
@@ -254,15 +251,13 @@ ngdpbase doesn't ship GitOps manifests, but the project's own reference cluster 
 
 [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) is the working example. Read it as one operator's solution, not a template.
 
-### Auto-rebuild from satellite (subscriber pattern)
+### Following new ngdpbase releases
 
-For derivative images (the wrapper-image pattern from step 1), the satellite repo can watch ngdpbase's GHCR tags via Renovate and auto-rebuild its own image when ngdpbase ships a patch. See [#680](https://github.com/jwilleke/ngdpbase/issues/680) for the design. geohazardwatch used this pattern until it moved to the stock image with an installed add-on ([`domain-site.md`](./domain-site.md)), which needs no rebuild at all. The satellite repo, not ngdpbase, owns the rebuild trigger — keeps the loop fully under the operator's control.
+A site on the stock image needs no rebuild when ngdpbase ships a patch: Renovate or Flux image automation moves the tag in the deployment and the pod restarts ([`domain-site.md`](./domain-site.md)). The site's own repository, not ngdpbase, owns that trigger, which keeps the loop under the operator's control.
 
-### Wrapper image vs. runtime-mounted addons
+### Installed add-ons vs. mounted folders
 
-Currently the wrapper-image pattern (bake addons into a derivative `FROM ngdpbase` image) is the supported approach for production. Runtime-mounted addons via `addons-path` work but the operational surface (volume mount + env var + UUID rules + version drift) is heavier than baking them in.
-
-A third "packaged" pattern — addons as npm-installable packages — is tracked in [#673](https://github.com/jwilleke/ngdpbase/issues/673) but not shipped yet.
+The supported way to run a published add-on in production is to install it from the site's config ([`domain-site.md`](./domain-site.md)). A folder mounted and added to `addons-path` works for development, but the operational surface (volume mount + env var + UUID rules + version drift) makes it unsuitable for a production site.
 
 ## Updating
 
@@ -352,7 +347,7 @@ Most often one of:
 
 - __§1 missing anchor Organization__ — boot log will mention `applyRoleDiff` skipping silently, or admin login resolves as Anonymous.
 - __§3 page provider misconfigured__ — `filesystemprovider` works but lacks editing UI affordances; switch to `versioningfileprovider`.
-- __§6 husky `prepare` script__ if you're building a wrapper image without `--ignore-scripts`.
+- __§6 husky `prepare` script__ if you're building an image of your own without `--ignore-scripts`.
 - __`/app/data` permission errors__ — the image runs as a non-root user; the PVC's `fsGroup` / `runAsUser` must let it write.
 
 The cleanup recipe in [§2](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#2-createdefaultadmin-only-runs-when-userssize--0) re-triggers `createDefaultAdmin` cleanly without destroying pages.

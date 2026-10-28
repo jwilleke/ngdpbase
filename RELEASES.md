@@ -56,7 +56,7 @@ Consumers may use any subscription mechanism they like. Three patterns are known
 
 ### 1. Renovate with a Dockerfile `ARG` pin
 
-The pattern used by `jwilleke/geohazardwatch`. The Dockerfile carries:
+For a consumer that keeps a Dockerfile of its own for the image (not for an add-on, which a site installs from its configuration: [domain-site.md](docs/platform/deployment/domain-site.md)). The Dockerfile carries:
 
 ```dockerfile
 # renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase
@@ -64,7 +64,7 @@ ARG NGDPBASE_VERSION=3.39.3
 FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
 ```
 
-And `renovate.json` declares a `customManager` that recognises the `# renovate:` annotation. Renovate's built-in dockerfile manager cannot follow a `FROM` whose tag is an `ARG`, hence the custom manager. See [geohazardwatch/renovate.json](https://github.com/jwilleke/geohazardwatch/blob/main/renovate.json) for a working example.
+And `renovate.json` declares a `customManager` that recognises the `# renovate:` annotation. Renovate's built-in dockerfile manager cannot follow a `FROM` whose tag is an `ARG`, hence the custom manager.
 
 ### 2. Renovate with a direct `FROM` (no `ARG`)
 
