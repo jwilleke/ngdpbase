@@ -60,3 +60,7 @@ The decided behaviour, and what is not built yet, is in [the addons developer gu
 - Issue #158 — original AddonsManager design
 - Issue #686 — auto-enable bundled addons (future enhancement)
 - Addon authoring: `docs/platform/addon-architecture.md`
+
+## addons-path
+
+Every `addons-path` entry is a directory (bundled and drop-in). A `node_modules:<glob>` entry, from the removed packaged model ([#2102](https://github.com/jwilleke/ngdpbase/issues/2102)), is ignored with one warning at start (`addons-path entry 'node_modules:…' is no longer supported and is ignored; install add-ons with ngdpbase.addons.install`). It is never treated as a directory and never stops the start. Install published add-ons with `ngdpbase.addons.install`.

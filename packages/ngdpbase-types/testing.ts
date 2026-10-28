@@ -79,7 +79,7 @@ export function openAddonTestDatabase<Handle = SqliteHandle>(owner: string, opti
   checkAddonDatabaseRequest(owner, options);
   if (declaredBy) {
     const { slug, defaults } = declaredBy;
-    const layer = addonDatabaseLayer([{ slug, dir: '', source: 'directory', enabled: true, defaults }], {});
+    const layer = addonDatabaseLayer([{ slug, dir: '', enabled: true, defaults }], {});
     const refused = layer.refused.get(slug);
     if (refused) throw new Error(`Add-on '${slug}' is not loaded: ${refused}`);
     addonDatabaseDeclarationFor(layer.declarations, owner, options.ledgerTable);

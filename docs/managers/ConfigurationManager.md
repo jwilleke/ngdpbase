@@ -232,3 +232,7 @@ node scripts/configurationmanage-get-config.js ngdpbase.notifications --prefix -
 For complete property reference, admin interface details, and troubleshooting:
 
 - [ConfigurationManager-Complete-Guide.md](ConfigurationManager-Complete-Guide.md)
+
+## Configured add-ons must exist (#672)
+
+At start, an `ngdpbase.addons.<id>.enabled = true` key with no matching add-on refuses the start. An add-on is known when it is a directory under an `addons-path` entry, or a slug named in `ngdpbase.addons.install`. A retired `node_modules:` entry is ignored here ([#2102](https://github.com/jwilleke/ngdpbase/issues/2102)); AddonsManager logs the warning.

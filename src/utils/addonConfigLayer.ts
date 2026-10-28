@@ -18,8 +18,8 @@
  * shipped entry. The operator's file still wins over everything.
  *
  * Discovery follows `ngdpbase.managers.addons-manager.addons-path` exactly as
- * AddonsManager does — directories and `node_modules:` patterns — so bundled
- * and external addons are treated alike. Only an addon whose
+ * AddonsManager does — directory entries — so bundled
+ * and drop-in addons are treated alike. Only an addon whose
  * `ngdpbase.addons.<slug>.enabled` is true in the shipped+custom view
  * contributes; a disabled addon's opinions do not reach the catalog.
  *
@@ -62,7 +62,7 @@ import fs from 'fs';
 import path from 'path';
 import { isDeepStrictEqual } from 'util';
 import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder, isPlainObject, readConfigFilesSync } from './configFiles.js';
-import { configuredInstallSlugs, findNodeModulesDir, installedAddonsDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
+import { configuredInstallSlugs, installedAddonsDir, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
 import { lockedAddonDirsSync } from './addonLock.js';
 import { LEGACY_SECRET_KEYS_KEY, SENSITIVE_VALUES_KEY } from './sensitiveValues.js';
 import { parsePrivatestore } from './privateStorePath.js';
@@ -75,7 +75,6 @@ export const ADDONS_MANAGER_ENABLED_KEY = 'ngdpbase.managers.addons-manager.enab
 export interface AddonDefaults {
   slug: string;
   dir: string;
-  source: 'directory' | 'npm';
   /**
    * Whether the addon is switched on. A turned-off addon's file is read for its
    * system-categories alone (#1559); none of its other keys reach the merge.
@@ -101,10 +100,10 @@ export function discoverAddonDirs(
   base: Record<string, unknown>,
   cwd: string = process.cwd(),
   dataFolder: string = instanceDataFolder()
-): Array<{ dir: string; source: 'directory' | 'npm' }> {
+): Array<{ dir: string }> {
   if (base[ADDONS_MANAGER_ENABLED_KEY] === false) return [];
-  const { directories, npmPatterns } = splitAddonsPath(base[ADDONS_PATH_KEY] ?? './addons');
-  const found: Array<{ dir: string; source: 'directory' | 'npm' }> = [];
+  const { directories } = splitAddonsPath(base[ADDONS_PATH_KEY] ?? './addons');
+  const found: Array<{ dir: string }> = [];
 
   for (const raw of directories) {
     const root = path.resolve(cwd, raw);
@@ -112,19 +111,12 @@ export function discoverAddonDirs(
     try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'shared') continue;
-      found.push({ dir: path.join(root, entry.name), source: 'directory' });
+      found.push({ dir: path.join(root, entry.name) });
     }
   }
   const installed = installedAddonsDir(dataFolder, cwd);
   if (!found.some((f) => path.dirname(f.dir) === installed)) {
-    for (const dir of lockedAddonDirsSync(installed, configuredInstallSlugs(base))) found.push({ dir, source: 'directory' });
-  }
-
-  const nmRoot = npmPatterns.length > 0 ? findNodeModulesDir(cwd) : null;
-  if (nmRoot) {
-    for (const pattern of npmPatterns) {
-      for (const dir of matchNpmPackageDirs(nmRoot, pattern)) found.push({ dir, source: 'npm' });
-    }
+    for (const dir of lockedAddonDirsSync(installed, configuredInstallSlugs(base))) found.push({ dir });
   }
   return found;
 }
@@ -139,8 +131,8 @@ export function discoverAddonDirs(
  */
 export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string = process.cwd(), dataFolder: string = instanceDataFolder()): AddonDefaults[] {
   const out: AddonDefaults[] = [];
-  for (const { dir, source } of discoverAddonDirs(base, cwd, dataFolder)) {
-    const slug = resolveAddonSlug(dir, source);
+  for (const { dir } of discoverAddonDirs(base, cwd, dataFolder)) {
+    const slug = resolveAddonSlug(dir);
     const enabled = isAddonEnabled(base, slug);
     const file = path.join(dir, 'config', 'default-config.json');
     if (!fs.existsSync(file)) continue;
@@ -149,9 +141,9 @@ export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string
       if (!isPlainObject(raw)) throw new Error('not a JSON object');
       const defaults: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(raw)) if (!key.startsWith('_')) defaults[key] = value;
-      out.push({ slug, dir, source, enabled, defaults });
+      out.push({ slug, dir, enabled, defaults });
     } catch (err) {
-      out.push({ slug, dir, source, enabled, defaults: {}, error: err instanceof Error ? err.message : String(err) });
+      out.push({ slug, dir, enabled, defaults: {}, error: err instanceof Error ? err.message : String(err) });
     }
   }
   return out;

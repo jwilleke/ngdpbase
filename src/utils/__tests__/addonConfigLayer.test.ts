@@ -133,8 +133,8 @@ describe('#1220 the layer sits between shipped and custom', () => {
   });
 
   test('mergeWithAddonLayer applies addons in discovery order', () => {
-    const a = { slug: 'a', dir: '', source: 'directory' as const, enabled: true, defaults: { k: 'a', 'ngdpbase.permissions.definitions': { x: { description: 'a' } } } };
-    const b = { slug: 'b', dir: '', source: 'directory' as const, enabled: true, defaults: { k: 'b', 'ngdpbase.permissions.definitions': { y: { description: 'b' } } } };
+    const a = { slug: 'a', dir: '', enabled: true, defaults: { k: 'a', 'ngdpbase.permissions.definitions': { x: { description: 'a' } } } };
+    const b = { slug: 'b', dir: '', enabled: true, defaults: { k: 'b', 'ngdpbase.permissions.definitions': { y: { description: 'b' } } } };
     const { merged } = mergeWithAddonLayer({ k: 'shipped', 'ngdpbase.permissions.definitions': { s: { description: 's' } } }, [a, b], {});
     expect(merged.k).toBe('b');
     expect(Object.keys(merged['ngdpbase.permissions.definitions'] as object)).toEqual(['s', 'x', 'y']);
@@ -164,7 +164,7 @@ describe('#1889 an add-on classifies only its own keys', () => {
   const SENSITIVE = 'ngdpbase.config.sensitive-values';
   const shipped = { [SENSITIVE]: { 'ngdpbase.session.secret': 'secret' }, 'ngdpbase.session.secret': 'x' };
   const addon = (slug: string, entries: unknown, enabled = true) =>
-    ({ slug, dir: '', source: 'directory' as const, enabled, defaults: { [SENSITIVE]: entries, [`ngdpbase.addons.${slug}.accounts`]: {} } });
+    ({ slug, dir: '', enabled, defaults: { [SENSITIVE]: entries, [`ngdpbase.addons.${slug}.accounts`]: {} } });
 
   test('a nested wildcard entry for its own map is merged', () => {
     const { merged, refused } = mergeWithAddonLayer(shipped, [addon('accounting', { 'ngdpbase.addons.accounting.accounts.*.account-number': 'secret' })], {});
@@ -196,7 +196,7 @@ describe('#1889 an add-on classifies only its own keys', () => {
 describe('#1612 a set map is extended by every layer, never replaced', () => {
   const SET = 'ngdpbase.config.secret-keys';
   const base = { [SET]: { 'ngdpbase.session.secret': true, 'ngdpbase.mail.password': true } };
-  const layer = (slug: string, defaults: Record<string, unknown>) => ({ slug, dir: '', source: 'directory' as const, enabled: true, defaults });
+  const layer = (slug: string, defaults: Record<string, unknown>) => ({ slug, dir: '', enabled: true, defaults });
 
   test('an addon list adds to the shipped set', () => {
     const { merged } = mergeWithAddonLayer(base, [layer('a', { [SET]: ['ngdpbase.addons.a.api-key'] })], {});
@@ -235,7 +235,7 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
 describe('#1999 an add-on\'s policy names only its own jobs', () => {
   const POLICIES = 'ngdpbase.access.policies';
   const addon = (slug: string, job: string, enabled = true) => ({
-    slug, dir: '', source: 'directory' as const, enabled,
+    slug, dir: '', enabled,
     defaults: {
       [POLICIES]: [{ id: `${slug}-job`, effect: 'allow', subjects: [{ type: 'job', value: job }], resources: [{ type: 'page', pattern: '*' }], actions: [`${slug}-read`] }],
       [`ngdpbase.addons.${slug}.setting`]: 1

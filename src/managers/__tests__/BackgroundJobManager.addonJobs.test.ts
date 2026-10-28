@@ -97,7 +97,7 @@ describe('the scheduler\'s time zone (#1998)', () => {
 describe('an add-on ships its job paused (#1998)', () => {
   const shipped = { 'ngdpbase.addons.accounting-dues.enabled': true };
   const addon = {
-    slug: 'accounting-dues', dir: '', source: 'directory' as const, enabled: true,
+    slug: 'accounting-dues', dir: '', enabled: true,
     defaults: { 'ngdpbase.jobs.accounting-dues.issue-invoices.enabled': false }
   };
 

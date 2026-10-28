@@ -124,8 +124,7 @@ export function validateScope(scope: string): string | null {
 
 /**
  * The package name (#1676). A published addon is `<scope>/<id>-addon`, which is
- * what the guide documents and what `node_modules:@scope/*-addon` discovery
- * matches; a bundled addon keeps the bundled convention, `@ngdpbase/<id>`.
+ * what the guide documents; a bundled addon keeps the bundled convention, `@ngdpbase/<id>`.
  */
 export function packageName(o: Pick<ScaffoldOptions, 'id' | 'scope'>): string {
   return o.scope ? `${o.scope}/${o.id}-addon` : `@ngdpbase/${o.id}`;
