@@ -10,6 +10,7 @@ import ImportManager from '../ImportManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
 import { boundScope } from '../../ice/runImport';
+import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
 import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceShim } from '../../ice/types';
@@ -253,10 +254,16 @@ describe('ImportManager — the import scope is the caller\'s (#2013)', () => {
   async function withIdentities(ids: Record<string, string>) {
     const made = await makeImportManager();
     const lookups: Array<{ reason: unknown }> = [];
+    const store = { answers: true, fails: false };
     made.managers['IdentityManager'] = {
-      identityIdOf: async (ctx: { reason?: unknown }, username: string) => { lookups.push({ reason: ctx?.reason }); return ids[username] ?? null; }
+      canAnswer: () => store.answers,
+      getByUserIdentifier: async (ctx: { reason?: unknown }, username: string) => {
+        lookups.push({ reason: ctx?.reason });
+        if (store.fails) throw new Error('index unreadable');
+        return ids[username] ? { '@id': ids[username] } : null;
+      }
     };
-    return { ...made, lookups };
+    return { ...made, lookups, store };
   }
   const photo = (text: string) => ({ source: { type: 'upload' as const, files: [md('photo.png', text)] }, receiver: 'core.files' });
 
@@ -294,6 +301,21 @@ describe('ImportManager — the import scope is the caller\'s (#2013)', () => {
   test('without an identity @id it falls back to the username (#2041)', async () => {
     const { im } = await withIdentities({});
     expect((await im.runImport(photo('PNG'), EDITOR)).scope).toBe(boundScope('core.files', 'editor1'));
+  });
+
+  test('when the identity store cannot answer, the run does not start and nothing is recorded', async () => {
+    const { im, uploads, store } = await withIdentities(IDS);
+    const ledger = new MemoryIceLedger();
+    im.setImportLedger(ledger);
+    store.answers = false;
+    await expect(im.runImport(photo('PNG'), EDITOR)).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    store.answers = true;
+    store.fails = true;
+    await expect(im.runImport(photo('PNG'), EDITOR)).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    await expect(im.enqueueImport(photo('PNG'), jobContextFromRequest(EDITOR as never))).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    expect(uploads).toEqual([]);
+    expect(await ledger.files(boundScope('core.files', 'editor1'))).toEqual([]);
+    expect(im.importRunsFor(EDITOR)).toEqual([]);
   });
 
   test('a scope that is not a non-empty string is refused', async () => {

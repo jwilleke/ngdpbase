@@ -82,10 +82,11 @@ describe('ICE fixture add-on (phr-shaped)', () => {
     expect(records.records.map(r => r.code)).toEqual(['bp', 'wt']);
 
     // The same export again: a file imported is unchanged; the partial one is read again (#2010),
-    // and its records already stored are skipped by the engine. Nothing is stored twice.
+    // its records already stored are skipped by the engine, and with nothing new it is unchanged.
+    // Nothing is stored twice.
     const again = await im.runImport({ source: { type: 'upload', files: [{ name: 'phr-export.zip', bytes: zip }] }, receiver: 'ice-fixture.health-records' }, ALICE);
-    expect(again.files.map(f => f.status)).toEqual(['unchanged', 'partial', 'noise', 'unreadable']);
-    expect(again.files[1]).toMatchObject({ stored: 0, duplicates: 1 });
+    expect(again.files.map(f => f.status)).toEqual(['unchanged', 'unchanged', 'noise', 'unreadable']);
+    expect(again.files[1]).toMatchObject({ stored: 0, duplicates: 1, message: 'already imported' });
     expect(records.records).toHaveLength(2);
   });
 

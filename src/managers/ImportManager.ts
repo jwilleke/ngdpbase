@@ -60,6 +60,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
+import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
@@ -608,19 +609,31 @@ class ImportManager extends BaseManager {
 
   /**
    * The ledger scope a run uses (#2013): bound to the receiver and to the user
-   * `ctx` names, by their identity `@id`, else their username (#2041, the
-   * same fallback as every reference to a user). Never a scope the caller
-   * names: a request's `scope` only narrows within this user's own.
+   * `ctx` names, by their identity `@id`; their username only when the
+   * identity store answers that there is no record for them (#2041). Never a
+   * scope the caller names: a request's `scope` only narrows within this
+   * user's own.
+   *
+   * @throws IdentityStoreUnavailableError when the identity store cannot
+   *   answer: the run does not start, and nothing is recorded, rather than
+   *   land in a scope the user's other runs do not use
    */
   private async importScope(request: IceRunRequest, ctx: ActorContext): Promise<string> {
     if (request.scope !== undefined && (typeof request.scope !== 'string' || !request.scope)) {
       throw new Error('ImportManager: a request scope is a non-empty string');
     }
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
-    const owner = typeof identities?.identityIdOf === 'function'
-      ? (await identities.identityIdOf(systemContext(this.engine, 'bind an import scope to its user: identity @id (#2013)'), ctx.username)) ?? ctx.username
-      : ctx.username;
-    return boundScope(request.receiver, owner, request.scope);
+    if (!identities) return boundScope(request.receiver, ctx.username, request.scope);
+    // `identityIdOf` answers null for "no record" and "cannot answer" alike, so
+    // the two doors that tell them apart (#2097): `canAnswer`, then the lookup, which throws.
+    if (!identities.canAnswer()) throw new IdentityStoreUnavailableError('no identity provider');
+    let record: Awaited<ReturnType<IdentityManager['getByUserIdentifier']>>;
+    try {
+      record = await identities.getByUserIdentifier(systemContext(this.engine, 'bind an import scope to its user: identity @id (#2013)'), ctx.username);
+    } catch (error) {
+      throw new IdentityStoreUnavailableError(error);
+    }
+    return boundScope(request.receiver, record?.['@id'] ?? ctx.username, request.scope);
   }
 
   private newRunReport(request: IceRunRequest, ctx: ActorContext, scope: string): IceRunReport {

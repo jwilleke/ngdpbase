@@ -196,6 +196,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
 import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
@@ -10364,6 +10365,11 @@ ${panes}
       return res.status(202).json({ success: true, runId });
     } catch (err) {
       if (err instanceof ImportUploadRefused) return res.status(403).json({ success: false, error: err.message });
+      // #2013: the run's scope needs the user's identity record; nothing was kept or queued.
+      if (err instanceof IdentityStoreUnavailableError) {
+        logger.warn('[import] identity store unavailable: import not started');
+        return res.status(503).json({ success: false, error: 'Imports cannot start right now. Try again shortly.' });
+      }
       logger.error(`[import] could not queue an import for ${currentUser.username}:`, err);
       return res.status(500).json({ success: false, error: 'The import could not be started.' });
     }
