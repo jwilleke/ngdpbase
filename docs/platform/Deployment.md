@@ -12,7 +12,7 @@ ngdpbase's primary responsibility is the __build container step__ — produce a 
 
 - A versioned source release on GitHub (`vX.Y.Z` tag + release notes).
 - A container image published to GHCR (`ghcr.io/jwilleke/ngdpbase:X.Y.Z`).
-- A reference [`docker/Dockerfile`](../../docker/Dockerfile) that builds the published image. Operators building their own derivative image can `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` instead of forking this one.
+- A reference [`docker/Dockerfile`](../../docker/Dockerfile) that builds the published image. A site does not need an image of its own: it runs this one and installs add-ons from its configuration ([`deployment/domain-site.md`](deployment/domain-site.md)).
 - Starter Docker Compose files: [`docker/docker-compose.yml`](../../docker/docker-compose.yml) (plain single-host) and [`docker/docker-compose-traefik.yml`](../../docker/docker-compose-traefik.yml) (with a Traefik reverse-proxy sidecar for HTTPS).
 - Starter plain Kubernetes manifests under [`docker/k8s/`](../../docker/k8s/) — `configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`, plus a `secrets.yaml.example`. Plain manifests only; no Kustomize bases, no Helm chart.
 - Helper scripts: [`docker/build-image.sh`](../../docker/build-image.sh), [`docker/deploy-remote.sh`](../../docker/deploy-remote.sh), [`docker/docker-setup.sh`](../../docker/docker-setup.sh).
@@ -93,6 +93,6 @@ See [kubernetes →](./deployment/kubernetes.md).
 ## Related issues
 
 - [#671](https://github.com/jwilleke/ngdpbase/issues/671) — Auto-deployments to Docker from Instances
-- [#673](https://github.com/jwilleke/ngdpbase/issues/673) — Packaged addon distribution model
+- [#673](https://github.com/jwilleke/ngdpbase/issues/673) — Packaged addon distribution model (superseded by installed add-ons, #1830)
 - [#674](https://github.com/jwilleke/ngdpbase/issues/674) — Canonical k8s manifest templates
 - [#680](https://github.com/jwilleke/ngdpbase/issues/680) — Auto-rebuild satellite images when ngdpbase ships a release

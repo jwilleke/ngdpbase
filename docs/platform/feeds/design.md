@@ -256,7 +256,7 @@ Each slice is an independently shippable PR.
 | The four #501 questions — template DSL, fetch policy, template storage, ImportManager integration shape | Slice 6 (`[DataFeed]` body materialization) | Not needed for slices 2–5. Resolve when #501 is picked up alongside slice 6. |
 | Per-adapter __auth__ (API keys / headers) for sources like NASA FIRMS | the adapter that first needs it | MVP sources (USGS, VolcanoDiscovery) are unauthenticated. Design `fetch` config to carry optional `headers`; defer secret-handling design until a keyed source is real. |
 | Final `app-default-config.json` namespace shape | Slice 2 | Needs operator sign-off (config-catalog change rule). |
-| Adapter packaging once #673 (packaged addon distribution) lands | post-MVP | Framework would itself become distributable to satellites. |
+| Adapter packaging once add-on distribution (#1830) is used for it | post-MVP | Framework would itself become distributable to satellites. |
 
 ## 11. Rejected alternatives
 

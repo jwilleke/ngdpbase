@@ -4,7 +4,7 @@ The repositories and sites that surround ngdpbase, and what each one actually ta
 
 Dependency runs one way. Every repository below consumes something ngdpbase publishes; ngdpbase consumes nothing from any of them and does not know they exist. [RELEASES.md](../RELEASES.md) is the contract that makes that work — ngdpbase publishes on its own cadence, each consumer subscribes on theirs.
 
-This page is the __repository-level__ view: which repositories exist, what each one takes, and how it is packaged. For __how an instance is implemented and what it inherits__ — the four methods, the inheritance table, and the per-instance specifics — [installation/Implementation.md](installation/Implementation.md) is the lead document and the authority. Where the two disagree, that one is right.
+This page is the __repository-level__ view: which repositories exist, what each one takes, and how it is packaged. For __how an instance is implemented and what it inherits__ — the three methods, the inheritance table, and the per-instance specifics — [installation/Implementation.md](installation/Implementation.md) is the lead document and the authority. Where the two disagree, that one is right.
 
 The useful distinction is not "which repo" but __what each one consumes, and how__. There are four different answers, and two repositories that look alike from the outside sit on opposite sides of it.
 

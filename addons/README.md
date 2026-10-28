@@ -1,6 +1,6 @@
 # ngdpbase Add-ons
 
-Optional modules that extend a running instance. How to write one — prerequisites, the slug, bundled versus drop-in versus packaged, seed pages, permissions, and the lint that has to pass — is [the addons developer guide](../docs/guides/addons-developer-guide.md). This file is the list of what ships in this directory.
+Optional modules that extend a running instance. How to write one — prerequisites, the slug, bundled versus installed versus drop-in (development only), seed pages, permissions, and the lint that has to pass — is [the addons developer guide](../docs/guides/addons-developer-guide.md). This file is the list of what ships in this directory.
 
 Each addon below is off until `ngdpbase.addons.<slug>.enabled` is true. Descriptions are the `description` each module exports.
 

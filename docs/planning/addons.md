@@ -33,7 +33,7 @@ The clearest test: __remove the addon and ask what is left.__ Remove `calendar` 
 
 A Domain addon is a *distribution*: ngdpbase plus the industry-specific addons that do not exist in core. So "the domain addon's pages" on a real instance may span several addon names, which is why ownership rules key on "was seeded by an addon" rather than on one addon identity (see §2).
 
-__Distribution model is orthogonal.__ `bundled` / `drop-in` / `packaged` describes *how the code arrives*; `domain` / `additive` describes *what it means to the site*. A domain addon may be bundled, drop-in or packaged — geohazardwatch is packaged (npm), while all four bundled addons are additive. The platform makes no trust distinction between models.
+__Distribution model is orthogonal.__ `bundled` / `installed` (plus `drop-in`, for local development) describes *how the code arrives*; `domain` / `additive` describes *what it means to the site*. A domain addon may be bundled or installed — geohazardwatch is installed from npm, while all four bundled addons are additive. The platform makes no trust distinction between models.
 
 ### What `type: 'domain'` actually does today
 
@@ -149,7 +149,7 @@ Admin-only editing narrows this to a small, informed audience, which makes it fa
 2. Backfill strategy for legacy seeded pages lacking `addon` / `addon-source-hash`. (§2)
 3. Should the second-domain-addon guard and duplicate-slug collision both become boot failures? (§1)
 4. Does `capabilities[]` in `AddonManifest` do anything today? It is declared but appears unused — candidate home for "which platform surfaces this domain addon takes over" (home route, site identity, nav, theme, search scope).
-5. Domain addons ship drop-in/packaged with their own repos, so the platform has no test signal on them. A conformance kit (contract tests an addon repo runs in its own CI) plus a manifest `requiresNgdpbase: ">=3.67"` boot check would close it — packaged gets version pinning free via npm, drop-in has nothing.
+5. Domain addons ship installed from npm, from their own repos, so the platform has no test signal on them. A conformance kit (contract tests an addon repo runs in its own CI) plus a manifest `requiresNgdpbase: ">=3.67"` boot check would close it — an installed add-on is pinned and verified by core, a drop-in has nothing.
 
 ---
 

@@ -297,7 +297,7 @@ __What "done" looks like:__ `WikiContext.system()` + `WikiContext.forUser(actor)
 
 ### 7. Addon platform maturation
 
-__Status:__ near-complete. Deploy + theme-auto-copy shipped via #674 + #443 + #682 (Levers 1+2); distribution shipped via #673 (`node_modules:<glob>` discovery in `AddonsManager`); scaffolding shipped via #675 (`npm run create:addon`, 2026-07-28; since [#1636](https://github.com/jwilleke/ngdpbase/issues/1636) its `--repo` flag writes a whole addon repository, and the separate `ngdpbase-addon-template` repo is retired). __Non-default-path auto-discovery (#686) is the only piece still open.__ Theme-policy decision (#444) closed 2026-05-25 as superseded-by-practice.
+__Status:__ near-complete. Deploy + theme-auto-copy shipped via #674 + #443 + #682 (Levers 1+2); distribution shipped via #673 and then superseded by installed add-ons (#1830; `node_modules:<glob>` discovery remains in `AddonsManager` but is not a documented model); scaffolding shipped via #675 (`npm run create:addon`, 2026-07-28; since [#1636](https://github.com/jwilleke/ngdpbase/issues/1636) its `--repo` flag writes a whole addon repository, and the separate `ngdpbase-addon-template` repo is retired). __Non-default-path auto-discovery (#686) is the only piece still open.__ Theme-policy decision (#444) closed 2026-05-25 as superseded-by-practice.
 
 __Driver:__ addon ecosystem maturation — moving from "ngdpbase-internal addons (calendar, forms, journal, elasticsearch)" to "third-party addons that operators can `npx create-ngdpbase-addon`, ship as `@scope/<slug>-addon`, `npm install`, and run." Each issue addresses a different step in the addon lifecycle (distribute → scaffold → discover → theme); all but discovery have now shipped.
 
@@ -308,9 +308,9 @@ __Composing issues:__
 | #682 | [EPIC] Domain Addon Deployment — easy deploy path for satellites | CLOSED | Parent EPIC — Levers 1 + 2 shipped satellite-side |
 | #674 | Canonical k8s manifest templates (Kustomize base + Flux + downstream-image layering) | CLOSED | __Deploy path__ — Kustomize bases/overlays for downstream operators |
 | #443 | Auto-deploy addon theme files on first load + admin dashboard | CLOSED | __Theme mechanism__ — auto-copy from `addons/<name>/themes/` to instance `themes/` |
-| #673 | Implement `packaged` addon distribution model (npm install) | CLOSED | __Distribution__ — `node_modules:<glob>` entries in `addons-path` are discovered by `AddonsManager` |
+| #673 | Implement `packaged` addon distribution model (npm install) | CLOSED | __Distribution__ — superseded by installed add-ons (#1830); see [domain-site.md](platform/deployment/domain-site.md) |
 | #675 | Scaffolder + reference template for new ngdpbase addons | CLOSED 2026-07-28 | __Scaffold__ — `npm run create:addon` (`scripts/create-addon.ts`); `--repo` replaces the retired `ngdpbase-addon-template` repo ([#1636](https://github.com/jwilleke/ngdpbase/issues/1636)) |
-| #686 | AddonsManager auto-enable bundled addons discovered in non-default `addons-path` dirs | OPEN | __Discovery__ — Lever 3 of #682; wrapper-image pattern (`/opt/<name>/`) defaults to `enabled: true` |
+| #686 | AddonsManager auto-enable bundled addons discovered in non-default `addons-path` dirs | OPEN | __Discovery__ — Lever 3 of #682; non-default-path add-ons default to `enabled: true` |
 | #444 | Resolve addon themes: load directly vs copy (domain-addon special case) | CLOSED 2026-05-25 (superseded-by-practice) | __Theme policy resolved__ — #443's auto-copy mechanism has operated ~1 year without complaint; the load-vs-copy question was answered de facto. Refile if a specific driver surfaces (domain addon with theme-size or write-frequency concern). |
 
 __Dependency graph:__
@@ -324,7 +324,7 @@ __Dependency graph:__
 
 addon lifecycle steps:
         │
-        ├── Distribute:  #673 (packaged npm-install loader, CLOSED)
+        ├── Distribute:  #673 (packaged npm-install loader, CLOSED; superseded by installed add-ons #1830)
         │                       │
         │                       └── companion: #675 (scaffolder, CLOSED 2026-07-28)
         │

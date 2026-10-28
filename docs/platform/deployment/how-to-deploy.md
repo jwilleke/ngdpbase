@@ -28,22 +28,13 @@ Pin an __exact version__ in production (`:3.62.1`), not `:latest`. Renovate can 
 
 ## 3. Deliver addons
 
-Addons reach the instance in one of four ways — bundled, drop-in and packaged in detail in [`../addon-architecture.md`](../addon-architecture.md#distribution-models):
+Addons reach the instance one way, in detail in [`../addon-architecture.md`](../addon-architecture.md#distribution-models):
 
 - __bundled__ — first-party addons already inside the image (`feeds`, `calendar`, `journal`, `forms`, `elasticsearch`). Nothing to install; just enable in config.
-- __drop-in__ — a directory listed in `addons-path`. Fine for development and simple/private cases.
-- __installed__ — the site's configuration names an npm package, a version and its repository, and core installs and verifies it into the data volume at start. No image of your own. This is how a domain site such as geohazardwatch.com runs: [`domain-site.md`](./domain-site.md).
-- __packaged__ — an npm package installed into a site image you build. For a site that builds its own image anyway — versioned, lockfile-pinned, Renovate-tracked. Full guide + the drop-in→packaged migration: [`addon-packaged.md`](./addon-packaged.md).
+- __installed__ — the site's configuration names an npm package, a version and its repository, and core installs and verifies it into the data volume at start. An admin moves it to a newer release with the Update button on Admin → Add-ons. No image of your own: the site runs the stock image. This is how a domain site such as geohazardwatch.com runs: [`domain-site.md`](./domain-site.md).
+- __drop-in__ — a directory listed in `addons-path`. For local development only, not a way to deploy.
 
-For a packaged addon, a thin image is just the base plus an install line:
-
-```dockerfile
-FROM ghcr.io/jwilleke/ngdpbase:3.62.1
-WORKDIR /app
-RUN npm install @jwilleke/geohazardwatch-addon@1.4.2
-```
-
-…and an `addons-path` entry `"node_modules:@jwilleke/*-addon"` (step 4). The ngdpbase base version and the addon version are pinned __independently__ — bumping one never drags the other.
+A site that builds its own image with an add-on baked in should move to the installed model: [`addon-packaged.md`](./addon-packaged.md).
 
 ## 4. Configure the instance
 
@@ -51,14 +42,20 @@ Config lives in __`<data>/config/app-custom-config.json`__ on the data volume (c
 
 ```json
 {
-  "ngdpbase.managers.addons-manager.addons-path": ["/app/addons", "node_modules:@jwilleke/*-addon"],
+  "ngdpbase.addons.install": {
+    "geohazardwatch": {
+      "package": "@jwilleke/geohazardwatch-addon",
+      "version": "^1.2.289",
+      "repository": "github.com/jwilleke/geohazardwatch"
+    }
+  },
   "ngdpbase.addons.geohazardwatch.enabled": true,
   "ngdpbase.addons.page-reseed": true
 }
 ```
 
-- __`addons-path`__ — where to discover addons (directories and/or `node_modules:` globs).
-- __`ngdpbase.addons.<slug>.enabled`__ — installing/dropping an addon makes it *discoverable*; this flag makes it *active*.
+- __`ngdpbase.addons.install`__ — the add-ons this site installs from npm ([`domain-site.md`](./domain-site.md)).
+- __`ngdpbase.addons.<slug>.enabled`__ — installing an addon makes it *available*; this flag makes it *active*.
 - __`ngdpbase.addons.page-reseed`__ (optional, default off) — when true, addon page updates reseed on restart (edit-preserving, revertable via version history). See [`../addon-page-handling.md`](../addon-page-handling.md).
 
 ## 5. Storage
@@ -73,11 +70,11 @@ Runtime data an addon manages (e.g. geohazardwatch's quake/HANS datasets) lives 
 ## 6. How updates flow
 
 ```
-ngdpbase release (v-tag) ──▶ GHCR image ──▶ Renovate bumps the base-image pin ──▶ rebuild + redeploy
-addon release (npm tag)  ──▶ npm registry ─▶ Renovate bumps the addon pin ───────▶ rebuild + redeploy
+ngdpbase release (v-tag) ──▶ GHCR image ──▶ image tag bumped in the deployment ──▶ redeploy
+addon release (npm tag)  ──▶ npm registry ─▶ Update on Admin → Add-ons ──────────▶ restart
 ```
 
-The two axes are independent and each lockfile/tag-pinned — the drift that caused #672 is gone. For minor/patch bumps Renovate can auto-merge (per the consumer repo's `renovate.json`); majors get manual review.
+The two axes are independent and each pinned: the image tag moves core, the add-on's entry in `ngdpbase.addons.install` moves the add-on. The drift that caused #672 is gone.
 
 - __Addon page content__ updates only propagate when `page-reseed` is on and the page is unmodified — see [`../addon-page-handling.md`](../addon-page-handling.md).
 - __Restart__ the instance after a redeploy so the in-memory caches and addon discovery re-run.
@@ -86,6 +83,6 @@ The two axes are independent and each lockfile/tag-pinned — the drift that cau
 
 - [`../addon-architecture.md`](../addon-architecture.md) — distribution models, load order.
 - [`domain-site.md`](./domain-site.md) — a domain site: the stock image plus an add-on installed through the site's config.
-- [`addon-packaged.md`](./addon-packaged.md) — the packaged addon model + migration.
+- [`addon-packaged.md`](./addon-packaged.md) — moving a site off a site image.
 - [`../addon-page-handling.md`](../addon-page-handling.md) — page seeding/reseed.
 - [`direct-install.md`](./direct-install.md) · [`docker-compose.md`](./docker-compose.md) · [`kubernetes.md`](./kubernetes.md) — per-target detail.

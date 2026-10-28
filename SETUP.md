@@ -2,7 +2,7 @@
 
 Quick setup instructions for getting ngdpbase running locally or in production.
 
-This page is the __direct install__ — a clone of the repository, built and run on the host. It is one of four implementation methods; [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document and names the others (container, Kubernetes, downstream image) and what each inherits.
+This page is the __direct install__ — a clone of the repository, built and run on the host. It is one of three implementation methods; [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document and names the others (container, Kubernetes) and what each inherits.
 
 ## Prerequisites
 

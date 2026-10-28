@@ -2,21 +2,21 @@
 
 Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addons-developer-guide.md`](../guides/addons-developer-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
 
-__Three distribution models, one slug + module + load contract:__ addons reach a running ngdpbase instance as __`bundled`__ (in this repo's `addons/<slug>/`), __`drop-in`__ (any directory listed in the `addons-path` config), or __`packaged`__ (`npm install`, discovered from `node_modules` via a `node_modules:<glob>` `addons-path` entry — #673). Names locked in by #668. How to choose, and the minimum that loads each one, is [Where it is loaded](../guides/addons-developer-guide.md#where-it-is-loaded). The table below is where the directory comes from.
+__One add-on model, one slug + module + load contract:__ addons reach a running ngdpbase instance as __`bundled`__ (in this repo's `addons/<slug>/`, enabled by config) or __`installed`__ (named in the site's `ngdpbase.addons.install`, pinned and verified), and a __`drop-in`__ directory (any directory listed in the `addons-path` config) is for local development only. How to choose, and the minimum that loads each one, is [Where it is loaded](../guides/addons-developer-guide.md#where-it-is-loaded). The table below is where the directory comes from.
 
 ---
 
 ## Distribution Models
 
-ngdpbase recognises three ways an addon can reach a running instance. The slug, the module contract, and the load sequence are identical across all three — only the source of the addon directory differs.
+ngdpbase recognises these ways an addon can reach a running instance. The slug, the module contract, and the load sequence are identical across all of them — only the source of the addon directory differs.
 
 | Model | Lives at | Cadence | Status |
 |---|---|---|---|
 | __bundled__ | `addons/<slug>/` inside the ngdpbase repo | Ships with each ngdpbase release | Implemented |
-| __drop-in__ | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. `/opt/external-addons/addons/<slug>/`) | Independent repo, deployed at install/restart time | Implemented |
-| __packaged__ | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | __Implemented (#673).__ Add a `node_modules:<glob>` entry to `addons-path` — e.g. `"node_modules:@jwilleke/*-addon"`. `AddonsManager` expands the glob against `node_modules` and loads each matching package through the same slug/module/`register()` contract; discovery runs after the directory scans, so a bundled/drop-in addon of the same name wins a collision. |
+| __installed__ | `<FAST_STORAGE>/addons/<slug>/`, unpacked by core | Independent repo, npm-versioned, pinned and verified | Implemented. `ngdpbase.addons.install` names the package, version range and repository; an admin moves it with Update on Admin → Add-ons. See [`domain-site.md`](./deployment/domain-site.md). |
+| __drop-in__ | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. a local repo checkout) | Independent repo, edited in place | Local development only, not a deployment model. |
 
-The platform makes no trust distinction between models. A `type: 'domain'` addon (see §3) can be bundled, drop-in, or packaged. Packaged discovery, publishing, and the two-stage image are [`addon-packaged.md`](./deployment/addon-packaged.md).
+The platform makes no trust distinction between models. A `type: 'domain'` addon (see §3) can be bundled or installed. Deploying one is [`domain-site.md`](./deployment/domain-site.md).
 
 ---
 
