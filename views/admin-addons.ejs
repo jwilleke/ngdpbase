@@ -174,6 +174,84 @@
         </div>
     <% } %>
 
+    <%# #2100: add-ons installed from npm (ngdpbase.addons.install): pinned release, range, newest in range, Update. %>
+    <% if (typeof installed !== 'undefined' && installed.length > 0) { %>
+        <div class="card mt-4" id="installed-addons">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-download"></i> Installed from npm (<%= installed.length %>)</h5>
+                <a href="/admin/addons#installed-addons" class="btn btn-outline-secondary btn-sm" title="Ask npm again for newer versions">
+                    <i class="fas fa-sync"></i> Check
+                </a>
+            </div>
+            <% if (installed.some(i => i.registryUnreachable)) { %>
+                <div class="alert alert-warning m-3 mb-0" role="alert" id="registry-unreachable">
+                    <i class="fas fa-exclamation-triangle"></i> npm couldn't be reached, so newer versions are not known right now. The site stays on the versions it has. Press Check to try again later.
+                </div>
+            <% } %>
+            <div class="card-body pb-0">
+                <p class="text-muted small mb-2">Restarting the site never updates an add-on; only Update does. An update is used from the next restart. <a href="/view/updating-add-ons">How updating works</a></p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Add-on</th>
+                            <th>Package</th>
+                            <th>Installed</th>
+                            <th>Allowed range</th>
+                            <th>Newest in range</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% installed.forEach(item => { %>
+                        <tr data-addon="<%= item.slug %>">
+                            <td><strong><%= item.slug %></strong></td>
+                            <td><% if (item.package) { %><code><%= item.package %></code><% } else { %><span class="text-muted">—</span><% } %></td>
+                            <td><% if (item.pinned) { %><code><%= item.pinned %></code><% } else { %><span class="text-muted">—</span><% } %></td>
+                            <td><% if (item.range) { %><code><%= item.range %></code><% } else { %><span class="text-muted">—</span><% } %></td>
+                            <td>
+                                <% if (item.newest) { %><code><%= item.newest %></code>
+                                <% } else if (item.registryUnreachable) { %><span class="text-muted">unknown (npm unreachable)</span>
+                                <% } else { %><span class="text-muted">—</span><% } %>
+                            </td>
+                            <td>
+                                <% if (item.problem) { %>
+                                    <span class="text-muted small"><%= item.problem %></span>
+                                <% } else { %>
+                                    <% if (item.pending) { %>
+                                        <div class="small text-primary mb-1" data-pending="<%= item.pending %>"><i class="fas fa-redo"></i> Restart the site to use version <%= item.pending %></div>
+                                    <% } %>
+                                    <% if (item.blocked) { %>
+                                        <div class="small text-warning mb-1" data-blocked="true"><i class="fas fa-exclamation-triangle"></i> To update again, <%= item.blocked %>.</div>
+                                    <% } %>
+                                    <% if (item.available && !item.blocked) { %>
+                                        <form method="POST" action="/admin/addons/<%= encodeURIComponent(item.slug) %>/update" class="d-inline">
+                                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                            <input type="hidden" name="version" value="<%= item.available %>">
+                                            <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('config-manage') %>
+                                                data-confirm="<%= 'Update ' + item.slug + ' from ' + item.pinned + ' to ' + item.available + '? It is checked and downloaded now, and used from the next restart.' %>"
+                                                onclick="return confirm(this.dataset.confirm)">
+                                                <i class="fas fa-arrow-up"></i> Update to <%= item.available %>
+                                            </button>
+                                        </form>
+                                    <% } %>
+                                    <% if (item.needsCore) { %>
+                                        <span class="badge bg-warning text-dark" title="<%= item.slug + ' ' + item.needsCore.version + ' needs a newer ngdpbase' %>"><%= item.needsCore.version %> needs ngdpbase ≥ <%= item.needsCore.minVersion %></span>
+                                    <% } %>
+                                    <% if (!item.available && !item.needsCore && !item.pending && !item.registryUnreachable && !item.blocked) { %>
+                                        <span class="badge bg-success">Up to date</span>
+                                    <% } %>
+                                <% } %>
+                            </td>
+                        </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <% } %>
+
     <%# #1860: the databases add-ons declare, listed whether or not the add-on is on. %>
     <% if (typeof databases !== 'undefined' && databases.length > 0) { %>
         <div class="card mt-4" id="declared-databases">

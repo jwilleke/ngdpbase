@@ -539,7 +539,7 @@ audited.
 | `backup-restore-cancel` | A staged database restore cancelled before the restart applied it: which backup, who staged it and who cancelled; recorded first, which cannot proceed without it (#1723) | refuse | yes |
 | `backup-restore-applied` | A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876) | continue | yes |
 | `addon-install` | An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830) | refuse | yes |
-| `addon-update` | An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet) | refuse | no |
+| `addon-update` | The release an installed add-on runs changed: an administrator's Update (who, the add-on, from and to version), recorded before the release is written, which cannot proceed without it; or core falling back to the previous release because the new one did not load (#2100) | refuse | yes |
 | `addon-verify-failed` | An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830) | continue | yes |
 | `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | continue | yes |
 | `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | refuse | yes |

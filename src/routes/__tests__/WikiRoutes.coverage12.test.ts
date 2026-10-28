@@ -163,7 +163,9 @@ const mockFootnoteManager = {
 };
 
 const mockAddonsManager = {
-  getStatus: vi.fn().mockResolvedValue([])
+  getStatus: vi.fn().mockResolvedValue([]),
+  checkInstalledUpdates: vi.fn().mockResolvedValue([]),
+  updateInstalledAddon: vi.fn()
 };
 
 const mockConfigManager = {
@@ -323,6 +325,8 @@ function resetMocks() {
   mockFootnoteManager.deleteFootnote.mockResolvedValue(undefined);
 
   mockAddonsManager.getStatus.mockResolvedValue([]);
+  mockAddonsManager.checkInstalledUpdates.mockResolvedValue([]);
+  mockAddonsManager.updateInstalledAddon.mockResolvedValue({ slug: 'ledger', status: 'staged', version: '1.1.0', previousVersion: '1.0.0' });
 }
 
 function buildApp() {
@@ -618,6 +622,69 @@ describe('WikiRoutes — coverage batch 12', () => {
         .send({ enabled: 'true' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('success');
+    });
+  });
+
+  describe('POST /admin/addons/:name/update (adminAddonUpdate, #2100)', () => {
+    test('refused by policy without config-manage; the manager is never asked', async () => {
+      mockPolicyDecisionPoint.permits.mockImplementation(async (_s: unknown, action: string) => action !== 'config-manage');
+      const res = await request(app)
+        .post('/admin/addons/ledger/update')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ version: '1.1.0' });
+      // Sabotage: removing the permitted() check in adminAddonUpdate let it through to the manager (red).
+      expect(res.status).toBe(403);
+      expect(mockAddonsManager.updateInstalledAddon).not.toHaveBeenCalled();
+    });
+
+    test('without the CSRF token the POST is refused', async () => {
+      const res = await request(app).post('/admin/addons/ledger/update').send({ version: '1.1.0' });
+      expect(res.status).toBe(403);
+      expect(mockAddonsManager.updateInstalledAddon).not.toHaveBeenCalled();
+    });
+
+    test('staged: hands the caller\'s context, slug and version to the manager, and says to restart', async () => {
+      const res = await request(app)
+        .post('/admin/addons/ledger/update')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ version: '1.1.0' });
+      expect(res.status).toBe(302);
+      expect(mockAddonsManager.updateInstalledAddon).toHaveBeenCalledWith(expect.objectContaining({ username: 'adminuser' }), 'ledger', '1.1.0');
+      expect(decodeURIComponent(res.headers.location)).toContain('Restart the site to use version 1.1.0');
+    });
+
+    test('npm unreachable: the page says so plainly', async () => {
+      mockAddonsManager.updateInstalledAddon.mockResolvedValue({ slug: 'ledger', status: 'refused', registryUnreachable: true, reason: 'registry unreachable (ENOTFOUND)' });
+      const res = await request(app)
+        .post('/admin/addons/ledger/update')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ version: '1.1.0' });
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=npm couldn't be reached, so ledger was not updated and stays on its current version/);
+    });
+  });
+
+  describe('POST /admin/addons/:name/update while the last update is unsettled (#2100)', () => {
+    test('the page says to finish the last update first', async () => {
+      mockAddonsManager.updateInstalledAddon.mockResolvedValue({ slug: 'ledger', status: 'refused', reason: 'finish the last update first: restart the site' });
+      const res = await request(app)
+        .post('/admin/addons/ledger/update')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ version: '1.2.0' });
+      expect(decodeURIComponent(res.headers.location)).toContain('error=ledger was not updated: finish the last update first: restart the site');
+    });
+  });
+
+  describe('GET /admin/addons — installed add-ons (#2100)', () => {
+    test('asks the manager with the caller\'s context when the page is opened', async () => {
+      const res = await request(app).get('/admin/addons');
+      expect(res.status).toBe(200);
+      expect(mockAddonsManager.checkInstalledUpdates).toHaveBeenCalledWith(expect.objectContaining({ username: 'adminuser' }));
+    });
+
+    test('a failed check still renders the page', async () => {
+      mockAddonsManager.checkInstalledUpdates.mockRejectedValue(new Error('no PDP'));
+      const res = await request(app).get('/admin/addons');
+      expect(res.status).toBe(200);
     });
   });
 

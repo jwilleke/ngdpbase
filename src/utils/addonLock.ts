@@ -11,14 +11,31 @@
 import fs from 'fs';
 import path from 'path';
 
-/** What the lock records for one installed add-on. */
-export interface LockEntry {
-  package: string;
+/** One verified release of an add-on: what it is and what it was accepted on. */
+export interface PinnedVersion {
   version: string;
   integrity: string;
   installedAt: string;
   /** The verified Sigstore provenance the install was accepted on. */
   provenance: { repository: string; verifiedAt: string };
+}
+
+/** What the lock records for one installed add-on. */
+export interface LockEntry extends PinnedVersion {
+  package: string;
+  /**
+   * #2100: a newer release an administrator's Update downloaded and verified.
+   * Its tarball waits in `.packages/`; the next start switches to it. Nothing
+   * else reads it, so until then the site runs `version`.
+   */
+  pending?: PinnedVersion;
+  /**
+   * #2100: the release this one replaced at the start that switched to it,
+   * kept (its folder as `.previous-<slug>`, its tarball in `.packages/`) until
+   * this one has loaded. Present at a later start only when that start never
+   * confirmed the switch, so the installer falls back to it.
+   */
+  previous?: PinnedVersion;
 }
 
 export interface LockFile {
@@ -29,6 +46,8 @@ export interface LockFile {
 export const LOCK_FILE_NAME = 'addons-lock.json';
 /** Verified tarballs, kept so a restart needs no registry. Dot-named: discovery skips it. */
 export const PACKAGES_DIR_NAME = '.packages';
+/** #2100: the folder a switched-from release waits in until the new one has loaded. Dot-named: discovery skips it. */
+export const PREVIOUS_DIR_PREFIX = '.previous-';
 
 export function lockFilePath(addonsDir: string): string {
   return path.join(addonsDir, LOCK_FILE_NAME);
