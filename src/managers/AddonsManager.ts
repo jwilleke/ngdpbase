@@ -27,8 +27,7 @@ import {
   ADDONS_INSTALL_KEY,
   installedAddonsDir,
   splitAddonsPath,
-  findNodeModulesDir,
-  matchNpmPackageDirs,
+  retiredAddonsPathWarning,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
 import {
@@ -474,8 +473,6 @@ class AddonsManager extends BaseManager {
 
   /** Resolved absolute paths to addons directories */
   private resolvedAddonsPaths: string[];
-  /** #673: npm package globs (from `node_modules:` addons-path entries) to discover from node_modules. */
-  private npmAddonPatterns: string[] = [];
   /** #1830: `<data>/addons`, where installed add-ons live; null when there is no data folder. */
   private installedDir: string | null = null;
   /** #1830: the installed add-ons verified this boot — the only ones loaded from `installedDir`. */
@@ -547,15 +544,13 @@ class AddonsManager extends BaseManager {
         : [String(raw)];
     }
 
-    // Split entries into filesystem directories and npm-package references
-    // (#673 packaged model). An entry prefixed `node_modules:` is a glob of
-    // npm packages to discover from node_modules (e.g. `node_modules:@jwilleke/*-addon`);
-    // everything else is a directory path resolved to absolute (bundled/drop-in).
-    // Shared with ConfigurationManager's boot-time addon-exists check (#924)
-    // so the two can no longer drift.
-    const { directories, npmPatterns } = splitAddonsPath(this.addonsPaths);
+    // Every entry is a directory path resolved to absolute (bundled/drop-in).
+    // A retired `node_modules:` entry (#2102) is ignored with one warning; it
+    // is never treated as a directory and never stops the boot.
+    // Shared with ConfigurationManager's boot-time addon-exists check (#924).
+    const { directories, retired } = splitAddonsPath(this.addonsPaths);
     this.resolvedAddonsPaths = directories.map(p => path.resolve(p));
-    this.npmAddonPatterns = npmPatterns;
+    for (const entry of retired) logger.warn(`[AddonsManager] ${retiredAddonsPathWarning(entry)}`);
 
     // #1830: install (first time) or verify (every start) the add-ons the
     // configuration names, before discovery sees <data>/addons. Only those
@@ -929,11 +924,6 @@ class AddonsManager extends BaseManager {
       await this.scanAddonsDirectory(dirPath);
     }
     await this.scanInstalledAddons();
-    // #673: packaged (npm) discovery — runs after directory scans, so a
-    // bundled/drop-in addon of the same name wins the duplicate-skip.
-    for (const pattern of this.npmAddonPatterns) {
-      await this.scanNpmAddons(pattern);
-    }
   }
 
   /**
@@ -947,7 +937,7 @@ class AddonsManager extends BaseManager {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       if (this.verifiedInstalled.has(entry.name)) {
-        await this.registerAddonFromDir(path.join(dir, entry.name), 'installed', 'directory');
+        await this.registerAddonFromDir(path.join(dir, entry.name), 'installed');
         continue;
       }
       const message = `${entry.name} in ${dir} is not loaded: only add-ons the installer installed and verified (named in ngdpbase.addons.install and in the lock file) load from there`;
@@ -980,50 +970,18 @@ class AddonsManager extends BaseManager {
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       if (entry.name === 'shared') continue; // reserved for shared utilities
-      await this.registerAddonFromDir(path.join(dirPath, entry.name), dirPath, 'directory');
+      await this.registerAddonFromDir(path.join(dirPath, entry.name), dirPath);
     }
-  }
-
-  /**
-   * #673 (packaged model): discover addons published as npm packages, matching a
-   * `node_modules:<glob>` addons-path entry (e.g. `node_modules:@jwilleke/*-addon`).
-   * Each matching package is loaded through the same slug/module/register()
-   * contract as bundled and drop-in addons — only discovery differs.
-   */
-  private async scanNpmAddons(pattern: string): Promise<void> {
-    const nmRoot = this.findNodeModules();
-    if (!nmRoot) {
-      logger.debug(`[AddonsManager] npm addon discovery: no node_modules found for '${pattern}'`);
-      return;
-    }
-    for (const pkgDir of this.resolveNpmAddonDirs(nmRoot, pattern)) {
-      await this.registerAddonFromDir(pkgDir, `npm:${pattern}`, 'npm');
-    }
-  }
-
-  /** Locate the node_modules directory (app root / cwd). */
-  private findNodeModules(): string | null {
-    return findNodeModulesDir();
-  }
-
-  /** Expand a `@scope/glob` (or bare `glob`) pattern to package directories. */
-  private resolveNpmAddonDirs(nmRoot: string, pattern: string): string[] {
-    return matchNpmPackageDirs(nmRoot, pattern);
   }
 
   /**
    * Load a single addon from its directory (index.js/ts + optional package.json
-   * `ngdpbase` manifest) and register it. Shared by directory scans and npm
-   * (#673) discovery; `sourceLabel` is for logging only. `source` selects the
-   * no-slug identity fallback (#927): a directory addon's folder name is its
-   * identity verbatim, while an npm package strips the conventional `-addon`
-   * suffix. Duplicate ids are skipped — since npm discovery runs last, a
-   * bundled/drop-in addon wins.
+   * `ngdpbase` manifest) and register it. `sourceLabel` is for logging only.
+   * Duplicate ids are skipped, so the first directory scanned wins.
    */
   private async registerAddonFromDir(
     addonPath: string,
-    sourceLabel: string,
-    source: 'directory' | 'npm'
+    sourceLabel: string
   ): Promise<void> {
     const folderName = path.basename(addonPath);
     const indexPath = path.join(addonPath, 'index.js');
@@ -1055,7 +1013,7 @@ class AddonsManager extends BaseManager {
       // merge refused (operator, 2026-10-16); its status says why. #1860: nor
       // one that declares a database DatabaseManager would refuse to open
       // (encrypt "required" with no key).
-      canonicalId = resolveAddonSlug(addonPath, source);
+      canonicalId = resolveAddonSlug(addonPath);
       const incompatible = this.incompatibility(manifest)
         ?? this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getAddonRefusal?.(canonicalId)
         ?? this.engine.getManager<DatabaseManager>('DatabaseManager')?.addonRefusal?.(canonicalId)

@@ -94,10 +94,8 @@ RUN apk add --no-cache libstdc++
 #   1. `docker exec <container> npm ...` — never a supported flow. The image is
 #      a runtime, not a build environment.
 #   2. Building `FROM ghcr.io/jwilleke/ngdpbase:<version>` and then running
-#      `npm install <addon>` — this IS supported. It is the packaged-addon
-#      deployment model documented in
-#      docs/platform/deployment/addon-packaged.md, and it is how geohazardwatch
-#      is built. #956 broke it, in a patch release, and the break surfaced as a
+#      `npm install <addon>` — this IS supported (the retired packaged model,
+#      #2102, used it; add-ons now install through ngdpbase.addons.install). #956 broke it, in a patch release, and the break surfaced as a
 #      red release build downstream.
 #
 # Flow 2 is restored by the `devtools` stage below rather than by putting npm

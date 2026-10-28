@@ -26,10 +26,7 @@ import { CONFIG_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import {
   configuredInstallSlugs,
   installedAddonsDir,
-  NPM_ADDON_PREFIX,
   splitAddonsPath,
-  findNodeModulesDir,
-  matchNpmPackageDirs,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
 
@@ -258,16 +255,15 @@ class ConfigurationManager extends BaseManager {
   /**
    * #672: refuse to start if any `ngdpbase.addons.<id>.enabled = true` key
    * references an `<id>` that has no matching addon in any configured
-   * `addons-path` entry — either a directory (bundled/drop-in) or, per
-   * #673/#924, an npm package matched by a `node_modules:<glob>` entry.
+   * `addons-path` directory (bundled/drop-in) and is not named in
+   * `ngdpbase.addons.install`. A retired `node_modules:` entry is ignored (#2102).
    * The discovery logic mirrors what `AddonsManager` does at runtime —
    * directory/package present with `index.js` or `index.ts` — but without
    * importing the modules (boot-time speed; `ConfigurationManager.initialize()`
-   * runs before any managers). The directory-vs-npm-pattern split, npm glob
-   * matching, AND the canonical-identity resolution are all shared with
+   * runs before any managers). The addons-path parsing AND the
+   * canonical-identity resolution are shared with
    * `AddonsManager` via `utils/addonsPathResolver.ts` so the two can no
-   * longer drift out of sync (#924: they had, and packaged addons could
-   * never boot as a result).
+   * longer drift out of sync (#924).
    *
    * Catches the failure mode that caused the 2026-05-10 geohazardwatch.com
    * outage: the deploy configmap had `ngdpbase.addons.ve-geology.enabled =
@@ -298,10 +294,10 @@ class ConfigurationManager extends BaseManager {
     if (enabledIds.length === 0) return;
 
     // 2. Resolve addons-path (string or string[]; default './addons') into
-    // filesystem directories vs. `node_modules:<glob>` npm patterns —
-    // matching AddonsManager.initialize().
+    // filesystem directories; a retired `node_modules:` entry is ignored (#2102)
+    // and AddonsManager.initialize() reports it.
     const raw = this.getProperty('ngdpbase.managers.addons-manager.addons-path', './addons');
-    const { directories, npmPatterns } = splitAddonsPath(raw);
+    const { directories } = splitAddonsPath(raw);
     const resolvedPaths = directories.map(p => path.resolve(p));
 
     // 3. Enumerate addon directories. Directory name + index.{js,ts} must
@@ -324,38 +320,17 @@ class ConfigurationManager extends BaseManager {
           // #927: resolve identity the same import-free way AddonsManager
           // registers it — package.json ngdpbase.slug, else the folder name
           // verbatim (directory addons are not stripped).
-          knownAddons.add(resolveAddonSlug(addonDir, 'directory'));
+          knownAddons.add(resolveAddonSlug(addonDir));
         }
       }
     }
 
-    // 3b. #673/#924: enumerate npm-packaged addons matching each
-    // `node_modules:<glob>` pattern, mirroring AddonsManager.scanNpmAddons().
-    // No module import here either (see false-positive note above).
-    if (npmPatterns.length > 0) {
-      const nmRoot = findNodeModulesDir();
-      if (nmRoot) {
-        for (const pattern of npmPatterns) {
-          for (const pkgDir of matchNpmPackageDirs(nmRoot, pattern)) {
-            const indexJs = path.join(pkgDir, 'index.js');
-            const indexTs = path.join(pkgDir, 'index.ts');
-            if (!fs.existsSync(indexJs) && !fs.existsSync(indexTs)) continue;
-            // #927: identity is the statically-declared slug, resolved the
-            // exact same import-free way AddonsManager registers it — so this
-            // is now an exact match, not the folder-name-derived guess #925
-            // had to fall back to.
-            knownAddons.add(resolveAddonSlug(pkgDir, 'npm'));
-          }
-        }
-      }
-    }
-
-    // 3c. #1830: an add-on named in ngdpbase.addons.install is known, installed
+    // 3b. #1830: an add-on named in ngdpbase.addons.install is known, installed
     // or not. AddonsManager installs it after this check, and a first install
     // with the registry down must not refuse the boot.
     for (const slug of configuredInstallSlugs(this.mergedConfig)) knownAddons.add(slug);
 
-    // 3d. #1830: a folder in <data>/addons that the install map does not name
+    // 3c. #1830: a folder in <data>/addons that the install map does not name
     // is never an add-on, and never stops the boot either (operator: warn,
     // never force). An enabled id that only such a folder answers is skipped
     // here with a warning; AddonsManager does not load it and tells admins.
@@ -363,7 +338,7 @@ class ConfigurationManager extends BaseManager {
     const installedDir = installedAddonsDir(this.instanceDataFolder);
     if (!resolvedPaths.includes(installedDir) && fs.existsSync(installedDir)) {
       for (const entry of fs.readdirSync(installedDir, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) strays.add(resolveAddonSlug(path.join(installedDir, entry.name), 'directory'));
+        if (entry.isDirectory() && !entry.name.startsWith('.')) strays.add(resolveAddonSlug(path.join(installedDir, entry.name)));
       }
     }
 
@@ -385,7 +360,7 @@ class ConfigurationManager extends BaseManager {
       return guess ? `"${id}" (did you mean "${guess}"?)` : `"${id}"`;
     });
 
-    const searchedIn = [...resolvedPaths, ...npmPatterns.map(p => `${NPM_ADDON_PREFIX}${p}`)];
+    const searchedIn = resolvedPaths;
     throw new Error(
       '[ConfigurationManager] Refusing to start: ' +
       `'ngdpbase.addons.<id>.enabled = true' references unknown addon(s): ${suggestions.join(', ')}. ` +

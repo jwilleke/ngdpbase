@@ -553,8 +553,8 @@ jobs:
       # =====================================================================
       # Published as :<version>-devtools. Identical to the runtime image except
       # npm is retained, for consumers that build FROM ngdpbase and need to
-      # `npm install` an addon into the derived layer — the packaged-addon model
-      # in docs/platform/deployment/addon-packaged.md.
+      # `npm install` an addon into the derived layer (the retired packaged model,
+      # #2102).
       #
       # Deliberately NOT Trivy-uploaded. It carries npm's vendored tree on
       # purpose, so scanning it would re-open exactly the alerts #956 closed and
