@@ -16388,6 +16388,12 @@ ${panes}
       }
       const addonsManager = this.engine.getManager('AddonsManager');
       const addons = addonsManager ? await addonsManager.getStatus() : [];
+      // #2100: installed add-ons and the newest release in each range, asked of
+      // the registry now: when the page is opened or Check is pressed, never at start.
+      const installed = (await addonsManager?.checkInstalledUpdates?.(currentUser)?.catch((err: unknown) => {
+        logger.warn('[admin/addons] Could not check installed add-ons for updates:', getErrorMessage(err));
+        return [];
+      })) ?? [];
       // #1860: every declared add-on database, the add-on on or off.
       const databases = this.engine.getManager<{ getDeclaredDatabases?: () => DeclaredAddonDatabase[] }>('DatabaseManager')?.getDeclaredDatabases?.() ?? [];
       const commonData = await this.getCommonTemplateData(req);
@@ -16395,6 +16401,7 @@ ${panes}
         ...commonData,
         title: 'Add-ons',
         addons,
+        installed,
         databases,
         csrfToken: req.session.csrfToken,
         success: req.query.success as string | undefined,
@@ -16491,6 +16498,36 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error toggling add-on:', err);
       return res.redirect(`/admin/addons?error=${encodeURIComponent('Failed to update add-on configuration')}`);
+    }
+  }
+
+  /**
+   * POST /admin/addons/:name/update — #2100: install a newer release of an
+   * installed add-on, within its configured range. `config-manage` (with its
+   * fresh sign-in); AddonsManager asks the PDP again at its door, checks the
+   * release as a first install is checked, records `addon-update`, and stages
+   * it for the next start. A restart never updates; only this does.
+   */
+  async adminAddonUpdate(req: Request, res: Response) {
+    const back = (kind: 'success' | 'error', message: string): void => res.redirect(`/admin/addons?${kind}=${encodeURIComponent(message)}#installed-addons`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const addonsManager = this.engine.getManager('AddonsManager');
+      if (!addonsManager?.updateInstalledAddon || !wikiContext.userContext) return back('error', 'AddonsManager unavailable');
+      const slug = req.params.name;
+      const version = typeof (req.body as Record<string, unknown>)?.version === 'string' ? String((req.body as Record<string, unknown>).version) : '';
+      const outcome = await addonsManager.updateInstalledAddon(wikiContext.userContext, slug, version);
+      if (outcome.status === 'staged') {
+        return back('success', `${slug} ${outcome.version} is downloaded and verified. Restart the site to use version ${outcome.version}; until then ${slug} ${outcome.previousVersion} keeps running.`);
+      }
+      if (outcome.registryUnreachable) {
+        return back('error', `npm couldn't be reached, so ${slug} was not updated and stays on its current version. Try again later.`);
+      }
+      return back('error', `${slug} was not updated: ${outcome.reason ?? 'refused'}`);
+    } catch (err: unknown) {
+      logger.error('Error updating add-on:', err);
+      return back('error', `The add-on was not updated: ${getErrorMessage(err)}`);
     }
   }
 
@@ -17492,6 +17529,7 @@ ${panes}
     app.get('/admin/stores', (req: Request, res: Response) => void this.adminStores(req, res));
     app.post('/admin/addons/:name/toggle', (req: Request, res: Response) => void this.adminAddonToggle(req, res));
     app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
+    app.post('/admin/addons/:name/update', (req: Request, res: Response) => void this.adminAddonUpdate(req, res));
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.

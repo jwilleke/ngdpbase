@@ -31,7 +31,7 @@ import path from 'path';
 import semver from 'semver';
 import { writeFileAtomic } from './atomicWrite.js';
 import { folderMatches, readTarball, unpackTarball, type TarballFiles } from './addonTarball.js';
-import { PACKAGES_DIR_NAME, lockFilePath, readLockSync, type LockEntry, type LockFile } from './addonLock.js';
+import { PACKAGES_DIR_NAME, PREVIOUS_DIR_PREFIX, lockFilePath, readLockSync, type LockEntry, type LockFile, type PinnedVersion } from './addonLock.js';
 import { normaliseRepository, type ProvenanceResult } from './addonProvenance.js';
 import { isAtLeast } from './version.js';
 
@@ -88,6 +88,12 @@ export type InstallStatus =
   | 'verified'
   /** Already installed; the folder differed from its verified tarball and was rewritten. */
   | 'repaired'
+  /**
+   * #2100: switched to the release an administrator's Update staged; the
+   * previous release is kept until AddonsManager confirms this one loaded
+   * ({@link confirmUpdate}) or falls back to it ({@link rollBackUpdate}).
+   */
+  | 'updated'
   /** Not installed (and not loaded); `reason` says why. */
   | 'skipped';
 
@@ -104,6 +110,17 @@ export interface InstallOutcome {
   registryUnreachable?: boolean;
   /** Set when a verification refused, or (for `repaired`) found the folder changed. */
   failedCheck?: FailedCheck;
+  /** For `updated`: the release it replaced. */
+  previousVersion?: string;
+  /**
+   * #2100: a switch an earlier start made and never confirmed (the new release
+   * did not load, or the process stopped before it could) was undone at this
+   * start, before anything loaded: `from` is the release given up, `to` the
+   * one restored.
+   */
+  rolledBack?: { from: string; to: string };
+  /** #2100: something admins should hear about a staged Update, such as one discarded. */
+  notice?: string;
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
@@ -178,11 +195,8 @@ function releasesInRange(versions: string[], range: string): string[] {
   return semver.rsort(versions.filter((v) => semver.valid(v) && semver.satisfies(v, range)));
 }
 
-/** The release to install: highest in range that this core can run. */
-async function resolveRelease(
-  spec: InstallSpec,
-  opts: InstallerOptions
-): Promise<{ version: string; manifest: PackumentVersion; passedOver?: string } | { skip: string }> {
+/** The package's releases from the registry packument, or why they cannot be had. Throws RegistryUnreachable. */
+async function fetchVersions(spec: InstallSpec, opts: InstallerOptions): Promise<{ versions: Record<string, PackumentVersion> } | { skip: string }> {
   const res = await get(opts, packumentUrl(opts.registry, spec.package), opts.maxPackumentBytes, 'application/json');
   if (res.status === 404) return { skip: `package ${spec.package} is not on the registry` };
   if (res.status >= 500 || res.status === 429) throw new RegistryUnreachable(`registry answered HTTP ${res.status}`);
@@ -195,8 +209,17 @@ async function resolveRelease(
     return { skip: `registry metadata for ${spec.package} is not JSON` };
   }
   if (packument.name !== spec.package) return { skip: `registry answered for '${String(packument.name)}', not ${spec.package}` };
+  return { versions: packument.versions ?? {} };
+}
 
-  const versions = packument.versions ?? {};
+/** The release to install: highest in range that this core can run. */
+async function resolveRelease(
+  spec: InstallSpec,
+  opts: InstallerOptions
+): Promise<{ version: string; manifest: PackumentVersion; passedOver?: string } | { skip: string }> {
+  const fetched = await fetchVersions(spec, opts);
+  if ('skip' in fetched) return fetched;
+  const { versions } = fetched;
   const candidates = releasesInRange(Object.keys(versions), spec.version);
   if (candidates.length === 0) return { skip: `no release of ${spec.package} matches '${spec.version}'` };
 
@@ -270,25 +293,37 @@ async function useInstalled(slug: string, entry: LockEntry, opts: InstallerOptio
   return { ...base, status: 'repaired', failedCheck: 'folder', reason: 'the add-on folder differed from its verified tarball and was rewritten from it' };
 }
 
-async function installFresh(slug: string, spec: InstallSpec, opts: InstallerOptions, lock: LockFile, stamp: string): Promise<InstallOutcome> {
-  const resolved = await resolveRelease(spec, opts);
-  if ('skip' in resolved) return { slug, package: spec.package, status: 'skipped', reason: resolved.skip };
-  const { version, manifest, passedOver } = resolved;
-  const base = { slug, package: spec.package, version };
-  const what = `${spec.package}@${version}`;
+/** A release that was not installed, for a reason that is not a failed check (no tarball, a newer core needed). */
+class Skipped extends Error {}
 
+/** A release downloaded and passed by every check: its tarball, the sha512 to pin, the repository its provenance names. */
+interface VerifiedRelease {
+  body: Buffer;
+  integrity: string;
+  repository: string;
+}
+
+/**
+ * Download `version` and check it: its sha512 against the registry's, its
+ * Sigstore provenance against the configured repository, its contents, and
+ * its own package.json against what was configured. The one door for every
+ * release that is written to disk, at a first install and at an Update
+ * (#2100). Throws Skipped, Refused or RegistryUnreachable.
+ */
+async function fetchVerified(slug: string, spec: InstallSpec, version: string, manifest: PackumentVersion, opts: InstallerOptions): Promise<VerifiedRelease> {
+  const what = `${spec.package}@${version}`;
   const integrity = manifest.dist?.integrity;
   const tarball = manifest.dist?.tarball;
   if (!integrity || !integrity.includes('sha512-')) throw new Refused('integrity', `${what} has no sha512 integrity on the registry`);
-  if (!tarball) return { ...base, status: 'skipped', reason: `${what} has no tarball address` };
+  if (!tarball) throw new Skipped(`${what} has no tarball address`);
   const registryOrigin = new URL(opts.registry).origin;
   if (new URL(tarball).origin !== registryOrigin) {
-    return { ...base, status: 'skipped', reason: `the tarball of ${what} is not on the configured registry (${tarball})` };
+    throw new Skipped(`the tarball of ${what} is not on the configured registry (${tarball})`);
   }
 
   const res = await get(opts, tarball, opts.maxTarballBytes, 'application/octet-stream');
   if (res.status >= 500 || res.status === 429) throw new RegistryUnreachable(`registry answered HTTP ${res.status}`);
-  if (res.status !== 200) return { ...base, status: 'skipped', reason: `registry answered HTTP ${res.status} for the tarball of ${what}` };
+  if (res.status !== 200) throw new Skipped(`registry answered HTTP ${res.status} for the tarball of ${what}`);
   if (!integrityMatches(res.body, integrity)) throw new Refused('integrity', `the tarball of ${what} does not match its sha512 integrity`);
 
   // Provenance: the attestation must be for this exact tarball, from the configured repository.
@@ -317,29 +352,46 @@ async function installFresh(slug: string, spec: InstallSpec, opts: InstallerOpti
   }
   const problem = checkTarballManifest(files, slug, spec, version, opts.coreVersion);
   if (problem?.check) throw new Refused(problem.check, problem.problem);
-  if (problem) return { ...base, status: 'skipped', reason: problem.problem };
+  if (problem) throw new Skipped(problem.problem);
 
-  const pinned = sha512Integrity(res.body);
+  return { body: res.body, integrity: sha512Integrity(res.body), repository: provenance.repository };
+}
+
+async function installFresh(slug: string, spec: InstallSpec, opts: InstallerOptions, lock: LockFile, stamp: string): Promise<InstallOutcome> {
+  const resolved = await resolveRelease(spec, opts);
+  if ('skip' in resolved) return { slug, package: spec.package, status: 'skipped', reason: resolved.skip };
+  const { version, manifest, passedOver } = resolved;
+  const base = { slug, package: spec.package, version };
+
+  let release: VerifiedRelease;
+  try {
+    release = await fetchVerified(slug, spec, version, manifest, opts);
+  } catch (err) {
+    if (err instanceof Skipped) return { ...base, status: 'skipped', reason: err.message };
+    throw err;
+  }
+
   const previous = lock.addons[slug];
   await opts.beforeInstall?.({
-    slug, package: spec.package, version, integrity: pinned, repository: provenance.repository,
+    slug, package: spec.package, version, integrity: release.integrity, repository: release.repository,
     ...(previous && previous.version !== version ? { previousVersion: previous.version } : {})
   });
 
   const tgzPath = tarballPath(opts.addonsDir, slug, version);
   await fs.ensureDir(path.dirname(tgzPath));
-  await writeFileAtomic(tgzPath, res.body);
+  await writeFileAtomic(tgzPath, release.body);
   await unpackTarball(tgzPath, path.join(opts.addonsDir, slug));
   lock.addons[slug] = {
     package: spec.package,
     version,
-    integrity: pinned,
+    integrity: release.integrity,
     installedAt: stamp,
-    provenance: { repository: provenance.repository, verifiedAt: stamp }
+    provenance: { repository: release.repository, verifiedAt: stamp }
   };
   await writeLock(opts.addonsDir, lock);
-  if (previous && previous.version !== version) {
-    await fs.remove(tarballPath(opts.addonsDir, slug, previous.version)).catch(() => {});
+  // #2100: a staged Update the configuration change overtook goes with the old version.
+  for (const old of [previous?.version, previous?.pending?.version]) {
+    if (old && old !== version) await fs.remove(tarballPath(opts.addonsDir, slug, old)).catch(() => {});
   }
   return passedOver
     ? { ...base, status: 'installed', reason: `newest in range not installed: ${passedOver}` }
@@ -367,6 +419,21 @@ function lockAnswers(entry: LockEntry | undefined, spec: InstallSpec): entry is 
     && entry.provenance?.repository === normaliseRepository(spec.repository);
 }
 
+/** One configured add-on at start: switch to a staged Update, verify the installed one, or install it. */
+async function installOne(slug: string, spec: InstallSpec, opts: InstallerOptions, lock: LockFile, stamp: string): Promise<InstallOutcome> {
+  const entry = lock.addons[slug];
+  if (lockAnswers(entry, spec)) {
+    const switched = entry.pending ? await switchToPending(slug, entry, spec, opts, lock, stamp) : undefined;
+    if (switched?.status === 'updated') return switched;
+    const outcome = await useInstalled(slug, lock.addons[slug], opts, stamp);
+    return switched?.notice ? { ...outcome, notice: switched.notice } : outcome;
+  }
+  if (!entry && (await fs.pathExists(path.join(opts.addonsDir, slug)))) {
+    return { slug, status: 'skipped', reason: `${path.join(opts.addonsDir, slug)} already exists and was not installed by the installer; it is left as it is` };
+  }
+  return installFresh(slug, spec, opts, lock, stamp);
+}
+
 /**
  * Install or verify every add-on in `specs` (`ngdpbase.addons.install`).
  * Never throws for one add-on's problem: each outcome says what happened.
@@ -384,27 +451,250 @@ export async function installConfiguredAddons(specs: Record<string, unknown>, op
     const problem = specProblem(slug, raw);
     if (problem) { outcomes.push({ slug, status: 'skipped', reason: problem }); continue; }
     const spec = raw as InstallSpec;
+    let rolledBack: { from: string; to: string } | undefined;
+    let outcome: InstallOutcome;
     try {
-      const entry = lock.addons[slug];
-      if (lockAnswers(entry, spec)) {
-        outcomes.push(await useInstalled(slug, entry, opts, stamp));
-        continue;
-      }
-      if (!entry && (await fs.pathExists(path.join(opts.addonsDir, slug)))) {
-        outcomes.push({ slug, status: 'skipped', reason: `${path.join(opts.addonsDir, slug)} already exists and was not installed by the installer; it is left as it is` });
-        continue;
-      }
-      outcomes.push(await installFresh(slug, spec, opts, lock, stamp));
+      // #2100: a switch an earlier start never confirmed falls back first.
+      rolledBack = await undoSwitch(opts.addonsDir, slug, lock, stamp);
+      outcome = await installOne(slug, spec, opts, lock, stamp);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (err instanceof RegistryUnreachable) {
-        outcomes.push({ slug, package: spec.package, status: 'skipped', reason: `registry unreachable (${message})`, registryUnreachable: true });
+        outcome = { slug, package: spec.package, status: 'skipped', reason: `registry unreachable (${message})`, registryUnreachable: true };
       } else if (err instanceof Refused) {
-        outcomes.push({ slug, package: spec.package, status: 'skipped', failedCheck: err.check, reason: `${message}; refused` });
+        outcome = { slug, package: spec.package, status: 'skipped', failedCheck: err.check, reason: `${message}; refused` };
       } else {
-        outcomes.push({ slug, package: spec.package, status: 'skipped', reason: message });
+        outcome = { slug, package: spec.package, status: 'skipped', reason: message };
       }
     }
+    outcomes.push(rolledBack ? { ...outcome, rolledBack } : outcome);
   }
   return outcomes;
+}
+
+// ---------------------------------------------------------------------------
+// #2100: the admin Update. An Update downloads and verifies a newer release in
+// the configured range and stages it; the next start switches to it, keeping
+// the previous release until the new one has loaded. A restart never asks the
+// registry for a newer release; only an Update does.
+// ---------------------------------------------------------------------------
+
+function previousDir(addonsDir: string, slug: string): string {
+  return path.join(addonsDir, `${PREVIOUS_DIR_PREFIX}${slug}`);
+}
+
+function pinnedOf(entry: PinnedVersion): PinnedVersion {
+  return { version: entry.version, integrity: entry.integrity, installedAt: entry.installedAt, provenance: entry.provenance };
+}
+
+/** Drop a staged release: its tarball and its lock field. */
+async function discardPending(addonsDir: string, slug: string, lock: LockFile): Promise<void> {
+  const entry = lock.addons[slug];
+  if (!entry?.pending) return;
+  if (entry.pending.version !== entry.version) await fs.remove(tarballPath(addonsDir, slug, entry.pending.version)).catch(() => {});
+  delete entry.pending;
+  await writeLock(addonsDir, lock);
+}
+
+/**
+ * At start, before anything loads: replace the installed release with the
+ * staged one. The installed folder moves to `.previous-<slug>` and its tarball
+ * stays, so {@link rollBackUpdate} can restore it. A staged release that no
+ * longer answers the configuration, or whose tarball fails its sha512, is
+ * discarded and the installed release stays.
+ */
+async function switchToPending(slug: string, entry: LockEntry, spec: InstallSpec, opts: InstallerOptions, lock: LockFile, stamp: string): Promise<InstallOutcome> {
+  const pending = entry.pending!;
+  const what = `${entry.package}@${pending.version}`;
+  const keep = async (notice: string): Promise<InstallOutcome> => {
+    await discardPending(opts.addonsDir, slug, lock);
+    return { slug, package: entry.package, version: entry.version, status: 'verified', notice };
+  };
+  if (!semver.satisfies(pending.version, spec.version) || pending.provenance?.repository !== normaliseRepository(spec.repository)) {
+    return keep(`the update to ${what} no longer matches ngdpbase.addons.install, so it was discarded; ${entry.version} stays`);
+  }
+  const tgzPath = tarballPath(opts.addonsDir, slug, pending.version);
+  const tgz = (await fs.pathExists(tgzPath)) ? await fs.readFile(tgzPath) : null;
+  if (!tgz || !integrityMatches(tgz, pending.integrity)) {
+    return keep(`the downloaded update ${what} ${tgz ? 'does not match the sha512 recorded when it was verified' : 'is missing'}, so it was discarded; ${entry.version} stays`);
+  }
+  const dir = path.join(opts.addonsDir, slug);
+  const prevDir = previousDir(opts.addonsDir, slug);
+  try {
+    await readTarball(tgz, opts.maxUnpackedBytes);
+    await fs.remove(prevDir);
+    if (await fs.pathExists(dir)) await fs.rename(dir, prevDir);
+    await unpackTarball(tgzPath, dir);
+  } catch (err) {
+    if (!(await fs.pathExists(dir)) && (await fs.pathExists(prevDir))) await fs.rename(prevDir, dir);
+    return keep(`the update to ${what} could not be unpacked (${err instanceof Error ? err.message : String(err)}), so it was discarded; ${entry.version} stays`);
+  }
+  lock.addons[slug] = {
+    package: entry.package,
+    ...pinnedOf(pending),
+    installedAt: stamp,
+    previous: pinnedOf(entry)
+  };
+  await writeLock(opts.addonsDir, lock);
+  return { slug, package: entry.package, version: pending.version, status: 'updated', previousVersion: entry.version };
+}
+
+/** Undo a switch in `lock` and on disk: the new release set aside, the previous one restored. */
+async function undoSwitch(addonsDir: string, slug: string, lock: LockFile, stamp: string): Promise<{ from: string; to: string } | undefined> {
+  const entry = lock.addons[slug];
+  const previous = entry?.previous;
+  if (!entry || !previous) return undefined;
+  await setAside(addonsDir, slug, stamp);
+  const prevDir = previousDir(addonsDir, slug);
+  // Without the folder the restored entry still verifies: the next check
+  // finds it missing and unpacks it from its kept, sha512-checked tarball.
+  if (await fs.pathExists(prevDir)) await fs.rename(prevDir, path.join(addonsDir, slug));
+  if (entry.version !== previous.version) await fs.remove(tarballPath(addonsDir, slug, entry.version)).catch(() => {});
+  lock.addons[slug] = { package: entry.package, ...previous };
+  await writeLock(addonsDir, lock);
+  return { from: entry.version, to: previous.version };
+}
+
+/**
+ * The switched-to release loaded (or the add-on is off, so there is nothing to
+ * try): the previous release's folder and tarball go. No-op when nothing waits.
+ */
+export async function confirmUpdate(addonsDir: string, slug: string): Promise<void> {
+  const lock = readLockSync(addonsDir);
+  const entry = lock.addons[slug];
+  if (!entry?.previous) return;
+  await fs.remove(previousDir(addonsDir, slug));
+  if (entry.previous.version !== entry.version) await fs.remove(tarballPath(addonsDir, slug, entry.previous.version)).catch(() => {});
+  delete entry.previous;
+  await writeLock(addonsDir, lock);
+}
+
+/**
+ * The switched-to release did not load: restore the previous release on disk
+ * and in the lock, so the next start runs it. The new folder is set aside
+ * (`.rejected-…`) for inspection. Undefined when there is nothing to undo.
+ */
+export async function rollBackUpdate(addonsDir: string, slug: string, now: Date = new Date()): Promise<{ from: string; to: string } | undefined> {
+  return undoSwitch(addonsDir, slug, readLockSync(addonsDir), now.toISOString());
+}
+
+/** What the admin page shows for one add-on in `ngdpbase.addons.install`. */
+export interface UpdateCheck {
+  slug: string;
+  package?: string;
+  /** The configured range (`version` in the entry). */
+  range?: string;
+  /** The release the lock pins: what runs. Absent when not installed. */
+  pinned?: string;
+  /** A release an Update downloaded, used from the next start. */
+  pending?: string;
+  /** The newest release in the range, whether or not this core can run it. */
+  newest?: string;
+  /** The newest release in the range, newer than what is pinned or staged, that this core can run: what Update installs. */
+  available?: string;
+  /** The newest release in the range, newer than what is pinned or staged, when it needs a newer ngdpbase. */
+  needsCore?: { version: string; minVersion: string };
+  registryUnreachable?: boolean;
+  /** Why there is nothing to compare: not installed, or a configuration problem. */
+  problem?: string;
+}
+
+/**
+ * Ask the registry, for every installed add-on, which releases in its range
+ * are newer than the one pinned. Reads the packument only; writes nothing.
+ * Called only when an administrator opens the add-ons page or presses Check,
+ * never at start.
+ */
+export async function checkForUpdates(specs: Record<string, unknown>, opts: InstallerOptions): Promise<UpdateCheck[]> {
+  const lock = (() => { try { return readLockSync(opts.addonsDir); } catch { return { lockfileVersion: 1 as const, addons: {} }; } })();
+  return Promise.all(Object.keys(specs).map(async (slug): Promise<UpdateCheck> => {
+    const raw = specs[slug];
+    const problem = specProblem(slug, raw);
+    if (problem) return { slug, problem };
+    const spec = raw as InstallSpec;
+    const entry = lock.addons[slug];
+    const base: UpdateCheck = { slug, package: spec.package, range: spec.version };
+    if (!lockAnswers(entry, spec)) return { ...base, problem: 'not installed yet: it is installed at the next start' };
+    base.pinned = entry.version;
+    if (entry.pending) base.pending = entry.pending.version;
+    try {
+      const fetched = await fetchVersions(spec, opts);
+      if ('skip' in fetched) return { ...base, problem: fetched.skip };
+      const inRange = releasesInRange(Object.keys(fetched.versions), spec.version);
+      const floor = base.pending && semver.gt(base.pending, entry.version) ? base.pending : entry.version;
+      const out: UpdateCheck = { ...base, ...(inRange[0] ? { newest: inRange[0] } : {}) };
+      for (const version of inRange.filter((v) => semver.gt(v, floor))) {
+        const needs = needsNewerCore(opts.coreVersion, fetched.versions[version]);
+        if (!needs) { out.available = version; break; }
+        out.needsCore ??= { version, minVersion: needs };
+      }
+      return out;
+    } catch (err) {
+      if (err instanceof RegistryUnreachable) return { ...base, registryUnreachable: true };
+      throw err;
+    }
+  }));
+}
+
+/** What an Update did. */
+export interface UpdateOutcome {
+  slug: string;
+  /** `staged`: verified and downloaded; it runs from the next start. `refused`: nothing changed; `reason` says why. */
+  status: 'staged' | 'refused';
+  package?: string;
+  version?: string;
+  /** The release that runs until the next start. */
+  previousVersion?: string;
+  reason?: string;
+  registryUnreachable?: boolean;
+  failedCheck?: FailedCheck;
+}
+
+/**
+ * Download `version` of an installed add-on and stage it for the next start
+ * (#2100). It must be a release in the configured range, newer than the
+ * pinned one, that this core can run, and it passes the same checks as a
+ * first install ({@link fetchVerified}): sha512, provenance, contents,
+ * package.json. `beforeInstall` (the audit record) runs after the checks and
+ * before anything is written. The running add-on's folder is not touched.
+ */
+export async function stageUpdate(slug: string, rawSpec: unknown, version: string, opts: InstallerOptions): Promise<UpdateOutcome> {
+  const problem = specProblem(slug, rawSpec);
+  if (problem) return { slug, status: 'refused', reason: problem };
+  const spec = rawSpec as InstallSpec;
+  const refused = (reason: string, extra: Partial<UpdateOutcome> = {}): UpdateOutcome => ({ slug, package: spec.package, version, status: 'refused', reason, ...extra });
+  await fs.ensureDir(opts.addonsDir);
+  const lock = readLockSync(opts.addonsDir);
+  const entry = lock.addons[slug];
+  if (!lockAnswers(entry, spec)) return refused(`${slug} is not installed, so there is nothing to update`);
+  if (!semver.valid(version) || semver.prerelease(version)) return refused(`'${version}' is not a release version`);
+  if (!semver.satisfies(version, spec.version)) return refused(`${version} is outside the configured range '${spec.version}'`);
+  if (!semver.gt(version, entry.version)) return refused(`${version} is not newer than ${entry.version}, the installed version`);
+  if (entry.pending?.version === version) return refused(`${version} is already downloaded; restart the site to use it`);
+
+  try {
+    const fetched = await fetchVersions(spec, opts);
+    if ('skip' in fetched) return refused(fetched.skip);
+    const manifest = fetched.versions[version];
+    if (!manifest) return refused(`${spec.package}@${version} is not on the registry`);
+    const needs = needsNewerCore(opts.coreVersion, manifest);
+    if (needs) return refused(`${spec.package}@${version} needs ngdpbase ${needs} or later; this is ${opts.coreVersion}`);
+    const release = await fetchVerified(slug, spec, version, manifest, opts);
+    const stamp = (opts.now ?? (() => new Date()))().toISOString();
+    await opts.beforeInstall?.({ slug, package: spec.package, version, integrity: release.integrity, repository: release.repository, previousVersion: entry.version });
+    const tgzPath = tarballPath(opts.addonsDir, slug, version);
+    await fs.ensureDir(path.dirname(tgzPath));
+    await writeFileAtomic(tgzPath, release.body);
+    const replaced = entry.pending?.version;
+    entry.pending = { version, integrity: release.integrity, installedAt: stamp, provenance: { repository: release.repository, verifiedAt: stamp } };
+    await writeLock(opts.addonsDir, lock);
+    if (replaced && replaced !== version && replaced !== entry.version) await fs.remove(tarballPath(opts.addonsDir, slug, replaced)).catch(() => {});
+    return { slug, package: spec.package, version, status: 'staged', previousVersion: entry.version };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof RegistryUnreachable) return refused(`registry unreachable (${message})`, { registryUnreachable: true });
+    if (err instanceof Refused) return refused(`${message}; refused`, { failedCheck: err.check });
+    if (err instanceof Skipped) return refused(message);
+    throw err;
+  }
 }

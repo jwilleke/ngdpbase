@@ -18,7 +18,7 @@ geohazardwatch.com has run this way since 2026-10-26 (epic [#2053](https://githu
 | Piece | Where it lives | How it moves |
 | --- | --- | --- |
 | Core | `ghcr.io/jwilleke/ngdpbase:<version>`, deployed from [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) `apps/production/geohazardwatch/` | Flux image automation (policy `geohazardwatch-ngdpbase`, range `>=5.32.0 <6.0.0`) bumps the tag and the pod restarts |
-| Add-on | `@jwilleke/geohazardwatch-addon` on npmjs.com, built and published with provenance from [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) by its `publish.yml` on a `geohazardwatch-v<version>` tag | an operator changes the version in the site's config and restarts |
+| Add-on | `@jwilleke/geohazardwatch-addon` on npmjs.com, built and published with provenance from [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) by its `publish.yml` on a `geohazardwatch-v<version>` tag | an admin presses Update on Admin → Add-ons and restarts, within the config's version range |
 | Site configuration | `app-custom-config.json` on the data volume | admin UI, or a hand edit of the file followed by a restart |
 | Add-on data | the add-on's own data path on the persistent volume | the add-on's scheduled jobs on core's job runner; no CronJob |
 
@@ -41,7 +41,7 @@ The two keys go in the site's `app-custom-config.json`, which is `<FAST_STORAGE>
 
 - __The map key__ is the add-on's slug (`ngdpbase.slug` in its `package.json`). It must match the slug the published package declares, or the install is refused.
 - __`package`__ is the npm package name.
-- __`version`__ is a semver range. Use an exact version, as here: a range is resolved only on the first install and whenever the pinned version stops answering it, so a range does not pick up new releases on a restart anyway, and an exact version says what is running.
+- __`version`__ is a semver range. It is resolved on the first install and whenever the pinned version stops answering it; a restart never picks up a new release. It is also the range Admin → Add-ons offers Updates within ([#2100](https://github.com/jwilleke/ngdpbase/issues/2100)): `^1` lets an admin move to any later 1.x release with a button, while an exact version, as in the example, offers none, and moving it means editing the config.
 - __`repository`__ is `host/owner/repo`. The release's Sigstore provenance must come from a CI workflow of this repository, or the install is refused.
 - __The enable key__ `ngdpbase.addons.<slug>.enabled` is separate. Installing does not enable an add-on; the key decides, as for every add-on.
 - __Keys are flat.__ `ngdpbase.addons.install` is one key whose value is the map; the enable key is its own flat key, not nested inside it.
@@ -73,15 +73,17 @@ If a save did happen in between, the file is back to what it was at start: make 
 ## Updating
 
 - __Core__ moves with the image. On geohazardwatch.com, Flux image automation bumps the tag within its policy range and the pod restarts on the new core. The installed add-on stays at its pinned version: the lock still answers the config, so core verifies the stored copy and asks npm nothing. The add-on repository's `core-compat.yml` builds and tests it against each new ngdpbase release, so a core release that breaks it shows there first. A release whose `ngdpbase.minVersion` is newer than the running core is not installed.
-- __The add-on__ moves only by a config change, until the admin Update action exists ([#1830](https://github.com/jwilleke/ngdpbase/issues/1830)):
+- __The add-on__ moves by Update on Admin → Add-ons ([#2100](https://github.com/jwilleke/ngdpbase/issues/2100)), within the `version` range of its `ngdpbase.addons.install` entry:
   - 1 Release the add-on: in its repository, push the tag `<slug>-v<version>`; its `publish.yml` publishes to npm with provenance and makes a GitHub release.
-  - 2 Check npm serves it: `npm view <package>@<version>`.
-  - 3 Change `version` in the site's `ngdpbase.addons.install` entry, and restart (mind [the admin-save trap](#the-admin-save-trap)).
-  - 4 Core installs and verifies the new release, rewrites the lock, and deletes the previous version's tarball from `.packages/`.
+  - 2 On Admin → Add-ons, the add-on's row shows the installed version, the range and the newest release in it (press Check to ask npm again). A release that needs a newer ngdpbase shows "needs ngdpbase ≥ X" and cannot be installed until core moves.
+  - 3 Press Update. Core checks the release as it checks a first install (sha512, provenance from `repository`, contents, `ngdpbase.minVersion`), downloads it into `.packages/`, records who updated what from which version to which (`addon-update`), and pins it in the lock as pending. The running add-on is not changed. If npm cannot be reached, nothing changes and the page says so.
+  - 4 Restart the site. The page says "Restart the site to use version X": core cannot swap a running add-on, so the new release is used from the next start. That start switches to it, keeping the previous release's folder (`.previous-<slug>`) and tarball, and removes them once the new release has loaded.
+  - A release outside the range still needs a config change: set `version` to a range that includes it and restart (mind [the admin-save trap](#the-admin-save-trap)); core installs and verifies it at that start and deletes the previous version's tarball.
 
 ## Rollback
 
-- __The add-on, after an update that installed:__ set `version` back to the previous release and restart. The previous tarball was deleted when the new one was installed, so this is an ordinary install from npm, with the same sha512 and provenance checks; npm must be reachable.
+- __The add-on, when the updated release does not load:__ core falls back by itself. After the load pass, an add-on that a start switched to a new release and that did not load is moved back: the new folder is set aside as `.rejected-<slug>-<time>`, the previous folder and lock entry are restored, admins get a notification (`<slug> X did not load (reason). <slug> Y is restored and runs after the next restart`), and the fall-back is recorded. Restart the site to run the previous release; until then the add-on is not running. If the process stopped while loading the new release (a crash), the next start finds the switch unconfirmed and falls back before loading anything. No npm is needed: the previous tarball was kept.
+- __The add-on, after an update that loaded:__ the previous release is gone once the new one is confirmed. Set `version` to a range that excludes the new release (for example `~1.2.0` to leave 1.3.0) and restart: this is an ordinary install from npm, with the same sha512 and provenance checks; npm must be reachable.
 - __The add-on, after an update that was refused or could not reach npm:__ the site started without the add-on, but the old folder, tarball and lock entry are untouched. Set `version` back and restart: the lock answers again, and the old copy is verified and loaded with no call to npm.
 - __Removing the add-on:__ set its enable key to `false`, or remove its `ngdpbase.addons.install` entry, and restart. A folder whose entry is gone is not loaded, and admins are warned about it.
 - __Core:__ pin the previous image tag in the site's deployment manifest and pause the image automation for it, or it moves the tag forward again. An add-on pinned at a version whose `ngdpbase.minVersion` the older core does not meet is not loaded on it.

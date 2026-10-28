@@ -16,7 +16,7 @@ import type UserManager from './UserManager.js';
 import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
-import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
@@ -31,10 +31,22 @@ import {
   matchNpmPackageDirs,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
-import { installConfiguredAddons, type InstallOutcome, type InstallRecord } from '../utils/addonInstaller.js';
+import {
+  checkForUpdates,
+  confirmUpdate,
+  installConfiguredAddons,
+  rollBackUpdate,
+  stageUpdate,
+  type InstallerOptions,
+  type InstallOutcome,
+  type InstallRecord,
+  type UpdateCheck,
+  type UpdateOutcome
+} from '../utils/addonInstaller.js';
 import { verifyProvenance } from '../utils/addonProvenance.js';
 import { DEFAULT_TUF_MIRROR, fetchTrustedRoot } from '../utils/sigstoreTrustedRoot.js';
 import { recordSystemAction } from '../context/bootActions.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
@@ -421,6 +433,9 @@ export interface AddonDashboardCard {
   adminUrl: string;
 }
 
+/** #2100: the PDP refused an administrator's add-on Update or Check. */
+export class AddonUpdateForbiddenError extends Error {}
+
 /**
  * Status information returned by getStatus()
  */
@@ -465,6 +480,10 @@ class AddonsManager extends BaseManager {
   private installedDir: string | null = null;
   /** #1830: the installed add-ons verified this boot — the only ones loaded from `installedDir`. */
   private verifiedInstalled = new Set<string>();
+  /** #2100: installed add-ons this start switched to an Update's release; settled after the load pass. */
+  private updatedThisStart = new Map<string, { from: string; to: string }>();
+  /** #2100: Updates run one at a time, so two never write the lock file at once. */
+  private updateQueue: Promise<unknown> = Promise.resolve();
 
   /** Stylesheets registered by add-ons via registerStylesheet() */
   private registeredStylesheets: Array<{ url: string; addonName: string }>;
@@ -551,6 +570,7 @@ class AddonsManager extends BaseManager {
     await this.discoverAddons();
     await this.loadAddons();
     this.loadPassDone = true;
+    await this.settleUpdatedAddons();
     this.reportUndiscoveredAddons(configManager);
     this.notifySystemCategoryProblems(configManager);
 
@@ -586,50 +606,9 @@ class AddonsManager extends BaseManager {
     const specs = configManager.getProperty(ADDONS_INSTALL_KEY, {});
     if (!isPlainObject(specs) || Object.keys(specs).length === 0) return;
 
-    const read = (key: string, fallback: unknown): unknown => configManager.getProperty(key, fallback);
-    const num = (key: string, fallback: number): number => {
-      const value = Number(read(key, fallback));
-      return Number.isFinite(value) && value > 0 ? value : fallback;
-    };
-    const prefix = 'ngdpbase.managers.addons-manager.install';
-    const registry = String(read(`${prefix}.registry`, 'https://registry.npmjs.org'));
-    const tufMirror = String(read(`${prefix}.sigstore-tuf-url`, DEFAULT_TUF_MIRROR));
-    const timeoutMs = num(`${prefix}.timeout-ms`, 30000);
-    const maxPackumentBytes = num(`${prefix}.max-metadata-bytes`, 16 * 1024 * 1024);
-    const coreVersion = String(read('ngdpbase.version', ''));
-    const egress = resolveEgressPolicy(read);
-    const get = async (url: string, maxBytes: number, accept: string): Promise<{ status: number; body: Buffer }> => {
-      const res = await guardedFetch(url, {
-        policy: egress.policy,
-        timeoutMs,
-        maxBytes,
-        headers: { Accept: accept, 'User-Agent': `ngdpbase/${coreVersion || 'unknown'} (add-on installer)` }
-      });
-      return { status: res.status, body: res.body };
-    };
-    // The Sigstore trusted root, fetched (through TUF and the guarded client)
-    // at most once per boot, and only when something is being installed.
-    let trustedRoot: Promise<unknown> | null = null;
-    const trustRoot = (): Promise<unknown> => (trustedRoot ??= fetchTrustedRoot({
-      cacheDir: path.join(addonsDir, '.sigstore'),
-      mirrorUrl: tufMirror,
-      maxBytes: maxPackumentBytes,
-      download: (url, maxBytes) => get(url, maxBytes, 'application/json')
-    }));
-
     let outcomes: InstallOutcome[];
     try {
-      outcomes = await installConfiguredAddons(specs, {
-        addonsDir,
-        registry,
-        coreVersion,
-        maxPackumentBytes,
-        maxTarballBytes: num(`${prefix}.max-tarball-bytes`, 50 * 1024 * 1024),
-        maxUnpackedBytes: num(`${prefix}.max-unpacked-bytes`, 200 * 1024 * 1024),
-        fetch: (url, { maxBytes, accept }) => get(url, maxBytes, accept),
-        checkProvenance: async (input) => verifyProvenance({ ...input, trustedRoot: await trustRoot() }),
-        beforeInstall: (record) => this.recordAddonInstall(record)
-      });
+      outcomes = await installConfiguredAddons(specs, this.installerOptions(configManager, addonsDir, 'timeout-ms', 30000, (record) => this.recordAddonInstall(record)));
     } catch (err) {
       // The lock file or the folder itself could not be read or written.
       logger.error(`[AddonsManager] Add-on installer could not run on ${addonsDir}:`, err);
@@ -642,6 +621,26 @@ class AddonsManager extends BaseManager {
       const what = `${outcome.slug}${outcome.version ? `@${outcome.version}` : ''}`;
       if (outcome.status !== 'skipped') this.verifiedInstalled.add(outcome.slug);
       if (outcome.failedCheck) await this.recordVerifyFailed(outcome);
+      if (outcome.rolledBack) {
+        // #2100: an earlier start switched to a release and never confirmed it loaded.
+        changed = true;
+        const { from, to } = outcome.rolledBack;
+        const message = `${outcome.slug} ${from} never finished loading after an update, so ${outcome.slug} is back on ${to}.`;
+        logger.error(`[AddonsManager] ${message}`);
+        this.notifyInstallProblem(outcome.slug, message, 'error');
+        await this.recordFallback(outcome.slug, from, to, 'the start that switched to it never confirmed it loaded');
+      }
+      if (outcome.notice) {
+        logger.warn(`[AddonsManager] ${outcome.slug}: ${outcome.notice}`);
+        this.notifyInstallProblem(outcome.slug, `${outcome.slug}: ${outcome.notice}`, 'warning');
+      }
+      if (outcome.status === 'updated') {
+        // #2100: confirmed, or undone, once the load pass has run (settleUpdatedAddons).
+        changed = true;
+        this.updatedThisStart.set(outcome.slug, { from: outcome.previousVersion ?? '?', to: outcome.version ?? '?' });
+        logger.info(`[AddonsManager] Installed add-on ${outcome.slug} switched from ${outcome.previousVersion} to ${outcome.version} (an admin's Update)`);
+        continue;
+      }
       if (outcome.status === 'verified') {
         logger.info(`[AddonsManager] Installed add-on ${what} verified against the lock file`);
         continue;
@@ -660,6 +659,63 @@ class AddonsManager extends BaseManager {
       }
     }
     if (changed) await configManager.reload?.();
+  }
+
+  /**
+   * The installer's options for this site (#1830, #2100): the registry and the
+   * limits from configuration, and every request — registry, attestations, the
+   * Sigstore TUF repository — through the guarded client and the egress policy
+   * (#1139). `timeoutKey` is the `…install.<key>` that bounds each request: the
+   * boot install's, or the shorter one an admin page waits on.
+   */
+  private installerOptions(
+    configManager: ConfigurationManager,
+    addonsDir: string,
+    timeoutKey: string,
+    timeoutDefault: number,
+    beforeInstall?: InstallerOptions['beforeInstall']
+  ): InstallerOptions {
+    const read = (key: string, fallback: unknown): unknown => configManager.getProperty(key, fallback);
+    const num = (key: string, fallback: number): number => {
+      const value = Number(read(key, fallback));
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    };
+    const prefix = 'ngdpbase.managers.addons-manager.install';
+    const registry = String(read(`${prefix}.registry`, 'https://registry.npmjs.org'));
+    const tufMirror = String(read(`${prefix}.sigstore-tuf-url`, DEFAULT_TUF_MIRROR));
+    const timeoutMs = num(`${prefix}.${timeoutKey}`, timeoutDefault);
+    const maxPackumentBytes = num(`${prefix}.max-metadata-bytes`, 16 * 1024 * 1024);
+    const coreVersion = String(read('ngdpbase.version', ''));
+    const egress = resolveEgressPolicy(read);
+    const get = async (url: string, maxBytes: number, accept: string): Promise<{ status: number; body: Buffer }> => {
+      const res = await guardedFetch(url, {
+        policy: egress.policy,
+        timeoutMs,
+        maxBytes,
+        headers: { Accept: accept, 'User-Agent': `ngdpbase/${coreVersion || 'unknown'} (add-on installer)` }
+      });
+      return { status: res.status, body: res.body };
+    };
+    // The Sigstore trusted root, fetched (through TUF and the guarded client)
+    // at most once per use of these options, and only when something is being installed.
+    let trustedRoot: Promise<unknown> | null = null;
+    const trustRoot = (): Promise<unknown> => (trustedRoot ??= fetchTrustedRoot({
+      cacheDir: path.join(addonsDir, '.sigstore'),
+      mirrorUrl: tufMirror,
+      maxBytes: maxPackumentBytes,
+      download: (url, maxBytes) => get(url, maxBytes, 'application/json')
+    }));
+    return {
+      addonsDir,
+      registry,
+      coreVersion,
+      maxPackumentBytes,
+      maxTarballBytes: num(`${prefix}.max-tarball-bytes`, 50 * 1024 * 1024),
+      maxUnpackedBytes: num(`${prefix}.max-unpacked-bytes`, 200 * 1024 * 1024),
+      fetch: (url, { maxBytes, accept }) => get(url, maxBytes, accept),
+      checkProvenance: async (input) => verifyProvenance({ ...input, trustedRoot: await trustRoot() }),
+      ...(beforeInstall ? { beforeInstall } : {})
+    };
   }
 
   /**
@@ -682,6 +738,140 @@ class AddonsManager extends BaseManager {
         integrity: record.integrity,
         repository: record.repository,
         ...(record.previousVersion ? { previousVersion: record.previousVersion } : {})
+      }
+    });
+  }
+
+  /**
+   * #2100: after the load pass, settle each add-on this start switched to an
+   * Update's release. Loaded (or switched off, so there was nothing to try):
+   * the previous release's folder and tarball go. Not loaded: the previous
+   * release is restored on disk and in the lock, so the next start runs it.
+   * Core cannot unload an add-on that failed half-way (its modules, routes and
+   * jobs stay), so the restored release is not loaded in this process.
+   */
+  private async settleUpdatedAddons(): Promise<void> {
+    const dir = this.installedDir;
+    if (!dir) return;
+    for (const [slug, { from, to }] of this.updatedThisStart) {
+      try {
+        if (!this.isEnabled(slug) || this.isLoaded(slug)) {
+          await confirmUpdate(dir, slug);
+          logger.info(`[AddonsManager] ${slug} ${to} ${this.isLoaded(slug) ? 'loaded' : 'is installed (the add-on is switched off)'}; ${from} removed`);
+          continue;
+        }
+        const reason = this.loadFailures.get(slug) ?? this.addons.get(slug)?.error ?? 'it did not load';
+        await rollBackUpdate(dir, slug);
+        const message = `${slug} ${to} did not load (${reason}). ${slug} ${from} is restored and runs after the next restart; until then ${slug} is not running.`;
+        logger.error(`[AddonsManager] ${message}`);
+        this.notifyInstallProblem(slug, message, 'error');
+        await this.recordFallback(slug, to, from, reason);
+      } catch (err) {
+        logger.error(`[AddonsManager] Could not settle the update of ${slug} to ${to}:`, err);
+        this.notifyInstallProblem(slug, `the update of ${slug} to ${to} could not be settled: ${err instanceof Error ? err.message : String(err)}. The next start falls back to ${from}.`, 'error');
+      }
+    }
+    this.updatedThisStart.clear();
+  }
+
+  /**
+   * `addon-update` (#2100) for a fall-back: core moved an installed add-on back
+   * from `from` to `to` because `from` did not load. on-failure: continue for
+   * this record — the fall-back has already happened on disk, and a lost
+   * record must not undo it.
+   */
+  private async recordFallback(slug: string, from: string, to: string, reason: string): Promise<void> {
+    try {
+      await recordSystemAction(this.engine, systemContext(this.engine, `fall back from add-on ${slug} ${from}, which did not load (#2100)`), {
+        eventType: AUDIT_EVENT.ADDON_UPDATE,
+        action: 'addon-update',
+        result: 'failure',
+        severity: 'high',
+        resource: slug,
+        resourceType: 'addon',
+        metadata: { fromVersion: from, toVersion: to, fallback: true, reason }
+      });
+    } catch (err) {
+      logger.warn(`[AddonsManager] Audit record failed for the fall-back of ${slug} to ${to}:`, err);
+    }
+  }
+
+  /** #2100: the door for the admin's add-on questions. Throws when the PDP refuses. */
+  private async requireAddonPermission(ctx: ActorContext, permissions: string[], what: string): Promise<void> {
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    for (const permission of permissions) {
+      if (pdp && (await pdp.permits(ctx, permission))) return;
+    }
+    throw new AddonUpdateForbiddenError(`${ctx.username} may not ${what} (needs ${permissions.join(' or ')})`);
+  }
+
+  /**
+   * #2100: for each add-on in `ngdpbase.addons.install`, the pinned release,
+   * the configured range, and the newest release in it that is newer — asked
+   * of the registry now. Called when an administrator opens the add-ons page
+   * or presses Check; never at start. Registry unreachable is an answer
+   * (`registryUnreachable`), not an error.
+   */
+  async checkInstalledUpdates(ctx: ActorContext): Promise<UpdateCheck[]> {
+    await this.requireAddonPermission(ctx, ['admin-read', 'admin-system'], 'view add-on updates');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const specs = configManager?.getProperty(ADDONS_INSTALL_KEY, {});
+    if (!configManager || !this.installedDir || !isPlainObject(specs) || Object.keys(specs).length === 0) return [];
+    return checkForUpdates(specs, this.installerOptions(configManager, this.installedDir, 'check-timeout-ms', 10000));
+  }
+
+  /**
+   * #2100: an administrator's Update. Downloads `version` of the installed
+   * add-on `slug`, checks it exactly as a first install is checked (sha512,
+   * provenance, contents, `ngdpbase.minVersion`) and stages it: it runs from
+   * the next start. Asks the PDP for `config-manage`. Recorded as
+   * `addon-update` (who, the add-on, from and to) before anything is written;
+   * a record that cannot be written stops the Update.
+   */
+  async updateInstalledAddon(ctx: ActorContext, slug: string, version: string): Promise<UpdateOutcome> {
+    await this.requireAddonPermission(ctx, ['config-manage'], `update add-on ${slug}`);
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const specs = configManager?.getProperty(ADDONS_INSTALL_KEY, {});
+    if (!configManager || !this.installedDir || !isPlainObject(specs) || !Object.prototype.hasOwnProperty.call(specs, slug)) {
+      return { slug, status: 'refused', reason: `${slug} is not in ngdpbase.addons.install` };
+    }
+    const addonsDir = this.installedDir;
+    const run = async (): Promise<UpdateOutcome> => {
+      const outcome = await stageUpdate(slug, specs[slug], version, this.installerOptions(configManager, addonsDir, 'timeout-ms', 30000,
+        (record) => this.recordAddonUpdate(ctx, record)));
+      if (outcome.failedCheck) {
+        await this.recordVerifyFailed({ slug, status: 'skipped', package: outcome.package, version: outcome.version, reason: outcome.reason, failedCheck: outcome.failedCheck });
+      }
+      logger.info(`[AddonsManager] Update of ${slug} to ${version} by ${ctx.username}: ${outcome.status}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+      return outcome;
+    };
+    const queued = this.updateQueue.then(run, run);
+    this.updateQueue = queued.catch(() => {});
+    return queued;
+  }
+
+  /**
+   * `addon-update` (#2100): an administrator's Update, written after every
+   * check passed and before anything is written to disk. on-failure: refuse —
+   * a record that cannot be written stops the Update.
+   */
+  private async recordAddonUpdate(ctx: ActorContext, record: InstallRecord): Promise<void> {
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: AUDIT_EVENT.ADDON_UPDATE,
+      ...who,
+      action: 'addon-update',
+      result: 'success',
+      severity: 'high',
+      resource: record.slug,
+      resourceType: 'addon',
+      metadata: {
+        ...who.metadata,
+        package: record.package,
+        fromVersion: record.previousVersion ?? null,
+        toVersion: record.version,
+        integrity: record.integrity,
+        repository: record.repository
       }
     });
   }

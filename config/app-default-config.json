@@ -492,12 +492,13 @@
   "ngdpbase.managers.cache-manager.enabled": true,
   "ngdpbase.managers.addons-manager.enabled": true,
   "ngdpbase.managers.addons-manager.addons-path": "./addons",
-  "_comment_addons_install": "#1830 — npm add-ons to install into <data>/addons/<slug>/, a map of slug → { \"package\": \"@scope/name-addon\", \"version\": \"<semver range>\", \"repository\": \"github.com/owner/repo\" }, e.g. { \"phr\": { \"package\": \"@yourphr/phr-addon\", \"version\": \"^1\", \"repository\": \"github.com/jwilleke/yourphr\" } }. An add-on not yet installed is installed at start: the highest release in the range whose ngdpbase.minVersion this core meets, from the registry below. Its tarball must match the registry sha512 integrity, and its Sigstore provenance attestation must be valid for that tarball and name the repository given (GitHub Actions or GitLab CI); missing, invalid or another repository refuses the install. It is then pinned in <data>/addons/addons-lock.json. Every later start uses the installed copy after re-checking it against the lock, and never asks the registry. Registry unreachable on a first install: the site starts without that add-on, admins are told, and the next start tries again. Only add-ons installed and verified this way load from <data>/addons. Installing does not enable: ngdpbase.addons.<slug>.enabled still decides. Empty (the default) does nothing.",
+  "_comment_addons_install": "#1830 — npm add-ons to install into <data>/addons/<slug>/, a map of slug → { \"package\": \"@scope/name-addon\", \"version\": \"<semver range>\", \"repository\": \"github.com/owner/repo\" }, e.g. { \"phr\": { \"package\": \"@yourphr/phr-addon\", \"version\": \"^1\", \"repository\": \"github.com/jwilleke/yourphr\" } }. An add-on not yet installed is installed at start: the highest release in the range whose ngdpbase.minVersion this core meets, from the registry below. Its tarball must match the registry sha512 integrity, and its Sigstore provenance attestation must be valid for that tarball and name the repository given (GitHub Actions or GitLab CI); missing, invalid or another repository refuses the install. It is then pinned in <data>/addons/addons-lock.json. Every later start uses the installed copy after re-checking it against the lock, and never asks the registry. A newer release in the range arrives only through Update on /admin/addons (#2100): it is checked the same way, downloaded, and used from the next start; the previous release is kept until the new one has loaded, and restored if it does not. Registry unreachable on a first install: the site starts without that add-on, admins are told, and the next start tries again. Only add-ons installed and verified this way load from <data>/addons. Installing does not enable: ngdpbase.addons.<slug>.enabled still decides. Empty (the default) does nothing.",
   "ngdpbase.addons.install": {},
-  "_comment_addons_install_tuning": "#1830 — the installer's registry (an https base URL; tarballs and attestations must be on the same origin), the Sigstore TUF repository the provenance trust root comes from, and limits: per-request timeout, and the largest registry metadata, tarball and unpacked size accepted. Every request goes through the egress boundary (ngdpbase.security.egress.*).",
+  "_comment_addons_install_tuning": "#1830 — the installer's registry (an https base URL; tarballs and attestations must be on the same origin), the Sigstore TUF repository the provenance trust root comes from, and limits: per-request timeout (check-timeout-ms bounds the newer-release check the add-ons admin page waits on, #2100), and the largest registry metadata, tarball and unpacked size accepted. Every request goes through the egress boundary (ngdpbase.security.egress.*).",
   "ngdpbase.managers.addons-manager.install.registry": "https://registry.npmjs.org",
   "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "https://tuf-repo-cdn.sigstore.dev",
   "ngdpbase.managers.addons-manager.install.timeout-ms": 30000,
+  "ngdpbase.managers.addons-manager.install.check-timeout-ms": 10000,
   "ngdpbase.managers.addons-manager.install.max-metadata-bytes": 16777216,
   "ngdpbase.managers.addons-manager.install.max-tarball-bytes": 52428800,
   "ngdpbase.managers.addons-manager.install.max-unpacked-bytes": 209715200,
@@ -2400,11 +2401,10 @@
       }
     },
     "addon-update": {
-      "description": "An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet)",
+      "description": "The release an installed add-on runs changed: an administrator's Update (who, the add-on, from and to version), recorded before the release is written, which cannot proceed without it; or core falling back to the previous release because the new one did not load (#2100)",
       "grantable": false,
       "audit": {
-        "on-failure": "refuse",
-        "enabled": false
+        "on-failure": "refuse"
       }
     },
     "addon-verify-failed": {
