@@ -408,6 +408,99 @@ jobs:
             docker rm -f "$NAME" >/dev/null; docker volume rm -f "$VOL" >/dev/null
           done
 
+      # #2101: THE MODEL GOING FORWARD for a domain add-on. The stock image plus
+      # a config that names a published add-on in `ngdpbase.addons.install`; core
+      # installs it (sha512 and Sigstore provenance checked) and loads it. The
+      # packaged-addon step (devtools image, `npm install` in a derived layer,
+      # further down) is kept for now; #2102 decides whether it is retired.
+      # Real registry, real provenance: @jwilleke/geohazardwatch-addon is
+      # published by GitHub Actions from github.com/jwilleke/geohazardwatch.
+      # `^1` is any 1.x whose ngdpbase.minVersion this core meets.
+      - name: Smoke test — an add-on installed from config
+        run: |
+          # The base URL is set because the second start comes after the install
+          # is complete, and a completed install refuses to start without one (#642).
+          probe() {
+            docker exec "$1" node -e \
+              "fetch('http://localhost:3000'+process.argv[1]).then(r=>console.log(r.status)).catch(()=>console.log('000'))" "$2" 2>/dev/null || echo 000
+          }
+          wait_ready() {
+            R=000
+            for i in $(seq 1 60); do
+              R=$(probe "$1" /health/readiness)
+              [ "$R" = "200" ] && return 0
+              if [ "$(docker inspect --format='{{.State.Running}}' "$1")" != "true" ]; then
+                echo "FAILED: $1 stopped:"; docker logs "$1"; return 1
+              fi
+              sleep 3
+            done
+            echo "FAILED: $1 not ready after 180s"; docker logs "$1"; return 1
+          }
+          # Readiness answers once the managers are up; add-ons are installed and
+          # loaded after that, so wait for the log line that ends the add-on pass
+          # (loaded, or the installer's refusal) before reading the logs.
+          wait_addon() {
+            for i in $(seq 1 60); do
+              docker logs "$1" 2>&1 | grep -qE "Add-on loaded: geohazardwatch|geohazardwatch not installed|Failed to load add-on" && return 0
+              sleep 3
+            done
+            echo "FAILED: no add-on result in the logs after 180s"; docker logs "$1"; return 1
+          }
+          NAME=ngdpbase-smoke-installer
+          VOL=ngdpbase-smoke-installer-data
+          docker rm -f "$NAME" 2>/dev/null || true
+          docker volume rm -f "$VOL" >/dev/null 2>&1 || true
+          docker volume create "$VOL" >/dev/null
+          docker run --rm -v "$VOL:/d" alpine sh -c \
+            'mkdir -p /d/config && printf "%s" "{\"ngdpbase.user.security.defaultpassword\":\"\$NGDPBASE_ADMIN_PASSWORD\",\"ngdpbase.addons.install\":{\"geohazardwatch\":{\"package\":\"@jwilleke/geohazardwatch-addon\",\"version\":\"^1\",\"repository\":\"github.com/jwilleke/geohazardwatch\"}},\"ngdpbase.addons.geohazardwatch.enabled\":true,\"ngdpbase.application.base-url\":\"http://localhost:3000\"}" > /d/config/app-custom-config.json && printf "NGDPBASE_SESSION_SECRET=%s\n" "$(head -c 24 /dev/urandom | base64)" > /d/.env && chmod 640 /d/.env && chown -R 1000:1000 /d'
+          run_site() {
+            # $1 = extra docker flags
+            docker run -d --name "$NAME" $1 \
+              -e HEADLESS_INSTALL=true -e NODE_ENV=production \
+              -e PUID=1000 -e PGID=1000 \
+              -e NGDPBASE_ADMIN_PASSWORD="ci-smoke-$(openssl rand -hex 12)" \
+              -v "$VOL:/app/data" \
+              ${{ steps.img.outputs.ref }} >/dev/null
+          }
+          lock() { docker run --rm -v "$VOL:/d" alpine cat /d/addons/addons-lock.json; }
+
+          # First start: installs from npm.
+          run_site ""
+          wait_ready "$NAME" || exit 1
+          wait_addon "$NAME" || exit 1
+          LOGS=$(docker logs "$NAME" 2>&1)
+          echo "$LOGS" | grep -E "Installed add-on geohazardwatch|not installed|Failed to load add-on|Add-on loaded: geohazardwatch" || true
+          echo "$LOGS" | grep -q "Installed add-on geohazardwatch@" || { echo "FAILED: the add-on was not installed from config"; echo "$LOGS"; exit 1; }
+          echo "$LOGS" | grep -q "Add-on loaded: geohazardwatch" || { echo "FAILED: the installed add-on did not load"; echo "$LOGS"; exit 1; }
+          if echo "$LOGS" | grep -q "Failed to load add-on"; then echo "FAILED: an add-on failed to load"; echo "$LOGS"; exit 1; fi
+          LOCK1=$(lock)
+          echo "$LOCK1"
+          echo "$LOCK1" | grep -q '"@jwilleke/geohazardwatch-addon"' || { echo "FAILED: the lock does not name the package"; exit 1; }
+          echo "$LOCK1" | grep -Eq '"version": *"1\.[0-9]+\.[0-9]+"' || { echo "FAILED: the lock has no pinned version"; exit 1; }
+          echo "$LOCK1" | grep -Eq '"integrity": *"sha512-' || { echo "FAILED: the lock has no sha512 integrity"; exit 1; }
+          echo "$LOCK1" | grep -q '"provenance"' || { echo "FAILED: the lock has no verified provenance"; exit 1; }
+          echo "$LOCK1" | grep -q 'github.com/jwilleke/geohazardwatch' || { echo "FAILED: the lock's provenance does not name the repository"; exit 1; }
+          [ "$(probe "$NAME" /health/readiness)" = "200" ] || { echo "FAILED: not ready"; exit 1; }
+          [ "$(probe "$NAME" /login)" = "200" ] || { echo "FAILED: /login did not answer 200"; exit 1; }
+          docker rm -f "$NAME" >/dev/null
+
+          # Second start: the registry is made unreachable (--network none), so
+          # any npm request would fail. It must load from the pinned copy:
+          # verified against the lock, no install, lock untouched.
+          run_site "--network none"
+          wait_ready "$NAME" || exit 1
+          wait_addon "$NAME" || exit 1
+          LOGS2=$(docker logs "$NAME" 2>&1)
+          echo "$LOGS2" | grep -E "Installed add-on geohazardwatch|not installed|Add-on loaded: geohazardwatch" || true
+          echo "$LOGS2" | grep -q "Installed add-on geohazardwatch@.*verified against the lock file" || { echo "FAILED: the second start did not verify the pinned copy"; echo "$LOGS2"; exit 1; }
+          if echo "$LOGS2" | grep "Installed add-on geohazardwatch" | grep -vq "verified against the lock file"; then echo "FAILED: the second start installed again"; echo "$LOGS2"; exit 1; fi
+          echo "$LOGS2" | grep -q "Add-on loaded: geohazardwatch" || { echo "FAILED: the add-on did not load from the pinned copy"; echo "$LOGS2"; exit 1; }
+          [ "$(lock)" = "$LOCK1" ] || { echo "FAILED: the second start changed the lock"; exit 1; }
+          [ "$(probe "$NAME" /health/readiness)" = "200" ] || { echo "FAILED: not ready on the second start"; exit 1; }
+          [ "$(probe "$NAME" /login)" = "200" ] || { echo "FAILED: /login did not answer 200 on the second start"; exit 1; }
+          echo "An add-on installed from config: installed with provenance, loaded, and restarted offline from the pinned copy."
+          docker rm -f "$NAME" >/dev/null; docker volume rm -f "$VOL" >/dev/null
+
       - name: Smoke test — dump logs on failure
         if: failure()
         run: docker logs ngdpbase-smoke 2>&1 || true
@@ -417,8 +510,8 @@ jobs:
         run: |
           docker rm -f ngdpbase-smoke 2>/dev/null || true
           docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
-          docker rm -f ngdpbase-smoke-nopuid ngdpbase-smoke-runas-puid ngdpbase-smoke-runas-user 2>/dev/null || true
-          docker volume rm -f ngdpbase-smoke-runas-puid-data ngdpbase-smoke-runas-user-data 2>/dev/null || true
+          docker rm -f ngdpbase-smoke-nopuid ngdpbase-smoke-runas-puid ngdpbase-smoke-runas-user ngdpbase-smoke-installer 2>/dev/null || true
+          docker volume rm -f ngdpbase-smoke-runas-puid-data ngdpbase-smoke-runas-user-data ngdpbase-smoke-installer-data 2>/dev/null || true
 
       # #1001: assert the runtime image really has no npm. #956 removed it and
       # nothing checked, so a later edit could put it back unnoticed — and the

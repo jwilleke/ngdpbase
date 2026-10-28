@@ -133,9 +133,11 @@ done
 # instance .env holding secrets — once started as root with PUID/PGID (the app
 # drops to them), once started directly as that user. These are the same
 # commands as the two docker-build.yml steps "no PUID/PGID, no start" and
-# "runs as an arbitrary non-root UID:GID, both ways": extract and run those
+# "runs as an arbitrary non-root UID:GID, both ways", plus (#2101) "an add-on
+# installed from config" (a real add-on installed from npm by the installer,
+# then a second start with --network none): extract and run those
 # steps against ngdpbase-release-smoke:local rather than retyping them here.
-for STEP in "no PUID/PGID, no start" "runs as an arbitrary non-root UID:GID, both ways"; do
+for STEP in "no PUID/PGID, no start" "runs as an arbitrary non-root UID:GID, both ways" "an add-on installed from config"; do
   ( echo 'set -e'; awk -v n="      - name: Smoke test — $STEP" 'index($0,n)==1{f=1;next} f&&/^      - name:/{exit} f' .github/workflows/docker-build.yml \
       | sed 1d | sed 's/^          //' | sed 's#${{ steps.img.outputs.ref }}#ngdpbase-release-smoke:local#' ) | bash \
     || echo "FAILED: $STEP"
@@ -145,8 +147,8 @@ done
 Then clean up whatever the outcome:
 
 ```bash
-docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse ngdpbase-smoke-nopuid ngdpbase-smoke-runas-puid ngdpbase-smoke-runas-user 2>/dev/null
-docker volume rm -f ngdpbase-smoke-runas-puid-data ngdpbase-smoke-runas-user-data 2>/dev/null
+docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse ngdpbase-smoke-nopuid ngdpbase-smoke-runas-puid ngdpbase-smoke-runas-user ngdpbase-smoke-installer 2>/dev/null
+docker volume rm -f ngdpbase-smoke-runas-puid-data ngdpbase-smoke-runas-user-data ngdpbase-smoke-installer-data 2>/dev/null
 docker rmi -f ngdpbase-release-smoke:local 2>/dev/null
 rm -rf "$SM"
 ```
