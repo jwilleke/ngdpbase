@@ -9,6 +9,8 @@ import os from 'os';
 import ImportManager from '../ImportManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
+import { boundScope } from '../../ice/runImport';
+import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
 import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceShim } from '../../ice/types';
@@ -173,10 +175,15 @@ describe('ImportManager — core receivers', () => {
     expect(saved[0].content).toContain('Tomatoes.');
   });
 
-  test('the pages receiver refuses a person without page-create (D5), and nothing is saved', async () => {
+  test('the pages receiver refuses a person without page-create (D5) before any conversion (#2012), and nothing is saved', async () => {
     const { im, saved } = await makeImportManager();
-    const run = await im.runImport({ source: { type: 'upload', files: [md('Nope.md', '# Nope')] }, receiver: 'core.pages' }, READER);
-    expect(run.files[0]).toMatchObject({ status: 'refused', message: 'You do not have permission to create pages' });
+    const read = vi.fn(async () => ({ items: [] }));
+    im.registerShim('test', { name: 'spy', direction: 'in', accepts: { extensions: ['.spy'] }, produces: 'ncm', receivers: ['core.pages'], read });
+    const run = await im.runImport({ source: { type: 'upload', files: [md('Nope.md', '# Nope'), md('Nope.spy', 'x')] }, receiver: 'core.pages' }, READER);
+    expect(run.files.map(f => [f.status, f.message, f.chain])).toEqual([
+      ['refused', 'You may not import into Pages', []], ['refused', 'You may not import into Pages', []]
+    ]);
+    expect(read).not.toHaveBeenCalled();
     expect(saved).toEqual([]);
   });
 
@@ -236,6 +243,84 @@ describe('ImportManager — core receivers', () => {
     const no = await im.runImport({ source: { type: 'upload', files: [md('photo2.png', 'PNG2')] }, receiver: 'core.files' }, READER);
     expect(no.files[0].status).toBe('refused');
     expect(uploads).toHaveLength(1);
+  });
+});
+
+describe('ImportManager — the import scope is the caller\'s (#2013)', () => {
+  const IDS: Record<string, string> = { editor1: 'urn:uuid:e1', editor3: 'urn:uuid:e3' };
+  GRANTS['editor3'] = ['page-create', 'asset-upload'];
+  const EDITOR3 = { username: 'editor3', roles: ['editor'], isAuthenticated: true } as unknown as ActorContext;
+
+  async function withIdentities(ids: Record<string, string>) {
+    const made = await makeImportManager();
+    const lookups: Array<{ reason: unknown }> = [];
+    const store = { answers: true, fails: false };
+    made.managers['IdentityManager'] = {
+      canAnswer: () => store.answers,
+      getByUserIdentifier: async (ctx: { reason?: unknown }, username: string) => {
+        lookups.push({ reason: ctx?.reason });
+        if (store.fails) throw new Error('index unreadable');
+        return ids[username] ? { '@id': ids[username] } : null;
+      }
+    };
+    return { ...made, lookups, store };
+  }
+  const photo = (text: string) => ({ source: { type: 'upload' as const, files: [md('photo.png', text)] }, receiver: 'core.files' });
+
+  test('bound to the receiver and the user\'s identity @id, looked up with a stated reason', async () => {
+    const { im, lookups } = await withIdentities(IDS);
+    const run = await im.runImport(photo('PNG'), EDITOR);
+    expect(run.scope).toBe(boundScope('core.files', 'urn:uuid:e1'));
+    expect(lookups[0].reason).toMatch(/#2013/);
+  });
+
+  test('a scope naming another user\'s neither skips their file nor shows their refs nor writes into it', async () => {
+    const { im, uploads } = await withIdentities(IDS);
+    const ledger = new MemoryIceLedger();
+    im.setImportLedger(ledger);
+    const theirs = await im.runImport(photo('PNG'), EDITOR);
+    expect(theirs.files[0]).toMatchObject({ status: 'imported', refs: ['att-1'] });
+
+    // editor3 names editor1's scope: it only narrows editor3's own.
+    const mine = await im.runImport({ ...photo('PNG'), scope: theirs.scope }, EDITOR3);
+    expect(mine.scope.startsWith(`${boundScope('core.files', 'urn:uuid:e3')}/`)).toBe(true);
+    expect(mine.files[0]).toMatchObject({ status: 'imported', refs: ['att-2'] });
+    expect(uploads.map(u => u.ctx.username)).toEqual(['editor1', 'editor3']);
+    expect((await ledger.files(theirs.scope)).map(f => f.refs)).toEqual([['att-1']]);
+  });
+
+  test('a later account with a reused username does not inherit the old one\'s imports', async () => {
+    const ids = { ...IDS };
+    const { im, uploads } = await withIdentities(ids);
+    await im.runImport(photo('PNG'), EDITOR);
+    ids.editor1 = 'urn:uuid:new-account';
+    expect((await im.runImport(photo('PNG'), EDITOR)).files[0].status).toBe('imported');
+    expect(uploads).toHaveLength(2);
+  });
+
+  test('without an identity @id it falls back to the username (#2041)', async () => {
+    const { im } = await withIdentities({});
+    expect((await im.runImport(photo('PNG'), EDITOR)).scope).toBe(boundScope('core.files', 'editor1'));
+  });
+
+  test('when the identity store cannot answer, the run does not start and nothing is recorded', async () => {
+    const { im, uploads, store } = await withIdentities(IDS);
+    const ledger = new MemoryIceLedger();
+    im.setImportLedger(ledger);
+    store.answers = false;
+    await expect(im.runImport(photo('PNG'), EDITOR)).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    store.answers = true;
+    store.fails = true;
+    await expect(im.runImport(photo('PNG'), EDITOR)).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    await expect(im.enqueueImport(photo('PNG'), jobContextFromRequest(EDITOR as never))).rejects.toBeInstanceOf(IdentityStoreUnavailableError);
+    expect(uploads).toEqual([]);
+    expect(await ledger.files(boundScope('core.files', 'editor1'))).toEqual([]);
+    expect(im.importRunsFor(EDITOR)).toEqual([]);
+  });
+
+  test('a scope that is not a non-empty string is refused', async () => {
+    const { im } = await withIdentities(IDS);
+    await expect(im.runImport({ ...photo('PNG'), scope: '' }, EDITOR)).rejects.toThrow(/non-empty string/);
   });
 });
 

@@ -24,6 +24,7 @@ import WikiRoutes from '../WikiRoutes';
 import ImportManager from '../../managers/ImportManager';
 import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
+import { boundScope } from '../../ice/runImport';
 
 /** Who holds what. `profile-manage` is every user's; an anonymous visitor holds nothing. */
 const GRANTS: Record<string, string[]> = {
@@ -100,7 +101,7 @@ async function makeApp(config: Record<string, unknown> = {}) {
   app.get('/import', call('importPage'));
   app.post('/import', call('importUpload'));
   app.get('/import/runs/:runId', call('importRunStatus'));
-  return { app, importManager, jobs, saved };
+  return { app, importManager, jobs, saved, managers };
 }
 
 const MD = Buffer.from('# Garden\n\nTomatoes.\n');
@@ -183,9 +184,18 @@ describe('POST /import (#2021)', () => {
     await jobs.whenIdle();
     await vi.waitFor(() => expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.state).toBe('done'));
     const run = importManager.getImportRun(res.body.runId, USERS.molly);
-    expect(run?.scope).toBe('core.pages/molly');
+    expect(run?.scope).toBe(boundScope('core.pages', 'molly'));
     expect(run?.files[0].status).toBe('imported');
     expect(saved).toEqual(['Garden']);
+  });
+
+  test('an identity store that cannot answer is a 503 to try again shortly, and nothing is queued (#2013)', async () => {
+    const { app, importManager, managers } = await makeApp();
+    managers['IdentityManager'] = { canAnswer: () => false, getByUserIdentifier: async () => null };
+    const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').attach('files', MD, 'Garden.md');
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/try again shortly/i);
+    expect(importManager.importRunsFor(USERS.molly as never)).toEqual([]);
   });
 
   test('a receiver the user may not use is refused, and nothing is queued', async () => {

@@ -250,6 +250,8 @@ describe('runImport', () => {
 
   test('the receiver refusing (its own permission, D5) marks the file refused and stores nothing', async () => {
     const { receiver, received } = recordingReceiver('test.records', ['test.record'], { refuse: (ctx) => ctx.username === 'alice' });
+    // Its pre-check let the run through; its door still says no for the item.
+    receiver.mayUse = async () => true;
     const result = await run(deps([recordShim()], [receiver]), {
       source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records'
     });
@@ -307,6 +309,210 @@ describe('runImport', () => {
   test('an unknown receiver fails the run', async () => {
     const result = await run(deps([recordShim()], []), { source: { type: 'upload', files: [] }, receiver: 'nobody.here' });
     expect(result).toMatchObject({ state: 'failed', error: "No receiver 'nobody.here'" });
+  });
+
+  describe('the receiver\'s permission is asked before any work (#2012)', () => {
+    /** Everything a run could do before the receiver: each records that it ran. */
+    function spies() {
+      const work: string[] = [];
+      const shim = recordShim({
+        accepts: { extensions: ['.rec'], canRead: (input) => { work.push(`canRead ${input.name}`); return true; } },
+        read: async (input, tools) => {
+          work.push(`read ${input.name}`);
+          await tools.fetch('https://example.invalid/more').catch(() => undefined);
+          return { items: [{ kind: 'test.record', name: input.name, data: 1 }] };
+        }
+      });
+      return { work, shim };
+    }
+
+    test('a refused user: no unzip, no shim, no keep, no fetch; every upload is refused and recorded', async () => {
+      const { work, shim } = spies();
+      const { receiver, received, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true, refuse: () => true });
+      const fetches: string[] = [];
+      const ledger = new MemoryIceLedger();
+      const d = { ...deps([shim], [receiver], ledger), tools: () => ({ options: {}, fetch: async (url: string) => { fetches.push(url); throw new Error('no'); } }) };
+      const zip = await packZip([{ path: 'inner.rec', bytes: Buffer.from('bp=1') }]);
+
+      const result = await run(d, { source: { type: 'upload', files: [upload('a.rec', 'bp=120'), { name: 'more.zip', bytes: zip }] }, receiver: 'test.records', original: 'keep' });
+
+      expect(result.state).toBe('done');
+      expect(result.files.map(f => [f.name, f.status, f.message])).toEqual([
+        ['a.rec', 'refused', 'You may not import into test.records'],
+        ['more.zip', 'refused', 'You may not import into test.records']
+      ]);
+      expect(work).toEqual([]);
+      expect(fetches).toEqual([]);
+      expect(received).toEqual([]);
+      expect(kept).toEqual([]);
+      expect((await ledger.files('test.records/alice')).map(f => [f.name, f.status])).toEqual([['a.rec', 'refused'], ['more.zip', 'refused']]);
+    });
+
+    test('a pre-check that throws is a refusal', async () => {
+      const { work, shim } = spies();
+      const { receiver } = recordingReceiver('test.records', ['test.record']);
+      receiver.mayUse = async () => { throw new Error('store down'); };
+      const result = await run(deps([shim], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
+      expect(result.files[0].status).toBe('refused');
+      expect(work).toEqual([]);
+    });
+
+    test('a refusal keeps what the scope already holds: an imported entry, and a kept original', async () => {
+      let refuse = false;
+      const { receiver } = recordingReceiver('test.records', ['test.record'], { keeps: true, refuse: () => refuse });
+      const ledger = new MemoryIceLedger();
+      const d = deps([recordShim()], [receiver], ledger);
+      const done = await run(d, { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records', original: 'keep' });
+      refuse = true;
+      await run(d, { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' });
+      expect(await ledger.lastFile('test.records/alice', done.files[0].sha256 ?? '')).toMatchObject({ status: 'imported', original: { ref: 'original-1' } });
+
+      // A file kept but not imported keeps its original reference through the refusal.
+      const failing = recordShim({ read: async () => { throw new Error('malformed'); } });
+      refuse = false;
+      const kept = await run(deps([failing], [receiver], ledger), { source: { type: 'upload', files: [upload('b.rec', 'bp=2')] }, receiver: 'test.records', original: 'keep' });
+      refuse = true;
+      await run(deps([failing], [receiver], ledger), { source: { type: 'upload', files: [upload('b.rec', 'bp=2')] }, receiver: 'test.records' });
+      expect(await ledger.lastFile('test.records/alice', kept.files[0].sha256 ?? '')).toMatchObject({ status: 'refused', original: { ref: 'original-2' } });
+    });
+
+    test('a refusal keeps the references the scope already recorded for the file', async () => {
+      let refuse = false;
+      const { receiver } = recordingReceiver('test.records', ['test.record'], { refuse: () => refuse });
+      receiver.receive = async (item): Promise<ReceiveOutcome> => ((item.data as { key: string }).key === 'hr' ? { status: 'refused', message: 'later' } : { status: 'stored', ref: 'records-bp' });
+      const ledger = new MemoryIceLedger();
+      const d = deps([recordShim()], [receiver], ledger);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=1\nhr=2')] }, receiver: 'test.records' };
+      const first = await run(d, req);
+      expect(first.files[0]).toMatchObject({ status: 'partial', refs: ['records-bp'] });
+      refuse = true;
+      await run(d, req);
+      expect(await ledger.lastFile('test.records/alice', first.files[0].sha256 ?? '')).toMatchObject({ status: 'refused', refs: ['records-bp'] });
+    });
+
+    test('nothing is kept at upload for a user the receiver refuses', async () => {
+      const { receiver, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true, refuse: () => true });
+      receiver.keepsEncrypted = true;
+      const live = { ...ALICE, privateStoreHandle: 'alice-session' } as ActorContext;
+      const result = await keepOriginalsAtUpload(deps([recordShim()], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records', original: 'keep' }, live, 'test.records/alice');
+      expect(result).toEqual({ kept: 0 });
+      expect(kept).toEqual([]);
+    });
+  });
+
+  describe('a partial file is tried again (#2010)', () => {
+    /** A receiver that answers duplicate for a key it already holds, and refuses the keys it is told to. */
+    function keyedReceiver(refused: Set<string>) {
+      const held = new Map<string, string>();
+      const receiver: RegisteredReceiver = {
+        id: 'test.records', owner: 'test', name: 'records', accepts: ['test.record'], mayUse: async () => true,
+        receive: async (item): Promise<ReceiveOutcome> => {
+          const key = (item.data as { key: string }).key;
+          if (held.has(key)) return { status: 'duplicate', ref: held.get(key) };
+          if (refused.has(key)) return { status: 'refused', message: `${key} not allowed` };
+          held.set(key, `rec-${key}`);
+          return { status: 'stored', ref: `rec-${key}` };
+        }
+      };
+      return { receiver, held };
+    }
+
+    test('items refused last time are offered again; items stored are not stored twice', async () => {
+      const refused = new Set(['hr']);
+      const { receiver, held } = keyedReceiver(refused);
+      const d = deps([recordShim({ duplicates: 'file' })], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=120\nhr=60')] }, receiver: 'test.records' };
+
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'partial', stored: 1 });
+      // Still refused: offered again, still partial, nothing stored twice.
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'partial', stored: 0, duplicates: 1, message: 'refused: hr not allowed' });
+      refused.clear();
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1 });
+      expect([...held.keys()]).toEqual(['bp', 'hr']);
+      // Now done: the same bytes are unchanged.
+      expect((await run(d, req)).files[0].status).toBe('unchanged');
+    });
+
+    test('a receiver with no duplicate check of its own is never handed a stored item twice', async () => {
+      let refuseHr = true;
+      const { receiver, received } = recordingReceiver('test.records', ['test.record'], { refuse: (ctx) => ctx.username === 'nobody' });
+      const inner = receiver.receive;
+      receiver.receive = async (item, ctx, info) => (refuseHr && (item.data as { key: string }).key === 'hr' ? { status: 'refused', message: 'later' } : inner(item, ctx, info));
+      const d = deps([recordShim({ duplicates: 'file' })], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=120\nhr=60')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'partial', stored: 1, refs: ['records-1'] });
+      refuseHr = false;
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1, refs: ['records-1', 'records-2'] });
+      expect(received.map(r => (r.item.data as { key: string }).key)).toEqual(['bp', 'hr']);
+    });
+
+    test('a file that failed part-way is retried without storing its first items again', async () => {
+      let broken = true;
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const inner = receiver.receive;
+      receiver.receive = async (item, ctx, info) => {
+        if (broken && (item.data as { key: string }).key === 'hr') throw new Error('disk full');
+        return inner(item, ctx, info);
+      };
+      const d = deps([recordShim()], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=120\nhr=60')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'failed', message: 'disk full' });
+      broken = false;
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1 });
+      expect(received.map(r => (r.item.data as { key: string }).key)).toEqual(['bp', 'hr']);
+    });
+
+    test('a shim\'s partial note is read again once; when every item is already stored it is unchanged, and done', async () => {
+      const { receiver } = keyedReceiver(new Set());
+      const read = vi.fn(async (input: IceItem) => ({ items: [{ kind: 'test.record', name: input.name, data: { key: 'bp' } }], partial: '2 sections not read' }));
+      const d = deps([recordShim({ read })], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0].status).toBe('partial');
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'unchanged', stored: 0, duplicates: 1, message: 'already imported', refs: ['rec-bp'] });
+      expect((await run(d, req)).files[0].status).toBe('unchanged');
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    test('a file whose every item the receiver already held is done: not read again', async () => {
+      const { receiver, held } = keyedReceiver(new Set());
+      held.set('bp', 'rec-bp');
+      const read = vi.fn(async (input: IceItem) => ({ items: [{ kind: 'test.record', name: input.name, data: { key: 'bp' } }] }));
+      const d = deps([recordShim({ read })], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'bp=1')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'duplicate', duplicates: 1 });
+      expect((await run(d, req)).files[0].status).toBe('unchanged');
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    test('items are skipped by their content, not their position: a shim that inserts an item first still stores the one refused', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const inner = receiver.receive;
+      let refuseB = true;
+      receiver.receive = async (item, ctx, info) => (refuseB && item.data === 'B' ? { status: 'refused', message: 'later' } : inner(item, ctx, info));
+      let output = ['A', 'B'];
+      const shim = recordShim({ read: async (input) => ({ items: output.map(data => ({ kind: 'test.record', name: input.name, data })) }) });
+      const d = deps([shim], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'x=1')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'partial', stored: 1 });
+      // The shim changed: a new item at position 0, the old position-1 item after it.
+      output = ['N', 'A', 'B'];
+      refuseB = false;
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'imported', stored: 2, duplicates: 1 });
+      expect(received.map(r => r.item.data)).toEqual(['A', 'N', 'B']);
+    });
+
+    test('identical items in one file are told apart: the second, refused before, is stored on the retry', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const inner = receiver.receive;
+      let calls = 0;
+      receiver.receive = async (item, ctx, info) => (++calls === 2 ? { status: 'refused', message: 'later' } : inner(item, ctx, info));
+      const shim = recordShim({ read: async (input) => ({ items: [{ kind: 'test.record', name: input.name, data: 'same' }, { kind: 'test.record', name: input.name, data: 'same' }] }) });
+      const d = deps([shim], [receiver]);
+      const req: IceRunRequest = { source: { type: 'upload', files: [upload('a.rec', 'x=1')] }, receiver: 'test.records' };
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'partial', stored: 1 });
+      expect((await run(d, req)).files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1 });
+      expect(received).toHaveLength(2);
+    });
   });
 
   describe('per-item duplicates', () => {

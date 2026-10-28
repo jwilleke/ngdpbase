@@ -81,9 +81,12 @@ describe('ICE fixture add-on (phr-shaped)', () => {
     ]);
     expect(records.records.map(r => r.code)).toEqual(['bp', 'wt']);
 
-    // The same export again: every file already taken is unchanged; nothing is stored twice.
+    // The same export again: a file imported is unchanged; the partial one is read again (#2010),
+    // its records already stored are skipped by the engine, and with nothing new it is unchanged.
+    // Nothing is stored twice.
     const again = await im.runImport({ source: { type: 'upload', files: [{ name: 'phr-export.zip', bytes: zip }] }, receiver: 'ice-fixture.health-records' }, ALICE);
     expect(again.files.map(f => f.status)).toEqual(['unchanged', 'unchanged', 'noise', 'unreadable']);
+    expect(again.files[1]).toMatchObject({ stored: 0, duplicates: 1, message: 'already imported' });
     expect(records.records).toHaveLength(2);
   });
 
@@ -96,15 +99,17 @@ describe('ICE fixture add-on (phr-shaped)', () => {
     expect(records.records.map(r => r.code)).toEqual(['c1', 'c2', 'c3']);
   });
 
-  test('the manager\'s own rule refuses (D5): nothing stored, the file refused', async () => {
+  test('the manager\'s own rule refuses (D5) before the shim reads anything (#2012): nothing stored, the file refused', async () => {
     const { im, records } = await loadFixture();
     records.closed.add('bob');
     const run = await im.runImport({
       source: { type: 'upload', files: [{ name: 'visit.xml', bytes: Buffer.from(CCDA('<observation code="bp" value="1"/>')) }] },
       receiver: 'ice-fixture.health-records'
     }, BOB);
-    expect(run.files[0]).toMatchObject({ status: 'refused', message: 'Only you can add to your health record' });
+    expect(run.files[0]).toMatchObject({ status: 'refused', message: 'You may not import into Health records', chain: [] });
     expect(records.records).toEqual([]);
+    // Asked through mayUse only: its doors were never called.
+    expect(records.calls).toEqual([]);
     expect(await im.receiversFor(BOB)).not.toContainEqual(expect.objectContaining({ id: 'ice-fixture.health-records' }));
   });
 

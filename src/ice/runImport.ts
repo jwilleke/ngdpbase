@@ -3,10 +3,16 @@
  *
  * The rules, each from docs/planning/ice-planing.md:
  *
+ * - the receiver is asked first whether the run's context may use it
+ *   (`mayUse`, its own rule, #2012). A refused run does no work: every file is
+ *   `refused`, and nothing is unpacked, read, kept or fetched;
  * - zips are unpacked and noise is dropped before any shim sees a file;
  * - every file is fingerprinted (SHA-256); a file whose fingerprint the scope
- *   already imported is `unchanged` and skipped. A shim whose duplicates are
- *   per item skips the items whose key the scope has seen instead;
+ *   already took (`imported`, `duplicate`, `unchanged`) is skipped as
+ *   `unchanged`; a `partial`, `failed` or `refused` file is tried again (#2010). A
+ *   shim whose duplicates are per item skips the items whose key the scope
+ *   has seen instead. The scope is bound to the receiver and the user the run
+ *   is for ({@link boundScope}, #2013);
  * - shims chain (D9) until an item is of a kind the receiver takes, from a
  *   shim that may hand to it (D7);
  * - each item goes to the receiver's own door with the run's context, and the
@@ -26,6 +32,7 @@
  *   door then allows the receiver's declared `originals.types` into its own
  *   vault, and nowhere else.
  */
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
@@ -59,12 +66,64 @@ export interface IceRunDeps {
 /** The id of the receiver that keeps an original when the chosen receiver does not keep its own (D11). */
 export const FILES_RECEIVER = 'core.files';
 
-/** A file the scope already took is skipped when its last status was one of these. */
-const DONE: ReadonlySet<string> = new Set(['imported', 'partial', 'duplicate']);
+/**
+ * A file the scope already took is skipped when its last status was one of
+ * these (#2010): imported, every item already held (`duplicate`), or a retry
+ * whose items were all already stored (`unchanged`). Every other status is
+ * tried again on the next run: a `partial` file (some items refused, or a
+ * shim's partial note), a `failed`, `refused` or `unreadable` one. Items
+ * already stored are not stored twice: a per-item shim skips them by key,
+ * the engine skips a retried file's stored items by {@link itemKeyOf}, and a
+ * receiver answers `duplicate` for what it already holds.
+ */
+const DONE: ReadonlySet<string> = new Set(['imported', 'unchanged', 'duplicate']);
 
-/** The scope a run's fingerprints are checked in, unless the caller names one. */
-export function defaultScope(receiverId: string, ctx: ActorContext): string {
-  return `${receiverId}/${ctx.username}`;
+/**
+ * The engine's key for an item of a file it stored, so a retry of that file
+ * skips it (#2010): the file's fingerprint, the chain, and a hash of the
+ * item's content (kind, text, data, bytes). Never its position: a shim that
+ * changes or orders its output differently cannot make a retry skip the
+ * wrong item. `seen` is how many identical items came before it in this file.
+ */
+export function itemKeyOf(sha256: string, chain: string[], item: IceItem, seen: number): string {
+  const content = createHash('sha256')
+    .update(JSON.stringify([item.kind, item.text ?? null, item.data ?? null]))
+    .update(item.bytes ?? Buffer.alloc(0))
+    .digest('hex');
+  return `${sha256}#${chain.join('>')}#${content}#${seen}`;
+}
+
+/** The form of a bound scope (#2013). Scopes written before it never match one. */
+export const SCOPE_FORM = 'ice2';
+
+/**
+ * The scope a run's fingerprints, per-file status and item keys live in
+ * (#2013): bound to the receiver and to the user the run is for, by their
+ * identity `@id` (else their username, #2041). The engine works it out from
+ * the caller's context; a request cannot name another user's. A caller's own
+ * `sub` (phr's source id) narrows it within that user's scope, never outside.
+ */
+export function boundScope(receiverId: string, owner: string, sub?: string): string {
+  return [SCOPE_FORM, receiverId, owner, ...(sub ? [sub] : [])].map(encodeURIComponent).join('/');
+}
+
+/**
+ * Ask the receiver whether this context may use it (#2012), before any work:
+ * no unzip, no shim, no keep, no fetch. It is the receiver's own existing
+ * rule (`mayUse`, D5); a throw is a no. The receiver's door still checks
+ * again for each item.
+ */
+async function mayReceive(receiver: RegisteredReceiver, ctx: ActorContext): Promise<boolean> {
+  try {
+    return await receiver.mayUse(ctx) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The status every file of a run the receiver refused gets (#2012). */
+function refusedMessage(receiver: RegisteredReceiver): string {
+  return `You may not import into ${receiver.label ?? receiver.id}`;
 }
 
 function canReadInbound(shim: RegisteredShim): boolean {
@@ -235,6 +294,8 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
   const receiver = deps.receivers.get(request.receiver);
   const result: UploadKeepResult = { kept: 0 };
   if (!receiver?.keepOriginal || !keepsAtUpload(receiver, request.original ?? deps.settings.defaultOriginal)) return result;
+  // #2012: nothing is kept for a user the receiver refuses; the run then reports each file refused.
+  if (!await mayReceive(receiver, ctx)) return result;
   const door = receiver.id;
 
   const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
@@ -270,6 +331,28 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
 }
 
 /**
+ * Report every uploaded file of a refused run as `refused` (#2012), without
+ * unpacking or reading it. The ledger records each one as refused, by the
+ * upload's own fingerprint, keeping any original already kept for it (#2011);
+ * a file this scope already imported keeps that entry.
+ */
+async function refuseAll(deps: IceRunDeps, request: IceRunRequest, receiver: RegisteredReceiver, scope: string, report: IceRunReport, now: () => Date): Promise<void> {
+  const message = refusedMessage(receiver);
+  for (const upload of request.source.files) {
+    const fr: IceFileReport = { name: upload.name, size: upload.bytes.length, status: 'refused', message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] };
+    report.files.push(fr);
+    if (upload.bytes.length > deps.settings.maxFileBytes) continue;
+    fr.sha256 = fingerprint(upload.bytes);
+    const last = await deps.ledger.lastFile(scope, fr.sha256);
+    if (last && DONE.has(last.status)) continue;
+    await deps.ledger.recordFile(scope, {
+      name: fr.name, sha256: fr.sha256, size: fr.size, status: 'refused', message, at: now().toISOString(), refs: last?.refs ?? [],
+      ...(last?.original ? { original: last.original } : {})
+    });
+  }
+}
+
+/**
  * Run one import. Fills and returns `report`, which the caller may be
  * showing while it runs. Never throws for one file's failure; that file's
  * status says why.
@@ -287,6 +370,15 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
   }
   const original = request.original ?? deps.settings.defaultOriginal;
   const scope = report.scope;
+
+  // #2012: the receiver's permission first. A refusal does no work: no unzip,
+  // no shim, no keep, no fetch. Each file uploaded is reported refused.
+  if (!await mayReceive(receiver, ctx)) {
+    await refuseAll(deps, request, receiver, scope, report, now);
+    report.state = 'done';
+    report.finishedAt = now().toISOString();
+    return report;
+  }
 
   const { files, unreadable } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
   for (const bad of unreadable) {
@@ -320,6 +412,11 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     }
     const { file, shim, sha256 } = plan;
     const perItem = shim?.duplicates === 'item';
+    // #2010: a file tried before and not done is read again. Its items already
+    // stored are skipped by the engine's own key for them ({@link itemKeyOf}),
+    // so a receiver is never handed one twice. Recorded only while the file is not done.
+    const retry = !perItem && !!plan.last;
+    const storedKeys: string[] = [];
 
     try {
       let kept: KeptOriginal | undefined;
@@ -358,9 +455,21 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       const refusals: string[] = [];
       // What the receiver said of what it stored ("12 new, 0 updated"): shown on the file's status.
       const said = new Set<string>();
+      const occurrences = new Map<string, number>();
       for (const { item, chain } of leaves) {
         fr.warnings.push(...(item.warnings ?? []));
         if (perItem && item.itemKey && await deps.ledger.hasItem(scope, item.itemKey)) {
+          fr.duplicates++;
+          continue;
+        }
+        let leafKey: string | undefined;
+        if (!perItem) {
+          const base = itemKeyOf(sha256, chain, item, 0);
+          const seen = occurrences.get(base) ?? 0;
+          occurrences.set(base, seen + 1);
+          leafKey = seen === 0 ? base : itemKeyOf(sha256, chain, item, seen);
+        }
+        if (leafKey && retry && await deps.ledger.hasItem(scope, leafKey)) {
           fr.duplicates++;
           continue;
         }
@@ -373,6 +482,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           if (outcome.ref) fr.refs.push(outcome.ref);
           if (outcome.message) said.add(outcome.message);
           if (perItem && item.itemKey) await deps.ledger.recordItem(scope, item.itemKey);
+          if (leafKey) storedKeys.push(leafKey);
         } else if (outcome.status === 'duplicate') {
           fr.duplicates++;
           if (outcome.ref) fr.refs.push(outcome.ref);
@@ -384,7 +494,11 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       // Kept short: one message, or the first and how many more.
       const notes = [...said];
       const receiverNote = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0];
-      if (refusals.length > 0 && fr.stored === 0) {
+      if (refusals.length === 0 && fr.stored === 0 && leaves.length > 0 && fr.duplicates === leaves.length) {
+        // Every item already held: done. A retry that found them all stored is `unchanged`.
+        fr.status = retry ? 'unchanged' : 'duplicate';
+        if (retry) fr.message = 'already imported';
+      } else if (refusals.length > 0 && fr.stored === 0 && fr.duplicates === 0) {
         fr.status = 'refused';
         fr.message = refusals[0];
       } else if (refusals.length > 0 || partial.length > 0) {
@@ -393,8 +507,6 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       } else if (leaves.length === 0) {
         fr.status = 'unreadable';
         fr.message = 'nothing in it could be read';
-      } else if (fr.stored === 0) {
-        fr.status = 'duplicate';
       } else {
         fr.status = 'imported';
         if (receiverNote) fr.message = receiverNote;
@@ -402,6 +514,10 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     } catch (err) {
       fr.status = 'failed';
       fr.message = err instanceof Error ? err.message : String(err);
+    }
+    if (retry) fr.refs = [...new Set([...(plan.last?.refs ?? []), ...fr.refs])];
+    if (fr.status !== 'imported') {
+      for (const key of storedKeys) await deps.ledger.recordItem(scope, key);
     }
     await record();
   }

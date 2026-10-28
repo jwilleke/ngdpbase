@@ -215,7 +215,13 @@ export interface IceReceiver {
   label?: string;
   /** The kinds it takes, e.g. `['ncm']`, `['file']`, `['phr.health-record']`. */
   accepts: IceKind[];
-  /** May this context use this receiver? Its existing permission — the import screen shows only these (D5). */
+  /**
+   * May this context use this receiver? Its existing permission (D5). The
+   * import screen shows only these, and the engine asks it before any work
+   * of a run (#2012): a no refuses every file before anything is unpacked,
+   * read by a shim, kept or fetched. Answer no whenever `receive` would
+   * refuse this context outright; `receive` still checks each item.
+   */
   mayUse(ctx: ActorContext): Promise<boolean>;
   /** Hand one item to the receiver's own door. */
   receive(item: IceItem, ctx: ActorContext, info: ReceiveInfo): Promise<ReceiveOutcome>;
@@ -267,10 +273,13 @@ export interface IceRunRequest {
   /** D11. Default `ngdpbase.import.engine.default-original`. */
   original?: OriginalChoice;
   /**
-   * Whose fingerprints and item keys this run is checked against. Default
-   * `<receiver>/<username>`: the same file imported again by the same person
-   * into the same receiver is skipped. A caller with its own notion of a
-   * source (phr's source id) passes it.
+   * A narrower ledger scope within the caller's own (#2013). The engine binds
+   * every run's scope to the receiver and to the user it runs as (their
+   * identity `@id`, else their username): the same file imported again by
+   * the same user into the same receiver is skipped. A caller with its own
+   * notion of a source (phr's source id) passes it to keep those apart; it
+   * can never reach another user's or another receiver's scope. Never pass a
+   * value a client sent.
    */
   scope?: string;
 }

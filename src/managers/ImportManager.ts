@@ -58,8 +58,11 @@ import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } f
 import { jobContextFromRequest, type JobContext } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
+import type IdentityManager from './IdentityManager.js';
+import { systemContext } from '../context/bootActions.js';
+import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
-import { convertChain, defaultScope, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
+import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
@@ -540,7 +543,7 @@ class ImportManager extends BaseManager {
   async runImport(request: IceRunRequest, ctx: ActorContext): Promise<IceRunReport> {
     if (!ctx?.username) throw new Error('ImportManager.runImport requires an ActorContext');
     const resolved = this.withOriginal(request);
-    const report = this.newRunReport(resolved, ctx);
+    const report = this.newRunReport(resolved, ctx, await this.importScope(resolved, ctx));
     return this.executeRun(resolved, ctx, report);
   }
 
@@ -553,7 +556,8 @@ class ImportManager extends BaseManager {
    */
   async enqueueImport(request: IceRunRequest, ctx: JobContext): Promise<string> {
     if (!ctx?.username) throw new Error('ImportManager.enqueueImport requires a JobContext');
-    return this.enqueueResolved(this.withOriginal(request), ctx);
+    const resolved = this.withOriginal(request);
+    return this.enqueueResolved(resolved, ctx, await this.importScope(resolved, ctx));
   }
 
   /**
@@ -573,13 +577,14 @@ class ImportManager extends BaseManager {
     if (!ctx?.username) throw new Error('ImportManager.enqueueUpload requires an ActorContext');
     const jobCtx = jobContextFromRequest(ctx);
     const resolved = this.withOriginal(request);
-    const kept = await keepOriginalsAtUpload(this.iceDeps(), resolved, ctx, resolved.scope ?? defaultScope(resolved.receiver, jobCtx));
+    const scope = await this.importScope(resolved, ctx);
+    const kept = await keepOriginalsAtUpload(this.iceDeps(), resolved, ctx, scope);
     if (kept.refused) throw new ImportUploadRefused(kept.refused.name, kept.refused.message);
-    return this.enqueueResolved(resolved, jobCtx);
+    return this.enqueueResolved(resolved, jobCtx, scope);
   }
 
-  private async enqueueResolved(request: IceRunRequest, ctx: JobContext): Promise<string> {
-    const report = this.newRunReport(request, ctx);
+  private async enqueueResolved(request: IceRunRequest, ctx: JobContext, scope: string): Promise<string> {
+    const report = this.newRunReport(request, ctx, scope);
     this.iceQueue.push({ request, ctx, report });
     await this.kickIceQueue(ctx);
     return report.runId;
@@ -602,11 +607,40 @@ class ImportManager extends BaseManager {
     this.iceLedger = ledger;
   }
 
-  private newRunReport(request: IceRunRequest, ctx: ActorContext): IceRunReport {
+  /**
+   * The ledger scope a run uses (#2013): bound to the receiver and to the user
+   * `ctx` names, by their identity `@id`; their username only when the
+   * identity store answers that there is no record for them (#2041). Never a
+   * scope the caller names: a request's `scope` only narrows within this
+   * user's own.
+   *
+   * @throws IdentityStoreUnavailableError when the identity store cannot
+   *   answer: the run does not start, and nothing is recorded, rather than
+   *   land in a scope the user's other runs do not use
+   */
+  private async importScope(request: IceRunRequest, ctx: ActorContext): Promise<string> {
+    if (request.scope !== undefined && (typeof request.scope !== 'string' || !request.scope)) {
+      throw new Error('ImportManager: a request scope is a non-empty string');
+    }
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (!identities) return boundScope(request.receiver, ctx.username, request.scope);
+    // `identityIdOf` answers null for "no record" and "cannot answer" alike, so
+    // the two doors that tell them apart (#2097): `canAnswer`, then the lookup, which throws.
+    if (!identities.canAnswer()) throw new IdentityStoreUnavailableError('no identity provider');
+    let record: Awaited<ReturnType<IdentityManager['getByUserIdentifier']>>;
+    try {
+      record = await identities.getByUserIdentifier(systemContext(this.engine, 'bind an import scope to its user: identity @id (#2013)'), ctx.username);
+    } catch (error) {
+      throw new IdentityStoreUnavailableError(error);
+    }
+    return boundScope(request.receiver, record?.['@id'] ?? ctx.username, request.scope);
+  }
+
+  private newRunReport(request: IceRunRequest, ctx: ActorContext, scope: string): IceRunReport {
     const report: IceRunReport = {
       runId: uuidv4(),
       receiver: request.receiver,
-      scope: request.scope ?? defaultScope(request.receiver, ctx),
+      scope,
       username: ctx.username,
       state: 'queued',
       files: []
