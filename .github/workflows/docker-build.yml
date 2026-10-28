@@ -436,6 +436,16 @@ jobs:
             done
             echo "FAILED: $1 not ready after 180s"; docker logs "$1"; return 1
           }
+          # Readiness answers once the managers are up; add-ons are installed and
+          # loaded after that, so wait for the log line that ends the add-on pass
+          # (loaded, or the installer's refusal) before reading the logs.
+          wait_addon() {
+            for i in $(seq 1 60); do
+              docker logs "$1" 2>&1 | grep -qE "Add-on loaded: geohazardwatch|geohazardwatch not installed|Failed to load add-on" && return 0
+              sleep 3
+            done
+            echo "FAILED: no add-on result in the logs after 180s"; docker logs "$1"; return 1
+          }
           NAME=ngdpbase-smoke-installer
           VOL=ngdpbase-smoke-installer-data
           docker rm -f "$NAME" 2>/dev/null || true
@@ -457,6 +467,7 @@ jobs:
           # First start: installs from npm.
           run_site ""
           wait_ready "$NAME" || exit 1
+          wait_addon "$NAME" || exit 1
           LOGS=$(docker logs "$NAME" 2>&1)
           echo "$LOGS" | grep -E "Installed add-on geohazardwatch|not installed|Failed to load add-on|Add-on loaded: geohazardwatch" || true
           echo "$LOGS" | grep -q "Installed add-on geohazardwatch@" || { echo "FAILED: the add-on was not installed from config"; echo "$LOGS"; exit 1; }
@@ -478,6 +489,7 @@ jobs:
           # verified against the lock, no install, lock untouched.
           run_site "--network none"
           wait_ready "$NAME" || exit 1
+          wait_addon "$NAME" || exit 1
           LOGS2=$(docker logs "$NAME" 2>&1)
           echo "$LOGS2" | grep -E "Installed add-on geohazardwatch|not installed|Add-on loaded: geohazardwatch" || true
           echo "$LOGS2" | grep -q "Installed add-on geohazardwatch@.*verified against the lock file" || { echo "FAILED: the second start did not verify the pinned copy"; echo "$LOGS2"; exit 1; }
