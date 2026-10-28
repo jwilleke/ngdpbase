@@ -120,7 +120,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-INSTANCE_NAME=$(npx pm2 jlist 2>/dev/null \
+# `pm2 jlist` prints a notice ahead of its JSON when the running daemon is
+# older than the local pm2 ("In-memory PM2 is out-of-date"); keep only the JSON.
+pm2_jlist() { npx pm2 jlist 2>/dev/null | sed -n '/^\[/,$p'; }
+
+INSTANCE_NAME=$(pm2_jlist \
   | jq -r --arg port "$PORT" '.[] | select(.pm2_env.PORT == $port or (.pm2_env.env.PORT // "") == $port) | .name' \
   | head -1)
 INSTANCE_NAME="${INSTANCE_NAME:-jimstest}"
@@ -201,7 +205,7 @@ if [[ "$DO_ADDON_DIFF" -eq 1 ]]; then
         return
       fi
     fi
-    bytes=$(npx pm2 jlist 2>/dev/null \
+    bytes=$(pm2_jlist \
       | jq -r --arg name "$INSTANCE_NAME" '.[] | select(.name == $name) | .monit.memory' \
       | head -1)
     awk -v b="${bytes:-0}" 'BEGIN { printf "%.1f", b / 1024 / 1024 }'
@@ -515,7 +519,7 @@ if [[ "$MEM_SOURCE" == "telemetry" ]]; then
     ENGINE_INIT_MEAN_MS=$(awk -v s="$EI_SUM" -v c="$EI_COUNT" 'BEGIN { printf "%.0f", s / c }')
   fi
 else
-  MEM_BYTES=$(npx pm2 jlist 2>/dev/null \
+  MEM_BYTES=$(pm2_jlist \
     | jq -r --arg name "$INSTANCE_NAME" '.[] | select(.name == $name) | .monit.memory' \
     | head -1)
   MEM_MB=$(awk -v b="${MEM_BYTES:-0}" 'BEGIN { printf "%.1f", b / 1024 / 1024 }')
