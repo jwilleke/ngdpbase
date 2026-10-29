@@ -60,15 +60,16 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
 import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
-import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
+import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
   IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
-  ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
+  ReceiveOutcome, RecentImport, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../ice/types.js';
+import { pageUrl } from '../utils/pageUrl.js';
 
 /**
  * Options for import operations
@@ -602,6 +603,61 @@ class ImportManager extends BaseManager {
     return [...this.iceRuns.values()].filter(r => r.username === ctx.username).reverse();
   }
 
+  /**
+   * The user's own recent imports, file by file, read from the ledger
+   * (#2110), so the list survives a restart: newest first, across the
+   * receivers `ctx` may use, at most `ngdpbase.import.engine.recent-imports`.
+   * Only the scopes bound to this user's identity (#2013), never anyone
+   * else's; a caller's narrower scope (phr's source id) is not read. Each
+   * entry links to what it created when the receiver says this user may
+   * open it (`linkFor`). Nothing is stored for this.
+   *
+   * @throws IdentityStoreUnavailableError when the identity store cannot
+   *   answer: whose entries they are cannot be told, so none is shown
+   */
+  async recentImportsFor(ctx: ActorContext): Promise<RecentImport[]> {
+    if (!ctx?.username) return [];
+    const receivers = await this.receiversFor(ctx);
+    if (receivers.length === 0) return [];
+    const owner = await this.scopeOwner(ctx);
+    const ledger = this.ledger();
+    const found: Array<{ entry: RecentImport; first?: string }> = [];
+    for (const r of receivers) {
+      for (const f of await ledger.files(boundScope(r.id, owner))) {
+        found.push({
+          entry: {
+            name: f.name, status: f.status, at: f.at, receiver: r.id, refs: f.refs.length,
+            ...(r.label ? { receiverLabel: r.label } : {}),
+            ...(f.message ? { message: f.message } : {})
+          },
+          ...(f.refs[0] ? { first: f.refs[0] } : {})
+        });
+      }
+    }
+    found.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
+    const shown = found.slice(0, this.numberSetting('ngdpbase.import.engine.recent-imports', 25));
+    for (const { entry, first } of shown) {
+      const receiver = this.receiverRegistry.get(entry.receiver);
+      if (!first || typeof receiver?.linkFor !== 'function') continue;
+      const link = await receiver.linkFor(first, ctx).catch(() => null);
+      // A link within this site only: a path, never another origin or a script URL.
+      if (typeof link === 'string' && /^\/(?![/\\])/.test(link)) entry.link = link;
+    }
+    return shown.map(s => s.entry);
+  }
+
+  /**
+   * Is an import into this receiver confidential (#2110)? Only when its
+   * destination is encrypted: a receiver that keeps into a sealed store
+   * (`keepsEncrypted`). No receiver can declare itself so otherwise. A
+   * confidential import's file names are shown to the uploader and kept in
+   * the audit log, and never written to application logs, notices or admin
+   * screens; every other import logs them as before.
+   */
+  isConfidential(receiverId: string): boolean {
+    return this.receiverRegistry.get(receiverId)?.keepsEncrypted === true;
+  }
+
   /** Use this ledger instead of the file one: a test's, or a database table's. */
   setImportLedger(ledger: IceLedger): void {
     this.iceLedger = ledger;
@@ -622,8 +678,18 @@ class ImportManager extends BaseManager {
     if (request.scope !== undefined && (typeof request.scope !== 'string' || !request.scope)) {
       throw new Error('ImportManager: a request scope is a non-empty string');
     }
+    return boundScope(request.receiver, await this.scopeOwner(ctx), request.scope);
+  }
+
+  /**
+   * Whose a scope is (#2013): the identity `@id` of the user `ctx` names, or
+   * their username when the identity store answers that they have none.
+   *
+   * @throws IdentityStoreUnavailableError when the store cannot answer
+   */
+  private async scopeOwner(ctx: ActorContext): Promise<string> {
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
-    if (!identities) return boundScope(request.receiver, ctx.username, request.scope);
+    if (!identities) return ctx.username;
     // `identityIdOf` answers null for "no record" and "cannot answer" alike, so
     // the two doors that tell them apart (#2097): `canAnswer`, then the lookup, which throws.
     if (!identities.canAnswer()) throw new IdentityStoreUnavailableError('no identity provider');
@@ -633,7 +699,7 @@ class ImportManager extends BaseManager {
     } catch (error) {
       throw new IdentityStoreUnavailableError(error);
     }
-    return boundScope(request.receiver, record?.['@id'] ?? ctx.username, request.scope);
+    return record?.['@id'] ?? ctx.username;
   }
 
   private newRunReport(request: IceRunRequest, ctx: ActorContext, scope: string): IceRunReport {
@@ -661,7 +727,10 @@ class ImportManager extends BaseManager {
       report.state = 'failed';
       report.error = err instanceof Error ? err.message : String(err);
       report.finishedAt = new Date().toISOString();
-      logger.error(`[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
+      // #2110: a confidential import's error may name a file; its log gives the run and the error's class only.
+      logger.error(this.isConfidential(report.receiver)
+        ? `[ImportManager] ICE run ${report.runId} failed (${errorClassOf(err)})`
+        : `[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
       return report;
     }
   }
@@ -833,6 +902,12 @@ class ImportManager extends BaseManager {
         }
         const saved = await this.createPageThroughPipeline(title, { content: body, metadata, warnings }, uuid, { actorContext: ctx });
         return { status: 'stored', ref: saved.name };
+      },
+      // #2110: a page the user may read, by PageManager's own read decision.
+      linkFor: async (ref: string, ctx: ActorContext): Promise<string | null> => {
+        const pageManager = this.engine.getManager<PageManager>('PageManager');
+        if (typeof pageManager?.mayShowPage !== 'function') return null;
+        return await pageManager.mayShowPage(ref, ctx) ? pageUrl(ref) : null;
       }
     };
   }

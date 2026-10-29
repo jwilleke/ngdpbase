@@ -226,6 +226,13 @@ export interface IceReceiver {
   /** Hand one item to the receiver's own door. */
   receive(item: IceItem, ctx: ActorContext, info: ReceiveInfo): Promise<ReceiveOutcome>;
   /**
+   * Where this context can open what one of its references names (#2110),
+   * for "your recent imports" on the import screen: a URL, or null when
+   * the thing is gone or this context may not open it. The receiver decides
+   * with its own existing read rule (D5). Without it, nothing is linked.
+   */
+  linkFor?(ref: string, ctx: ActorContext): Promise<string | null>;
+  /**
    * Keep the original file itself (D11: phr keeps originals in its own
    * store). Without this, `keep` hands the original to the files receiver.
    * `original.mediaType` is the engine's (#2061): the request's type for a
@@ -345,6 +352,26 @@ export interface LedgerFileEntry {
   refs: string[];
   /** The original kept for this fingerprint, whatever became of the conversion (D11). */
   original?: LedgerOriginal;
+}
+
+/**
+ * One file in a user's recent imports (#2110), read from the ledger: what
+ * the import screen lists, so the list survives a restart. Only the user's
+ * own entries, from the receivers they may use.
+ */
+export interface RecentImport {
+  name: string;
+  status: IceFileStatus;
+  message?: string;
+  /** When the ledger last recorded this file, ISO. */
+  at: string;
+  /** The receiver it went into. */
+  receiver: string;
+  receiverLabel?: string;
+  /** How many references the receiver gave (pages, records). */
+  refs: number;
+  /** Where the user can open the first of them (`linkFor`), when they may. */
+  link?: string;
 }
 
 /**

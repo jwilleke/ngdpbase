@@ -74,7 +74,7 @@ export type { default as ImportManager } from '../../src/managers/ImportManager.
 export type {
   IceShim, IceReceiver, IceItem, IceKind, IceWarning, ShimDirection, ShimAccepts, ShimTools, ShimReadResult,
   ReceiveInfo, ReceiveOutcome, IceCitation, KeptOriginal, OriginalChoice, IceOriginalChoices, OriginalKeep, IceUpload, IceSource, IceRunRequest,
-  IceRunReport, IceFileReport, IceFileStatus
+  IceRunReport, IceFileReport, IceFileStatus, RecentImport
 } from '../../src/ice/types.js';
 
 // Accounts (#2025): the account door, and the change `updateUser` takes (the fields, or a function of the account as it is now).

@@ -25,6 +25,8 @@ import ImportManager from '../../managers/ImportManager';
 import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
 import { boundScope } from '../../ice/runImport';
+import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
+import logger from '../../utils/logger';
 
 /** Who holds what. `profile-manage` is every user's; an anonymous visitor holds nothing. */
 const GRANTS: Record<string, string[]> = {
@@ -271,13 +273,58 @@ describe('GET /import/runs/:runId (#2021)', () => {
     expect(anonymous.status).toBe(401);
   });
 
-  test('the screen lists only the user\'s own runs', async () => {
-    const { app, jobs } = await makeApp();
-    await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').attach('files', MD, 'Mine.md');
-    await request(app).post('/import').set('x-user', 'bob').field('receiver', 'core.pages').attach('files', MD, 'Bobs.md');
+  test('the screen lists only the user\'s own recent imports, from the ledger (#2110)', async () => {
+    const { app, jobs, importManager } = await makeApp();
+    const mine = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').attach('files', MD, 'Mine.md');
+    await request(app).post('/import').set('x-user', 'bob').field('receiver', 'core.pages').attach('files', Buffer.from('# Bob\n'), 'Bobs.md');
     await jobs.whenIdle();
+    await vi.waitFor(() => expect(importManager.getImportRun(mine.body.runId, USERS.molly as never)?.state).toBe('done'));
     const res = await request(app).get('/import').set('x-user', 'molly');
-    expect(res.body.data.runs.map((r: { username: string }) => r.username)).toEqual(['molly']);
+    expect(res.body.data.recent.map((r: { name: string; status: string }) => [r.name, r.status])).toEqual([['Mine.md', 'imported']]);
+    expect(res.body.data.recentUnavailable).toBe(false);
+    // A finished run is in the recent list; only runs still going are listed as runs.
+    expect(res.body.data.runs).toEqual([]);
+  });
+
+  test('when whose entries they are cannot be told, the screen says so and lists none', async () => {
+    const { app, importManager } = await makeApp();
+    vi.spyOn(importManager, 'recentImportsFor').mockRejectedValue(new IdentityStoreUnavailableError('down'));
+    const res = await request(app).get('/import').set('x-user', 'molly');
+    expect(res.status).toBe(200);
+    expect(res.body.data.recent).toEqual([]);
+    expect(res.body.data.recentUnavailable).toBe(true);
+  });
+});
+
+describe('POST /import: a confidential import\'s file names stay out of the log (#2110)', () => {
+  const SECRET = 'psychiatric-assessment-Jones';
+  const logged = () => (['info', 'warn', 'error', 'debug'] as const)
+    .flatMap(l => (logger[l] as unknown as { mock: { calls: unknown[][] } }).mock.calls)
+    .map(args => args.map(a => (a instanceof Error ? `${a.message} ${a.stack ?? ''}` : String(a))).join(' ')).join('\n');
+
+  async function failingUpload(encrypted: boolean): Promise<string> {
+    const { app, importManager } = await makeApp();
+    importManager.registerReceiver('vaultrec', {
+      name: 'records', label: 'Records', accepts: ['file'],
+      ...(encrypted ? { keepsEncrypted: true } : {}),
+      mayUse: async () => true,
+      receive: async () => ({ status: 'stored', ref: 'r' })
+    });
+    vi.spyOn(importManager, 'enqueueUpload').mockRejectedValue(new Error(`could not read ${SECRET}.xml`));
+    for (const l of ['info', 'warn', 'error', 'debug'] as const) (logger[l] as unknown as { mockClear(): void }).mockClear();
+    const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'vaultrec.records').attach('files', MD, `${SECRET}.xml`);
+    expect(res.status).toBe(500);
+    return logged();
+  }
+
+  test('into an encrypted destination, the failure is logged without the file name', async () => {
+    const text = await failingUpload(true);
+    expect(text).toContain('could not queue an import for molly');
+    expect(text).not.toContain(SECRET);
+  });
+
+  test('into any other destination, the failure is logged as before, with its error', async () => {
+    expect(await failingUpload(false)).toContain(SECRET);
   });
 });
 

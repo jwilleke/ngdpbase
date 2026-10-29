@@ -55,6 +55,8 @@ Every registered converter is also a shim, `core.<formatId>`; `registerConverter
 | `runImport(request, ctx)` | Run now and wait; returns the report |
 | `getImportRun(runId, ctx)` | The run's report, to the user it ran as |
 | `importRunsFor(ctx)` | The runs this process holds for that user, newest first; never anyone else's |
+| `recentImportsFor(ctx)` | That user's own recent files, read from the ledger ([#2110](https://github.com/jwilleke/ngdpbase/issues/2110)): newest first, across the receivers `receiversFor` gives them, at most `recent-imports`. Each with its result, message, time, receiver, how many references, and a `link` when the receiver's `linkFor` says the user may open the first. Throws `IdentityStoreUnavailableError` when whose entries they are cannot be told |
+| `isConfidential(receiverId)` | True when the destination is encrypted: the receiver keeps into a sealed store (`keepsEncrypted`). Such an import's file names never go into application logs or notices ([#2110](https://github.com/jwilleke/ngdpbase/issues/2110)) |
 
 A request is `{ source: { type: 'upload', files }, receiver, shim?, original?, scope? }`. Each file's report has its status: `imported`, `partial` (a shim's partial note, or some items refused), `unchanged`, `duplicate`, `noise`, `unreadable` (no shim reads it for that receiver), `refused` (the receiver's permission said no, before any work, or for every item), or `failed`. A file's `message` carries what the receiver said of what it stored (`ReceiveOutcome.message`, such as "12 new, 0 updated, 0 unchanged"), before any partial note and refusal; when several items say different things it shows the first and how many more, so the per-file status at /import stays short.
 
@@ -77,6 +79,7 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 | `ngdpbase.import.engine.ledger-max-entries` | 10000 | Files and item keys kept per scope |
 | `ngdpbase.import.engine.max-kept-runs` | 100 | Run reports held in memory |
 | `ngdpbase.import.engine.upload-max-files` | 20 | Files in one upload on `/import` |
+| `ngdpbase.import.engine.recent-imports` | 25 | Files listed under "Your recent imports" on `/import` |
 | `ngdpbase.import.engine.upload-max-bytes` | 268435456 | One upload on `/import`, all files together. Ships equal to `zip-max-bytes`, so the screen takes any archive the engine would |
 | `ngdpbase.import.shims.<shim id>.enabled` | `true` | Switches a shim (D6), for the engine and the folder import |
 | `ngdpbase.import.shims.<shim id>.options` | `{}` | Handed to the shim as `tools.options` |
@@ -85,9 +88,13 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 
 Any user's screen onto the engine ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021)), in `WikiRoutes` (`importPage`, `importUpload`, `importRunStatus`) and `views/import.ejs`. Gated by `profile-manage`, which every user holds, so an anonymous visitor is sent to sign in; there is no import permission (D5).
 
-- `GET /import` offers the receivers `receiversFor` gives this user, and their runs from `importRunsFor`. `?receiver=<id>` preselects one, only when it is among them. With none, the screen says there is nothing they can import into.
+- `GET /import` offers the receivers `receiversFor` gives this user, their runs still queued or running from `importRunsFor`, and "Your recent imports" from `recentImportsFor`, so the list survives a restart. When the identity store cannot answer, the list says it cannot be shown right now. `?receiver=<id>` preselects one, only when it is among them. With none, the screen says there is nothing they can import into.
 - `POST /import` (multipart: `files`, `receiver`, `original`; sent with `csrfFetch`) checks the receiver is one of theirs and the original choice one it offers, then calls `enqueueUpload` with the request's own context, which keeps originals into an encrypted store (#2034) and queues the run with `jobContextFromRequest`. The request is built from those fields only, never a client's `scope` or `shim`. It answers 202 with the run id at once. Over `upload-max-files` or `upload-max-bytes` is a 413, refused before anything is queued. An original that could not be kept in an encrypted store is a 403 whose `error` says which file and why; nothing is queued.
 - `GET /import/runs/:runId` returns the run's report to the user it ran as; anyone else gets 404.
+
+### File names of a confidential import ([#2110](https://github.com/jwilleke/ngdpbase/issues/2110))
+
+The uploader sees every file name on their own status and recent list, and the audit log keeps what the receivers' doors record. When the destination is encrypted (`isConfidential`: a receiver with `keepsEncrypted`), file names are never written to application logs, notices or admin screens: the engine's failed-run log and `POST /import`'s failed-queue log give the run and the error's class (`errorClassOf`), never the message, which may name a file. A sealed store's upload door logs by id ([#1461](https://github.com/jwilleke/ngdpbase/issues/1461)). Every other import logs file names as before. `ImportManager.confidentialNames.test.ts` is the guard: it drives one distinctive name through every way a confidential run can end and fails if a log line or notice holds it, with a control run proving the search finds a logged name. A test, not a static check: a file name reaches a log through a variable or an error's message, which no pattern over the source can see.
 
 The end-user help page is [Importing Files](../../required-pages/979ca807-b5fd-4993-a101-d619fe9b6362.md).
 
@@ -100,7 +107,8 @@ Unchanged for the user using it: preview, import (streamed), conflict policy, at
 - [#2061](https://github.com/jwilleke/ngdpbase/issues/2061): only a keep at upload (`keepsEncrypted`) carries an `OriginalKeep`; a receiver that keeps in the run into an unencrypted vault of its own still meets the site's allow-list. An original kept through `core.files` is an ordinary attachment, shown inline (sandboxed) like any other.
 
 - [#1979](https://github.com/jwilleke/ngdpbase/issues/1979): export (`out` shims), feeds (D10), the takeout import and the URL import are not on the engine yet.
-- [#2021](https://github.com/jwilleke/ngdpbase/issues/2021): the import screen shows every file name in a run's status; a receiver cannot hide them yet (health-record exports often name the user). After a restart the screen lists no earlier runs, though the ledger still holds each file's last status.
+- [#2110](https://github.com/jwilleke/ngdpbase/issues/2110): "Your recent imports" lists what the ledger records, so a file skipped as noise or as unchanged, one too large, and an archive that could not be unpacked are shown only on the live run's status. Entries under a caller's narrower scope (an add-on's own source id passed as `scope`) are not listed. `core.files` has no `linkFor` yet (whether a user may read an attachment is decided in the attachment route, not in a manager), so a stored file is not linked. An original kept at upload shows as failed, "not imported yet", until its run records the result.
+- [#2110](https://github.com/jwilleke/ngdpbase/issues/2110): only the engine and `/import` are guarded for confidential file names. A confidential receiver's own code (an add-on's `receive` and `keepOriginal`) must not log them either; the guard does not reach add-on code outside this repository.
 - `core.pages` does not register JSPWiki categories as keywords, as the folder import does: that writes the site's keyword catalogue, which `page-create` does not cover.
 - Run reports live in memory (`max-kept-runs`); the ledger keeps per-file status across restarts.
 - [#2010](https://github.com/jwilleke/ngdpbase/issues/2010): the engine's keys for a retried file's stored items hash the item's content, so a shim whose output for an item changes between runs (a new version, an option) makes it look new, and the keys a scope keeps are capped at `ledger-max-entries`; a receiver's own duplicate check is then what prevents a second copy. A `duplicate` file is done: a page deleted since is not imported again from the same bytes.

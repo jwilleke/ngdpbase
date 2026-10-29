@@ -195,8 +195,9 @@ import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
+import type { RecentImport } from '../ice/types.js';
 import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
-import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
+import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
@@ -10278,7 +10279,16 @@ ${panes}
       const receivers = importManager ? await importManager.receiversFor(currentUser) : [];
       const asked = typeof req.query.receiver === 'string' ? req.query.receiver : '';
       const preselected = receivers.find(r => r.id === asked)?.id ?? (receivers.length === 1 ? receivers[0].id : '');
-      const runs = importManager ? importManager.importRunsFor(currentUser) : [];
+      // In-progress runs from this process; finished ones are in the recent list, read from the ledger (#2110).
+      const runs = importManager ? importManager.importRunsFor(currentUser).filter(r => r.state === 'queued' || r.state === 'running') : [];
+      let recent: RecentImport[] = [];
+      let recentUnavailable = false;
+      try {
+        recent = importManager ? await importManager.recentImportsFor(currentUser) : [];
+      } catch (err) {
+        if (!(err instanceof IdentityStoreUnavailableError)) throw err;
+        recentUnavailable = true;
+      }
 
       const commonData = await this.getCommonTemplateData(req);
       return res.render('import', {
@@ -10287,6 +10297,8 @@ ${panes}
         receivers,
         preselected,
         runs,
+        recent,
+        recentUnavailable,
         limits: this.importUploadLimits()
       });
     } catch (err) {
@@ -10372,7 +10384,9 @@ ${panes}
         logger.warn('[import] identity store unavailable: import not started');
         return res.status(503).json({ success: false, error: 'Imports cannot start right now. Try again shortly.' });
       }
-      logger.error(`[import] could not queue an import for ${currentUser.username}:`, err);
+      // #2110: a confidential import's error may name a file; its log gives the error's class only.
+      if (importManager.isConfidential(receiver.id)) logger.error(`[import] could not queue an import for ${currentUser.username} (${errorClassOf(err)})`);
+      else logger.error(`[import] could not queue an import for ${currentUser.username}:`, err);
       return res.status(500).json({ success: false, error: 'The import could not be started.' });
     }
   }
