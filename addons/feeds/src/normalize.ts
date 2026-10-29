@@ -12,8 +12,7 @@
  */
 
 import type { Article, CreativeWork } from '../../../dist/src/types/Schema.js';
-import type { NormalizedRecord } from './adapters/types.js';
-import type { FeedSourceConfig } from './types.js';
+import type { FeedSourceConfig, NormalizedRecord } from './types.js';
 
 /**
  * CreativeWork union members the feeds addon can currently PROJECT to. The

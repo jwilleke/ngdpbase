@@ -1,44 +1,12 @@
 /**
- * Unit tests for the csv adapter + parseCsv (#911).
+ * Unit tests for the csv shim + parseCsv (#911; a shim since #2109).
  *
  * @jest-environment node
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { csvAdapter, parseCsv, preambleSuspicion } from '../src/adapters/csv';
-import type { FeedSourceConfig } from '../src/types';
-
-// #1133 — the adapters go through `guardedFetch` with an egress policy now.
-// They used to call the global `fetch`, so these tests stubbed that; a global
-// stub would now pass while testing nothing. Mocking the module is the seam,
-// because production deliberately has no injectable transport parameter —
-// one way to reach the network was the point.
-vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
-import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
-import type { EgressPolicy } from '../../../dist/src/http/ssrf.js';
-
-const mockGuardedFetch = vi.mocked(guardedFetch);
-
-/** Any object: `guardedFetch` is mocked, so the policy is never inspected here. */
-const POLICY = {} as EgressPolicy;
-
-/** Script the next guardedFetch response. */
-const stubFetch = (body: unknown, ok = true, status = 200): EgressPolicy => {
-  mockGuardedFetch.mockResolvedValue({
-    status: ok ? status : status,
-    headers: {},
-    // The old stubs returned `json: async () => body` for JSON feeds and
-    // `text: async () => body` for the rest; guardedFetch hands back bytes, so
-    // an object body is serialised here rather than at every call site.
-    body: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
-    finalUrl: 'https://x.test/',
-    chain: ['https://x.test/']
-  });
-  return POLICY;
-};
-
-
-const base: FeedSourceConfig = { sourceId: 'firms', adapter: 'csv', url: 'https://x.test/csv', type: 'Event' };
-
+import { describe, expect, it } from 'vitest';
+import { csvShim, parseCsv, preambleSuspicion } from '../src/shims/csv';
+import { recordItemKey } from '../src/shims/buildRecord';
+import { readShim, recordsOf } from './__fixtures__/feedEngine';
 
 // A trimmed FIRMS VIIRS response (two rows).
 const FIRMS = 'latitude,longitude,bright_ti4,acq_date,confidence\n64.4314,144.83386,330.28,2026-07-22,n\n-1.2,50.5,301.1,2026-07-22,h\n';
@@ -136,69 +104,71 @@ describe('preambleSuspicion (#1102)', () => {
   });
 });
 
-describe('csvAdapter (#911)', () => {
-  it('fetch() parses the CSV body into RawRecords', async () => {
-    const policy = stubFetch(FIRMS);
-    const rows = await csvAdapter.fetch(base, policy, guardedFetch);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ latitude: '64.4314', confidence: 'n' });
+describe('csvShim (#911, #2109)', () => {
+  it('reads the CSV into one record item per row, keyed by id and content', async () => {
+    const result = await readShim(csvShim, FIRMS);
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every(i => i.kind === 'record')).toBe(true);
+    expect(recordsOf(result)[0].properties).toMatchObject({ latitude: '64.4314', confidence: 'n' });
+    expect(result.items[0].itemKey).toBe(recordItemKey(recordsOf(result)[0]));
   });
 
-  it('fetch() throws on non-ok', async () => {
-    const policy = stubFetch('', false, 503);
-    await expect(csvAdapter.fetch(base, policy, guardedFetch)).rejects.toThrow(/503/);
+  it('declares per-item duplicates, CSV files and media types, and the feed items receiver', () => {
+    expect(csvShim).toMatchObject({
+      name: 'csv', direction: 'in', duplicates: 'item', produces: 'record', receivers: ['feeds.items'],
+      accepts: { extensions: ['.csv', '.tsv'], mediaTypes: ['text/csv', 'text/tab-separated-values'] }
+    });
   });
 
-  it('parse() lifts columns as properties and synthesizes a stable id when none', () => {
-    const row = { latitude: '64.4314', longitude: '144.83386', confidence: 'n' };
-    const a = csvAdapter.parse(row, base);
-    const b = csvAdapter.parse({ ...row }, base);
+  it('lifts columns as properties and synthesizes a stable id when none', async () => {
+    const [a] = recordsOf(await readShim(csvShim, 'latitude,longitude,confidence\n64.4314,144.83386,n\n'));
+    const [b] = recordsOf(await readShim(csvShim, 'latitude,longitude,confidence\n64.4314,144.83386,n\n'));
     expect(a).toMatchObject({ properties: { latitude: '64.4314', confidence: 'n' } });
     // synthetic id is stable across identical rows...
-    expect(a!.sourceRecordId).toBe(b!.sourceRecordId);
-    expect(a!.sourceRecordId).toMatch(/^[0-9a-f]{16}$/);
+    expect(a.id).toBe(b.id);
+    expect(a.id).toMatch(/^[0-9a-f]{16}$/);
     // ...order-independent (column reorder → same id)...
-    const reordered = csvAdapter.parse({ confidence: 'n', longitude: '144.83386', latitude: '64.4314' }, base);
-    expect(reordered!.sourceRecordId).toBe(a!.sourceRecordId);
+    const [reordered] = recordsOf(await readShim(csvShim, 'confidence,longitude,latitude\nn,144.83386,64.4314\n'));
+    expect(reordered.id).toBe(a.id);
     // ...and the synthetic id does not leak into properties.
-    expect(a!.properties.id).toBeUndefined();
+    expect(a.properties.id).toBeUndefined();
   });
 
-  it('fetch() warns when the parse looks like it hit an unskipped preamble', async () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const policy = stubFetch(PREAMBLE);
-    await csvAdapter.fetch(base, policy, guardedFetch);
-    expect(spy).toHaveBeenCalledTimes(1);
-    const msg = String(spy.mock.calls[0][0]);
-    expect(msg).toContain("feed 'firms'");
-    expect(msg).toContain('skipLines');
-    spy.mockRestore();
+  it('warns once on the read when the parse looks like it hit an unskipped preamble', async () => {
+    const result = await readShim(csvShim, PREAMBLE);
+    const warnings = result.items.flatMap(i => i.warnings ?? []);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].kind).toBe('csv-preamble');
+    expect(warnings[0].detail).toContain('skipLines');
   });
 
-  it('fetch() does not warn once skipLines is set correctly', async () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const policy = stubFetch(PREAMBLE);
-    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 }, policy, guardedFetch);
-    expect(spy).not.toHaveBeenCalled();
-    expect(Object.keys(rows[0])).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
-    spy.mockRestore();
+  it('does not warn once skipLines is set correctly', async () => {
+    const result = await readShim(csvShim, PREAMBLE, { skipLines: 1 });
+    expect(result.items.flatMap(i => i.warnings ?? [])).toEqual([]);
+    expect(Object.keys(recordsOf(result)[0].properties)).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
   });
 
-  it('fetch() does not warn for an ordinary multi-column feed', async () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const policy = stubFetch(FIRMS);
-    await csvAdapter.fetch(base, policy, guardedFetch);
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+  it('does not warn for an ordinary multi-column file', async () => {
+    expect((await readShim(csvShim, FIRMS)).items.flatMap(i => i.warnings ?? [])).toEqual([]);
   });
 
-  it('parse() honours recordIdField when the CSV carries an id column', () => {
-    const r = csvAdapter.parse({ event_id: 'ev-9', mag: '5.2' }, { ...base, recordIdField: 'event_id' });
-    expect(r).toMatchObject({ sourceRecordId: 'ev-9', properties: { mag: '5.2' } });
+  it('honours recordIdField when the CSV carries an id column', async () => {
+    const [r] = recordsOf(await readShim(csvShim, 'event_id,mag\nev-9,5.2\n', { recordIdField: 'event_id' }));
+    expect(r).toEqual({ id: 'ev-9', properties: { event_id: 'ev-9', mag: '5.2' } });
   });
 
-  it('parse() applies a dot-path map', () => {
-    const r = csvAdapter.parse({ latitude: '64.4', longitude: '144.8', bright_ti4: '330' }, { ...base, recordIdField: 'bright_ti4', map: { lat: 'latitude', lon: 'longitude' } });
-    expect(r).toMatchObject({ sourceRecordId: '330', properties: { lat: '64.4', lon: '144.8' } });
+  it('applies a dot-path map', async () => {
+    const [r] = recordsOf(await readShim(csvShim, 'latitude,longitude,bright_ti4\n64.4,144.8,330\n', { recordIdField: 'bright_ti4', map: { lat: 'latitude', lon: 'longitude' } }));
+    expect(r).toEqual({ id: '330', properties: { lat: '64.4', lon: '144.8' } });
+  });
+
+  it('knows nothing about feeds: a semicolon bank statement with a preamble reads with options alone', async () => {
+    // The shape a later accounting import would hand it (#2109): no feed configuration anywhere.
+    const statement = 'Account 1234 statement, October\nDate;Reference;Amount\n2026-10-01;TX-1;-12,50\n2026-10-02;TX-2;100,00\n';
+    const result = await readShim(csvShim, statement, { delimiter: ';', skipLines: 1, recordIdField: 'Reference', map: { date: 'Date', amount: 'Amount' } });
+    expect(recordsOf(result)).toEqual([
+      { id: 'TX-1', properties: { date: '2026-10-01', amount: '-12,50' } },
+      { id: 'TX-2', properties: { date: '2026-10-02', amount: '100,00' } }
+    ]);
   });
 });

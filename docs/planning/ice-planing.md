@@ -18,7 +18,7 @@ Four separate ways data comes in, each with its own plumbing:
 | Path | What it does | Where |
 |---|---|---|
 | ImportManager converters | JSPWiki, HTML, Markdown and DOCX files into NCM pages. Admin-only (`/admin/import`, gated by admin view access) | `src/managers/ImportManager.ts` (`registerConverter`, `canHandle`) |
-| Feeds adapters | GeoJSON, REST/JSON, XML, CSV, RSS/Atom and XML-index sources fetched on a schedule into feed records | `addons/feeds/src/adapters/`, `FeedScheduler` |
+| Feeds adapters | GeoJSON, REST/JSON, XML, CSV, RSS/Atom and XML-index sources fetched on a schedule into feed records. On the engine since [#2109](https://github.com/jwilleke/ngdpbase/issues/2109) (see [Feeds on the engine](#feeds-on-the-engine-2109-built-2026-10-29)) | `addons/feeds/src/shims/`, the job `feeds.poll` |
 | Vault takeout import | A takeout imported into its owner's private store | `store-import` |
 | phr's own engine | FHIR / C-CDA files into health records | the yourphr repository (temporary) |
 
@@ -133,9 +133,20 @@ The smallest piece that proves the engine:
 - __Existing ledger entries belong to nobody (#2013).__ They were written under scopes any caller could name, so none is trusted as a user's history: a ledger file without the new form marker is read as empty, and its files are imported once more. Receivers' own duplicate checks (a page title, per-item keys) catch what they already hold. The old files are left on disk, unread.
 - __Partial and failed files are retried (#2010).__ Done is `imported`, `duplicate` (every item already held) and `unchanged`; `partial`, `failed`, `refused` and `unreadable` files are read again on the next run, so refused items are offered again. Items of such a file already stored are skipped by the engine's own key for them (fingerprint, chain and a hash of the item's content, never its position, so a shim that changes its output order cannot skip the wrong item), recorded while the file is not done, so a receiver is never handed one twice. A retry that finds every item already stored, with nothing refused, is `unchanged` and done, so a shim's "could not read this part" note costs one more read, not one per upload.
 
+### Feeds on the engine ([#2109](https://github.com/jwilleke/ngdpbase/issues/2109), built 2026-10-29)
+
+D10 is built: a feed is a URL source fetched by the engine, read by a shim, into FeedManager. All six adapters moved in one change; none is left on the old path.
+
+- __Shims.__ `feeds.geojson`, `feeds.rest-json`, `feeds.xml`, `feeds.csv`, `feeds.rss-atom` and `feeds.xml-index` (`addons/feeds/src/shims/`), registered with `host.registerShim` and declared in the add-on's manifest. A source's `adapter` names its shim. Each produces core's `record` kind (`data` is `{ id, properties }`), per-item duplicates, for the receiver `feeds.items`. Nothing in them is about feeds: the parse settings (`itemsPath`, `recordIdField`, `map`, `delimiter`, `skipLines`, `linkPattern`, `maxItems`) are the run's `options`, so the CSV shim reads a bank statement with a preamble and a semicolon delimiter as it reads a FIRMS feed. Which shims an accounting import uses, and whether the CSV shim then moves into core, is for that import to decide.
+- __Receiver.__ FeedManager's `feeds.items` keeps the feed settings and shows them (records, the catalog, `toMarqueeText`), as before. It checks an existing permission, `config-manage`: feed sources are site configuration (D5, no new permission). It takes no uploads (`uploads: false`): the import screen never offers it.
+- __Fetching.__ The engine fetches the source's URL (a new `url` source) through `guardedFetch` with the site's egress policy and default User-Agent and the source's own headers and timeout (#1959), at most `ngdpbase.import.engine.fetch-max-bytes`. The xml-index shim asks the engine for each item document (`tools.fetch`); the source's headers and timeout apply to those too.
+- __Scheduling.__ The routine background job `feeds.poll` (every minute; `ngdpbase.jobs.feeds.poll.schedule` changes it) replaces FeedScheduler's `setInterval`. Each run starts the due sources, each fetch under the job's context with its own reason (`fetch feed '<id>' on its schedule`), and does not wait for them, so one source hanging to its timeout never holds back the next run's other sources (#1955). Cadence (`intervalMinutes`, `dailyAt`), back-off, the stale-feed warning and `max-concurrent-ingests` are unchanged.
+- __Duplicates.__ The engine skips an item whose key it has seen; the key is the item's own id with its content's hash, the same hash the record store keeps, so an item revised under the same id is not skipped. A feed's store is a snapshot of its source, so the receiver gets every item of the fetch at `fileDone`, those skipped included, and stores the whole source there, shaped by `dedupeBy` / `maxAgeHours` and dropping what the source no longer holds, as an ingest always has.
+- __Carry-over.__ Record stores are unchanged on disk, and the receiver's own duplicate check compares the stored hash, so the first fetch after the upgrade finds every unchanged record unchanged: nothing is re-added or dropped. A test copies stores written by the old adapters and proves it for CSV, RSS/Atom and GeoJSON.
+- __Known gaps.__ The feeds' back-off multiplier, staleness window and the 100-item xml-index default are code defaults, as before (the last can be set per site with `ngdpbase.import.shims.feeds.xml-index.options.maxItems`). A fetch through the engine binds its ledger scope to the system principal's identity, so while the identity store cannot answer, feeds are not fetched ("try again shortly", #2013). While the application database is configured but unavailable, BackgroundJobManager holds every job, `feeds.poll` included (#1892).
+
 Later, once the engine has proven itself:
 
-- feeds moved onto it (D10);
 - the vault takeout import;
 - export, including PDF (#1974);
 - accounting's statement imports.

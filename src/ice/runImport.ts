@@ -39,7 +39,7 @@ import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
 import type {
-  IceCitation, IceFileReport, IceFileStatus, IceItem, IceLedger, IceRunReport, IceRunRequest, IceUpload, KeptOriginal, LedgerFileEntry,
+  IceCitation, IceFileReport, IceFileStatus, IceItem, IceLedger, IceRunReport, IceRunRequest, IceUpload, IceUrlSource, KeptOriginal, LedgerFileEntry,
   LedgerOriginal, OriginalChoice, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from './types.js';
 
@@ -51,6 +51,8 @@ export interface IceEngineSettings {
   maxFileBytes: number;
   maxChainDepth: number;
   defaultOriginal: OriginalChoice;
+  /** The largest response a URL source may return (#2109). */
+  fetchMaxBytes: number;
 }
 
 export interface IceRunDeps {
@@ -60,6 +62,8 @@ export interface IceRunDeps {
   ledger: IceLedger;
   settings: IceEngineSettings;
   tools(shim: RegisteredShim): ShimTools;
+  /** The engine's guarded fetch, for a URL source (#2109): the same one `tools` hands shims. */
+  fetch?: ShimTools['fetch'];
   now?: () => Date;
 }
 
@@ -221,6 +225,54 @@ async function keepOriginal(file: IceItem, sha256: string, receiver: RegisteredR
   return files.receive(file, ctx, { runId, source: { name: file.name, sha256 }, chain: [] });
 }
 
+/**
+ * What each shim of this run is handed (#2109): the site's tools, with the
+ * run's own `options` over the site's, and a URL source's headers and
+ * timeout on every follow-up fetch the shim asks of the engine.
+ */
+function runTools(deps: IceRunDeps, request: IceRunRequest): (shim: RegisteredShim) => ShimTools {
+  const source = request.source.type === 'url' ? request.source : null;
+  if (!request.options && !source?.headers && source?.timeoutMs === undefined) return (shim) => deps.tools(shim);
+  return (shim) => {
+    const site = deps.tools(shim);
+    return {
+      options: { ...site.options, ...(request.options ?? {}) },
+      fetch: (url, opts = {}) => site.fetch(url, {
+        ...(source?.timeoutMs !== undefined ? { timeoutMs: source.timeoutMs } : {}),
+        ...opts,
+        ...(source?.headers || opts.headers ? { headers: { ...(source?.headers ?? {}), ...(opts.headers ?? {}) } } : {})
+      })
+    };
+  };
+}
+
+/** The name a URL source's file goes by. */
+function urlSourceName(source: IceUrlSource): string {
+  return source.name || source.url;
+}
+
+/**
+ * Fetch a URL source as the run's one file (#2109), through the engine's
+ * guarded fetch with the source's headers and timeout. A refused, failed or
+ * non-2xx fetch is the file's `failed` status, never a throw.
+ */
+async function fetchUrlSource(deps: IceRunDeps, source: IceUrlSource): Promise<{ upload?: IceUpload; failed?: string }> {
+  if (!deps.fetch) return { failed: 'this engine cannot fetch a URL source' };
+  try {
+    const res = await deps.fetch(source.url, {
+      maxBytes: deps.settings.fetchMaxBytes,
+      ...(source.timeoutMs !== undefined ? { timeoutMs: source.timeoutMs } : {}),
+      ...(source.headers ? { headers: source.headers } : {})
+    });
+    if (res.status < 200 || res.status >= 300) return { failed: `HTTP ${res.status} from ${source.url}` };
+    const type = res.headers['content-type'];
+    const mediaType = (Array.isArray(type) ? type[0] : type)?.split(';')[0].trim().toLowerCase();
+    return { upload: { name: urlSourceName(source), bytes: res.body, ...(mediaType ? { mediaType } : {}) } };
+  } catch (err) {
+    return { failed: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** One file as the engine first hands it on: its bytes, and the same bytes as text. */
 function fileItem(upload: IceUpload): IceItem {
   return { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
@@ -293,6 +345,7 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
   const now = deps.now ?? ((): Date => new Date());
   const receiver = deps.receivers.get(request.receiver);
   const result: UploadKeepResult = { kept: 0 };
+  if (request.source.type !== 'upload') return result;
   if (!receiver?.keepOriginal || !keepsAtUpload(receiver, request.original ?? deps.settings.defaultOriginal)) return result;
   // #2012: nothing is kept for a user the receiver refuses; the run then reports each file refused.
   if (!await mayReceive(receiver, ctx)) return result;
@@ -338,6 +391,11 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
  */
 async function refuseAll(deps: IceRunDeps, request: IceRunRequest, receiver: RegisteredReceiver, scope: string, report: IceRunReport, now: () => Date): Promise<void> {
   const message = refusedMessage(receiver);
+  if (request.source.type === 'url') {
+    // Nothing is fetched for a refused run (#2012): the source is reported, not read.
+    report.files.push({ name: urlSourceName(request.source), size: 0, status: 'refused', message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
+    return;
+  }
   for (const upload of request.source.files) {
     const fr: IceFileReport = { name: upload.name, size: upload.bytes.length, status: 'refused', message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] };
     report.files.push(fr);
@@ -380,7 +438,26 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     return report;
   }
 
-  const { files, unreadable } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
+  let uploads: IceUpload[];
+  let sourceMetadata: Record<string, unknown> | undefined;
+  if (request.source.type === 'url') {
+    // #2109: fetched now, inside the run, off the request path.
+    const fetched = await fetchUrlSource(deps, request.source);
+    if (!fetched.upload) {
+      report.files.push({ name: urlSourceName(request.source), size: 0, status: 'failed', message: fetched.failed, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
+      report.state = 'done';
+      report.finishedAt = now().toISOString();
+      return report;
+    }
+    uploads = [fetched.upload];
+    // Where the file came from, for a shim resolving relative links (an index's).
+    sourceMetadata = { ...(request.source.metadata ?? {}), sourceUrl: request.source.url };
+  } else {
+    uploads = request.source.files;
+  }
+  const tools = runTools(deps, request);
+
+  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth);
   for (const bad of unreadable) {
     report.files.push({ name: bad.name, size: bad.size, status: 'failed', message: bad.message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
   }
@@ -411,6 +488,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       continue;
     }
     const { file, shim, sha256 } = plan;
+    if (sourceMetadata) file.metadata = { ...sourceMetadata };
     const perItem = shim?.duplicates === 'item';
     // #2010: a file tried before and not done is read again. Its items already
     // stored are skipped by the engine's own key for them ({@link itemKeyOf}),
@@ -444,7 +522,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       const partial: string[] = [];
       const spec: ChainSpec = {
         shims: deps.shims,
-        tools: (s) => deps.tools(s),
+        tools,
         maxChainDepth: deps.settings.maxChainDepth,
         done: (from, item) => receiver.accepts.includes(item.kind) && from.receivers.includes(receiver.id),
         target: receiver.id
@@ -456,9 +534,14 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       // What the receiver said of what it stored ("12 new, 0 updated"): shown on the file's status.
       const said = new Set<string>();
       const occurrences = new Map<string, number>();
+      // #2109: a per-item file's keys are read once and written once, not per item: a feed holds thousands.
+      const seenKeys = perItem
+        ? await deps.ledger.seenItems(scope, leaves.map(l => l.item.itemKey).filter((k): k is string => !!k))
+        : new Set<string>();
+      const newKeys: string[] = [];
       for (const { item, chain } of leaves) {
         fr.warnings.push(...(item.warnings ?? []));
-        if (perItem && item.itemKey && await deps.ledger.hasItem(scope, item.itemKey)) {
+        if (perItem && item.itemKey && seenKeys.has(item.itemKey)) {
           fr.duplicates++;
           continue;
         }
@@ -481,7 +564,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           fr.stored++;
           if (outcome.ref) fr.refs.push(outcome.ref);
           if (outcome.message) said.add(outcome.message);
-          if (perItem && item.itemKey) await deps.ledger.recordItem(scope, item.itemKey);
+          if (perItem && item.itemKey) newKeys.push(item.itemKey);
           if (leafKey) storedKeys.push(leafKey);
         } else if (outcome.status === 'duplicate') {
           fr.duplicates++;
@@ -491,6 +574,17 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         }
       }
 
+      // #2109: the receiver settles the whole file, items skipped as seen included.
+      if (receiver.fileDone) {
+        const settled = await receiver.fileDone(ctx, {
+          runId: report.runId, source: { name: upload.name, sha256 }, chain: fr.chain,
+          ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
+          metadata: { ...(file.metadata ?? {}) }, items: leaves.map(l => l.item)
+        });
+        if (settled) said.add(settled);
+      }
+      await deps.ledger.recordItems(scope, newKeys);
+
       // Kept short: one message, or the first and how many more.
       const notes = [...said];
       const receiverNote = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0];
@@ -498,6 +592,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         // Every item already held: done. A retry that found them all stored is `unchanged`.
         fr.status = retry ? 'unchanged' : 'duplicate';
         if (retry) fr.message = 'already imported';
+        else if (receiverNote) fr.message = receiverNote;
       } else if (refusals.length > 0 && fr.stored === 0 && fr.duplicates === 0) {
         fr.status = 'refused';
         fr.message = refusals[0];

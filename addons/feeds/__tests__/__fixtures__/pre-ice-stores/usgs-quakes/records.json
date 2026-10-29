@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-29T11:00:44.708Z",
+  "records": {
+    "q1": {
+      "record": {
+        "sourceRecordId": "q1",
+        "fetchedAt": "2026-10-29T11:00:44.708Z",
+        "properties": {
+          "magnitude": 5.1,
+          "place": "Alaska",
+          "time": 1700000000000
+        }
+      },
+      "hash": "33a1632a49e2b60ed6dce571c1daa0e02b314a7930b51886b40c5098d76a3f0a"
+    },
+    "q2": {
+      "record": {
+        "sourceRecordId": "q2",
+        "fetchedAt": "2026-10-29T11:00:44.708Z",
+        "properties": {
+          "magnitude": 6.3,
+          "place": "Chile",
+          "time": 1700000100000
+        }
+      },
+      "hash": "eb7819070a730ea65773bcc5332a7a129739469965f9a6dd4ff99df44b32019d"
+    }
+  }
+}

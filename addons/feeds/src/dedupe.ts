@@ -36,8 +36,7 @@
  */
 
 import { recordDateIso } from './normalize.js';
-import type { NormalizedRecord } from './adapters/types.js';
-import type { FeedSourceConfig } from './types.js';
+import type { FeedSourceConfig, NormalizedRecord } from './types.js';
 
 /** Outcome of a shaping pass — the counts drive ingest logging. */
 export interface ShapeResult {

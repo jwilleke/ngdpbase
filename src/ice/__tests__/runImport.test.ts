@@ -8,8 +8,9 @@ import { packZip } from '../../utils/zipArchive';
 import { MemoryIceLedger } from '../ledger';
 import { keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
 import type {
-  IceItem, IceRunReport, IceRunRequest, ReceiveInfo, ReceiveOutcome, RegisteredReceiver, RegisteredShim
+  FileDoneInfo, IceItem, IceRunReport, IceRunRequest, ReceiveInfo, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../types';
+import type { GuardedResponse } from '../../http/guardedFetch';
 import type { ActorContext } from '../../context/ActorContext';
 
 const ALICE: ActorContext = { username: 'alice', roles: ['reader'], isAuthenticated: true } as ActorContext;
@@ -20,7 +21,8 @@ const SETTINGS: IceEngineSettings = {
   maxZipDepth: 3,
   maxFileBytes: 1_000_000,
   maxChainDepth: 5,
-  defaultOriginal: 'none'
+  defaultOriginal: 'none',
+  fetchMaxBytes: 1_000_000
 };
 
 type Received = { item: IceItem; ctx: ActorContext; info: ReceiveInfo };
@@ -765,6 +767,130 @@ describe('runImport', () => {
       const cite = { ...req(), original: 'cite' as const };
       expect(await keepOriginalsAtUpload(deps([recordShim()], [sealed.receiver]), cite, LIVE, 'test.records/alice')).toEqual({ kept: 0 });
       expect(sealed.kept).toEqual([]);
+    });
+  });
+
+  describe('a URL source (#2109)', () => {
+    type FetchCall = { url: string; opts: Parameters<ShimTools['fetch']>[1] };
+    const response = (body: string, status = 200, type = 'text/plain; charset=utf-8'): GuardedResponse =>
+      ({ status, headers: { 'content-type': type }, body: Buffer.from(body), finalUrl: 'https://feed.test/', chain: ['https://feed.test/'] });
+
+    /** Deps whose engine fetch and shim fetch answer from `pages`, recording each call. */
+    function urlDeps(shims: RegisteredShim[], receivers: RegisteredReceiver[], pages: Record<string, GuardedResponse>, ledger = new MemoryIceLedger()) {
+      const calls: FetchCall[] = [];
+      const fetch: ShimTools['fetch'] = async (url, opts) => {
+        calls.push({ url, opts });
+        const page = pages[url];
+        if (!page) throw new Error(`refused: ${url}`);
+        return page;
+      };
+      const d: IceRunDeps = { ...deps(shims, receivers, ledger), fetch, tools: () => ({ options: { site: 'yes', delimiter: ',' }, fetch }) };
+      return { d, calls };
+    }
+    const urlReq = (extra: Partial<IceRunRequest> = {}): IceRunRequest => ({
+      source: { type: 'url', url: 'https://feed.test/list.rec', headers: { 'User-Agent': 'feed-bot/1' }, timeoutMs: 9000, metadata: { feed: 'quakes' } },
+      receiver: 'test.records', shim: 'test.rec', ...extra
+    });
+
+    test('the engine fetches the URL with the source\'s headers and timeout, and the file carries the source\'s metadata', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const { d, calls } = urlDeps([recordShim()], [receiver], { 'https://feed.test/list.rec': response('a=1\nb=2') });
+      const r = await run(d, urlReq());
+      expect(r.files).toMatchObject([{ name: 'https://feed.test/list.rec', status: 'imported', stored: 2 }]);
+      expect(calls).toEqual([{ url: 'https://feed.test/list.rec', opts: { maxBytes: 1_000_000, timeoutMs: 9000, headers: { 'User-Agent': 'feed-bot/1' } } }]);
+      const meta = { feed: 'quakes', sourceUrl: 'https://feed.test/list.rec' };
+      expect(received.map(x => x.item.metadata)).toEqual([meta, meta]);
+    });
+
+    test('a failed or non-2xx fetch fails the file; nothing is handed', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const { d } = urlDeps([recordShim()], [receiver], { 'https://feed.test/list.rec': response('down', 503) });
+      expect((await run(d, urlReq())).files).toMatchObject([{ status: 'failed', message: 'HTTP 503 from https://feed.test/list.rec' }]);
+      const refused = urlDeps([recordShim()], [receiver], {});
+      expect((await run(refused.d, urlReq({ source: { type: 'url', url: 'http://10.0.0.1/x', name: 'inside' } }))).files)
+        .toMatchObject([{ name: 'inside', status: 'failed', message: 'refused: http://10.0.0.1/x' }]);
+      expect(received).toEqual([]);
+    });
+
+    test('a receiver that refuses the run is asked first: nothing is fetched (#2012)', async () => {
+      const { receiver } = recordingReceiver('test.records', ['test.record'], { refuse: () => true });
+      const { d, calls } = urlDeps([recordShim()], [receiver], { 'https://feed.test/list.rec': response('a=1') });
+      expect((await run(d, urlReq())).files).toMatchObject([{ name: 'https://feed.test/list.rec', status: 'refused' }]);
+      expect(calls).toEqual([]);
+    });
+
+    test('the run\'s options reach its shims over the site\'s; a follow-up fetch carries the source\'s headers and timeout', async () => {
+      const { receiver } = recordingReceiver('test.records', ['test.record']);
+      let seen: Record<string, unknown> = {};
+      const indexShim = recordShim({
+        read: async (input, tools) => {
+          seen = tools.options;
+          const items: IceItem[] = [];
+          for (const url of (input.text ?? '').split('\n').filter(Boolean)) {
+            const res = await tools.fetch(url, { headers: { Accept: 'text/plain' } });
+            items.push({ kind: 'test.record', name: url, data: res.body.toString() });
+          }
+          return { items };
+        }
+      });
+      const { d, calls } = urlDeps([indexShim], [receiver], {
+        'https://feed.test/list.rec': response('https://feed.test/1\nhttps://feed.test/2'),
+        'https://feed.test/1': response('one'), 'https://feed.test/2': response('two')
+      });
+      const r = await run(d, urlReq({ options: { delimiter: ';', itemsPath: 'rows' } }));
+      expect(r.files[0]).toMatchObject({ status: 'imported', stored: 2 });
+      expect(seen).toEqual({ site: 'yes', delimiter: ';', itemsPath: 'rows' });
+      expect(calls.slice(1)).toEqual([
+        { url: 'https://feed.test/1', opts: { timeoutMs: 9000, headers: { 'User-Agent': 'feed-bot/1', Accept: 'text/plain' } } },
+        { url: 'https://feed.test/2', opts: { timeoutMs: 9000, headers: { 'User-Agent': 'feed-bot/1', Accept: 'text/plain' } } }
+      ]);
+    });
+  });
+
+  describe('a receiver that settles each file (fileDone, #2109)', () => {
+    const req = (files: Array<{ name: string; bytes: Buffer }>): IceRunRequest => ({ source: { type: 'upload', files }, receiver: 'test.records' });
+    function snapshotReceiver() {
+      const settled: FileDoneInfo[] = [];
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      receiver.fileDone = async (_ctx, info) => {
+        settled.push(info);
+        return `${info.items.length} held`;
+      };
+      return { receiver, received, settled };
+    }
+
+    test('gets every item the file held, those skipped as already seen included; seen keys are read and written once per file', async () => {
+      const { receiver, received, settled } = snapshotReceiver();
+      const ledger = new MemoryIceLedger();
+      const reads = vi.spyOn(ledger, 'seenItems');
+      const writes = vi.spyOn(ledger, 'recordItems');
+      const d = deps([recordShim({ duplicates: 'item' })], [receiver], ledger);
+      await run(d, req([upload('a.rec', 'a=1\nb=2')]));
+      const second = await run(d, req([upload('b.rec', 'a=1\nb=2\nc=3')]));
+      expect(received.map(r => (r.item.data as { key: string }).key)).toEqual(['a', 'b', 'c']);
+      expect(settled.map(s => s.items.map(i => i.itemKey))).toEqual([['a', 'b'], ['a', 'b', 'c']]);
+      expect(second.files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 2, message: '3 held' });
+      expect(reads).toHaveBeenCalledTimes(2);
+      expect(writes).toHaveBeenCalledTimes(2);
+    });
+
+    test('a file whose every item was seen is a duplicate and still settled', async () => {
+      const { receiver, settled } = snapshotReceiver();
+      const d = deps([recordShim({ duplicates: 'item' })], [receiver]);
+      await run(d, req([upload('a.rec', 'a=1')]));
+      const again = await run(d, req([upload('a.rec', 'a=1')]));
+      expect(again.files[0]).toMatchObject({ status: 'duplicate', message: '1 held' });
+      expect(settled).toHaveLength(2);
+    });
+
+    test('a fileDone that throws fails the file, and its new item keys are not recorded', async () => {
+      const { receiver, received } = snapshotReceiver();
+      receiver.fileDone = async () => { throw new Error('store is read-only'); };
+      const d = deps([recordShim({ duplicates: 'item' })], [receiver]);
+      expect((await run(d, req([upload('a.rec', 'a=1')]))).files[0]).toMatchObject({ status: 'failed', message: 'store is read-only' });
+      delete receiver.fileDone;
+      expect((await run(d, req([upload('a.rec', 'a=1')]))).files[0]).toMatchObject({ status: 'imported', stored: 1 });
+      expect(received).toHaveLength(2);
     });
   });
 });

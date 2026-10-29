@@ -11,6 +11,7 @@ import BackgroundJobManager from '../BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
 import { boundScope } from '../../ice/runImport';
 import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
+import { REFUSAL } from '../../http/ssrf';
 import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceShim } from '../../ice/types';
@@ -94,6 +95,27 @@ describe('ImportManager — ICE registry', () => {
     expect(() => im.registerShim('acct', { ...ok, name: 'noread', read: undefined })).toThrow(/inbound shim has read/);
     expect(() => im.registerShim('acct', { ...ok, name: 'pdf', direction: 'both' })).toThrow(/outbound shim has write/);
     expect(() => im.registerReceiver('acct', { name: 'ledger', accepts: ['x'] })).toThrow(/mayUse\(\) and receive\(\)/);
+  });
+
+  test('a receiver fed only by its owner\'s sources (uploads: false, #2109) is never offered and refuses an upload', async () => {
+    const { im } = await makeImportManager();
+    im.registerReceiver('feedsish', { name: 'items', accepts: ['record'], uploads: false, mayUse: async () => true, receive: async () => ({ status: 'stored' }) });
+    expect((await im.receiversFor(EDITOR)).map(r => r.id)).not.toContain('feedsish.items');
+    await expect(im.enqueueUpload({ source: { type: 'upload', files: [md('a.csv', 'a\n1')] }, receiver: 'feedsish.items' }, EDITOR)).rejects.toThrow(/takes no uploads/);
+  });
+
+  test('a URL source is fetched by the engine through guardedFetch and its egress policy (#2109): a refused URL fails the file, nothing is read', async () => {
+    const { im } = await makeImportManager();
+    const received: string[] = [];
+    im.registerShim('feedsish', { name: 'lines', direction: 'in', accepts: {}, produces: 'record', receivers: ['feedsish.items'], duplicates: 'item',
+      read: async (input) => ({ items: (input.text ?? '').split('\n').map(l => ({ kind: 'record', name: input.name, data: l, itemKey: l })) }) });
+    im.registerReceiver('feedsish', { name: 'items', accepts: ['record'], uploads: false, mayUse: async () => true,
+      receive: async (item) => { received.push(String(item.data)); return { status: 'stored' }; } });
+    // A link-local URL is refused by guardedFetch itself, before any socket: the engine's one way out.
+    const refused = await im.runImport({ source: { type: 'url', url: 'http://169.254.169.254/x' }, receiver: 'feedsish.items', shim: 'feedsish.lines' }, EDITOR);
+    expect(refused.files[0]).toMatchObject({ name: 'http://169.254.169.254/x', status: 'failed' });
+    expect(refused.files[0].message).toContain(REFUSAL);
+    expect(received).toEqual([]);
   });
 
   test('configuration switches a shim off (D6), for the engine and for the folder import alike', async () => {

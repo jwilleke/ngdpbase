@@ -6,14 +6,18 @@
  * consumed by plugins — without writing one page per record. See the design
  * gate at docs/platform/feeds/design.md.
  *
- * SKELETON (slice 3): registers a FeedCatalogSource per configured source with
- * CatalogManager and registers FeedManager with the engine. No adapters, no
- * scheduler, no store yet (slices 4–6). The addon is inert until enabled
- * (`ngdpbase.addons.feeds.enabled: true`) and a source is configured.
+ * Since #2109 (ICE, D10) a feed is "a scheduled URL source, plus shims, into
+ * FeedManager": the add-on registers one import shim per format with the
+ * import engine (declared in package.json's manifest), FeedManager as the
+ * receiver `feeds.items`, and its schedule as the background job
+ * `feeds.poll`. The engine fetches each due source through the guarded
+ * outbound path, runs its shim and hands the records to FeedManager. The
+ * addon is inert until enabled (`ngdpbase.addons.feeds.enabled: true`) and a
+ * source is configured.
  *
  * Configuration (app-custom-config.json, established `ngdpbase.addons.<name>.*`):
  *   ngdpbase.addons.feeds.enabled                  — true/false (default: false)
- *   ngdpbase.addons.feeds.sources.<id>.adapter     — 'geojson' | 'rest-json' | ...
+ *   ngdpbase.addons.feeds.sources.<id>.adapter     — the shim: 'geojson' | 'rest-json' | 'xml' | 'csv' | 'rss-atom' | 'xml-index'
  *   ngdpbase.addons.feeds.sources.<id>.url         — upstream feed URL
  *   ngdpbase.addons.feeds.sources.<id>.type        — schema.org @type
  *   ngdpbase.addons.feeds.sources.<id>.intervalMinutes | .dailyAt
@@ -30,7 +34,9 @@ import type CatalogManager from '../../dist/src/managers/CatalogManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type { AddonHost } from '../../dist/src/utils/addonHost.js';
-import { FeedManager } from './src/FeedManager.js';
+import type { ActorContext } from '../../dist/src/context/ActorContext.js';
+import { FeedManager, type FeedImporter, type FeedJobs } from './src/FeedManager.js';
+import { registerFeedShims } from './src/shims/index.js';
 import { parseSourceConfigs, readFeedSettings } from './src/config.js';
 import { createDataFeedPlugin } from './src/DataFeedPlugin.js';
 
@@ -57,14 +63,28 @@ const feedsAddon = {
       ? config.dataPath
       : path.join(configManager?.getInstanceDataFolder?.() ?? './data', 'feeds');
 
-    // #1133 — how the adapters reach the egress policy. Positional and
-    // required, because an adapter that was handed none must not compile.
+    // #2109: every fetch and parse goes through the import engine, whose one
+    // way out is guardedFetch with the site's egress policy (#1133, #1139).
+    const importer = engine.getManager<FeedImporter>('ImportManager');
+    if (!importer) {
+      logger.error('[feeds addon] ImportManager not available — feeds cannot be fetched');
+      return;
+    }
+    const pdp = engine.getManager('PolicyDecisionPoint') as
+      | { permits?: (ctx: ActorContext, permission: string) => Promise<boolean> }
+      | null;
     feedManager = new FeedManager(
       host,
       sourceConfigs,
       baseDir,
-      (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback
+      importer,
+      async (ctx, permission) => typeof pdp?.permits === 'function' ? pdp.permits(ctx, permission) : false
     );
+
+    // The shims (D6, D7) and FeedManager's receiver (D4), as the manifest declares them.
+    const shims = registerFeedShims(host);
+    host.registerReceiver(feedManager.receiver());
+    logger.info(`[feeds addon] Registered import shims ${shims.join(', ')} and the receiver feeds.items`);
 
     // #1876, #1985: the record stores under dataPath are backed up by BackupManager, and a
     // staged restore of them was put in place before register() ran.
@@ -94,21 +114,26 @@ const feedsAddon = {
     // this addon with no per-consumer vendoring required.
     engine.app?.use('/addons/feeds', engine.serveStatic(path.join(__dirname, 'public')));
 
-    // Start the poll scheduler; stale-feed warnings route to /admin/notifications.
+    // Schedule the feeds as a background job (#2109); stale-feed warnings route to /admin/notifications.
     const nm = engine.getManager('NotificationManager') as
       | { notifyAdmins?: (n: unknown) => Promise<string | null> }
       | null;
     const notify = (n: { level: string; title: string; message: string }): void => {
       if (nm?.notifyAdmins) nm.notifyAdmins(n).catch(() => { /* ignore */ });
     };
-    feedManager.startScheduler({ notify, maxConcurrent: settings.maxConcurrentIngests });
+    const jobs = engine.getManager<FeedJobs>('BackgroundJobManager');
+    if (typeof jobs?.registerMaintenance === 'function') {
+      feedManager.startScheduler(jobs, { notify, maxConcurrent: settings.maxConcurrentIngests });
+    } else {
+      logger.error('[feeds addon] BackgroundJobManager not available — feeds are not scheduled');
+    }
   },
 
   status(): Promise<AddonStatusDetails> {
     const n = feedManager?.getSourceIds().length ?? 0;
     return Promise.resolve({
       healthy: true,
-      message: `${n} feed source(s) configured (geojson adapter; auto-poll scheduler active)`
+      message: `${n} feed source(s) configured (fetched through the import engine; scheduled as the job feeds.poll)`
     });
   },
 

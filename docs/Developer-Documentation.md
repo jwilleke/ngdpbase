@@ -68,7 +68,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | DatabaseManager | ✅ [doc](managers/DatabaseManager.md) | The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger |
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP), with attachments |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown, the one CSV writer for every CSV export, and HTML to PDF through a chosen provider (none, local Chromium, or a Chromium service) |
-| FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler. |
+| FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; the receiver feeds.items for what the import engine fetches and reads (#2109), scheduled as the background job feeds.poll. |
 | FileManager | ✅ [doc](managers/FileManager.md) | The one door for files (epic #1851). First step, read-only: today's attachments shown as file records, and the migration dry run |
 | FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |

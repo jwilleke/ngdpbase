@@ -1,15 +1,16 @@
 /**
- * #1187 — a feed ingest refuses a private address for real.
+ * #1187 — a feed ingest refuses a private address for real; through the
+ * import engine since #2109.
  *
- * `FeedManager.test.ts` and every adapter test mock `guardedFetch` to test
+ * The shim tests and most FeedManager tests mock `guardedFetch` to test
  * parsing; that mock always succeeds and proves nothing about the boundary.
  * This file does NOT mock `guardedFetch`. It mocks what lies beneath — the
  * `request` functions of `node:http` / `node:https`, the only way
  * `guardedFetch` reaches a socket — and records every call. A refused source
  * must produce no call; an allowed one exactly one.
  *
- * The policy is resolved from the manager's own `ConfigReader` per ingest and
- * handed to the adapter, as production does. Sabotage that hand-off — pass a
+ * The policy is resolved by the real ImportManager from the site's
+ * configuration per fetch, as production does. Sabotage that — pass a
  * permissive literal, or `{}` — and the RFC1918 case reaches the socket and
  * goes red. Link-local would still be refused, being mechanism rather than
  * policy, which is why both cases are here.
@@ -18,14 +19,10 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FeedManager } from '../src/FeedManager';
 import type { FeedSourceConfig } from '../src/types';
 import { ALLOWED_RANGES_KEY } from '../../../dist/src/http/egressPolicy.js';
 import { REFUSAL } from '../../../dist/src/http/ssrf.js';
-import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
-
-/** The host core hands the feeds add-on (#1813). */
-const HOST = buildAddonHost('feeds', {});
+import { feedEngine, POLL_CTX } from './__fixtures__/feedEngine';
 
 const witness = vi.hoisted(() => ({ requests: [] as string[] }));
 
@@ -54,54 +51,57 @@ const source = (sourceId: string, url: string): FeedSourceConfig => ({
   sourceId, adapter: 'geojson', url, type: 'Event', recordIdField: 'id', map: { magnitude: 'properties.mag' }
 });
 
-function readerWith(allowed: () => string[]) {
-  return (key: string, fallback?: unknown): unknown => (key === ALLOWED_RANGES_KEY ? allowed() : fallback);
+/** A site whose egress allow-list is read from `allowed` each time the engine asks. */
+function engineAllowing(sources: FeedSourceConfig[], allowed: () => string[]) {
+  const config: Record<string, unknown> = {};
+  Object.defineProperty(config, ALLOWED_RANGES_KEY, { enumerable: true, get: allowed });
+  return feedEngine(sources, TMP, { config });
 }
 
 beforeEach(() => {
   witness.requests.length = 0;
 });
 
-describe('#1187 — ingest through the real guardedFetch', () => {
+describe('#1187 — ingest through the engine and the real guardedFetch', () => {
   test('a link-local feed URL is refused before any socket', async () => {
-    const fm = new FeedManager(HOST, [source('meta', 'http://169.254.169.254/latest/meta-data')], TMP, readerWith(() => []));
-    await expect(fm.ingest('meta')).rejects.toThrow(REFUSAL);
+    const { fm } = await engineAllowing([source('meta', 'http://169.254.169.254/latest/meta-data')], () => []);
+    await expect(fm.ingest('meta', POLL_CTX)).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
   test('an RFC1918 feed URL is refused under the shipped policy', async () => {
-    const fm = new FeedManager(HOST, [source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => []));
-    await expect(fm.ingest('lan')).rejects.toThrow(REFUSAL);
+    const { fm } = await engineAllowing([source('lan', 'http://10.0.0.5/feed.geojson')], () => []);
+    await expect(fm.ingest('lan', POLL_CTX)).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
   test('a .local name is refused before resolution', async () => {
-    const fm = new FeedManager(HOST, [source('mdns', 'http://sensor.local/feed.geojson')], TMP, readerWith(() => []));
-    await expect(fm.ingest('mdns')).rejects.toThrow(REFUSAL);
+    const { fm } = await engineAllowing([source('mdns', 'http://sensor.local/feed.geojson')], () => []);
+    await expect(fm.ingest('mdns', POLL_CTX)).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
   });
 
-  test('the same RFC1918 feed is fetched once its prefix is allowed — and the policy is read per ingest', async () => {
+  test('the same RFC1918 feed is fetched once its prefix is allowed — and the policy is read per fetch', async () => {
     let allowed: string[] = [];
-    const fm = new FeedManager(HOST, [source('lan', 'http://10.0.0.5/feed.geojson')], TMP, readerWith(() => allowed));
+    const { fm } = await engineAllowing([source('lan', 'http://10.0.0.5/feed.geojson')], () => allowed);
 
-    await expect(fm.ingest('lan')).rejects.toThrow(REFUSAL);
+    await expect(fm.ingest('lan', POLL_CTX)).rejects.toThrow(REFUSAL);
     expect(witness.requests).toEqual([]);
 
     allowed = ['10.0.0.0/8'];
     // The witness fails every request, so ingest still rejects — with the
     // witness's error, not the guard's. The request was made, to the URL.
-    await expect(fm.ingest('lan')).rejects.toThrow('socket witness');
+    await expect(fm.ingest('lan', POLL_CTX)).rejects.toThrow('socket witness');
     expect(witness.requests).toEqual(['http://10.0.0.5/feed.geojson']);
 
     allowed = [];
-    await expect(fm.ingest('lan')).rejects.toThrow(REFUSAL);
+    await expect(fm.ingest('lan', POLL_CTX)).rejects.toThrow(REFUSAL);
     expect(witness.requests).toHaveLength(1);
   });
 
   test('a public feed URL reaches the request step', async () => {
-    const fm = new FeedManager(HOST, [source('pub', 'https://feeds.example/q.geojson')], TMP, readerWith(() => []));
-    await expect(fm.ingest('pub')).rejects.toThrow('socket witness');
+    const { fm } = await engineAllowing([source('pub', 'https://feeds.example/q.geojson')], () => []);
+    await expect(fm.ingest('pub', POLL_CTX)).rejects.toThrow('socket witness');
     expect(witness.requests).toEqual(['https://feeds.example/q.geojson']);
   });
 });

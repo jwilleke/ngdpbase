@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { createDataFeedPlugin } from '../src/DataFeedPlugin';
 import logger from '../../../dist/src/utils/logger.js';
 import { asExecuted } from '../../../dist/src/test-support/plugins.js';
-import type { NormalizedRecord } from '../src/adapters/types';
+import type { NormalizedRecord } from '../src/types';
 
 // #1813: the plugin reports through the logger register() hands it.
 const DataFeedPlugin = asExecuted(createDataFeedPlugin(logger));

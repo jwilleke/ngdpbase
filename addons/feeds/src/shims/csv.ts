@@ -1,36 +1,38 @@
-import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
-import { isOk, reason, requestOptions } from './http.js';
 /**
- * csv adapter (#685 slice 4+, #911) — zero dependency (native fetch + a small
- * RFC 4180 parser). Needed for sources that only publish CSV, e.g. NASA FIRMS
- * thermal hotspots (geohazardwatch#4), whose `/api/area/csv/...` endpoint has
- * no JSON/GeoJSON/XML variant.
+ * csv shim (#685 slice 4+, #911; a shim since #2109) — zero dependency (a
+ * small RFC 4180 parser). Needed for sources that only publish CSV, e.g. NASA
+ * FIRMS thermal hotspots (geohazardwatch#4), whose `/api/area/csv/...`
+ * endpoint has no JSON/GeoJSON/XML variant.
  *
- * The first row is the header; each subsequent row becomes a RawRecord keyed by
- * the header column names (all values are strings — `map`/dot-path and the
- * downstream schema mappers cast as needed, exactly as for the other adapters).
+ * Nothing in it is about feeds, so any receiver of records can use it (a
+ * bank statement as well as a feed). The first row is the header; each
+ * subsequent row becomes one `record` item keyed by the header column names
+ * (all values are strings — `map`/dot-path and the downstream schema
+ * mappers cast as needed, exactly as for the other shims).
  *
- * CSV rows rarely carry an `id` column, so when neither `cfg.recordIdField` nor
- * an `id` field resolves, a stable content hash of the row is synthesized as the
- * `sourceRecordId` — order-independent (keys sorted) so a column reorder upstream
- * doesn't churn ids, and content-addressed so change-detection still works.
+ * Rows rarely carry an `id` column, so when neither the `recordIdField`
+ * option nor an `id` field resolves, a stable content hash of the row is
+ * synthesized as the id — order-independent (keys sorted) so a column
+ * reorder upstream doesn't churn ids, and content-addressed so
+ * change-detection still works.
  *
- * Delimiter defaults to `,`; override per-source with `cfg.delimiter` (e.g. `\t`).
+ * Delimiter defaults to `,`; override with the `delimiter` option (e.g. `\t`).
  *
- * `cfg.skipLines` skips N leading lines before the header (#1102). Some feeds —
- * government data exports especially — emit a human-readable caption above the
- * real header. Without skipping it, the caption becomes the sole column name,
- * the real header is consumed as the first record, and every column but the
- * first is discarded. That failure is entirely silent: HTTP 200, a successful
- * parse, records upserted, and a table of empty values. Hence
- * {@link preambleSuspicion}, which makes it visible without blocking it.
+ * The `skipLines` option skips N leading lines before the header (#1102).
+ * Some sources — government data exports especially — emit a human-readable
+ * caption above the real header. Without skipping it, the caption becomes
+ * the sole column name, the real header is consumed as the first record,
+ * and every column but the first is discarded. That failure is entirely
+ * silent: HTTP 200, a successful parse, records stored, and a table of empty
+ * values. Hence {@link preambleSuspicion}, which makes it visible (a warning
+ * on the read) without blocking it.
  */
 
 import { createHash } from 'node:crypto';
-import type { SourceAdapter, RawRecord, NormalizedRecord, GuardedFetch } from './types.js';
-import type { FeedSourceConfig } from '../types.js';
+import type { IceRecordData, IceShim, IceWarning } from '../../../../dist/src/ice/types.js';
+import type { RawRecord } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord } from './buildRecord.js';
+import { buildRecord, FEED_ITEMS_RECEIVER, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions } from './buildRecord.js';
 
 /**
  * Parse CSV text into header-keyed row objects. RFC 4180 subset: quoted fields,
@@ -115,52 +117,47 @@ export function preambleSuspicion(columns: readonly string[]): string | null {
   return looksLikeProse ? only : null;
 }
 
-/** Best-effort console; the addon uses console at this layer (no logger import). */
-function warn(msg: string): void {
-  // eslint-disable-next-line no-console
-  console.warn(msg);
-}
-
 /** Order-independent, content-addressed id for a row with no natural id. */
 function stableRowId(raw: RawRecord): string {
   const s = Object.keys(raw).sort().map(k => `${k}=${String(raw[k])}`).join('\x1f');
   return createHash('sha1').update(s).digest('hex').slice(0, 16);
 }
 
-export const csvAdapter: SourceAdapter = {
+/** One row as a record: its own id, or one synthesized from its content. */
+export function csvRecord(raw: RawRecord, opts: RecordShimOptions): IceRecordData | null {
+  const hasExplicitId = opts.recordIdField
+    ? getByPath(raw, opts.recordIdField) != null
+    : raw.id != null && raw.id !== '';
+  const seed = hasExplicitId ? raw : { ...raw, id: stableRowId(raw) };
+  // props come from `raw` (no synthetic id leak); id from `seed`.
+  return buildRecord(seed, opts, raw);
+}
+
+export const csvShim: IceShim = {
   name: 'csv',
+  label: 'CSV',
+  direction: 'in',
+  accepts: { extensions: ['.csv', '.tsv'], mediaTypes: ['text/csv', 'text/tab-separated-values'] },
+  produces: RECORD_KIND,
+  receivers: [FEED_ITEMS_RECEIVER],
+  duplicates: 'item',
 
-  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy, guardedFetch: GuardedFetch): Promise<RawRecord[]> {
-    const res = await guardedFetch(cfg.url, requestOptions(cfg, policy));
-    if (!isOk(res)) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
-    }
-    const rows = parseCsv(res.body.toString('utf8'), cfg.delimiter, cfg.skipLines) as RawRecord[];
+  async read(input, tools) {
+    const opts = recordOptions(tools.options);
+    const rows = parseCsv(input.text ?? '', opts.delimiter, opts.skipLines) as RawRecord[];
 
-    // Once per poll, not per record. Fires whether or not skipLines is set: if
+    // Once per read, not per record. Fires whether or not skipLines is set: if
     // it is set and the result still looks like prose, the value is wrong and
     // that is worth saying too.
-    if (rows.length > 0) {
-      const suspect = preambleSuspicion(Object.keys(rows[0]));
-      if (suspect) {
-        const shown = suspect.length > 60 ? `${suspect.slice(0, 60)}…` : suspect;
-        warn(
-          `feed '${cfg.sourceId}': parsed 1 column named "${shown}" — this looks like a ` +
-          'caption line being read as the header, which discards every other column. ' +
-          'Set `skipLines` if the feed has a preamble.'
-        );
-      }
+    const warnings: IceWarning[] = [];
+    const suspect = rows.length > 0 ? preambleSuspicion(Object.keys(rows[0])) : null;
+    if (suspect) {
+      const shown = suspect.length > 60 ? `${suspect.slice(0, 60)}…` : suspect;
+      warnings.push({
+        kind: 'csv-preamble',
+        detail: `parsed 1 column named "${shown}" — this looks like a caption line being read as the header, which discards every other column. Set \`skipLines\` if the file has a preamble.`
+      });
     }
-    return rows;
-  },
-
-  parse(raw: RawRecord, cfg: FeedSourceConfig): NormalizedRecord | null {
-    // Resolve an id; synthesize a stable one when the row carries none.
-    const hasExplicitId = cfg.recordIdField
-      ? getByPath(raw, cfg.recordIdField) != null
-      : raw.id != null && raw.id !== '';
-    const seed = hasExplicitId ? raw : { ...raw, id: stableRowId(raw) };
-    // props come from `raw` (no synthetic id leak); id from `seed`.
-    return buildRecord(seed, cfg, raw);
+    return { items: recordItems(input, rows.map(r => csvRecord(r, opts)), warnings) };
   }
 };

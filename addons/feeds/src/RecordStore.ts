@@ -10,8 +10,8 @@
 
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import { createHash } from 'node:crypto';
-import type { NormalizedRecord } from './adapters/types.js';
+import type { NormalizedRecord } from './types.js';
+import { recordHash } from './recordHash.js';
 
 interface StoredEntry {
   record: NormalizedRecord;
@@ -30,20 +30,6 @@ export interface UpsertResult {
   updated: number;
   unchanged: number;
   removed: number;
-}
-
-/** Stable JSON (recursively sorted keys) so the hash is order-independent. */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const obj = value as Record<string, unknown>;
-  return `{${Object.keys(obj).sort().map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
-}
-
-/** Content hash of a record — excludes the volatile fetchedAt (D6). */
-function recordHash(rec: NormalizedRecord): string {
-  // The same sha256 hex DeltaStorage.calculateHash gives, so stored hashes still match (#1813).
-  return createHash('sha256').update(stableStringify({ sourceRecordId: rec.sourceRecordId, properties: rec.properties }), 'utf8').digest('hex');
 }
 
 export class RecordStore {
@@ -106,6 +92,12 @@ export class RecordStore {
   async list(): Promise<NormalizedRecord[]> {
     await this.ensureLoaded();
     return Object.values(this.records).map(e => e.record);
+  }
+
+  /** The stored content hash of a record, or null when the store does not hold it (#2109: the receiver's own duplicate check). */
+  async hashOf(sourceRecordId: string): Promise<string | null> {
+    await this.ensureLoaded();
+    return this.records[sourceRecordId]?.hash ?? null;
   }
 
   async get(sourceRecordId: string): Promise<NormalizedRecord | null> {

@@ -3,18 +3,21 @@
  *
  * @jest-environment node
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
 import { shapeRecords } from '../src/dedupe';
 import { parseSourceConfigs } from '../src/config';
-import { FeedManager } from '../src/FeedManager';
 import { recordDateIso } from '../src/normalize';
-import type { NormalizedRecord, SourceAdapter } from '../src/adapters/types';
-import type { FeedSourceConfig } from '../src/types';
+import type { FeedSourceConfig, NormalizedRecord } from '../src/types';
 import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
+import { feedEngine, POLL_CTX } from './__fixtures__/feedEngine';
+
+// #2109: the engine fetches; its guardedFetch is the seam.
+vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
 
 /** The host core hands the feeds add-on (#1813). */
 const HOST = buildAddonHost('feeds', {});
@@ -39,11 +42,6 @@ const rec = (id: string, volcano: string | undefined, occurredAt?: string): Norm
 
 const ids = (r: NormalizedRecord[]) => r.map(x => x.sourceRecordId);
 
-
-// #1133 — FeedManager resolves the egress policy per ingest and hands it to
-// the adapter. It holds a ConfigReader, not a transport; these tests pass a
-// reader that sets nothing, so the shipped egress defaults apply.
-const NO_EGRESS_CONFIG = (_key: string, fallback?: unknown): unknown => fallback;
 
 describe('shapeRecords — pass-through (#989)', () => {
   it('returns the input untouched when neither key is configured', () => {
@@ -251,25 +249,13 @@ describe('FeedManager.ingest — shaping is applied before the store (#989)', ()
       { id: 'r-new', volcanoName: 'Rainier', occurredAt: hoursAgo(1) },
       { id: 's-1', volcanoName: 'Shasta', occurredAt: hoursAgo(2) }
     ];
-    const adapter: SourceAdapter = {
-      name: 'stub',
-      fetch: async () => raw,
-      parse: (r) => ({
-        sourceRecordId: String(r.id),
-        fetchedAt: new Date(NOW).toISOString(),
-        properties: { volcanoName: r.volcanoName, occurredAt: r.occurredAt }
-      })
-    };
-
-    const fm = new FeedManager(
-      HOST,
-      [{ sourceId: 'vaac-1', adapter: 'stub', url: 'u', type: 'Advisory', dedupeBy: 'volcanoName' }],
-      TMP,
-      NO_EGRESS_CONFIG,
-      () => adapter
+    vi.mocked(guardedFetch).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(raw)), finalUrl: 'https://x.test/', chain: [] });
+    const { fm } = await feedEngine(
+      [{ sourceId: 'vaac-1', adapter: 'rest-json', url: 'https://x.test/vaac.json', type: 'Advisory', dedupeBy: 'volcanoName', map: { volcanoName: 'volcanoName', occurredAt: 'occurredAt' } }],
+      TMP
     );
 
-    const result = await fm.ingest('vaac-1');
+    const result = await fm.ingest('vaac-1', POLL_CTX);
     expect(result.added).toBe(2);
 
     const captured: { sourceId: string; list: (o: object) => Promise<{ total: number }> }[] = [];

@@ -21,7 +21,18 @@
   },
   "ngdpbase": {
     "slug": "feeds",
-    "type": "additive"
+    "type": "additive",
+    "shims": [
+      "geojson",
+      "rest-json",
+      "xml",
+      "csv",
+      "rss-atom",
+      "xml-index"
+    ],
+    "receivers": [
+      "items"
+    ]
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.2"
