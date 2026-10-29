@@ -13,7 +13,11 @@
  *   test went red;
  * - recording before saving (save first, then record): the refuse-on-failure
  *   test went red, a keys file was left on disk;
- * - the token check in saveRecoveryWords (skipped): the wrong-token test went red.
+ * - the token check in saveRecoveryWords (skipped): the wrong-token test went red;
+ * - the confirmation check in createFolderKey (skipped): the "unconfirmed
+ *   words" test went red;
+ * - the confirmed check in discardUnconfirmedWords (skipped): the "confirmed
+ *   set cannot be discarded" test went red.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,6 +35,9 @@ describe('SharedFolderManager (#2124)', () => {
   let admins: Set<string>;
   let audited: Array<Record<string, unknown>>;
   let auditFails: boolean;
+  /** `user/wordsId` pairs ConsentManager holds a current confirmation for. */
+  let confirmed: Set<string>;
+  let wordingPage: boolean;
   const savedKey = process.env[SHARED_FOLDERS_KEY_ENV];
 
   const build = async (): Promise<SharedFolderManager> => {
@@ -38,6 +45,11 @@ describe('SharedFolderManager (#2124)', () => {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.shared-folders.storagedir' ? dir : d)
+      },
+      ConsentManager: {
+        documents: async (scope: string) => (scope === 'shared-folders-recovery-words' && wordingPage ? [{ id: scope }] : []),
+        pendingFor: async (u: string, scope: string, subject?: string) =>
+          (scope === 'shared-folders-recovery-words' && wordingPage && !confirmed.has(`${u}/${subject}`) ? [{ id: scope }] : [])
       },
       PolicyDecisionPoint: { permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && s.isAuthenticated && admins.has(s.username)) },
       AuditManager: {
@@ -54,10 +66,11 @@ describe('SharedFolderManager (#2124)', () => {
     return manager;
   };
 
-  /** Make and save the recovery words as `who`; returns the words. */
-  const setUpWords = async (m: SharedFolderManager, who = 'ann'): Promise<string> => {
+  /** Make and save the recovery words as `who`, and (unless told not to) record their confirmation; returns the words. */
+  const setUpWords = async (m: SharedFolderManager, who = 'ann', confirm = true): Promise<string> => {
     const { token, words } = await m.prepareRecoveryWords(admin(who));
-    await m.saveRecoveryWords(admin(who), token);
+    const wordsId = await m.saveRecoveryWords(admin(who), token);
+    if (confirm) confirmed.add(`${who}/${wordsId}`);
     return words.join(' ');
   };
 
@@ -67,6 +80,8 @@ describe('SharedFolderManager (#2124)', () => {
     admins = new Set(['ann', 'bob']);
     audited = [];
     auditFails = false;
+    confirmed = new Set();
+    wordingPage = true;
   });
 
   afterEach(() => {
@@ -134,10 +149,71 @@ describe('SharedFolderManager (#2124)', () => {
     });
   });
 
+  describe('discarding an unconfirmed set (operator, 2026-10-29)', () => {
+    test('any admin may discard words the admin shown them has not confirmed, then make and confirm a new set', async () => {
+      const m = await build();
+      await setUpWords(m, 'ann', false);
+      expect(await m.recoveryWordsConfirmed()).toBe(false);
+      await m.discardUnconfirmedWords(admin('bob'));
+      expect(m.recoveryWordsInfo()).toBeNull();
+      expect(audited.map((e) => [e.eventType, e.user, (e.metadata as Record<string, unknown>).shownTo])).toContainEqual(['shared-folder-words-discard', 'bob', 'ann']);
+      await setUpWords(m, 'bob');
+      expect(m.recoveryWordsInfo()?.shownTo).toBe('bob');
+      expect(await m.recoveryWordsConfirmed()).toBe(true);
+      await m.createFolderKey(admin('bob'), 'executive');
+    });
+
+    test('a confirmed set cannot be discarded', async () => {
+      const m = await build();
+      await setUpWords(m);
+      await expect(m.discardUnconfirmedWords(admin('bob'))).rejects.toThrow(/confirmed saving these recovery words/);
+      expect(m.recoveryWordsInfo()).not.toBeNull();
+    });
+
+    test('a set that protects folder keys cannot be discarded, even when a new wording version asks again', async () => {
+      const m = await build();
+      await setUpWords(m);
+      await m.createFolderKey(admin(), 'executive');
+      confirmed.clear(); // as if the wording's version was raised
+      expect(m.recoveryWordsInfo()?.protectsFolders).toBe(true);
+      await expect(m.discardUnconfirmedWords(admin('bob'))).rejects.toThrow(/protect shared folders/);
+    });
+
+    test('only an admin, and a failed audit record refuses: nothing is removed', async () => {
+      const m = await build();
+      await setUpWords(m, 'ann', false);
+      admins.delete('bob');
+      await expect(m.discardUnconfirmedWords(admin('bob'))).rejects.toThrow(/needs admin-system/);
+      auditFails = true;
+      await expect(m.discardUnconfirmedWords(admin('ann'))).rejects.toThrow();
+      expect((await build()).recoveryWordsInfo()).not.toBeNull();
+    });
+
+    test('nothing to discard without words', async () => {
+      await expect((await build()).discardUnconfirmedWords(admin())).rejects.toThrow(/no recovery words to discard/);
+    });
+  });
+
   describe('folder keys', () => {
     test('need the recovery words first', async () => {
       const m = await build();
       await expect(m.createFolderKey(admin(), 'executive')).rejects.toThrow(/recovery words first/);
+    });
+
+    test('need the words confirmed by the admin shown them, not merely made', async () => {
+      const m = await build();
+      const words = await setUpWords(m, 'ann', false);
+      await expect(m.createFolderKey(admin(), 'executive')).rejects.toThrow(/ann has not confirmed saving/);
+      // Another admin's confirmation does not count.
+      confirmed.add(`bob/${m.recoveryWordsInfo()!.wordsId}`);
+      await expect(m.createFolderKey(admin('bob'), 'executive')).rejects.toThrow(/has not confirmed/);
+      // Without the wording page nobody could have confirmed it.
+      confirmed.add(`ann/${m.recoveryWordsInfo()!.wordsId}`);
+      wordingPage = false;
+      await expect(m.createFolderKey(admin(), 'executive')).rejects.toThrow(/has not confirmed/);
+      wordingPage = true;
+      await m.createFolderKey(admin(), 'executive');
+      expect((await m.openFolderKeyWithWords(admin(), 'executive', words)).equals(await m.openFolderKey(admin(), 'executive'))).toBe(true);
     });
 
     test('round-trip through the server-key wrap and through the words, which give the same key', async () => {

@@ -33,7 +33,7 @@ describe('the shared folders\' recovery words on Admin → Backup (#2124)', () =
   let dir: string;
   let routes: WikiRoutes;
   let folders: SharedFolderManager;
-  let consent: { documents: ReturnType<typeof vi.fn>; accept: ReturnType<typeof vi.fn> };
+  let consent: { documents: ReturnType<typeof vi.fn>; accept: ReturnType<typeof vi.fn>; pendingFor: ReturnType<typeof vi.fn> };
   let wordsVersion: string;
   let allowed: boolean;
   const savedKey = process.env[SHARED_FOLDERS_KEY_ENV];
@@ -57,7 +57,9 @@ describe('the shared folders\' recovery words on Admin → Backup (#2124)', () =
     allowed = true;
     consent = {
       documents: vi.fn(async (scope: string) => (scope === SCOPE ? [{ id: SCOPE, scope, title: 'Shared Folders Recovery Words', version: wordsVersion, effective: null }] : [])),
-      accept: vi.fn(async () => [])
+      accept: vi.fn(async () => []),
+      // Nobody has confirmed: the set stays unconfirmed (the consent records are ConsentManager's, tested there).
+      pendingFor: vi.fn(async (_u: string, scope: string) => (scope === SCOPE ? [{ id: SCOPE }] : []))
     };
     const managers: Record<string, unknown> = {
       ConsentManager: consent,
@@ -125,6 +127,27 @@ describe('the shared folders\' recovery words on Admin → Backup (#2124)', () =
     consent.accept.mockRejectedValue(new Error('consent folder gone'));
     const { token } = await show();
     await routes.adminSharedFoldersWordsSave(req({ token, ...TICK }), newRes());
+    expect(folders.recoveryWordsInfo()).not.toBeNull();
+  });
+
+  test('an unconfirmed set can be discarded from Admin → Backup, and a new set made', async () => {
+    const { token } = await show();
+    await routes.adminSharedFoldersWordsSave(req({ token, ...TICK }), newRes());
+    expect(folders.recoveryWordsInfo()).not.toBeNull();
+    const res = newRes();
+    await routes.adminSharedFoldersWordsDiscard(req(), res);
+    expect(res.redirect.mock.calls[0][0]).toMatch(/^\/admin\/backup\?success=/);
+    expect(folders.recoveryWordsInfo()).toBeNull();
+    await show();
+  });
+
+  test('a confirmed set is not discarded', async () => {
+    const { token } = await show();
+    await routes.adminSharedFoldersWordsSave(req({ token, ...TICK }), newRes());
+    consent.pendingFor.mockResolvedValue([]);
+    const res = newRes();
+    await routes.adminSharedFoldersWordsDiscard(req(), res);
+    expect(decodeURIComponent(res.redirect.mock.calls[0][0] as string)).toMatch(/cannot be discarded/);
     expect(folders.recoveryWordsInfo()).not.toBeNull();
   });
 

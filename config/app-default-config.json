@@ -2160,6 +2160,13 @@
         "on-failure": "refuse"
       }
     },
+    "shared-folder-words-discard": {
+      "description": "An administrator discarded the organization's shared-folders recovery words before the admin shown them confirmed saving them (#2124): who, which set (an id) and who it was shown to. Recorded before the words are removed, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "shared-folder-key-create": {
       "description": "A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it",
       "grantable": false,

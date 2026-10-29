@@ -37,5 +37,6 @@ export function sharedFoldersWordsMessage(state: SharedFoldersWordsInfo, viewer:
   const stake = 'If the shared-folders key is ever lost, the organization\'s 12 recovery words are the only way to open its shared folders again.';
   return viewer === state.shownTo
     ? `${stake} You were shown them once; confirm you have saved them off this server.`
-    : `${stake} ${state.shownTo} was shown them and has not confirmed saving them yet.`;
+    : `${stake} ${state.shownTo} was shown them and has not confirmed saving them yet.` +
+      (state.protectsFolders ? '' : ' If they cannot, discard this set on Admin → Backup and make a new one, then confirm it yourself.');
 }

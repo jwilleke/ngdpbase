@@ -13038,6 +13038,28 @@ ${panes}
   }
 
   /**
+   * POST /admin/backup/shared-folders/words/discard — discard the shared
+   * folders' recovery words while the admin shown them has not confirmed
+   * saving them (#2124; operator, 2026-10-29). Any holder of `admin-system`,
+   * so a reminder nobody can clear can always be cleared: they then make a
+   * new set and confirm it themselves. SharedFolderManager refuses a
+   * confirmed set, or one that protects folder keys.
+   */
+  async adminSharedFoldersWordsDiscard(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      await folders.discardUnconfirmedWords(wikiContext.userContext);
+      return back('success', 'The unconfirmed recovery words are discarded. Make a new set, and confirm you have saved it.');
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
+    }
+  }
+
+  /**
    * POST /admin/backup/config — Save auto-backup configuration
    */
   async adminBackupConfig(req: Request, res: Response) {
@@ -17719,6 +17741,7 @@ ${panes}
     app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
     app.post('/admin/backup/shared-folders/words', (req: Request, res: Response) => void this.adminSharedFoldersWords(req, res));
     app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
+    app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

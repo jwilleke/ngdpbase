@@ -55,6 +55,7 @@ import {
   type WrappedBlob
 } from '../utils/privateStoreCrypto.js';
 import type { Lockbox } from '../utils/shareLockbox.js';
+import { SHARED_FOLDERS_WORDS_CONSENT_SCOPE } from '../types/Consent.js';
 import {
   currentSharedFoldersKey,
   SHARED_FOLDERS_KEY_ENV,
@@ -117,6 +118,8 @@ export interface SharedFoldersWordsInfo {
   wordsId: string;
   madeAt: string;
   shownTo: string;
+  /** Whether any folder key is sealed for this set: such a set can never be discarded. */
+  protectsFolders: boolean;
 }
 
 /** The door said no: not allowed, or the request does not fit the state. Nothing was changed. */
@@ -127,6 +130,11 @@ export class SharedFolderRefusedError extends Error {
 /** The keys cannot be used right now (no server key, or not the one they were made under); the message says why. */
 export class SharedFoldersUnavailableError extends Error {
   override readonly name = 'SharedFoldersUnavailableError';
+}
+
+interface ConsentReader {
+  documents(scope: string): Promise<unknown[]>;
+  pendingFor(username: string, scope: string, subject?: string): Promise<unknown[]>;
 }
 
 interface Pdp {
@@ -200,7 +208,22 @@ class SharedFolderManager extends BaseManager {
   /** The organization's recovery words as made (never the words), or null: none made yet. */
   recoveryWordsInfo(): SharedFoldersWordsInfo | null {
     const r = this.file?.recovery;
-    return r ? { wordsId: recoveryWordsId(r), madeAt: r.madeAt, shownTo: r.shownTo } : null;
+    return r ? { wordsId: recoveryWordsId(r), madeAt: r.madeAt, shownTo: r.shownTo, protectsFolders: Object.keys(this.file?.folders ?? {}).length > 0 } : null;
+  }
+
+  /**
+   * Whether the admin shown the current words confirmed saving them, at the
+   * wording's current version: their consent in `shared-folders-recovery-words`
+   * for this set exists (ConsentManager's fact, asked each time). False with
+   * no words, no ConsentManager, or no wording page (then nobody could have
+   * confirmed what it says).
+   */
+  async recoveryWordsConfirmed(): Promise<boolean> {
+    const info = this.recoveryWordsInfo();
+    const consent = this.engine.getManager<ConsentReader>('ConsentManager');
+    if (!info || !consent) return false;
+    if ((await consent.documents(SHARED_FOLDERS_WORDS_CONSENT_SCOPE)).length === 0) return false;
+    return (await consent.pendingFor(info.shownTo, SHARED_FOLDERS_WORDS_CONSENT_SCOPE, info.wordsId)).length === 0;
   }
 
   /** Why the keys cannot be used now, or null when they can. */
@@ -215,8 +238,9 @@ class SharedFolderManager extends BaseManager {
    * once (decision 4). Nothing is saved: the words wait, in memory only, for
    * that admin's `saveRecoveryWords` with the returned token, for
    * `ngdpbase.shared-folders.words-pending-minutes`. A second call replaces
-   * the first set unsaved. Refused when a set already exists: making a new set,
-   * which retires the old, is a later slice.
+   * the first set unsaved. Refused while a set is saved: an unconfirmed set is
+   * discarded first (`discardUnconfirmedWords`); replacing a confirmed set is a
+   * later slice.
    */
   async prepareRecoveryWords(ctx: ActorContext): Promise<{ token: string; words: string[] }> {
     await this.requireAdmin(ctx);
@@ -238,6 +262,42 @@ class SharedFolderManager extends BaseManager {
   /** Forget the words shown to `ctx` and not saved: they are never shown again. */
   discardRecoveryWords(ctx: ActorContext): void {
     this.pending.delete(ctx.username);
+  }
+
+  /**
+   * Discard the saved recovery words while the admin shown them has not
+   * confirmed saving them (operator, 2026-10-29): any holder of
+   * `admin-system` may, so a reminder that nobody can clear (that admin's
+   * account deleted, say) can always be cleared by making a new set and
+   * confirming it themselves. Refused once the set is confirmed, and while
+   * any folder key is sealed for it (`createFolderKey` needs a confirmed set,
+   * so such a set was confirmed once). Recorded as
+   * `shared-folder-words-discard` before the words are removed (on-failure
+   * refuse).
+   */
+  async discardUnconfirmedWords(ctx: ActorContext): Promise<void> {
+    await this.requireAdmin(ctx);
+    this.requireUsable();
+    await this.serial.run(KEYS_FILE, async () => {
+      const file = this.file;
+      const info = this.recoveryWordsInfo();
+      if (!file?.recovery || !info) throw new SharedFolderRefusedError('The shared folders have no recovery words to discard');
+      if (info.protectsFolders) throw new SharedFolderRefusedError('These recovery words protect shared folders, so they cannot be discarded');
+      if (await this.recoveryWordsConfirmed()) throw new SharedFolderRefusedError(`${info.shownTo} confirmed saving these recovery words, so they cannot be discarded`);
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+        eventType: AUDIT_EVENT.SHARED_FOLDER_WORDS_DISCARD,
+        ...who,
+        action: 'shared-folder-words-discard',
+        result: 'success',
+        severity: 'high',
+        resource: 'shared-folders',
+        resourceType: 'shared-folders-recovery-words',
+        metadata: { ...who.metadata, wordsId: info.wordsId, shownTo: info.shownTo }
+      });
+      await this.writeKeysFile({ ...file, recovery: null });
+      logger.info(`🗝️  [SharedFolderManager] ${ctx.username} discarded the shared folders' unconfirmed recovery words (shown to ${info.shownTo})`);
+    });
   }
 
   /**
@@ -286,7 +346,9 @@ class SharedFolderManager extends BaseManager {
   /**
    * Make folder `folderId`'s own key (decision 2): a random key, wrapped
    * under the server key and sealed for the recovery words, so it needs the
-   * words to exist first. Recorded as `shared-folder-key-create` before it is
+   * words to exist and to be confirmed saved by the admin shown them
+   * (`recoveryWordsConfirmed`; operator, 2026-10-29): no folder key is ever
+   * protected only by words nobody saved. Recorded as `shared-folder-key-create` before it is
    * saved (on-failure refuse). The key itself is not returned; open it with
    * `openFolderKey`.
    */
@@ -297,6 +359,9 @@ class SharedFolderManager extends BaseManager {
     await this.serial.run(KEYS_FILE, async () => {
       const file = this.fileOrNew();
       if (!file.recovery) throw new SharedFolderRefusedError('Make the shared folders\' recovery words first (Admin → Backup)');
+      if (!(await this.recoveryWordsConfirmed())) {
+        throw new SharedFolderRefusedError(`${file.recovery.shownTo} has not confirmed saving the shared folders' recovery words yet, so no folder key can be made`);
+      }
       if (file.folders[folderId]) throw new SharedFolderRefusedError(`Shared folder '${folderId}' already has a key`);
       const record = createEncryptedStore(wrapKey);
       const dek = unwrapDek(wrapKey, record);

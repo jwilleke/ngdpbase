@@ -111,7 +111,14 @@
             <% if (sfWords.pending.length === 0) { %>
             <p class="text-success mb-0" id="shared-folders-words-confirmed"><i class="fas fa-check-circle"></i> <%= sfWords.shownTo %> confirmed they are saved.</p>
             <% } else { %>
-            <div class="alert alert-warning mb-0" id="shared-folders-words-unconfirmed"><%= sfWords.shownTo %> has not confirmed saving them yet. Until they do, administrators see a reminder.</div>
+            <div class="alert alert-warning mb-2" id="shared-folders-words-unconfirmed"><%= sfWords.shownTo %> has not confirmed saving them yet. Until they do, administrators see a reminder, and no shared folder can be made.</div>
+            <% if (!sfWords.protectsFolders) { %>
+            <p class="small mb-1">If <%= sfWords.shownTo %> cannot confirm (the words were lost, or the account is gone), discard this set and make a new one; you then confirm the new set yourself.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words/discard" id="shared-folders-words-discard" class="mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-danger btn-sm"<%- lockedUnless('admin-system') %>><i class="fas fa-trash"></i> Discard these words</button>
+            </form>
+            <% } %>
             <% } %>
             <% } %>
         </div>

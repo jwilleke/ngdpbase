@@ -46,29 +46,36 @@ It protects against a stolen backup or data volume, not against someone who alre
 Made on an admin's action, on Admin → Backup ("Make the recovery words"), not at first start or with the first folder:
 
 - At first start no one is there to see them; they would have to sit on disk until an admin looked, which defeats keeping them off the server.
-- The first folder (slice 2) would bundle two steps; a folder cannot be made until the words exist (`createFolderKey` refuses), so slice 2 sends the admin here first.
+- The first folder (slice 2) would bundle two steps; a folder cannot be made until the words exist and are confirmed (`createFolderKey` refuses), so slice 2 sends the admin here first.
 
 The steps:
 
 - `prepareRecoveryWords(ctx)` makes 12 BIP39 words and returns them with a token. Nothing is saved: the words wait in memory, for that admin only, for `ngdpbase.shared-folders.words-pending-minutes` (default 15). A second call replaces them.
 - The page (`views/admin-shared-folders-words.ejs`, `no-store`) shows them once with the required tick from `_recovery-words-consent.ejs` and the wording's version.
 - `POST /admin/backup/shared-folders/words/save` refuses without the tick, or when the wording's version changed: the words are discarded (`discardRecoveryWords`), never shown again, and nothing is saved. With it, `saveRecoveryWords(ctx, token)` records `shared-folder-words-create` (on-failure refuse) and then writes them, naming the admin they were shown to (`shownTo`). The route then records the consent (`how: setup`), bound to the set of words (`recoveryWordsInfo().wordsId`).
-- A second set is refused. Making a new set, which retires the old one, is a later slice.
+- A second set is refused while one is saved. An __unconfirmed__ set can be discarded (below); replacing a __confirmed__ set, which retires the old one, is a later slice.
+
+### Confirmed before any folder key (operator, 2026-10-29)
+
+- `createFolderKey` refuses until the words are __confirmed__: the admin shown them has a consent for this set at the wording's current version (`recoveryWordsConfirmed()`, which asks ConsentManager each time; false without the wording page). Made is not enough, so no folder key is ever protected only by words nobody saved. A new wording version asks again, and until the confirmation is renewed no new folder key is made; existing ones are unaffected.
+- `discardUnconfirmedWords(ctx)`: any holder of `admin-system` may discard a set the admin shown it has not confirmed (`POST /admin/backup/shared-folders/words/discard`, "Discard these words" on Admin → Backup), then make a new set and confirm it themselves. That is how a reminder nobody can clear (the words lost, or that admin's account deleted) is always cleared. Recorded as `shared-folder-words-discard` (on-failure refuse) before the words are removed. Refused for a confirmed set, and for a set any folder key is sealed for (`protectsFolders`): such a set was confirmed when the key was made, and discarding it would leave those keys without their recovery copy.
 
 ### The confirmation and the banner
 
-Only the admin shown the words can confirm saving them; nobody else saw them. Until that admin's consent exists for this set at the wording's current version (`sharedFoldersWordsState`, `src/utils/sharedFoldersWordsConsent.ts`), holders of `admin-system` see a banner on the home page, `/admin` and `/admin/backup` (`res.locals.sharedFoldersWordsNotice`, set by `src/middleware/recoveryWordsNotice.ts`). The admin who saw the words is linked to `/consent?scope=shared-folders-recovery-words`; the others to Admin → Backup, which names who was shown them. It never holds a request, and never shows to a token, a share link or a proxy. The wording is the required page `shared-folders-recovery-words`; raising its `version:` asks again.
+Only the admin shown the words can confirm saving them; nobody else saw them. Until that admin's consent exists for this set at the wording's current version (`sharedFoldersWordsState`, `src/utils/sharedFoldersWordsConsent.ts`), holders of `admin-system` see a banner on the home page, `/admin` and `/admin/backup` (`res.locals.sharedFoldersWordsNotice`, set by `src/middleware/recoveryWordsNotice.ts`). The admin who saw the words is linked to `/consent?scope=shared-folders-recovery-words`; the others to Admin → Backup, which names who was shown them, and are told they can discard the set and make their own (unless it protects folder keys). It never holds a request, and never shows to a token, a share link or a proxy. The wording is the required page `shared-folders-recovery-words`; raising its `version:` asks again.
 
 ## Methods
 
 | Method | For |
 | --- | --- |
-| `recoveryWordsInfo()` | the words as made (`wordsId`, `madeAt`, `shownTo`), never the words; null before |
+| `recoveryWordsInfo()` | the words as made (`wordsId`, `madeAt`, `shownTo`, `protectsFolders`), never the words; null before |
 | `unavailableReason()` | why the keys cannot be used now, or null |
 | `prepareRecoveryWords(ctx)` | make the words to show once; returns `{ token, words }` |
 | `saveRecoveryWords(ctx, token)` | save them after the tick; returns `wordsId` |
 | `discardRecoveryWords(ctx)` | forget unsaved words |
-| `createFolderKey(ctx, folderId)` | make a folder's key, under the server key and for the words |
+| `recoveryWordsConfirmed()` | whether the admin shown the words confirmed them, at the current wording |
+| `discardUnconfirmedWords(ctx)` | discard saved words nobody confirmed (any admin) |
+| `createFolderKey(ctx, folderId)` | make a folder's key, under the server key and for the words; needs confirmed words |
 | `openFolderKey(ctx, folderId)` | the folder's key, with the server key |
 | `openFolderKeyWithWords(ctx, folderId, words)` | the folder's key, with the words: what recovery will use |
 
@@ -90,7 +97,8 @@ Every method takes the caller's context and asks the PDP for `admin-system` (`Sh
 - Slice 2 ([#1775](https://github.com/jwilleke/ngdpbase/issues/1775) build order): folders holding pages and files through the page and asset doors, the `shared-folder-read` / `shared-folder-file` permissions, sealed search and audit. Until then nothing calls `createFolderKey` or `openFolderKey` outside tests.
 - Slice 3: the admin Shared folders screen. Slice 4: `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)).
 - Later: rotation of the server key (decision 3), recovery with the words after a lost key and making a new set of words (decision 4), add-on folders (decision 9), trash and purge (decision 10).
-- The confirmation belongs to the admin shown the words. If that account is deleted before confirming, the banner stays until a new set of words can be made (a later slice).
+- A set confirmed and then asked again by a new wording version, whose admin is gone, cannot be discarded once it protects folder keys: its reminder stays until replacing a confirmed set is built (a later slice). An unconfirmed set protecting no folder can always be discarded.
+- A backup taken without the backup key leaves `.env` out, so its `keys.json` needs the recovery words on a new server (recovery is a later slice).
 
 ## See also
 

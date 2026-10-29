@@ -21,7 +21,7 @@ const PAGE = { accept: 'text/html,application/xhtml+xml' };
 const SCOPE = 'shared-folders-recovery-words';
 
 describe('the shared folders\' recovery-words banner (#2124)', () => {
-  let words: { wordsId: string; madeAt: string; shownTo: string } | null;
+  let words: { wordsId: string; madeAt: string; shownTo: string; protectsFolders: boolean } | null;
   let confirmed: Set<string>;
   let version: string;
   let admins: Set<string>;
@@ -62,7 +62,7 @@ describe('the shared folders\' recovery-words banner (#2124)', () => {
   const notice = (o: Outcome) => o.locals.sharedFoldersWordsNotice as { message: string; link: string; mine: boolean } | undefined;
 
   beforeEach(() => {
-    words = { wordsId: 'org-words-1', madeAt: '2026-10-29T12:00:00.000Z', shownTo: 'ann' };
+    words = { wordsId: 'org-words-1', madeAt: '2026-10-29T12:00:00.000Z', shownTo: 'ann', protectsFolders: false };
     confirmed = new Set();
     version = '1';
     admins = new Set(['ann', 'bob']);
@@ -82,6 +82,14 @@ describe('the shared folders\' recovery-words banner (#2124)', () => {
     const n = notice(await run('/admin', 'bob'));
     expect(n).toMatchObject({ mine: false, link: '/admin/backup#shared-folders-key' });
     expect(n?.message).toMatch(/ann was shown them and has not confirmed/);
+    // They can discard the unconfirmed set and make their own (operator, 2026-10-29) ...
+    expect(n?.message).toMatch(/discard this set on Admin → Backup and make a new one, then confirm it yourself/);
+    // ... but not one that protects folder keys.
+    words.protectsFolders = true;
+    expect(notice(await run('/admin', 'bob'))?.message).not.toMatch(/discard/);
+    // The admin shown them is never told to discard.
+    words.protectsFolders = false;
+    expect(notice(await run('/admin', 'ann'))?.message).not.toMatch(/discard/);
   });
 
   test('not for a user without admin-system, not on other pages, not for a delegated request, not before words exist', async () => {

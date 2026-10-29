@@ -179,6 +179,8 @@ export const AUDIT_EVENT = {
   SHARED_FOLDER_KEY_CREATE: 'shared-folder-key-create',
   /** The organization's 12 recovery words for shared folders were made and saved (#2124): the admin who was shown them, and which set (an id, never the words). Recorded before the words are saved, which cannot proceed without it */
   SHARED_FOLDER_WORDS_CREATE: 'shared-folder-words-create',
+  /** An administrator discarded the organization's shared-folders recovery words before the admin shown them confirmed saving them (#2124): who, which set (an id) and who it was shown to. Recorded before the words are removed, which cannot proceed without it */
+  SHARED_FOLDER_WORDS_DISCARD: 'shared-folder-words-discard',
   /** Sign-in approval: the browser that was waiting gave up the sign-in (#1532) */
   SIGNINAPPROVAL_ABANDON: 'signinapproval-abandon',
   /** Sign-in approval: the user pressed Approve (#1532) */

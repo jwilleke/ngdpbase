@@ -72,6 +72,10 @@ test.describe('Shared folders key and recovery words (#2124)', () => {
     await expect(banner).toContainText('the only way to open its shared folders again');
     await page.goto('/profile');
     await expect(page.locator('[data-shared-folders-words-banner]')).toHaveCount(0);
+    // While unconfirmed (and protecting no folder), any admin may discard the set and make a new one.
+    await page.goto('/admin/backup');
+    await expect(page.locator('#shared-folders-words-unconfirmed')).toBeVisible();
+    await expect(page.locator('#shared-folders-words-discard button')).toBeVisible();
 
     await page.goto('/admin');
     await Promise.all([page.waitForURL(/\/consent\?scope=shared-folders-recovery-words/), banner.getByRole('link', { name: 'I have saved them' }).click()]);
