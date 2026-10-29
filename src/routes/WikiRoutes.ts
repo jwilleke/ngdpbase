@@ -197,6 +197,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
 import type { RecentImport } from '../ice/types.js';
+import { isZip } from '../ice/fileHandling.js';
 import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
@@ -10452,7 +10453,9 @@ ${panes}
 
   /**
    * POST /import — start an import (#2021). Multipart: `files` (one or more,
-   * a zip among them if wanted), `receiver`, and `original` (D11). Answers at
+   * a zip among them if wanted), `receiver`, `original` (D11), and `name`
+   * (#2130): what a single uploaded file becomes, for a receiver that takes
+   * a name. A zip, or several files, keep their own names. Answers at
    * once with the run id; the engine unpacks, filters, fingerprints and
    * converts in a background job (`enqueueUpload`).
    *
@@ -10512,10 +10515,27 @@ ${panes}
     if (asked !== undefined && !original) {
       return res.status(400).json({ success: false, error: 'That choice for the original file is not offered here.' });
     }
+    // #2130: a name for what one uploaded file becomes. A user value: checked as
+    // a name only (the receiver's rule); it never picks a location or a path.
+    const givenName: unknown = req.body?.name;
+    if (givenName !== undefined) {
+      if (typeof givenName !== 'string') return res.status(400).json({ success: false, error: 'The name could not be read.' });
+      if (uploaded.length !== 1 || isZip({ name: uploaded[0].originalname, bytes: uploaded[0].buffer, mediaType: uploaded[0].mimetype })) {
+        return res.status(400).json({ success: false, error: 'A zip, or several files, keep their own names.' });
+      }
+      const problem = importManager.givenNameProblem(receiver.id, givenName, uploaded[0].originalname);
+      if (problem) return res.status(400).json({ success: false, error: problem });
+    }
 
     try {
       const runId = await importManager.enqueueUpload({
-        source: { type: 'upload', files: uploaded.map(f => ({ name: f.originalname, bytes: f.buffer, ...(f.mimetype ? { mediaType: f.mimetype } : {}) })) },
+        source: {
+          type: 'upload',
+          files: uploaded.map(f => ({
+            name: f.originalname, bytes: f.buffer, ...(f.mimetype ? { mediaType: f.mimetype } : {}),
+            ...(typeof givenName === 'string' ? { givenName } : {})
+          }))
+        },
         receiver: receiver.id,
         ...(original ? { original } : {})
       }, currentUser);

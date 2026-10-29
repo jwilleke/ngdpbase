@@ -37,6 +37,7 @@ import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
+import { appliedGivenName, givenNameProblem } from './givenName.js';
 import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
 import { ANY_RECEIVER } from './types.js';
 import type {
@@ -54,6 +55,8 @@ export interface IceEngineSettings {
   defaultOriginal: OriginalChoice;
   /** The largest response a URL source may return (#2109). */
   fetchMaxBytes: number;
+  /** The longest name a user may give what an upload becomes (#2130). */
+  maxNameLength: number;
 }
 
 export interface IceRunDeps {
@@ -279,6 +282,20 @@ async function fetchUrlSource(deps: IceRunDeps, source: IceUrlSource): Promise<{
   }
 }
 
+/**
+ * The name the user gave this file (#2130), as the engine applies it: none
+ * when the receiver names things itself (it declares no `names`) or the user
+ * kept the file's own name; a problem when the name breaks the rule. Never
+ * trusted from the caller: checked here whoever queued the run.
+ */
+export function resolveGivenName(upload: IceUpload, receiver: RegisteredReceiver, maxLength: number): { name?: string; problem?: string } {
+  if (typeof upload.givenName !== 'string' || !receiver.names) return {};
+  const problem = givenNameProblem(receiver.names, upload.givenName, upload.name, maxLength);
+  if (problem) return { problem };
+  const name = appliedGivenName(receiver.names, upload.givenName, upload.name);
+  return name ? { name } : {};
+}
+
 /** One file as the engine first hands it on: its bytes, and the same bytes as text. */
 function fileItem(upload: IceUpload): IceItem {
   return { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
@@ -474,12 +491,16 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
 
     const plan = await planFile(upload, request, receiver, deps, scope);
     if (plan.sha256) fr.sha256 = plan.sha256;
+    // #2130: the name the user gave it; a zip's files have none, and keep their own.
+    const given = resolveGivenName(upload, receiver, deps.settings.maxNameLength);
+    if (given.name) fr.givenName = given.name;
     // The original kept for these bytes, carried forward in every entry so a retry never keeps another (#2011).
     let keptOriginal: LedgerOriginal | undefined = plan.last?.original;
     const record = async (): Promise<void> => {
       if (!fr.sha256) return;
       await deps.ledger.recordFile(scope, {
         name: fr.name, sha256: fr.sha256, size: fr.size, status: fr.status, at: now().toISOString(), refs: fr.refs,
+        ...(fr.givenName ? { givenName: fr.givenName } : {}),
         ...(fr.message ? { message: fr.message } : {}),
         ...(keptOriginal ? { original: keptOriginal } : {})
       });
@@ -491,6 +512,13 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         if (plan.stop.refs) fr.refs = plan.stop.refs;
         if (plan.stop.record) await record();
       }
+      continue;
+    }
+    if (given.problem) {
+      // Refused, not done: the next upload with another name is read again.
+      fr.status = 'refused';
+      fr.message = given.problem;
+      await record();
       continue;
     }
     const { file, shim, sha256 } = plan;
@@ -564,7 +592,8 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         }
         const outcome = await receiver.receive(item, ctx, {
           runId: report.runId, source: { name: upload.name, sha256 }, chain,
-          ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {})
+          ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
+          ...(given.name ? { givenName: given.name } : {})
         });
         if (outcome.status === 'stored') {
           fr.stored++;
@@ -585,6 +614,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         const settled = await receiver.fileDone(ctx, {
           runId: report.runId, source: { name: upload.name, sha256 }, chain: fr.chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
+          ...(given.name ? { givenName: given.name } : {}),
           metadata: { ...(file.metadata ?? {}) }, items: leaves.map(l => l.item)
         });
         if (settled) said.add(settled);

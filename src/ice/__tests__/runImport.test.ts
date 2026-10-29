@@ -22,7 +22,8 @@ const SETTINGS: IceEngineSettings = {
   maxFileBytes: 1_000_000,
   maxChainDepth: 5,
   defaultOriginal: 'none',
-  fetchMaxBytes: 1_000_000
+  fetchMaxBytes: 1_000_000,
+  maxNameLength: 200
 };
 
 type Received = { item: IceItem; ctx: ActorContext; info: ReceiveInfo };

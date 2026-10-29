@@ -63,6 +63,27 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     expect(events[0]).toMatchObject({ eventType: 'page-create', user: 'jim' });
   });
 
+  test('an import the user named records the file it came from on the create, never on an edit (#2130)', async () => {
+    const { manager, events } = makeManager([
+      { title: 'Existing', content: 'old', metadata: { title: 'Existing', author: 'jim' } }
+    ]);
+    await manager.savePage('Garden plan', 'body', { title: 'Garden plan' }, JIM, { audit: { importedFrom: 'export_1.md' } });
+    await manager.savePage('Existing', 'body', { title: 'Existing' }, JIM, { audit: { importedFrom: 'x.md' } });
+    await settle();
+
+    expect(events[0]).toMatchObject({ eventType: 'page-create', metadata: { pageName: 'Garden plan', importedFrom: 'export_1.md' } });
+    expect(events[1].metadata).not.toHaveProperty('importedFrom');
+  });
+
+  test('a private page names no imported file: its record names it by its vault name only (#2130)', async () => {
+    const { manager, provider, events } = makeManager();
+    provider.savePage.mockImplementationOnce(async () => ({ name: 'vaults/jim/default/Plan', uuid: 'uuid-1' }));
+    await manager.savePage('Plan', 'body', { title: 'Plan', private: true }, JIM, { audit: { importedFrom: 'referral.md' } });
+    await settle();
+
+    expect(JSON.stringify(events[0])).not.toContain('referral.md');
+  });
+
   test('an existing page emits page-edit', async () => {
     const { manager, events } = makeManager([
       { title: 'Existing', content: 'old', metadata: { title: 'Existing', author: 'jim' } }

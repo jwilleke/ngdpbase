@@ -135,6 +135,12 @@ describe('#1183 — asset-upload is recorded at the door', () => {
     });
   });
 
+  test('an import the user named records the file it came from beside its name (#2130)', async () => {
+    const sink: Recorded[] = [];
+    await uploadManager(sink).uploadAttachment(Buffer.from('x'), FILE, CTX, { importedFrom: 'IMG_1234.jpg' });
+    expect(sink[0]).toMatchObject({ metadata: { filename: 'photo.jpg', importedFrom: 'IMG_1234.jpg' } });
+  });
+
   test('the client IP comes from the WikiContext the caller carries', async () => {
     // The manager never sees the Express request. Moving the emit here would
     // otherwise have silently dropped the IP the route used to record.

@@ -65,6 +65,7 @@ import { converterShim } from '../ice/converterShim.js';
 import { RECORD_SHIMS } from '../ice/shims/index.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
+import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
   IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
@@ -349,6 +350,8 @@ export interface UsableReceiver {
   label?: string;
   /** What the screen offers; the kept types (`types`, #2061) are the upload door's business, not the screen's. */
   originals: Required<Omit<IceOriginalChoices, 'types'>>;
+  /** What a name the user gives becomes (#2130), when the receiver takes one: the screen offers the field only then. */
+  names?: IceNameForm;
 }
 
 /** A media type a receiver may declare it keeps (#2061): `type/subtype`, exactly, no wildcard. */
@@ -472,6 +475,9 @@ class ImportManager extends BaseManager {
     if (typeof receiver.receive !== 'function' || typeof receiver.mayUse !== 'function' || !Array.isArray(receiver.accepts)) {
       throw new Error(`ICE receiver '${id}': declare accepts, mayUse() and receive()`);
     }
+    if (receiver.names !== undefined && receiver.names !== 'title' && receiver.names !== 'file') {
+      throw new Error(`ICE receiver '${id}': names is 'title' or 'file'`);
+    }
     const types = receiver.originals?.types;
     if (types !== undefined && (!Array.isArray(types) || !types.every(t => typeof t === 'string' && KEPT_MEDIA_TYPE.test(t.trim().toLowerCase())))) {
       throw new Error(`ICE receiver '${id}': originals.types are media types, type/subtype exactly, with no wildcard`);
@@ -506,9 +512,24 @@ class ImportManager extends BaseManager {
     for (const r of this.receiverRegistry.values()) {
       // #2109: a receiver fed only by its owner's sources is never offered for an upload.
       if (r.uploads === false) continue;
-      if (await r.mayUse(ctx).catch(() => false)) out.push({ id: r.id, label: r.label, originals: this.originalChoices(r) });
+      if (await r.mayUse(ctx).catch(() => false)) {
+        out.push({ id: r.id, label: r.label, originals: this.originalChoices(r), ...(r.names ? { names: r.names } : {}) });
+      }
     }
     return out;
+  }
+
+  /**
+   * Why a name the user gave cannot be used for this receiver (#2130), or
+   * null when it can: the engine's one rule (`givenNameProblem`), with the
+   * site's `ngdpbase.import.engine.name-max-length`. A receiver that names
+   * what it creates itself (no `names`) takes no name at all. For the import
+   * screen, to answer at once; the engine checks again in the run.
+   */
+  givenNameProblem(receiverId: string, given: string, original: string): string | null {
+    const receiver = this.receiverRegistry.get(receiverId);
+    if (!receiver?.names) return 'This import names what it creates itself.';
+    return givenNameProblem(receiver.names, given, original, this.engineSettings().maxNameLength);
   }
 
   /**
@@ -637,6 +658,7 @@ class ImportManager extends BaseManager {
         found.push({
           entry: {
             name: f.name, status: f.status, at: f.at, receiver: r.id, refs: f.refs.length,
+            ...(f.givenName ? { givenName: f.givenName } : {}),
             ...(r.label ? { receiverLabel: r.label } : {}),
             ...(f.message ? { message: f.message } : {})
           },
@@ -841,7 +863,8 @@ class ImportManager extends BaseManager {
       maxFileBytes: this.numberSetting('ngdpbase.import.engine.max-file-bytes', 104_857_600),
       maxChainDepth: this.numberSetting('ngdpbase.import.engine.max-chain-depth', 5),
       defaultOriginal: original === 'cite' || original === 'keep' ? original : 'none',
-      fetchMaxBytes: this.numberSetting('ngdpbase.import.engine.fetch-max-bytes', 8_388_608)
+      fetchMaxBytes: this.numberSetting('ngdpbase.import.engine.fetch-max-bytes', 8_388_608),
+      maxNameLength: this.numberSetting('ngdpbase.import.engine.name-max-length', 200)
     };
   }
 
@@ -887,12 +910,15 @@ class ImportManager extends BaseManager {
    * `core.pages` (D4): NCM into pages, through PageManager's save door, as the
    * folder import saves. It checks `page-create` itself (D5). A title that
    * already exists is a duplicate, as it is for the folder import by default.
+   * A title the user gave (#2130) replaces the one the file gives; when a
+   * page has it already, the item is refused, never saved over that page.
    */
   private pagesReceiver(): IceReceiver {
     return {
       name: 'pages',
       label: 'Pages',
       accepts: ['ncm'],
+      names: 'title',
       mayUse: (ctx) => this.permits(ctx, 'page-create'),
       receive: async (item: IceItem, ctx: ActorContext, info: ReceiveInfo): Promise<ReceiveOutcome> => {
         if (!(await this.permits(ctx, 'page-create'))) {
@@ -901,9 +927,12 @@ class ImportManager extends BaseManager {
         const pageManager = this.engine.getManager<PageManager>('PageManager');
         if (!pageManager) throw new Error('PageManager unavailable — cannot import a page');
         const metadata: Record<string, unknown> = { ...(item.metadata ?? {}) };
+        if (info.givenName) metadata['title'] = info.givenName;
         if (!metadata['title']) metadata['title'] = titleFromFileName(item.name);
         const title = String(metadata['title']);
         if (await pageManager.getPageMetadata(title, ctx)) {
+          // #2130, #1855: a name the user chose that is taken is refused, so they can choose another.
+          if (info.givenName) return { status: 'refused', message: `A page named "${title}" already exists. Choose another name and import it again.` };
           return { status: 'duplicate', ref: title, message: `Page "${title}" already exists` };
         }
 
@@ -919,7 +948,11 @@ class ImportManager extends BaseManager {
         if (typeof pageManager.completeNcmConversion === 'function') {
           body = (await pageManager.completeNcmConversion(body, { pageName: title, uuid }, ctx, { dryRun: false })).content;
         }
-        const saved = await this.createPageThroughPipeline(title, { content: body, metadata, warnings }, uuid, { actorContext: ctx });
+        const saved = await this.createPageThroughPipeline(title, { content: body, metadata, warnings }, uuid, {
+          actorContext: ctx,
+          // #2130: the audit record names the file it came from beside the title given.
+          ...(info.givenName ? { importedFrom: path.basename(info.source.name) } : {})
+        });
         return { status: 'stored', ref: saved.name };
       },
       // #2110: a page the user may read, by PageManager's own read decision.
@@ -935,27 +968,36 @@ class ImportManager extends BaseManager {
    * `core.files` (D4): a file through AttachmentManager's upload door, which
    * checks `asset-upload` itself. Also where a kept original goes (D11) when
    * the chosen receiver does not keep its own. It becomes FileManager's write
-   * door once the files layer has one (#1851).
+   * door once the files layer has one (#1851). A name the user gave (#2130)
+   * is the stored file's name; when the shared pool has a file of that name
+   * already, the item is refused, never stored beside or over it.
    */
   private filesReceiver(): IceReceiver {
     return {
       name: 'files',
       label: 'Files',
       accepts: ['file'],
+      names: 'file',
       // The file stored is the original itself; keeping or citing it again adds nothing (D11).
       originals: { allowed: ['none'] },
       mayUse: (ctx) => this.permits(ctx, 'asset-upload'),
-      receive: async (item: IceItem, ctx: ActorContext): Promise<ReceiveOutcome> => {
+      receive: async (item: IceItem, ctx: ActorContext, info?: ReceiveInfo): Promise<ReceiveOutcome> => {
         const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
         if (!attachmentManager) throw new Error('AttachmentManager unavailable — cannot store a file');
         const bytes = item.bytes ?? Buffer.from(item.text ?? '', 'utf8');
-        const originalName = path.basename(item.name);
+        const ownName = path.basename(item.name);
+        const originalName = info?.givenName ?? ownName;
+        // #2130, #1855: a name the user chose that is taken is refused, so they can choose another.
+        if (info?.givenName && await attachmentManager.getSharedPoolAttachmentByFilename(originalName)) {
+          return { status: 'refused', message: `A file named "${originalName}" already exists. Choose another name and import it again.` };
+        }
         try {
           const stored = await attachmentManager.uploadAttachment(
             bytes,
-            { originalName, mimeType: item.mediaType || mediaTypeByExtension(originalName), size: bytes.length },
+            // The media type is the upload's own: a given name keeps its extension.
+            { originalName, mimeType: item.mediaType || mediaTypeByExtension(ownName), size: bytes.length },
             ctx,
-            { description: `Imported ${item.name}` }
+            { description: `Imported ${item.name}`, ...(info?.givenName ? { importedFrom: ownName } : {}) }
           );
           return { status: 'stored', ref: stored.identifier };
         } catch (err) {
@@ -1616,7 +1658,10 @@ class ImportManager extends BaseManager {
     pageTitle: string,
     conversionResult: ConversionResult,
     pageUuid: string | undefined,
-    options: Pick<ImportOptions, 'actorContext' | 'private' | 'store'>
+    options: Pick<ImportOptions, 'actorContext' | 'private' | 'store'> & {
+      /** The uploaded file's own name, when the user gave the page another title (#2130): for the audit record. */
+      importedFrom?: string;
+    }
   ): Promise<PageSaveResult> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
@@ -1636,7 +1681,10 @@ class ImportManager extends BaseManager {
     }
     // #1462: the door indexes the page. #1455: a title the rule refuses is
     // normalised and reported (see overwriteExistingPage).
-    return pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext, { normaliseTitle: true });
+    return pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext, {
+      normaliseTitle: true,
+      ...(options.importedFrom ? { audit: { importedFrom: options.importedFrom } } : {})
+    });
   }
 
   /**

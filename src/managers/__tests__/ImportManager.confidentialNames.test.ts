@@ -17,9 +17,11 @@ import BackgroundJobManager from '../BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
 import logger from '../../utils/logger';
 import type { ActorContext } from '../../context/ActorContext';
-import type { IceItem, IceLedger, IceReceiver, IceUpload } from '../../ice/types';
+import type { IceItem, IceLedger, IceReceiver, IceUpload, ReceiveInfo } from '../../ice/types';
 
 const SECRET = 'oncology-referral-Smith';
+/** A name the user gave a file (#2130): kept out of logs as the file's own is. */
+const GIVEN = 'chemo-plan-Jones';
 const MOLLY = { username: 'molly', roles: ['editor'], isAuthenticated: true } as unknown as ActorContext;
 
 const LEVELS = ['info', 'warn', 'error', 'debug'] as const;
@@ -53,11 +55,12 @@ async function make() {
   im.setImportLedger(new MemoryIceLedger());
   // The vault receiver: the destination is encrypted.
   const door = (encrypted: boolean): IceReceiver => ({
-    name: encrypted ? 'records' : 'plain', accepts: ['file'],
+    name: encrypted ? 'records' : 'plain', accepts: ['file'], names: 'file',
     ...(encrypted ? { keepsEncrypted: true } : {}),
     mayUse: async () => true,
-    receive: async (item: IceItem) => {
+    receive: async (item: IceItem, _ctx: ActorContext, info: ReceiveInfo) => {
       if (item.name.includes('throws')) throw new Error(`could not store ${item.name}`);
+      if (info.givenName?.includes('throws')) throw new Error(`could not store ${info.givenName}`);
       return { status: 'stored', ref: `rec-${item.name}` };
     },
     keepOriginal: async (item: IceItem) => ({ status: 'stored', ref: `orig-${item.name}` })
@@ -101,6 +104,21 @@ describe('a confidential import keeps file names out of logs and notices (#2110)
     expect(failed.error).toContain(SECRET);
 
     expect(written(notices)).not.toContain(SECRET);
+  });
+
+  test('a name the user gave is kept out of logs and notices too: applied, refused as invalid, or in a receiver\'s error (#2130)', async () => {
+    const { im, jobs, notices } = await make();
+    const one = (name: string, givenName: string): IceUpload[] => [{ name, bytes: Buffer.from(`<a>${name}</a>`), givenName }];
+    const applied = await im.runImport({ source: { type: 'upload', files: one('a.xml', `${GIVEN}.xml`) }, receiver: 'vaultrec.records' }, MOLLY);
+    expect(applied.files[0]).toMatchObject({ status: 'imported', givenName: `${GIVEN}.xml` });
+    const invalid = await im.runImport({ source: { type: 'upload', files: one('b.xml', `${GIVEN}/x.xml`) }, receiver: 'vaultrec.records' }, MOLLY);
+    expect(invalid.files[0].status).toBe('refused');
+    const throws = await im.runImport({ source: { type: 'upload', files: one('c.xml', `${GIVEN}-throws.xml`) }, receiver: 'vaultrec.records' }, MOLLY);
+    expect(throws.files[0]).toMatchObject({ status: 'failed', message: expect.stringContaining(GIVEN) });
+    const queued = await im.enqueueUpload({ source: { type: 'upload', files: one('d.xml', `${GIVEN}-q.xml`) }, receiver: 'vaultrec.records', original: 'keep' }, MOLLY);
+    await jobs.whenIdle();
+    await vi.waitFor(() => expect(im.getImportRun(queued, MOLLY)?.state).toBe('done'));
+    expect(written(notices)).not.toContain(GIVEN);
   });
 
   test('control: an ordinary import still logs the file name, so the search above would find one', async () => {

@@ -254,6 +254,68 @@ describe('POST /import (#2021)', () => {
   });
 });
 
+describe('POST /import: the name of what a single upload becomes (#2130)', () => {
+  test('the screen is told which receivers take a name, and in which form', async () => {
+    const { app } = await makeApp();
+    const res = await request(app).get('/import').set('x-user', 'bob');
+    const byId = Object.fromEntries(res.body.data.receivers.map((r: { id: string; names?: string }) => [r.id, r.names]));
+    expect(byId).toEqual({ 'core.pages': 'title', 'core.files': 'file' });
+  });
+
+  test('a new name travels on the run request with the file, and the page takes it', async () => {
+    const { app, importManager, jobs, saved } = await makeApp();
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
+    const res = await request(app).post('/import').set('x-user', 'molly')
+      .field('receiver', 'core.pages').field('name', 'Vegetable garden').attach('files', MD, 'export_1.md');
+    expect(res.status).toBe(202);
+    expect(enqueue.mock.calls[0][0].source).toMatchObject({ files: [{ name: 'export_1.md', givenName: 'Vegetable garden' }] });
+    await jobs.whenIdle();
+    await vi.waitFor(() => expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.state).toBe('done'));
+    expect(saved).toEqual(['Vegetable garden']);
+    expect(importManager.getImportRun(res.body.runId, USERS.molly as never)?.files[0]).toMatchObject({ name: 'export_1.md', givenName: 'Vegetable garden' });
+  });
+
+  test('an invalid name is a 400 with why, and nothing is queued', async () => {
+    const { app, importManager } = await makeApp();
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
+    const page = await request(app).post('/import').set('x-user', 'molly')
+      .field('receiver', 'core.pages').field('name', 'Docs/Setup').attach('files', MD, 'a.md');
+    expect(page.status).toBe(400);
+    expect(page.body.error).toMatch(/invalid characters/);
+    const file = await request(app).post('/import').set('x-user', 'bob')
+      .field('receiver', 'core.files').field('name', '../../etc/x.md').attach('files', MD, 'a.md');
+    expect(file.status).toBe(400);
+    expect(file.body.error).toBe('A file name cannot contain / or \\.');
+    const long = await request(app).post('/import').set('x-user', 'molly')
+      .field('receiver', 'core.pages').field('name', 'x'.repeat(201)).attach('files', MD, 'a.md');
+    expect(long.status).toBe(400);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a zip, or several files, keep their own names: a name with them is a 400', async () => {
+    const { app, importManager } = await makeApp();
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
+    const two = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').field('name', 'One name')
+      .attach('files', MD, 'One.md').attach('files', MD, 'Two.md');
+    expect(two.status).toBe(400);
+    expect(two.body.error).toMatch(/keep their own names/);
+    const zip = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').field('name', 'One name')
+      .attach('files', Buffer.from('PK'), 'pages.zip');
+    expect(zip.status).toBe(400);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a receiver that names what it creates itself takes no name', async () => {
+    const { app, importManager } = await makeApp();
+    importManager.registerReceiver('notes', { name: 'items', label: 'Notes', accepts: ['ncm'], mayUse: async () => true, receive: async () => ({ status: 'stored' }) });
+    const enqueue = vi.spyOn(importManager, 'enqueueUpload');
+    const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'notes.items').field('name', 'Mine').attach('files', MD, 'a.md');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('This import names what it creates itself.');
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /import/runs/:runId (#2021)', () => {
   test('a run is shown to the user it ran as; anyone else, or anonymous, is refused', async () => {
     const { app, jobs } = await makeApp();
