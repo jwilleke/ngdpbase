@@ -11,6 +11,12 @@ Status: design decided (operator, 2026-10-28). Nothing built yet. The first fold
 - Never shared by link: no public or capability URLs; every access goes through the permission check.
 - Every read and write is audited with who acted.
 
+## Access is by permission (operator, 2026-10-29)
+
+Access to a shared folder is decided by permissions, never roles. Two generic permissions, `shared-folder-read` and `shared-folder-file`, are scoped to a folder by the policy's resource (e.g. `shared/executive`), as page policies name a resource pattern. A folder lists no roles; the admin screen writes policies. Creating a folder adds no permission.
+
+Build order (each its own sub-issue of [#1775](https://github.com/jwilleke/ngdpbase/issues/1775)): 1 the organization key, per-folder keys and the recovery words; 2 folders holding pages and files, with permission checks, sealed search and audit; 3 the admin Shared folders screen; 4 `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)). Later: add-on folders, rotation, recovery with the words, trash and purge.
+
 ## Decisions (operator, 2026-10-28)
 
 Each is also a comment on [#1775](https://github.com/jwilleke/ngdpbase/issues/1775).
