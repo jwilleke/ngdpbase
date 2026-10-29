@@ -6,7 +6,9 @@
     never recorded for a version they did not see. Locals: scope, documents (ConsentDocument[]),
     canPutOff, actingFor, returnTo, error, csrfToken; recoveryWordsVaults for the recovery-words scope (#1928):
     the user's own confirmation that they saved their recovery words, reached from the reminder banner. It never
-    holds the session, so "Not now" just goes back. %>
+    holds the session, so "Not now" just goes back. #2124: scope shared-folders-recovery-words, the admin shown the
+    organization's shared-folders recovery words confirming they saved them; reached from that banner, never holding. %>
+<% const _sf = scope === 'shared-folders-recovery-words'; %>
 <% const _rw = scope === 'recovery-words'; %>
 <% const _rwVaults = typeof recoveryWordsVaults !== 'undefined' ? recoveryWordsVaults : []; %>
 <% const _rwName = function (v) { return v === 'default' ? 'your private pages' : '"' + v + '"'; }; %>
@@ -16,7 +18,7 @@
         <div class="col-md-8 col-lg-6">
             <div class="card mt-5" data-consent-scope="<%= scope %>">
                 <div class="card-header">
-                    <h4 class="mb-0"><%= _rw ? 'Save your recovery words' : (scope === 'core' ? 'Please accept the terms' : 'Please accept to use ' + scope) %></h4>
+                    <h4 class="mb-0"><%= _sf ? 'The shared folders\' recovery words' : _rw ? 'Save your recovery words' : (scope === 'core' ? 'Please accept the terms' : 'Please accept to use ' + scope) %></h4>
                 </div>
                 <div class="card-body">
                     <% if (error) { %>
@@ -26,7 +28,11 @@
                     <div class="alert alert-info" role="alert">You are acting for someone else. Only they can accept these, signed in themselves.</div>
                     <% } %>
                     <p>
-                        <% if (_rw) { %>
+                        <% if (_sf) { %>
+                        Each of the organization's shared folders is locked with its own key, kept under this site's shared-folders key and under
+                        the organization's 12 recovery words. If the shared-folders key is lost, those words are the only way to open the shared
+                        folders again. They were shown to you once, when you made them on Admin → Backup.
+                        <% } else if (_rw) { %>
                         Your encrypted <%= _rwVaults.length === 1 ? 'vault' : 'vaults' %>
                         <% _rwVaults.forEach(function (v, i) { %><%= i === 0 ? '' : (i === _rwVaults.length - 1 ? ' and ' : ', ') %><strong data-recovery-words-vault="<%= v %>"><%= _rwName(v) %></strong><% }) %>
                         <%= _rwVaults.length === 1 ? 'is' : 'are' %> locked with your own key. Nobody, not even an administrator, can open
@@ -56,12 +62,12 @@
                         <% }) %>
                         <div class="form-check mb-3">
                             <input class="form-check-input" type="checkbox" name="accept" id="consent-accept" required>
-                            <label class="form-check-label" for="consent-accept"><%= _rw ? 'I\'ve saved my recovery words and understand they are the only way back' : 'I have read and accept ' + (documents.length === 1 ? 'it' : 'them') %></label>
+                            <label class="form-check-label" for="consent-accept"><%= _sf ? 'I have saved the shared folders\' recovery words off this server' : _rw ? 'I\'ve saved my recovery words and understand they are the only way back' : 'I have read and accept ' + (documents.length === 1 ? 'it' : 'them') %></label>
                         </div>
-                        <button type="submit" class="btn btn-primary" <%= actingFor ? 'disabled' : '' %>><%= _rw ? 'Confirm' : 'Accept and continue' %></button>
+                        <button type="submit" class="btn btn-primary" <%= actingFor ? 'disabled' : '' %>><%= (_rw || _sf) ? 'Confirm' : 'Accept and continue' %></button>
                     </form>
                     <hr>
-                    <% if (_rw) { %>
+                    <% if (_rw || _sf) { %>
                     <p class="small text-muted mb-0">Not now? <a href="<%= returnTo %>">Go back</a>. Nothing is held up; the reminder stays until you confirm.</p>
                     <% } else if (canPutOff) { %>
                     <p class="small text-muted mb-0">Not now? <a href="/profile">Go to your profile</a>, where you can turn <%= scope %> off.</p>

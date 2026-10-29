@@ -266,7 +266,7 @@ Rules that follow from this, for every implementation:
 - __The ambient environment beats the file.__ A variable set in the Deployment or compose file cannot be changed by editing `.env`; remove it from the launcher first.
 - __The image carries no `.env`.__ A checkout's `.env` (yours, jimstest's) never reaches a container. Per-instance values live on the instance's own data volume or in its launcher.
 - __Names are exact.__ There are no aliases: `SESSION_SECRET` is not `NGDPBASE_SESSION_SECRET`, and a misnamed variable is silently unused ([#1678](https://github.com/jwilleke/ngdpbase/issues/1678)). An `optional: true` `secretKeyRef` hides a Secret that does not exist, so check the name in `.env.example`.
-- __Missing secrets are generated, not required.__ The boot backfills write `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY` into the instance `.env` when nothing supplied them, so a fresh volume works; supply them yourself only to manage them (rotation, a GitOps-held Secret).
+- __Missing secrets are generated, not required.__ The boot backfills write `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, `NGDPBASE_BACKUP_KEY` and `NGDPBASE_SHARED_FOLDERS_KEY` into the instance `.env` when nothing supplied them, so a fresh volume works; supply them yourself only to manage them (rotation, a GitOps-held Secret).
 
 Which of those homes a *new* variable belongs in is decided by what it is — see [Where a new variable goes](#where-a-new-variable-goes).
 
@@ -291,6 +291,7 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `NGDPBASE_SESSION_SECRET` | Signs the session cookie. Generated into `<FAST_STORAGE>/.env` on first boot if absent; set it yourself only to manage it. Placeholders are refused |
 | `NGDPBASE_CREDENTIALS_KEY` | Signs the credentials store and encrypts TOTP seeds. Generated into `<FAST_STORAGE>/.env` on first boot if absent. No config key |
 | `NGDPBASE_DATABASE_KEY` | The SQLCipher key of the application database and every add-on database, when `ngdpbase.database.provider` is `sqlite`. Never generated and never a config key: set it yourself, and keep a copy off the server. Missing or wrong on an encrypted database, the site starts in maintenance mode (see below) |
+| `NGDPBASE_SHARED_FOLDERS_KEY` | The organization's key every shared folder's own key is wrapped under (#2124). Generated into `<FAST_STORAGE>/.env` on first boot if absent, read once at start by SharedFolderManager. No config key. Admin → Backup asks for a saved copy of `.env` until an admin confirms one that holds it. Changed or lost, the shared folders do not open (the dashboard says so) |
 | `NGDPBASE_BACKUP_KEY` | The key every backup is encrypted under: the document, every file archive, the `.env` copy and the databases. Its own value, never the database key. Generated into `<FAST_STORAGE>/.env` on first boot if absent (#1876); save a copy off the server. Never in a backup itself |
 | `OIDC_AUTH_SERVER_JWKS` | OpenID Connect signing keys. Generated into the instance `.env` only when `oidc-auth-server.enabled` is true |
 | `OIDC_AUTH_SERVER_COOKIE_KEYS` | OpenID Connect cookie keys. Same gate as the JWKS |

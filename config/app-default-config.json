@@ -63,7 +63,7 @@
     "ngdpbase.managers.addons-manager.install.registry": "sensitive",
     "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "sensitive"
   },
-  "_comment_config_env_keys": "Config keys OWNED BY THE ENVIRONMENT, and the variable that supplies each (#1089). These are ALWAYS read-only on the Admin Configuration screen — not 'read-only while the variable happens to be set'. A conditional would make the UI the source of truth whenever the variable is unset, which is exactly the ambiguity this removes: a key is owned by one layer, never two. The value shipped for such a key in this file is a BOOT FALLBACK so a fresh install comes up; it is not a setting. To change one, set the variable in .env (root or <FAST_STORAGE>/.env) and restart — nothing in ngdpbase writes .env, by design, with these exceptions, each generated once and appended to <FAST_STORAGE>/.env when absent: NGDPBASE_SESSION_SECRET (#1194, src/bootstrap-env.ts), because the alternative was signing every session with the public literal shipped below; NGDPBASE_CREDENTIALS_KEY (#1524, src/bootstrap-env.ts), which signs every credentials-store row and encrypts TOTP seeds and has no config key at all; and, only when oidc-auth-server.enabled is true, OIDC_AUTH_SERVER_JWKS and OIDC_AUTH_SERVER_COOKIE_KEYS (#1574, OidcManager), the embedded OpenID Connect provider's signing and cookie keys, read by that package from the environment only. A config screen that restarts the server is a different feature. Deliberately SHORT: a key earns a place only if the environment must be able to supply it in a deployment where NO config file exists — a fresh headless container boot onto an empty volume is the case that decides it. NOTE application.base-url may equally be set in app-custom-config.json (the install wizard writes it there); it is listed because docker-compose-traefik.yml composes it at deploy time and InstallService names the env var as the alternative for headless installs, so the environment must remain a valid source. Replaces a hardcoded map that used to live in ConfigurationManager.getProperty() where nothing could see it.",
+  "_comment_config_env_keys": "Config keys OWNED BY THE ENVIRONMENT, and the variable that supplies each (#1089). These are ALWAYS read-only on the Admin Configuration screen — not 'read-only while the variable happens to be set'. A conditional would make the UI the source of truth whenever the variable is unset, which is exactly the ambiguity this removes: a key is owned by one layer, never two. The value shipped for such a key in this file is a BOOT FALLBACK so a fresh install comes up; it is not a setting. To change one, set the variable in .env (root or <FAST_STORAGE>/.env) and restart — nothing in ngdpbase writes .env, by design, with these exceptions, each generated once and appended to <FAST_STORAGE>/.env when absent: NGDPBASE_SESSION_SECRET (#1194, src/bootstrap-env.ts), because the alternative was signing every session with the public literal shipped below; NGDPBASE_CREDENTIALS_KEY (#1524, src/bootstrap-env.ts), which signs every credentials-store row and encrypts TOTP seeds and has no config key at all; NGDPBASE_SHARED_FOLDERS_KEY (#2124, src/bootstrap-env.ts), the organization's key every shared folder's own key is wrapped under, with no config key either; and, only when oidc-auth-server.enabled is true, OIDC_AUTH_SERVER_JWKS and OIDC_AUTH_SERVER_COOKIE_KEYS (#1574, OidcManager), the embedded OpenID Connect provider's signing and cookie keys, read by that package from the environment only. A config screen that restarts the server is a different feature. Deliberately SHORT: a key earns a place only if the environment must be able to supply it in a deployment where NO config file exists — a fresh headless container boot onto an empty volume is the case that decides it. NOTE application.base-url may equally be set in app-custom-config.json (the install wizard writes it there); it is listed because docker-compose-traefik.yml composes it at deploy time and InstallService names the env var as the alternative for headless installs, so the environment must remain a valid source. Replaces a hardcoded map that used to live in ConfigurationManager.getProperty() where nothing could see it.",
   "ngdpbase.config.env-keys": {
     "ngdpbase.session.secret": "NGDPBASE_SESSION_SECRET",
     "ngdpbase.server.port": "NGDPBASE_PORT",
@@ -547,6 +547,9 @@
     "privacy-policy"
   ],
   "ngdpbase.consent.storagedir": "${FAST_STORAGE}/consent",
+  "_comment_shared_folders": "#2124 (epic #1775) — shared folders, slice 1: the keys. SharedFolderManager keeps each shared folder's own key, wrapped under the organization's NGDPBASE_SHARED_FOLDERS_KEY (instance .env) and sealed for the organization's 12 recovery words, in one owner-only file (keys.json) under storagedir, backed up with the site. words-pending-minutes: how long the recovery words an admin was shown on Admin -> Backup wait for their 'I have saved them' before they are discarded unsaved.",
+  "ngdpbase.shared-folders.storagedir": "${FAST_STORAGE}/shared-folders",
+  "ngdpbase.shared-folders.words-pending-minutes": 15,
   "_comment_reviews": "#2072 — one core way to review requests (ReviewManager). An add-on, or a form set to need review, files a request naming the permission whose holders decide; they are notified, decide on /reviews, and on approval the add-on's handler carries it out. Requests are kept in the application database and only while it is encrypted (ngdpbase.database.provider sqlite and NGDPBASE_DATABASE_KEY set), since they can hold personal details. retention-days: how long a decided request is kept before it is removed (0 keeps them). list-limit: the most open requests the reviewer screen shows at once. details-max-bytes: the largest a request's details may be, as JSON.",
   "ngdpbase.reviews.retention-days": 365,
   "ngdpbase.reviews.list-limit": 200,
@@ -2143,6 +2146,27 @@
         "on-failure": "refuse"
       }
     },
+    "shared-folder-words-create": {
+      "description": "The organization's 12 recovery words for shared folders were made and saved (#2124): the admin who was shown them, and which set (an id, never the words). Recorded before the words are saved, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "shared-folder-words-discard": {
+      "description": "An administrator discarded the organization's shared-folders recovery words before the admin shown them confirmed saving them (#2124): who, which set (an id) and who it was shown to. Recorded before the words are removed, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "shared-folder-key-create": {
+      "description": "A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "proxy-switch": {
       "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762)",
       "grantable": false,
@@ -3204,6 +3228,8 @@
   "ngdpbase.backup.key-saved-fingerprint": "",
   "_comment_backup_env_keys_saved": "#1976: the names (never the values) the instance .env set when an admin last confirmed it is saved off the server, sorted, set from Admin -> Backup ('I have saved .env off the server'). null: not recorded yet; the first check records the names it finds without asking. Any name added or removed after that lists Backup under 'needs your attention' and notifies admins once, until an admin confirms again.",
   "ngdpbase.backup.env-keys-saved": null,
+  "_comment_backup_shared_folders_key_saved": "#2124: the fingerprint of the shared-folders key (NGDPBASE_SHARED_FOLDERS_KEY) an admin confirmed is saved off the server, recorded when they confirm a downloaded .env that holds it ('I have saved .env off the server' on Admin -> Backup). Empty: the dashboard asks for .env to be saved. A different key (a rotated one, later) asks again. The fingerprint never reveals the key.",
+  "ngdpbase.backup.shared-folders-key-saved-fingerprint": "",
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

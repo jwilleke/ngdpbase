@@ -2,7 +2,7 @@
 
 Folders owned by the organization, at `/shared/<name>`, opened by role or permission rather than by one user's key. Epic [#1775](https://github.com/jwilleke/ngdpbase/issues/1775). Always called "shared folders", never vaults. Terms follow [docs/GLOSSARY.md](../GLOSSARY.md) (Identities).
 
-Status: design decided (operator, 2026-10-28). Nothing built yet. The first folder built is `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095), [executive-hub.md](executive-hub.md)).
+Status: design decided (operator, 2026-10-28). Slice 1 built ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124)): the organization key, per-folder keys and the recovery words with their consent, in [SharedFolderManager](../managers/SharedFolderManager.md). No folders yet. The first folder built is `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095), [executive-hub.md](executive-hub.md)).
 
 ## Rules (from the epic)
 

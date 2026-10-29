@@ -69,7 +69,8 @@ describe('ConsentManager (#1603)', () => {
     pages = {
       'terms-of-service': { title: 'Terms of Service', version: 1, effective: new Date('2026-10-22T00:00:00Z') },
       'privacy-policy': { title: 'Privacy Policy', version: '1', effective: '2026-10-22' },
-      'recovery-words': { title: 'Your Recovery Words', version: 1, effective: '2026-10-29' }
+      'recovery-words': { title: 'Your Recovery Words', version: 1, effective: '2026-10-29' },
+      'shared-folders-recovery-words': { title: 'Shared Folders Recovery Words', version: 1, effective: '2026-10-29' }
     };
     users = { ann: { username: 'ann', createdAt: '2026-01-01T00:00:00.000Z' }, bob: { username: 'bob' } };
     holdsProfileManage = new Set(['ann', 'bob']);
@@ -267,7 +268,7 @@ describe('ConsentManager (#1603)', () => {
       expect(cm.addonForPath('/phr/records')).toBe('phr');
       expect(cm.addonForPath('/api/phr/x')).toBe('phr');
       expect(cm.addonForPath('/phrase')).toBeNull();
-      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'phr-terms-of-service']);
+      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'shared-folders-recovery-words', 'phr-terms-of-service']);
     });
 
     test('an add-on may register only documents named <slug>-…, and only when it is per-person', () => {
@@ -330,6 +331,37 @@ describe('ConsentManager (#1603)', () => {
     test('no add-on may take its scope', () => {
       perPerson.add('recovery-words');
       expect(() => cm.registerAddonDocuments('recovery-words', { documents: ['recovery-words-x'] })).toThrow(/core keeps for itself/);
+    });
+  });
+
+  describe('the shared folders\' recovery words (#2124)', () => {
+    const SCOPE = 'shared-folders-recovery-words';
+    const ORG_WORDS = 'org-words-set-1';
+
+    test('a scope of its own, bound to the set of words, with its own document', async () => {
+      expect(await cm.pendingFor('ann', SCOPE)).toEqual([]);
+      expect((await cm.pendingFor('ann', SCOPE, ORG_WORDS)).map((d) => [d.id, d.version])).toEqual([[SCOPE, '1']]);
+      const [record] = await cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'setup', ORG_WORDS);
+      expect(record).toMatchObject({ document: SCOPE, scope: SCOPE, version: '1', subject: ORG_WORDS, context: { by: 'ann', how: 'setup' } });
+      expect(audited).toEqual([expect.objectContaining({ eventType: 'consent-grant', resource: SCOPE, metadata: expect.objectContaining({ scope: SCOPE, how: 'setup', subject: ORG_WORDS }) })]);
+      expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
+      // A new set of words, or a new version of the wording, asks again; the personal words are a separate scope.
+      expect(await cm.pendingFor('ann', SCOPE, 'org-words-set-2')).toHaveLength(1);
+      expect(await cm.pendingFor('ann', 'recovery-words', ORG_WORDS)).toHaveLength(1);
+      pages[SCOPE] = { ...pages[SCOPE], version: 2 };
+      expect((await cm.pendingFor('ann', SCOPE, ORG_WORDS)).map((d) => d.version)).toEqual(['2']);
+    });
+
+    test('refused without a subject, and no add-on may take its scope', async () => {
+      await expect(cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'reminder')).rejects.toBeInstanceOf(ConsentRefusedError);
+      perPerson.add(SCOPE);
+      expect(() => cm.registerAddonDocuments(SCOPE, { documents: [`${SCOPE}-x`] })).toThrow(/core keeps for itself/);
+    });
+
+    test('a missing page asks nothing and needs attention', async () => {
+      pages[SCOPE] = null;
+      expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
+      expect(cm.getManagerStatus().reason).toMatch(/No 'shared-folders-recovery-words' page/);
     });
   });
 

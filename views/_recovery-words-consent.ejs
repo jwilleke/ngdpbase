@@ -2,13 +2,16 @@
     when a user's keys are first made, and the screen that makes a new set (#1925). The route refuses to finish
     without it (WikiRoutes.recoveryWordsSaved) and then records it as a consent. The hidden fields say which
     version of the wording was shown; a changed version asks again. Locals: recoveryWordsDocument
-    (ConsentDocument or null when its page is missing). %>
+    (ConsentDocument or null when its page is missing). #2124: the shared folders' words screen passes its own
+    words as recoveryWordsText, recoveryWordsMore and recoveryWordsTick; the fields and the check are the same. %>
 <% const _rwDoc = typeof recoveryWordsDocument !== 'undefined' ? recoveryWordsDocument : null; %>
+<% const _rwText = typeof recoveryWordsText !== 'undefined' ? recoveryWordsText : 'Your encrypted vaults\' files are locked with your own key. Nobody, not even an administrator, can open them. If you lose your password, these 12 recovery words are the only way back; without them those files are lost for good.'; %>
+<% const _rwMore = typeof recoveryWordsMore !== 'undefined' ? recoveryWordsMore : 'Read more about your recovery words'; %>
+<% const _rwTick = typeof recoveryWordsTick !== 'undefined' ? recoveryWordsTick : 'I\'ve saved my recovery words and understand they are the only way back'; %>
 <div class="alert alert-warning" data-recovery-words-consent>
   <p class="mb-2">
-    Your encrypted vaults' files are locked with your own key. Nobody, not even an administrator, can open them.
-    If you lose your password, these 12 recovery words are the only way back; without them those files are lost for good.
-    <% if (_rwDoc) { %><a href="/view/<%= encodeURIComponent(_rwDoc.id) %>" target="_blank" rel="noopener">Read more about your recovery words</a>.<% } %>
+    <%= _rwText %>
+    <% if (_rwDoc) { %><a href="/view/<%= encodeURIComponent(_rwDoc.id) %>" target="_blank" rel="noopener"><%= _rwMore %></a>.<% } %>
   </p>
   <% if (_rwDoc) { %>
   <input type="hidden" name="words-document" value="<%= _rwDoc.id %>">
@@ -16,6 +19,6 @@
   <% } %>
   <div class="form-check mb-0">
     <input class="form-check-input" type="checkbox" name="saved" id="recovery-words-saved" required>
-    <label class="form-check-label" for="recovery-words-saved"><strong>I've saved my recovery words and understand they are the only way back</strong></label>
+    <label class="form-check-label" for="recovery-words-saved"><strong><%= _rwTick %></strong></label>
   </div>
 </div>

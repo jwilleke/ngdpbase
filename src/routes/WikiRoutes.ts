@@ -61,8 +61,10 @@ import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type ConsentManager from '../managers/ConsentManager.js';
 import { ConsentChangedError, ConsentRefusedError } from '../managers/ConsentManager.js';
-import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, type ConsentDocument, type ConsentSeen } from '../types/Consent.js';
+import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, SHARED_FOLDERS_WORDS_CONSENT_SCOPE, type ConsentDocument, type ConsentSeen } from '../types/Consent.js';
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
+import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
+import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
@@ -7789,9 +7791,13 @@ ${panes}
     const signedIn = typeof req.session?.username === 'string' ? req.session.username : '';
     // #1928: the recovery words are about the user's own words and vaults; never under a proxy.
     const words = scope === RECOVERY_WORDS_CONSENT_SCOPE ? await this.ownRecoveryWords(req) : null;
+    // #2124: the shared folders' words are confirmed only by the admin they were shown to.
+    const orgWords = scope === SHARED_FOLDERS_WORDS_CONSENT_SCOPE ? await this.sharedFoldersWordsShownTo(req) : null;
     const pending = scope === RECOVERY_WORDS_CONSENT_SCOPE
       ? (words ? await recoveryWordsPending(this.engine, req.userContext, words) : [])
-      : (consent && signedIn ? await consent.pendingFor?.(signedIn, scope) : []) ?? [];
+      : scope === SHARED_FOLDERS_WORDS_CONSENT_SCOPE
+        ? (orgWords?.pending ?? [])
+        : (consent && signedIn ? await consent.pendingFor?.(signedIn, scope) : []) ?? [];
     if (pending.length === 0) {
       if (scope === CORE_CONSENT_SCOPE && req.session.consentPending) {
         delete req.session.consentPending;
@@ -7805,7 +7811,8 @@ ${panes}
     res.set('Cache-Control', 'no-store');
     res.render('consent', {
       ...commonData,
-      title: scope === RECOVERY_WORDS_CONSENT_SCOPE ? 'Save your recovery words' : 'Please accept',
+      title: scope === RECOVERY_WORDS_CONSENT_SCOPE ? 'Save your recovery words'
+        : scope === SHARED_FOLDERS_WORDS_CONSENT_SCOPE ? 'The shared folders\' recovery words' : 'Please accept',
       scope,
       documents: pending,
       recoveryWordsVaults: words?.vaults ?? [],
@@ -7840,6 +7847,10 @@ ${panes}
         // #1928: from the reminder; about the user's current set of words.
         const words = await this.ownRecoveryWords(req);
         if (words) await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), 'reminder', words.wordsId);
+      } else if (scope === SHARED_FOLDERS_WORDS_CONSENT_SCOPE) {
+        // #2124: from the banner; only the admin the organization's words were shown to, about that set.
+        const orgWords = await this.sharedFoldersWordsShownTo(req);
+        if (orgWords) await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), 'reminder', orgWords.wordsId);
       } else {
         await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), scope === CORE_CONSENT_SCOPE ? 'sign-in' : 'add-on');
       }
@@ -7865,6 +7876,18 @@ ${panes}
     const subject = req.userContext as (ActorContext & { viaProxy?: unknown; viaToken?: unknown; viaShare?: unknown }) | undefined;
     if (!subject?.username || subject.username !== req.session?.username || subject.viaProxy || subject.viaToken || subject.viaShare) return null;
     return recoveryWordsState(this.engine, subject);
+  }
+
+  /**
+   * The organization's shared-folders recovery words (#2124) when the
+   * signed-in user is the admin they were shown to, signed in themselves; null
+   * otherwise (none made, someone else's to confirm, or a delegated request).
+   */
+  private async sharedFoldersWordsShownTo(req: Request): Promise<Awaited<ReturnType<typeof sharedFoldersWordsState>>> {
+    const subject = req.userContext as (ActorContext & { viaProxy?: unknown; viaToken?: unknown; viaShare?: unknown }) | undefined;
+    if (!subject?.username || subject.username !== req.session?.username || subject.viaProxy || subject.viaToken || subject.viaShare) return null;
+    const state = await sharedFoldersWordsState(this.engine);
+    return state?.shownTo === subject.username ? state : null;
   }
 
   /** What a consent form showed: parallel `document` / `version` fields, one pair per document (#1603). */
@@ -9837,10 +9860,10 @@ ${panes}
     return this.privatePageRoute(req, res, action, handler);
   }
 
-  /** The recovery-words document as it stands now (#1928), or null when its page is missing. */
-  private async recoveryWordsDocument(): Promise<ConsentDocument | null> {
+  /** The recovery-words document as it stands now (#1928; the shared folders' with that scope, #2124), or null when its page is missing. */
+  private async recoveryWordsDocument(scope: string = RECOVERY_WORDS_CONSENT_SCOPE): Promise<ConsentDocument | null> {
     const consent = this.engine.getManager('ConsentManager');
-    return (await consent?.documents?.(RECOVERY_WORDS_CONSENT_SCOPE))?.[0] ?? null;
+    return (await consent?.documents?.(scope))?.[0] ?? null;
   }
 
   /**
@@ -9871,10 +9894,15 @@ ${panes}
    *   the new envelope's `recoveryWordsId` and `how: 'new-words'`. The new id
    *   is what makes the reminder come back for the new set.
    *
+   * - the shared folders' words on Admin → Backup (#2124): `how: 'setup'`,
+   *   in the scope `shared-folders-recovery-words`.
+   *
    * Never fails the step: the keys are already written. A refused or failed
    * record is logged, and the banner then asks the user to confirm.
    */
-  private async recordRecoveryWordsSaved(req: Request, wordsId: string, document: ConsentDocument | null, how: 'store-door' | 'new-words'): Promise<boolean> {
+  private async recordRecoveryWordsSaved(
+    req: Request, wordsId: string, document: ConsentDocument | null, how: 'store-door' | 'new-words' | 'setup', scope: string = RECOVERY_WORDS_CONSENT_SCOPE
+  ): Promise<boolean> {
     const consent = this.engine.getManager('ConsentManager');
     const who = req.userContext?.username ?? '?';
     if (!consent || !document) {
@@ -9883,7 +9911,7 @@ ${panes}
     }
     try {
       // The request's own subject, forwarded: ConsentManager refuses a token, share or proxy.
-      await consent.accept(req.userContext, RECOVERY_WORDS_CONSENT_SCOPE, [{ id: document.id, version: document.version }], how, wordsId);
+      await consent.accept(req.userContext, scope, [{ id: document.id, version: document.version }], how, wordsId);
       return true;
     } catch (err) {
       logger.warn(`[recovery-words] the confirmation of ${who} could not be recorded; the reminder will ask again:`, err);
@@ -12900,6 +12928,11 @@ ${panes}
         backupKey: backupManager.backupKeyInfo(),
         // #1976: the names the instance .env sets, and which changed since an admin last saved it — never a value.
         envKeys: backupManager.envKeysInfo(),
+        // #2124: the shared-folders key's fingerprint and whether a saved .env holds it — never the key;
+        // the organization's recovery words (never the words) and whether their admin confirmed saving them.
+        sharedFoldersKey: backupManager.sharedFoldersKeyInfo(),
+        sharedFoldersWords: await sharedFoldersWordsState(this.engine),
+        sharedFoldersUnavailable: ((folders) => (folders ? folders.unavailableReason() : 'Shared folders are not available on this site'))(this.engine.getManager<SharedFolderManager>('SharedFolderManager')),
         backupHealth,
         formatBytes,
         siteName: this.siteName(),
@@ -12978,6 +13011,88 @@ ${panes}
         : 'Thank you: .env is recorded as saved off the server.'));
     } catch (err: unknown) {
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+    }
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/words — make the organization's 12
+   * shared-folders recovery words and show them, once, to this admin (#2124,
+   * epic #1775 decision 4; `admin-system`, which SharedFolderManager asks
+   * again). Nothing is saved until they tick "I have saved them" on this
+   * page (`adminSharedFoldersWordsSave`). Never cached, never logged.
+   */
+  async adminSharedFoldersWords(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return res.redirect('/admin/backup?error=' + encodeURIComponent('Shared folders are not available on this site'));
+      const { token, words } = await folders.prepareRecoveryWords(wikiContext.userContext);
+      res.setHeader('Cache-Control', 'no-store');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-shared-folders-words', {
+        ...commonData,
+        title: 'Shared folders: recovery words',
+        words,
+        token,
+        recoveryWordsDocument: await this.recoveryWordsDocument(SHARED_FOLDERS_WORDS_CONSENT_SCOPE),
+        csrfToken: req.session.csrfToken || ''
+      });
+    } catch (err: unknown) {
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+    }
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/words/save — the admin shown the words
+   * confirms they saved them (#2124). Refused without the tick, or when the
+   * wording's version changed: then the words shown are discarded, never
+   * shown again, and nothing is saved. Otherwise SharedFolderManager saves
+   * them and the confirmation is recorded as a consent (`how: setup`).
+   */
+  async adminSharedFoldersWordsSave(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const document = await this.recoveryWordsDocument(SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
+      const saved = WikiRoutes.recoveryWordsSaved(body, document);
+      if (saved !== 'ok') {
+        folders.discardRecoveryWords(wikiContext.userContext);
+        return back('error', saved === 'unticked'
+          ? 'Nothing was saved: the words were not confirmed as saved, so they have been discarded. Make a new set and tick "I have saved them" to finish.'
+          : 'Nothing was saved: the wording about the recovery words changed while you were reading, so the words have been discarded. Make a new set.');
+      }
+      const wordsId = await folders.saveRecoveryWords(wikiContext.userContext, typeof body.token === 'string' ? body.token : '');
+      await this.recordRecoveryWordsSaved(req, wordsId, document, 'setup', SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
+      return back('success', 'The shared folders\' recovery words are saved. Keep them off this server, with the organization\'s important papers.');
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
+    }
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/words/discard — discard the shared
+   * folders' recovery words while the admin shown them has not confirmed
+   * saving them (#2124; operator, 2026-10-29). Any holder of `admin-system`,
+   * so a reminder nobody can clear can always be cleared: they then make a
+   * new set and confirm it themselves. SharedFolderManager refuses a
+   * confirmed set, or one that protects folder keys.
+   */
+  async adminSharedFoldersWordsDiscard(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      await folders.discardUnconfirmedWords(wikiContext.userContext);
+      return back('success', 'The unconfirmed recovery words are discarded. Make a new set, and confirm you have saved it.');
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
     }
   }
 
@@ -17655,6 +17770,9 @@ ${panes}
     app.get('/admin/backup/key', (req: Request, res: Response) => void this.adminBackupKey(req, res));
     app.get('/admin/backup/env', (req: Request, res: Response) => void this.adminBackupEnv(req, res));
     app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
+    app.post('/admin/backup/shared-folders/words', (req: Request, res: Response) => void this.adminSharedFoldersWords(req, res));
+    app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
+    app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

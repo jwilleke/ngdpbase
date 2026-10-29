@@ -46,6 +46,7 @@ import FootnoteManager from './managers/FootnoteManager.js';
 import FileManager from './managers/FileManager.js';
 import ShareManager from './managers/ShareManager.js';
 import ConsentManager from './managers/ConsentManager.js';
+import SharedFolderManager from './managers/SharedFolderManager.js';
 import ReviewManager from './managers/ReviewManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import IdentityManager from './managers/IdentityManager.js';
@@ -418,6 +419,11 @@ class WikiEngine extends Engine {
     const consentManager = new ConsentManager(this);
     this.registerManager('ConsentManager', consentManager);
     await consentManager.initialize();
+
+    // #2124 (epic #1775): the organization's shared folders — their keys and the recovery words.
+    const sharedFolderManager = new SharedFolderManager(this);
+    this.registerManager('SharedFolderManager', sharedFolderManager);
+    await sharedFolderManager.initialize();
 
     // #2072: requests for review, filed by add-ons, decided by the holders of a permission.
     const reviewManager = new ReviewManager(this);

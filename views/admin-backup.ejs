@@ -61,7 +61,8 @@
                 </div>
                 <% } %>
                 <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
-                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey))) { %>
+                <% const _sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
+                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey) || (_sfKey.set && !_sfKey.saved && envKeys.holdsSharedFoldersKey))) { %>
                 <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
@@ -70,6 +71,56 @@
                 </form>
                 <% } %>
             </div>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- Shared folders key and recovery words (#2124, epic #1775)         -->
+    <!-- ================================================================ -->
+    <% const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
+    <% const sfWords = locals.sharedFoldersWords || null; %>
+    <% const sfUnavailable = locals.sharedFoldersUnavailable || null; %>
+    <div class="card mb-4" id="shared-folders-key">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-folder"></i> Shared folders key</h5>
+        </div>
+        <div class="card-body">
+            <p>Each shared folder is locked with its own key, kept under this site's shared-folders key (<code>NGDPBASE_SHARED_FOLDERS_KEY</code>, in <code>.env</code>) and under the organization's 12 recovery words.</p>
+            <% if (sfUnavailable) { %>
+            <div class="alert alert-danger" id="shared-folders-unavailable"><%= sfUnavailable %></div>
+            <% } %>
+            <% if (sfKey.set) { %>
+            <p class="mb-2">Fingerprint: <code id="shared-folders-key-fingerprint"><%= sfKey.fingerprint %></code></p>
+            <% if (sfKey.saved) { %>
+            <p class="text-success" id="shared-folders-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed a saved copy of <code>.env</code> holding this key.</p>
+            <% } else { %>
+            <div class="alert alert-warning" id="shared-folders-key-not-saved">
+                <strong>Save <code>.env</code> off this server.</strong> It holds the shared-folders key, and no admin has confirmed a saved copy of it yet. Use <em>Download .env</em> above, then <em>I have saved .env off the server</em>.
+            </div>
+            <% } %>
+            <% } %>
+            <h6 class="mt-3">Recovery words</h6>
+            <% if (!sfWords) { %>
+            <p id="shared-folders-words-none">Not made yet. They are needed before the first shared folder can be made. You will be shown them once: have paper ready.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words" id="shared-folders-words-make">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-key"></i> Make the recovery words</button>
+            </form>
+            <% } else { %>
+            <p class="mb-1" id="shared-folders-words-made">Made <time datetime="<%= sfWords.madeAt %>" data-local-time><%= sfWords.madeAt.slice(0, 16).replace('T', ' ') %> UTC</time> and shown once to <strong><%= sfWords.shownTo %></strong>.</p>
+            <% if (sfWords.pending.length === 0) { %>
+            <p class="text-success mb-0" id="shared-folders-words-confirmed"><i class="fas fa-check-circle"></i> <%= sfWords.shownTo %> confirmed they are saved.</p>
+            <% } else { %>
+            <div class="alert alert-warning mb-2" id="shared-folders-words-unconfirmed"><%= sfWords.shownTo %> has not confirmed saving them yet. Until they do, administrators see a reminder, and no shared folder can be made.</div>
+            <% if (!sfWords.protectsFolders) { %>
+            <p class="small mb-1">If <%= sfWords.shownTo %> cannot confirm (the words were lost, or the account is gone), discard this set and make a new one; you then confirm the new set yourself.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words/discard" id="shared-folders-words-discard" class="mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-danger btn-sm"<%- lockedUnless('admin-system') %>><i class="fas fa-trash"></i> Discard these words</button>
+            </form>
+            <% } %>
+            <% } %>
+            <% } %>
         </div>
     </div>
 
