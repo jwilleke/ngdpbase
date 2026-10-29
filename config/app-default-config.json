@@ -211,6 +211,8 @@
   "_comment_share": "Share links (#842): anonymous capability-token access to keyword-scoped content. Keys approved by operator 2026-07-16.",
   "ngdpbase.share.enabled": true,
   "ngdpbase.share.storagedir": "${FAST_STORAGE}/shares",
+  "_comment_share_public_base_url": "#2117 — the address share links are made and shown with, when it differs from ngdpbase.application.base-url: for a site whose own address is private (a LAN name) and that is reached from outside only through a tunnel or proxy carrying /share/… (everything a share view loads is under /share/). An absolute http or https URL with no path, such as https://share.example.com. Empty (the default) uses ngdpbase.application.base-url, else the request's own address. An invalid value is ignored and named at startup. When the site serves HTTPS itself, the tunnel or proxy must connect to it over https (startup warns): plain http is redirected to ngdpbase.application.base-url. Read on every link shown.",
+  "ngdpbase.share.public-base-url": "",
   "_comment_tab": "Tabbed page sections configuration (#551)",
   "ngdpbase.tab.pagetabs": true,
   "ngdpbase.tab.pagetabs.template": "Template:PageTabs",
