@@ -122,6 +122,12 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     expect(saved.status()).toBe(404);
     const deleted = await page.request.post(`${pagePath}/delete`, { form: { _csrf: csrf }, maxRedirects: 0 });
     expect(deleted.status()).toBe(404);
+    // A file from inside the folder goes into the folder or nowhere, never the public pool: refused.
+    const up = await page.request.post(`/attachments/upload/${encodeURIComponent(`shared/${CLOSED}/${TITLE}`)}`, {
+      headers: { 'X-CSRF-Token': csrf },
+      multipart: { file: { name: `closed-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`file ${WORD}`) } }
+    });
+    expect(up.ok()).toBe(false);
     // Nothing landed: the folder is still empty, and search finds no closed note.
     await page.goto(`/shared/${CLOSED}`);
     await expect(page.locator('[data-testid="shared-folder-empty"]')).toBeVisible();
@@ -147,6 +153,20 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     const visitor = await anon.newPage();
     await visitor.goto('/');
     expect([403, 404]).toContain(await statusOf(visitor, `/attachments/${id}`));
+
+    // From a page not saved yet, the file still goes into the folder: served to its readers, to nobody signed out.
+    const early = await page.request.post(`/attachments/upload/${encodeURIComponent(`shared/default/${TITLE} draft`)}`, {
+      headers: { 'X-CSRF-Token': await csrfFrom(page) },
+      multipart: { file: { name: `draft-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`draft ${WORD}`) } }
+    });
+    expect(early.ok()).toBe(true);
+    const earlyBody = await early.json() as { attachment?: { id?: string; identifier?: string } };
+    const earlyId = earlyBody.attachment?.identifier ?? earlyBody.attachment?.id;
+    expect(earlyId).toBeTruthy();
+    const earlyGot = await page.request.get(`/attachments/${earlyId}`);
+    expect(earlyGot.status()).toBe(200);
+    expect(await earlyGot.text()).toBe(`draft ${WORD}`);
+    expect([403, 404]).toContain(await statusOf(visitor, `/attachments/${earlyId}`));
     await anon.close();
   });
 

@@ -504,6 +504,7 @@ The organization's shared folders ([#2125](https://github.com/jwilleke/ngdpbase/
 
 - __Who may act__: never the owner rule. `mayActInPrivateContainer` refuses everyone for the container; `permitsInVault` asks `shared-folder-read` or `shared-folder-file` on the folder instead (`permitsInSharedFolder`), and the page tiers decide a folder page by that alone, never by the `vault` policy. Administrators hold `shared-folder-read` on every folder (`shared-folder-admin-read`), which opens its key; the page door therefore asks `shared-folder-file` before a folder page is saved, moved or deleted, so holding the key never lets a reader write.
 - __The key__: the server's, from SharedFolderManager, never in a session bag. `dekFor` hands it only to a context the PDP has permitted on the folder (`sharedFolderKeyFor`). `store.json` says the folder is sealed and holds no wrapped key.
+- __An upload goes where the user is working__: a file uploaded with a page name under `shared/{folder}/` lands in that folder, saved page or not, never the public pool, and needs `shared-folder-file` on it (operator, 2026-10-29). For a user's vault the destination still follows the saved page (that tie is [#2135](https://github.com/jwilleke/ngdpbase/issues/2135)).
 - __No share links__: a share subject is refused before the PDP is asked, and a vault link can be issued only by a vault's owner, which no account is here.
 
 Everything else above applies as it is: the page and file doors, history, trash, the per-folder page, file and search indexes, sealing, and the instance backup.

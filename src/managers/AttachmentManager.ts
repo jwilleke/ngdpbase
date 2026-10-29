@@ -667,14 +667,23 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     let isPrivatePage = false;
     let pageCreator: string | undefined;
     let pageStore: string | undefined;
-    const pageOwner = pageName
-      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
-      : null;
+    // #2125 (operator, 2026-10-29): an upload from inside /shared/<name> goes
+    // into that folder, because that is where the user is working, whether or
+    // not the page is saved yet; never the public pool. It is asked
+    // `shared-folder-file` on the folder (`mayInVault` below, before any bytes
+    // are stored), the same answer the page tiers give a folder page.
+    const named = pageName ? parsePrivatePageName(pageName) : null;
+    const inSharedFolder = named !== null && isSharedFolderOwner(named.owner);
+    const pageOwner = inSharedFolder
+      ? { creator: named.owner, store: named.store }
+      : pageName
+        ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
+        : null;
     // A private container is its owner's: nobody else writes into it unless the
     // owner delegated. The decision is the page's own — PolicyInformationPoint Tier 0 via
     // the cross-page check — so the rule has one home and a refusal is recorded
     // (authorization-deny). Refused before any bytes are stored.
-    if (pageOwner && pageName) {
+    if (pageOwner && pageName && !inSharedFolder) {
       await this.assertMayEditPage(ctx, pageName);
     }
     // A share visitor has no container of their own to put a private file in.
