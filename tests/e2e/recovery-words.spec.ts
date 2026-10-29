@@ -104,8 +104,10 @@ test.describe('Save your recovery words (#1928)', () => {
       await expect(banner).toContainText('without them those files are lost for good');
       await page.goto(`/stores/${VAULT}`);
       await expect(page.locator('[data-recovery-words-banner]')).toBeVisible();
-      // Not on an ordinary page.
-      await page.goto('/view/Welcome');
+      // On the home page too; not on an ordinary page.
+      await page.goto('/');
+      await expect(page.locator('[data-recovery-words-banner]')).toBeVisible();
+      await page.goto('/my/edits');
       await expect(page.locator('[data-recovery-words-banner]')).toHaveCount(0);
 
       // Confirming from the banner clears it.

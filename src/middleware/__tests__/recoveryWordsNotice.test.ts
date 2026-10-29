@@ -30,11 +30,13 @@ describe('recoveryWordsNotice (#1928)', () => {
   /** `${wordsId}@${version}` the user has confirmed. */
   let confirmed: Set<string>;
   let version: string;
+  /** `ngdpbase.front-page`, when the site names one. */
+  let frontPage: string | undefined;
   let pendingFor: ReturnType<typeof vi.fn>;
 
   const engine = () => ({
     getManager: (n: string): unknown => {
-      if (n === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => pagesDir };
+      if (n === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.front-page' && frontPage !== undefined ? frontPage : d), getResolvedDataPath: () => pagesDir };
       if (n === 'PageManager') {
         return {
           listOwnStoreIds: async (ctx: { username: string }) => {
@@ -82,6 +84,7 @@ describe('recoveryWordsNotice (#1928)', () => {
     pagesDir = path.join(dir, 'pages');
     confirmed = new Set();
     version = '1';
+    frontPage = undefined;
     pendingFor = vi.fn(async (_u: string, scope: string, subject?: string) =>
       (scope === 'recovery-words' && subject && !confirmed.has(`${subject}@${version}`) ? [{ id: 'recovery-words', scope, title: 'Your Recovery Words', version, effective: null }] : []));
   });
@@ -115,6 +118,29 @@ describe('recoveryWordsNotice (#1928)', () => {
     expect(notice(await run('/vaults/ann/default/Shopping'))).toBeUndefined();
     expect(notice(await run('/vaults/bob/health/Notes'))).toBeUndefined();
     expect(notice(await run('/view/Main'))).toBeUndefined();
+  });
+
+  test('on the home page: / and the front page it lands on, by name or slug, and only that page (operator, 2026-10-29)', async () => {
+    await giveKeys('ann');
+    await giveVault('ann', 'health', true);
+    // The shipped front page, Welcome.
+    for (const p of ['/', '/view/Welcome', '/view/welcome']) expect(notice(await run(p)), p).toBeDefined();
+    expect(notice(await run('/view/Main'))).toBeUndefined();
+    expect(notice(await run('/view/Welcome/edit'))).toBeUndefined();
+
+    frontPage = 'Our Home';
+    expect(notice(await run('/view/Our%20Home'))).toBeDefined();
+    expect(notice(await run('/view/our-home'))).toBeDefined();
+    expect(notice(await run('/view/Welcome'))).toBeUndefined();
+    // Never for anyone but the user themselves, there as everywhere.
+    expect(notice(await run('/view/Our%20Home', { bearerAuth: true }))).toBeUndefined();
+    expect(notice(await run('/view/Our%20Home', { userContext: { username: 'bob', isAuthenticated: true, viaProxy: { grantId: 'g' } } }))).toBeUndefined();
+  });
+
+  test('not on the home page for a user without encrypted vaults', async () => {
+    await giveKeys('ann');
+    await giveVault('ann', 'default', false);
+    expect(notice(await run('/view/Welcome'))).toBeUndefined();
   });
 
   test('it never holds a request: every request goes on, with or without it', async () => {

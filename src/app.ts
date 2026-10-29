@@ -1224,7 +1224,7 @@ void (async (): Promise<void> => {
   //      are behind it.
   const { consentGate } = await import('./middleware/consentGate.js');
   app.use(consentGate(engine));
-  // #1928: the "save your recovery words" banner on the dashboard, /profile and
+  // #1928: the "save your recovery words" banner on the home page, the dashboard, /profile and
   // the user's encrypted vaults' pages. Warns only; it never holds a request.
   const { recoveryWordsNotice } = await import('./middleware/recoveryWordsNotice.js');
   app.use(recoveryWordsNotice(engine));
