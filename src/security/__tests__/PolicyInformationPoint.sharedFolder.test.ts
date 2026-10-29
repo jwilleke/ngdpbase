@@ -8,7 +8,9 @@
  *   every account is given) and to nobody signed out;
  * - any other folder opens only through a policy naming `shared/<name>`, and
  *   reading is not filing;
- * - an admin's site-wide grants and the vault-owner policy reach no folder;
+ * - an admin reads every folder (`shared-folder-admin-read`, operator
+ *   2026-10-29) but files into none a policy does not name; an admin's
+ *   site-wide page grants and the vault-owner policy add nothing more;
  * - a grant removed ends access on the next request: a new request's subject
  *   holds no folder key until the PDP permits it again;
  * - a share link never gets in, and no share action is allowed in a folder.
@@ -20,7 +22,9 @@
  *   went red on its permit-everything PDP (the real PDP's share ceiling
  *   refuses too, so the refusal is asked before any PDP);
  * - the `shared-folder` resource matcher (returning true): "a folder no policy
- *   names", "a policy naming the folder" and "does not leak" went red.
+ *   names", "a policy naming the folder" and "does not leak" went red;
+ * - the shipped `shared-folder-admin-read` policy (removed): "an admin reads
+ *   every folder" went red.
  */
 
 import fs from 'fs';
@@ -91,10 +95,27 @@ describe('shared folders answer to permission alone (#2125)', () => {
     for (const action of ['view', 'edit']) expect(await decide(anonymous(), action, MINUTES)).toBe(false);
   });
 
-  test('a folder no policy names opens to nobody: not the admin, not vault-owner', async () => {
+  test('a folder no policy names opens to no ordinary account, not even vault-owner', async () => {
+    const reader = user('rita', ['reader', 'editor', 'vault-owner']);
+    for (const action of ['view', 'edit', 'delete']) expect(await decide(reader, action, BOARD)).toBe(false);
+    expect(await permitsInSharedFolder(pdp, reader, 'page-read', 'executive')).toBe(false);
+    expect(await permitsInSharedFolder(pdp, reader, 'asset-read', 'executive')).toBe(false);
+  });
+
+  test('an admin reads every folder, and files into none a policy does not name', async () => {
     const admin = user('ann', ['admin', 'vault-owner']);
-    for (const action of ['view', 'edit', 'delete']) expect(await decide(admin, action, BOARD)).toBe(false);
-    expect(await permitsInSharedFolder(pdp, admin, 'page-read', 'executive')).toBe(false);
+    for (const action of ['view', 'history', 'diff']) expect(await decide(admin, action, BOARD)).toBe(true);
+    for (const action of ['edit', 'delete', 'rename']) expect(await decide(admin, action, BOARD)).toBe(false);
+    expect(await permitsInSharedFolder(pdp, admin, 'page-read', 'executive')).toBe(true);
+    expect(await permitsInSharedFolder(pdp, admin, 'shared-folder-read', 'executive')).toBe(true);
+    expect(await permitsInSharedFolder(pdp, admin, 'shared-folder-file', 'executive')).toBe(false);
+    expect(await permitsInVault(pdp as never, admin, 'asset-read', { owner: SHARED_FOLDER_OWNER, vault: 'executive', resource: BOARD })).toBe(true);
+    for (const action of ['page-create', 'asset-upload', 'asset-delete']) {
+      expect(await permitsInVault(pdp as never, admin, action, { owner: SHARED_FOLDER_OWNER, vault: 'executive', resource: BOARD })).toBe(false);
+    }
+    // Without the shipped policy an admin is shut out like anyone else.
+    policies = policies.filter((p) => p.id !== 'shared-folder-admin-read');
+    expect(await permitsInSharedFolder(pdp, user('ann', ['admin', 'vault-owner']), 'page-read', 'executive')).toBe(false);
   });
 
   test('a policy naming the folder opens it; reading is not filing', async () => {
@@ -116,6 +137,9 @@ describe('shared folders answer to permission alone (#2125)', () => {
     const exec = user('eve', ['reader', 'executive']);
     expect(await pdp.permits(exec, 'shared-folder-read')).toBe(false);
     expect(await pdp.permits(exec, 'shared-folder-file')).toBe(false);
+    const admin = user('ann', ['admin', 'vault-owner']);
+    expect(await pdp.permits(admin, 'shared-folder-read')).toBe(false);
+    expect(await pdp.permits(admin, 'shared-folder-file')).toBe(false);
   });
 
   test('a grant removed ends access on the next request; the key goes only to a context the PDP permitted', async () => {

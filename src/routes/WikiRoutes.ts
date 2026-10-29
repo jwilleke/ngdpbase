@@ -9957,8 +9957,9 @@ ${panes}
    * POST /admin/backup/shared-folders/folders — make a shared folder
    * (#2125). Admins only; SharedFolderManager asks `admin-system` again and
    * refuses until the recovery words are confirmed. Until the Shared folders
-   * screen (slice 3) a new folder other than `default` opens to nobody: a
-   * policy naming `shared/<name>` gives access.
+   * screen (slice 3) a new folder other than `default` is read only by
+   * admins (`shared-folder-admin-read`): a policy naming `shared/<name>`
+   * gives anyone else access, and anyone at all `shared-folder-file`.
    */
   async adminSharedFoldersCreate(req: Request, res: Response) {
     const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);

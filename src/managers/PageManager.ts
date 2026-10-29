@@ -315,7 +315,7 @@ import { isSafePathSegment } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
-import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
+import { permitsInSharedFolder, SHARED_FOLDER_FILE } from '../utils/sharedFolderAccess.js';
 import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
 
 /** One vault page with data outside its vault (#1842), as the repair actions offer it. */
@@ -1971,6 +1971,25 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The write door's shared-folder check (#2125): a folder's page is added,
+   * changed, moved or deleted only by a context the PDP permits
+   * `shared-folder-file` on its folder, whatever route it came by (the
+   * editor, the raw editor, the API, a restore). Reading a folder
+   * (`shared-folder-read`, which every admin holds on every folder) opens
+   * its key, so the store would take the write: this is what refuses it.
+   * A name that is not a folder page is not checked here.
+   *
+   * @throws when `ctx` may not file into the page's folder
+   */
+  private async assertMayFileInSharedFolder(pageName: string | undefined, ctx: ActorContext): Promise<void> {
+    const name = pageName ? parsePrivatePageName(pageName) : null;
+    if (!name || !isSharedFolderOwner(name.owner)) return;
+    if (await permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, SHARED_FOLDER_FILE, name.store)) return;
+    logger.warn(`[PageManager] write in shared folder '${name.store}' refused: ${actorOf(ctx).user} may not add, edit or delete there (#2125)`);
+    throw new Error(`You may not add, edit or delete pages in shared folder '${name.store}'`);
+  }
+
+  /**
    * Admin-override save (#689): the admin "Edit raw" textarea, split into
    * frontmatter and body and written through the door (#1462).
    *
@@ -2497,6 +2516,10 @@ class PageManager extends BaseManager implements CatalogSource {
       }
       logger.info(`[PageManager] Title normalised for '${givenTitle}' → '${normalised}' (#1455)`);
     }
+
+    // #2125: only a filer of a shared folder writes in it, from or to.
+    await this.assertMayFileInSharedFolder(pageName, ctx);
+    await this.assertMayFileInSharedFolder(options.moveFrom, ctx);
 
     // #1505: a page moving vault is found where it is now, not where it is going.
     const existingPage = options.moveFrom
@@ -3064,6 +3087,8 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager.deletePage requires an ActorContext');
     }
     logger.info(`[PageManager] Deleting page: ${identifier} by user: ${actorOf(ctx).user}`);
+    // #2125: only a filer of a shared folder deletes in it.
+    await this.assertMayFileInSharedFolder(identifier, ctx);
 
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
     // #1964: nobody outside a page's audience deletes it.

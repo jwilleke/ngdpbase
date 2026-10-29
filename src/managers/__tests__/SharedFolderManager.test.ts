@@ -26,6 +26,9 @@ import { randomBytes } from 'node:crypto';
 import SharedFolderManager, { SharedFolderRefusedError, SharedFoldersUnavailableError } from '../SharedFolderManager';
 import { SHARED_FOLDERS_KEY_ENV } from '../../utils/sharedFoldersKey';
 import { newRecoveryWords } from '../../utils/privateStoreCrypto';
+import { pdpOver } from '../../test-support/policyDecisionPoint';
+
+const shipped = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
 interface Subj { username: string; isAuthenticated: boolean; roles: string[] }
 const admin = (username = 'ann'): never => ({ username, roles: ['admin'], isAuthenticated: true }) as never;
@@ -42,7 +45,8 @@ describe('SharedFolderManager (#2124)', () => {
   let wordingPage: boolean;
   const savedKey = process.env[SHARED_FOLDERS_KEY_ENV];
 
-  const build = async (): Promise<SharedFolderManager> => {
+  /** The manager over `dir`; `pdp` replaces the stand-in PDP (the shipped policies' test). */
+  const build = async (pdp?: unknown): Promise<SharedFolderManager> => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
@@ -53,7 +57,7 @@ describe('SharedFolderManager (#2124)', () => {
         pendingFor: async (u: string, scope: string, subject?: string) =>
           (scope === 'shared-folders-recovery-words' && wordingPage && !confirmed.has(`${u}/${subject}`) ? [{ id: scope }] : [])
       },
-      PolicyDecisionPoint: {
+      PolicyDecisionPoint: pdp ?? {
         permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && s.isAuthenticated && admins.has(s.username)),
         decide: (s: Subj, r: { action: string; attributes: Record<string, unknown> }) =>
           Promise.resolve({ permit: r.action === 'shared-folder-read' && s.isAuthenticated && readers.has(`${s.username}:${String(r.attributes['shared-folder'])}`) })
@@ -380,6 +384,25 @@ describe('SharedFolderManager (#2124)', () => {
       // A folder that does not exist is never permitted, whatever a policy says.
       readers.add('ann:shared/ghost');
       expect(await m.mayInFolder(admin('ann'), 'shared-folder-read', 'ghost')).toBe(false);
+    });
+
+    test('by the shipped policies an admin may open every folder and file into none a policy does not name; an ordinary account only default', async () => {
+      const made = await build();
+      await setUpWords(made);
+      await made.createFolder(admin(), 'default');
+      await made.createFolder(admin(), 'executive');
+      // The same folders, decided by the real PDP over the shipped policies.
+      const m = await build(await pdpOver(shipped));
+      const ada = { username: 'ada', roles: ['admin', 'vault-owner'], isAuthenticated: true } as never;
+      expect(await m.foldersReadableBy(ada)).toEqual(['default', 'executive']);
+      expect(await m.mayInFolder(ada, 'shared-folder-file', 'executive')).toBe(false);
+      expect(await m.mayInFolder(ada, 'page-edit', 'executive')).toBe(false);
+      expect(await m.mayInFolder(ada, 'shared-folder-file', 'default')).toBe(true);
+      const rita = { username: 'rita', roles: ['editor', 'vault-owner'], isAuthenticated: true } as never;
+      expect(await m.foldersReadableBy(rita)).toEqual(['default']);
+      expect(await m.mayInFolder(rita, 'shared-folder-read', 'executive')).toBe(false);
+      const anon = { username: 'Anonymous', roles: ['anonymous'], isAuthenticated: false } as never;
+      expect(await m.foldersReadableBy(anon)).toEqual([]);
     });
 
     test('a read is recorded with who read it and what', async () => {
