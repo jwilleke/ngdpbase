@@ -61,17 +61,18 @@ System categories are now configurable via `app-default-config.json` under `ngdp
 | `label` | string | Display name for the category |
 | `description` | string | Human-readable description |
 | `default` | boolean | Whether this is the default category |
-| `source` | string | Where the category's pages come from: `site` (made on the site), `shipped` (required-pages/ in the release) or `repo` (the repository's docs/, never stored on the site) |
+| `storageLocation` | object | Where its pages are stored: `defaultstore` (the pages folder) and, when its pages may be private, `privatestore` (its vault). Absent: its pages are never stored on the site |
 | `enabled` | boolean | Whether the category is active |
 
 __Default System Categories:__
 
-- `general` - General wiki pages (default, regular storage)
-- `system` - System configuration and administrative pages (required storage)
-- `documentation` - User documentation (regular storage)
-- `user` - User-generated content (regular storage)
-- `test` - Testing pages (regular storage)
-- `developer` - Developer documentation (regular storage)
+- `general` - General pages (the default; stored `vault`: may be private)
+- `system` - System configuration pages (stored `public`; shipped)
+- `documentation` - User documentation (stored `public`; shipped)
+- `addon` - Pages seeded by an add-on (stored `public`)
+- `user-profile` - User profile pages (stored `public`; disabled)
+- `capture` - Pages made by the capture bookmarklet (stored `vault`; disabled)
+- `developer` - Developer documentation (stored `none`: never stored on the site; disabled)
 
 Custom categories can be added to configuration. Categories not in the configuration will generate validation warnings (but are still allowed).
 
@@ -97,21 +98,21 @@ Configuration is loaded from ConfigurationManager via `config/app-default-config
       "label": "General",
       "description": "General wiki pages",
       "default": true,
-      "source": "site",
+      "storageLocation": { "defaultstore": "pages/", "privatestore": "pages/vaults/{user}/default/" },
       "enabled": true
     },
     "system": {
       "label": "System",
       "description": "System configuration and infrastructure pages",
       "default": false,
-      "source": "shipped",
+      "storageLocation": { "defaultstore": "pages/" },
       "enabled": true
     },
     "documentation": {
       "label": "Documentation",
       "description": "User and technical documentation",
       "default": false,
-      "source": "site",
+      "storageLocation": { "defaultstore": "pages/" },
       "enabled": true
     }
   }
@@ -123,7 +124,7 @@ __Configuration Properties:__
 - `label` (string, required) - Display name used in metadata validation
 - `description` (string, optional) - Human-readable description
 - `default` (boolean, optional) - Mark as default category (only one should be true)
-- `source` (string, optional) - `site`, `shipped` or `repo`; missing means `site`
+- `storageLocation` (object, optional) - `defaultstore` and, for a category whose pages may be private, `privatestore`; absent means its pages are never stored on the site. A `source` field from older configurations is ignored
 - `enabled` (boolean, optional) - Set to false to disable category
 
 __Adding Custom Categories:__
@@ -136,7 +137,7 @@ To add a custom category, add it to `app-custom-config.json`:
       "label": "Custom Category",
       "description": "My custom category",
       "default": false,
-      "source": "site",
+      "storageLocation": { "defaultstore": "pages/" },
       "enabled": true
     }
   }
@@ -728,7 +729,7 @@ __Returns:__ Category configuration object or null
   label: string,         // Display label
   description: string,   // Category description
   default: boolean,      // Is default category
-  source?: 'site' | 'shipped' | 'repo',
+  storageLocation?: { defaultstore: string, privatestore?: string },
   enabled: boolean       // Is enabled
 }
 ```
@@ -738,45 +739,32 @@ __Example:__
 ```javascript
 const categoryConfig = validationManager.getCategoryConfig('System');
 if (categoryConfig) {
-  console.log('Source:', categoryConfig.source); // 'shipped'
+  console.log('Stored:', validationManager.getCategoryStored('System')); // 'public'
   console.log('Description:', categoryConfig.description);
 }
 ```
 
 ---
 
-##### `getCategorySource(category: string): CategorySource`
+##### `getCategoryStored(category: string): CategoryStored | null`
 
-Gets where a category's pages come from.
+Gets where a system-category's pages are stored on the site, from its `storageLocation`. A system-category's former `source` field is not read.
 
 __Parameters:__
 
 - `category` (string): Category label
 
-__Returns:__ `CategorySource` - `'site'`, `'shipped'` or `'repo'`; an unknown category is `'site'`
+__Returns:__ `'none'` (no `storageLocation`: never stored on the site; saving is refused), `'public'` (a `storageLocation` without a vault: never private) or `'vault'` (a `storageLocation.privatestore`: may be private); `null` for a category the site does not know
 
 __Example:__
 
 ```javascript
-const location = validationManager.getCategorySource('System');
-// Returns: 'shipped'
-
-const location2 = validationManager.getCategorySource('Documentation');
-// Returns: 'site'
+validationManager.getCategoryStored('System');    // 'public'
+validationManager.getCategoryStored('general');   // 'vault'
+validationManager.getCategoryStored('developer'); // 'none'
 ```
 
-__Use Case:__
-
-```javascript
-const category = metadata['system-category'];
-const source = validationManager.getCategorySource(category);
-
-if (source === 'shipped') {
-  targetPath = path.join(requiredPagesDir, filename);
-} else {
-  targetPath = path.join(pagesDir, filename);
-}
-```
+Which pages are shipped copies is not a category question: `PageManager.isShippedPageCopy(uuid)` decides it per page, and `PageManager.shippedSystemCategories()` reads the system-categories `required-pages/` ships from its files' frontmatter.
 
 ---
 
@@ -795,8 +783,8 @@ __Returns:__ Array of category configuration objects
     label: 'General',
     description: 'General wiki pages',
     default: true,
-    source: 'site',
-    enabled: true
+    enabled: true,
+    storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/default/' }
   },
   // ... more categories
 ]
@@ -812,8 +800,8 @@ categories.forEach(cat => {
   console.log(`${cat.label}: ${cat.description}`);
 });
 
-// Filter by storage location
-const requiredCategories = categories.filter(c => c.source === 'shipped');
+// Filter by where their pages are stored
+const privateCapable = categories.filter(c => validationManager.getCategoryStored(c.label) === 'vault');
 ```
 
 ---
@@ -917,38 +905,19 @@ async function createPage(title, content, options) {
     throw new Error(`Page validation failed: ${validation.error}`);
   }
 
-  // Determine storage location based on category
-  const category = metadata['system-category'];
-  const source = validationManager.getCategorySource(category);
-
-  let targetPath;
-  if (source === 'shipped') {
-    targetPath = path.join(requiredPagesDir, filename);
-  } else {
-    targetPath = path.join(pagesDir, filename);
-  }
-
-  // Save via PageManager
-  await pageManager.savePage(targetPath, { metadata, content });
+  // Save via PageManager; it decides the folder (the pages folder, or the
+  // owner's vault for a private page whose category has one)
+  await pageManager.savePage(metadata.title, content, metadata, ctx);
 }
 ```
 
 __Category-Based Storage Example:__
 
 ```javascript
-// System pages go to /required-pages
-const systemMetadata = validationManager.generateValidMetadata('System Config', {
-  'system-category': 'System'
-});
-const systemLocation = validationManager.getCategorySource('System');
-console.log(systemLocation); // 'shipped'
-
-// General pages go to /pages
-const generalMetadata = validationManager.generateValidMetadata('My Page', {
-  'system-category': 'General'
-});
-const generalLocation = validationManager.getCategorySource('General');
-console.log(generalLocation); // 'site'
+// A system page can never be private; a general page can
+validationManager.getCategoryStored('System');  // 'public'
+validationManager.getCategoryStored('General'); // 'vault'
+validationManager.canBePrivate('System');       // false
 ```
 
 ### ConfigurationManager Integration

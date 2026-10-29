@@ -58,7 +58,7 @@ The journal's entry in `addons/journal/config/default-config.json` (#1507) has t
 ### The fields an add-on sets
 
 - __Map key and `label`__: keep them the same word. A page stores the `label` as its `system-category`, and some code looks entries up by key, some by label.
-- __`storageLocation.defaultstore`__: `pages/`, where public pages of the category live.
+- __`storageLocation.defaultstore`__: `pages/`, where public pages of the category live. Without a `storageLocation` at all, pages of the category are never stored on the site: saving one is refused, none is seeded, and it is not offered in the editor (an enabled entry like that gets a startup warning).
 - __`storageLocation.privatestore`__: the vault, `pages/vaults/{user}/{vaultid}/`. `{user}` is the page owner's username. The last segment is the vault id: use the add-on's slug, and never one another entry uses. Without a `privatestore`, pages of the category can never be private.
 - __`defaultPrivate`__: whether a new page starts private. Exactly one of:
   - `true` (the boolean): always private, no preference offered;
@@ -73,7 +73,7 @@ The journal's entry in `addons/journal/config/default-config.json` (#1507) has t
 - __`enabled`__: whether users can choose the category when creating or moving a page. Visibility only: whether a page may be edited is policy. Set `false` when only the add-on assigns the category.
 - __`default`__: never `true` on an add-on's entry (such an entry is refused). Exactly one entry, `general`, is the default.
 - __`page-badge`__: optional `{ color, label, title }`, shown beside the page title.
-- __`source`__: legacy (`site`, `shipped`, `repo`), still read but decided to be removed. Leave it out, or use `site`.
+- __`source`__: removed ([#1503](https://github.com/jwilleke/ngdpbase/issues/1503)). Leave it out. An entry that still carries it is ignored, with one info line at startup naming every such entry; where pages are stored is `storageLocation` alone.
 
 ### Value types are exact
 

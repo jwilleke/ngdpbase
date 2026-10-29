@@ -163,11 +163,11 @@ const mockConfigManager = {
       'ngdpbase.tab.pagetabs': false,
       'ngdpbase.logging.debug.login': false,
       'ngdpbase.system-category': {
-        general:       { label: 'general',       source: 'site',  enabled: true },
-        system:        { label: 'system',        source: 'shipped', enabled: true },
-        documentation: { label: 'documentation', source: 'shipped', enabled: true },
-        developer:     { label: 'developer',     source: 'repo',   enabled: true },
-        addon:         { label: 'addon',         source: 'site',  enabled: true }
+        general:       { label: 'general',       storageLocation: { defaultstore: 'pages/' },  enabled: true },
+        system:        { label: 'system',        storageLocation: { defaultstore: 'pages/' }, enabled: true },
+        documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' }, enabled: true },
+        developer:     { label: 'developer',   enabled: true },
+        addon:         { label: 'addon',         storageLocation: { defaultstore: 'pages/' },  enabled: true }
       }
     };
     return key in map ? map[key] : defaultValue;

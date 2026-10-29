@@ -4,8 +4,9 @@
  * Tests the isRequiredPage() method that determines if a page
  * requires admin permission to edit (Issue #174).
  *
- * Protected pages are determined solely by system-category metadata.
- * Hardcoded page-name lists were removed in favour of config-driven category checks.
+ * Protected pages are determined solely by system-category metadata: the
+ * system-categories required-pages/ ships (#1503), as PageManager reads them
+ * from its files' frontmatter. Hardcoded page-name lists were removed.
  *
  * @jest-environment node
  */
@@ -18,33 +19,16 @@ describe('WikiRoutes.isRequiredPage()', () => {
   let mockEngine;
 
   beforeEach(() => {
-    // Create mock PageManager
+    // Create mock PageManager. #1503: the protected system-categories are the
+    // ones required-pages/ ships, read from its files' frontmatter.
     mockPageManager = {
-      getPageMetadata: vi.fn()
+      getPageMetadata: vi.fn(),
+      shippedSystemCategories: vi.fn().mockResolvedValue(new Set(['system', 'documentation']))
     };
 
     // Create mock Engine
     mockEngine = {
-      getManager: vi.fn((name) => {
-        if (name === 'PageManager') return mockPageManager;
-        if (name === 'ConfigurationManager') {
-          return {
-            getProperty: vi.fn((key) => {
-              if (key === 'ngdpbase.system-category') {
-                return {
-                  general:       { label: 'general',       source: 'site',  enabled: true },
-                  system:        { label: 'system',        source: 'shipped', enabled: true },
-                  documentation: { label: 'documentation', source: 'shipped', enabled: true },
-                  developer:     { label: 'developer',     source: 'repo',   enabled: true },
-                  addon:         { label: 'addon',         source: 'site',  enabled: true }
-                };
-              }
-              return null;
-            })
-          };
-        }
-        return null;
-      })
+      getManager: vi.fn((name) => (name === 'PageManager' ? mockPageManager : null))
     };
 
     // Create WikiRoutes instance

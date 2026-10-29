@@ -112,19 +112,18 @@ Storage location is __automatically determined__ by the `system-category` field 
 │  (app-default-config.json)              │
 └───────────────┬─────────────────────────┘
                 │
-        ┌───────┴────────┐
-        │                │
-        ▼                ▼
-┌──────────────┐  ┌──────────────┐
-│ source          │  source          │
-│ = "shipped"     │  = "site"       │
-└───────┬────────┘  └───────┬────────┘
-        │                   │
-        ▼                   ▼
-┌──────────────┐  ┌──────────────┐
-│ required-pages/ │  pages/      │
-└──────────────┘  └──────────────┘
+        ┌───────────────┼────────────────┐
+        ▼               ▼                ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐
+│ no           │ │ storageLoc.  │ │ storageLoc. with     │
+│ storageLoc.  │ │ (public)     │ │ privatestore (vault) │
+└──────┬───────┘ └──────┬───────┘ └──────────┬───────────┘
+       ▼                ▼                    ▼
+  save refused       pages/          pages/, or the owner's
+  (docs/ only)                       vault when private
 ```
+
+`required-pages/` holds the originals of shipped pages; they are copied into `pages/` once and saved there like any other page ([#1371](https://github.com/jwilleke/ngdpbase/issues/1371), [#1503](https://github.com/jwilleke/ngdpbase/issues/1503)).
 
 ### Automatic Routing
 
@@ -132,7 +131,7 @@ When you save a page, ngdpbase:
 
 1. __Reads__ the `system-category` from page frontmatter
 2. __Looks up__ the category in configuration
-3. __Checks__ the category's `source`
+3. __Checks__ where the category's pages are stored (its `storageLocation`: `none`, `public` or `vault`)
 4. __Routes__ the page to the correct directory
 5. __Saves__ with UUID-based filename
 
@@ -145,7 +144,7 @@ system-category: documentation  # ← This determines storage
 ---
 ```
 
-The system sees `documentation` has `"source": "shipped"`, so the page goes to `required-pages/`.
+The system sees `documentation` has a `storageLocation` without a vault, so the page goes to `pages/` and can never be private.
 
 ---
 
@@ -153,9 +152,9 @@ The system sees `documentation` has `"source": "shipped"`, so the page goes to `
 
 System categories are predefined in `config/app-default-config.json` and control where pages are stored.
 
-### Categories → Required Pages
+### Shipped Categories
 
-These categories route pages to the `required-pages/` directory:
+The pages these categories ship with are kept in `required-pages/` in the release and copied once into `pages/` (`developer` pages are never stored on the site):
 
 | Category | Label | Description | Access Level |
 | ---------- | ------- | ------------- | -------------- |
@@ -170,14 +169,14 @@ __Configuration Example:__
   "label": "documentation",
   "description": "User and technical documentation",
   "default": false,
-  "source": "shipped",  // ← Routes to required-pages/
-  "enabled": true
+  "enabled": true,
+  "storageLocation": { "defaultstore": "pages/" }  // ← public: never private
 }
 ```
 
-### Categories → Regular Pages
+### Site Categories
 
-These categories route pages to the `pages/` directory:
+Pages of these categories are made on the site and stored in `pages/`:
 
 | Category | Label | Description | Access Level |
 | ---------- | ------- | ------------- | -------------- |
@@ -192,8 +191,8 @@ __Configuration Example:__
   "label": "general",
   "description": "General wiki pages",
   "default": true,              // ← Default category
-  "source": "site", // ← Routes to pages/
-  "enabled": true
+  "enabled": true,
+  "storageLocation": { "defaultstore": "pages/", "privatestore": "pages/vaults/{user}/default/" }  // ← may be private
 }
 ```
 
@@ -709,8 +708,8 @@ __A:__ Yes! Add them to `data/config/app-custom-config.json`:
       "label": "my-custom-category",
       "description": "My custom content type",
       "default": false,
-      "source": "site",  // or "shipped"
-      "enabled": true
+      "enabled": true,
+      "storageLocation": { "defaultstore": "pages/" }  // without it, its pages are never stored
     }
   }
 }
@@ -842,11 +841,11 @@ __Solution:__
    grep -A5 '"documentation"' config/app-default-config.json
    ```
 
-2. __Verify `source` is correct:__
+2. __Verify the category has a `storageLocation`__ (without one, its pages are never stored on the site and a save is refused):
 
    ```json
    "documentation": {
-     "source": "shipped"  // Should be "shipped" not "site"
+     "storageLocation": { "defaultstore": "pages/" }
    }
    ```
 
@@ -927,22 +926,22 @@ Located in: `config/app-default-config.json`
       "label": "general",
       "description": "General wiki pages",
       "default": true,
-      "source": "site",  // ← Routes to pages/
-      "enabled": true
+      "enabled": true,
+      "storageLocation": { "defaultstore": "pages/", "privatestore": "pages/vaults/{user}/default/" }
     },
     "system": {
       "label": "system",
       "description": "System configuration and infrastructure pages",
       "default": false,
-      "source": "shipped",  // ← Routes to required-pages/
-      "enabled": true
+      "enabled": true,
+      "storageLocation": { "defaultstore": "pages/" }
     },
     "documentation": {
       "label": "documentation",
       "description": "User and technical documentation",
       "default": false,
-      "source": "shipped",  // ← Routes to required-pages/
-      "enabled": true
+      "enabled": true,
+      "storageLocation": { "defaultstore": "pages/" }
     }
     // ... more categories
   }

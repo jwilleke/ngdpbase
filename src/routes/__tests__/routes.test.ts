@@ -162,6 +162,8 @@ vi.mock('../../WikiEngine', () => {
   };
 
   const mockPageManager = {
+    // #1503: the system-categories required-pages/ ships, from its frontmatter
+    shippedSystemCategories: vi.fn().mockResolvedValue(new Set(['system', 'documentation'])),
     getPageNames: vi.fn().mockResolvedValue(['Welcome', 'TestPage']),
     getAllPages: vi.fn().mockResolvedValue([]),
     getPage: vi.fn().mockImplementation((pageName) => {
@@ -288,11 +290,11 @@ vi.mock('../../WikiEngine', () => {
         'ngdpbase.application-name': 'ngdpbase',
         'ngdpbase.version': '1.0.0',
         'ngdpbase.system-category': {
-          general:       { label: 'general',       source: 'site',  enabled: true },
-          system:        { label: 'system',        source: 'shipped', enabled: true },
-          documentation: { label: 'documentation', source: 'shipped', enabled: true },
-          developer:     { label: 'developer',     source: 'repo',   enabled: true },
-          addon:         { label: 'addon',         source: 'site',  enabled: true }
+          general:       { label: 'general',       storageLocation: { defaultstore: 'pages/' },  enabled: true },
+          system:        { label: 'system',        storageLocation: { defaultstore: 'pages/' }, enabled: true },
+          documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' }, enabled: true },
+          developer:     { label: 'developer',   enabled: true },
+          addon:         { label: 'addon',         storageLocation: { defaultstore: 'pages/' },  enabled: true }
         }
       };
       return key in defaults ? defaults[key] : defaultValue;

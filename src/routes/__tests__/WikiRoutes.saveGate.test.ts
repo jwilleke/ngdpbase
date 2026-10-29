@@ -37,7 +37,7 @@ function makeEngine({ existing, granted, pageAllows }: { existing: boolean; gran
       decide: vi.fn((_s: unknown, { action }: { action: string }) => Promise.resolve({ permit: granted.includes(action), applicable: true, reason: 'test' }))
     },
     ConfigurationManager: {
-      getProperty: vi.fn((key: string, def: unknown) => (key === 'ngdpbase.system-category' ? { general: { enabled: true, label: 'general' } } : def))
+      getProperty: vi.fn((key: string, def: unknown) => (key === 'ngdpbase.system-category' ? { general: { enabled: true, label: 'general', storageLocation: { defaultstore: 'pages/' } } } : def))
     }
   };
   return { engine: { getManager: vi.fn((n: string) => managers[n] ?? null) }, pageManager };
@@ -98,6 +98,19 @@ describe('savePage asks the editor’s doors (#1542)', () => {
     const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit'], pageAllows: true });
     await new WikiRoutes(engine).savePage(req(CONTRIBUTOR), res());
     expect(pageManager.savePage).toHaveBeenCalled();
+  });
+
+  // #1503: decided per page, by the seeded-pages record, not by the system-category.
+  test('a shipped copy is marked user-modified when saved; a page made on the site is not', async () => {
+    for (const shipped of [true, false]) {
+      const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit'], pageAllows: true });
+      const isShippedPageCopy = vi.fn().mockResolvedValue(shipped);
+      Object.assign(pageManager, { isShippedPageCopy });
+      await new WikiRoutes(engine).savePage(req(CONTRIBUTOR), res());
+      expect(isShippedPageCopy).toHaveBeenCalledWith('u1');
+      const metadata = pageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
+      expect(metadata['user-modified']).toBe(shipped ? true : undefined);
+    }
   });
 
   test('a save refused because the encrypted vault is not open answers 409 with what to do, not 500 (#1834)', async () => {

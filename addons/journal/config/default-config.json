@@ -24,7 +24,6 @@
       "label": "journal",
       "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
       "default": false,
-      "source": "site",
       "enabled": true,
       "owner": "journal",
       "storageLocation": {

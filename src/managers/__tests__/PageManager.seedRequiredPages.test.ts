@@ -6,7 +6,7 @@
  * - A required page new in a release appears at the next start-up, on every site.
  * - A required page removed on the site stays removed (#954), whatever the
  *   provider: the site's seeded-pages record remembers it after the trash forgets.
- * - Pages in a repo-only category are never seeded.
+ * - Pages in a system-category with no storageLocation (never stored on the site) are never seeded.
  *
  * Real PageManager and FileSystemProvider over temp directories; teardown removes
  * only the mkdtemp directory.
@@ -38,10 +38,10 @@ import logger from '../../utils/logger';
 import PageManager from '../PageManager';
 
 const SYSTEM_CATEGORIES = {
-  general:       { label: 'general',       storageLocation: 'pages' },
-  system:        { label: 'system',        source: 'shipped' },
-  documentation: { label: 'documentation', source: 'shipped' },
-  developer:     { label: 'developer',     source: 'repo' }
+  general:       { label: 'general',       storageLocation: { defaultstore: 'pages/' } },
+  system:        { label: 'system',        storageLocation: { defaultstore: 'pages/' } },
+  documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' } },
+  developer:     { label: 'developer' }
 };
 
 const uuid = (n: number) => `aaaaaaaa-0000-0000-0000-${String(n).padStart(12, '0')}`;

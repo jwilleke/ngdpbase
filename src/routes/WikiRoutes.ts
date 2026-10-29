@@ -207,7 +207,7 @@ import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
 import type TemplateManager from '../managers/TemplateManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
-import { categorySource } from '../managers/ValidationManager.js';
+import { categoryStored } from '../managers/ValidationManager.js';
 import { acceptedSystemCategory } from '../utils/acceptedSystemCategory.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
@@ -461,6 +461,10 @@ interface IPageManager {
   declineShippedPage(sourceId: string, uuid: string, reason: string, ctx: ActorContext): Promise<boolean>;
   allowShippedPage(sourceId: string, uuid: string, ctx: ActorContext): Promise<boolean>;
   declinedShippedPages(): Promise<Record<string, Record<string, { at: string; by: string; reason: string }>>>;
+  /** #1503: the system-categories required-pages/ ships, from its frontmatter */
+  shippedSystemCategories?(): Promise<Set<string>>;
+  /** #1503: whether a page is a copy of a shipped original (its uuid is in the seeded-pages record) */
+  isShippedPageCopy?(uuid: string): Promise<boolean>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   /** At unlock (#1456): sealed pages move into their stores' own indexes. */
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
@@ -1922,22 +1926,15 @@ class WikiRoutes {
   }
 
   /**
-   * Get category labels whose source is 'shipped' (i.e. tracked in required-pages/).
-   * Used to determine whether to set the user-modified flag and whether a page is protected.
+   * The system-categories required-pages/ ships, lower-cased (#1503): the
+   * values its files' frontmatter carries, as PageManager reads them. Used to
+   * decide whether a page is protected (admin-only edit, never private).
    */
-  getRequiredPageCategories(): string[] {
+  async getRequiredPageCategories(): Promise<string[]> {
     try {
-      const configManager = this.engine.getManager('ConfigurationManager');
-      if (!configManager) return [];
-      const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { source?: string; label?: string; enabled?: boolean }>;
-      const labels: string[] = [];
-      for (const [key, cfg] of Object.entries(systemCategories)) {
-        if (cfg.enabled !== false && categorySource(cfg) === 'shipped') {
-          labels.push((cfg.label || key).toLowerCase());
-        }
-      }
-      return labels;
+      const pageManager = this.engine.getManager('PageManager');
+      if (typeof pageManager?.shippedSystemCategories !== 'function') return [];
+      return [...await pageManager.shippedSystemCategories()];
     } catch {
       return [];
     }
@@ -1955,14 +1952,15 @@ class WikiRoutes {
 
       // Load system categories from configuration
       const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { enabled?: boolean; label?: string; source?: string }>;
+        Record<string, { enabled?: boolean; label?: string; storageLocation?: unknown }>;
 
-      // Filter enabled categories — exclude source 'repo', since those pages
-      // live in the repository's docs/ folder only and cannot be created here.
+      // Filter enabled categories — exclude those with no storageLocation, since
+      // those pages live in the repository's docs/ folder only and cannot be
+      // created here (#1503).
       const categories: string[] = [];
       for (const [key, config] of Object.entries(systemCategories)) {
         const cfg = config;
-        if (cfg.enabled !== false && categorySource(cfg) !== 'repo') {
+        if (cfg.enabled !== false && categoryStored(cfg) !== 'none') {
           // Use label if available, otherwise use key (both lowercase)
           const label = (cfg.label || key).toLowerCase();
           categories.push(label);
@@ -2812,8 +2810,9 @@ ${panes}
         const systemCategory = (metadata['system-category'] || '').toLowerCase();
         const category = (metadata.category || '').toLowerCase();
 
-        // Protected categories that require admin permission to edit (config-driven)
-        const protectedCategories = this.getRequiredPageCategories();
+        // Protected categories that require admin permission to edit: the ones
+        // required-pages/ ships (#1503)
+        const protectedCategories = await this.getRequiredPageCategories();
 
         if (protectedCategories.includes(systemCategory) ||
             protectedCategories.includes(category)) {
@@ -3043,11 +3042,9 @@ ${panes}
         : typeof req.query['unknown-tags'] === 'string'
           ? req.query['unknown-tags']
           : '';
-      const warningMessage = req.query.warning === 'github-page'
-        ? 'This page is managed in GitHub — edits here will not be reflected in the source repository.'
-        : _unknownTagsParam
-          ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
-          : null;
+      const warningMessage = _unknownTagsParam
+        ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
+        : null;
       const sectionEditingEnabled =
         canEdit && !!userContext?.preferences?.['display.sectionEditing'];
 
@@ -4074,22 +4071,18 @@ ${panes}
       // from disk after the user set the page back to published.
       if (!statusValue) delete (metadata).status;
 
-      // Mark pages as user-modified when their category's master copy lives elsewhere (#1503)
-      const _catConfigManager = this.engine.getManager('ConfigurationManager');
-      const _allCategoryConfig = (_catConfigManager
-        ? _catConfigManager.getProperty('ngdpbase.system-category', {})
-        : {}) as Record<string, { source?: string; label?: string }>;
-      const _catKey = Object.keys(_allCategoryConfig).find(
-        k => (_allCategoryConfig[k].label || k).toLowerCase() === matchedCategory.toLowerCase()
-      );
-      const source = categorySource(_catKey ? _allCategoryConfig[_catKey] : undefined);
-      if (source === 'shipped' || source === 'repo') {
+      // Mark a page user-modified when it is a copy of a shipped original: its
+      // uuid is in the seeded-pages record (#1503, decided per page)
+      const _pageUuid = typeof existingPage?.metadata?.uuid === 'string' ? existingPage.metadata.uuid : '';
+      let shippedCopy = false;
+      try {
+        shippedCopy = typeof pageManager.isShippedPageCopy === 'function' && await pageManager.isShippedPageCopy(_pageUuid);
+      } catch (err: unknown) {
+        logger.warn(`savePage(${pageName}): could not read the seeded-pages record:`, err);
+      }
+      if (shippedCopy) {
         metadata['user-modified'] = true;
       }
-      // Warn when editing a page whose source lives in GitHub, not in required-pages/
-      const saveWarning = source === 'repo'
-        ? 'This page is managed in GitHub — edits here will not be reflected in the source repository.'
-        : undefined;
 
       // Warn about unrecognised fenced code block language tags
       const _configManager = this.engine.getManager('ConfigurationManager');
@@ -4108,7 +4101,7 @@ ${panes}
       }
 
       // Check if the new metadata will make this a required page
-      const willBeRequired = this.getRequiredPageCategories().includes(
+      const willBeRequired = (await this.getRequiredPageCategories()).includes(
         ((metadata['system-category'] as string) || '').toLowerCase()
       );
       if (isCurrentlyRequired || willBeRequired) {
@@ -4195,8 +4188,8 @@ ${panes}
       });
       content = saved.content ?? content;
 
-      // Notify admins when a required page is edited in the wiki UI
-      if (source === 'shipped') {
+      // Notify admins when a shipped page is edited in the wiki UI
+      if (shippedCopy) {
         const pageTitle = (metadata.title as string) || pageName;
         const editor = currentUser?.username || 'unknown';
         try {
@@ -4242,7 +4235,6 @@ ${panes}
       const redirectName = (metadata.title as string) || pageName;
       this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
       const warnParams = new URLSearchParams();
-      if (saveWarning) warnParams.set('warning', 'github-page');
       if (unknownTagWarning) warnParams.set('unknown-tags', unknownTagWarning);
       const warnParam = warnParams.size > 0 ? `?${warnParams.toString()}` : '';
       const target = `/view/${encodeURIComponent(redirectName)}${warnParam}`;
@@ -14425,13 +14417,12 @@ ${panes}
         }
       }
 
-      // #1377: live pages whose category says they belong in the required-pages
-      // set (source `shipped` — system, documentation) but whose UUID
-      // is not in it yet. The comparison above is built from the source files,
+      // #1377: live pages whose system-category says they belong in the
+      // required-pages set (one its files carry — system, documentation) but
+      // whose UUID is not in it yet. The comparison above is built from the source files,
       // so these were invisible. Addon pages belong to their addon's own set;
       // private pages are nobody's shipped content.
       const notInSource = await this.findRequiredCategoryPagesNotInSource(
-        configManager,
         [...mdFiles.map((f: string) => path.basename(f, '.md')), ...addonComparison.map((a) => a.uuid)],
         req.userContext
       );
@@ -14484,22 +14475,17 @@ ${panes}
   }
 
   /**
-   * #1377: live pages in a category whose source is `shipped` (system,
-   * documentation) whose UUID is in none of the source sets given — pages that
-   * belong in the GitHub required-pages set but were never added to it. Addon
-   * and private pages are left out. Sorted by title.
+   * #1377: live pages in a system-category required-pages/ ships (system,
+   * documentation: read from its files' frontmatter, #1503) whose UUID is in
+   * none of the source sets given — pages that belong in the GitHub
+   * required-pages set but were never added to it. Addon and private pages are
+   * left out. Sorted by title.
    */
   private async findRequiredCategoryPagesNotInSource(
-    configManager: { getProperty: (key: string, def: unknown) => unknown },
     sourceUuids: string[],
     reader: ActorContext
   ): Promise<Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }>> {
-    const categories = (configManager.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; source?: string }>;
-    const requiredCategories = new Set(
-      Object.entries(categories)
-        .filter(([, c]) => categorySource(c) === 'shipped')
-        .map(([key, c]) => (c.label || key).toLowerCase())
-    );
+    const requiredCategories = new Set(await this.getRequiredPageCategories());
     const inSource = new Set(sourceUuids.map((u) => u.toLowerCase()));
     const pageManager = this.engine.getManager('PageManager');
     const found: Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }> = [];

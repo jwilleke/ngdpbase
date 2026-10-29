@@ -38,7 +38,7 @@ import type { PluginContext, PluginParams, PluginFormatters, SimplePlugin } from
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { valueLevels, shownValue, type ValueLevel, type ValueViewer } from '../utils/sensitiveValues.js';
-import { categorySource } from '../managers/ValidationManager.js';
+import { categoryStored } from '../managers/ValidationManager.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import { pageUrl } from '../utils/pageUrl.js';
 import type { AddonListing } from '../managers/AddonsManager.js';
@@ -97,7 +97,7 @@ interface SystemCategory {
   description?: string;
   enabled?: boolean;
   default?: boolean;
-  source?: string;
+  storageLocation?: unknown;
 }
 
 interface PermissionDefinition {
@@ -132,7 +132,8 @@ interface ConfigAccessorParams extends PluginParams {
   category?: string;
   restrictEditing?: string | boolean;
   default?: string | boolean;
-  source?: string;
+  /** systemCategories filter: `none`, `public` or `vault` (#1503). */
+  stored?: string;
   caption?: string;
   table?: string | boolean;
   noheader?: string | boolean;
@@ -951,7 +952,7 @@ function displaySystemCategories(
     }));
 
     // Apply filters based on opts
-    const filterKeys = ['label', 'enabled', 'default', 'source'] as const;
+    const filterKeys = ['label', 'enabled', 'default', 'stored'] as const;
     for (const filterKey of filterKeys) {
       if (opts[filterKey] !== undefined) {
         const filterValue = opts[filterKey];
@@ -962,7 +963,7 @@ function displaySystemCategories(
             return cat[filterKey] === boolValue;
           }
           // Handle string values (case-insensitive comparison)
-          const catValue = filterKey === 'source' ? categorySource(cat) : cat[filterKey as keyof typeof cat];
+          const catValue = filterKey === 'stored' ? categoryStored(cat) : cat[filterKey as keyof typeof cat];
           return String(catValue).toLowerCase() === String(filterValue).toLowerCase();
         });
       }
@@ -1017,7 +1018,7 @@ function displaySystemCategories(
     html += '            <tr>\n';
     html += '              <th style="width: 15%;">Label</th>\n';
     html += '              <th style="width: 45%;">Description</th>\n';
-    html += '              <th style="width: 15%;">Source</th>\n';
+    html += '              <th style="width: 15%;">Stored</th>\n';
     html += '              <th style="width: 10%;">Enabled</th>\n';
     html += '              <th style="width: 15%;">Default</th>\n';
     html += '            </tr>\n';
@@ -1033,12 +1034,13 @@ function displaySystemCategories(
       const defaultBadge = cat.default ?
         '<span class="badge bg-primary">Yes</span>' :
         '<span class="badge bg-secondary">No</span>';
-      const source = categorySource(cat);
-      const storageBadge = source === 'shipped'
-        ? '<span class="badge bg-warning">required-pages</span>'
-        : source === 'repo'
-          ? '<span class="badge bg-secondary">docs</span>'
-          : '<span class="badge bg-info">pages</span>';
+      // #1503: none (never stored on the site), public (no vault), vault
+      const stored = categoryStored(cat);
+      const storageBadge = stored === 'vault'
+        ? '<span class="badge bg-success">vault</span>'
+        : stored === 'public'
+          ? '<span class="badge bg-info">public</span>'
+          : '<span class="badge bg-secondary">none</span>';
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(cat.label)}</code></td>\n`;
@@ -1057,14 +1059,14 @@ function displaySystemCategories(
     html += `      <small>Total Categories: ${categories.length}`;
 
     const storageBreakdown = categories.reduce<Record<string, number>>((acc, cat) => {
-      const loc = categorySource(cat);
+      const loc = categoryStored(cat);
       acc[loc] = (acc[loc] || 0) + 1;
       return acc;
     }, {});
     const storageDesc = Object.entries(storageBreakdown)
       .map(([loc, count]) => `${loc}: ${count}`)
       .join(', ');
-    html += ` | By Source: ${storageDesc}`;
+    html += ` | By Stored: ${storageDesc}`;
 
     html += '</small>\n';
     html += '    </div>\n';

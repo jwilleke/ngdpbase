@@ -24,12 +24,11 @@ const ROOT = process.cwd();
 const shipped = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
 const journalDefaults = JSON.parse(fs.readFileSync(path.join(ROOT, 'addons', 'journal', 'config', 'default-config.json'), 'utf8')) as Record<string, unknown>;
 
-/** The entry core shipped before #1507; the move changes none of it but `owner`. */
+/** The entry core shipped before #1507; the move changes none of it but `owner` (and #1503 dropped `source`). */
 const BEFORE_1507 = {
   label: 'journal',
   description: 'Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)',
   default: false,
-  source: 'site',
   enabled: true,
   storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/journal/' },
   defaultPrivate: 'choice',
