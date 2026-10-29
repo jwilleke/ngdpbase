@@ -82,3 +82,16 @@ export interface FeedSourceConfig {
    */
   timeoutMs?: number;
 }
+
+/** One raw item straight off the wire (a GeoJSON feature, an RSS item, a CSV row, …). */
+export type RawRecord = Record<string, unknown>;
+
+/** A source-agnostic normalized record, as the record store keeps it. `properties` is the domain data bag. */
+export interface NormalizedRecord {
+  /** Stable per-record id within the source (from `recordIdField`, the format's own id, or a row hash). */
+  sourceRecordId: string;
+  /** ISO 8601 fetch timestamp — NOT part of the change-detection hash. */
+  fetchedAt: string;
+  /** Normalized domain fields (dot-path mapped, or lifted from the raw record). */
+  properties: Record<string, unknown>;
+}

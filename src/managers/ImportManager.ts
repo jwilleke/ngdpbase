@@ -62,6 +62,7 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
+import { RECORD_SHIMS } from '../ice/shims/index.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { FileIceLedger } from '../ice/ledger.js';
@@ -410,6 +411,10 @@ class ImportManager extends BaseManager {
     this.registerConverter(new MarkdownConverter());
     this.registerConverter(new DocxConverter());
 
+    // #2109: core's record shims (CSV, GeoJSON, JSON, XML, RSS/Atom, XML index),
+    // for any receiver that takes records: a feed, a bank statement.
+    for (const shim of RECORD_SHIMS) this.registerShim('core', shim);
+
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
   }
 
@@ -499,6 +504,8 @@ class ImportManager extends BaseManager {
   async receiversFor(ctx: ActorContext): Promise<UsableReceiver[]> {
     const out: UsableReceiver[] = [];
     for (const r of this.receiverRegistry.values()) {
+      // #2109: a receiver fed only by its owner's sources is never offered for an upload.
+      if (r.uploads === false) continue;
       if (await r.mayUse(ctx).catch(() => false)) out.push({ id: r.id, label: r.label, originals: this.originalChoices(r) });
     }
     return out;
@@ -576,6 +583,9 @@ class ImportManager extends BaseManager {
    */
   async enqueueUpload(request: IceRunRequest, ctx: ActorContext): Promise<string> {
     if (!ctx?.username) throw new Error('ImportManager.enqueueUpload requires an ActorContext');
+    if (this.receiverRegistry.get(request.receiver)?.uploads === false) {
+      throw new Error(`ICE receiver '${request.receiver}' takes no uploads; it is fed by its owner's own sources`);
+    }
     const jobCtx = jobContextFromRequest(ctx);
     const resolved = this.withOriginal(request);
     const scope = await this.importScope(resolved, ctx);
@@ -742,7 +752,8 @@ class ImportManager extends BaseManager {
       receivers: this.receiverRegistry,
       ledger: this.ledger(),
       settings: this.engineSettings(),
-      tools: (shim) => this.shimTools(shim)
+      tools: (shim) => this.shimTools(shim),
+      fetch: (url, opts) => this.engineFetch(url, opts)
     };
   }
 
@@ -829,7 +840,8 @@ class ImportManager extends BaseManager {
       maxZipDepth: this.numberSetting('ngdpbase.import.engine.zip-max-depth', 3),
       maxFileBytes: this.numberSetting('ngdpbase.import.engine.max-file-bytes', 104_857_600),
       maxChainDepth: this.numberSetting('ngdpbase.import.engine.max-chain-depth', 5),
-      defaultOriginal: original === 'cite' || original === 'keep' ? original : 'none'
+      defaultOriginal: original === 'cite' || original === 'keep' ? original : 'none',
+      fetchMaxBytes: this.numberSetting('ngdpbase.import.engine.fetch-max-bytes', 8_388_608)
     };
   }
 
@@ -849,12 +861,19 @@ class ImportManager extends BaseManager {
     const options = this.setting<unknown>(`ngdpbase.import.shims.${shim.id}.options`, {});
     return {
       options: options && typeof options === 'object' && !Array.isArray(options) ? options as Record<string, unknown> : {},
-      fetch: (url, opts = {}) => {
-        const egress = resolveEgressPolicy((key, fallback) => this.setting(key, fallback));
-        const timeoutMs = this.numberSetting('ngdpbase.fetch-timeout-ms', 30_000);
-        return guardedFetch(url, { timeoutMs, ...opts, policy: egress.policy });
-      }
+      fetch: (url, opts) => this.engineFetch(url, opts)
     };
+  }
+
+  /**
+   * The engine's one way out (design rule, #1139): `guardedFetch` with the
+   * site's egress policy, read per call, and its default timeout. A URL
+   * source and every shim's follow-up fetch go through here (#2109).
+   */
+  private engineFetch(url: string, opts: Parameters<ShimTools['fetch']>[1] = {}): ReturnType<ShimTools['fetch']> {
+    const egress = resolveEgressPolicy((key, fallback) => this.setting(key, fallback));
+    const timeoutMs = this.numberSetting('ngdpbase.fetch-timeout-ms', 30_000);
+    return guardedFetch(url, { timeoutMs, ...opts, policy: egress.policy });
   }
 
   /** A receiver's existing permission, asked of the PDP with the run's context (D5, P2). */

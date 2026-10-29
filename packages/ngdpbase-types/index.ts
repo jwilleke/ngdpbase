@@ -73,7 +73,8 @@ export type {
 export type { default as ImportManager } from '../../src/managers/ImportManager.js';
 export type {
   IceShim, IceReceiver, IceItem, IceKind, IceWarning, ShimDirection, ShimAccepts, ShimTools, ShimReadResult,
-  ReceiveInfo, ReceiveOutcome, IceCitation, KeptOriginal, OriginalChoice, IceOriginalChoices, OriginalKeep, IceUpload, IceSource, IceRunRequest,
+  ReceiveInfo, ReceiveOutcome, IceCitation, KeptOriginal, OriginalChoice, IceOriginalChoices, OriginalKeep, IceUpload, IceSource, IceUrlSource, IceRunRequest,
+  IceRecordData, FileDoneInfo,
   IceRunReport, IceFileReport, IceFileStatus, RecentImport
 } from '../../src/ice/types.js';
 

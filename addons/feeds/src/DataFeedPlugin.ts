@@ -58,7 +58,7 @@
 
 import type { FeedLog } from './config.js';
 import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/plugins/types.js';
-import type { NormalizedRecord } from './adapters/types.js';
+import type { NormalizedRecord } from './types.js';
 import { recordName } from './normalize.js';
 
 const DEFAULT_MAX = 20;

@@ -76,6 +76,27 @@ abstract class ScopedLedger implements IceLedger {
     });
   }
 
+  async seenItems(scope: string, itemKeys: string[]): Promise<Set<string>> {
+    if (itemKeys.length === 0) return new Set();
+    const held = new Set((await this.load(scope)).items);
+    return new Set(itemKeys.filter(k => held.has(k)));
+  }
+
+  recordItems(scope: string, itemKeys: string[]): Promise<void> {
+    if (itemKeys.length === 0) return Promise.resolve();
+    return this.serial(scope, async () => {
+      const data = await this.load(scope);
+      const held = new Set(data.items);
+      for (const key of itemKeys) {
+        if (held.has(key)) continue;
+        held.add(key);
+        data.items.push(key);
+      }
+      if (data.items.length > this.maxEntries) data.items = data.items.slice(-this.maxEntries);
+      await this.save(data);
+    });
+  }
+
   async files(scope: string): Promise<LedgerFileEntry[]> {
     return (await this.load(scope)).files;
   }

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-29T11:00:44.705Z",
+  "records": {
+    "1019b8cde0f8eeda": {
+      "record": {
+        "sourceRecordId": "1019b8cde0f8eeda",
+        "fetchedAt": "2026-10-29T11:00:44.701Z",
+        "properties": {
+          "latitude": "64.4314",
+          "longitude": "144.83386",
+          "bright_ti4": "330.28",
+          "acq_date": "2026-07-22",
+          "confidence": "n"
+        }
+      },
+      "hash": "055896dd8051c05578669ce8c5c678994ca8644e88da9613a8061b3008e9e5ea"
+    },
+    "e1826aa6a802dcd4": {
+      "record": {
+        "sourceRecordId": "e1826aa6a802dcd4",
+        "fetchedAt": "2026-10-29T11:00:44.702Z",
+        "properties": {
+          "latitude": "-1.2",
+          "longitude": "50.5",
+          "bright_ti4": "301.1",
+          "acq_date": "2026-07-22",
+          "confidence": "h"
+        }
+      },
+      "hash": "5c65d56425c1fea8c3acd169fe6d719dde78b83632b95d5a8245e5c529d3430d"
+    }
+  }
+}

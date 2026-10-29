@@ -1,8 +1,9 @@
 /**
- * FeedScheduler (#685 slice 6) — polls each configured feed on a cadence,
- * mirroring the engine's BackupManager pattern: a single `setInterval` tick
- * (default 60s, `.unref()`'d so it never blocks process exit) that checks which
- * sources are due and runs `ingest()` for them.
+ * FeedScheduler (#685 slice 6) — decides which configured feeds are due and
+ * fetches them. It keeps no timer (#2109): the background job `feeds.poll`
+ * (BackgroundJobManager, every minute by default; `ngdpbase.jobs.feeds.poll.schedule`
+ * changes it) calls {@link FeedScheduler.pass} with its job context, and each
+ * due source's fetch runs under that context with its own stated reason.
  *
  * - Cadence: `intervalMinutes` (default 60) or `dailyAt` 'HH:MM'.
  * - Back-off: consecutive failures multiply the effective interval (capped), so
@@ -19,25 +20,31 @@
  */
 
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
+import type { JobContext } from '../../../dist/src/context/JobContext.js';
 import type { FeedSourceConfig } from './types.js';
 import type { UpsertResult } from './RecordStore.js';
 import { FEED_SETTING_DEFAULTS } from './config.js';
 
 const MINUTE_MS = 60_000;
 const DEFAULT_INTERVAL_MINUTES = 60;
-const DEFAULT_TICK_MS = 60_000;
 const MAX_BACKOFF_MULTIPLIER = 6; // cap effective interval at 6× base
 const STALENESS_MULTIPLIER = 3;   // warn after 3× the base interval with no success
 const FAILURES_BEFORE_NEVER_SUCCEEDED_STALE = 3;
 
 export interface SchedulerNotification { level: string; title: string; message: string }
 export type SchedulerNotify = (n: SchedulerNotification) => void;
-export type IngestFn = (sourceId: string) => Promise<UpsertResult>;
+/** One source's fetch, as the context it runs under (P1). */
+export type IngestFn = (sourceId: string, ctx: JobContext) => Promise<UpsertResult>;
+
+/** What one pass started: the sources it found due, and when their fetches are all done. */
+export interface SchedulerPass {
+  started: string[];
+  done: Promise<void>;
+}
 
 export interface FeedSchedulerOptions {
   now?: () => number;
   notify?: SchedulerNotify;
-  tickMs?: number;
   defaultIntervalMinutes?: number;
   /** Most sources ingesting at once (#1955). */
   maxConcurrent?: number;
@@ -54,14 +61,12 @@ interface SourceState {
 export class FeedScheduler {
   private readonly now: () => number;
   private readonly notify: SchedulerNotify;
-  private readonly tickMs: number;
   private readonly defaultIntervalMinutes: number;
   private readonly maxConcurrent: number;
   /** Ingests holding a slot now, and the queued ones waiting for a slot. */
   private active = 0;
   private readonly waiting: Array<() => void> = [];
   private readonly state = new Map<string, SourceState>();
-  private timer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * @param logger - The host's logger (#1813): where starts, ingests and stale sources are said
@@ -74,41 +79,41 @@ export class FeedScheduler {
   ) {
     this.now = opts.now ?? Date.now;
     this.notify = opts.notify ?? (() => { /* no-op */ });
-    this.tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
     this.defaultIntervalMinutes = opts.defaultIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES;
     this.maxConcurrent = opts.maxConcurrent ?? FEED_SETTING_DEFAULTS.maxConcurrentIngests;
   }
 
-  start(): void {
-    this.stop();
-    if (this.configs.length === 0) return;
-    const timer = setInterval(() => void this.tick(), this.tickMs);
-    timer.unref?.(); // don't block process exit (BackupManager pattern)
-    this.timer = timer;
-    this.logger.info(`[feeds] scheduler started — ${this.configs.length} source(s), tick ${this.tickMs}ms`);
-  }
-
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+  /** How many sources it schedules. */
+  get size(): number {
+    return this.configs.length;
   }
 
   /**
-   * One scheduler pass: warn on staleness, then start every due source. They
-   * run side by side, up to `maxConcurrent`; the rest queue for a free slot.
-   * Resolves when this pass's ingests have all finished.
+   * One scheduler pass, as the job `ctx` names: warn on staleness, then start
+   * every due source. They run side by side, up to `maxConcurrent`; the rest
+   * queue for a free slot. Returns at once with what it started; `done`
+   * resolves when those fetches have all finished. The job does not wait for
+   * `done`, so one source hanging to its timeout never holds back the next
+   * pass's other sources (#1955).
    */
-  async tick(): Promise<void> {
+  pass(ctx: JobContext): SchedulerPass {
     const now = this.now();
+    const started: string[] = [];
     const runs: Promise<void>[] = [];
     for (const cfg of this.configs) {
       const st = this.stateOf(cfg.sourceId);
       this.checkStale(cfg, st, now);
-      if (this.isDue(cfg, st, now)) runs.push(this.runOnce(cfg, st, now));
+      if (this.isDue(cfg, st, now)) {
+        started.push(cfg.sourceId);
+        runs.push(this.runOnce(cfg, st, now, ctx));
+      }
     }
-    await Promise.all(runs);
+    return { started, done: Promise.all(runs).then(() => undefined) };
+  }
+
+  /** One pass, resolving when its fetches have all finished. */
+  tick(ctx: JobContext): Promise<void> {
+    return this.pass(ctx).done;
   }
 
   /** Wait for a free slot. A released slot passes straight to the next in line. */
@@ -169,13 +174,14 @@ export class FeedScheduler {
     return true;
   }
 
-  private async runOnce(cfg: FeedSourceConfig, st: SourceState, now: number): Promise<void> {
+  private async runOnce(cfg: FeedSourceConfig, st: SourceState, now: number, ctx: JobContext): Promise<void> {
     // Marked before the slot wait, so a later tick never queues it a second time.
     st.running = true;
     st.lastAttemptAt = now;
     await this.acquireSlot();
     try {
-      const res = await this.ingest(cfg.sourceId);
+      // P1: the job's context, with this fetch's own reason for the record.
+      const res = await this.ingest(cfg.sourceId, { ...ctx, reason: `fetch feed '${cfg.sourceId}' on its schedule (#2109)` });
       st.lastSuccessAt = now;
       st.failures = 0;
       st.staleWarned = false;

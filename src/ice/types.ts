@@ -21,13 +21,18 @@
 import type { ActorContext } from '../context/ActorContext.js';
 import type { GuardedFetchOptions, GuardedResponse } from '../http/guardedFetch.js';
 
+/** In a shim's `receivers`: any receiver that takes the kind the shim produces (#2109). */
+export const ANY_RECEIVER = '*';
+
 /** D3: which way a shim moves data. Most are `in`; PDF (#1974) would be `both`. */
 export type ShimDirection = 'in' | 'out' | 'both';
 
 /**
  * The kind of a piece of content moving through the engine. `file` is raw
- * input bytes; `html` and `ncm` are core's; an add-on's own kinds are named
- * `<slug>.<kind>`, e.g. `phr.health-record`.
+ * input bytes; `html` and `ncm` are core's; `record` is one structured entry
+ * of a table or feed (`data` is `{ id, properties }`, {@link IceRecordData}),
+ * so a format shim such as CSV serves any receiver that takes records (#2109);
+ * an add-on's own kinds are named `<slug>.<kind>`, e.g. `phr.health-record`.
  */
 export type IceKind = string;
 
@@ -62,6 +67,16 @@ export interface IceItem {
   itemKey?: string;
 }
 
+/**
+ * The `data` of a `record` item (#2109): one row of a table or one entry of a
+ * feed. `id` is the entry's own id (a configured id field, the format's own
+ * id, or a hash of the row when it has none); `properties` its fields.
+ */
+export interface IceRecordData {
+  id: string;
+  properties: Record<string, unknown>;
+}
+
 /** What a shim takes. A file matches by extension or media type; a chained input by kind. */
 export interface ShimAccepts {
   /** Lower-case, with the dot: `['.xml']`. */
@@ -84,7 +99,11 @@ export interface ShimTools {
    * path, with the site's egress policy, User-Agent and timeout.
    */
   fetch(url: string, options?: Omit<GuardedFetchOptions, 'policy' | 'transport' | 'resolver'>): Promise<GuardedResponse>;
-  /** This shim's options from site configuration (D6): `ngdpbase.import.shims.<id>.options`. */
+  /**
+   * This shim's options from site configuration (D6):
+   * `ngdpbase.import.shims.<id>.options`, with the run's own `options` over
+   * them (a feed source's parse settings, #2109).
+   */
   options: Record<string, unknown>;
 }
 
@@ -112,7 +131,10 @@ export interface IceShim {
   produces: IceKind;
   /**
    * Receivers it may hand to directly (ids, `core.pages` or `<slug>.<name>`).
-   * Empty for a shim whose output only feeds another shim.
+   * Empty for a shim whose output only feeds another shim. {@link ANY_RECEIVER}
+   * (`'*'`): any receiver that takes the kind it produces — a generic format
+   * shim such as core's CSV, whose `record` items any add-on's receiver may
+   * take (#2109). Each receiver still decides with its own permission (D5).
    */
   receivers: string[];
   /** Two duplicate kinds (design rule): a whole file by fingerprint, or each item by `itemKey`. Default `file`. */
@@ -198,6 +220,14 @@ export interface ReceiveInfo {
   original?: KeptOriginal;
 }
 
+/** What a receiver's `fileDone` is told (#2109). */
+export interface FileDoneInfo extends ReceiveInfo {
+  /** What the source said about the file: a URL source's `metadata`. */
+  metadata: Record<string, unknown>;
+  /** Every item the file held, in order: those handed to `receive`, and those skipped as already seen. */
+  items: IceItem[];
+}
+
 /** A receiver's answer for one item. `refused` is its existing permission saying no (D5). */
 export interface ReceiveOutcome {
   status: 'stored' | 'duplicate' | 'refused';
@@ -225,6 +255,22 @@ export interface IceReceiver {
   mayUse(ctx: ActorContext): Promise<boolean>;
   /** Hand one item to the receiver's own door. */
   receive(item: IceItem, ctx: ActorContext, info: ReceiveInfo): Promise<ReceiveOutcome>;
+  /**
+   * Called once per file whose shims read it through (#2109), after each of
+   * its items was handed to `receive` or skipped as already seen, with every
+   * item the file held, in order. A receiver that holds a snapshot of a
+   * source (a feed's records) stores it here and drops what the source no
+   * longer holds: an item skipped as already seen is still in the source.
+   * Not called for a file that failed before its items were known. Returns a
+   * note for the file's status; a throw fails the file.
+   */
+  fileDone?(ctx: ActorContext, info: FileDoneInfo): Promise<string | void>;
+  /**
+   * `false`: this receiver is fed only by its owner's own sources (a feed's
+   * schedule, #2109). The import screen never offers it and an upload into
+   * it is refused. Default: it takes uploads.
+   */
+  uploads?: boolean;
   /**
    * Where this context can open what one of its references names (#2110),
    * for "your recent imports" on the import screen: a URL, or null when
@@ -265,10 +311,34 @@ export interface IceUpload {
 }
 
 /**
- * A source (D1). The first slice reads uploads; a URL fetched on a schedule
- * (D10, feeds) and a server folder join this union later.
+ * A URL the engine fetches as the run's one file (D1, D10, #2109): through
+ * the one guarded path (`guardedFetch`, #1139) with the site's egress policy
+ * and default User-Agent, and the source's own headers and timeout (#1959),
+ * which also apply to every follow-up fetch a shim asks of the engine during
+ * the run. A feed's schedule is its owner's job; the engine fetches when run.
  */
-export type IceSource = { type: 'upload'; files: IceUpload[] };
+export interface IceUrlSource {
+  type: 'url';
+  url: string;
+  /** The name the fetched file gets in reports and the ledger. Default: the URL. */
+  name?: string;
+  /** Request headers for every fetch of the run (a `User-Agent` replaces the site default). */
+  headers?: Record<string, string>;
+  /** Each fetch's time limit, ms. Default `ngdpbase.fetch-timeout-ms`. */
+  timeoutMs?: number;
+  /**
+   * Facts the source states about the file, carried on it and on every item
+   * read from it (a feed source's id). The engine adds `sourceUrl`, the URL
+   * fetched, so a shim can resolve the file's relative links.
+   */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A source (D1): uploaded files, or a URL fetched when the run starts
+ * (#2109). A server folder joins this union later.
+ */
+export type IceSource = { type: 'upload'; files: IceUpload[] } | IceUrlSource;
 
 /** One import, as a caller asks for it. */
 export interface IceRunRequest {
@@ -289,6 +359,12 @@ export interface IceRunRequest {
    * value a client sent.
    */
   scope?: string;
+  /**
+   * Options for this run's shims, over the site's (`ShimTools.options`): a
+   * feed source's parse settings (#2109). Server-built; never a value a
+   * client sent.
+   */
+  options?: Record<string, unknown>;
 }
 
 /** Per-file status (first slice). */
@@ -384,5 +460,9 @@ export interface IceLedger {
   recordFile(scope: string, entry: LedgerFileEntry): Promise<void>;
   hasItem(scope: string, itemKey: string): Promise<boolean>;
   recordItem(scope: string, itemKey: string): Promise<void>;
+  /** Which of these item keys the scope has seen: one read for a whole file's items (#2109). */
+  seenItems(scope: string, itemKeys: string[]): Promise<Set<string>>;
+  /** Record several item keys in one write (#2109). */
+  recordItems(scope: string, itemKeys: string[]): Promise<void>;
   files(scope: string): Promise<LedgerFileEntry[]>;
 }

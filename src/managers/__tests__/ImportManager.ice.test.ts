@@ -11,6 +11,7 @@ import BackgroundJobManager from '../BackgroundJobManager';
 import { MemoryIceLedger } from '../../ice/ledger';
 import { boundScope } from '../../ice/runImport';
 import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
+import { REFUSAL } from '../../http/ssrf';
 import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceShim } from '../../ice/types';
@@ -70,7 +71,7 @@ describe('ImportManager — ICE registry', () => {
   test('today\'s converters are shims into pages, and core registers the pages and files receivers', async () => {
     const { im } = await makeImportManager();
     const shims = im.listShims();
-    expect(shims.map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx']);
+    expect(shims.filter(s => s.produces !== 'record').map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx']);
     expect(shims.find(s => s.id === 'core.markdown')).toMatchObject({ owner: 'core', direction: 'in', produces: 'ncm', receivers: ['core.pages'], enabled: true });
     // DOCX produces HTML, which chains into the html shim (D9).
     expect(shims.find(s => s.id === 'core.docx')).toMatchObject({ produces: 'html', receivers: [] });
@@ -94,6 +95,46 @@ describe('ImportManager — ICE registry', () => {
     expect(() => im.registerShim('acct', { ...ok, name: 'noread', read: undefined })).toThrow(/inbound shim has read/);
     expect(() => im.registerShim('acct', { ...ok, name: 'pdf', direction: 'both' })).toThrow(/outbound shim has write/);
     expect(() => im.registerReceiver('acct', { name: 'ledger', accepts: ['x'] })).toThrow(/mayUse\(\) and receive\(\)/);
+  });
+
+  test('a receiver fed only by its owner\'s sources (uploads: false, #2109) is never offered and refuses an upload', async () => {
+    const { im } = await makeImportManager();
+    im.registerReceiver('feedsish', { name: 'items', accepts: ['record'], uploads: false, mayUse: async () => true, receive: async () => ({ status: 'stored' }) });
+    expect((await im.receiversFor(EDITOR)).map(r => r.id)).not.toContain('feedsish.items');
+    await expect(im.enqueueUpload({ source: { type: 'upload', files: [md('a.csv', 'a\n1')] }, receiver: 'feedsish.items' }, EDITOR)).rejects.toThrow(/takes no uploads/);
+  });
+
+  test('a URL source is fetched by the engine through guardedFetch and its egress policy (#2109): a refused URL fails the file, nothing is read', async () => {
+    const { im } = await makeImportManager();
+    const received: string[] = [];
+    im.registerShim('feedsish', { name: 'lines', direction: 'in', accepts: {}, produces: 'record', receivers: ['feedsish.items'], duplicates: 'item',
+      read: async (input) => ({ items: (input.text ?? '').split('\n').map(l => ({ kind: 'record', name: input.name, data: l, itemKey: l })) }) });
+    im.registerReceiver('feedsish', { name: 'items', accepts: ['record'], uploads: false, mayUse: async () => true,
+      receive: async (item) => { received.push(String(item.data)); return { status: 'stored' }; } });
+    // A link-local URL is refused by guardedFetch itself, before any socket: the engine's one way out.
+    const refused = await im.runImport({ source: { type: 'url', url: 'http://169.254.169.254/x' }, receiver: 'feedsish.items', shim: 'feedsish.lines' }, EDITOR);
+    expect(refused.files[0]).toMatchObject({ name: 'http://169.254.169.254/x', status: 'failed' });
+    expect(refused.files[0].message).toContain(REFUSAL);
+    expect(received).toEqual([]);
+  });
+
+  test('core registers the record shims (#2109); any receiver of records may take them, no add-on needed', async () => {
+    const { im } = await makeImportManager();
+    expect(im.listShims().filter(s => s.produces === 'record').map(s => [s.id, s.receivers]))
+      .toEqual(['core.geojson', 'core.rest-json', 'core.xml', 'core.csv', 'core.rss-atom', 'core.xml-index'].map(id => [id, ['*']]));
+    // An accounting-shaped receiver from another owner takes a bank statement through core.csv, by its extension.
+    const rows: unknown[] = [];
+    im.registerReceiver('acct', { name: 'statements', accepts: ['record'], mayUse: async () => true,
+      receive: async (item) => { rows.push(item.data); return { status: 'stored' }; } });
+    const run = await im.runImport({
+      source: { type: 'upload', files: [md('october.csv', 'Date;Reference;Amount\n2026-10-01;TX-1;-12,50\n')] },
+      receiver: 'acct.statements', options: { delimiter: ';', recordIdField: 'Reference' }
+    }, EDITOR);
+    expect(run.files[0]).toMatchObject({ status: 'imported', chain: ['core.csv'], stored: 1 });
+    expect(rows).toEqual([{ id: 'TX-1', properties: { Date: '2026-10-01', Reference: 'TX-1', Amount: '-12,50' } }]);
+    // A receiver that takes no records is never reached by them: a CSV is no page.
+    const pages = await im.runImport({ source: { type: 'upload', files: [md('october.csv', 'a\n1')] }, receiver: 'core.pages' }, EDITOR);
+    expect(pages.files[0].status).toBe('unreadable');
   });
 
   test('configuration switches a shim off (D6), for the engine and for the folder import alike', async () => {

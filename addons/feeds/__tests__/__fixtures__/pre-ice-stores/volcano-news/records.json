@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-29T11:00:44.708Z",
+  "records": {
+    "news-1": {
+      "record": {
+        "sourceRecordId": "news-1",
+        "fetchedAt": "2026-10-29T11:00:44.707Z",
+        "properties": {
+          "title": "Etna erupts",
+          "link": "https://x.test/a",
+          "guid": {
+            "#text": "news-1",
+            "@isPermaLink": false
+          }
+        }
+      },
+      "hash": "8c8583f550758057adcf935acc3763bc833b0ce99e248f409f4c0aed01569016"
+    },
+    "news-2": {
+      "record": {
+        "sourceRecordId": "news-2",
+        "fetchedAt": "2026-10-29T11:00:44.707Z",
+        "properties": {
+          "title": "Kilauea update",
+          "link": "https://x.test/b",
+          "guid": "news-2"
+        }
+      },
+      "hash": "3cf9c4bbb392e2952626f23d67eb802cb8b61681fb7582e07852eb92422b05bb"
+    }
+  }
+}
