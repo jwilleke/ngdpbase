@@ -627,9 +627,9 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
 
     test('#2117: links are shown with ShareManager\'s origin, given the request\'s own', async () => {
       mockUserContext = { ...adminUser };
-      const res = await request(app).get('/shares').set('Host', 'site.lan:3000');
+      const res = await request(app).get('/shares').set('Host', 'site.test:3000');
       expect(res.status).toBe(200);
-      expect(mockShareManager.linkBaseUrl).toHaveBeenCalledWith('http://site.lan:3000');
+      expect(mockShareManager.linkBaseUrl).toHaveBeenCalledWith('http://site.test:3000');
       expect((JSON.parse(res.text) as { baseUrl: string }).baseUrl).toBe('https://wiki.example.com');
     });
 
