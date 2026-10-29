@@ -13,7 +13,10 @@
  * - __The recovery words (#1928).__ A user's confirmation that they saved
  *   their recovery words (`RECOVERY_WORDS_CONSENT_SCOPE`), bound to the set
  *   of words it is about (`subject`): asked where the words are shown, and
- *   reminded by a banner — it never holds a session.
+ *   reminded by a banner — it never holds a session. An admin's confirmation
+ *   that they saved the organization's shared-folders recovery words
+ *   (`SHARED_FOLDERS_WORDS_CONSENT_SCOPE`, #2124) is the same kind of consent,
+ *   bound to the organization's set of words.
  *
  * The documents themselves are pages, read when asked (`version:` and
  * `effective:` front matter), never copied. Whether a person has accepted
@@ -38,9 +41,8 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
   CORE_CONSENT_SCOPE,
-  RECOVERY_WORDS_CONSENT_SCOPE,
-  RECOVERY_WORDS_DOCUMENT,
   RESERVED_CONSENT_SCOPES,
+  SUBJECT_CONSENT_DOCUMENTS,
   SUBJECT_CONSENT_SCOPES,
   type AddonConsentRegistration,
   type ConsentDocument,
@@ -184,13 +186,14 @@ class ConsentManager extends BaseManager {
   allDocumentIds(): string[] {
     return [
       ...this.documentIds(CORE_CONSENT_SCOPE),
-      ...this.documentIds(RECOVERY_WORDS_CONSENT_SCOPE),
+      ...SUBJECT_CONSENT_SCOPES.flatMap((s) => this.documentIds(s)),
       ...[...this.addons.values()].flatMap((a) => a.documents)
     ];
   }
 
   private documentIds(scope: ConsentScope): string[] {
-    if (scope === RECOVERY_WORDS_CONSENT_SCOPE) return [RECOVERY_WORDS_DOCUMENT];
+    // #1928, #2124: core's subject-bound scopes each have one document.
+    if (SUBJECT_CONSENT_SCOPES.includes(scope)) return [SUBJECT_CONSENT_DOCUMENTS[scope]];
     if (scope === CORE_CONSENT_SCOPE) {
       const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(CONSENT_DOCUMENTS_KEY, DEFAULT_DOCUMENTS);
       return Array.isArray(configured) ? configured.filter((d): d is string => typeof d === 'string' && d.trim() !== '') : [];
@@ -223,7 +226,7 @@ class ConsentManager extends BaseManager {
     }
     const whose = scope === CORE_CONSENT_SCOPE ? '' : ` (${scope})`;
     if (!meta) {
-      const fix = scope === RECOVERY_WORDS_CONSENT_SCOPE
+      const fix = SUBJECT_CONSENT_SCOPES.includes(scope)
         ? 'Restore it (Admin → Required Pages Sync)'
         : `Restore it (Admin → Required Pages Sync for core's) or remove it from ${scope === CORE_CONSENT_SCOPE ? CONSENT_DOCUMENTS_KEY : 'the add-on\'s registration'}`;
       this.problems.set(id, `No '${id}' page${whose}: nobody is asked to accept it. ${fix}.`);
@@ -256,7 +259,7 @@ class ConsentManager extends BaseManager {
   /** Read every document once, so a missing one shows on the dashboard from start-up. Called after the required pages are seeded. */
   async checkDocuments(): Promise<void> {
     await this.documents(CORE_CONSENT_SCOPE);
-    await this.documents(RECOVERY_WORDS_CONSENT_SCOPE);
+    for (const scope of SUBJECT_CONSENT_SCOPES) await this.documents(scope);
     for (const slug of this.addons.keys()) await this.documents(slug);
   }
 

@@ -32,6 +32,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { instanceDataFolder as resolveInstanceDataFolder } from '../src/utils/configFiles.js';
 import { backupKeyFingerprint } from '../src/utils/backupKey.js';
+import { SHARED_FOLDERS_KEY_ENV, sharedFoldersKeyFingerprint } from '../src/utils/sharedFoldersKey.js';
 
 async function seedTestData() {
   // #1895: the same folder the server resolves. This read only the legacy
@@ -87,6 +88,12 @@ async function seedTestData() {
       customConfig['ngdpbase.backup.key-saved-fingerprint'] = backupKeyFingerprint(process.env.NGDPBASE_BACKUP_KEY);
       await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
       console.log('✅ E2E backup key recorded as saved (a throwaway instance\'s key)');
+    }
+    // #2124: the same for the shared-folders key, which Admin → Backup asks to be saved with .env.
+    if (process.env[SHARED_FOLDERS_KEY_ENV]) {
+      customConfig['ngdpbase.backup.shared-folders-key-saved-fingerprint'] = sharedFoldersKeyFingerprint(process.env[SHARED_FOLDERS_KEY_ENV]);
+      await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+      console.log('✅ E2E shared-folders key recorded as saved (a throwaway instance\'s key)');
     }
 
     // #1895: the admin's bootstrap password comes from config, never straight

@@ -191,7 +191,7 @@ export function sealKekCopy(recipient: LinkPublicKey, kek: Buffer): Promise<Lock
  * their private key from `envelope`, which opens `copy`. Throws when any step
  * fails; the private key never leaves this function.
  */
-export async function openKekCopy(envelope: UserKeyEnvelope, ownKek: Buffer, copy: Lockbox): Promise<Buffer> {
+export async function openKekCopy(envelope: Pick<UserKeyEnvelope, 'personKey'>, ownKek: Buffer, copy: Lockbox): Promise<Buffer> {
   if (!envelope.personKey) throw new Error('cannot unwrap the person key');
   const secret = unwrap(ownKek, envelope.personKey.privateWrap, 'person');
   let opened: Uint8Array | undefined;
@@ -213,7 +213,7 @@ export async function unwrapKekWithPassword(envelope: UserKeyEnvelope, password:
   return unwrap(key, envelope.passwordWrap, 'password');
 }
 
-export function unwrapKekWithMnemonic(envelope: UserKeyEnvelope, mnemonic: string): Buffer {
+export function unwrapKekWithMnemonic(envelope: Pick<UserKeyEnvelope, 'recoveryWrap'>, mnemonic: string): Buffer {
   return unwrap(mnemonicToWrapKey(mnemonic), envelope.recoveryWrap, 'recovery');
 }
 

@@ -15,13 +15,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import BackupManager, { ENV_KEYS_CHANGED_TITLE, ENV_KEYS_SAVED_KEY } from '../BackupManager';
+import BackupManager, { ENV_KEYS_CHANGED_TITLE, ENV_KEYS_SAVED_KEY, SHARED_FOLDERS_KEY_SAVED_KEY } from '../BackupManager';
 import { BACKUP_KEY_ENV, backupKeyFingerprint } from '../../utils/backupKey';
+import { SHARED_FOLDERS_KEY_ENV, sharedFoldersKeyFingerprint } from '../../utils/sharedFoldersKey';
 import logger from '../../utils/logger';
 
 const CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true };
 const KEY = 'made-up-backup-key-value-1976';
-const VALUES = ['session-value-not-a-secret', 'credentials-value-not-a-secret', KEY, 'smtp value not a secret'];
+const SHARED = 'made-up-shared-folders-key-value-2124';
+const VALUES = ['session-value-not-a-secret', 'credentials-value-not-a-secret', KEY, 'smtp value not a secret', SHARED];
 
 describe('the reminder to save .env when its key set changes (#1976)', () => {
   let dir: string;
@@ -30,13 +32,15 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
   let logged: string[];
   let customConfigPath: string | undefined;
   const savedKey = process.env[BACKUP_KEY_ENV];
+  const savedShared = process.env[SHARED_FOLDERS_KEY_ENV];
 
   const writeEnv = (names: string[]): void => {
     const lines: Record<string, string> = {
       NGDPBASE_SESSION_SECRET: `NGDPBASE_SESSION_SECRET=${VALUES[0]}`,
       NGDPBASE_CREDENTIALS_KEY: `NGDPBASE_CREDENTIALS_KEY=${VALUES[1]}`,
       [BACKUP_KEY_ENV]: `${BACKUP_KEY_ENV}=${KEY}`,
-      SMTP_PASSWORD: `SMTP_PASSWORD="${VALUES[3]}"`
+      SMTP_PASSWORD: `SMTP_PASSWORD="${VALUES[3]}"`,
+      [SHARED_FOLDERS_KEY_ENV]: `${SHARED_FOLDERS_KEY_ENV}=${SHARED}`
     };
     fs.writeFileSync(path.join(dir, '.env'), `# made by the site\n${names.map((n) => lines[n]).join('\n')}\n`, { mode: 0o600 });
   };
@@ -65,6 +69,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdpbase-1976-'));
     process.env[BACKUP_KEY_ENV] = KEY;
+    delete process.env[SHARED_FOLDERS_KEY_ENV];
     props = { 'ngdpbase.backup.key-saved-fingerprint': backupKeyFingerprint(KEY) };
     notifications = [];
     logged = [];
@@ -77,6 +82,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     if (savedKey === undefined) delete process.env[BACKUP_KEY_ENV]; else process.env[BACKUP_KEY_ENV] = savedKey;
+    if (savedShared === undefined) delete process.env[SHARED_FOLDERS_KEY_ENV]; else process.env[SHARED_FOLDERS_KEY_ENV] = savedShared;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -173,9 +179,70 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
     expect(bm.getManagerStatus().reason).toMatch(/^Save the backup key off this server/);
   });
 
+  describe('the shared-folders key joins the confirmation (#2124)', () => {
+    beforeEach(() => { process.env[SHARED_FOLDERS_KEY_ENV] = SHARED; });
+
+    test('not confirmed: its reminder asks for .env, after the backup key is saved and the names are unchanged', async () => {
+      props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', SHARED_FOLDERS_KEY_ENV];
+      writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
+      const bm = await start();
+      expect(bm.getManagerStatus()).toMatchObject({
+        state: 'degraded', kind: 'attention', configKey: SHARED_FOLDERS_KEY_SAVED_KEY,
+        reason: expect.stringMatching(new RegExp(`^Save \\.env off this server: it holds the shared-folders key .*fingerprint ${sharedFoldersKeyFingerprint(SHARED)}`))
+      });
+      expect(bm.sharedFoldersKeyInfo()).toEqual({ set: true, fingerprint: sharedFoldersKeyFingerprint(SHARED), saved: false });
+      expect(bm.envKeysInfo()!.holdsSharedFoldersKey).toBe(true);
+    });
+
+    test('confirming a saved .env that holds it records its fingerprint and clears it, across restarts', async () => {
+      props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', SHARED_FOLDERS_KEY_ENV];
+      writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
+      const bm = await start();
+      await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY), bm.envKeysInfo()!.fingerprint);
+      expect(props[SHARED_FOLDERS_KEY_SAVED_KEY]).toBe(sharedFoldersKeyFingerprint(SHARED));
+      expect(bm.sharedFoldersKeyInfo().saved).toBe(true);
+      expect(bm.getManagerStatus()).toEqual({ state: 'ready' });
+      expect((await start()).getManagerStatus()).toEqual({ state: 'ready' });
+    });
+
+    test('a new site: one "I have saved .env" clears the backup key and the shared-folders key together', async () => {
+      props = {};
+      writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV, 'NGDPBASE_SESSION_SECRET']);
+      const bm = await start();
+      expect(bm.getManagerStatus().reason).toMatch(/^Save the backup key off this server/);
+      await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY), bm.envKeysInfo()!.fingerprint);
+      expect(bm.getManagerStatus()).toEqual({ state: 'ready' });
+    });
+
+    test('confirming the backup key alone leaves the shared-folders reminder up', async () => {
+      props = { [ENV_KEYS_SAVED_KEY]: ['NGDPBASE_BACKUP_KEY', SHARED_FOLDERS_KEY_ENV] };
+      writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
+      const bm = await start();
+      await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY));
+      expect(bm.getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+    });
+
+    test('a .env that does not hold the current shared-folders key does not count', async () => {
+      props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY'];
+      writeEnv([BACKUP_KEY_ENV]);
+      const bm = await start();
+      await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY), bm.envKeysInfo()!.fingerprint);
+      expect(props[SHARED_FOLDERS_KEY_SAVED_KEY]).toBeUndefined();
+      expect(bm.getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+    });
+
+    test('a different shared-folders key asks again', async () => {
+      props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', SHARED_FOLDERS_KEY_ENV];
+      props[SHARED_FOLDERS_KEY_SAVED_KEY] = sharedFoldersKeyFingerprint('an earlier key');
+      writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
+      expect((await start()).getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+    });
+  });
+
   test('values never reach the settings, the notifications, the dashboard or the log', async () => {
+    process.env[SHARED_FOLDERS_KEY_ENV] = SHARED;
     props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_SESSION_SECRET'];
-    writeEnv(['NGDPBASE_SESSION_SECRET', 'NGDPBASE_CREDENTIALS_KEY', BACKUP_KEY_ENV, 'SMTP_PASSWORD']);
+    writeEnv(['NGDPBASE_SESSION_SECRET', 'NGDPBASE_CREDENTIALS_KEY', BACKUP_KEY_ENV, 'SMTP_PASSWORD', SHARED_FOLDERS_KEY_ENV]);
     const bm = await start();
     const info = bm.envKeysInfo()!;
     await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY), info.fingerprint);

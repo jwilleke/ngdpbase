@@ -166,6 +166,7 @@ const mockBackupManager = {
   // #1876
   backupKeyInfo: vi.fn(),
   envKeysInfo: vi.fn(),
+  sharedFoldersKeyInfo: vi.fn().mockReturnValue({ set: false, fingerprint: null, saved: false }), // #2124
   revealBackupKey: vi.fn(),
   confirmBackupKeySaved: vi.fn(),
   // #1938

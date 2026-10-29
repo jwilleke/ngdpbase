@@ -1,0 +1,40 @@
+<%- include('header', { pageName: 'Shared folders: recovery words' }) %>
+<%# #2124 (epic #1775 decision 4) — the organization's 12 shared-folders recovery words, shown once to the admin
+    who made them on Admin -> Backup. Nothing is saved until they tick "I have saved them" and send this form
+    (WikiRoutes.adminSharedFoldersWordsSave); without the tick the words are discarded and never shown again.
+    Locals: words (string[]), token, recoveryWordsDocument (ConsentDocument or null), csrfToken. %>
+
+<div class="container mt-4" style="max-width:760px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-key"></i> Shared folders: recovery words</h1>
+    </div>
+
+    <div class="alert alert-danger" role="alert" id="shared-folders-words-warning">
+        <strong>Write these <%= words.length %> words down now, in order.</strong>
+        They are shown only once, and only to you. If this site's shared-folders key is ever lost, these words are the only
+        way to open the organization's shared folders again. Keep them off this server and away from its backups,
+        for example on paper with the organization's important papers.
+    </div>
+
+    <ol class="row list-unstyled g-2 mb-3" id="shared-folders-words">
+        <% words.forEach(function(word, i) { %>
+        <li class="col-6 col-md-4"><span class="text-muted"><%= i + 1 %>.</span> <strong data-word><%= word %></strong></li>
+        <% }); %>
+    </ol>
+    <label for="shared-folders-words-copy" class="form-label small text-muted">The same words, to copy</label>
+    <textarea id="shared-folders-words-copy" class="form-control mb-3" rows="2" readonly><%= words.join(' ') %></textarea>
+
+    <form method="POST" action="/admin/backup/shared-folders/words/save" id="shared-folders-words-save">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="token" value="<%= token %>">
+        <%- include('_recovery-words-consent', {
+            recoveryWordsText: 'Each shared folder is locked with its own key, kept under this site\'s shared-folders key and under these words. If the shared-folders key is lost, an administrator can open the folders again only with these 12 words; without them the folders are lost for good.',
+            recoveryWordsMore: 'Read more about the shared folders\' recovery words',
+            recoveryWordsTick: 'I have saved these recovery words off this server and understand they are the only way back if the shared-folders key is lost'
+        }) %>
+        <button type="submit" class="btn btn-primary mt-3"<%- lockedUnless('admin-system') %>><i class="fas fa-check"></i> Save the recovery words</button>
+        <a href="/admin/backup#shared-folders-key" class="btn btn-link mt-3">Cancel (nothing is saved)</a>
+    </form>
+</div>
+
+<%- include('footer') %>

@@ -175,6 +175,10 @@ export const AUDIT_EVENT = {
   SHARE_EXTEND: 'share-extend',
   /** Share link revoked; pairs with token-revoke */
   SHARE_REVOKE: 'share-revoke',
+  /** A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it */
+  SHARED_FOLDER_KEY_CREATE: 'shared-folder-key-create',
+  /** The organization's 12 recovery words for shared folders were made and saved (#2124): the admin who was shown them, and which set (an id, never the words). Recorded before the words are saved, which cannot proceed without it */
+  SHARED_FOLDER_WORDS_CREATE: 'shared-folder-words-create',
   /** Sign-in approval: the browser that was waiting gave up the sign-in (#1532) */
   SIGNINAPPROVAL_ABANDON: 'signinapproval-abandon',
   /** Sign-in approval: the user pressed Approve (#1532) */

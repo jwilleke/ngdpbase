@@ -76,7 +76,7 @@ engine.getManager('ConsentManager')?.registerAddonDocuments('phr', {
 - __Turning it on:__ `AddonsManager`'s per-user switch (`host.setEnabledForPerson`) refuses to go from off to on while any of the add-on's documents is pending, with `ConsentRequiredError`. The profile shows the documents on the add-on's card with an "I accept" box; `POST /preferences` records that acceptance first, then runs the add-ons' saves, so the switch flips only after the record exists. A switch refused for consent is reported back to the user.
 - __A version change__ asks again when the user next uses the add-on, separately from core's terms: under a registered `path`, the consent gate sends a user who has the add-on on to `/consent?scope=<slug>`. Without `paths` they are asked when they next turn it on, and "Your consents" shows it as changed.
 - Turning the add-on off withdraws nothing; its acceptance stays recorded.
-- `core` and `recovery-words` are core's scopes: an add-on with either slug is refused.
+- `core`, `recovery-words` and `shared-folders-recovery-words` are core's scopes: an add-on with any of those slugs is refused.
 
 ## The recovery words
 
@@ -87,7 +87,15 @@ A user's confirmation that they saved their 12 recovery words ([#1928](https://g
 - __A new set of words__ ([#1925](https://github.com/jwilleke/ngdpbase/issues/1925), not built): its screen shows the same partial beside the new words, refuses without `recoveryWordsSaved(...) === 'ok'`, and records through `recordRecoveryWordsSaved` with the new envelope's id and `how: new-words`.
 - __The reminder, never the gate.__ `src/middleware/recoveryWordsNotice.ts`, mounted after the consent gate, holds nothing. On a page read of the home page (`/` and the front page it lands on, `/view/<ngdpbase.front-page>`, by name or slug; operator, 2026-10-29), the dashboard (`/admin`), `/profile`, `/my/vaults`, or one of the user's encrypted vaults' pages (`/stores/<vault>`, `/vaults/<them>/<vault>/…`), a user with keys and at least one encrypted vault (`recoveryWordsState`, `src/utils/recoveryWordsConsent.ts`) who has not accepted the current version for their current set gets `res.locals.recoveryWordsNotice` (`message`, `link`). The header shows it, naming the vaults, with "I have saved them" linking to `/consent?scope=recovery-words&returnTo=<this page>`, where the tick records it (`how: reminder`). "Go back" leaves it showing. Never for a token, a share link or a proxy. Unlike core's banner it reads files (the user's `user-keys.json` and each vault's `store.json`), so it is asked on those pages only (the front-page check is one config read); an error shows no banner that time.
 - __Not in "Your consents".__ `statusFor` lists core's and the add-ons' documents; the recovery-words records are kept and audited (`consent-grant` with `subject`) like any other.
-- __The org shared folders' words__ ([#1775](https://github.com/jwilleke/ngdpbase/issues/1775), not built) are meant to reuse this: a scope of their own in `SUBJECT_CONSENT_SCOPES`, bound to that folder's set of words.
+
+## The shared folders' recovery words
+
+An admin's confirmation that they saved the organization's 12 shared-folders recovery words ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124), epic [#1775](https://github.com/jwilleke/ngdpbase/issues/1775) decision 4) is a consent in the scope `shared-folders-recovery-words` (`SHARED_FOLDERS_WORDS_CONSENT_SCOPE`). Its document is the required page `shared-folders-recovery-words` (Shared Folders Recovery Words). Core's subject-bound scopes and their documents are one map, `SUBJECT_CONSENT_DOCUMENTS` (`src/types/Consent.ts`); `SUBJECT_CONSENT_SCOPES` and `RESERVED_CONSENT_SCOPES` follow from it.
+
+- __One set for the organization.__ The subject is the organization's set of words (`SharedFolderManager.recoveryWordsInfo().wordsId`, a digest of its recovery wrap), so a new set asks again.
+- __Only the admin shown them.__ The words are shown once, to the admin who makes them on Admin → Backup ([SharedFolderManager](SharedFolderManager.md#the-recovery-words)); only that admin's acceptance counts (`sharedFoldersWordsState`, `src/utils/sharedFoldersWordsConsent.ts`, asks `pendingFor(shownTo, …)`), and `/consent?scope=shared-folders-recovery-words` offers the tick to that admin only. The record names them, the time and the wording's version.
+- __Asked where they are shown.__ The words page has the required tick (`_recovery-words-consent.ejs` with the organization's wording); the step does not finish without it, nor when the wording's version changed, and then nothing is saved. Recorded after the words are saved (`how: setup`, through `WikiRoutes.recordRecoveryWordsSaved`). A record that cannot be written leaves the words saved and the banner asks.
+- __The banner, never the gate.__ Until the acceptance exists, holders of `admin-system` see `res.locals.sharedFoldersWordsNotice` on the home page, `/admin` and `/admin/backup` (set by the same `recoveryWordsNotice` middleware). The admin shown the words is linked to confirm (`how: reminder`); the others to Admin → Backup. Never for a token, a share link or a proxy.
 
 ## Deleting an account
 

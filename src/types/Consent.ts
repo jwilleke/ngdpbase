@@ -20,19 +20,38 @@ export const CORE_CONSENT_SCOPE = 'core';
  * current words is reminded by a banner.
  *
  * Bound to a subject: the set of words (`recoveryWordsId`), so a new set asks
- * again. The org shared-folders' recovery words (#1775) are meant to be a
- * scope of their own with the same binding (subject: that folder's set).
+ * again.
  */
 export const RECOVERY_WORDS_CONSENT_SCOPE = 'recovery-words';
 
 /** The page whose `version:` is the version of the recovery-words wording (#1928). */
 export const RECOVERY_WORDS_DOCUMENT = 'recovery-words';
 
-/** Scopes core reserves: an add-on can never register one as its slug. */
-export const RESERVED_CONSENT_SCOPES: readonly ConsentScope[] = [CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE];
+/**
+ * The scope of an admin's confirmation that they saved the organization's
+ * shared-folders recovery words (#2124, epic #1775 decision 4). Like
+ * `recovery-words` it never holds a session: it is asked where the words are
+ * shown (Admin → Backup), and until the admin who was shown them confirms,
+ * holders of `admin-system` see a banner. Bound to a subject: the
+ * organization's set of words (`SharedFolderManager.recoveryWordsInfo().wordsId`),
+ * so a new set asks again.
+ */
+export const SHARED_FOLDERS_WORDS_CONSENT_SCOPE = 'shared-folders-recovery-words';
+
+/** The page whose `version:` is the version of the shared-folders recovery-words wording (#2124). */
+export const SHARED_FOLDERS_WORDS_DOCUMENT = 'shared-folders-recovery-words';
+
+/** Core's scopes bound to a subject, each with its one document (#1928, #2124). */
+export const SUBJECT_CONSENT_DOCUMENTS: Readonly<Record<ConsentScope, string>> = {
+  [RECOVERY_WORDS_CONSENT_SCOPE]: RECOVERY_WORDS_DOCUMENT,
+  [SHARED_FOLDERS_WORDS_CONSENT_SCOPE]: SHARED_FOLDERS_WORDS_DOCUMENT
+};
 
 /** Scopes whose acceptance is about one thing (a subject), not the account as a whole (#1928). */
-export const SUBJECT_CONSENT_SCOPES: readonly ConsentScope[] = [RECOVERY_WORDS_CONSENT_SCOPE];
+export const SUBJECT_CONSENT_SCOPES: readonly ConsentScope[] = Object.keys(SUBJECT_CONSENT_DOCUMENTS);
+
+/** Scopes core reserves: an add-on can never register one as its slug. */
+export const RESERVED_CONSENT_SCOPES: readonly ConsentScope[] = [CORE_CONSENT_SCOPE, ...SUBJECT_CONSENT_SCOPES];
 
 /**
  * A document a person is asked to accept, as it stands now: a page whose
@@ -83,7 +102,8 @@ export interface ConsentRecord {
   /**
    * Who and how: the account, where from, and the way they were asked
    * (`sign-up`, `sign-in`, `add-on`; for the recovery words `store-door`,
-   * `reminder`, and `new-words` once #1925 makes a new set).
+   * `reminder`, and `new-words` once #1925 makes a new set; for the
+   * shared-folders words `setup` and `reminder`).
    */
   context: {
     by: string;

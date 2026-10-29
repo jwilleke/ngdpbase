@@ -129,6 +129,28 @@ describe('bootstrap-env', () => {
       expect(process.env.NGDPBASE_BACKUP_KEY).toBe(made);
     });
 
+    test('the shared-folders key (#2124) is made at first start, written to <FAST_STORAGE>/.env, and stays the same across restarts', async () => {
+      const savedShared = process.env.NGDPBASE_SHARED_FOLDERS_KEY;
+      delete process.env.NGDPBASE_SHARED_FOLDERS_KEY;
+      try {
+        process.env.FAST_STORAGE = path.join(tmpRoot, 'data');
+        await loadBootstrap();
+        const made = process.env.NGDPBASE_SHARED_FOLDERS_KEY;
+        expect(made).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
+        expect(made).not.toBe(process.env.NGDPBASE_BACKUP_KEY);
+        const file = fs.readFileSync(path.join(tmpRoot, 'data', '.env'), 'utf8');
+        expect(file.match(/^NGDPBASE_SHARED_FOLDERS_KEY=/gm)).toHaveLength(1);
+        expect(file).toContain(`NGDPBASE_SHARED_FOLDERS_KEY=${made}`);
+        // Restart: read from the file, never made again.
+        delete process.env.NGDPBASE_SHARED_FOLDERS_KEY;
+        await loadBootstrap();
+        expect(process.env.NGDPBASE_SHARED_FOLDERS_KEY).toBe(made);
+        expect(fs.readFileSync(path.join(tmpRoot, 'data', '.env'), 'utf8').match(/^NGDPBASE_SHARED_FOLDERS_KEY=/gm)).toHaveLength(1);
+      } finally {
+        if (savedShared === undefined) delete process.env.NGDPBASE_SHARED_FOLDERS_KEY; else process.env.NGDPBASE_SHARED_FOLDERS_KEY = savedShared;
+      }
+    });
+
     test('a staged .env goes in before it is loaded: its values replace the old file\'s, never an ambient one, and the live backup key stays', async () => {
       const data = path.join(tmpRoot, 'data');
       process.env.FAST_STORAGE = data;

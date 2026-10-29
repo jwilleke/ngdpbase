@@ -25,6 +25,7 @@ import {
 import { encryptBuffer, ENCRYPTED_SUFFIX } from '../utils/backupCrypto.js';
 import { readBackupDocument, verifyBackupOffThread, type BackupDocument } from '../utils/backupDocument.js';
 import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, isLeftOutForNoKey, LEFT_OUT_FOR_NO_KEY } from '../utils/backupKey.js';
+import { currentSharedFoldersKey, SHARED_FOLDERS_KEY_ENV, sharedFoldersKeyFingerprint } from '../utils/sharedFoldersKey.js';
 import {
   applyDeclaredPartsAtStart, archiveReader, archiveTarget, archiveWriter, backupDeclaredParts, placePartRecords, stageDeclaredParts, stageFilePart,
   type DirectoryBackupData
@@ -389,8 +390,22 @@ export const ENV_KEYS_SAVED_KEY = 'ngdpbase.backup.env-keys-saved';
 /** The title of the one notification per change of the `.env` key set (#1976). */
 export const ENV_KEYS_CHANGED_TITLE = 'Save a copy of .env';
 
+/**
+ * The config key that records an admin's confirmation that the shared-folders
+ * key is saved off the server (#2124, epic #1775 decision 1): its fingerprint,
+ * recorded when they confirm a downloaded `.env` that holds it. A different
+ * key asks again.
+ */
+export const SHARED_FOLDERS_KEY_SAVED_KEY = 'ngdpbase.backup.shared-folders-key-saved-fingerprint';
+
 const ENV_KEYS_CHANGED_PREFIX = 'The keys in .env changed since an admin last saved it';
 const KEY_NOT_SAVED_PREFIX = 'Save the backup key off this server';
+const SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX = 'Save .env off this server: it holds the shared-folders key';
+
+/** The banner while no admin has confirmed a saved `.env` holding the current shared-folders key (#2124). */
+export function sharedFoldersKeyNotSaved(fingerprint: string): string {
+  return `${SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX} (${SHARED_FOLDERS_KEY_ENV}, fingerprint ${fingerprint}), which opens every shared folder. Download .env on Admin → Backup and keep the copy off this server. This stays until an admin confirms it is saved`;
+}
 
 /** The banner while the instance `.env` sets other names than the ones an admin last confirmed saved (#1976): names only, never a value. */
 export function envKeysChanged(change: { added: readonly string[]; removed: readonly string[] }): string {
@@ -415,6 +430,8 @@ export interface EnvKeysInfo {
   removed: string[];
   /** The file holds this site's current backup key, so a saved copy is a saved key too. */
   holdsBackupKey: boolean;
+  /** The file holds this site's current shared-folders key (#2124), so a saved copy is a saved key too. */
+  holdsSharedFoldersKey: boolean;
 }
 
 /** What Admin → Backup shows about the backup key: never the key itself. */
@@ -1084,13 +1101,16 @@ class BackupManager extends BaseManager {
       // #1876: the banner asking an admin to save the key off the server, until one confirms;
       // then #1976's, while the .env key set differs from the one last confirmed. One at a time,
       // and one confirmation ("I have saved .env", which holds the key) can clear both.
-      const reminder = this.backupKeyInfo().saved ? envReminder : backupKeyNotSaved(backupKeyFingerprint(key));
+      // #2124: then the shared-folders key's, while no saved .env holding the current one is confirmed.
+      const shared = this.sharedFoldersKeyInfo();
+      const sharedReminder = shared.set && !shared.saved && shared.fingerprint ? sharedFoldersKeyNotSaved(shared.fingerprint) : null;
+      const reminder = this.backupKeyInfo().saved ? (envReminder ?? sharedReminder) : backupKeyNotSaved(backupKeyFingerprint(key));
       const status = this.getManagerStatus();
-      const ours = status.state === 'degraded' && (status.reason?.startsWith(KEY_NOT_SAVED_PREFIX) || status.reason?.startsWith(ENV_KEYS_CHANGED_PREFIX));
+      const ours = status.state === 'degraded' && [KEY_NOT_SAVED_PREFIX, ENV_KEYS_CHANGED_PREFIX, SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX].some((p) => status.reason?.startsWith(p));
       if (!reminder) {
         if (ours) this.markReady();
       } else if (status.state !== 'degraded' || ours) {
-        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : BACKUP_KEY_SAVED_KEY);
+        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : reminder === sharedReminder ? SHARED_FOLDERS_KEY_SAVED_KEY : BACKUP_KEY_SAVED_KEY);
       }
       return;
     }
@@ -1172,8 +1192,21 @@ class BackupManager extends BaseManager {
       recorded: recorded !== null,
       added: recorded ? names.filter((n) => !recorded.includes(n)) : [],
       removed: recorded ? recorded.filter((n) => !names.includes(n)) : [],
-      holdsBackupKey: Boolean(key) && readEnvLine(content, BACKUP_KEY_ENV) === key
+      holdsBackupKey: Boolean(key) && readEnvLine(content, BACKUP_KEY_ENV) === key,
+      holdsSharedFoldersKey: Boolean(currentSharedFoldersKey()) && readEnvLine(content, SHARED_FOLDERS_KEY_ENV) === currentSharedFoldersKey()
     };
+  }
+
+  /**
+   * The shared-folders key as Admin → Backup shows it (#2124): set or not,
+   * its fingerprint, and whether an admin confirmed a saved `.env` holding
+   * it. Never the key. Read at use, like the backup key.
+   */
+  sharedFoldersKeyInfo(): BackupKeyInfo {
+    const key = currentSharedFoldersKey();
+    if (!key) return { set: false, fingerprint: null, saved: false };
+    const fingerprint = sharedFoldersKeyFingerprint(key);
+    return { set: true, fingerprint, saved: this.setting<string>(SHARED_FOLDERS_KEY_SAVED_KEY, '') === fingerprint };
   }
 
   /** The backup key as Admin → Backup shows it: set or not, its fingerprint, and whether an admin confirmed it is saved. Never the key. */
@@ -1228,8 +1261,9 @@ class BackupManager extends BaseManager {
    * With `envFingerprint` (#1976) the admin confirms the whole `.env` is
    * saved, the one confirmation for both reminders: the names it sets are
    * recorded (`ngdpbase.backup.env-keys-saved`), and so is the backup key
-   * when the file holds it. Refused when the names changed since the page
-   * was loaded.
+   * when the file holds it, and the shared-folders key when it holds that
+   * (#2124, `ngdpbase.backup.shared-folders-key-saved-fingerprint`). Refused
+   * when the names changed since the page was loaded.
    */
   async confirmBackupKeySaved(ctx: ActorContext, fingerprint: string, envFingerprint?: string): Promise<void> {
     const STALE_KEY = 'That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved';
@@ -1243,6 +1277,8 @@ class BackupManager extends BaseManager {
     if (!configManager) throw new Error('ConfigurationManager not available');
     if (recordsKey) await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);
     if (env) await configManager.setProperty(ENV_KEYS_SAVED_KEY, env.names, ctx);
+    const shared = this.sharedFoldersKeyInfo();
+    if (env?.holdsSharedFoldersKey && shared.fingerprint && !shared.saved) await configManager.setProperty(SHARED_FOLDERS_KEY_SAVED_KEY, shared.fingerprint, ctx);
     await this.checkBackupKey();
   }
 
