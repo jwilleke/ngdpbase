@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIResponse, type BrowserContext } from '@playwright/test';
 import { TEST_PAGE_PREFIX, createPrivatePage, deletePage, signInWithPassword } from './fixtures/helpers';
 
 /**
@@ -16,15 +16,30 @@ import { TEST_PAGE_PREFIX, createPrivatePage, deletePage, signInWithPassword } f
  * page, and opens the link signed out. When E2E_SHARE_PUBLIC_BASE_URL is set
  * (the instance's ngdpbase.share.public-base-url), the link must start with it.
  */
+/**
+ * GET a path without following redirects, except the one hop an instance that
+ * serves HTTPS itself answers plain http with: the same path over https (#1163).
+ * A redirect anywhere else (a sign-in page, another path) is returned as is, so
+ * it still fails the caller's assertion.
+ */
+async function getOverHttps(context: BrowserContext, path: string): Promise<APIResponse> {
+  const res = await context.request.get(path, { maxRedirects: 0 });
+  const location = res.headers()['location'] ?? '';
+  if ([301, 302, 307, 308].includes(res.status()) && /^https:\/\/[^/]+(\/.*)$/.exec(location)?.[1] === path) {
+    return context.request.get(location, { maxRedirects: 0, ignoreHTTPSErrors: true });
+  }
+  return res;
+}
+
 test.describe('Share view assets under /share/ (#2117)', () => {
   test('the encrypted-vault viewer is served under /share/_assets to anyone', async ({ browser }) => {
     const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-    const res = await anon.request.get('/share/_assets/share-viewer.js', { maxRedirects: 0 });
+    const res = await getOverHttps(anon, '/share/_assets/share-viewer.js');
     expect(res.status()).toBe(200);
     expect(res.headers()['content-type']).toMatch(/javascript/);
     expect(await res.text()).toContain('/lockbox/');
 
-    const miss = await anon.request.get('/share/_assets/no-such-file.js', { maxRedirects: 0 });
+    const miss = await getOverHttps(anon, '/share/_assets/no-such-file.js');
     expect(miss.status()).toBe(404);
     // A share link's answer carries noindex; this one never reached the token resolver.
     expect(miss.headers()['x-robots-tag']).toBeUndefined();
