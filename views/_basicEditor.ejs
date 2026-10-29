@@ -14,7 +14,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
         <i class="fas fa-exclamation-triangle me-2 flex-shrink-0"></i>
         <div>
-            <strong>Required page:</strong> This page is managed in the <code>required-pages/</code> source.
+            <strong>Shipped page:</strong> This page is a copy of a page that ships with the release (<code>required-pages/</code>) or with an add-on.
             Your changes will be overwritten the next time an admin runs a Required Pages Sync.
             To make edits permanent, push them back to the source from
             <a href="/admin/required-pages" class="alert-link">Admin &rsaquo; Required Pages Sync</a>.

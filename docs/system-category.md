@@ -88,7 +88,7 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
 }
 ```
 
-The `journal` entry is not in core configuration. The journal add-on declares it in its own `config/default-config.json` (built, #1507), and core reads it from there live, whether the add-on is on or off (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)). The add-on's file also carries the legacy `source: "site"`, left out here as above:
+The `journal` entry is not in core configuration. The journal add-on declares it in its own `config/default-config.json` (built, #1507), and core reads it from there live, whether the add-on is on or off (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)):
 
 ```json
 "journal": {
@@ -134,14 +134,14 @@ Each field of a system-category entry, what it represents, and what its absence 
 
 ### Where a page's master copy lives
 
-There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided earlier and built in #1503, then found redundant and dropped (operator, 2026-09-28). Each job it did is answered by something that already exists:
+There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided earlier and built in #1503, then found redundant and dropped (operator, 2026-09-28). __Built (#1503):__ no code reads it, and no shipped entry carries it (see [`source`](#source-removed)). Each job it did is answered by something that already exists:
 
-- __Never stored on the site__ (was `repo`): the entry has no `storageLocation`. That is `developer`.
-- __Can never be private__ (was part of `shipped`): the entry has no `privatestore`. That is `system`, `documentation`, `addon` and `user-profile`.
-- __Only admins may edit a shipped page__ (was part of `shipped`): the page's own `access`, which seeding sets on every page it copies from a shipped source (#1411).
-- __Who may move a page into a system-category__ (today: admin-only for the shipped ones): policy, per system-category, checked through `hasPermission` (operator, 2026-09-28), using the `system-category` resource type decided in [access-policies.md](access-policies.md#decided-not-yet-built). By default only admins may move a page into `system` or `documentation`.
-- __A page on the site is a copy of a shipped original__ (was part of `shipped`): its page ID is in a shipped source (`required-pages/` or an add-on's pages). That is decided per page, not per system-category, so a `system` page someone creates on the site is not mistaken for a shipped one. How shipped pages are seeded and tracked: [The seed pipeline](platform/addon-page-handling.md#the-seed-pipeline).
-- __Which system-categories ship from `required-pages/`__ (the #1377 check lists pages in one of them that are not in the release): read from the shipped files themselves. Each file in `required-pages/` carries `system-category:` in its frontmatter, and the values found there (today `system` and `documentation`) are the shipped ones. No setting names them (operator, 2026-09-28).
+- __Never stored on the site__ (was `repo`): the entry has no `storageLocation`. That is `developer`. Read through `ValidationManager.getCategoryStored` (`none`): the provider refuses the save, the seed skips the page, and the editor does not offer it.
+- __Can never be private__ (was part of `shipped`): the entry has no `privatestore`. That is `system`, `documentation`, `addon` and `user-profile` (`getCategoryStored` is `public`; PageManager drops a `private: true` for them, and the editor refuses the Private box).
+- __Only admins may edit a shipped page__ (was part of `shipped`): the page's own `access`, which seeding sets on every page it copies from a shipped source (#1411). Until that is the only gate, the routes also hold every shipped page (decided per page, below) admin-only to edit, delete or rename.
+- __Who may move a page into a system-category__ (today: admin-only for the shipped ones): policy, per system-category, checked through `hasPermission` (operator, 2026-09-28), using the `system-category` resource type decided in [access-policies.md](access-policies.md#decided-not-yet-built). By default only admins may move a page into `system` or `documentation`. Built today without policy, and wider (operator, 2026-10-29): __nobody but an administrator sets or changes a page's system-category at all__, whichever it is. For anyone else a new page is `general` and an existing page keeps its own; a request naming another is refused with a 403 (`PageManager.systemCategoryForWrite`, asked by the create form, the editor, the ingest API and the takeout import; see [the security guide](guides/security-developer-guide.md#only-an-administrator-sets-a-pages-system-category)). Editing a page already in a shipped system-category is not admin-only unless that page is itself shipped.
+- __A page on the site is a copy of a shipped original__ (was part of `shipped`): its page ID is in a shipped source (`required-pages/` or an add-on's pages). That is decided per page, not per system-category, so a `system` page someone creates on the site is not mistaken for a shipped one. __Add-on pages are shipped pages exactly like `required-pages/` ones, in every check__ (operator, 2026-10-29). Built: `PageManager.isShippedPageCopy(uuid)`, the site's seeded-pages record from any shipped source, asked by every "is this a shipped page?" decision: only admins may edit, delete or rename it (`WikiRoutes.isRequiredPage`), it is never private (refused by the save route, and dropped by `PageManager` even in a system-category with a vault), a save marks it `user-modified` and notifies admins, and the authorship conversion (#2097) counts its upstream author apart. How shipped pages are seeded and tracked: [The seed pipeline](platform/addon-page-handling.md#the-seed-pipeline).
+- __Which system-categories ship pages__ (the #1377 check lists pages in one of them that are not in the release): read from the shipped files themselves. Each file in `required-pages/` carries `system-category:` in its frontmatter, and the values found there (today `system` and `documentation`) are the shipped ones; so are those of each enabled add-on's pages (a page without one is `addon`, as the seed stamps it). No setting names them (operator, 2026-09-28). Built: `PageManager.shippedSystemCategories()`, each source read once. Used only where a category list is the question: the #1377 check and moving a page into one; never to decide whether a page is shipped.
 
 ### Rules for owners
 
@@ -221,21 +221,17 @@ The system-category a new page gets when none is given: the first entry with `de
 
 `{ color, label, title }`: the badge shown beside the title on a page of this system-category (`views/header.ejs`, data from `WikiRoutes`). Without it, no badge (e.g. `general`).
 
-### `source` (`site` | `shipped` | `repo`)
+### `source` (removed)
 
-__Built in #1503, decided 2026-09-28 to be removed__ (see [Where a page's master copy lives](#where-a-pages-master-copy-lives)). Today every reader goes through `ValidationManager.getCategorySource()`:
+__Removed (#1503).__ Nothing reads it; its jobs moved as [Where a page's master copy lives](#where-a-pages-master-copy-lives) says. A site's `app-custom-config.json`, or an add-on's file, that still carries it is ignored without breaking: startup logs one info line naming every entry that has it, never a warning per entry (#1988). A guard test (`src/managers/__tests__/categoryStored.test.ts`) fails if code reads `source` off a system-category again.
 
-| Value | What the code does |
-|---|---|
-| `site` | Nothing special |
-| `shipped` | Cannot be made private. Editing is admin-only, marks the page user-modified and notifies admins. Listed by the #1377 check. Badge "required-pages" in the table |
-| `repo` | Saving is refused. Never seeded. Hidden from the editor's list |
-
-A missing or unknown value reads as `site`, with a startup warning naming the entry.
+The categories table, `[{ConfigAccessor type='systemCategories'}]`, shows a __Stored__ column instead (`none`, `public` or `vault`, from `storageLocation`), and filters on it with `stored=`; the `source=` filter is gone.
 
 ### `storageLocation`
 
-Read since #1504: `defaultstore` is where public pages live, and `privatestore` (`pages/vaults/{user}/{vaultid}/`) is the vault, whose last segment is the vault id (`ValidationManager.getVaultId`, `privateStoreDoor.storeKindFromConfig`). `journal` and `capture` carry one.
+Read since #1504: `defaultstore` is where public pages live, and `privatestore` (`pages/vaults/{user}/{vaultid}/`) is the vault, whose last segment is the vault id (`ValidationManager.getVaultId`, `privateStoreDoor.storeKindFromConfig`). `general`, `journal` and `capture` carry one.
+
+Since #1503 it also decides where a system-category's pages may be stored, through one rule (`categoryStored`, `ValidationManager.getCategoryStored`): no `storageLocation` is `none` (never stored on the site), one without a valid `privatestore` is `public`, and one with a valid `privatestore` is `vault`. Only an absent `storageLocation` means `none`: any other value, such as a word left from before #1504, still stores, so a stale site config never starts refusing saves. A system-category the site does not know has no answer, and nothing is refused for it. An enabled entry with no `storageLocation` is left out of the editor and its saves are refused, so startup warns once, naming every such entry.
 
 ### `defaultPrivate`, `encrypt`, `owner`, `shareMaxDays`
 
@@ -275,7 +271,7 @@ The phr add-on's seed page is the case it was built for: its plugin output is pr
 ## How we get there (#1477)
 
 - __Done (#1508):__ the unread `ngdpbase.storageLocation.*` block is gone from the default config.
-- __Built (#1503), now to be undone:__ `source: site | shipped | repo` replaced the old `storageLocation` words. It is removed again, each of its jobs moving to what [Where a page's master copy lives](#where-a-pages-master-copy-lives) names. __Order (operator, 2026-09-28): after `storageLocation` becomes the pair of folders (next bullet, #1504).__ Until every entry carries `storageLocation` and, where it has a vault, `privatestore`, reading their absence as "never stored" and "never private" would refuse every save and every private page.
+- __Done (#1503):__ `source: site | shipped | repo` replaced the old `storageLocation` words, and was then removed again (operator, 2026-10-02), each of its jobs moving to what [Where a page's master copy lives](#where-a-pages-master-copy-lives) names. __Order (operator, 2026-09-28): after `storageLocation` becomes the pair of folders (next bullet, #1504).__ Until every entry carries `storageLocation` and, where it has a vault, `privatestore`, reading their absence as "never stored" and "never private" would refuse every save and every private page.
 - __First: vaults move from `pages/private/` to `pages/vaults/`__ (#1506; order decided by the operator, 2026-09-28, so that `privatestore` names the real folder, `pages/vaults/{user}/{vaultid}/`, from the start), and page names and URLs follow (`/vaults/jim/default/Diary`). Stored links are rewritten once; old `/private/…` addresses are not redirected (operator, 2026-09-28).
 - __`storageLocation` becomes the pair of folders__ (`defaultstore`, `privatestore`), with `defaultPrivate` beside it. `privatestore` then declares the vault folder, so two settings that declare it today go (operator, 2026-09-28): `ngdpbase.page.provider.filesystem.privateroot` (the parent folder; the scan that keeps vaults out of the public index reads it from the `privatestore` entries instead, and every entry's `privatestore` must share one parent, `pages/vaults/`) and `ngdpbase.page.provider.filesystem.defaultstoreid` (the vault id of a user's ordinary vault, which is the last folder of `general`'s `privatestore`, `default`).
 - __Built (#1505, piece 2):__ a new private page goes to its system-category's vault (the create form, the editor's Private box, and pages the capture flow creates, which are now `capture` pages); a system-category with no vault offers no Private box and refuses one. Existing pages stay where they are until moved.

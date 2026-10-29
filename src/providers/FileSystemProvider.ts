@@ -782,10 +782,11 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error('FileSystemProvider not initialized - directories not set');
     }
 
-    // A category whose source is the repository (docs/) is never stored on the site (#1503)
+    // A system-category with no storageLocation is never stored on the site:
+    // its pages live in the repository's docs/ (#1503)
     const systemCategory = String(metadata['system-category'] ?? 'general');
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
-    if (validationManager?.getCategorySource(systemCategory) === 'repo') {
+    if (validationManager?.getCategoryStored(systemCategory) === 'none') {
       throw new Error(`Cannot save page with system-category '${systemCategory}' - its pages live in the repository's docs/ folder and are not stored on the site`);
     }
 

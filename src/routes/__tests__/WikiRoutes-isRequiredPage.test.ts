@@ -1,183 +1,57 @@
 /**
- * WikiRoutes.isRequiredPage() tests
+ * WikiRoutes.isRequiredPage() — whether a page is a shipped page, which is
+ * admin-only to edit, delete or rename and never private (#174).
  *
- * Tests the isRequiredPage() method that determines if a page
- * requires admin permission to edit (Issue #174).
- *
- * Protected pages are determined solely by system-category metadata.
- * Hardcoded page-name lists were removed in favour of config-driven category checks.
- *
- * @jest-environment node
+ * #1503 (operator, 2026-10-29): decided per page, never by system-category. A
+ * page is shipped when its uuid is in the site's seeded-pages record, from
+ * required-pages/ or an add-on's pages alike. A page made on this site is not
+ * shipped, whatever its system-category.
  */
 
 import WikiRoutes from '../WikiRoutes';
 
-describe('WikiRoutes.isRequiredPage()', () => {
-  let wikiRoutes;
-  let mockPageManager;
-  let mockEngine;
+const SHIPPED_REQUIRED = 'aaaaaaaa-0000-4000-8000-000000000001';
+const SHIPPED_ADDON = 'aaaaaaaa-0000-4000-8000-000000000002';
+const SITE_MADE = 'aaaaaaaa-0000-4000-8000-000000000003';
+
+describe('WikiRoutes.isRequiredPage() (#174, #1503)', () => {
+  let wikiRoutes: WikiRoutes;
+  let mockPageManager: { getPageMetadata: ReturnType<typeof vi.fn>; isShippedPageCopy: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
-    // Create mock PageManager
     mockPageManager = {
-      getPageMetadata: vi.fn()
+      getPageMetadata: vi.fn(),
+      isShippedPageCopy: vi.fn(async (uuid: string) => [SHIPPED_REQUIRED, SHIPPED_ADDON].includes(uuid))
     };
-
-    // Create mock Engine
-    mockEngine = {
-      getManager: vi.fn((name) => {
-        if (name === 'PageManager') return mockPageManager;
-        if (name === 'ConfigurationManager') {
-          return {
-            getProperty: vi.fn((key) => {
-              if (key === 'ngdpbase.system-category') {
-                return {
-                  general:       { label: 'general',       source: 'site',  enabled: true },
-                  system:        { label: 'system',        source: 'shipped', enabled: true },
-                  documentation: { label: 'documentation', source: 'shipped', enabled: true },
-                  developer:     { label: 'developer',     source: 'repo',   enabled: true },
-                  addon:         { label: 'addon',         source: 'site',  enabled: true }
-                };
-              }
-              return null;
-            })
-          };
-        }
-        return null;
-      })
-    };
-
-    // Create WikiRoutes instance
-    wikiRoutes = new WikiRoutes(mockEngine);
+    wikiRoutes = new WikiRoutes({ getManager: vi.fn((name: string) => (name === 'PageManager' ? mockPageManager : null)) });
   });
 
-  describe('Page Name Alone (no system-category)', () => {
-    test('should return false for "System Categories" without system-category metadata', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({ title: 'System Categories' });
-      const result = await wikiRoutes.isRequiredPage('System Categories');
-      expect(result).toBe(false);
-    });
+  const isRequired = (metadata: Record<string, unknown> | null) => {
+    mockPageManager.getPageMetadata.mockResolvedValue(metadata);
+    return wikiRoutes.isRequiredPage('Test Page', { username: 'someone' });
+  };
 
-    test('should return false for "User Documentation" without system-category metadata', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({ title: 'User Documentation' });
-      const result = await wikiRoutes.isRequiredPage('User Documentation');
-      expect(result).toBe(false);
-    });
+  test('a seeded required page is shipped', async () => {
+    expect(await isRequired({ uuid: SHIPPED_REQUIRED, 'system-category': 'documentation' })).toBe(true);
+    expect(mockPageManager.isShippedPageCopy).toHaveBeenCalledWith(SHIPPED_REQUIRED);
   });
 
-  describe('System Category Protection (Issue #174)', () => {
-    test('should return true for system-category: system (lowercase)', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'system'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(true);
-    });
-
-    test('should return true for system-category: System (uppercase)', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'System'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(true);
-    });
-
-    test('should return true for system-category: documentation', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'documentation'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(true);
-    });
-
-    test('should return true for system-category: Documentation (uppercase)', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'Documentation'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(true);
-    });
-
-    test('should return false for system-category: System/Admin (invalid legacy category, not in required list)', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'System/Admin'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
-
-    test('should return false for category: System/Admin (invalid legacy category, not in required list)', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        category: 'System/Admin'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
+  test('a seeded add-on page is shipped, like a required page', async () => {
+    expect(await isRequired({ uuid: SHIPPED_ADDON, 'system-category': 'addon', addon: 'demo' })).toBe(true);
   });
 
-  describe('Non-Protected Pages', () => {
-    test('should return false for system-category: General', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'General'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
-
-    test('should return false for system-category: Developer', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page',
-        'system-category': 'Developer'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
-
-    test('should return false when no system-category is set', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue({
-        title: 'Test Page'
-      });
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
-
-    test('should return false when page does not exist', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue(null);
-
-      const result = await wikiRoutes.isRequiredPage('NonExistent Page');
-      expect(result).toBe(false);
-    });
+  test('a page made on the site in a shipped system-category is not shipped', async () => {
+    expect(await isRequired({ uuid: SITE_MADE, 'system-category': 'system' })).toBe(false);
+    expect(await isRequired({ uuid: SITE_MADE, 'system-category': 'addon' })).toBe(false);
   });
 
-  describe('Error Handling', () => {
-    test('should return false when PageManager throws error', async () => {
-      mockPageManager.getPageMetadata.mockRejectedValue(new Error('Database error'));
+  test('a page with no uuid, or none at all, is not shipped', async () => {
+    expect(await isRequired({ title: 'Test Page', 'system-category': 'system' })).toBe(false);
+    expect(await isRequired(null)).toBe(false);
+  });
 
-      const result = await wikiRoutes.isRequiredPage('Error Page');
-      expect(result).toBe(false);
-    });
-
-    test('should return false when metadata is null', async () => {
-      mockPageManager.getPageMetadata.mockResolvedValue(null);
-
-      const result = await wikiRoutes.isRequiredPage('Test Page');
-      expect(result).toBe(false);
-    });
+  test('a failure reads as not shipped', async () => {
+    mockPageManager.getPageMetadata.mockRejectedValue(new Error('Database error'));
+    expect(await wikiRoutes.isRequiredPage('Error Page', { username: 'someone' })).toBe(false);
   });
 });

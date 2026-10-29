@@ -50,26 +50,34 @@ export interface ContentValidationResult {
   warnings: string[];
 }
 
-/**
- * Where a category's pages come from (#1503): made on this site, shipped with
- * the release in required-pages/, or kept in the repository's docs/ and never
- * stored on the site. Replaces the old storageLocation words one for one
- * (regular → site, required → shipped, github → repo).
- */
 /** A new share link's maximum lifetime when a vault's system-category sets none (operator, 2026-09-30, #1388). */
 export const DEFAULT_SHARE_MAX_DAYS = 15;
 
-export type CategorySource = 'site' | 'shipped' | 'repo';
-
-const CATEGORY_SOURCES: readonly string[] = ['site', 'shipped', 'repo'];
+/**
+ * Where a system-category's pages are stored on the site (#1503,
+ * docs/system-category.md "Where a page's master copy lives"):
+ *
+ * - `none`: the entry has no `storageLocation`; its pages are never stored on
+ *   the site (they live in the repository's docs/), so saving one is refused
+ *   and none is seeded.
+ * - `public`: a `storageLocation` without a vault; its pages can never be
+ *   private.
+ * - `vault`: a `storageLocation.privatestore`; its pages may be private.
+ */
+export type CategoryStored = 'none' | 'public' | 'vault';
 
 /**
- * A category entry's source. An entry without a valid one is a site category.
- * The one rule every reader of a category's source goes through.
+ * Where an entry's pages are stored. The one rule every reader of "is this
+ * system-category stored here, and can it be private" goes through. A
+ * system-category's former `source` field is never read (#1503).
  */
-export function categorySource(cfg: { source?: string } | null | undefined): CategorySource {
-  const source = cfg?.source;
-  return source !== undefined && CATEGORY_SOURCES.includes(source) ? source as CategorySource : 'site';
+export function categoryStored(cfg: { storageLocation?: unknown } | null | undefined): CategoryStored {
+  const location = cfg?.storageLocation;
+  // Only an absent storageLocation means "never stored". Anything else present
+  // (a malformed value, or a word left from before #1504) still stores, so a
+  // stale site config never starts refusing saves.
+  if (location === undefined || location === null) return 'none';
+  return typeof location === 'object' && parsePrivatestore((location as { privatestore?: unknown }).privatestore) ? 'vault' : 'public';
 }
 
 /**
@@ -127,9 +135,10 @@ export interface CategoryConfig {
   label: string;
   description?: string;
   default?: boolean;
-  source?: CategorySource;
   enabled?: boolean;
   key?: string;
+  /** Where its pages are stored; see {@link categoryStored}. */
+  storageLocation?: { defaultstore?: string; privatestore?: string };
   /** `false`: its pages show no Comments tab and take no comment, unless a page says otherwise (#1951). */
   comments?: boolean;
   /** `false`: its pages show no Footnotes tab and take no footnote change, unless a page says otherwise (#1951). */
@@ -326,17 +335,26 @@ class ValidationManager extends BaseManager {
 
         // Build valid categories list from enabled categories
         const categories: string[] = [];
+        // #1503, #1988: `source` was removed. A site or add-on config that still
+        // carries it is ignored, with one info line naming every such entry.
+        const withSource: string[] = [];
+        // An offered entry with no storageLocation is never stored, so it is
+        // left out of the editor and its saves are refused: say so once.
+        const offeredNeverStored: string[] = [];
         for (const [key, categoryConfig] of Object.entries(systemCategoriesConfig)) {
-          // #1503: a missing or unknown source reads as 'site'. A missing one is
-          // silent: source was dropped and the guides say leave it out (#1988).
-          // Only a value that is present but not site | shipped | repo warns.
-          if (categoryConfig.source !== undefined && categorySource(categoryConfig) !== categoryConfig.source) {
-            logger.warn(`System category '${key}' has an unknown source '${String(categoryConfig.source)}' (site | shipped | repo); treating it as 'site'`);
-          }
+          if (categoryConfig && typeof categoryConfig === 'object' && 'source' in categoryConfig) withSource.push(key);
+          if (categoryConfig.enabled !== false && categoryStored(categoryConfig) === 'none') offeredNeverStored.push(key);
           if (categoryConfig.enabled !== false) {
             // Use the label as the valid category value
             categories.push(categoryConfig.label);
           }
+        }
+
+        if (withSource.length > 0) {
+          logger.info(`System categories ${withSource.join(', ')} carry 'source', which is no longer read and is ignored; storageLocation decides where their pages are stored (docs/system-category.md)`);
+        }
+        if (offeredNeverStored.length > 0) {
+          logger.warn(`System categories ${offeredNeverStored.join(', ')} are enabled but have no storageLocation, so their pages are never stored on the site: they are not offered in the editor and saving one is refused. Give each a storageLocation, or set enabled: false (docs/system-category.md)`);
         }
 
         if (categories.length > 0) {
@@ -517,12 +535,14 @@ class ValidationManager extends BaseManager {
   }
 
   /**
-   * Where a category's pages come from (#1503)
+   * Where a system-category's pages are stored on the site (#1503): see
+   * {@link categoryStored}. Null for a system-category the site does not
+   * know; no rule refuses a page for that.
    * @param {string} category - Category label
-   * @returns {CategorySource} 'site', 'shipped' or 'repo'; an unknown category is 'site'
    */
-  getCategorySource(category: string): CategorySource {
-    return categorySource(this.getCategoryConfig(category));
+  getCategoryStored(category: string): CategoryStored | null {
+    const entry = this.getCategoryConfig(category);
+    return entry ? categoryStored(entry) : null;
   }
 
   /**
@@ -593,7 +613,6 @@ class ValidationManager extends BaseManager {
         label,
         description: '',
         default: label === 'general',
-        source: 'site' as const,
         enabled: true
       }));
     }

@@ -289,7 +289,7 @@ export class PageContentValidationError extends Error {
 }
 import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
-import { categorySource } from './ValidationManager.js';
+import { categoryStored } from './ValidationManager.js';
 import type NotificationManager from './NotificationManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
@@ -362,6 +362,14 @@ export type VaultRepairResult =
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
+/** The refusal when someone without `admin-system` names a system-category (#1503, operator 2026-10-29). */
+export const SYSTEM_CATEGORY_ADMIN_ONLY = "Only administrators can set a page's system category";
+
+/** What a write may give a page as its system-category ({@link PageManager.systemCategoryForWrite}). */
+export type SystemCategoryForWrite =
+  | { ok: true; category: string | undefined; admin: boolean }
+  | { ok: false; reason: string };
+
 export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 /** The move of private pages from the default vault into their system-category's own vault (#1507). */
 export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
@@ -589,6 +597,9 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   private formerTitleIndex: Map<string, string | typeof AMBIGUOUS> | null = null;
   private providerClass?: string;
+
+  /** The system-categories each shipped source ships, read once ({@link shippedSystemCategories}, #1503). */
+  private shippedCategoriesRead = new Map<string, Promise<Set<string>>>();
 
   /**
    * Creates a new PageManager instance
@@ -1117,7 +1128,8 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * The source for the required pages this release ships (#1405, #1406).
-   * Pages in a category whose source is `repo` are excluded.
+   * Pages in a system-category with no `storageLocation` (never stored on the
+   * site, #1503) are excluded.
    */
   requiredPagesSource(): ShippedPageSource {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -1130,10 +1142,10 @@ class PageManager extends BaseManager implements CatalogSource {
     ) as string;
     const dir = path.isAbsolute(requiredDirRaw) ? requiredDirRaw : path.join(process.cwd(), requiredDirRaw);
     const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-      Record<string, { source?: string }>;
-    const repoOnly = new Set(
+      Record<string, { storageLocation?: unknown }>;
+    const neverStored = new Set(
       Object.entries(systemCategories)
-        .filter(([, cfg]) => categorySource(cfg) === 'repo')
+        .filter(([, cfg]) => categoryStored(cfg) === 'none')
         .map(([key]) => key)
     );
     return {
@@ -1143,8 +1155,8 @@ class PageManager extends BaseManager implements CatalogSource {
       stampKey: REQUIRED_SOURCE_HASH_KEY,
       exclude: (data) => {
         const category = data['system-category'];
-        return typeof category === 'string' && repoOnly.has(category)
-          ? `repo-only category '${category}'`
+        return typeof category === 'string' && neverStored.has(category)
+          ? `system-category '${category}' is never stored on the site`
           : undefined;
       },
       // #1411: administrator-edit only, the rule addon pages follow (#971). A
@@ -1155,6 +1167,94 @@ class PageManager extends BaseManager implements CatalogSource {
       },
       onPresent: (live, parsed, ctx) => this.backfillShippedPageAccess(live, parsed, ctx)
     };
+  }
+
+  /**
+   * The system-categories that ship pages (#1503), lower-cased: the
+   * `system-category:` values in the frontmatter of required-pages/ (read
+   * once) and of each enabled add-on's pages (read once per add-on; a page
+   * without one is `addon`, as the seed stamps it). No setting names them
+   * (operator, 2026-09-28). A file the seed would exclude is left out.
+   *
+   * Only for category questions (moving a page into one, the #1377 check):
+   * whether a page is shipped is {@link isShippedPageCopy}, per page.
+   */
+  async shippedSystemCategories(): Promise<Set<string>> {
+    const found = new Set(await this.categoriesShippedBy('required-pages', () => this.requiredPagesSource()));
+    const addons = this.engine.getManager<{ getEnabledAddonPagesDirectories?(): Array<{ name: string; pagesDir: string }> }>('AddonsManager');
+    for (const { name, pagesDir } of addons?.getEnabledAddonPagesDirectories?.() ?? []) {
+      for (const category of await this.categoriesShippedBy(`addon:${name}:${pagesDir}`, () => this.addonPagesSource(name, pagesDir))) found.add(category);
+    }
+    return found;
+  }
+
+  /** One shipped source's system-categories, read once; a failed read is not kept, so the next call reads again. */
+  private categoriesShippedBy(key: string, source: () => ShippedPageSource): Promise<Set<string>> {
+    let read = this.shippedCategoriesRead.get(key);
+    if (!read) {
+      read = this.readShippedSystemCategories(source).then((found) => {
+        if (!found) this.shippedCategoriesRead.delete(key);
+        return found ?? new Set<string>();
+      });
+      this.shippedCategoriesRead.set(key, read);
+    }
+    return read;
+  }
+
+  private async readShippedSystemCategories(sourceOf: () => ShippedPageSource): Promise<Set<string> | null> {
+    const found = new Set<string>();
+    try {
+      const source = sourceOf();
+      if (!(await fse.pathExists(source.dir))) return found;
+      for (const file of (await fse.readdir(source.dir)).filter((f: string) => f.endsWith('.md'))) {
+        const { data } = parsePageFrontmatter(await fse.readFile(path.join(source.dir, file), 'utf8'));
+        if (source.exclude?.(data)) continue;
+        const category = source.extraMetadata?.(data)['system-category'] ?? data['system-category'];
+        if (typeof category === 'string' && category.trim()) found.add(category.trim().toLowerCase());
+      }
+    } catch (err) {
+      logger.warn('[PageManager] Could not read the system-categories a shipped source ships:', err);
+      return null;
+    }
+    return found;
+  }
+
+  /**
+   * Which system-category a write by `ctx` gives a page (#1503, operator
+   * 2026-10-29): only an administrator (`admin-system`, asked of the PDP) sets
+   * or changes one. Anyone else's new page takes `fallback` (else the default
+   * system-category) and an existing page keeps its own (`current`); a request
+   * naming any other is refused, never rewritten. An administrator's request
+   * comes back as given (`undefined` when it names none), for the caller's own
+   * validation. Every write path that takes a system-category from a request
+   * asks here: create, save, ingest, takeout import.
+   *
+   * @param ctx - Who is writing
+   * @param requested - The system-category the request names, if any
+   * @param current - The page's system-category now; absent for a new page
+   * @param fallback - A new page's system-category when not the default (a vault's own)
+   */
+  async systemCategoryForWrite(ctx: ActorContext, requested: unknown, current?: string | null, fallback?: string): Promise<SystemCategoryForWrite> {
+    if (!ctx) throw new Error('PageManager.systemCategoryForWrite requires an ActorContext');
+    const asked = typeof requested === 'string' && requested.trim() ? requested.trim() : undefined;
+    if (await this.adminSystem(ctx, 'permits')) return { ok: true, category: asked, admin: true };
+    const fixed = (typeof current === 'string' && current.trim())
+      || fallback
+      || this.engine.getManager<ValidationManager>('ValidationManager')?.getDefaultSystemCategory?.()
+      || 'general';
+    if (asked === undefined || asked.toLowerCase() === fixed.toLowerCase()) return { ok: true, category: fixed, admin: false };
+    return { ok: false, reason: SYSTEM_CATEGORY_ADMIN_ONLY };
+  }
+
+  /**
+   * Whether a page on the site is a shipped page (#1503): a copy of a shipped
+   * original, its uuid in the site's seeded-pages record, from required-pages/
+   * or an add-on's pages alike (operator, 2026-10-29). Decided per page, so a
+   * page someone creates on the site in a shipped system-category is not
+   * taken for a shipped one. Shipped pages are admin-only and never private.
+   */
+  async isShippedPageCopy(uuid: string): Promise<boolean> {
+    return Boolean(uuid) && (await this.loadSeededRecord()).hasUuid(uuid);
   }
 
   /**
@@ -2161,18 +2261,22 @@ class PageManager extends BaseManager implements CatalogSource {
       delete (rawMetadata as Record<string, unknown>).formerTitles;
     }
 
-    // Determine if this is a required page by checking the system-category config.
-    // Shipped pages (a category whose source is 'shipped') cannot be marked private.
+    // A page whose system-category has no vault (no storageLocation.privatestore)
+    // cannot be marked private (#1503). A system-category the site does not
+    // know is left to the provider, as before.
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const systemCategoriesConfig = (configManager
-      ? configManager.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; source?: string }>
-      : {}) as Record<string, { label?: string; source?: string }>;
     const pageSystemCategory = ((rawMetadata as Record<string, unknown>)['system-category'] as string | undefined)
       || ((existingPage?.metadata as Record<string, unknown> | undefined)?.['system-category'] as string | undefined)
       || '';
-    const isRequiredPage = Object.values(systemCategoriesConfig).some(
-      (cfg) => ((cfg.label || '').toLowerCase() === pageSystemCategory.toLowerCase() && categorySource(cfg) === 'shipped')
-    );
+    const storedAs = pageSystemCategory
+      ? this.engine.getManager<ValidationManager>('ValidationManager')?.getCategoryStored(pageSystemCategory)
+      : null;
+    // A shipped page (required-pages/ or an add-on's, decided per page) is
+    // never private either. The record is read only when private is asked for.
+    const uuidOf = (v: unknown): string => (typeof v === 'string' ? v : '');
+    const shippedUuid = uuidOf((existingPage?.metadata as Record<string, unknown> | undefined)?.uuid) || uuidOf((rawMetadata as Record<string, unknown>).uuid);
+    const cannotBePrivate = storedAs === 'none' || storedAs === 'public' ||
+      ((rawMetadata as Record<string, unknown>).private === true && await this.isShippedPageCopy(shippedUuid).catch(() => false));
 
     // #639 Slice E: top-level `private: true` is the canonical privacy signal.
     // The Slice B back-compat path that scanned user-keywords for 'private' (or
@@ -2181,7 +2285,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // strip of any stray 'private' from user-keywords is preserved — cheap
     // insurance against external authoring tools that might still emit it.
     const userKeywords = (rawMetadata['user-keywords'] || []);
-    const wantsPrivate = !isRequiredPage && (rawMetadata as Record<string, unknown>).private === true;
+    const wantsPrivate = !cannotBePrivate && (rawMetadata as Record<string, unknown>).private === true;
     const keywordsHadPrivate = userKeywords.includes('private');
     let normalizedKeywords = userKeywords.filter(kw => kw !== 'private');
 
@@ -3983,7 +4087,8 @@ class PageManager extends BaseManager implements CatalogSource {
     const batchSize = this.authorshipBatchSize();
     const { convert, counts } = identities.conversionPass(ctx);
     const convertPrincipal = await this.accessListConverter(convert);
-    const shipped = this.shippedCategories();
+    // #1503: a shipped copy is decided per page, by the seeded-pages record.
+    const seeded = configManager ? await SeededShippedPages.load(configManager.getInstanceDataFolder()) : null;
     const markSearchStale = async (): Promise<void> => {
       if (!recordFile || record.pending?.[AUTHORSHIP_SEARCH_PENDING]) return;
       record.pending = { ...record.pending, [AUTHORSHIP_SEARCH_PENDING]: new Date().toISOString() };
@@ -4018,7 +4123,7 @@ class PageManager extends BaseManager implements CatalogSource {
           }
           // A shipped or add-on page names upstream's author (often no account
           // here): orphaned like any other, but counted apart, not needing attention.
-          if (outcome.addon || (outcome.category && shipped.has(outcome.category.toLowerCase()))) {
+          if (outcome.addon || seeded?.hasUuid(uuid)) {
             result.shippedOrphans += counts.orphans - orphansBefore;
             counts.orphans = orphansBefore;
           }
@@ -4169,15 +4274,6 @@ class PageManager extends BaseManager implements CatalogSource {
       if (typeof stored === 'string' && stored && (await identities.convertRecordedUser(ctx, stored)).value !== stored) return true;
     }
     return false;
-  }
-
-  /** The system-categories whose pages are shipped with the code (source `shipped`), lower-cased (#2097). */
-  private shippedCategories(): Set<string> {
-    const categories = (this.engine.getManager<ConfigurationManager>('ConfigurationManager')
-      ?.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; source?: string }>;
-    return new Set(Object.entries(categories)
-      .filter(([, cfg]) => categorySource(cfg) === 'shipped')
-      .flatMap(([key, cfg]) => [key.toLowerCase(), (cfg.label || key).toLowerCase()]));
   }
 
   /** `ngdpbase.page.authorship-conversion.batch-size`: pages converted between yields (#2097). */

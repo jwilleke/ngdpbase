@@ -42,9 +42,9 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     'ngdpbase.page.provider.versioning.deltastorage': true,
     'ngdpbase.page.provider.versioning.compression': 'none',
     'ngdpbase.system-category': {
-      general: { label: 'general', source: 'site' },
-      documentation: { label: 'documentation', source: 'shipped' },
-      system: { label: 'system', source: 'shipped' }
+      general: { label: 'general', storageLocation: { defaultstore: 'pages/' } },
+      documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' } },
+      system: { label: 'system', storageLocation: { defaultstore: 'pages/' } }
     }
   });
 

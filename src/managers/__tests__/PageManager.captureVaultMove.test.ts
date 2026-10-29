@@ -73,9 +73,12 @@ describe('PageManager capture vault move (#1505)', () => {
       getResolvedDataPath: vi.fn((key: string, fallback: string) =>
         (key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : fallback))
     };
+    const vaultOf = (category: string) =>
+      (category === 'capture' ? captureVault : category === 'journal' ? 'journal' : category === 'general' ? 'default' : null);
     const validationManager = {
-      getVaultId: vi.fn((category: string) =>
-        (category === 'capture' ? captureVault : category === 'journal' ? 'journal' : category === 'general' ? 'default' : null)),
+      getVaultId: vi.fn(vaultOf),
+      // #1503: a system-category with a vault; others unknown here.
+      getCategoryStored: vi.fn((category: string) => (vaultOf(category) ? 'vault' : null)),
       sanitizeMetadata: vi.fn((metadata: unknown) => metadata),
       checkConflicts: vi.fn(async () => ({ hasConflict: false }))
     };

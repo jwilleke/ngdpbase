@@ -768,7 +768,7 @@ describe('VersioningFileProvider', () => {
           return {
             Navigation: {
               label: 'Navigation',
-              source: 'shipped'
+              storageLocation: { defaultstore: 'pages/' }
             }
           };
         }

@@ -260,21 +260,38 @@ describe('#2097 page authorship conversion', () => {
   });
 
   // Sabotage: dropping the shipped/add-on branch turned this red (the orphan counted as needing attention).
-  test('a shipped page whose author has no account here is orphaned but counted apart, not needing attention', async () => {
+  // #1503: a shipped copy is decided per page, by the seeded-pages record.
+  const upstreamDocumentationPage = async (seeded: boolean) => {
     site.config['ngdpbase.system-category'] = {
       ...vaultCategories(),
-      documentation: { label: 'documentation', source: 'shipped', storageLocation: { defaultstore: 'pages/' } }
+      documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' } }
     };
     const file = pageFile(site, uuids.b);
     const parsed = matter(await fs.readFile(file, 'utf8'));
     await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, author: 'upstream', editor: 'upstream', 'system-category': 'documentation' }));
+    if (seeded) {
+      await fs.writeJson(path.join(site.dir, 'seeded-shipped-pages.json'), {
+        version: 2, sources: { 'required-pages': { seeded: { [uuids.b.toLowerCase()]: '2026-01-01T00:00:00.000Z' }, declined: {} } }
+      });
+    }
     const restarted = await site.restart();
     const attention = vi.spyOn(restarted as unknown as { markNeedsAttention(r: string): void }, 'markNeedsAttention');
     const result = await restarted.convertAuthorship(SYS);
     expect(matter(await fs.readFile(file, 'utf8')).data.author).toBe('orphan:upstream');
+    return { result, attention };
+  };
+
+  test('a shipped page whose author has no account here is orphaned but counted apart, not needing attention', async () => {
+    const { result, attention } = await upstreamDocumentationPage(true);
     expect(result).toMatchObject({ orphans: 0 });
     expect(result?.shippedOrphans).toBeGreaterThan(0);
     expect(attention).not.toHaveBeenCalled();
+  });
+
+  test('a page made on this site in a shipped system-category is not taken for a shipped one (#1503)', async () => {
+    const { result } = await upstreamDocumentationPage(false);
+    expect(result?.shippedOrphans).toBe(0);
+    expect(result?.orphans).toBeGreaterThan(0);
   });
 
   // Review fix 1. Sabotage: running the tombstone conversion outside withPageWrite

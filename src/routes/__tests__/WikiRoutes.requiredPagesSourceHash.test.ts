@@ -90,7 +90,7 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
           checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }),
           // #1462 slice 2: every save goes through the one door, which sanitises.
           sanitizeMetadata: (m: unknown) => m,
-          getCategorySource: () => 'site'
+          getCategoryStored: () => 'public'
         };
       }
       if (name === 'PageManager') return holder.pageManager;
