@@ -108,7 +108,7 @@ The smallest piece that proves the engine:
 - D11 on the screen: a receiver states the original choices it offers, `originals: { allowed, default }` on `IceReceiver`; the engine refuses any other. `core.files` offers only `none`.
 - Status: each run's per-file report from `getImportRun`, refreshing until done, to its own user only; the screen lists the user's runs this process holds (`importRunsFor`).
 - Limits: `ngdpbase.import.engine.upload-max-files` (20) and `upload-max-bytes` (256 MB, equal to `zip-max-bytes`).
-- A receiver cannot hide file names from the status view: only the user who uploaded sees it, and they need the names to see which file failed. The audit log keeps the file name; application logs, notices and admin screens do not show it to anyone else (operator, 2026-10-28).
+- A receiver cannot hide file names from the status view: only the user who uploaded sees it, and they need the names to see which file failed. The audit log keeps the file name. When the destination is encrypted (a sealed vault, e.g. health records), application logs, notices and admin screens do not show it to anyone else (operator, 2026-10-28; narrowed to encrypted destinations 2026-10-29); other imports log file names as before.
 - "Your recent imports" is read from the ledger, so it survives a restart: the user's own recent files, newest first, with each file's result and what it went into. How many it shows is a configuration key with a default (operator, 2026-10-28). Not built yet.
 
 ### Keeping an original in an encrypted vault ([#2034](https://github.com/jwilleke/ngdpbase/issues/2034), built 2026-10-24)
