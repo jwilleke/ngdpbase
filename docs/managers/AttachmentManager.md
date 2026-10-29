@@ -161,3 +161,7 @@ The files are in every backup, beside the document, never in it ([#1876](https:/
 For complete API reference, configuration options, provider implementation, and troubleshooting:
 
 - [AttachmentManager-Complete-Guide.md](AttachmentManager-Complete-Guide.md)
+
+## Known gaps
+
+- [#2130](https://github.com/jwilleke/ngdpbase/issues/2130): an upload's content id is a SHA-256 of the whole file, computed synchronously (`crypto.createHash`) on the request path. It is computed once per shared-pool upload (`storeAttachment` hands it to the store step rather than hashing again) and once per file into a private store (its fingerprint). For a file near `ngdpbase.attachment.maxsize`, that blocks the event loop while it hashes. Moving it off the request path (streaming, or a worker) is not done here.

@@ -83,6 +83,17 @@ describe('#1629 store() and the upload door', () => {
     expect(again).toMatchObject({ alreadyHeld: true, identifier: first.identifier, name: 'scan0042.txt' });
   });
 
+  it('storeAttachment() hashes the bytes once per upload, never twice on the request path (#2130)', async () => {
+    const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
+    await provider.initialize();
+    const hash = vi.spyOn(provider as unknown as { generateAttachmentId: (b: Buffer) => string }, 'generateAttachmentId');
+    const bytes = Buffer.from('hash me once');
+    await provider.storeAttachment(bytes, { originalName: 'a.txt', mimeType: 'text/plain', size: bytes.length }, {}, { username: 'alice' });
+    expect(hash).toHaveBeenCalledTimes(1);
+    await provider.storeAttachment(bytes, { originalName: 'b.txt', mimeType: 'text/plain', size: bytes.length }, {}, { username: 'alice' });
+    expect(hash).toHaveBeenCalledTimes(2);
+  });
+
   it('store() refuses when the door is unavailable', async () => {
     const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
     await provider.initialize();

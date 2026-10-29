@@ -113,6 +113,8 @@ interface StoreAttachmentOptions {
   pageCreator?: string;
   /** Private-store id; destination is `{pages}/{privateroot}/{user}/{store}/` */
   store?: string;
+  /** The content id (SHA-256) when the caller already computed it (#2130): the bytes are hashed once. */
+  attachmentId?: string;
 }
 
 /**
@@ -687,8 +689,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     // Validate file
     this.validateFile(fileInfo);
 
-    // Generate content-based ID
-    const attachmentId = this.generateAttachmentId(fileBuffer);
+    // Generate content-based ID (once: a caller that already has it passes it, #2130)
+    const attachmentId = options.attachmentId ?? this.generateAttachmentId(fileBuffer);
 
     // Check if attachment already exists (deduplication)
     const existing = this.attachmentMetadata.get(attachmentId);
@@ -821,14 +823,16 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       store: metadata.store as string | undefined
     };
 
-    // #2130: whether these bytes were already held, so the door's audit record tells the truth.
-    const alreadyHeld = this.attachmentMetadata.has(this.generateAttachmentId(fileBuffer));
+    // #2130: whether these bytes were already held, so the door's audit record
+    // tells the truth. The id is computed once and handed on, never hashed twice.
+    const attachmentId = this.generateAttachmentId(fileBuffer);
+    const alreadyHeld = this.attachmentMetadata.has(attachmentId);
     const schemaMetadata = await this.storeAttachmentInternal(
       fileBuffer,
       fileInfo,
       metadata,
       user,
-      storeOptions
+      { ...storeOptions, attachmentId }
     );
 
     // Convert Schema.org format to AttachmentMetadata
