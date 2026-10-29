@@ -54,7 +54,7 @@ import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
 import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks } from '../utils/privateStoreImport.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
-import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig, systemCategoryVaults } from '../utils/privateStorePath.js';
 import { jobContextFromRequest, type JobContext } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
@@ -2305,6 +2305,10 @@ class ImportManager extends BaseManager {
 
     // ── Pages ──────────────────────────────────────────────────────────────
     const nameIn = (s: string, key: string): string => formatPrivatePageName(owner, s, key);
+    // #1503: only an administrator sets a page's system-category. Anyone
+    // else's imported page is the system-category whose vault this store is.
+    const storeCategory = systemCategoryVaults(configManager.getProperty('ngdpbase.system-category', null))
+      .find((v) => v.vaultId === store)?.key;
     // The bodies of this takeout's pages as they now stand in the store —
     // what decides whether a file is linked from anything.
     const bodiesInStore: string[] = [];
@@ -2329,8 +2333,16 @@ class ImportManager extends BaseManager {
           }
         }
 
+        const categoryForWrite = await pageManager.systemCategoryForWrite(ctx, page.metadata['system-category'], null, storeCategory);
+        if (!categoryForWrite.ok) {
+          report.pages.push({ title: page.title, outcome: 'failed', message: categoryForWrite.reason });
+          continue;
+        }
         const title = await freeImportTitle(page.title, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
-        const metadata: Record<string, unknown> = { ...page.metadata, title, private: true, store };
+        const metadata: Record<string, unknown> = {
+          ...page.metadata, title, private: true, store,
+          ...(categoryForWrite.category ? { 'system-category': categoryForWrite.category } : {})
+        };
         for (const key of Object.keys(metadata)) {
           if (metadata[key] === undefined) delete metadata[key];
         }

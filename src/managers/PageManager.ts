@@ -362,6 +362,14 @@ export type VaultRepairResult =
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
+/** The refusal when someone without `admin-system` names a system-category (#1503, operator 2026-10-29). */
+export const SYSTEM_CATEGORY_ADMIN_ONLY = "Only administrators can set a page's system category";
+
+/** What a write may give a page as its system-category ({@link PageManager.systemCategoryForWrite}). */
+export type SystemCategoryForWrite =
+  | { ok: true; category: string | undefined; admin: boolean }
+  | { ok: false; reason: string };
+
 export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 /** The move of private pages from the default vault into their system-category's own vault (#1507). */
 export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
@@ -1209,6 +1217,33 @@ class PageManager extends BaseManager implements CatalogSource {
       return null;
     }
     return found;
+  }
+
+  /**
+   * Which system-category a write by `ctx` gives a page (#1503, operator
+   * 2026-10-29): only an administrator (`admin-system`, asked of the PDP) sets
+   * or changes one. Anyone else's new page takes `fallback` (else the default
+   * system-category) and an existing page keeps its own (`current`); a request
+   * naming any other is refused, never rewritten. An administrator's request
+   * comes back as given (`undefined` when it names none), for the caller's own
+   * validation. Every write path that takes a system-category from a request
+   * asks here: create, save, ingest, takeout import.
+   *
+   * @param ctx - Who is writing
+   * @param requested - The system-category the request names, if any
+   * @param current - The page's system-category now; absent for a new page
+   * @param fallback - A new page's system-category when not the default (a vault's own)
+   */
+  async systemCategoryForWrite(ctx: ActorContext, requested: unknown, current?: string | null, fallback?: string): Promise<SystemCategoryForWrite> {
+    if (!ctx) throw new Error('PageManager.systemCategoryForWrite requires an ActorContext');
+    const asked = typeof requested === 'string' && requested.trim() ? requested.trim() : undefined;
+    if (await this.adminSystem(ctx, 'permits')) return { ok: true, category: asked, admin: true };
+    const fixed = (typeof current === 'string' && current.trim())
+      || fallback
+      || this.engine.getManager<ValidationManager>('ValidationManager')?.getDefaultSystemCategory?.()
+      || 'general';
+    if (asked === undefined || asked.toLowerCase() === fixed.toLowerCase()) return { ok: true, category: fixed, admin: false };
+    return { ok: false, reason: SYSTEM_CATEGORY_ADMIN_ONLY };
   }
 
   /**

@@ -465,6 +465,8 @@ interface IPageManager {
   shippedSystemCategories?(): Promise<Set<string>>;
   /** #1503: whether a page is a copy of a shipped original (its uuid is in the seeded-pages record) */
   isShippedPageCopy?(uuid: string): Promise<boolean>;
+  /** #1503: only an administrator sets or changes a page's system-category */
+  systemCategoryForWrite?(ctx: ActorContext, requested: unknown, current?: string | null, fallback?: string): Promise<{ ok: true; category: string | undefined; admin: boolean } | { ok: false; reason: string }>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   /** At unlock (#1456): sealed pages move into their stores' own indexes. */
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
@@ -2804,6 +2806,20 @@ ${panes}
   }
 
   /**
+   * The system-category a request may give a page (#1503, operator
+   * 2026-10-29), from PageManager's one rule: only an administrator sets or
+   * changes one. Without a PageManager that can answer (an older stand-in),
+   * the request stands as before.
+   */
+  private async systemCategoryForWrite(req: Request, requested: unknown, current: string | null | undefined): Promise<{ ok: true; category: string | undefined; admin: boolean } | { ok: false; reason: string }> {
+    const pageManager = this.engine.getManager('PageManager');
+    if (typeof pageManager?.systemCategoryForWrite !== 'function') {
+      return { ok: true, category: typeof requested === 'string' && requested.trim() ? requested.trim() : undefined, admin: true };
+    }
+    return pageManager.systemCategoryForWrite(req.userContext, requested, current);
+  }
+
+  /**
    * Whether a page is a shipped page (#1503, operator 2026-10-29): a copy of
    * an original from required-pages/ or an add-on's pages, decided per page by
    * its uuid in the seeded-pages record. Shipped pages are admin-only to edit,
@@ -3343,11 +3359,16 @@ ${panes}
     try {
       const { pageName, templateName, categories } = req.body;
       const userKeywords = req.body['user-keywords'] || req.body.userKeywords;
-      const systemCategory = req.body['system-category'] || 'general';
 
       if (!pageName || !templateName) {
         return res.status(400).send('Page name and template are required');
       }
+
+      // #1503: only an administrator sets a page's system-category; anyone
+      // else's new page is the default one, and naming another is refused.
+      const categoryForWrite = await this.systemCategoryForWrite(req, req.body['system-category'], null);
+      if (!categoryForWrite.ok) return res.status(403).send(categoryForWrite.reason);
+      const systemCategory = categoryForWrite.category || 'general';
 
       // #1455: the title rule is the door's, declared once in pageTitleRule.
       if (titleBreaksRule(pageName)) {
@@ -3861,8 +3882,18 @@ ${panes}
       // page-door-ignore: the page being saved — the save's page-edit door decides below.
       const existingPage = await pageManager.getPage(pageName, req.userContext);
 
+      // #1503: only an administrator sets or changes a page's system-category;
+      // anyone else's page keeps its own (a new one is the default), and a
+      // request naming another is refused, never rewritten.
+      const categoryForWrite = await this.systemCategoryForWrite(
+        req,
+        req.body['system-category'],
+        (existingPage?.metadata as Record<string, unknown> | undefined)?.['system-category'] as string | undefined
+      );
+      if (!categoryForWrite.ok) return res.status(403).send(categoryForWrite.reason);
+
       // Accept system-category as required field (new metadata format)
-      const systemCategory = req.body['system-category'] || '';
+      const systemCategory = categoryForWrite.category || '';
       if (
         !systemCategory ||
         typeof systemCategory !== 'string' ||
@@ -11550,22 +11581,14 @@ ${panes}
       // import hands over, so a title that breaks the rule is normalised by the
       // door and reported below, never refused.
 
-      // Optional category — validate against the enabled system categories.
+      // Optional category — a string; validated below, once it is known whether
+      // this caller may set one (#1503).
       let category: string | undefined;
       if (body.category !== undefined && body.category !== null && body.category !== '') {
         if (typeof body.category !== 'string') {
           return res.status(400).json({ success: false, error: 'category must be a string' });
         }
-        const catStr = body.category;
-        const valid = this.getSystemCategories();
-        const matched = valid.find(c => c.toLowerCase() === catStr.trim().toLowerCase());
-        if (!matched) {
-          return res.status(400).json({
-            success: false,
-            error: `Invalid category "${catStr}". Valid categories: ${valid.join(', ')}`
-          });
-        }
-        category = matched;
+        category = body.category;
       }
 
       // Optional keywords — array of strings, max 5.
@@ -11590,6 +11613,26 @@ ${panes}
       if (await this.writeRefusal(req, pageName, existing)) {
         await this.refuse(baseContext, req, res, 'json', permission);
         return;
+      }
+
+      // #1503: only an administrator sets or changes a page's system-category.
+      const categoryForWrite = await this.systemCategoryForWrite(
+        req, category, (existing?.metadata as Record<string, unknown> | undefined)?.['system-category'] as string | undefined
+      );
+      if (!categoryForWrite.ok) return res.status(403).json({ success: false, error: categoryForWrite.reason });
+      category = categoryForWrite.category;
+      // An administrator's choice must be an enabled system category.
+      if (categoryForWrite.admin && category !== undefined) {
+        const catStr = category;
+        const valid = this.getSystemCategories();
+        const matched = valid.find(c => c.toLowerCase() === catStr.trim().toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid category "${catStr}". Valid categories: ${valid.join(', ')}`
+          });
+        }
+        category = matched;
       }
 
       // Build frontmatter: preserve existing on update, generate on create.

@@ -194,6 +194,21 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
     expect(await filesContaining('Cholesterol 180')).toEqual([]);
   });
 
+  // #1503 (operator, 2026-10-29): only an administrator sets a page's system-category.
+  test('a page naming another system-category is not imported by a non-admin; the rest are', async () => {
+    await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
+    await pages.savePage(name(VAULT, 'Smuggled'), 'Not mine to class.', { uuid: UUID_B, 'system-category': 'documentation' }, MOLLY);
+    const archive = await takeoutOf(VAULT);
+    await emptyStore(VAULT);
+
+    const report = await run(VAULT, archive);
+
+    const byTitle = Object.fromEntries(report.pages.map(p => [p.title, p]));
+    expect(byTitle['Medical notes'].outcome).toBe('imported');
+    expect(byTitle.Smuggled).toMatchObject({ outcome: 'failed', message: "Only administrators can set a page's system category" });
+    expect(await pages.getPage(name(VAULT, 'Smuggled'), MOLLY)).toBeNull();
+  });
+
   test('importing the same takeout twice changes nothing the second time', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);
