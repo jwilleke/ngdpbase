@@ -7,12 +7,18 @@
  * stand-in that permits by `user:shared/<folder>`; the folder keys come from
  * the source SharedFolderManager sets (`setSharedFolderKeySource`). A request
  * opens the folders it may read before it reaches the door, as the session
- * middleware does (`permitsInSharedFolder`).
+ * middleware does (`permitsInSharedFolder`). The admin test swaps in the real
+ * PolicyDecisionPoint over the SHIPPED policies, so what it asserts is what
+ * `shared-folder-admin-read` grants an admin: read every folder, write none.
  *
  * Sabotaged once (then restored): the key gate (`sharedFolderKeyFor` handing
  * the key to any context): "a reader of one folder", "a grant removed" and
  * "a context nothing asked about" went red — the provider read the other
  * folder's page for a reader the PDP never permitted.
+ * And the shipped `shared-folder-admin-read` policy (removed): the admin test
+ * went red (the admin read and found nothing). And the write door's
+ * shared-folder check (`assertMayFileInSharedFolder`, absent): the admin test
+ * went red — reading opens the folder's key, and the admin's save landed.
  */
 
 vi.unmock('../PageManager');
@@ -30,6 +36,10 @@ import type { ActorContext } from '../../context/ActorContext';
 import { formatPrivatePageName, SHARED_FOLDER_OWNER, storeMetaPath, storeSearchIndexPath } from '../../utils/privateStorePath';
 import { isSealedBytes } from '../../utils/privateStoreCrypto';
 import { permitsInSharedFolder, setSharedFolderKeySource } from '../../utils/sharedFolderAccess';
+import type { VaultDecider } from '../../utils/privateStoreAccess';
+import { pdpOver } from '../../test-support/policyDecisionPoint';
+
+const shipped = fs.readJsonSync(path.join(__dirname, '../../../config/app-default-config.json')) as Record<string, unknown>;
 
 const MINUTES = formatPrivatePageName(SHARED_FOLDER_OWNER, 'default', 'Minutes');
 const BOARD = formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'Board pack');
@@ -44,14 +54,16 @@ describe('shared folders hold pages through the page door (#2125)', () => {
   /** `user:shared/<folder>` pairs the policies grant. */
   let grants: Set<string>;
   const keys: Record<string, Buffer> = {};
-  const pdp = {
+  const standIn = {
     decide: (s: { username: string }, r: { attributes: Record<string, unknown> }) =>
       Promise.resolve({ permit: grants.has(`${s.username}:${String(r.attributes['shared-folder'])}`) })
   };
+  /** The PDP the doors ask: the stand-in, or the real shipped one (the admin test). */
+  let pdp: VaultDecider = standIn as never;
 
   /** A request's subject, with the folders it may read opened as the middleware opens them. */
-  const request = async (username: string): Promise<ActorContext> => {
-    const ctx = actor(username);
+  const request = async (username: string, roles?: string[]): Promise<ActorContext> => {
+    const ctx = actor(username, roles);
     for (const folder of ['default', 'executive']) await permitsInSharedFolder(pdp, ctx, 'shared-folder-read', folder);
     return ctx;
   };
@@ -66,6 +78,7 @@ describe('shared folders hold pages through the page door (#2125)', () => {
     }
     setSharedFolderKeySource((folder) => (keys[folder] ? Buffer.from(keys[folder]) : undefined));
     grants = new Set(['ann:shared/default', 'ann:shared/executive', 'rita:shared/default']);
+    pdp = standIn as never;
 
     const configManager = {
       getProperty: vi.fn((key: string, fallback: unknown) => {
@@ -153,5 +166,27 @@ describe('shared folders hold pages through the page door (#2125)', () => {
     expect(await manager.getPage(MINUTES, actor('ann'))).toBeNull();
     expect(await manager.listVaultPages(actor('nobody'), SHARED_FOLDER_OWNER, 'default')).toEqual([]);
     expect((await manager.listVaultPages(await request('rita'), SHARED_FOLDER_OWNER, 'default')).map((p) => p.name)).toEqual([MINUTES]);
+  });
+
+  test('an admin reads and finds every folder by the shipped policies, and adds, edits and deletes nothing there', async () => {
+    await manager.savePage(MINUTES, 'The quince budget was approved.', { uuid: MINUTES_UUID }, await request('ann'));
+    await manager.savePage(BOARD, 'The quince merger stays confidential.', { uuid: BOARD_UUID }, await request('ann'));
+    pdp = await pdpOver(shipped);
+
+    // No policy names shared/executive for anyone; shared-folder-admin-read covers shared/*.
+    const ada = await request('ada', ['admin', 'vault-owner']);
+    expect((await manager.getPage(BOARD, ada))?.content).toContain('merger');
+    expect((await manager.listVaultPages(ada, SHARED_FOLDER_OWNER, 'executive')).map((p) => p.name)).toEqual([BOARD]);
+    const hits = await manager.searchSharedFolderPages(ada, ['default', 'executive'], { query: 'quince' });
+    expect(hits.map((h) => h.name).sort()).toEqual([BOARD, MINUTES].sort());
+    await expect(manager.savePage(BOARD, 'changed', { uuid: BOARD_UUID }, ada)).rejects.toThrow();
+    await expect(manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'New'), 'new', {}, ada)).rejects.toThrow();
+    await expect(manager.deletePage(BOARD, ada)).rejects.toThrow();
+    expect((await manager.getPage(BOARD, await request('ada', ['admin', 'vault-owner'])))?.content).toContain('merger');
+
+    // An ordinary account: shared/default (every account), and nothing of shared/executive.
+    const rita = await request('rita', ['editor', 'vault-owner']);
+    expect(await manager.getPage(BOARD, rita)).toBeNull();
+    expect((await manager.searchSharedFolderPages(rita, ['default', 'executive'], { query: 'quince' })).map((h) => h.name)).toEqual([MINUTES]);
   });
 });

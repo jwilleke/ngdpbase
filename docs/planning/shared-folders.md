@@ -13,7 +13,7 @@ Status: design decided (operator, 2026-10-28). Slice 1 built ([#2124](https://gi
 
 ## Access is by permission (operator, 2026-10-29)
 
-Access to a shared folder is decided by permissions, never roles. Two generic permissions, `shared-folder-read` and `shared-folder-file`, are scoped to a folder by the policy's resource (e.g. `shared/executive`), as page policies name a resource pattern. A folder lists no roles; the admin screen writes policies. Creating a folder adds no permission.
+Access to a shared folder is decided by permissions, never roles. Two generic permissions, `shared-folder-read` and `shared-folder-file`, are scoped to a folder by the policy's resource (e.g. `shared/executive`), as page policies name a resource pattern. A folder lists no roles; the admin screen writes policies. Creating a folder adds no permission. Administrators read every folder (operator, 2026-10-29, [#2125](https://github.com/jwilleke/ngdpbase/issues/2125)): the shipped policy `shared-folder-admin-read` grants `shared-folder-read` on `shared/*` to the `admin` role, so an admin opens, lists and searches every folder; adding, editing and deleting in a folder (`shared-folder-file`) still needs a policy naming it. Folder page titles stay visible in the logs and the audit record.
 
 Build order (each its own sub-issue of [#1775](https://github.com/jwilleke/ngdpbase/issues/1775)): 1 the organization key, per-folder keys and the recovery words; 2 folders holding pages and files, with permission checks, sealed search and audit; 3 the admin Shared folders screen; 4 `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)). Later: add-on folders, rotation, recovery with the words, trash and purge.
 
