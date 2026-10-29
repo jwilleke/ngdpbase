@@ -72,6 +72,7 @@ function makeRoutes(opts: {
   authSucceeds?: boolean;
   username?: string;
   audit?: { payload?: unknown };
+  notifications?: unknown;
 }) {
   const username = opts.username ?? 'molly';
   // #1758: the real AuthManager completes the sign-in (and unlocks the stores
@@ -90,6 +91,7 @@ function makeRoutes(opts: {
       }
       if (name === 'UserManager') return { authenticateUser: vi.fn().mockResolvedValue(null), getUser: vi.fn().mockResolvedValue({ username }) }; // #1882: the stored account
       if (name === 'MetricsManager') return { recordLoginAttempt: vi.fn() };
+      if (name === 'NotificationManager') return opts.notifications ?? null;
       if (name === 'AuditManager') {
         return {
           logAuthentication: vi.fn(async (context: Record<string, unknown>, result: string, reason: string) => {
@@ -180,6 +182,23 @@ describe('private store session bag (#1391, #1392)', () => {
     expect(combined).not.toContain(created.kek.toString('base64'));
     expect(combined).not.toContain(created.kek.toString('hex'));
     expect(combined).not.toContain(created.mnemonic);
+  });
+
+  test('#1928: a password sign-in with vault keys sends no "Keep your recovery words safe" notification (the banner replaced it)', async () => {
+    const created = await createUserKeys('correct-horse', { kdf });
+    await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
+    await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
+    const notifications = { addNotification: vi.fn(async () => 'n1'), getAllNotifications: vi.fn(() => []) };
+
+    const session = createMockSession();
+    await makeRoutes({ pagesDir, notifications }).processLogin(
+      createMockReq({ username: 'molly', password: 'correct-horse' }, session),
+      createMockRes()
+    );
+    await new Promise((r) => setTimeout(r, 10)); // the old reminder was sent after the sign-in, unawaited
+
+    expect(getUnlockedKek(session.privateStoreHandle as string)).toEqual(created.kek);
+    expect(notifications.addNotification).not.toHaveBeenCalled();
   });
 
   test('failed login does not unlock even when the posted password would unwrap the envelope', async () => {

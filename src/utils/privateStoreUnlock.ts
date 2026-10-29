@@ -21,6 +21,7 @@ import {
   newPersonKey,
   openKekCopy,
   personPublicKey,
+  recoveryWordsId,
   rewrapPassword,
   sealKekCopy,
   rewrapPasswordWithKek,
@@ -265,6 +266,12 @@ async function ensurePersonKey(pagesDirectory: string, username: string, envelop
 /** Whether `username` has keys at all, i.e. a store that can be encrypted. */
 export async function hasUserKeys(pagesDirectory: string, username: string): Promise<boolean> {
   return (await readUserKeyEnvelope(pagesDirectory, username)) !== null;
+}
+
+/** Which set of recovery words `username` has (#1928, `recoveryWordsId`), or null when they have no keys. */
+export async function recoveryWordsIdOf(pagesDirectory: string, username: string): Promise<string | null> {
+  const envelope = await readUserKeyEnvelope(pagesDirectory, username);
+  return envelope ? recoveryWordsId(envelope) : null;
 }
 
 /**

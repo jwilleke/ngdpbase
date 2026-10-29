@@ -228,6 +228,18 @@ export function newRecoveryWords(kek: Buffer): { mnemonic: string; recoveryWrap:
   return { mnemonic, recoveryWrap: wrap(mnemonicToWrapKey(mnemonic), kek) };
 }
 
+/**
+ * Which set of recovery words an envelope holds (#1928), as a short id: a
+ * digest of the recovery wrap, which a new set of words replaces and nothing
+ * else changes (a password change or a new person key keep it). Reveals
+ * nothing about the words or the key; it is what a recorded "I saved my
+ * recovery words" is bound to, so a new set asks again.
+ */
+export function recoveryWordsId(envelope: Pick<UserKeyEnvelope, 'recoveryWrap'>): string {
+  const w = envelope.recoveryWrap;
+  return createHash('sha256').update(`${w.iv}.${w.tag}.${w.ct}`).digest('hex').slice(0, 32);
+}
+
 /** True when two phrases are the same 12 words, compared as the recovery wrap reads them. */
 export function sameMnemonic(entered: string, expected: string): boolean {
   const a = Buffer.from(normalizeMnemonic(entered));

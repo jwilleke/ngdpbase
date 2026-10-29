@@ -13,6 +13,28 @@ export const CONSENT_PATH = '/consent';
 export const CORE_CONSENT_SCOPE = 'core';
 
 /**
+ * The scope of a user's confirmation that they saved their own recovery words
+ * (#1928). Not core's terms: it never holds a session. It is asked where the
+ * words are shown (the store door, and a new set of words, #1925), and a user
+ * with encrypted vaults who has not confirmed the current version for their
+ * current words is reminded by a banner.
+ *
+ * Bound to a subject: the set of words (`recoveryWordsId`), so a new set asks
+ * again. The org shared-folders' recovery words (#1775) are meant to be a
+ * scope of their own with the same binding (subject: that folder's set).
+ */
+export const RECOVERY_WORDS_CONSENT_SCOPE = 'recovery-words';
+
+/** The page whose `version:` is the version of the recovery-words wording (#1928). */
+export const RECOVERY_WORDS_DOCUMENT = 'recovery-words';
+
+/** Scopes core reserves: an add-on can never register one as its slug. */
+export const RESERVED_CONSENT_SCOPES: readonly ConsentScope[] = [CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE];
+
+/** Scopes whose acceptance is about one thing (a subject), not the account as a whole (#1928). */
+export const SUBJECT_CONSENT_SCOPES: readonly ConsentScope[] = [RECOVERY_WORDS_CONSENT_SCOPE];
+
+/**
  * A document a person is asked to accept, as it stands now: a page whose
  * front matter carries `version:` and `effective:`. Read from the page each
  * time, never copied.
@@ -52,7 +74,17 @@ export interface ConsentRecord {
    * account that takes the same username never inherits it.
    */
   account?: string;
-  /** Who and how: the account, where from, and the way they were asked (`sign-up`, `sign-in`, `add-on`). */
+  /**
+   * What the acceptance is about, in a scope bound to a subject (#1928): for
+   * the recovery words, which set of words (`recoveryWordsId`). Absent
+   * elsewhere. A new subject (a new set of words) asks again.
+   */
+  subject?: string;
+  /**
+   * Who and how: the account, where from, and the way they were asked
+   * (`sign-up`, `sign-in`, `add-on`; for the recovery words `store-door`,
+   * `reminder`, and `new-words` once #1925 makes a new set).
+   */
   context: {
     by: string;
     how: string;
