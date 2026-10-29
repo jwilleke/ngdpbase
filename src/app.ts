@@ -493,6 +493,12 @@ void (async (): Promise<void> => {
       );
     }
 
+    // #2117: share links on a public origin, with TLS terminated here. One
+    // warning; whether a tunnel or proxy is in front cannot be seen from here.
+    const shareTlsWarning = engine.getManager<import('./managers/ShareManager.js').default>('ShareManager')
+      ?.publicOriginTlsWarning(scheme === 'https');
+    if (shareTlsWarning) logger.warn(`⚠️  [share] ${shareTlsWarning}`);
+
     console.log('✅ ngdpbase Engine initialized successfully.');
   } catch (error) {
     // Still fatal: reaching here means the machinery needed to SERVE the

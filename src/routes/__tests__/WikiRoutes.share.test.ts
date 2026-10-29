@@ -15,7 +15,7 @@ import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import WikiRoutes, { shareRateLimiter } from '../WikiRoutes';
+import WikiRoutes, { shareRateLimiter, SHARE_ASSETS_PATH } from '../WikiRoutes';
 import { buildTestApp } from './__fixtures__/buildTestApp';
 import { csrfTestBodyField } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 import { readDoor } from './__fixtures__/pageReadDoor';
@@ -110,6 +110,8 @@ const mockShareManager = {
     expiresAt: null
   })),
   revoke: vi.fn(async () => true),
+  // #2117: where links point is the manager's answer; this one has a public origin.
+  linkBaseUrl: vi.fn((_requestOrigin: string) => 'https://wiki.example.com'),
   list: vi.fn(() => shareState.records),
   get: vi.fn((id: string) => shareState.records.find(r => r.id === id) ?? null)
 };
@@ -303,6 +305,28 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
   });
 
   // ── public: album ──────────────────────────────────────────────────────────
+
+  describe('#2117: /share/_assets is never a token', () => {
+    test('a miss under it is a plain 404 that never reaches the resolver or its rate limit', async () => {
+      shareRateLimiter.configure({ max: 1, windowMs: 60 * 1000 });
+      for (const url of [`${SHARE_ASSETS_PATH}/nope.js`, `${SHARE_ASSETS_PATH}/nope.js`, SHARE_ASSETS_PATH]) {
+        const res = await request(app).get(url);
+        expect(res.status).toBe(404);
+        expect(res.headers['x-robots-tag']).toBeUndefined();
+      }
+      expect(mockShareManager.subjectFor).not.toHaveBeenCalled();
+      expect(mockShareManager.validate).not.toHaveBeenCalled();
+      expect(mockShareManager.recordAccess).not.toHaveBeenCalled();
+    });
+
+    test('the encrypted-vault viewer lives there, and the locked view loads it from there', () => {
+      const root = path.resolve(__dirname, '../../..');
+      expect(fs.existsSync(path.join(root, 'public', SHARE_ASSETS_PATH, 'share-viewer.js'))).toBe(true);
+      const view = fs.readFileSync(path.join(root, 'views', 'share-locked.ejs'), 'utf-8');
+      expect(view).toContain(`<script src="${SHARE_ASSETS_PATH}/share-viewer.js"></script>`);
+      expect(view).not.toContain('/js/share-viewer.js');
+    });
+  });
 
   describe('GET /share/:token (album)', () => {
     test('renders album with resolved media + pages, sets noindex, records access', async () => {
@@ -599,6 +623,14 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(body.isAdmin).toBe(true);
       expect(body.baseUrl).toBe('https://wiki.example.com');
       expect(body.shares.map(s => s.status)).toEqual(['active', 'revoked', 'expired']);
+    });
+
+    test('#2117: links are shown with ShareManager\'s origin, given the request\'s own', async () => {
+      mockUserContext = { ...adminUser };
+      const res = await request(app).get('/shares').set('Host', 'site.lan:3000');
+      expect(res.status).toBe(200);
+      expect(mockShareManager.linkBaseUrl).toHaveBeenCalledWith('http://site.lan:3000');
+      expect((JSON.parse(res.text) as { baseUrl: string }).baseUrl).toBe('https://wiki.example.com');
     });
 
     test('404 when ShareManager is disabled', async () => {

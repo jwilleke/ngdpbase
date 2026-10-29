@@ -40,6 +40,8 @@ const REPO = path.resolve(__dirname, '..');
 /** Directories whose files run (or generate scripts that run) in the browser. */
 const SCAN_DIRS = [
   'public/js',
+  // #2117: the share viewer, served under /share/ for path-filtered tunnels.
+  'public/share',
   'views',
   'src/plugins',
   'src/parsers/handlers'

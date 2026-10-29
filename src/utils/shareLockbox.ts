@@ -11,7 +11,7 @@
  * recipient's browser opens each lockbox with the private key from the link.
  *
  * The algorithm is WebCrypto's own, so the server (Node's `crypto.webcrypto`)
- * and the browser (`window.crypto.subtle`, public/js/share-viewer.js) run the
+ * and the browser (`window.crypto.subtle`, public/share/_assets/share-viewer.js) run the
  * same steps: ECDH on P-256 between a fresh ephemeral key and the link's key,
  * HKDF-SHA-256 over the shared secret, AES-256-GCM over the content.
  */

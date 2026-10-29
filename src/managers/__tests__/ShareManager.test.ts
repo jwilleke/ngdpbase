@@ -28,8 +28,17 @@ let tmpDir: string;
 let shareEnabled: boolean;
 let auditEvents: Array<Record<string, unknown>>;
 
+/** #2117: `ngdpbase.share.public-base-url` and the site's base URL, per test. */
+let publicBaseUrl: unknown;
+let siteBaseUrl: string;
+
 const mockConfigManager = {
-  getProperty: vi.fn((key: string, dv: unknown) => (key === 'ngdpbase.share.enabled' ? shareEnabled : dv)),
+  getProperty: vi.fn((key: string, dv: unknown) => {
+    if (key === 'ngdpbase.share.enabled') return shareEnabled;
+    if (key === 'ngdpbase.share.public-base-url') return publicBaseUrl;
+    return dv;
+  }),
+  getBaseURL: vi.fn(() => siteBaseUrl),
   getResolvedDataPath: vi.fn(() => tmpDir)
 };
 
@@ -130,6 +139,8 @@ describe('ShareManager', () => {
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'share-test-'));
     shareEnabled = true;
+    publicBaseUrl = '';
+    siteBaseUrl = 'https://site.lan.example.com:3000';
     auditEvents = [];
     mediaItems = [];
     searchResults = [];
@@ -181,6 +192,66 @@ describe('ShareManager', () => {
       const sm2 = new ShareManager(mockEngine);
       await sm2.initialize();
       expect(sm2.list()).toHaveLength(0);
+    });
+  });
+
+  describe('linkBaseUrl() / publicOriginTlsWarning() (#2117)', () => {
+    test('without the public base URL, links use the configured base URL', () => {
+      expect(sm.linkBaseUrl('http://10.0.0.5:3000')).toBe('https://site.lan.example.com:3000');
+    });
+
+    test('without either, links use the request origin', () => {
+      siteBaseUrl = '';
+      expect(sm.linkBaseUrl('http://10.0.0.5:3000')).toBe('http://10.0.0.5:3000');
+    });
+
+    test('with the public base URL set, links use it, with no trailing slash', () => {
+      publicBaseUrl = 'https://share.example.com/';
+      expect(sm.linkBaseUrl('http://10.0.0.5:3000')).toBe('https://share.example.com');
+    });
+
+    test('is read on every call, so a change applies to the next link', () => {
+      expect(sm.linkBaseUrl('http://x')).toBe('https://site.lan.example.com:3000');
+      publicBaseUrl = 'https://share.example.com';
+      expect(sm.linkBaseUrl('http://x')).toBe('https://share.example.com');
+    });
+
+    test.each([
+      ['not a URL', 'share.example.com'],
+      ['another scheme', 'ftp://share.example.com'],
+      ['a path', 'https://share.example.com/sub'],
+      ['a query', 'https://share.example.com/?a=1'],
+      ['credentials', 'https://u:p@share.example.com'],
+      ['not a string', 42]
+    ])('an invalid value (%s) is ignored and named loudly at startup', async (_why, value) => {
+      publicBaseUrl = value;
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      const fresh = new ShareManager(mockEngine);
+      await fresh.initialize();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('ngdpbase.share.public-base-url'));
+      expect(fresh.linkBaseUrl('http://x')).toBe('https://site.lan.example.com:3000');
+      error.mockRestore();
+    });
+
+    test('a valid or empty value logs no error at startup', async () => {
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      publicBaseUrl = 'https://share.example.com';
+      await new ShareManager(mockEngine).initialize();
+      publicBaseUrl = '';
+      await new ShareManager(mockEngine).initialize();
+      expect(error).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    test('warns only when the instance serves HTTPS itself and a public base URL is set', () => {
+      expect(sm.publicOriginTlsWarning(true)).toBeNull();
+      publicBaseUrl = 'https://share.example.com';
+      expect(sm.publicOriginTlsWarning(false)).toBeNull();
+      const warning = sm.publicOriginTlsWarning(true);
+      expect(warning).toContain('https://share.example.com');
+      expect(warning).toContain('must connect to it over https');
+      publicBaseUrl = 'nonsense';
+      expect(sm.publicOriginTlsWarning(true)).toBeNull();
     });
   });
 
