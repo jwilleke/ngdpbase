@@ -170,6 +170,12 @@ export interface PageSaveOptions {
     /** The rename that caused a `link-rewrite`. Ignored for other ops. */
     rewriteOf?: { from: string; to: string } | null;
     /**
+     * An import's file name, when the user gave the page another title
+     * (#2130): recorded on a `create` beside the title. Ignored for a private
+     * page, whose record names it by its vault name only.
+     */
+    importedFrom?: string;
+    /**
      * Suppress the event. For writes that are a side effect of an already
      * audited operation, where a second record would describe the same act
      * twice.
@@ -2590,6 +2596,7 @@ class PageManager extends BaseManager implements CatalogSource {
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
           fromPageName: op === 'rename' ? options.moveFrom ?? pageName : null,
           rewriteOf: options.audit?.rewriteOf ?? null,
+          importedFrom: op === 'create' && !parsePrivatePageName(saved.name) ? options.audit?.importedFrom ?? null : null,
           viaToken: viaToken,
           // #1762: forwarded like the token — the row names the proxy as `actor`.
           viaProxy: ctx.viaProxy

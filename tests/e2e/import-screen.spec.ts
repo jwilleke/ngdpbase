@@ -11,6 +11,10 @@ import { deletePages, markTestArtifact, signInWithPassword } from './fixtures/he
  *   exists.
  * - A reader (a user who may use no receiver) gets the screen saying there is
  *   nothing they can import into, with no upload form.
+ * - #2130: one file gets a name field pre-filled with its own name (a page's
+ *   title, without the extension); a new name is the page's title, and the
+ *   status and recent list show it with the file's own name beside it.
+ *   Several files get no field.
  *
  * Everything this spec makes is its own: two test accounts (deleted at the
  * end, with their profile pages) and the imported page, marked test-artifact
@@ -21,6 +25,8 @@ test.use({ storageState: './tests/e2e/.auth/user.json' });
 
 const RUN = randomUUID().slice(0, 8);
 const TITLE = `E2E Import Screen ${RUN}`;
+const FILE_NAME = `export_${RUN}.md`;
+const GIVEN = `E2E Import Named ${RUN}`;
 const EDITOR = `e2e-import-editor-${RUN}`;
 const READER = `e2e-import-reader-${RUN}`;
 const PASSWORD = `pw-${randomUUID()}`;
@@ -59,7 +65,7 @@ test.describe('Import screen (#2021)', () => {
     const page = await context.newPage();
     try {
       // #2008: loud — the imported page is this spec's to remove.
-      await deletePages(page, [TITLE]);
+      await deletePages(page, [TITLE, GIVEN]);
     } finally {
       for (const username of [EDITOR, READER]) {
         const res = await context.request.delete(`/admin/users/${encodeURIComponent(username)}`, {
@@ -116,6 +122,40 @@ test.describe('Import screen (#2021)', () => {
     } finally {
       await context.close();
     }
+  });
+
+  test('one file is named on the screen: pre-filled with its own name, and the page takes the new one (#2130)', async ({ browser, page: admin }) => {
+    const { context, page } = await signIn(browser, EDITOR);
+    try {
+      await page.goto('/import?receiver=core.pages');
+      const name = page.locator('#importName');
+      // Several files: each keeps its own name, so no field.
+      await page.locator('#importFiles').setInputFiles([
+        { name: 'one.md', mimeType: 'text/markdown', buffer: Buffer.from('# one') },
+        { name: 'two.md', mimeType: 'text/markdown', buffer: Buffer.from('# two') }
+      ]);
+      await expect(page.locator('#importNameRow')).toBeHidden();
+
+      await page.locator('#importFiles').setInputFiles({ name: FILE_NAME, mimeType: 'text/markdown', buffer: Buffer.from(`Named through the screen ${RUN}.\n`) });
+      await expect(name).toBeVisible();
+      await expect(name).toHaveValue(`export_${RUN}`);
+      await name.fill(GIVEN);
+      await page.locator('#importStart').click();
+
+      const run = page.locator('#importRuns [data-run-state]').first();
+      await expect(run).toHaveAttribute('data-run-state', 'done', { timeout: 60_000 });
+      await expect(run.locator('[data-file-status]')).toHaveAttribute('data-file-status', 'imported');
+      await expect(run).toContainText(`${GIVEN} (from ${FILE_NAME})`);
+
+      await page.goto('/import');
+      await expect(page.locator('#importRecent tbody tr', { hasText: GIVEN })).toContainText(`(from ${FILE_NAME})`);
+    } finally {
+      await context.close();
+    }
+
+    await markTestArtifact(admin, GIVEN);
+    const view = await admin.goto(`/view/${encodeURIComponent(GIVEN)}`);
+    expect(view?.status()).toBe(200);
   });
 
   test('a user who may use no receiver is told so, with no upload form', async ({ browser }) => {

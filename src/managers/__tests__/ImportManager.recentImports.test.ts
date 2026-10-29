@@ -83,6 +83,15 @@ describe('ImportManager.recentImportsFor (#2110)', () => {
     expect(recent[1]).toMatchObject({ refs: 1, at: '2026-10-29T10:01:00.000Z' });
   });
 
+  test('a file given a name shows that name, with its own beside it (#2130)', async () => {
+    const im = await make();
+    im.setImportLedger(new MemoryIceLedger());
+    tick(); await im.runImport({ source: { type: 'upload', files: [{ name: 'export_20261029.md', bytes: Buffer.from('# x'), givenName: 'Bank October' }] }, receiver: 'core.pages' }, MOLLY);
+    tick(); await im.runImport({ source: md('Kept.md'), receiver: 'core.pages' }, MOLLY);
+    const recent = await im.recentImportsFor(MOLLY);
+    expect(recent.map(r => [r.givenName, r.name])).toEqual([[undefined, 'Kept.md'], ['Bank October', 'export_20261029.md']]);
+  });
+
   test('only the user\'s own entries, and none from a receiver they may not use', async () => {
     const im = await make();
     im.setImportLedger(new MemoryIceLedger());

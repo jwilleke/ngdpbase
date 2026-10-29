@@ -641,6 +641,13 @@ export interface AttachmentMetadata {
   /** Description */
   description?: string;
 
+  /**
+   * True when the store already held these bytes and stored nothing new
+   * (#2130): the record returned is the existing one, under its own name.
+   * Set by `storeAttachment`; absent for a new file.
+   */
+  alreadyHeld?: boolean;
+
   /** Additional metadata */
   [key: string]: unknown;
 }

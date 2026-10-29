@@ -23,9 +23,13 @@ const READER = { username: 'reader1', roles: ['reader'], isAuthenticated: true }
 const GRANTS: Record<string, string[]> = { editor1: ['page-create', 'asset-upload'], reader1: [] };
 
 function makeEngine(config: Record<string, unknown> = {}) {
-  const saved: Array<{ name: string; content: string; metadata: Record<string, unknown>; ctx: ActorContext }> = [];
+  const saved: Array<{ name: string; content: string; metadata: Record<string, unknown>; ctx: ActorContext; options?: Record<string, unknown> }> = [];
   const existing = new Set<string>();
-  const uploads: Array<{ name: string; ctx: ActorContext }> = [];
+  const uploads: Array<{ name: string; ctx: ActorContext; options?: Record<string, unknown> }> = [];
+  const poolNames = new Set<string>();
+  /** With `pool.dedupe`, the pool stores by content, as the real one does: the same bytes come back under their first name. */
+  const poolBytes = new Map<string, { identifier: string; name: string }>();
+  const pool = { dedupe: false };
   const managers: Record<string, unknown> = {
     ConfigurationManager: {
       getProperty: (key: string, fallback: unknown) => (key in config ? config[key] : fallback),
@@ -38,23 +42,29 @@ function makeEngine(config: Record<string, unknown> = {}) {
       getPageMetadata: async (title: string) => (existing.has(title) ? { uuid: 'existing-uuid', title } : null),
       normalizePageContent: (content: string) => ({ content, changes: [] }),
       completeNcmConversion: async (content: string) => ({ content, warnings: [] }),
-      savePage: async (name: string, content: string, metadata: Record<string, unknown>, ctx: ActorContext) => {
-        saved.push({ name, content, metadata, ctx });
+      savePage: async (name: string, content: string, metadata: Record<string, unknown>, ctx: ActorContext, options?: Record<string, unknown>) => {
+        saved.push({ name, content, metadata, ctx, ...(options?.audit ? { options } : {}) });
         existing.add(name);
         return { content, name, uuid: String(metadata.uuid), previousName: null };
       },
       refreshPageList: async () => undefined
     },
     AttachmentManager: {
-      uploadAttachment: async (_bytes: Buffer, info: { originalName: string }, ctx: ActorContext) => {
+      uploadAttachment: async (bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => {
         if (!(GRANTS[ctx.username] ?? []).includes('asset-upload')) throw new Error('Permission denied: You do not have permission to upload attachments');
-        uploads.push({ name: info.originalName, ctx });
-        return { identifier: `att-${uploads.length}` };
-      }
+        const held = pool.dedupe ? poolBytes.get(bytes.toString('base64')) : undefined;
+        if (held) return held;
+        uploads.push({ name: info.originalName, ctx, ...(options?.importedFrom ? { options: { importedFrom: options.importedFrom } } : {}) });
+        poolNames.add(info.originalName);
+        const record = { identifier: `att-${uploads.length}`, name: info.originalName };
+        poolBytes.set(bytes.toString('base64'), record);
+        return record;
+      },
+      getSharedPoolAttachmentByFilename: async (name: string) => (poolNames.has(name) ? { identifier: 'taken' } : null)
     }
   };
   const engine = { getManager: (name: string) => managers[name] ?? null };
-  return { engine, managers, saved, existing, uploads };
+  return { engine, managers, saved, existing, uploads, poolNames, pool };
 }
 
 async function makeImportManager(config: Record<string, unknown> = {}) {
@@ -76,8 +86,8 @@ describe('ImportManager — ICE registry', () => {
     // DOCX produces HTML, which chains into the html shim (D9).
     expect(shims.find(s => s.id === 'core.docx')).toMatchObject({ produces: 'html', receivers: [] });
     expect(await im.receiversFor(EDITOR)).toEqual([
-      { id: 'core.pages', label: 'Pages', originals: { allowed: ['none', 'cite', 'keep'], default: 'none' } },
-      { id: 'core.files', label: 'Files', originals: { allowed: ['none'], default: 'none' } }
+      { id: 'core.pages', label: 'Pages', originals: { allowed: ['none', 'cite', 'keep'], default: 'none' }, names: 'title' },
+      { id: 'core.files', label: 'Files', originals: { allowed: ['none'], default: 'none' }, names: 'file' }
     ]);
   });
 
@@ -284,6 +294,105 @@ describe('ImportManager — core receivers', () => {
     const no = await im.runImport({ source: { type: 'upload', files: [md('photo2.png', 'PNG2')] }, receiver: 'core.files' }, READER);
     expect(no.files[0].status).toBe('refused');
     expect(uploads).toHaveLength(1);
+  });
+});
+
+describe('ImportManager — the name a user gives what an upload becomes (#2130)', () => {
+  const named = (name: string, text: string, givenName?: string) => ({ ...md(name, text), ...(givenName !== undefined ? { givenName } : {}) });
+
+  test('pages: the default title is the file\'s own; a new name is the page\'s title, and the audit names the file beside it', async () => {
+    const { im, saved } = await makeImportManager();
+    await im.runImport({ source: { type: 'upload', files: [named('export_1.md', '# One', 'export_1')] }, receiver: 'core.pages' }, EDITOR);
+    const run = await im.runImport({ source: { type: 'upload', files: [named('export_2.md', '# Two', 'Garden plan')] }, receiver: 'core.pages' }, EDITOR);
+    expect(saved.map(s => s.name)).toEqual(['export_1', 'Garden plan']);
+    expect(saved[0].options).toBeUndefined();
+    expect(saved[1].metadata.title).toBe('Garden plan');
+    expect(saved[1].options).toMatchObject({ audit: { importedFrom: 'export_2.md' } });
+    expect(run.files[0]).toMatchObject({ name: 'export_2.md', givenName: 'Garden plan', status: 'imported', refs: ['Garden plan'] });
+  });
+
+  test('pages: a given title that a page has is refused, not saved over it; another name then imports', async () => {
+    const { im, saved, existing } = await makeImportManager();
+    existing.add('Taken');
+    const clash = await im.runImport({ source: { type: 'upload', files: [named('a.md', '# A', 'Taken')] }, receiver: 'core.pages' }, EDITOR);
+    expect(clash.files[0]).toMatchObject({ status: 'refused', message: 'A page named "Taken" already exists. Choose another name and import it again.' });
+    expect(saved).toEqual([]);
+    const retry = await im.runImport({ source: { type: 'upload', files: [named('a.md', '# A', 'Free')] }, receiver: 'core.pages' }, EDITOR);
+    expect(retry.files[0]).toMatchObject({ status: 'imported', givenName: 'Free' });
+  });
+
+  test('files: a new name is the stored file\'s name, its media type still the upload\'s; the audit names the file beside it', async () => {
+    const { im, uploads } = await makeImportManager();
+    const run = await im.runImport({ source: { type: 'upload', files: [named('IMG_1234.png', 'PNG', 'Beach.png')] }, receiver: 'core.files' }, EDITOR);
+    expect(run.files[0]).toMatchObject({ status: 'imported', givenName: 'Beach.png' });
+    expect(uploads).toEqual([{ name: 'Beach.png', ctx: EDITOR, options: { importedFrom: 'IMG_1234.png' } }]);
+  });
+
+  test('files: a given name already in the shared pool is refused, never stored beside or over it', async () => {
+    const { im, uploads, poolNames } = await makeImportManager();
+    poolNames.add('Beach.png');
+    const run = await im.runImport({ source: { type: 'upload', files: [named('IMG_9.png', 'PNG9', 'Beach.png')] }, receiver: 'core.files' }, EDITOR);
+    expect(run.files[0]).toMatchObject({ status: 'refused', message: 'A file named "Beach.png" already exists. Choose another name and import it again.' });
+    expect(uploads).toEqual([]);
+  });
+
+  test('files: bytes the pool already holds under another name are not renamed, and the status says where they are (operator, 2026-10-29)', async () => {
+    const { im, uploads, pool } = await makeImportManager();
+    pool.dedupe = true;
+    // Uploaded first under its own name, in a narrower scope (as an add-on's source would), so the fingerprint does not skip the next.
+    await im.runImport({ source: { type: 'upload', files: [md('scan0042.pdf', 'PDFBYTES')] }, receiver: 'core.files', scope: 'elsewhere' }, EDITOR);
+    const run = await im.runImport({ source: { type: 'upload', files: [named('copy.pdf', 'PDFBYTES', 'Tax return.pdf')] }, receiver: 'core.files' }, EDITOR);
+    expect(run.files[0]).toMatchObject({ status: 'duplicate', heldAs: 'scan0042.pdf', message: 'This file is already on the site as "scan0042.pdf"; rename it there.', refs: ['att-1'] });
+    expect(run.files[0].givenName).toBeUndefined();
+    expect(uploads.map(u => u.name)).toEqual(['scan0042.pdf']);
+
+    // The same again, with yet another name: skipped by its fingerprint, and still told where it is.
+    const again = await im.runImport({ source: { type: 'upload', files: [named('copy.pdf', 'PDFBYTES', 'Taxes.pdf')] }, receiver: 'core.files' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: 'This file is already on the site as "scan0042.pdf"; rename it there.' });
+    const recent = await im.recentImportsFor(EDITOR);
+    expect(recent.find(r => r.name === 'copy.pdf')).toMatchObject({ status: 'duplicate', message: expect.stringContaining('scan0042.pdf') });
+    expect(recent.find(r => r.name === 'copy.pdf')?.givenName).toBeUndefined();
+  });
+
+  test('pages: the same file imported again under a new name is unchanged, says the title it has, and links to it when the user may open it', async () => {
+    const { im, managers, saved } = await makeImportManager();
+    (managers.PageManager as Record<string, unknown>).mayShowPage = async () => true;
+    await im.runImport({ source: { type: 'upload', files: [named('export.md', '# Plan', 'Garden plan')] }, receiver: 'core.pages' }, EDITOR);
+    const again = await im.runImport({ source: { type: 'upload', files: [named('export.md', '# Plan', 'Veg plan')] }, receiver: 'core.pages' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: 'This file is already on the site as "Garden plan"; rename it there.', link: '/view/Garden%20plan' });
+    expect(again.files[0].givenName).toBeUndefined();
+    expect(saved).toHaveLength(1);
+  });
+
+  test('without a given name, the same file again is unchanged as today', async () => {
+    const { im } = await makeImportManager();
+    await im.runImport({ source: { type: 'upload', files: [md('scan.pdf', 'X1')] }, receiver: 'core.files' }, EDITOR);
+    const again = await im.runImport({ source: { type: 'upload', files: [md('scan.pdf', 'X1')] }, receiver: 'core.files' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: expect.stringMatching(/^already imported /) });
+    expect(again.files[0].link).toBeUndefined();
+  });
+
+  test('an invalid name is refused with why, for pages and files', async () => {
+    const { im, saved, uploads } = await makeImportManager();
+    const page = await im.runImport({ source: { type: 'upload', files: [named('a.md', '# A', 'Docs/Setup')] }, receiver: 'core.pages' }, EDITOR);
+    expect(page.files[0]).toMatchObject({ status: 'refused', message: expect.stringMatching(/invalid characters/) });
+    const file = await im.runImport({ source: { type: 'upload', files: [named('a.png', 'P', 'a.exe')] }, receiver: 'core.files' }, EDITOR);
+    expect(file.files[0]).toMatchObject({ status: 'refused', message: 'Keep the file\'s extension, .png.' });
+    expect(saved).toEqual([]);
+    expect(uploads).toEqual([]);
+    expect(im.givenNameProblem('core.files', 'b.png', 'a.png')).toBeNull();
+    expect(im.givenNameProblem('nobody.here', 'b.png', 'a.png')).toBe('This import names what it creates itself.');
+  });
+
+  test('the longest name is configuration', async () => {
+    const { im } = await makeImportManager({ 'ngdpbase.import.engine.name-max-length': 5 });
+    expect(im.givenNameProblem('core.pages', 'Garden', 'a.md')).toBe('A name can be up to 5 characters.');
+  });
+
+  test('a receiver declares names as title or file, nothing else', async () => {
+    const { im } = await makeImportManager();
+    expect(() => im.registerReceiver('acct', { name: 'odd', accepts: ['x'], names: 'path' as never, mayUse: async () => true, receive: async () => ({ status: 'stored' }) }))
+      .toThrow(/names is 'title' or 'file'/);
   });
 });
 

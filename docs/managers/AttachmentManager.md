@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-25'
+dateModified: '2026-10-29'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -77,6 +77,10 @@ An upload's author and editor are the uploader's __username__, read from the con
 Since [#2097](https://github.com/jwilleke/ngdpbase/issues/2097) the uploader (`author.name` in the shared pool, `author` in a vault's files index) and a metadata edit's `editor.name` are the user's identity `@id` (`IdentityManager.identityIdOf`; the username when there is none or the identity store cannot answer); the username is still what the vault rules compare (`keepAllowsInto`). Existing records convert once: the shared pool at start-up (`convertUploadersAtBoot`, one write, under the system context; `Unknown` becomes `orphan:unknown`, a name with no account `orphan:<name>`, counted in the log at info (never on the dashboard: an orphan is the intended final state); postponed when the identity store cannot answer), a vault's files index when the vault is opened (`convertVaultUploaders(ctx)`, from `WikiRoutes.adoptSealedPages`). The admin attachments list and its health report show the uploader as `jim (urn:uuid:…)`; `FileManager` names a file's owner by the username its uploader `@id` names.
 
 No one uploads anonymously. After policy allows the upload and before anything is written, a context with no username, or the anonymous subject's (`Anonymous`, which a share visitor carries too), is refused with `Permission denied: you must be signed in to upload a file`; the upload route answers it 401. `BasicAttachmentProvider.storeAttachment` also refuses a call that names no username. A vault upload by nobody is refused earlier, by the vault's container rule. Records written before #1926 keep what they have.
+
+## The same bytes again (#2130)
+
+The shared pool stores by content: an upload of bytes it already holds stores nothing new and returns the existing record, under its own name. `storeAttachment` marks that record `alreadyHeld: true`. The `asset-upload` audit record then tells the truth (operator, 2026-10-29): `stored: false`, the existing file's id, `filename` and `heldAs` the name it is held under, and `offeredAs` the name the upload offered. A new file's record has none of these three fields. A file in an encrypted store is recorded by id and store only, as above; its duplicates are found in the store and are not marked.
 
 ## Attachment Resolution Order
 
@@ -157,3 +161,7 @@ The files are in every backup, beside the document, never in it ([#1876](https:/
 For complete API reference, configuration options, provider implementation, and troubleshooting:
 
 - [AttachmentManager-Complete-Guide.md](AttachmentManager-Complete-Guide.md)
+
+## Known gaps
+
+- [#2130](https://github.com/jwilleke/ngdpbase/issues/2130): an upload's content id is a SHA-256 of the whole file, computed synchronously (`crypto.createHash`) on the request path. It is computed once per shared-pool upload (`storeAttachment` hands it to the store step rather than hashing again) and once per file into a private store (its fingerprint). For a file near `ngdpbase.attachment.maxsize`, that blocks the event loop while it hashes. Moving it off the request path (streaming, or a worker) is not done here.

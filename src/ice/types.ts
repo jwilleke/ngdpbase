@@ -20,6 +20,7 @@
  */
 import type { ActorContext } from '../context/ActorContext.js';
 import type { GuardedFetchOptions, GuardedResponse } from '../http/guardedFetch.js';
+import type { IceNameForm } from './givenName.js';
 
 /** In a shim's `receivers`: any receiver that takes the kind the shim produces (#2109). */
 export const ANY_RECEIVER = '*';
@@ -218,6 +219,15 @@ export interface ReceiveInfo {
   chain: string[];
   citation?: IceCitation;
   original?: KeptOriginal;
+  /**
+   * The name the user gave what this file becomes (#2130): a page's title, a
+   * file's name. Given only to a receiver that declares `names`, only when it
+   * passed the name rule (`givenNameProblem`) and differs from the file's own
+   * (`defaultGivenName`). The receiver applies it in its own door, where the
+   * thing goes as it would without one, and refuses the item when the name is
+   * taken there: never a silent replace.
+   */
+  givenName?: string;
 }
 
 /** What a receiver's `fileDone` is told (#2109). */
@@ -234,6 +244,13 @@ export interface ReceiveOutcome {
   /** Where it went: a page name, an attachment id, a record id. */
   ref?: string;
   message?: string;
+  /**
+   * The name the thing goes by on the site, when it differs from the name
+   * the user gave (#2130): a `duplicate` the receiver already held under
+   * another name. The engine says so on the file's status, and records it
+   * so the same bytes uploaded again are told the same.
+   */
+  heldAs?: string;
 }
 
 /**
@@ -296,6 +313,15 @@ export interface IceReceiver {
   keepsEncrypted?: boolean;
   /** The original-file choices this receiver offers (D11). Without it: all three. */
   originals?: IceOriginalChoices;
+  /**
+   * This receiver applies a name the user gives (#2130): `title` (a page's
+   * title) or `file` (a file's name, keeping the upload's extension). The
+   * import screen then offers a name field for a single uploaded file, and
+   * the receiver finds the name in `ReceiveInfo.givenName`. Without it the
+   * receiver names what it creates itself: no field is offered, a posted
+   * name is refused, and the engine passes none.
+   */
+  names?: IceNameForm;
 }
 
 export interface RegisteredReceiver extends IceReceiver {
@@ -308,6 +334,12 @@ export interface IceUpload {
   name: string;
   bytes: Buffer;
   mediaType?: string;
+  /**
+   * The name the user gave what this file becomes (#2130). For a file
+   * uploaded on its own; a zip's files keep their own names (the engine
+   * drops it on a zip). Checked by the engine against the receiver's `names`.
+   */
+  givenName?: string;
 }
 
 /**
@@ -380,6 +412,16 @@ export type IceFileStatus =
 
 export interface IceFileReport {
   name: string;
+  /** The name the user gave what it becomes (#2130), when it was applied: something was stored under it. */
+  givenName?: string;
+  /**
+   * Where the user can open what the file already is on the site, when a
+   * name they gave was not applied because it was already here (#2130):
+   * the receiver's `linkFor`, a path on this site only.
+   */
+  link?: string;
+  /** The name what the file already is goes by on the site, when a name given was not applied (#2130). */
+  heldAs?: string;
   sha256?: string;
   size: number;
   status: IceFileStatus;
@@ -419,7 +461,12 @@ export interface LedgerOriginal extends KeptOriginal {
 
 /** What the engine remembers about one file in a scope. */
 export interface LedgerFileEntry {
+  /** The file's own name, as uploaded. */
   name: string;
+  /** The name the user gave what it became (#2130), when it was applied. */
+  givenName?: string;
+  /** The name what it is already goes by on the site, when a given name was not applied (#2130). */
+  heldAs?: string;
   sha256: string;
   size: number;
   status: IceFileStatus;
@@ -436,7 +483,10 @@ export interface LedgerFileEntry {
  * own entries, from the receivers they may use.
  */
 export interface RecentImport {
+  /** The file's own name, as uploaded. */
   name: string;
+  /** The name the user gave what it became (#2130); the screen shows it with `name` beside it. */
+  givenName?: string;
   status: IceFileStatus;
   message?: string;
   /** When the ledger last recorded this file, ISO. */

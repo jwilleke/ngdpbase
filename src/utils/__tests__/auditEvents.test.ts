@@ -34,6 +34,13 @@ describe('buildPageMutationAuditEvent', () => {
     uuid: 'uuid-1'
   };
 
+  it('a create from an import the user named records the file it came from beside the title (#2130)', () => {
+    const event = buildPageMutationAuditEvent({ ...base, op: 'create', importedFrom: 'export_1.md' });
+    expect(event.metadata).toMatchObject({ pageName: 'Welcome', importedFrom: 'export_1.md' });
+    expect('importedFrom' in buildPageMutationAuditEvent({ ...base, op: 'edit', importedFrom: 'x.md' }).metadata).toBe(false);
+    expect('importedFrom' in buildPageMutationAuditEvent({ ...base, op: 'create' }).metadata).toBe(false);
+  });
+
   it('builds a page-create event', () => {
     const event = buildPageMutationAuditEvent({ ...base, op: 'create' });
     expect(event.eventType).toBe('page-create');
@@ -134,6 +141,22 @@ describe('buildAttachmentAuditEvent', () => {
     });
     expect(event.severity).toBe('high');
     expect(event.metadata.viaTokenId).toBe('tok-1');
+  });
+
+  it('an upload from an import the user named records the file it came from beside its name (#2130)', () => {
+    const event = buildAttachmentAuditEvent({ ...base, op: 'upload', filename: 'Beach.jpg', importedFrom: 'IMG_1234.jpg' });
+    expect(event.metadata).toMatchObject({ filename: 'Beach.jpg', importedFrom: 'IMG_1234.jpg' });
+    expect('importedFrom' in buildAttachmentAuditEvent({ ...base, op: 'upload' }).metadata).toBe(false);
+  });
+
+  it('a pool hit records that nothing was stored, what it is held as, and the name offered (#2130)', () => {
+    const event = buildAttachmentAuditEvent({ ...base, op: 'upload', filename: 'scan0042.jpg', stored: false, heldAs: 'scan0042.jpg', offeredAs: 'Beach.jpg' });
+    expect(event.metadata).toMatchObject({ filename: 'scan0042.jpg', stored: false, heldAs: 'scan0042.jpg', offeredAs: 'Beach.jpg' });
+  });
+
+  it('a sealed store\'s file is named by id only, with no import name (#2048, #2130)', () => {
+    const event = buildAttachmentAuditEvent({ op: 'upload', username: 'bob', attachmentId: 'att-9', sealedStore: { owner: 'bob', store: 'health' } });
+    expect(JSON.stringify(event.metadata)).not.toMatch(/filename|importedFrom/);
   });
 
   it('omits optional page and size when not supplied', () => {
