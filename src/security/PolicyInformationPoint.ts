@@ -5,7 +5,9 @@ import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
-import { parsePrivatePageName } from '../utils/privateStorePath.js';
+import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
+import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
+import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import logger from '../utils/logger.js';
@@ -784,6 +786,17 @@ class PolicyInformationPoint extends BaseManager {
     if (action.toLowerCase() === 'view'
       && hiddenByFeature(metadata, this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager'))) {
       return { allowed: false, reason: 'feature_disabled' };
+    }
+
+    // A shared folder's page (#2125) is decided by permission alone:
+    // `shared-folder-read` to read it, `shared-folder-file` to change it, on
+    // the folder. No vault policy, no audience, no site-wide page grant.
+    const named = parsePrivatePageName(pageName);
+    if (named && isSharedFolderOwner(named.owner)) {
+      const subject = (args.privateCtx?.userContext ?? userContext) as ActorContext | null | undefined;
+      const allowed = Boolean(subject)
+        && await permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject as ActorContext, action, named.store);
+      return { allowed, reason: allowed ? 'shared_folder_allow' : 'shared_folder_deny' };
     }
 
     // Tier 0: private. Refuses only (#1539); an admitted subject goes on to

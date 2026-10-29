@@ -55,7 +55,9 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   // #1762: AuthManager asks the policy decision point itself for proxy-grant.
   /\bpdp\.permits\(\s*\w+,\s*'([^']+)'/g,
   // #1762 slice 2: the private-container rule reads vault-proxy from a proxy grant.
-  /\bproxyCarries\(\s*[^,]+,\s*'([^']+)'/g
+  /\bproxyCarries\(\s*[^,]+,\s*'([^']+)'/g,
+  // #2125: a shared folder's door asks the PDP for shared-folder-read / -file on the folder.
+  /\bmayInFolder\(\s*\w+,\s*'([^']+)'/g
 ];
 
 /**

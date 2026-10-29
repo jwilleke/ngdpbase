@@ -107,6 +107,16 @@ interface PrivateSearchDoor {
     ctx: ActorContext,
     ask: StoreSearchQuery
   ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>>;
+  searchSharedFolderPages?(
+    ctx: ActorContext,
+    folders: readonly string[],
+    ask: StoreSearchQuery
+  ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>>;
+}
+
+/** The shared folders a reader may open (#2125): SharedFolderManager's answer, asked of the PDP. */
+interface SharedFolderList {
+  foldersReadableBy(ctx: ActorContext): Promise<string[]>;
 }
 
 /**
@@ -498,6 +508,10 @@ class SearchManager extends BaseManager {
    * yields nothing rather than an error.
    *
    * A private row carries the page's private name, so `pageUrl` links to it.
+   *
+   * And the pages of the shared folders the requester may read (#2125), from
+   * each folder's own sealed index, through the same door. A folder they may
+   * not read gives nothing: no row, no title, no count (decision 7).
    */
   private async mergeOwnPrivateResults(
     results: SearchResult[],
@@ -514,6 +528,10 @@ class SearchManager extends BaseManager {
     let matches: Awaited<ReturnType<PrivateSearchDoor['searchOwnPrivatePages']>>;
     try {
       matches = await door.searchOwnPrivatePages(ctx, ask);
+      const folders = this.engine.getManager<SharedFolderList>('SharedFolderManager');
+      if (folders && door.searchSharedFolderPages) {
+        matches = [...matches, ...await door.searchSharedFolderPages(ctx, await folders.foldersReadableBy(ctx), ask)];
+      }
     } catch (err) {
       // #1461: the failure is named, the pages are not.
       logger.warn(`[SearchManager] Private-store search did not run: ${err instanceof Error ? err.message : String(err)}`);

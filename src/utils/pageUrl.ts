@@ -8,7 +8,7 @@
  * It holds no data and reads no config.
  */
 
-import { parsePrivatePageName, PRIVATE_URL_SEGMENT } from './privateStorePath.js';
+import { isSharedFolderOwner, parsePrivatePageName, PRIVATE_URL_SEGMENT, SHARED_URL_SEGMENT } from './privateStorePath.js';
 
 /** The page actions that have a URL of their own. */
 export type PageAction = 'view' | 'edit' | 'save' | 'delete' | 'history' | 'diff';
@@ -18,10 +18,14 @@ export type PageAction = 'view' | 'edit' | 'save' | 'delete' | 'history' | 'diff
  *
  * @example pageUrl('Main') === '/view/Main'
  * @example pageUrl('vaults/jim/default/Diary', 'edit') === '/vaults/jim/default/Diary/edit'
+ * @example pageUrl('shared/default/Minutes') === '/shared/default/Minutes' (#2125)
  */
 export function pageUrl(pageName: string, action: PageAction = 'view'): string {
   const name = parsePrivatePageName(pageName);
   if (!name) return `/${action}/${encodeURIComponent(pageName)}`;
-  const base = ['', PRIVATE_URL_SEGMENT, name.owner, name.store, name.title].map(encodeURIComponent).join('/');
+  const parts = isSharedFolderOwner(name.owner)
+    ? [SHARED_URL_SEGMENT, name.store, name.title]
+    : [PRIVATE_URL_SEGMENT, name.owner, name.store, name.title];
+  const base = ['', ...parts].map(encodeURIComponent).join('/');
   return action === 'view' ? base : `${base}/${action}`;
 }

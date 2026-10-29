@@ -2079,6 +2079,22 @@
         "description": "Executive Hub read; not recorded, read volume"
       }
     },
+    "shared-folder-read": {
+      "description": "Open a shared folder (/shared/<name>, #2125): its pages, their history and its files. Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>); a folder lists no roles. Shipped granted on shared/default to every account",
+      "label": "Open shared folders",
+      "icon": "folder-open",
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "description": "A shared folder's page or file was opened (#2125): who, the folder and what. On by default: every read of a shared folder is recorded (#1775)"
+      }
+    },
+    "shared-folder-file": {
+      "description": "Add, edit and delete pages and files in a shared folder (/shared/<name>, #2125). Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>). The writes themselves are recorded by the page and file doors (page-create, page-edit, page-delete, asset-upload, asset-delete)",
+      "label": "Add to shared folders",
+      "icon": "folder-plus",
+      "color": "#28a745"
+    },
     "admin-system": {
       "description": "System administration",
       "label": "Administer the site",
@@ -2163,6 +2179,13 @@
     },
     "shared-folder-key-create": {
       "description": "A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "shared-folder-create": {
+      "description": "An administrator created a shared folder (#2125): which folder and who. Recorded before the folder is made, which cannot proceed without it",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
@@ -2743,6 +2766,9 @@
     },
     "vault": {
       "description": "A page or file in a private vault, matched by the vault id (glob pattern; `*` is every vault). Only the vault's owner gets past the private-container check, so a policy naming it applies to the owner's own vaults (#1539)"
+    },
+    "shared-folder": {
+      "description": "A shared folder, its pages and files, matched by the folder as shared/<name> (glob pattern; shared/* is every folder). Only shared-folder-read and shared-folder-file are asked with it (#2125)"
     }
   },
   "ngdpbase.access.policies": [
@@ -3086,6 +3112,29 @@
         "profile-manage",
         "account-security",
         "search-user"
+      ]
+    },
+    {
+      "id": "shared-folder-default",
+      "name": "Shared Folder: default",
+      "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "vault-owner"
+        }
+      ],
+      "resources": [
+        {
+          "type": "shared-folder",
+          "pattern": "shared/default"
+        }
+      ],
+      "actions": [
+        "shared-folder-read",
+        "shared-folder-file"
       ]
     },
     {

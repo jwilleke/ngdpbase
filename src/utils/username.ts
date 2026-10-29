@@ -1,5 +1,7 @@
 'use strict';
 
+import { SHARED_FOLDER_OWNER } from './privateStorePath.js';
+
 /**
  * One spelling of a username, for comparison (#1436).
  *
@@ -54,11 +56,13 @@ export function sameUsername(a: unknown, b: unknown): boolean {
  * holding that name would collide with it wherever the name is compared.
  * `asserted` was the subject removed in #1435; it is reserved so the name
  * cannot be taken in the window before anyone reconsiders the concept.
+ * `shared-folders` owns the organization's shared folders (#2125): an account
+ * by that name would be the owner of every folder by the vault owner rule.
  *
  * The system principal is NOT listed here: its name comes from `.env` and is
  * checked separately by `isSystemPrincipal`, because an operator chooses it.
  */
-export const RESERVED_USERNAMES: readonly string[] = ['anonymous', 'asserted'];
+export const RESERVED_USERNAMES: readonly string[] = ['anonymous', 'asserted', SHARED_FOLDER_OWNER];
 
 /**
  * The prefix of a person's identifier when the person has no account (#1930):

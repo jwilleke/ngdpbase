@@ -6,6 +6,7 @@ import {
   LEGACY_PRIVATE_ROOT,
   formatPrivatePageName,
   isSafePathSegment,
+  isSharedFolderOwner,
   isValidStoreId,
   parsePrivatePageName,
   parsePrivatePageRel,
@@ -1185,6 +1186,10 @@ class FileSystemProvider extends BasePageProvider {
     authorName?: string
   ): { owner: string; store: string } | null {
     const privateName = parsePrivatePageName(pageName);
+    // #2125: a shared folder's page never leaves its folder for the public space.
+    if (privateName && isSharedFolderOwner(privateName.owner) && md.private === false) {
+      throw new Error('A shared folder\'s page stays in its folder');
+    }
     const isPrivate = md.private === true || (privateName !== null && md.private !== false);
     if (!isPrivate) return null;
     const owner = privateName?.owner ?? authorName;

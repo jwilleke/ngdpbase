@@ -468,6 +468,17 @@ Private attachments are stored separately in
 `$SLOW_STORAGE/attachments/private/{creator}/` with `isPrivate: true` and
 `creator` set in metadata.
 
+### Shared Folder
+
+Preferred: __shared folder__. Never "vault", never "shared vault".
+
+A folder of pages and files owned by the organization, not by any user, at
+`/shared/<name>` (`/shared/default` is open to every signed-in user). Opened
+by permission, `shared-folder-read` and `shared-folder-file` on the folder,
+never by role ([SharedFolderManager](managers/SharedFolderManager.md),
+[shared-folders.md](planning/shared-folders.md)). On disk it is kept the way a
+vault is, which is an implementation detail, not its name.
+
 ---
 
 ## Page Metadata

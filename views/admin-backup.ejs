@@ -121,6 +121,23 @@
             <% } %>
             <% } %>
             <% } %>
+            <% const sfNames = locals.sharedFolderNames || []; %>
+            <h6 class="mt-3">Folders</h6>
+            <% if (sfNames.length === 0) { %>
+            <p class="mb-2" id="shared-folders-none">No shared folder yet. The first one, <code>default</code>, is made when the recovery words are confirmed; it is open to every signed-in user.</p>
+            <% } else { %>
+            <ul class="mb-2" id="shared-folders-list">
+                <% sfNames.forEach(function (n) { %><li><a href="/shared/<%= encodeURIComponent(n) %>"><code>/shared/<%= n %></code></a></li><% }) %>
+            </ul>
+            <% } %>
+            <% if (sfWords && sfWords.pending.length === 0) { %>
+            <form method="POST" action="/admin/backup/shared-folders/folders" id="shared-folders-create" class="row g-2 mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="col-auto"><input type="text" name="name" class="form-control form-control-sm" placeholder="<%= sfNames.includes('default') ? 'folder name' : 'default' %>" value="<%= sfNames.includes('default') ? '' : 'default' %>" pattern="[a-z0-9]+(-[a-z0-9]+)*" required aria-label="Folder name"></div>
+                <div class="col-auto"><button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-folder-plus"></i> Make a shared folder</button></div>
+            </form>
+            <p class="small text-muted mt-1 mb-0">A new folder other than <code>default</code> opens to nobody until a policy gives <code>shared-folder-read</code> or <code>shared-folder-file</code> on <code>shared/&lt;name&gt;</code>.</p>
+            <% } %>
         </div>
     </div>
 

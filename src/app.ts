@@ -1135,6 +1135,27 @@ void (async (): Promise<void> => {
     next();
   });
 
+  // #2125: the shared folders this request's subject may open. The PDP is
+  // asked `shared-folder-read` on each folder for every request, and only the
+  // folders it permits hand their key to this subject's store I/O, so a grant
+  // removed ends access on the next request (#1775 decision 5). Each door
+  // still asks for the action it does. A site with no folder asks nothing.
+  app.use(async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    try {
+      type FolderList = {
+        folderNames?: () => string[];
+        foldersReadableBy?: (ctx: NonNullable<Request['userContext']>) => Promise<string[]>;
+      };
+      const folders = engine.getManager<FolderList>('SharedFolderManager');
+      if (req.userContext && folders?.folderNames && folders.folderNames().length > 0) {
+        await folders.foldersReadableBy?.(req.userContext);
+      }
+    } catch (err) {
+      logger.warn('[shared folders] could not decide which folders this request may open:', err);
+    }
+    next();
+  });
+
   // 5b. HTTP request duration metrics middleware
   const metricsManager = engine.getManager('MetricsManager') as {
     isEnabled(): boolean;

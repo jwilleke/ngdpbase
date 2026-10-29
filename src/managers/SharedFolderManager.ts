@@ -1,8 +1,10 @@
 /**
  * SharedFolderManager — the organization's shared folders (#1775). Slice 1
- * (#2124): their keys and the organization's recovery words. No folders,
- * routes for folder content, permissions or search yet; those are later
- * slices, and they come to this manager.
+ * (#2124): their keys and the organization's recovery words. Slice 2
+ * (#2125): the folders themselves, `/shared/<name>`, which hold pages and
+ * files through the page and file doors (PageManager, AttachmentManager) as
+ * the container `shared-folders`' vaults (`SHARED_FOLDER_OWNER`), sealed with
+ * each folder's key, opened by permission (`utils/sharedFolderAccess.ts`).
  *
  * It owns one fact, the key material (`<ngdpbase.shared-folders.storagedir>/keys.json`,
  * owner-only, backed up with the site as the part `shared-folders`):
@@ -23,8 +25,10 @@
  *   so a different key at start says so on the dashboard instead of failing
  *   later.
  *
- * It asks for everything else: who may act is the PDP's (`admin-system` in
- * this slice; slice 2 gates opening a folder by `shared-folder-read`), the
+ * It asks for everything else: who may act is the PDP's (`admin-system` to
+ * make words and folders; `shared-folder-read` / `shared-folder-file` on the
+ * folder to open it or add to it), what a folder holds is PageManager's and
+ * AttachmentManager's, the
  * admin's "I have saved the words" is ConsentManager's
  * (`shared-folders-recovery-words`), the audit records are AuditManager's,
  * and whether the key is saved off the server is BackupManager's.
@@ -55,6 +59,14 @@ import {
   type WrappedBlob
 } from '../utils/privateStoreCrypto.js';
 import type { Lockbox } from '../utils/shareLockbox.js';
+import { isValidStoreId, privateStoreLayoutFromConfig, SHARED_FOLDER_OWNER, storeMetaPath } from '../utils/privateStorePath.js';
+import {
+  permitsInSharedFolder,
+  setSharedFolderKeySource,
+  SHARED_FOLDER_READ,
+  sharedFolderResource
+} from '../utils/sharedFolderAccess.js';
+import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { SHARED_FOLDERS_WORDS_CONSENT_SCOPE } from '../types/Consent.js';
 import {
   currentSharedFoldersKey,
@@ -71,6 +83,12 @@ const KEYS_FILE = 'keys.json';
 
 /** A folder id: lower case letters, digits and hyphens, as in `/shared/<id>`. */
 const FOLDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** The folder every signed-in user may open (decision; the shipped `shared-folder-default` policy). */
+export const DEFAULT_SHARED_FOLDER = 'default';
+
+/** Where pages live: a folder is kept under it, as the `shared-folders` container's vault. */
+const PAGES_DIR_KEY = 'ngdpbase.page.provider.filesystem.storagedir';
 
 /** The organization's recovery words, as kept: never the words. */
 interface RecoveryRecord {
@@ -190,7 +208,15 @@ class SharedFolderManager extends BaseManager {
       this.markDegraded(this.unavailable, SHARED_FOLDERS_KEY_ENV);
       return;
     }
+    // #2125: a folder's key reaches the store I/O only for a context the PDP
+    // has permitted on that folder (`sharedFolderKeyFor`).
+    setSharedFolderKeySource((folder) => this.folderKey(folder));
     logger.info(`🗝️  SharedFolderManager initialized (${dir}; ${Object.keys(this.file?.folders ?? {}).length} folder key(s))`);
+  }
+
+  override async shutdown(): Promise<void> {
+    setSharedFolderKeySource(null);
+    await super.shutdown();
   }
 
   private configuredStorageDir(): string | null {
@@ -393,16 +419,139 @@ class SharedFolderManager extends BaseManager {
   }
 
   /**
-   * Folder `folderId`'s key, unwrapped with the server key. The caller holds
-   * it for the moment it needs it and zeroes it. `admin-system` in this
-   * slice; slice 2 asks `shared-folder-read` on the folder here.
+   * Folder `folderId`'s key, unwrapped with the server key, for a caller the
+   * PDP permits `shared-folder-read` on the folder (#2125). The caller holds
+   * it for the moment it needs it and zeroes it. The page and file doors do
+   * not call this: they reach the key through the store I/O
+   * (`sharedFolderKeyFor`), only for a context permitted on the folder.
    */
   async openFolderKey(ctx: ActorContext, folderId: string): Promise<Buffer> {
-    await this.requireAdmin(ctx);
-    const wrapKey = this.requireUsable();
+    this.requireUsable();
+    if (!(await this.mayInFolder(ctx, SHARED_FOLDER_READ, folderId))) {
+      throw new SharedFolderRefusedError(`${ctx?.username ?? 'Nobody'} may not open shared folder '${folderId}'`);
+    }
+    const key = this.folderKey(folderId);
+    if (!key) throw new SharedFolderRefusedError(`Shared folder '${folderId}' has no key`);
+    return key;
+  }
+
+  /** Folder `folderId`'s key with the server key, or undefined: no such folder, or the keys cannot be used. Never asks who; its callers have. */
+  private folderKey(folderId: string): Buffer | undefined {
     const entry = this.file?.folders[folderId];
-    if (!entry) throw new SharedFolderRefusedError(`Shared folder '${folderId}' has no key`);
-    return unwrapDek(wrapKey, { encrypt: true, dekWrap: entry.serverWrap });
+    if (!entry || this.unavailable || !this.wrapKey) return undefined;
+    return unwrapDek(this.wrapKey, { encrypt: true, dekWrap: entry.serverWrap });
+  }
+
+  // ── Folders (#2125) ────────────────────────────────────────────────────
+
+  /** The folders there are, by name: each has its key. */
+  folderNames(): string[] {
+    return Object.keys(this.file?.folders ?? {}).sort();
+  }
+
+  /**
+   * Make shared folder `name` (#2125): its key (`createFolderKey`, which
+   * needs the recovery words confirmed) and its place for pages, sealed with
+   * that key. Admins only (decision 8) until the Shared folders screen
+   * (slice 3). A new folder opens to nobody until a policy names
+   * `shared/<name>`; `default` is shipped open to every signed-in user.
+   * Recorded as `shared-folder-create` before anything is made (on-failure
+   * refuse). Refused when it exists.
+   */
+  async createFolder(ctx: ActorContext, name: string): Promise<void> {
+    await this.requireAdmin(ctx);
+    this.requireUsable();
+    if (!FOLDER_ID.test(name) || !isValidStoreId(name)) throw new SharedFolderRefusedError(`'${name}' is not a folder name: lower case letters, digits and single hyphens`);
+    const where = this.pagesPlace();
+    if (!where) throw new SharedFoldersUnavailableError('There is no folder for pages on this site');
+    const hasKey = Boolean(this.file?.folders[name]);
+    const hasPlace = existsSync(storeMetaPath(where.pagesDirectory, SHARED_FOLDER_OWNER, name, where.layout));
+    if (hasKey && hasPlace) throw new SharedFolderRefusedError(`Shared folder '${name}' already exists`);
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: AUDIT_EVENT.SHARED_FOLDER_CREATE,
+      ...who,
+      action: 'shared-folder-create',
+      result: 'success',
+      severity: 'medium',
+      resource: sharedFolderResource(name),
+      resourceType: 'shared-folder',
+      metadata: { ...who.metadata, folder: name }
+    });
+    if (!hasKey) await this.createFolderKey(ctx, name);
+    // Sealed: its key is the server's (keys.json), so store.json carries no
+    // wrapped key, only that the folder is sealed.
+    if (!hasPlace) {
+      const meta = storeMetaPath(where.pagesDirectory, SHARED_FOLDER_OWNER, name, where.layout);
+      await fsp.mkdir(path.dirname(meta), { recursive: true });
+      await fsp.writeFile(meta, JSON.stringify({ kind: 'shared-folder', encrypt: true, created: new Date().toISOString() }), { flag: 'wx' });
+    }
+    logger.info(`🗂️  [SharedFolderManager] ${ctx.username} created shared folder '${name}'`);
+  }
+
+  /**
+   * Make `/shared/default` when it is not there yet and can be made: the
+   * recovery words are confirmed. Finishing the words does this, so the
+   * folder every signed-in user may open exists from then on. Returns whether
+   * it was made now.
+   */
+  async ensureDefaultFolder(ctx: ActorContext): Promise<boolean> {
+    if (this.folderNames().includes(DEFAULT_SHARED_FOLDER) || !(await this.recoveryWordsConfirmed())) return false;
+    await this.createFolder(ctx, DEFAULT_SHARED_FOLDER);
+    return true;
+  }
+
+  /**
+   * May `ctx` do `action` (a page or file action, or `shared-folder-read` /
+   * `shared-folder-file`) in folder `name`? The PDP's answer
+   * (`permitsInSharedFolder`); false for a folder that does not exist.
+   */
+  async mayInFolder(ctx: ActorContext, action: string, name: string): Promise<boolean> {
+    if (!this.folderNames().includes(name)) return false;
+    return permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, action, name);
+  }
+
+  /**
+   * The folders `ctx` may open (`shared-folder-read`), by name. Asking opens
+   * each one's key to this context (`sharedFolderKeyFor`), so the page and
+   * file doors can read what this reader may. The session middleware asks it
+   * on every request, so a grant removed ends access on the next request
+   * (decision 5).
+   */
+  async foldersReadableBy(ctx: ActorContext): Promise<string[]> {
+    const out: string[] = [];
+    for (const name of this.folderNames()) {
+      if (await this.mayInFolder(ctx, SHARED_FOLDER_READ, name)) out.push(name);
+    }
+    return out;
+  }
+
+  /**
+   * Record that `ctx` opened `what` (a page, its history, or a file) in
+   * folder `name` (`shared-folder-read`, on by default: every read of a
+   * shared folder is recorded, #1775). Called by what serves it, after the
+   * door allowed it. The writes are recorded by the page and file doors.
+   */
+  async recordRead(ctx: ActorContext, name: string, what: { page?: string; attachmentId?: string; action?: string }): Promise<void> {
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: AUDIT_EVENT.SHARED_FOLDER_READ,
+      ...who,
+      action: 'shared-folder-read',
+      result: 'success',
+      severity: 'low',
+      resource: what.page ?? (what.attachmentId ? `attachment:${what.attachmentId}` : sharedFolderResource(name)),
+      resourceType: 'shared-folder',
+      metadata: { ...who.metadata, folder: name, ...what }
+    });
+  }
+
+  /** The pages directory and the configured vault layout, where folders are kept. */
+  private pagesPlace(): { pagesDirectory: string; layout: ReturnType<typeof privateStoreLayoutFromConfig> } | null {
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = config?.getResolvedDataPath(PAGES_DIR_KEY, './data/pages');
+    if (!config || !pagesDirectory) return null;
+    return { pagesDirectory, layout: privateStoreLayoutFromConfig((key, fallback) => config.getProperty(key, fallback)) };
   }
 
   /**
