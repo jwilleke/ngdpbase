@@ -1,5 +1,5 @@
 /**
- * Unit tests for the xml-index shim (#912; a shim since #2109).
+ * Unit tests for the xml-index shim (#912; a core shim since #2109).
  *
  * The shim is handed the index (the engine fetched it, as the source's URL)
  * and asks the engine to fetch each item it names (`tools.fetch`): the second
@@ -12,10 +12,10 @@
  * @jest-environment node
  */
 import { describe, expect, it, vi } from 'vitest';
-import { xmlIndexShim, extractItemUrls } from '../src/shims/xml-index';
-import type { GuardedResponse } from '../../../dist/src/http/guardedFetch.js';
-import type { ShimTools } from '../../../dist/src/ice/types.js';
-import { fileOf, recordsOf } from './__fixtures__/feedEngine';
+import { xmlIndexShim, extractItemUrls } from '../xml-index';
+import type { GuardedResponse } from '../../../http/guardedFetch';
+import type { ShimTools } from '../../types';
+import { fileOf, recordsOf } from './__fixtures__/readShim';
 
 const INDEX_URL = 'https://ospo.test/vaac/messages.html';
 const OPTIONS = { linkPattern: 'xml_files/.*\\.xml$' };

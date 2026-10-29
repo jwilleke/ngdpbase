@@ -21,6 +21,9 @@
 import type { ActorContext } from '../context/ActorContext.js';
 import type { GuardedFetchOptions, GuardedResponse } from '../http/guardedFetch.js';
 
+/** In a shim's `receivers`: any receiver that takes the kind the shim produces (#2109). */
+export const ANY_RECEIVER = '*';
+
 /** D3: which way a shim moves data. Most are `in`; PDF (#1974) would be `both`. */
 export type ShimDirection = 'in' | 'out' | 'both';
 
@@ -128,7 +131,10 @@ export interface IceShim {
   produces: IceKind;
   /**
    * Receivers it may hand to directly (ids, `core.pages` or `<slug>.<name>`).
-   * Empty for a shim whose output only feeds another shim.
+   * Empty for a shim whose output only feeds another shim. {@link ANY_RECEIVER}
+   * (`'*'`): any receiver that takes the kind it produces — a generic format
+   * shim such as core's CSV, whose `record` items any add-on's receiver may
+   * take (#2109). Each receiver still decides with its own permission (D5).
    */
   receivers: string[];
   /** Two duplicate kinds (design rule): a whole file by fingerprint, or each item by `itemKey`. Default `file`. */

@@ -1,6 +1,6 @@
 /**
  * #1947 / #1955, through the import engine since #2109 — a source's headers
- * and timeoutMs reach guardedFetch on every fetch of every shim, xml-index's
+ * and timeoutMs reach guardedFetch on every fetch of every core record shim, xml-index's
  * item fetches included, and a source that sets neither sends only the
  * engine's own options, so guardedFetch's site defaults (the User-Agent) and
  * the engine's timeout apply.
@@ -14,7 +14,6 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { shimNames } from '../src/shims/index';
 import type { FeedSourceConfig } from '../src/types';
 import { feedEngine, POLL_CTX } from './__fixtures__/feedEngine';
 
@@ -59,8 +58,9 @@ function cfgFor(adapter: string, over: Partial<FeedSourceConfig> = {}): FeedSour
 }
 
 describe('per-source request options reach guardedFetch through the engine (#1947, #1955, #2109)', () => {
-  it('covers every feeds shim', () => {
-    expect(shimNames().sort()).toEqual(Object.keys(BODY).sort());
+  it('covers every core record shim', async () => {
+    const { im } = await feedEngine([], TMP);
+    expect(im.listShims().filter(s => s.produces === 'record').map(s => s.id.replace(/^core\./, '')).sort()).toEqual(Object.keys(BODY).sort());
   });
 
   for (const name of Object.keys(BODY)) {

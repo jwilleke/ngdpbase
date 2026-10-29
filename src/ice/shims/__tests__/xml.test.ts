@@ -1,16 +1,16 @@
 /**
- * Unit tests for the xml shim (#685 slice 8; a shim since #2109).
+ * Unit tests for the xml shim (#685 slice 8; a core shim since #2109).
  *
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import { xmlShim, xmlItems } from '../src/shims/xml';
-import { FEED_SHIMS } from '../src/shims/index';
-import { readShim, recordsOf } from './__fixtures__/feedEngine';
+import { xmlShim, xmlItems } from '../xml';
+import { RECORD_SHIMS } from '../index';
+import { readShim, recordsOf } from './__fixtures__/readShim';
 
 describe('xmlShim (#685)', () => {
-  it('is one of the feeds shims', () => {
-    expect(FEED_SHIMS).toContain(xmlShim);
+  it('is one of core\'s record shims', () => {
+    expect(RECORD_SHIMS).toContain(xmlShim);
   });
 
   it('locates repeated elements via itemsPath', () => {

@@ -1,12 +1,12 @@
 /**
- * Unit tests for the rest-json shim and the shared record builder (#685 slice 8; a shim since #2109).
+ * Unit tests for the rest-json shim and the shared record builder (#685 slice 8; a core shim since #2109).
  *
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import { restJsonShim, jsonItems } from '../src/shims/restjson';
-import { buildRecord, pickItemsArray, recordOptions } from '../src/shims/buildRecord';
-import { readShim, recordsOf } from './__fixtures__/feedEngine';
+import { restJsonShim, jsonItems } from '../restjson';
+import { buildRecord, pickItemsArray, recordOptions } from '../record';
+import { readShim, recordsOf } from './__fixtures__/readShim';
 
 describe('pickItemsArray (#685)', () => {
   it('returns the body when it is an array', () => {

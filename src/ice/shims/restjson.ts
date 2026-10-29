@@ -1,5 +1,5 @@
 /**
- * rest-json shim (#685 slice 8; a shim since #2109) — zero dependency (JSON.parse).
+ * rest-json shim (#685 slice 8; a core shim since #2109) — zero dependency (JSON.parse).
  *
  * Generic REST GET → JSON. Locates the items array via the `itemsPath` option
  * (dot-path, e.g. 'results' or 'data.events'); with none, falls back to the
@@ -8,10 +8,9 @@
  * are lifted as properties when no `map` is set).
  */
 
-import type { IceShim } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { ANY_RECEIVER, type IceShim } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, pickItemsArray, RECORD_KIND, recordItems, recordOptions } from './buildRecord.js';
+import { buildRecord, pickItemsArray, RECORD_KIND, recordItems, recordOptions, type RawRecord } from './record.js';
 
 /** The items of a JSON document: at `itemsPath`, or the first likely array. */
 export function jsonItems(data: unknown, itemsPath: string | undefined): RawRecord[] {
@@ -25,7 +24,7 @@ export const restJsonShim: IceShim = {
   direction: 'in',
   accepts: { extensions: ['.json'], mediaTypes: ['application/json'] },
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input, tools) {

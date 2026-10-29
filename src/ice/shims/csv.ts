@@ -1,5 +1,5 @@
 /**
- * csv shim (#685 slice 4+, #911; a shim since #2109) — zero dependency (a
+ * csv shim (#685 slice 4+, #911; a core shim since #2109) — zero dependency (a
  * small RFC 4180 parser). Needed for sources that only publish CSV, e.g. NASA
  * FIRMS thermal hotspots (geohazardwatch#4), whose `/api/area/csv/...`
  * endpoint has no JSON/GeoJSON/XML variant.
@@ -29,10 +29,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { IceRecordData, IceShim, IceWarning } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { ANY_RECEIVER, type IceRecordData, type IceShim, type IceWarning } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions } from './buildRecord.js';
+import { buildRecord, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions, type RawRecord } from './record.js';
 
 /**
  * Parse CSV text into header-keyed row objects. RFC 4180 subset: quoted fields,
@@ -139,7 +138,7 @@ export const csvShim: IceShim = {
   direction: 'in',
   accepts: { extensions: ['.csv', '.tsv'], mediaTypes: ['text/csv', 'text/tab-separated-values'] },
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input, tools) {

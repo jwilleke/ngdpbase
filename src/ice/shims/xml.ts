@@ -1,5 +1,5 @@
 /**
- * xml shim (#685 slice 8; a shim since #2109) — dependency: fast-xml-parser
+ * xml shim (#685 slice 8; a core shim since #2109) — dependency: fast-xml-parser
  * (itself zero-dep).
  *
  * Generic XML → records, for sources with no JSON surface (e.g. VAAC ash
@@ -17,10 +17,9 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import type { IceShim } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { ANY_RECEIVER, type IceShim } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, pickItemsArray, RECORD_KIND, recordItems, recordOptions } from './buildRecord.js';
+import { buildRecord, pickItemsArray, RECORD_KIND, recordItems, recordOptions, type RawRecord } from './record.js';
 
 /**
  * Shared fast-xml-parser instance — reused by the rss-atom (#913) and xml-index
@@ -58,7 +57,7 @@ export const xmlShim: IceShim = {
   direction: 'in',
   accepts: { extensions: ['.xml'], mediaTypes: ['application/xml', 'text/xml'] },
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input, tools) {

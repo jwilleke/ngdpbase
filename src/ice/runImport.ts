@@ -38,6 +38,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import type { ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
+import { ANY_RECEIVER } from './types.js';
 import type {
   IceCitation, IceFileReport, IceFileStatus, IceItem, IceLedger, IceRunReport, IceRunRequest, IceUpload, IceUrlSource, KeptOriginal, LedgerFileEntry,
   LedgerOriginal, OriginalChoice, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
@@ -134,9 +135,14 @@ function canReadInbound(shim: RegisteredShim): boolean {
   return shim.direction !== 'out' && typeof shim.read === 'function';
 }
 
+/** Does this shim list the receiver, by id or as any receiver (`'*'`, #2109)? */
+export function handsTo(shim: Pick<RegisteredShim, 'receivers'>, receiverId: string): boolean {
+  return shim.receivers.includes(receiverId) || shim.receivers.includes(ANY_RECEIVER);
+}
+
 /** Can this shim, alone or through others, hand to the receiver? (D7: only through shims that list it.) */
 function reaches(shim: RegisteredShim, receiver: RegisteredReceiver, shims: RegisteredShim[], depthLeft: number): boolean {
-  if (shim.receivers.includes(receiver.id) && receiver.accepts.includes(shim.produces)) return true;
+  if (handsTo(shim, receiver.id) && receiver.accepts.includes(shim.produces)) return true;
   if (depthLeft <= 1) return false;
   return shims.some(next => next !== shim && canReadInbound(next) && (next.accepts.kinds ?? []).includes(shim.produces)
     && reaches(next, receiver, shims, depthLeft - 1));
@@ -524,7 +530,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         shims: deps.shims,
         tools,
         maxChainDepth: deps.settings.maxChainDepth,
-        done: (from, item) => receiver.accepts.includes(item.kind) && from.receivers.includes(receiver.id),
+        done: (from, item) => receiver.accepts.includes(item.kind) && handsTo(from, receiver.id),
         target: receiver.id
       };
       const leaves: ChainLeaf[] = shim ? await convertChain(shim, file, [], spec, partial) : [{ item: file, chain: [] }];

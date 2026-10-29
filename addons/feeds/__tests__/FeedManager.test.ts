@@ -1,7 +1,7 @@
 /**
  * Unit tests for the feeds addon (#685 slices 3–4), on the import engine
  * since #2109: FeedManager asks the real ImportManager to fetch each source,
- * the feeds shims read it, and FeedManager's receiver stores it.
+ * core's record shims read it, and FeedManager's receiver stores it.
  *
  * @jest-environment node
  */
@@ -14,14 +14,13 @@ import { parseSourceConfigs } from '../src/config';
 
 import { FeedCatalogSource } from '../src/FeedCatalogSource';
 import { RecordStore } from '../src/RecordStore';
-import { getByPath } from '../src/shims/dotpath';
-import { geojsonRecord, geojsonShim } from '../src/shims/geojson';
+import { getByPath } from '../../../dist/src/ice/shims/dotpath.js';
 import { recordToArticle } from '../src/normalize';
 import { FEED_PERMISSION, FEED_POLL_JOB, type FeedJobs } from '../src/FeedManager';
 import MarqueePluginModule from '../../../dist/src/plugins/MarqueePlugin';
 import { asExecuted } from '../../../dist/src/test-support/plugins.js';
 import type { FeedSourceConfig } from '../src/types';
-import { feedEngine, POLL_CTX, readShim, recordsOf } from './__fixtures__/feedEngine';
+import { feedEngine, POLL_CTX } from './__fixtures__/feedEngine';
 
 // #1133, #2109 — every fetch is the import engine's, through `guardedFetch`.
 // Mocking that module is the seam, because production deliberately has no
@@ -121,24 +120,6 @@ describe('getByPath (#685)', () => {
   it('returns undefined past a non-object', () => expect(getByPath(o, 'properties.mag.x')).toBeUndefined());
 });
 
-describe('geojsonShim (#685, #2109)', () => {
-  const opts = { recordIdField: 'id', map: quakeCfg.map };
-  it('maps via dot-paths and uses recordIdField', () => {
-    expect(geojsonRecord(feature('us1', 5.2, 'Ridgecrest', 1_700_000_000_000), opts))
-      .toEqual({ id: 'us1', properties: { magnitude: 5.2, place: 'Ridgecrest', time: 1_700_000_000_000 } });
-  });
-  it('lifts feature.properties when no map is configured', () => {
-    expect(geojsonRecord(feature('us2', 4.8, 'Aleutians', 1), { recordIdField: 'id' })!.properties).toMatchObject({ mag: 4.8, place: 'Aleutians' });
-  });
-  it('returns null when no id resolves', () => {
-    expect(geojsonRecord({ properties: {} }, opts)).toBeNull();
-  });
-  it('reads a FeatureCollection into record items', async () => {
-    const result = await readShim(geojsonShim, collection(feature('a', 1, 'x', 1)), opts);
-    expect(recordsOf(result)).toEqual([{ id: 'a', properties: { magnitude: 1, place: 'x', time: 1 } }]);
-  });
-});
-
 describe('RecordStore — change detection (#685)', () => {
   let store: RecordStore;
   beforeEach(() => { store = new RecordStore(TMP, `s-${Math.random().toString(36).slice(2)}`); });
@@ -221,7 +202,7 @@ describe('FeedManager (#685)', () => {
   it('ingest() throws on an adapter no shim answers to', async () => {
     stubFetch('{}');
     const { fm } = await feedEngine([{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP);
-    await expect(fm.ingest('q2', POLL_CTX)).rejects.toThrow(/feeds\.nonesuch is not available/);
+    await expect(fm.ingest('q2', POLL_CTX)).rejects.toThrow(/core\.nonesuch is not available/);
   });
 
   it('ingest() throws on a non-2xx fetch and leaves the store as it was', async () => {
@@ -244,16 +225,17 @@ describe('FeedManager (#685)', () => {
 
   it('a feed shim can be switched off by the site (D6): its sources then fail', async () => {
     stubFetch(collection(feature('a', 1, 'x', 1)));
-    const { fm } = await feedEngine([{ ...quakeCfg, sourceId: 'q5' }], TMP, { config: { 'ngdpbase.import.shims.feeds.geojson.enabled': false } });
-    await expect(fm.ingest('q5', POLL_CTX)).rejects.toThrow(/feeds\.geojson is not available/);
+    const { fm } = await feedEngine([{ ...quakeCfg, sourceId: 'q5' }], TMP, { config: { 'ngdpbase.import.shims.core.geojson.enabled': false } });
+    await expect(fm.ingest('q5', POLL_CTX)).rejects.toThrow(/core\.geojson is not available/);
   });
 });
 
 describe('FeedManager as the receiver feeds.items (#2109)', () => {
-  it('registers the six shims and the receiver the manifest declares', async () => {
+  it('registers only its receiver; the format shims are core\'s, any add-on\'s to use', async () => {
     const { im } = await feedEngine([], TMP);
-    expect(im.listShims().filter(s => s.owner === 'feeds').map(s => s.id))
-      .toEqual(['feeds.geojson', 'feeds.rest-json', 'feeds.xml', 'feeds.csv', 'feeds.rss-atom', 'feeds.xml-index']);
+    expect(im.listShims().filter(s => s.owner === 'feeds')).toEqual([]);
+    expect(im.listShims().filter(s => s.produces === 'record').map(s => s.id))
+      .toEqual(['core.geojson', 'core.rest-json', 'core.xml', 'core.csv', 'core.rss-atom', 'core.xml-index']);
   });
 
   it('checks its existing permission with the run\'s context (D5): refused, nothing is fetched or stored', async () => {
@@ -284,7 +266,7 @@ describe('FeedManager as the receiver feeds.items (#2109)', () => {
 
     // The engine's report for the run: 'a' skipped as already seen, 'b' handed as changed.
     const [run] = im.importRunsFor(POLL_CTX);
-    expect(run.files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1, chain: ['feeds.geojson'] });
+    expect(run.files[0]).toMatchObject({ status: 'imported', stored: 1, duplicates: 1, chain: ['core.geojson'] });
   });
 
   it('an unchanged poll is a duplicate file to the engine and changes nothing in the store', async () => {

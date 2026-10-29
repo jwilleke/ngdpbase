@@ -15,7 +15,7 @@ import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
  * - It is the receiver for feed items (`feeds.items`): the engine hands it
  *   each source's records, and it keeps them in that source's RecordStore.
  * - It asks the engine to fetch each source when it is due: a URL source,
- *   parsed by the shim the source's `adapter` names (`feeds.<adapter>`),
+ *   parsed by the core record shim the source's `adapter` names (`core.<adapter>`),
  *   with the source's headers and timeout (#1959). The engine owns the
  *   fetch (guarded, #1139), the shims, and per-item duplicate handling.
  * - Its schedule is the background job `feeds.poll`, not a timer.
@@ -26,8 +26,6 @@ import { RecordStore } from './RecordStore.js';
 import { shapeRecords } from './dedupe.js';
 import { recordToCreativeWork } from './normalize.js';
 import { recordHash } from './recordHash.js';
-import { RECORD_KIND } from './shims/buildRecord.js';
-import { shimIdFor } from './shims/index.js';
 import { FeedScheduler } from './FeedScheduler.js';
 import type { FeedSchedulerOptions } from './FeedScheduler.js';
 import type { FeedSourceConfig, NormalizedRecord } from './types.js';
@@ -54,6 +52,18 @@ export type FeedPermits = (ctx: ActorContext, permission: string) => Promise<boo
 /** Where the poll job is registered: BackgroundJobManager's routine door (#1721). */
 export interface FeedJobs {
   registerMaintenance(spec: { id: string; displayName: string; everyMs: number; run: (ctx: JobRunContext) => Promise<string | void> }): void;
+}
+
+/** Core's generic record kind (#2109): what the record shims produce, `data: { id, properties }`. */
+const RECORD_KIND = 'record';
+
+/**
+ * The core record shim a source's `adapter` names (#2109): `csv` → `core.csv`.
+ * The shims are core's, so any add-on can use them; a site switches one off
+ * with `ngdpbase.import.shims.core.<adapter>.enabled`.
+ */
+export function shimIdFor(adapter: string): string {
+  return `core.${adapter}`;
 }
 
 /** The receiver's name; its id is `feeds.items`. */
@@ -231,8 +241,8 @@ export class FeedManager {
   }
 
   /**
-   * `feeds.items` (D4): FeedManager's own door for the records the feeds
-   * shims produce. It checks its existing permission (D5,
+   * `feeds.items` (D4): FeedManager's own door for the records core's
+   * record shims produce. It checks its existing permission (D5,
    * {@link FEED_PERMISSION}); it takes no uploads, since what a feed holds
    * comes only from its source.
    *

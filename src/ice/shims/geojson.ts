@@ -1,5 +1,5 @@
 /**
- * GeoJSON shim (#685 slice 4; a shim since #2109) — zero dependency (JSON.parse).
+ * GeoJSON shim (#685 slice 4; a core shim since #2109) — zero dependency (JSON.parse).
  *
  * Handles a GeoJSON FeatureCollection (`{ features: [...] }`), a bare array of
  * features, or a single Feature. Per feature, the id comes from the
@@ -11,9 +11,8 @@
  * (https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson).
  */
 
-import type { IceRecordData, IceShim } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions } from './buildRecord.js';
+import { ANY_RECEIVER, type IceRecordData, type IceShim } from '../types.js';
+import { buildRecord, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions, type RawRecord } from './record.js';
 
 /** The features of a GeoJSON document. */
 export function geojsonFeatures(data: unknown): RawRecord[] {
@@ -38,7 +37,7 @@ export const geojsonShim: IceShim = {
   direction: 'in',
   accepts: { extensions: ['.geojson'], mediaTypes: ['application/geo+json'] },
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input, tools) {

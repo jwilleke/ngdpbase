@@ -1,11 +1,11 @@
 /**
- * Unit tests for the rss-atom shim (#913; a shim since #2109).
+ * Unit tests for the rss-atom shim (#913; a core shim since #2109).
  *
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import { rssAtomShim, rssAtomItems, rssAtomRecord } from '../src/shims/rss-atom';
-import { readShim, recordsOf } from './__fixtures__/feedEngine';
+import { rssAtomShim, rssAtomItems, rssAtomRecord } from '../rss-atom';
+import { readShim, recordsOf } from './__fixtures__/readShim';
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel>
   <title>Volcano News</title>

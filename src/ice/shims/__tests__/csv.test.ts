@@ -1,12 +1,12 @@
 /**
- * Unit tests for the csv shim + parseCsv (#911; a shim since #2109).
+ * Unit tests for the csv shim + parseCsv (#911; a core shim since #2109).
  *
  * @jest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import { csvShim, parseCsv, preambleSuspicion } from '../src/shims/csv';
-import { recordItemKey } from '../src/shims/buildRecord';
-import { readShim, recordsOf } from './__fixtures__/feedEngine';
+import { csvShim, parseCsv, preambleSuspicion } from '../csv';
+import { recordItemKey } from '../record';
+import { readShim, recordsOf } from './__fixtures__/readShim';
 
 // A trimmed FIRMS VIIRS response (two rows).
 const FIRMS = 'latitude,longitude,bright_ti4,acq_date,confidence\n64.4314,144.83386,330.28,2026-07-22,n\n-1.2,50.5,301.1,2026-07-22,h\n';
@@ -113,9 +113,9 @@ describe('csvShim (#911, #2109)', () => {
     expect(result.items[0].itemKey).toBe(recordItemKey(recordsOf(result)[0]));
   });
 
-  it('declares per-item duplicates, CSV files and media types, and the feed items receiver', () => {
+  it('declares per-item duplicates, CSV files and media types, and any receiver of records', () => {
     expect(csvShim).toMatchObject({
-      name: 'csv', direction: 'in', duplicates: 'item', produces: 'record', receivers: ['feeds.items'],
+      name: 'csv', direction: 'in', duplicates: 'item', produces: 'record', receivers: ['*'],
       accepts: { extensions: ['.csv', '.tsv'], mediaTypes: ['text/csv', 'text/tab-separated-values'] }
     });
   });

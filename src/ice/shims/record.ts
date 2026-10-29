@@ -1,12 +1,14 @@
 /**
- * What every feeds shim shares (#685 slice 8, #2109): the options a run
- * hands its shim, turning one raw item into a `record` item, and the item's
- * key.
+ * What core's record shims share (#685 slice 8; core shims since #2109): the
+ * options a run hands its shim, turning one raw item into a `record` item,
+ * and the item's key.
  *
- * Nothing here is about feeds. A shim reads one format into `record` items
- * (`data` is `{ id, properties }`, core's `IceRecordData`); which receiver
- * takes them, and what it does with them, is the receiver's business. So
- * the same CSV shim can serve a bank-statement import as well as a feed.
+ * Nothing here is about any one receiver. A record shim reads one format
+ * into `record` items (`data` is `{ id, properties }`, `IceRecordData`); which
+ * receiver takes them, and what it does with them, is the receiver's
+ * business. So the same CSV shim serves a feed (the feeds add-on's
+ * `feeds.items`) and a bank-statement import alike, with neither add-on's
+ * code (operator, 2026-10-29: generic work goes to core).
  *
  * id ← the `recordIdField` option (dot-path) or the item's own `id`.
  * properties ← the `map` option (dot-path per field), or — with no map — the
@@ -14,22 +16,22 @@
  * rest-json lifts the item itself). No id resolves → no record (skipped).
  */
 
-import type { IceItem, IceRecordData, IceWarning } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { createHash } from 'node:crypto';
+import type { IceItem, IceRecordData, IceWarning } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { recordHash } from '../recordHash.js';
 
-/** The kind every feeds shim produces: core's generic record (#2109). */
+/** One raw item straight off the wire (a GeoJSON feature, an RSS item, a CSV row, …). */
+export type RawRecord = Record<string, unknown>;
+
+/** The kind every record shim produces: core's generic record (#2109). */
 export const RECORD_KIND = 'record';
 
-/** The receiver the feeds shims hand to: FeedManager's door. */
-export const FEED_ITEMS_RECEIVER = 'feeds.items';
-
 /**
- * A shim's options (#2109): the site's `ngdpbase.import.shims.<id>.options`,
- * with the run's own over them (a feed source's settings). Each is optional
- * and generic: where the items are, which field is the id, a field map, and
- * the few format settings (CSV's delimiter and preamble, an index's links).
+ * A record shim's options (#2109): the site's `ngdpbase.import.shims.<id>.options`,
+ * with the run's own over them (a feed source's settings, an import's).
+ * Each is optional and generic: where the items are, which field is the id,
+ * a field map, and the few format settings (CSV's delimiter and preamble, an
+ * index's links).
  */
 export interface RecordShimOptions {
   /** Dot-path to each item's id. */
@@ -52,8 +54,8 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== 
 
 /**
  * The options as a shim reads them: each of the right type, or absent. The
- * feeds add-on has validated a source's own when its configuration was read;
- * this only refuses a value of the wrong type from anywhere.
+ * caller (a feed's configuration) validated its own; this only refuses a
+ * value of the wrong type from anywhere.
  */
 export function recordOptions(raw: Record<string, unknown>): RecordShimOptions {
   const out: RecordShimOptions = {};
@@ -94,15 +96,24 @@ export function buildRecord(
   return { id, properties };
 }
 
+/** Stable JSON (recursively sorted keys), so the key does not depend on property order. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj).sort().map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+}
+
 /**
- * The key the engine knows an item by (per-item duplicates, #2109): its own
- * id with its content's hash. The id alone would skip an item that changed
- * upstream under the same id (a revised advisory), so the hash is the
- * version; it is the same hash the record store keeps (`recordHash`), so
- * the engine and the store agree on what "unchanged" means.
+ * The key the engine knows a record by (per-item duplicates, #2109): its own
+ * id with a hash of its content. The id alone would skip a record that
+ * changed upstream under the same id (a revised advisory), so the hash is
+ * the version. A receiver's own duplicate check is still its own (the feeds
+ * add-on compares the hash its record store keeps).
  */
 export function recordItemKey(rec: IceRecordData): string {
-  return `${rec.id}#${recordHash({ sourceRecordId: rec.id, properties: rec.properties })}`;
+  const hash = createHash('sha256').update(stableStringify({ id: rec.id, properties: rec.properties }), 'utf8').digest('hex');
+  return `${rec.id}#${hash}`;
 }
 
 /** The `record` items of one read, from its records in order; null records (no id) are dropped. */

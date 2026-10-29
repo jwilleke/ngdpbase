@@ -36,18 +36,18 @@ Per configured source, FeedManager holds one `FeedEntry`:
 
 ```text
 ImportManager.runImport({ source: { type: 'url', url, headers, timeoutMs, metadata: { feedSource } },
-                          receiver: 'feeds.items', shim: 'feeds.<adapter>', scope: sourceId, options })
+                          receiver: 'feeds.items', shim: 'core.<adapter>', scope: sourceId, options })
   → the engine fetches the URL (guardedFetch, egress policy, User-Agent, the source's headers and timeout)
   → the shim reads it into `record` items, each keyed by its id and content hash
   → feeds.items: receive() says new/changed or duplicate per item; items already seen are skipped
   → feeds.items: fileDone() gets every item, shapes them (dedupeBy / maxAgeHours) and RecordStore.upsertAll()
 ```
 
-Resolves with the store's counts (`added`, `updated`, `unchanged`, `removed`). Throws, leaving the store as it was, on an unknown source, a refused or failed fetch, a non-2xx answer, a body the shim cannot read, an `adapter` no shim answers to, a shim the site switched off (`ngdpbase.import.shims.feeds.<adapter>.enabled: false`), or a refusal by the receiver's permission.
+Resolves with the store's counts (`added`, `updated`, `unchanged`, `removed`). Throws, leaving the store as it was, on an unknown source, a refused or failed fetch, a non-2xx answer, a body the shim cannot read, an `adapter` no shim answers to, a shim the site switched off (`ngdpbase.import.shims.core.<adapter>.enabled: false`, which stops every user of that format), or a refusal by the receiver's permission.
 
-### Shims
+### Shims (core's)
 
-Each format is an import shim registered by the addon (`addons/feeds/src/shims/`, declared in its manifest), named `feeds.<adapter>`. Each produces core's `record` kind (`data: { id, properties }`) with per-item duplicates. Nothing in them is about feeds: a source's parse settings reach the shim as the run's `options`, so another add-on's receiver can take the same records.
+Each format is one of core's record shims (`src/ice/shims/`, registered by ImportManager, operator decision 2026-10-29: generic work goes to core), named `core.<adapter>`. The addon registers no shim; its manifest declares only the receiver `items`. Each shim produces core's `record` kind (`data: { id, properties }`) with per-item duplicates and hands to any receiver of records (`receivers: ['*']`). A source's parse settings reach the shim as the run's `options`, so another add-on (accounting's bank statements, [#2121](https://github.com/jwilleke/ngdpbase/issues/2121)) uses the same shims without feeds enabled.
 
 | Shim | Shape | Dependency |
 |---|---|---|
@@ -60,7 +60,7 @@ Each format is an import shim registered by the addon (`addons/feeds/src/shims/`
 
 ### The receiver `feeds.items`
 
-FeedManager's own door for the records the shims produce (D4). It checks an existing permission, `config-manage` (feed sources are site configuration; D5, no new permission), with the run's context: the poll job acts as the system principal, or as `job:feeds.poll` when a policy names it; Run now acts as the administrator who pressed it. On a no nothing is fetched. It takes no uploads (`uploads: false`): the import screen never offers it.
+FeedManager's own door for the records core's record shims produce (D4). It checks an existing permission, `config-manage` (feed sources are site configuration; D5, no new permission), with the run's context: the poll job acts as the system principal, or as `job:feeds.poll` when a policy names it; Run now acts as the administrator who pressed it. On a no nothing is fetched. It takes no uploads (`uploads: false`): the import screen never offers it.
 
 A feed's store is a snapshot of its source. `receive` compares each item's content hash with the stored one (new or changed: `stored`; the same: `duplicate`); `fileDone` gets every item of the fetch, those the engine skipped as already seen included, and stores the whole source at once, so a record the source no longer holds is removed, as an ingest always has.
 

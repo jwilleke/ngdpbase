@@ -62,6 +62,7 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
+import { RECORD_SHIMS } from '../ice/shims/index.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { FileIceLedger } from '../ice/ledger.js';
@@ -409,6 +410,10 @@ class ImportManager extends BaseManager {
     this.registerConverter(new HtmlConverter());
     this.registerConverter(new MarkdownConverter());
     this.registerConverter(new DocxConverter());
+
+    // #2109: core's record shims (CSV, GeoJSON, JSON, XML, RSS/Atom, XML index),
+    // for any receiver that takes records: a feed, a bank statement.
+    for (const shim of RECORD_SHIMS) this.registerShim('core', shim);
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
   }

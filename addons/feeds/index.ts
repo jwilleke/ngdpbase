@@ -7,17 +7,18 @@
  * gate at docs/platform/feeds/design.md.
  *
  * Since #2109 (ICE, D10) a feed is "a scheduled URL source, plus shims, into
- * FeedManager": the add-on registers one import shim per format with the
- * import engine (declared in package.json's manifest), FeedManager as the
- * receiver `feeds.items`, and its schedule as the background job
- * `feeds.poll`. The engine fetches each due source through the guarded
- * outbound path, runs its shim and hands the records to FeedManager. The
+ * FeedManager": the format shims are core's (`core.csv`, `core.rss-atom`, …,
+ * registered by ImportManager), and the add-on registers only FeedManager as
+ * the receiver `feeds.items` (declared in package.json's manifest) and its
+ * schedule as the background job `feeds.poll`. The engine fetches each due
+ * source through the guarded outbound path, runs the core shim the source's
+ * `adapter` names and hands the records to FeedManager. The
  * addon is inert until enabled (`ngdpbase.addons.feeds.enabled: true`) and a
  * source is configured.
  *
  * Configuration (app-custom-config.json, established `ngdpbase.addons.<name>.*`):
  *   ngdpbase.addons.feeds.enabled                  — true/false (default: false)
- *   ngdpbase.addons.feeds.sources.<id>.adapter     — the shim: 'geojson' | 'rest-json' | 'xml' | 'csv' | 'rss-atom' | 'xml-index'
+ *   ngdpbase.addons.feeds.sources.<id>.adapter     — the core shim (core.<adapter>): 'geojson' | 'rest-json' | 'xml' | 'csv' | 'rss-atom' | 'xml-index'
  *   ngdpbase.addons.feeds.sources.<id>.url         — upstream feed URL
  *   ngdpbase.addons.feeds.sources.<id>.type        — schema.org @type
  *   ngdpbase.addons.feeds.sources.<id>.intervalMinutes | .dailyAt
@@ -36,7 +37,6 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import { FeedManager, type FeedImporter, type FeedJobs } from './src/FeedManager.js';
-import { registerFeedShims } from './src/shims/index.js';
 import { parseSourceConfigs, readFeedSettings } from './src/config.js';
 import { createDataFeedPlugin } from './src/DataFeedPlugin.js';
 
@@ -81,10 +81,9 @@ const feedsAddon = {
       async (ctx, permission) => typeof pdp?.permits === 'function' ? pdp.permits(ctx, permission) : false
     );
 
-    // The shims (D6, D7) and FeedManager's receiver (D4), as the manifest declares them.
-    const shims = registerFeedShims(host);
+    // FeedManager's receiver (D4), as the manifest declares it; the format shims are core's.
     host.registerReceiver(feedManager.receiver());
-    logger.info(`[feeds addon] Registered import shims ${shims.join(', ')} and the receiver feeds.items`);
+    logger.info('[feeds addon] Registered the receiver feeds.items');
 
     // #1876, #1985: the record stores under dataPath are backed up by BackupManager, and a
     // staged restore of them was put in place before register() ran.

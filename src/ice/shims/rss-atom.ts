@@ -1,5 +1,5 @@
 /**
- * rss-atom shim (#913; a shim since #2109) — dependency: fast-xml-parser
+ * rss-atom shim (#913; a core shim since #2109) — dependency: fast-xml-parser
  * (shared with the xml shim). RSS 2.0 and Atom 1.0 are both XML, so this is a
  * thin, sensible-default wrapper over the shared XML machinery rather than a
  * separate parser.
@@ -14,10 +14,9 @@
  * `@isPermaLink`, Atom link as an attribute-only element) — both are unwrapped.
  */
 
-import type { IceRecordData, IceShim } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { ANY_RECEIVER, type IceRecordData, type IceShim } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, pickItemsArray, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions } from './buildRecord.js';
+import { buildRecord, pickItemsArray, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions, type RawRecord } from './record.js';
 import { xmlParser, coerceItems } from './xml.js';
 
 /** Stringify only scalars; objects/arrays/null → ''. */
@@ -71,7 +70,7 @@ export const rssAtomShim: IceShim = {
     mediaTypes: ['application/rss+xml', 'application/atom+xml']
   },
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input, tools) {

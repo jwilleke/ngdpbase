@@ -1,5 +1,5 @@
 /**
- * xml-index shim (#912; a shim since #2109) — dependency: fast-xml-parser
+ * xml-index shim (#912; a core shim since #2109) — dependency: fast-xml-parser
  * (shared with the xml shim). For "index page + N item documents, no
  * combined feed" sources common to bulletin-style publishers (e.g. Washington
  * VAAC ash advisories, geohazardwatch#5): an HTML/text index links to many
@@ -12,7 +12,7 @@
  *      regex string), resolved against the index's URL (`metadata.sourceUrl`,
  *      else the file's name). Deduped, capped at the `maxItems` option
  *      (default 100; a site sets its own with
- *      `ngdpbase.import.shims.feeds.xml-index.options.maxItems`).
+ *      `ngdpbase.import.shims.core.xml-index.options.maxItems`).
  *   2. Each item document is fetched by asking the engine (`tools.fetch`), so
  *      every request takes the one guarded path with the source's headers
  *      and timeout (design rule), then XML-parsed. Each yields one record (its
@@ -24,10 +24,9 @@
  * read: the read is then `partial`, saying which.
  */
 
-import type { IceItem, IceShim, ShimTools } from '../../../../dist/src/ice/types.js';
-import type { RawRecord } from '../types.js';
+import { ANY_RECEIVER, type IceItem, type IceShim, type ShimTools } from '../types.js';
 import { getByPath } from './dotpath.js';
-import { buildRecord, FEED_ITEMS_RECEIVER, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions } from './buildRecord.js';
+import { buildRecord, RECORD_KIND, recordItems, recordOptions, type RecordShimOptions, type RawRecord } from './record.js';
 import { xmlParser, coerceItems } from './xml.js';
 
 const DEFAULT_MAX_ITEMS = 100;
@@ -108,7 +107,7 @@ export const xmlIndexShim: IceShim = {
   // Never detected: a source names it.
   accepts: {},
   produces: RECORD_KIND,
-  receivers: [FEED_ITEMS_RECEIVER],
+  receivers: [ANY_RECEIVER],
   duplicates: 'item',
 
   async read(input: IceItem, tools: ShimTools) {
