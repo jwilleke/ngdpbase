@@ -104,6 +104,9 @@ export default class ShareManager extends BaseManager {
         'ngdpbase.share.storagedir',
         './data/shares'
       );
+      // #2117: a bad public origin is ignored, so say so loudly once, here.
+      const publicOrigin = this.readPublicBaseUrl();
+      if (publicOrigin.problem) logger.error(`🚨 [ShareManager] ${publicOrigin.problem}`);
     }
     if (!this.enabled) {
       logger.info('ShareManager initialized (disabled by config)');
@@ -124,6 +127,78 @@ export default class ShareManager extends BaseManager {
 
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Where links point (#2117)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The origin every share link is minted and shown with, no trailing slash.
+   *
+   * `ngdpbase.share.public-base-url` when it is set and valid: an instance
+   * whose own address is private (a LAN name) can hand out links that open
+   * from outside, through a tunnel or proxy that carries only `/share/…`.
+   * Otherwise the configured `ngdpbase.application.base-url`, else the
+   * request's own origin. Read on every call, so a change made on the admin
+   * screen applies to the next link shown.
+   */
+  linkBaseUrl(requestOrigin: string): string {
+    const publicOrigin = this.readPublicBaseUrl().url;
+    if (publicOrigin) return publicOrigin;
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getBaseURL?.() ?? '';
+    return (configured || requestOrigin).replace(/\/$/, '');
+  }
+
+  /**
+   * The one startup warning for a public origin on an instance that terminates
+   * TLS itself (#2117), or null. A plain-http connection to such an instance
+   * gets the #1163 redirect to `ngdpbase.application.base-url`, so a tunnel or
+   * proxy in front that connects over http sends every link's visitor to the
+   * site's own (possibly private) address. Whether a proxy exists, and how it
+   * connects, cannot be seen from here; the warning says what it must do.
+   */
+  publicOriginTlsWarning(nativeTls: boolean): string | null {
+    if (!nativeTls) return null;
+    const publicOrigin = this.readPublicBaseUrl().url;
+    if (!publicOrigin) return null;
+    return (
+      `Share links point at ${publicOrigin} (ngdpbase.share.public-base-url), and this instance serves HTTPS itself. ` +
+      'Whatever carries that address to this instance (a tunnel or proxy) must connect to it over https, ' +
+      'for example https://localhost:<port> with the server name set to the base-url host. ' +
+      'A plain-http connection is redirected to ngdpbase.application.base-url, so a visitor following a share link ' +
+      'would be sent to that address instead.'
+    );
+  }
+
+  /**
+   * `ngdpbase.share.public-base-url`, validated: an absolute http(s) URL with
+   * no path beyond `/`, no query, fragment or credentials. Unset is
+   * `{ url: null, problem: null }`; an invalid value is ignored and named in
+   * `problem`.
+   */
+  private readPublicBaseUrl(): { url: string | null; problem: string | null } {
+    const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+      ?.getProperty('ngdpbase.share.public-base-url', '');
+    if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) {
+      return { url: null, problem: null };
+    }
+    const refuse = (why: string) => ({
+      url: null,
+      problem: `ngdpbase.share.public-base-url ${JSON.stringify(raw)} is ignored: ${why}. ` +
+        'Share links use ngdpbase.application.base-url instead. Set it to an address such as https://share.example.com.'
+    });
+    if (typeof raw !== 'string') return refuse('it is not a string');
+    let parsed: URL;
+    try {
+      parsed = new URL(raw.trim());
+    } catch {
+      return refuse('it is not an absolute URL');
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return refuse('it is not http or https');
+    if (parsed.username || parsed.password) return refuse('it carries a user name or password');
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) return refuse('it has a path, query or fragment');
+    return { url: parsed.origin, problem: null };
   }
 
   // ---------------------------------------------------------------------------

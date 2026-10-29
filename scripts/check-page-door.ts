@@ -67,7 +67,7 @@ const SCAN = ['src', 'addons'];
  * accepts. Only `title-rule-copy` applies here; the other rules are server
  * writes.
  */
-const BROWSER_SCAN = ['views', 'public/js'];
+const BROWSER_SCAN = ['views', 'public/js', 'public/share'];
 
 /** The page door itself, and the providers that implement the writes. */
 const DOOR = 'src/managers/PageManager.ts';

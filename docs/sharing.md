@@ -85,8 +85,43 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 | `ngdpbase.share.enabled` | `true` | The master switch. When `false`, every `/share/*`, `/shares` and `/my/vaults/links` route answers 404, and no link is issued |
 | `ngdpbase.share.storagedir` | `${FAST_STORAGE}/shares` | One JSON file per link |
 | `ngdpbase.system-category.{entry}.shareMaxDays` | `15` | The longest a new link to that system-category's vault may last |
+| `ngdpbase.share.public-base-url` | empty | The address links are made and shown with, when it differs from the site's own ([#2117](https://github.com/jwilleke/ngdpbase/issues/2117)). An absolute `http` or `https` URL with no path. Read on every link shown |
 
-Links the site shows or sends are built from `ngdpbase.application.base-url`, falling back to the request's origin. That base URL must resolve and route for recipients, or every link made is dead. [#860](https://github.com/jwilleke/ngdpbase/issues/860) is the example: the fix was a path-filtered Cloudflare Tunnel exposing only `/share/*` publicly.
+### Where links point
+
+`ShareManager.linkBaseUrl` decides the address of every link: the `/shares` list, the `/my/vaults/links` list, and the link to an encrypted vault that the owner's browser builds (the form's `data-base-url`). In order:
+
+- `ngdpbase.share.public-base-url`, when it is set and valid.
+- `ngdpbase.application.base-url`.
+- The request's own origin.
+
+An invalid public base URL (not absolute, not `http`/`https`, with a path, query, fragment or credentials) is ignored, and startup logs an error naming it. The address chosen must resolve and route for recipients, or every link made is dead.
+
+### Reaching links from outside
+
+A site whose own address is private, a LAN name, is shared through a tunnel or proxy that carries only `/share/…` and answers 404 to everything else. [#860](https://github.com/jwilleke/ngdpbase/issues/860) set this up with a Cloudflare Tunnel; [#2117](https://github.com/jwilleke/ngdpbase/issues/2117) made it work with a site that serves HTTPS itself.
+
+- Set `ngdpbase.share.public-base-url` to the tunnel's address, such as `https://share.example.com`. Links are then made with it, and the site's own base URL stays as it is.
+- Everything a share view loads from the site is under `/share/`: the pages, files, thumbnails and locked copies under `/share/{token}/…`, and the viewer for a link to an encrypted vault at `/share/_assets/share-viewer.js` (from `public/share/_assets/`). `_assets` is never a token: a miss under it is a plain 404 that never reaches the resolver or its rate limit. Styles and fonts come from public CDNs.
+- When the site terminates TLS itself ([#1153](https://github.com/jwilleke/ngdpbase/issues/1153)), the tunnel must connect to it over https. A plain-http request on the TLS port is redirected to `ngdpbase.application.base-url` ([#1163](https://github.com/jwilleke/ngdpbase/issues/1163)), so a tunnel connecting over http sends every visitor to the private address. Startup warns once when a public base URL is set and the site serves HTTPS itself. It cannot see the tunnel.
+
+A `cloudflared` ingress for a site that serves HTTPS on port 3000, whose base URL host is `site.lan.example.com`:
+
+```yaml
+ingress:
+  - hostname: share.example.com
+    path: ^/share($|/.*)
+    service: https://localhost:3000
+    originRequest:
+      originServerName: site.lan.example.com
+  - service: http_status:404
+```
+
+`originServerName` makes `cloudflared` check the site's certificate against the base URL host it was issued for. `noTLSVerify: true` also works, but checks nothing. A site that serves plain HTTP keeps `service: http://localhost:3000`.
+
+## Known gaps
+
+- A shared page's rendered content can point at addresses outside `/share/`: links to other pages (`/view/…`), and the `/attachments/…` pictures and files of a page shared by a keyword link. Behind a tunnel that carries only `/share/…` these answer 404 at the tunnel. A vault-link page's `/attachments/…` addresses are rewritten to `/share/{token}/attachment/…`; a keyword-link page's are not.
 
 ## Where it lives
 
@@ -98,7 +133,9 @@ Links the site shows or sends are built from `ngdpbase.application.base-url`, fa
 | The link as a ceiling | `PolicyDecisionPoint.ceiling`; `PolicyInformationPoint` (page decider and list filter) |
 | Files through a vault link | `AttachmentManager.getVaultShareAttachment` |
 | The recipient's routes, `/shares`, `/my/vaults/links` | `src/routes/WikiRoutes.ts` (`shareResolve`, `shareAlbum`, `sharePage`, `shareAttachment`, `sharesList`, `myVaultLinksPage`) |
-| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/shares.ejs`, `views/my-vault-links.ejs` |
+| Where links point | `ShareManager.linkBaseUrl`, `ShareManager.publicOriginTlsWarning` (logged at startup by `src/app.ts`) |
+| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/share-locked.ejs`, `views/shares.ejs`, `views/my-vault-links.ejs` |
+| The encrypted-vault viewer | `public/share/_assets/share-viewer.js`, served at `/share/_assets/share-viewer.js` |
 
 ## History
 

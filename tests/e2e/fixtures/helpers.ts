@@ -349,6 +349,33 @@ async function signInWithPassword(
   if (opts.acceptTerms !== false) await acceptTermsIfAsked(page);
 }
 
+/**
+ * Create a private page through the create form, in the owner's default vault,
+ * and save `body`; returns its private name (`vaults/{owner}/{vault}/{title}`).
+ * The caller deletes it.
+ */
+async function createPrivatePage(page: import('@playwright/test').Page, title: string, body: string): Promise<string> {
+  await page.goto('/create');
+  await page.locator('#pageName, input[name="pageName"]').first().fill(title);
+  const box = page.locator('#privateFlag');
+  if (!(await box.isChecked())) await box.check();
+  // A private page opens at its vault address: /vaults/{owner}/{vault}/{title}/edit.
+  await Promise.all([
+    page.waitForURL(/\/vaults\/[^/]+\/[^/]+\/[^/]+\/edit$/, { timeout: 30000 }),
+    page.locator('button:has-text("Create Page"), form[action="/create"] button[type="submit"]').first().click()
+  ]);
+  const name = new URL(page.url()).pathname.replace(/\/edit$/, '').slice(1).split('/').map(decodeURIComponent).join('/');
+  expect(name).toMatch(/^vaults\//);
+  const editor = page.locator('textarea#editorContent, textarea[name="content"], .CodeMirror textarea');
+  await editor.first().waitFor({ state: 'visible', timeout: 15000 });
+  await editor.first().fill(body);
+  await Promise.all([
+    page.waitForURL((u) => u.pathname.startsWith('/vaults/') && !u.pathname.endsWith('/edit'), { timeout: 30000 }),
+    page.locator('button[type="submit"]:has-text("Save"), #saveButton').first().click()
+  ]);
+  return name;
+}
+
 export {
   TEST_PAGE_PREFIX,
   acceptTermsIfAsked,
@@ -358,6 +385,7 @@ export {
   waitForServerReady,
   waitForPageReady,
   createPage,
+  createPrivatePage,
   deletePage,
   markTestArtifact,
   purgeDeletedPage,

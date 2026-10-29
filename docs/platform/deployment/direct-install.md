@@ -88,7 +88,7 @@ ngdpbase listens on plain HTTP. For HTTPS use any reverse proxy in front:
 
 - __Caddy__ — simplest TLS-by-default option; one-line Caddyfile.
 - __nginx__ — proxy_pass example in [`docker/DOCKER.md`](../../../docker/DOCKER.md#using-with-reverse-proxy).
-- __Cloudflare Tunnel__ — no public IP required; tunnel terminates TLS at the edge.
+- __Cloudflare Tunnel__ — no public IP required; tunnel terminates TLS at the edge. To expose only share links from a site whose own address is private, see [Reaching links from outside](../../sharing.md#reaching-links-from-outside): set `ngdpbase.share.public-base-url`, and when the site serves HTTPS itself, point the tunnel at `https://localhost:<port>` with `originRequest.originServerName` set to the base URL host.
 
 After wiring the proxy, update `app-custom-config.json`:
 

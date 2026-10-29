@@ -663,6 +663,13 @@ interface RequestInfo {
 export const contactRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
 /**
+ * Where the files a share view loads are served (#2117): under `/share/`, so a
+ * tunnel or proxy that exposes only `/share/…` carries them, and on a segment
+ * no token can be (tokens are 64 hex characters).
+ */
+export const SHARE_ASSETS_PATH = '/share/_assets';
+
+/**
  * Module-scope rate limiter for anonymous /share/:token/* access (#853,
  * decision 5) keyed `token:ip`. Generous budget — one album view fans out
  * into one request per thumbnail, so a big album must fit in the window.
@@ -9220,7 +9227,7 @@ ${panes}
         preselected,
         links,
         titles,
-        baseUrl: this.shareBaseUrl(req),
+        baseUrl: this.shareLinkBase(req),
         createdId: typeof req.query.created === 'string' ? req.query.created : null,
         notice: typeof req.query.notice === 'string' ? req.query.notice : null,
         error: typeof req.query.error === 'string' ? req.query.error : null
@@ -17926,6 +17933,11 @@ ${panes}
     // Share routes (#853) — token-gated anonymous access (epic #842 slice 2)
     // #1223: one resolver for every /share/:token* request. It turns the token
     // into the share subject and attaches it; the handlers below decide nothing.
+    // #2117: /share/_assets/ holds the files a share view loads (public/share/_assets,
+    // served by express.static ahead of every route), so a tunnel that carries
+    // only /share/… carries them too. A miss there is a plain 404 here: `_assets`
+    // is never a token, and must not reach the resolver or its rate limiter.
+    app.use(SHARE_ASSETS_PATH, (_req: Request, res: Response) => { res.status(404).send('Not Found'); });
     app.use('/share/:token', (req: Request, res: Response, next: NextFunction) => this.shareResolve(req, res, next));
     app.get('/share/:token', (req: Request, res: Response) => void this.shareAlbum(req, res));
     app.get('/share/:token/file/:id', (req: Request, res: Response) => void this.shareFile(req, res));
@@ -21243,6 +21255,15 @@ ${description}
     next();
   }
 
+  /**
+   * The origin share links are shown with: ShareManager decides it (#2117),
+   * given this request's own origin as the last resort.
+   */
+  private shareLinkBase(req: Request): string {
+    const requestOrigin = `${req.protocol}://${req.get('host')}`;
+    return this.engine.getManager('ShareManager')?.linkBaseUrl(requestOrigin) ?? requestOrigin;
+  }
+
   /** The scope the resolver attached — the share's candidate set, for listing. */
   private shareScopeOf(res: Response): ShareScope {
     return res.locals.shareScope as ShareScope;
@@ -21439,17 +21460,6 @@ ${description}
 
 
   /**
-   * Absolute base for displaying share links. Prefers the canonical
-   * configured base-url; falls back to the request's own origin so the
-   * page still works on instances without an explicit base-url.
-   */
-  private shareBaseUrl(req: Request): string {
-    const configManager = this.engine.getManager('ConfigurationManager');
-    const configured = configManager?.getBaseURL?.() ?? '';
-    return (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  }
-
-  /**
    * GET /shares
    * Management list: own shares for editors, all shares for admins.
    * Shows full share link, status (active/expired/revoked), and expiry.
@@ -21520,7 +21530,7 @@ ${description}
         shareStatsHtml,
         isAdmin,
         backLink,
-        baseUrl: this.shareBaseUrl(req),
+        baseUrl: this.shareLinkBase(req),
         createdId: typeof req.query.created === 'string' ? req.query.created : null,
         revoked: req.query.revoked === '1',
         error: typeof req.query.error === 'string' ? req.query.error : null,

@@ -1,7 +1,7 @@
 ---
 name: Configuration developer guide
 description: How to add or change a configuration key — one reader, three merge layers, maps not arrays
-dateModified: 2026-10-22
+dateModified: 2026-10-29
 category: guides
 relatedModules: [ConfigurationManager]
 ---
@@ -50,6 +50,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 
 - [ConfigurationManager](../managers/ConfigurationManager.md)
 - Keys added with [#1974](https://github.com/jwilleke/ngdpbase/issues/1974), documented with their module: `ngdpbase.export.pdf.*`, the PDF provider (`none`, `local-chrome`, `chrome-service`) and its settings, in [ExportManager](../managers/ExportManager.md#configuration) (read on every render, no restart; a `chrome-service` URL on a private address also needs its range in `ngdpbase.security.egress.allowed-ranges`), `ngdpbase.mail.attachments.max-bytes` in [EmailManager](../managers/EmailManager.md#configuration) (read at startup)
+- `ngdpbase.share.public-base-url` ([#2117](https://github.com/jwilleke/ngdpbase/issues/2117)), the address share links are made with when it differs from `ngdpbase.application.base-url`, documented in [sharing.md](../sharing.md#configuration) (read on every link shown; an invalid value is ignored and named at startup)
 - [bootstrap-developer-guide.md](bootstrap-developer-guide.md)
 - [security-developer-guide.md](security-developer-guide.md) — addon merge of permissions and policies
 - `src/utils/configFiles.ts`, `src/utils/configEnvKeys.ts`

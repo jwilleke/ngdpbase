@@ -1,7 +1,7 @@
 ---
 name: ShareManager
 description: Share-link capability tokens (#842) — issue/validate/revoke/list + live keyword-scope resolution
-dateModified: '2026-07-16'
+dateModified: '2026-10-29'
 category: managers
 code: src/managers/ShareManager.ts
 ---
@@ -25,6 +25,8 @@ Routes consume ONLY this narrow interface, never the storage:
 - `issueVaultShare(scope, lifetimeHours, issuer)` — a link to chosen pages of a vault, or the whole vault ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)): the vault's owner only, lifetime up to `maxShareDays(vault)`
 - `extend(id, hours, by)` — the issuer adds up to 24 hours to a live link, audited as `share-extend`
 - `recordVaultVisit(token, what, ip)` — one `share-access` record per page, file or list opened through a vault link
+- `linkBaseUrl(requestOrigin)` — the origin every link is shown with: `ngdpbase.share.public-base-url`, else `ngdpbase.application.base-url`, else the request's origin ([where links point](../sharing.md#where-links-point), [#2117](https://github.com/jwilleke/ngdpbase/issues/2117))
+- `publicOriginTlsWarning(nativeTls)` — the one startup warning when a public base URL is set and the instance serves HTTPS itself, else `null`
 
 Role gating (decision 2: `admin` + `editor` may create) is the route layer's job — slice 3.
 
@@ -53,6 +55,8 @@ Since [#1223](https://github.com/jwilleke/ngdpbase/issues/1223) the handlers dec
 - `GET /share/:token` — album: `resolveScope` enumerates the candidates (everything carrying the keyword); each page is kept only if the page read gate allows it, each media item only if `MediaManager.getItem` returns it (chrome-free standalone template)
 - `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id` — the `/media/file/:id` and `/media/thumb/:id` doors, reached as the share subject; the thumbnail door answers `Cache-Control: private` to a share subject
 - `GET /share/:token/page/:name` — the same read gate as `/view` and export, then a read-only render; known v1 caveat: links inside the rendered HTML point at normal `/view/` URLs
+
+`/share/_assets/…` is not a token: it holds the files a share view loads (`public/share/_assets/`, served statically ahead of every route), and a miss there is a plain 404 registered ahead of the resolver ([#2117](https://github.com/jwilleke/ngdpbase/issues/2117)).
 
 `WikiRoutes.shareDoors.test.ts` holds statically that no handler contains an access decision.
 
