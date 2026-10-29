@@ -73,6 +73,16 @@ describe('#1629 store() and the upload door', () => {
     expect(record.filename).toBe('a.txt');
   });
 
+  it('storeAttachment() says when the bytes were already held, and returns them under their own name (#2130)', async () => {
+    const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
+    await provider.initialize();
+    const bytes = Buffer.from('same bytes');
+    const first = await provider.storeAttachment(bytes, { originalName: 'scan0042.txt', mimeType: 'text/plain', size: bytes.length }, {}, { username: 'alice' });
+    expect(first.alreadyHeld).toBeUndefined();
+    const again = await provider.storeAttachment(bytes, { originalName: 'Tax return.txt', mimeType: 'text/plain', size: bytes.length }, {}, { username: 'alice' });
+    expect(again).toMatchObject({ alreadyHeld: true, identifier: first.identifier, name: 'scan0042.txt' });
+  });
+
   it('store() refuses when the door is unavailable', async () => {
     const provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir, null));
     await provider.initialize();

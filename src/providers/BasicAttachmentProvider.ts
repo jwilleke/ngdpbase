@@ -821,6 +821,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       store: metadata.store as string | undefined
     };
 
+    // #2130: whether these bytes were already held, so the door's audit record tells the truth.
+    const alreadyHeld = this.attachmentMetadata.has(this.generateAttachmentId(fileBuffer));
     const schemaMetadata = await this.storeAttachmentInternal(
       fileBuffer,
       fileInfo,
@@ -846,7 +848,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       filePath: schemaMetadata.storageLocation,
       description: schemaMetadata.description,
       isPrivate: schemaMetadata.isPrivate,
-      creator: schemaMetadata.creator
+      creator: schemaMetadata.creator,
+      ...(alreadyHeld ? { alreadyHeld: true } : {})
     };
 
     // Add page mention if pageUuid is provided

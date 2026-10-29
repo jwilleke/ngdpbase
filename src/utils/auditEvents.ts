@@ -189,6 +189,14 @@ export type AttachmentDetail =
     attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null;
     /** An import's own file name, when the user gave the file another (#2130). */
     importedFrom?: string | null;
+    /**
+     * `false` when the pool already held these bytes and nothing new was
+     * stored (#2130): `filename` and `heldAs` are then the name it is held
+     * under, and `offeredAs` the name the upload offered. Absent: stored.
+     */
+    stored?: false;
+    heldAs?: string;
+    offeredAs?: string;
   }
   /** A sealed store's file: `owner` is the store owner's identity @id in the record, `ownerUser` their username beside it (#2041). */
   | { attachmentId: string; sealedStore: { owner: string; store: string; ownerUser?: string } };
@@ -309,6 +317,11 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
     if (input.pageName) metadata.pageName = input.pageName;
     if (typeof input.sizeBytes === 'number') metadata.sizeBytes = input.sizeBytes;
     if (input.importedFrom) metadata.importedFrom = input.importedFrom;
+    if (input.stored === false) {
+      metadata.stored = false;
+      if (input.heldAs) metadata.heldAs = input.heldAs;
+      if (input.offeredAs) metadata.offeredAs = input.offeredAs;
+    }
   }
 
   const severity: AuditSeverity = op === 'delete'

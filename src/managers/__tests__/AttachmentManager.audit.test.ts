@@ -141,6 +141,25 @@ describe('#1183 — asset-upload is recorded at the door', () => {
     expect(sink[0]).toMatchObject({ metadata: { filename: 'photo.jpg', importedFrom: 'IMG_1234.jpg' } });
   });
 
+  test('a pool hit stores nothing: the record says so, names the file as held, and keeps the offered name apart (#2130)', async () => {
+    const sink: Recorded[] = [];
+    const manager = makeManager(makeEngine(sink), {
+      storeAttachment: () => Promise.resolve({ identifier: 'att-1', name: 'scan0042.jpg', alreadyHeld: true })
+    });
+    await manager.uploadAttachment(Buffer.from('x'), FILE, CTX, { importedFrom: 'IMG_1234.jpg' });
+    expect(sink[0]).toMatchObject({
+      eventType: 'asset-upload',
+      metadata: { attachmentId: 'att-1', filename: 'scan0042.jpg', stored: false, heldAs: 'scan0042.jpg', offeredAs: 'photo.jpg', importedFrom: 'IMG_1234.jpg' }
+    });
+  });
+
+  test('a new file\'s record carries no stored/heldAs fields (#2130)', async () => {
+    const sink: Recorded[] = [];
+    await uploadManager(sink).uploadAttachment(Buffer.from('x'), FILE, CTX);
+    expect(sink[0].metadata).not.toHaveProperty('stored');
+    expect(sink[0].metadata).not.toHaveProperty('heldAs');
+  });
+
   test('the client IP comes from the WikiContext the caller carries', async () => {
     // The manager never sees the Express request. Moving the emit here would
     // otherwise have silently dropped the IP the route used to record.

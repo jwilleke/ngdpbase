@@ -792,12 +792,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in
     // WikiRoutes. on-failure: continue, so a failed record is logged, not fatal.
+    // #2130: the pool stores by content. When it already held these bytes,
+    // nothing new was stored: the record says so, names the file by the name
+    // it is held under, and keeps the name offered apart, never as if stored.
+    const heldAs = attachmentMetadata.alreadyHeld === true && typeof attachmentMetadata.name === 'string'
+      ? attachmentMetadata.name
+      : null;
     await this.recordAttachmentEvent('upload', ctx, {
       attachmentId: String(attachmentMetadata.identifier ?? ''),
-      filename: fileInfo.originalName,
+      filename: heldAs ?? fileInfo.originalName,
       pageName: pageName ?? null,
       sizeBytes: fileInfo.size ?? null,
-      ...(options.importedFrom ? { importedFrom: options.importedFrom } : {})
+      ...(options.importedFrom ? { importedFrom: options.importedFrom } : {}),
+      ...(heldAs !== null ? { stored: false, heldAs, offeredAs: fileInfo.originalName } : {})
     }, options.wikiContext);
 
     return attachmentMetadata;

@@ -149,6 +149,11 @@ describe('buildAttachmentAuditEvent', () => {
     expect('importedFrom' in buildAttachmentAuditEvent({ ...base, op: 'upload' }).metadata).toBe(false);
   });
 
+  it('a pool hit records that nothing was stored, what it is held as, and the name offered (#2130)', () => {
+    const event = buildAttachmentAuditEvent({ ...base, op: 'upload', filename: 'scan0042.jpg', stored: false, heldAs: 'scan0042.jpg', offeredAs: 'Beach.jpg' });
+    expect(event.metadata).toMatchObject({ filename: 'scan0042.jpg', stored: false, heldAs: 'scan0042.jpg', offeredAs: 'Beach.jpg' });
+  });
+
   it('a sealed store\'s file is named by id only, with no import name (#2048, #2130)', () => {
     const event = buildAttachmentAuditEvent({ op: 'upload', username: 'bob', attachmentId: 'att-9', sealedStore: { owner: 'bob', store: 'health' } });
     expect(JSON.stringify(event.metadata)).not.toMatch(/filename|importedFrom/);
