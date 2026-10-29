@@ -103,11 +103,16 @@ test.describe('Import screen (#2021)', () => {
     await expect(admin.locator('#pagecontent, .page-content, main').first()).toContainText(`Imported through the screen ${RUN}`);
   });
 
-  test('after a reload the user still sees their run', async ({ browser }) => {
+  test('after a reload the file is under "Your recent imports", read from the ledger, with a link to the page (#2110)', async ({ browser }) => {
     const { context, page } = await signIn(browser, EDITOR);
     try {
       await page.goto('/import');
-      await expect(page.locator('#importRuns [data-run-state="done"]').first()).toContainText(`${TITLE}.md`);
+      const row = page.locator('#importRecent tbody tr', { hasText: `${TITLE}.md` });
+      await expect(row).toHaveAttribute('data-file-status', 'imported');
+      await expect(row).toContainText('Pages');
+      await expect(row.locator('a', { hasText: 'Open' })).toHaveAttribute('href', `/view/${encodeURIComponent(TITLE)}`);
+      // Shown in the viewer's local time, not the UTC fallback.
+      await expect(row.locator('time[data-local-time]')).not.toContainText('UTC');
     } finally {
       await context.close();
     }

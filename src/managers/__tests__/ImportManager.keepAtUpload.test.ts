@@ -24,6 +24,7 @@ import AttachmentManager from '../AttachmentManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import ImportManager, { ImportUploadRefused } from '../ImportManager';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
+import logger from '../../utils/logger';
 import { MemoryIceLedger } from '../../ice/ledger';
 import type { IceItem, IceRunRequest } from '../../ice/types';
 import { jobContextFromRequest } from '../../context/JobContext';
@@ -166,6 +167,19 @@ describe('ImportManager — keeping an original in an encrypted store at upload 
     unlockPrivateStores('molly-sid', 'molly', kek);
     setUnlockedDek('molly-sid', STORE, dek);
     expect((await attachments.getPrivateStoreAttachment(String(ref), MOLLY))?.buffer.equals(XML)).toBe(true);
+  });
+
+  test('a confidential import: the sealed store\'s upload door and the run log no file name (#2110)', async () => {
+    const levels = ['info', 'warn', 'error', 'debug'] as const;
+    const calls = () => levels.flatMap(l => (logger[l] as unknown as { mock: { calls: unknown[][] } }).mock.calls);
+    const before = calls().length;
+    const runId = await importManager.enqueueUpload(request(), MOLLY);
+    await jobs.whenIdle();
+    await vi.waitFor(() => expect(importManager.getImportRun(runId, MOLLY)?.state).toBe('done'));
+    expect(importManager.isConfidential('vaultrec.records')).toBe(true);
+    const logged = calls().slice(before).map(args => args.map(a => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged.join('\n')).not.toContain('labs');
   });
 
   test('without the request context the run cannot keep: a job context holds no key', async () => {

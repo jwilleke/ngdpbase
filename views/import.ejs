@@ -3,7 +3,9 @@
 <%# #2021: the import screen for the ICE engine (#1979). Any user; only the
     receivers they may use (receiversFor), only their own runs. Locals:
     receivers [{ id, label, originals: { allowed, default } }], preselected,
-    runs (IceRunReport[], newest first), limits { maxFiles, maxBytes }.
+    runs (IceRunReport[] still queued or running, newest first),
+    recent (RecentImport[] from the ledger, #2110), recentUnavailable,
+    limits { maxFiles, maxBytes }.
     The upload is posted with csrfFetch (the CSRF check runs before a
     multipart body is parsed); times go out as <time datetime data-local-time>. %>
 <div class="container mt-4" id="importScreen">
@@ -56,9 +58,35 @@
         </form>
     <% } %>
 
-    <h2 class="h5">Your imports</h2>
-    <p class="text-muted small" id="importNoRuns" <%= runs.length ? 'hidden' : '' %>>You have no recent imports. Imports are listed here until the site restarts.</p>
     <div id="importRuns" aria-live="polite"></div>
+
+    <%# #2110: the user's own recent files, from the engine's ledger, so they survive a restart. %>
+    <h2 class="h5">Your recent imports</h2>
+    <% if (locals.recentUnavailable) { %>
+        <p class="text-muted small" id="importRecentUnavailable">Your earlier imports cannot be shown right now. Try again shortly.</p>
+    <% } else if (!recent || recent.length === 0) { %>
+        <p class="text-muted small" id="importNoRecent">You have no recent imports.</p>
+    <% } else { %>
+        <% var RECENT_STATUS = { imported: 'Imported', partial: 'Partly imported', unchanged: 'Already imported, unchanged', duplicate: 'Already here', noise: 'Skipped (not content)', unreadable: 'Could not be read', refused: 'Not allowed', failed: 'Failed' }; %>
+        <div class="table-responsive">
+        <table class="table table-sm small" id="importRecent">
+            <thead><tr><th scope="col">When</th><th scope="col">File</th><th scope="col">Result</th><th scope="col">Into</th></tr></thead>
+            <tbody>
+            <% recent.forEach(function(f) { %>
+                <tr data-file-status="<%= f.status %>">
+                    <td class="text-nowrap"><time datetime="<%= f.at %>" data-local-time><%= f.at.slice(0, 16).replace('T', ' ') %> UTC</time></td>
+                    <td class="text-break"><%= f.name %></td>
+                    <td><%= RECENT_STATUS[f.status] || f.status %><% if (f.message) { %><div class="text-muted"><%= f.message %></div><% } %></td>
+                    <td>
+                        <%= f.receiverLabel || f.receiver %>
+                        <% if (f.link) { %><div><a href="<%= f.link %>">Open</a><% if (f.refs > 1) { %> <span class="text-muted">and <%= f.refs - 1 %> more</span><% } %></div><% } %>
+                    </td>
+                </tr>
+            <% }); %>
+            </tbody>
+        </table>
+        </div>
+    <% } %>
 </div>
 
 <script type="application/json" id="importData"><%- jsonForScript({ receivers: receivers, runs: runs }) %></script>
@@ -127,7 +155,6 @@
         var old = document.getElementById(card.id);
         if (old) old.replaceWith(card); else runsBox.appendChild(card);
         if (window.localizeTimes) window.localizeTimes(card);
-        document.getElementById('importNoRuns').hidden = true;
         return card;
     }
 
