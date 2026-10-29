@@ -63,7 +63,7 @@ import { systemContext } from '../context/bootActions.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
 import { RECORD_SHIMS } from '../ice/shims/index.js';
-import { boundScope, convertChain, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
+import { boundScope, convertChain, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
@@ -670,10 +670,9 @@ class ImportManager extends BaseManager {
     const shown = found.slice(0, this.numberSetting('ngdpbase.import.engine.recent-imports', 25));
     for (const { entry, first } of shown) {
       const receiver = this.receiverRegistry.get(entry.receiver);
-      if (!first || typeof receiver?.linkFor !== 'function') continue;
-      const link = await receiver.linkFor(first, ctx).catch(() => null);
       // A link within this site only: a path, never another origin or a script URL.
-      if (typeof link === 'string' && /^\/(?![/\\])/.test(link)) entry.link = link;
+      const link = receiver ? await receiverLink(receiver, first, ctx) : undefined;
+      if (link) entry.link = link;
     }
     return shown.map(s => s.entry);
   }
@@ -999,6 +998,12 @@ class ImportManager extends BaseManager {
             ctx,
             { description: `Imported ${item.name}`, ...(info?.givenName ? { importedFrom: ownName } : {}) }
           );
+          // #2130: the pool stores by content. The same bytes already there come
+          // back under their old name, so the name given was not applied: say so.
+          const heldAs = typeof stored.name === 'string' ? stored.name : undefined;
+          if (info?.givenName && heldAs && heldAs !== info.givenName) {
+            return { status: 'duplicate', ref: stored.identifier, heldAs };
+          }
           return { status: 'stored', ref: stored.identifier };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

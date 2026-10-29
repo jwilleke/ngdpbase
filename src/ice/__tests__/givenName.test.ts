@@ -124,3 +124,48 @@ describe('the engine applies a given name (#2130)', () => {
     expect(result.files.map(f => [f.name, f.givenName])).toEqual([['all.zip/one.csv', undefined], ['all.zip/two.csv', undefined]]);
   });
 });
+
+describe('a name given is never silently dropped (operator, 2026-10-29)', () => {
+  /** A receiver that already holds everything, under another name, and links to it. */
+  function holding(link: string) {
+    const r: RegisteredReceiver = {
+      id: 'test.things', owner: 'test', name: 'things', accepts: ['file'], names: 'file',
+      mayUse: async () => true,
+      receive: async () => ({ status: 'duplicate', ref: 'thing-7', heldAs: 'scan0042.pdf' }),
+      linkFor: async () => link
+    };
+    return r;
+  }
+
+  test('held under another name: duplicate, says where, links there, and the name is not recorded as applied', async () => {
+    const ledger = new MemoryIceLedger();
+    const result = await run(deps(holding('/things/7'), ledger), { source: { type: 'upload', files: [file('copy.pdf', 'Taxes.pdf')] }, receiver: 'test.things' });
+    expect(result.files[0]).toMatchObject({ status: 'duplicate', heldAs: 'scan0042.pdf', link: '/things/7', message: 'This file is already on the site as "scan0042.pdf"; rename it there.' });
+    expect(result.files[0].givenName).toBeUndefined();
+    const entry = (await ledger.files('s'))[0];
+    expect(entry).toMatchObject({ heldAs: 'scan0042.pdf' });
+    expect(entry.givenName).toBeUndefined();
+  });
+
+  test('a link to another origin is never offered', async () => {
+    const result = await run(deps(holding('https://evil.example/x')), { source: { type: 'upload', files: [file('copy.pdf', 'Taxes.pdf')] }, receiver: 'test.things' });
+    expect(result.files[0].link).toBeUndefined();
+  });
+
+  test('without a name given, a held item is a plain duplicate, as today', async () => {
+    const result = await run(deps(holding('/things/7')), { source: { type: 'upload', files: [file('copy.pdf')] }, receiver: 'test.things' });
+    expect(result.files[0].status).toBe('duplicate');
+    expect(result.files[0].message).toBeUndefined();
+    expect(result.files[0].link).toBeUndefined();
+  });
+
+  test('the same bytes again: under the name they have, today\'s "already imported"; under another, where they are', async () => {
+    const { r } = receiver('file');
+    const d = deps(r);
+    await run(d, { source: { type: 'upload', files: [file('export.csv', 'Bank.csv')] }, receiver: r.id });
+    const again = await run(d, { source: { type: 'upload', files: [file('export.csv', 'Bank.csv')] }, receiver: r.id });
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: expect.stringMatching(/^already imported /) });
+    const renamed = await run(d, { source: { type: 'upload', files: [file('export.csv', 'Other.csv')] }, receiver: r.id });
+    expect(renamed.files[0]).toMatchObject({ status: 'unchanged', message: 'This file is already on the site as "Bank.csv"; rename it there.' });
+  });
+});

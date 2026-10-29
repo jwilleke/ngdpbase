@@ -27,6 +27,9 @@ function makeEngine(config: Record<string, unknown> = {}) {
   const existing = new Set<string>();
   const uploads: Array<{ name: string; ctx: ActorContext; options?: Record<string, unknown> }> = [];
   const poolNames = new Set<string>();
+  /** With `pool.dedupe`, the pool stores by content, as the real one does: the same bytes come back under their first name. */
+  const poolBytes = new Map<string, { identifier: string; name: string }>();
+  const pool = { dedupe: false };
   const managers: Record<string, unknown> = {
     ConfigurationManager: {
       getProperty: (key: string, fallback: unknown) => (key in config ? config[key] : fallback),
@@ -47,17 +50,21 @@ function makeEngine(config: Record<string, unknown> = {}) {
       refreshPageList: async () => undefined
     },
     AttachmentManager: {
-      uploadAttachment: async (_bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => {
+      uploadAttachment: async (bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => {
         if (!(GRANTS[ctx.username] ?? []).includes('asset-upload')) throw new Error('Permission denied: You do not have permission to upload attachments');
+        const held = pool.dedupe ? poolBytes.get(bytes.toString('base64')) : undefined;
+        if (held) return held;
         uploads.push({ name: info.originalName, ctx, ...(options?.importedFrom ? { options: { importedFrom: options.importedFrom } } : {}) });
         poolNames.add(info.originalName);
-        return { identifier: `att-${uploads.length}` };
+        const record = { identifier: `att-${uploads.length}`, name: info.originalName };
+        poolBytes.set(bytes.toString('base64'), record);
+        return record;
       },
       getSharedPoolAttachmentByFilename: async (name: string) => (poolNames.has(name) ? { identifier: 'taken' } : null)
     }
   };
   const engine = { getManager: (name: string) => managers[name] ?? null };
-  return { engine, managers, saved, existing, uploads, poolNames };
+  return { engine, managers, saved, existing, uploads, poolNames, pool };
 }
 
 async function makeImportManager(config: Record<string, unknown> = {}) {
@@ -327,6 +334,42 @@ describe('ImportManager — the name a user gives what an upload becomes (#2130)
     const run = await im.runImport({ source: { type: 'upload', files: [named('IMG_9.png', 'PNG9', 'Beach.png')] }, receiver: 'core.files' }, EDITOR);
     expect(run.files[0]).toMatchObject({ status: 'refused', message: 'A file named "Beach.png" already exists. Choose another name and import it again.' });
     expect(uploads).toEqual([]);
+  });
+
+  test('files: bytes the pool already holds under another name are not renamed, and the status says where they are (operator, 2026-10-29)', async () => {
+    const { im, uploads, pool } = await makeImportManager();
+    pool.dedupe = true;
+    // Uploaded first under its own name, in a narrower scope (as an add-on's source would), so the fingerprint does not skip the next.
+    await im.runImport({ source: { type: 'upload', files: [md('scan0042.pdf', 'PDFBYTES')] }, receiver: 'core.files', scope: 'elsewhere' }, EDITOR);
+    const run = await im.runImport({ source: { type: 'upload', files: [named('copy.pdf', 'PDFBYTES', 'Tax return.pdf')] }, receiver: 'core.files' }, EDITOR);
+    expect(run.files[0]).toMatchObject({ status: 'duplicate', heldAs: 'scan0042.pdf', message: 'This file is already on the site as "scan0042.pdf"; rename it there.', refs: ['att-1'] });
+    expect(run.files[0].givenName).toBeUndefined();
+    expect(uploads.map(u => u.name)).toEqual(['scan0042.pdf']);
+
+    // The same again, with yet another name: skipped by its fingerprint, and still told where it is.
+    const again = await im.runImport({ source: { type: 'upload', files: [named('copy.pdf', 'PDFBYTES', 'Taxes.pdf')] }, receiver: 'core.files' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: 'This file is already on the site as "scan0042.pdf"; rename it there.' });
+    const recent = await im.recentImportsFor(EDITOR);
+    expect(recent.find(r => r.name === 'copy.pdf')).toMatchObject({ status: 'duplicate', message: expect.stringContaining('scan0042.pdf') });
+    expect(recent.find(r => r.name === 'copy.pdf')?.givenName).toBeUndefined();
+  });
+
+  test('pages: the same file imported again under a new name is unchanged, says the title it has, and links to it when the user may open it', async () => {
+    const { im, managers, saved } = await makeImportManager();
+    (managers.PageManager as Record<string, unknown>).mayShowPage = async () => true;
+    await im.runImport({ source: { type: 'upload', files: [named('export.md', '# Plan', 'Garden plan')] }, receiver: 'core.pages' }, EDITOR);
+    const again = await im.runImport({ source: { type: 'upload', files: [named('export.md', '# Plan', 'Veg plan')] }, receiver: 'core.pages' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: 'This file is already on the site as "Garden plan"; rename it there.', link: '/view/Garden%20plan' });
+    expect(again.files[0].givenName).toBeUndefined();
+    expect(saved).toHaveLength(1);
+  });
+
+  test('without a given name, the same file again is unchanged as today', async () => {
+    const { im } = await makeImportManager();
+    await im.runImport({ source: { type: 'upload', files: [md('scan.pdf', 'X1')] }, receiver: 'core.files' }, EDITOR);
+    const again = await im.runImport({ source: { type: 'upload', files: [md('scan.pdf', 'X1')] }, receiver: 'core.files' }, EDITOR);
+    expect(again.files[0]).toMatchObject({ status: 'unchanged', message: expect.stringMatching(/^already imported /) });
+    expect(again.files[0].link).toBeUndefined();
   });
 
   test('an invalid name is refused with why, for pages and files', async () => {

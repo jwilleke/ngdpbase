@@ -155,6 +155,13 @@
                 if (f.givenName) li.appendChild(el('span', 'text-muted', ' (from ' + f.name + ')'));
                 li.appendChild(document.createTextNode(' — ' + (STATUS[f.status] || f.status)));
                 if (f.message) li.appendChild(document.createTextNode(': ' + f.message));
+                // #2130: where the file already is, when the name given was not applied (a same-site path from the engine).
+                if (f.link && /^\/(?![\/\\])/.test(f.link)) {
+                    li.appendChild(document.createTextNode(' '));
+                    var open = el('a', '', 'Open');
+                    open.setAttribute('href', f.link);
+                    li.appendChild(open);
+                }
                 list.appendChild(li);
             });
             body.appendChild(list);

@@ -244,6 +244,13 @@ export interface ReceiveOutcome {
   /** Where it went: a page name, an attachment id, a record id. */
   ref?: string;
   message?: string;
+  /**
+   * The name the thing goes by on the site, when it differs from the name
+   * the user gave (#2130): a `duplicate` the receiver already held under
+   * another name. The engine says so on the file's status, and records it
+   * so the same bytes uploaded again are told the same.
+   */
+  heldAs?: string;
 }
 
 /**
@@ -405,8 +412,16 @@ export type IceFileStatus =
 
 export interface IceFileReport {
   name: string;
-  /** The name the user gave what it becomes (#2130), when it differs from `name`. */
+  /** The name the user gave what it becomes (#2130), when it was applied: something was stored under it. */
   givenName?: string;
+  /**
+   * Where the user can open what the file already is on the site, when a
+   * name they gave was not applied because it was already here (#2130):
+   * the receiver's `linkFor`, a path on this site only.
+   */
+  link?: string;
+  /** The name what the file already is goes by on the site, when a name given was not applied (#2130). */
+  heldAs?: string;
   sha256?: string;
   size: number;
   status: IceFileStatus;
@@ -448,8 +463,10 @@ export interface LedgerOriginal extends KeptOriginal {
 export interface LedgerFileEntry {
   /** The file's own name, as uploaded. */
   name: string;
-  /** The name the user gave what it became (#2130), when they gave one. */
+  /** The name the user gave what it became (#2130), when it was applied. */
   givenName?: string;
+  /** The name what it is already goes by on the site, when a given name was not applied (#2130). */
+  heldAs?: string;
   sha256: string;
   size: number;
   status: IceFileStatus;
