@@ -28,6 +28,7 @@ import {
   type UserKeyEnvelope
 } from './privateStoreCrypto.js';
 import {
+  isSharedFolderOwner,
   isValidStoreId,
   privateStoreRoot,
   privateUserKeysPath,
@@ -123,6 +124,8 @@ export async function countStoreCopies(
 ): Promise<number> {
   let copies = 0;
   for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+    // #2125: the shared folders' container is the organization's, not a user holding a copy.
+    if (isSharedFolderOwner(owner)) continue;
     if (await fs.pathExists(storeMetaPath(pagesDirectory, owner, kindId, layout))) copies++;
   }
   return copies;

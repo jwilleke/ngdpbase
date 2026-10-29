@@ -144,8 +144,11 @@ import {
   canonicalPageName,
   formatPrivatePageName,
   isSafePathSegment,
+  isSharedFolderOwner,
   parsePrivatePageName,
   PRIVATE_URL_SEGMENT,
+  SHARED_FOLDER_OWNER,
+  SHARED_URL_SEGMENT,
   privateStoreLayoutFromConfig,
   systemCategoryVaults,
   type PrivatePageName,
@@ -3659,12 +3662,15 @@ ${panes}
 
       // If page doesn't exist, create empty page data for new page
       if (!pageData) {
+        // #2125: a new page in a shared folder (or a vault) is named by its
+        // path; its title is the last part, which the editor shows.
+        const newTitle = parsePrivatePageName(pageName)?.title ?? pageName;
         pageData = {
-          title: pageName,
+          title: newTitle,
           uuid: '',
           filePath: '',
           content: '',
-          metadata: this.buildNewPageMetadata(pageName, {
+          metadata: this.buildNewPageMetadata(newTitle, {
             author: currentUser.username || 'Anonymous'
           }) as PageFrontmatter
         };
@@ -4006,6 +4012,10 @@ ${panes}
       // out of its store to the public space — the owner's move alone. Where
       // the page lands is its name after the save.
       const movesStore = privateName ? !privateFlag : privateFlag;
+      // #2125: a shared folder's page stays in its folder; the Private box never moves it out.
+      if (privateName && isSharedFolderOwner(privateName.owner) && !privateFlag) {
+        return await fail(400, 'Cannot Make Public', 'A shared folder\'s page stays in its folder. Copy what should be public to a page outside it.');
+      }
       const isPageOwner = privateName ? currentUser?.username === privateName.owner : isPageAuthor;
       if (movesStore && existingPage && !isPageOwner) {
         return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
@@ -9855,10 +9865,115 @@ ${panes}
   private publicPageRoute(req: Request, res: Response, action: PageAction, handler: () => Promise<unknown>): Promise<unknown> {
     const name = parsePrivatePageName(req.params.page);
     if (!name) return handler();
+    if (isSharedFolderOwner(name.owner)) {
+      req.params.folder = name.store;
+      req.params.title = name.title;
+      return this.sharedPageRoute(req, res, action, handler);
+    }
     req.params.owner = name.owner;
     req.params.store = name.store;
     req.params.title = name.title;
     return this.privatePageRoute(req, res, action, handler);
+  }
+
+  /**
+   * The gate in front of every action on a shared folder's page (#2125):
+   * `/shared/:folder/:title` and its edit, save, delete, history and diff.
+   * The folder's permission for the action (`shared-folder-read` to view,
+   * history and diff; `shared-folder-file` to edit, save and delete), asked
+   * of the PDP with the requester's context, never a role. A refusal is the
+   * same 404 a page that is not there gets, with no echo of the path. A read
+   * is recorded (`shared-folder-read`); the handler then asks the page door
+   * as for any page.
+   */
+  private async sharedPageRoute(req: Request, res: Response, action: PageAction, handler: () => Promise<unknown>): Promise<unknown> {
+    const name = parsePrivatePageName(formatPrivatePageName(SHARED_FOLDER_OWNER, req.params.folder ?? '', req.params.title ?? ''));
+    const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+    const subject = req.userContext;
+    if (!name || !folders || !subject || !(await folders.mayInFolder(subject, action, name.store))) {
+      // Recorded like any page door's refusal (authorization-deny), and answered as a page that is not there.
+      this.engine.getManager<{ logAccessDecision(entry: Record<string, unknown>): void }>('PolicyInformationPoint')?.logAccessDecision({
+        user: subject, pageName: `${SHARED_URL_SEGMENT}/${req.params.folder ?? ''}`, action, allowed: false, reason: 'shared_folder_deny', context: {}
+      });
+      return this.renderError(req, res, 404, 'Not Found', 'The page does not exist.');
+    }
+    const pageName = formatPrivatePageName(name.owner, name.store, name.title);
+    if (action === 'view' || action === 'history' || action === 'diff') {
+      await folders.recordRead(subject, name.store, { page: pageName, action });
+    }
+    req.params.page = pageName;
+    return handler();
+  }
+
+  /**
+   * GET /shared — the shared folders this reader may open (#2125), and
+   * nothing about the others. An anonymous visitor has none.
+   */
+  async sharedFoldersPage(req: Request, res: Response): Promise<void> {
+    const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+    const subject = req.userContext;
+    const readable = folders && subject ? await folders.foldersReadableBy(subject) : [];
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('shared-folder', { ...commonData, title: 'Shared folders', folder: null, folders: readable, pages: [], mayFile: false });
+  }
+
+  /**
+   * GET /shared/:folder — one shared folder's pages (#2125), to a reader the
+   * PDP permits `shared-folder-read` on it; anyone else gets the 404 a folder
+   * that is not there gets. `?new=<title>` opens the editor for a new page,
+   * for a reader permitted `shared-folder-file`.
+   */
+  async sharedFolderPage(req: Request, res: Response): Promise<unknown> {
+    const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+    const pageManager = this.engine.getManager('PageManager');
+    const folder = req.params.folder ?? '';
+    const subject = req.userContext;
+    if (!folders || !subject || !(await folders.mayInFolder(subject, 'shared-folder-read', folder))) {
+      return this.renderError(req, res, 404, 'Not Found', 'The page does not exist.');
+    }
+    const mayFile = await folders.mayInFolder(subject, 'shared-folder-file', folder);
+    const asked = typeof req.query.new === 'string' ? req.query.new.trim() : '';
+    if (asked) {
+      const name = parsePrivatePageName(formatPrivatePageName(SHARED_FOLDER_OWNER, folder, asked));
+      if (!mayFile || !name) return this.renderError(req, res, mayFile ? 400 : 404, mayFile ? 'Bad Request' : 'Not Found', mayFile ? 'That is not a page title.' : 'The page does not exist.');
+      return res.redirect(pageUrl(formatPrivatePageName(name.owner, name.store, name.title), 'edit'));
+    }
+    const pages = await pageManager.listVaultPages(subject, SHARED_FOLDER_OWNER, folder);
+    pages.sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title));
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    return res.render('shared-folder', {
+      ...commonData,
+      title: `Shared folder: ${folder}`,
+      folder,
+      folders: [],
+      pages: pages.map((p: { name: string; title: string }) => ({ title: p.title, url: pageUrl(p.name) })),
+      mayFile
+    });
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/folders — make a shared folder
+   * (#2125). Admins only; SharedFolderManager asks `admin-system` again and
+   * refuses until the recovery words are confirmed. Until the Shared folders
+   * screen (slice 3) a new folder other than `default` opens to nobody: a
+   * policy naming `shared/<name>` gives access.
+   */
+  async adminSharedFoldersCreate(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const name = typeof body.name === 'string' ? body.name.trim().toLowerCase() : '';
+      await folders.createFolder(wikiContext.userContext, name);
+      return back('success', `Shared folder '${name}' is made, at /shared/${name}.`);
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
+    }
   }
 
   /** The recovery-words document as it stands now (#1928; the shared folders' with that scope, #2124), or null when its page is missing. */
@@ -12953,6 +13068,8 @@ ${panes}
         sharedFoldersKey: backupManager.sharedFoldersKeyInfo(),
         sharedFoldersWords: await sharedFoldersWordsState(this.engine),
         sharedFoldersUnavailable: ((folders) => (folders ? folders.unavailableReason() : 'Shared folders are not available on this site'))(this.engine.getManager<SharedFolderManager>('SharedFolderManager')),
+        // #2125: the folders there are, by name (who may open each is policy's).
+        sharedFolderNames: this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.folderNames() ?? [],
         backupHealth,
         formatBytes,
         siteName: this.siteName(),
@@ -13088,7 +13205,12 @@ ${panes}
       }
       const wordsId = await folders.saveRecoveryWords(wikiContext.userContext, typeof body.token === 'string' ? body.token : '');
       await this.recordRecoveryWordsSaved(req, wordsId, document, 'setup', SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
-      return back('success', 'The shared folders\' recovery words are saved. Keep them off this server, with the organization\'s important papers.');
+      // #2125: with the words confirmed, /shared/default can be made: the folder every signed-in user may open.
+      const madeDefault = await folders.ensureDefaultFolder(wikiContext.userContext).catch((err: unknown) => {
+        logger.warn(`[shared folders] /shared/default was not made: ${getErrorMessage(err)}`);
+        return false;
+      });
+      return back('success', `The shared folders' recovery words are saved. Keep them off this server, with the organization's important papers.${madeDefault ? ' The shared folder /shared/default is made, open to every signed-in user.' : ''}`);
     } catch (err: unknown) {
       return back('error', getErrorMessage(err));
     }
@@ -17608,6 +17730,15 @@ ${panes}
     });
     // #1456: a private page's own URL space — every action on it lives here,
     // behind one gate that answers 404 to anyone who may not reach it.
+    // #2125: a shared folder's pages, `/shared/{folder}/{title}`, through the same handlers behind the folder's permission.
+    app.get(`/${SHARED_URL_SEGMENT}`, (req: Request, res: Response) => void this.sharedFoldersPage(req, res));
+    app.get(`/${SHARED_URL_SEGMENT}/:folder`, (req: Request, res: Response) => void this.sharedFolderPage(req, res));
+    app.get(`/${SHARED_URL_SEGMENT}/:folder/:title`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'view', () => this.viewPage(req, res)));
+    app.get(`/${SHARED_URL_SEGMENT}/:folder/:title/edit`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'edit', () => this.editPage(req, res)));
+    app.post(`/${SHARED_URL_SEGMENT}/:folder/:title/save`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'save', () => this.savePage(req, res)));
+    app.post(`/${SHARED_URL_SEGMENT}/:folder/:title/delete`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'delete', () => this.deletePage(req, res)));
+    app.get(`/${SHARED_URL_SEGMENT}/:folder/:title/history`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'history', () => this.pageHistory(req, res)));
+    app.get(`/${SHARED_URL_SEGMENT}/:folder/:title/diff`, (req: Request, res: Response) => this.sharedPageRoute(req, res, 'diff', () => this.pageDiff(req, res)));
     app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'view', () => this.viewPage(req, res)));
     app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/edit`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'edit', () => this.editPage(req, res)));
     app.post(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/save`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'save', () => this.savePage(req, res)));
@@ -17793,6 +17924,7 @@ ${panes}
     app.post('/admin/backup/shared-folders/words', (req: Request, res: Response) => void this.adminSharedFoldersWords(req, res));
     app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
     app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
+    app.post('/admin/backup/shared-folders/folders', (req: Request, res: Response) => void this.adminSharedFoldersCreate(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

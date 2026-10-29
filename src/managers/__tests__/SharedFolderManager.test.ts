@@ -33,6 +33,8 @@ const admin = (username = 'ann'): never => ({ username, roles: ['admin'], isAuth
 describe('SharedFolderManager (#2124)', () => {
   let dir: string;
   let admins: Set<string>;
+  /** `user:shared/<folder>` pairs a policy grants shared-folder-read (#2125). */
+  let readers: Set<string>;
   let audited: Array<Record<string, unknown>>;
   let auditFails: boolean;
   /** `user/wordsId` pairs ConsentManager holds a current confirmation for. */
@@ -44,14 +46,18 @@ describe('SharedFolderManager (#2124)', () => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
-        getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.shared-folders.storagedir' ? dir : d)
+        getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.shared-folders.storagedir' ? dir : k === 'ngdpbase.page.provider.filesystem.storagedir' ? path.join(dir, 'pages') : d)
       },
       ConsentManager: {
         documents: async (scope: string) => (scope === 'shared-folders-recovery-words' && wordingPage ? [{ id: scope }] : []),
         pendingFor: async (u: string, scope: string, subject?: string) =>
           (scope === 'shared-folders-recovery-words' && wordingPage && !confirmed.has(`${u}/${subject}`) ? [{ id: scope }] : [])
       },
-      PolicyDecisionPoint: { permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && s.isAuthenticated && admins.has(s.username)) },
+      PolicyDecisionPoint: {
+        permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && s.isAuthenticated && admins.has(s.username)),
+        decide: (s: Subj, r: { action: string; attributes: Record<string, unknown> }) =>
+          Promise.resolve({ permit: r.action === 'shared-folder-read' && s.isAuthenticated && readers.has(`${s.username}:${String(r.attributes['shared-folder'])}`) })
+      },
       AuditManager: {
         logAuditEvent: (e: Record<string, unknown>) => {
           if (auditFails) return Promise.reject(new Error('audit device full'));
@@ -78,6 +84,7 @@ describe('SharedFolderManager (#2124)', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-folders-2124-'));
     process.env[SHARED_FOLDERS_KEY_ENV] = randomBytes(32).toString('base64');
     admins = new Set(['ann', 'bob']);
+    readers = new Set(['ann:shared/executive', 'bob:shared/executive', 'ann:shared/default']);
     audited = [];
     auditFails = false;
     confirmed = new Set();
@@ -291,11 +298,14 @@ describe('SharedFolderManager (#2124)', () => {
       await expect(m.prepareRecoveryWords(admin())).rejects.toBeInstanceOf(SharedFoldersUnavailableError);
     });
 
-    test('opening a key asks the PDP', async () => {
+    test('opening a key asks the PDP for shared-folder-read on the folder (#2125), not admin-system', async () => {
       const m = await build();
       await setUpWords(m);
       await m.createFolderKey(admin(), 'executive');
       admins.delete('ann');
+      // Still a reader of shared/executive: no admin-system needed to open it.
+      expect((await m.openFolderKey(admin(), 'executive')).length).toBe(32);
+      readers.delete('ann:shared/executive');
       await expect(m.openFolderKey(admin(), 'executive')).rejects.toBeInstanceOf(SharedFolderRefusedError);
     });
 
@@ -309,5 +319,78 @@ describe('SharedFolderManager (#2124)', () => {
   test('declares its folder for the backup', async () => {
     const m = await build();
     expect(m.backupFolders()).toEqual([{ part: 'shared-folders', folder: dir, optional: true }]);
+  });
+
+  describe('folders (#2125)', () => {
+    const storeJson = (name: string): string => path.join(dir, 'pages', 'vaults', 'shared-folders', name, 'store.json');
+
+    test('an admin makes a folder once the words are confirmed: its key, and a sealed place for pages under the shared-folders container', async () => {
+      const m = await build();
+      await setUpWords(m);
+      await m.createFolder(admin(), 'executive');
+      expect(m.folderNames()).toEqual(['executive']);
+      expect(JSON.parse(fs.readFileSync(storeJson('executive'), 'utf8'))).toMatchObject({ kind: 'shared-folder', encrypt: true });
+      // No wrapped key in store.json: the key is the server's (keys.json).
+      expect(fs.readFileSync(storeJson('executive'), 'utf8')).not.toContain('dekWrap');
+      expect(audited.map((e) => [e.eventType, e.user, e.resource])).toEqual([
+        ['shared-folder-words-create', 'ann', 'shared-folders'],
+        ['shared-folder-create', 'ann', 'shared/executive'],
+        ['shared-folder-key-create', 'ann', 'executive']
+      ]);
+      await expect(m.createFolder(admin(), 'executive')).rejects.toThrow(/already exists/);
+    });
+
+    test('refused until the words are confirmed, to anyone without admin-system, and for a name that is not a slug', async () => {
+      const m = await build();
+      await expect(m.createFolder(admin(), 'default')).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      await setUpWords(m, 'ann', false);
+      await expect(m.createFolder(admin(), 'default')).rejects.toThrow(/has not confirmed/);
+      expect(fs.existsSync(storeJson('default'))).toBe(false);
+      admins.delete('bob');
+      await expect(m.createFolder(admin('bob'), 'default')).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      await expect(m.createFolder(admin(), 'Bad--Name')).rejects.toThrow(/not a folder name/);
+    });
+
+    test('nothing is made when the record cannot be written (on-failure refuse)', async () => {
+      const m = await build();
+      await setUpWords(m);
+      auditFails = true;
+      await expect(m.createFolder(admin(), 'executive')).rejects.toThrow();
+      expect(m.folderNames()).toEqual([]);
+      expect(fs.existsSync(storeJson('executive'))).toBe(false);
+    });
+
+    test('/shared/default is made when the words are confirmed, once', async () => {
+      const m = await build();
+      expect(await m.ensureDefaultFolder(admin())).toBe(false);
+      await setUpWords(m);
+      expect(await m.ensureDefaultFolder(admin())).toBe(true);
+      expect(m.folderNames()).toEqual(['default']);
+      expect(await m.ensureDefaultFolder(admin())).toBe(false);
+    });
+
+    test('the folders a reader may open are the PDP\'s answer, folder by folder', async () => {
+      const m = await build();
+      await setUpWords(m);
+      await m.createFolder(admin(), 'default');
+      await m.createFolder(admin(), 'executive');
+      expect(await m.foldersReadableBy(admin('ann'))).toEqual(['default', 'executive']);
+      expect(await m.foldersReadableBy(admin('bob'))).toEqual(['executive']);
+      expect(await m.foldersReadableBy(admin('cat'))).toEqual([]);
+      // A folder that does not exist is never permitted, whatever a policy says.
+      readers.add('ann:shared/ghost');
+      expect(await m.mayInFolder(admin('ann'), 'shared-folder-read', 'ghost')).toBe(false);
+    });
+
+    test('a read is recorded with who read it and what', async () => {
+      const m = await build();
+      await m.recordRead(admin('bob'), 'executive', { page: 'shared/executive/Board pack', action: 'view' });
+      expect(audited).toEqual([expect.objectContaining({
+        eventType: 'shared-folder-read',
+        user: 'bob',
+        resource: 'shared/executive/Board pack',
+        metadata: expect.objectContaining({ folder: 'executive', page: 'shared/executive/Board pack', action: 'view' })
+      })]);
+    });
   });
 });

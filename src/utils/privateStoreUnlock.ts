@@ -34,6 +34,7 @@ import { readStoreMeta, readVaultSealState, refuseUnsealedVault } from './privat
 import { dropPendingWords } from './privateStoreDoor.js';
 import {
   PRIVATE_USER_CATALOG_FILES,
+  isSharedFolderOwner,
   isValidStoreId,
   privateUserDir,
   privateUserKeysPath,
@@ -45,6 +46,7 @@ import type { PermissionSubject } from '../managers/UserManager.js';
 import { writeFileAtomic } from './atomicWrite.js';
 import { SECRET_FILE_MODE } from './secretFileMode.js';
 import { mixesProxyWithDelegation, proxyCarries } from './proxyClaim.js';
+import { sharedFolderKeyFor } from './sharedFolderAccess.js';
 import type { LinkPublicKey, Lockbox } from './shareLockbox.js';
 
 /**
@@ -465,8 +467,12 @@ function copyFor(ctx: ActorContext | undefined): KeyCopy | undefined {
  * owner's own bag — DEKs are keyed by store id, and every user has a
  * `default` — or, for someone acting for the owner, from the key copy their
  * grant carries (#1762 slice 5).
+ *
+ * A shared folder's key is the server's, never in a bag (#2125): handed only
+ * to a context the PDP has permitted on that folder (`sharedFolderKeyFor`).
  */
 export function dekFor(ctx: ActorContext | undefined, owner: string, store: string): Buffer | undefined {
+  if (isSharedFolderOwner(owner)) return sharedFolderKeyFor(ctx, store);
   const copy = copyFor(ctx);
   if (copy) {
     const dek = copy.owner === owner ? copy.deks.get(store) : undefined;

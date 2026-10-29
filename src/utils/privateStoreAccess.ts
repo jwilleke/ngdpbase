@@ -27,6 +27,8 @@
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { shareNamesVault } from '../types/Share.js';
 import { mixesProxyWithDelegation, proxyCarries } from './proxyClaim.js';
+import { isSharedFolderOwner } from './privateStorePath.js';
+import { permitsInSharedFolder } from './sharedFolderAccess.js';
 
 /** The PDP surface a vault decision needs. */
 export interface VaultDecider {
@@ -41,7 +43,9 @@ export function mayActInPrivateContainer(
   owner: string,
   opts: { vault?: string } = {}
 ): boolean {
-  if (!owner) return false;
+  // #2125: the shared folders' container has no owner who acts; a folder is
+  // decided by permission (`permitsInSharedFolder`), never by this rule.
+  if (!owner || isSharedFolderOwner(owner)) return false;
   // #1762: a proxy's subject carries the represented person's username, so
   // the owner test below would admit it unasked. It gets in only when the
   // grant carries `vault-proxy`, and never alongside a token or a share.
@@ -66,6 +70,10 @@ export function mayActInPrivateContainer(
  * vault page's name, or a file in the vault); it never matches `page: *`, so a
  * site-wide role does not reach in. The one rule for vault pages
  * (`BaseContext.hasPermissionOn`) and vault files (`AttachmentManager`).
+ *
+ * A shared folder (#2125) is asked by permission instead:
+ * `shared-folder-read` or `shared-folder-file` on the folder
+ * (`permitsInSharedFolder`), never the vault policy.
  */
 export async function permitsInVault(
   pdp: VaultDecider | null | undefined,
@@ -73,6 +81,7 @@ export async function permitsInVault(
   action: string,
   where: { owner: string; vault: string; resource: string }
 ): Promise<boolean> {
+  if (isSharedFolderOwner(where.owner)) return permitsInSharedFolder(pdp, ctx, action, where.vault);
   if (!pdp || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
   return (await pdp.decide(ctx, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
 }

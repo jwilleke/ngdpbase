@@ -495,6 +495,7 @@ audited.
 | `identity-manage` | Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values | continue | yes |
 | `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
 | `executive-read` | Executive Hub read; not recorded, read volume | continue | no |
+| `shared-folder-read` | A shared folder's page or file was opened (#2125): who, the folder and what. On by default: every read of a shared folder is recorded (#1775) | continue | yes |
 | `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
 | `vault-repair` | A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system | refuse | yes |
 | `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
@@ -506,6 +507,7 @@ audited.
 | `shared-folder-words-create` | The organization's 12 recovery words for shared folders were made and saved (#2124): the admin who was shown them, and which set (an id, never the words). Recorded before the words are saved, which cannot proceed without it | refuse | yes |
 | `shared-folder-words-discard` | An administrator discarded the organization's shared-folders recovery words before the admin shown them confirmed saving them (#2124): who, which set (an id) and who it was shown to. Recorded before the words are removed, which cannot proceed without it | refuse | yes |
 | `shared-folder-key-create` | A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it | refuse | yes |
+| `shared-folder-create` | An administrator created a shared folder (#2125): which folder and who. Recorded before the folder is made, which cannot proceed without it | refuse | yes |
 | `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |

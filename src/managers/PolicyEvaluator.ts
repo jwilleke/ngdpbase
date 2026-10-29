@@ -59,6 +59,15 @@ export const RESOURCE_MATCHERS: Record<string, (pattern: string, pageName: strin
   vault: (pattern, _pageName, attributes) => {
     const vault = attributes?.vault;
     return typeof vault === 'string' && micromatch.isMatch(vault, pattern);
+  },
+  /**
+   * A shared folder, as `shared/{name}` (#2125). Supplied only when a folder
+   * is asked about (`permitsInSharedFolder`), so a capability check never
+   * matches: a folder grant cannot leak site-wide.
+   */
+  'shared-folder': (pattern, _pageName, attributes) => {
+    const folder = attributes?.['shared-folder'];
+    return typeof folder === 'string' && micromatch.isMatch(folder, pattern);
   }
 };
 

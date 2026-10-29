@@ -362,6 +362,7 @@ A private page is in no shared index, so each store keeps its own saved search i
 - `PageManager.reconcileStoreSearch()` updates it after every private save, rename and delete, from the same reconciliation step every save runs. A page that left a store — deleted, renamed across stores, or moved to the public space — has its document removed from the store it was in.
 - `PageManager.rebuildStoreSearchIndex()` rebuilds one store's index from its pages; `buildMissingStoreSearchIndexes()` gives an index to every readable store that has none, so a store whose index was lost gets it back at the next boot or unlock and a store that has one costs nothing.
 - `PageManager.searchOwnPrivatePages(ctx, query)` reads only the requester's own container, guarded by `mayActInPrivateContainer`, and only the stores that context can open. A locked store yields no matches rather than an error. Each match carries the page's private name.
+- `PageManager.searchSharedFolderPages(ctx, folders, query)` reads the shared folders' indexes the same way, only for the folders the PDP permits `shared-folder-read` to `ctx` ([#2125](https://github.com/jwilleke/ngdpbase/issues/2125), [Shared folders](#shared-folders)); `SearchManager` merges both.
 
 `SearchManager.mergeOwnPrivateResults()` appends those rows to the public results, sorts the combined list by score and applies `maxResults`. A private row is flagged `isPrivate: true` and carries the private name, so `pageUrl` links to `/private/…`. Another user's search, and an administrator's, reach none of it — the merge asks the page door for the __requester's own__ stores and never for anyone else's.
 
@@ -494,6 +495,18 @@ The owner of a vault can share chosen pages, or the whole vault, through a read-
 - the vault rule above lets a link in only to a vault it names, and only when the caller names that vault; the owner's container as a whole never admits one
 - a link shows only current pages and the files they use, never history, and a file no covered page uses is not shared
 - a link to an encrypted vault opens nothing yet: it carries no key. The agreed key-per-item design is in [sharing.md](sharing.md#decided-not-yet-built)
+
+---
+
+## Shared folders
+
+The organization's shared folders ([#2125](https://github.com/jwilleke/ngdpbase/issues/2125), [SharedFolderManager](managers/SharedFolderManager.md#folders)) use this container code: each folder is a vault of the reserved container `shared-folders` (`SHARED_FOLDER_OWNER`), at `pages/vaults/shared-folders/{folder}/`, laid out as above. Its pages are named `shared/{folder}/{title}`, which `parsePrivatePageName` reads as that container's (`vaults/shared-folders/…` is not a name), and `pageUrl` links to `/shared/…`. Three things differ from a user's vault:
+
+- __Who may act__: never the owner rule. `mayActInPrivateContainer` refuses everyone for the container; `permitsInVault` asks `shared-folder-read` or `shared-folder-file` on the folder instead (`permitsInSharedFolder`), and the page tiers decide a folder page by that alone, never by the `vault` policy.
+- __The key__: the server's, from SharedFolderManager, never in a session bag. `dekFor` hands it only to a context the PDP has permitted on the folder (`sharedFolderKeyFor`). `store.json` says the folder is sealed and holds no wrapped key.
+- __No share links__: a share subject is refused before the PDP is asked, and a vault link can be issued only by a vault's owner, which no account is here.
+
+Everything else above applies as it is: the page and file doors, history, trash, the per-folder page, file and search indexes, sealing, and the instance backup.
 
 ---
 

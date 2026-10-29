@@ -2,7 +2,7 @@
 
 Folders owned by the organization, at `/shared/<name>`, opened by role or permission rather than by one user's key. Epic [#1775](https://github.com/jwilleke/ngdpbase/issues/1775). Always called "shared folders", never vaults. Terms follow [docs/GLOSSARY.md](../GLOSSARY.md) (Identities).
 
-Status: design decided (operator, 2026-10-28). Slice 1 built ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124)): the organization key, per-folder keys and the recovery words with their consent, in [SharedFolderManager](../managers/SharedFolderManager.md). No folders yet. The first folder built is `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095), [executive-hub.md](executive-hub.md)).
+Status: design decided (operator, 2026-10-28). Slice 1 built ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124)): the organization key, per-folder keys and the recovery words with their consent, in [SharedFolderManager](../managers/SharedFolderManager.md). Slice 2 built ([#2125](https://github.com/jwilleke/ngdpbase/issues/2125)): folders at `/shared/<name>` holding pages and files through the page and file doors, `shared-folder-read` / `shared-folder-file` scoped by the policy resource `shared/<name>`, `/shared/default` open to every signed-in user, per-folder sealed search and read audit ([SharedFolderManager, Folders](../managers/SharedFolderManager.md#folders)). Next: the admin screen ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)), then `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095), [executive-hub.md](executive-hub.md)).
 
 ## Rules (from the epic)
 

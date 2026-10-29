@@ -175,8 +175,12 @@ export const AUDIT_EVENT = {
   SHARE_EXTEND: 'share-extend',
   /** Share link revoked; pairs with token-revoke */
   SHARE_REVOKE: 'share-revoke',
+  /** An administrator created a shared folder (#2125): which folder and who. Recorded before the folder is made, which cannot proceed without it */
+  SHARED_FOLDER_CREATE: 'shared-folder-create',
   /** A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it */
   SHARED_FOLDER_KEY_CREATE: 'shared-folder-key-create',
+  /** A shared folder's page or file was opened (#2125): who, the folder and what. On by default: every read of a shared folder is recorded (#1775) */
+  SHARED_FOLDER_READ: 'shared-folder-read',
   /** The organization's 12 recovery words for shared folders were made and saved (#2124): the admin who was shown them, and which set (an id, never the words). Recorded before the words are saved, which cannot proceed without it */
   SHARED_FOLDER_WORDS_CREATE: 'shared-folder-words-create',
   /** An administrator discarded the organization's shared-folders recovery words before the admin shown them confirmed saving them (#2124): who, which set (an id) and who it was shown to. Recorded before the words are removed, which cannot proceed without it */

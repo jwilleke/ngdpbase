@@ -40,6 +40,9 @@ import {
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
   PRIVATE_PAGE_NAME_PREFIX,
+  SHARED_PAGE_NAME_PREFIX,
+  SHARED_FOLDER_OWNER,
+  isSharedFolderOwner,
   PRIVATE_SLUG_PREFIX
 } from '../utils/privateStorePath.js';
 import {
@@ -311,7 +314,8 @@ import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
-import { permitsInVault } from '../utils/privateStoreAccess.js';
+import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
+import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
 import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
 
 /** One vault page with data outside its vault (#1842), as the repair actions offer it. */
@@ -2469,7 +2473,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // `private/{owner}/{store}/{title}` says nothing we can act on — its title
     // would have to contain a `/`, which no title may. Refused rather than
     // read as a public title, which would write it to the public space.
-    if (!privatePath && pageName.startsWith(PRIVATE_PAGE_NAME_PREFIX)) {
+    if (!privatePath && (pageName.startsWith(PRIVATE_PAGE_NAME_PREFIX) || pageName.startsWith(SHARED_PAGE_NAME_PREFIX))) {
       throw new Error(`'${pageName}' is not a private page name: ${TITLE_RULE_MESSAGE}`);
     }
     const givenTitle = (metadata.title) ?? privatePath?.title ?? pageName;
@@ -2798,6 +2802,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * or a share link the owner issued that names this vault. Anyone else gets
    * an empty list, the same as a vault with nothing in it. Whether each page
    * may then be read is still the page door's answer.
+   *
+   * A shared folder (`SHARED_FOLDER_OWNER`, #2125): whoever the PDP permits
+   * `shared-folder-read` on it.
    */
   async listVaultPages(
     ctx: ActorContext,
@@ -2806,7 +2813,9 @@ class PageManager extends BaseManager implements CatalogSource {
   ): Promise<Array<{ name: string; title: string; uuid: string }>> {
     if (!ctx) throw new Error('PageManager.listVaultPages requires an ActorContext');
     if (!this.provider?.listPrivateStorePages || !isValidStoreId(vault)) return [];
-    if (!mayActInPrivateContainer(ctx, owner, { vault })) return [];
+    if (isSharedFolderOwner(owner)) {
+      if (!(await permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, 'page-read', vault))) return [];
+    } else if (!mayActInPrivateContainer(ctx, owner, { vault })) return [];
     return (await this.provider.listPrivateStorePages(ctx, owner))
       .filter((p) => p.store === vault)
       .map((p) => ({ name: formatPrivatePageName(owner, vault, p.title), title: p.title, uuid: p.uuid }));
@@ -3333,8 +3342,45 @@ class PageManager extends BaseManager implements CatalogSource {
     // A search is a read of the searcher's OWN container and nobody else's.
     if (!mayActInPrivateContainer(ctx, owner)) return [];
 
+    return this.searchStoreIndexes(ctx, owner, [...(await provider.readablePrivateStores(owner, ctx)).keys()], ask);
+  }
+
+  /**
+   * The pages of shared folders that match (#2125), from each folder's own
+   * sealed search index, as a private store's are found. Only the folders
+   * `ctx` may read: each is asked `shared-folder-read` here, whatever the
+   * caller passed, and a folder it may not read gives nothing, not even a
+   * count (decision 7). Folder pages are in no site-wide index.
+   *
+   * @param ctx - Who is searching (#1179)
+   * @param folders - The folders to search, by name (SharedFolderManager's list)
+   * @param ask - The query, as {@link matchStoreSearch} reads it
+   */
+  async searchSharedFolderPages(
+    ctx: ActorContext,
+    folders: readonly string[],
+    ask: StoreSearchQuery = {}
+  ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>> {
+    if (!ctx) throw new Error('PageManager.searchSharedFolderPages requires an ActorContext');
+    const pdp = this.engine.getManager<VaultDecider>('PolicyDecisionPoint');
+    const readable: string[] = [];
+    for (const folder of folders) {
+      if (await permitsInSharedFolder(pdp, ctx, 'page-read', folder)) readable.push(folder);
+    }
+    return this.searchStoreIndexes(ctx, SHARED_FOLDER_OWNER, readable, ask);
+  }
+
+  /** Matches from `owner`'s `stores`' own search indexes, read through `ctx`; a store that will not read gives none. */
+  private async searchStoreIndexes(
+    ctx: ActorContext,
+    owner: string,
+    stores: readonly string[],
+    ask: StoreSearchQuery
+  ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>> {
+    const provider = this.provider;
+    if (!provider?.readStoreSearchDocuments) return [];
     const out: Array<StoreSearchMatch & { name: string; owner: string; store: string }> = [];
-    for (const store of (await provider.readablePrivateStores(owner, ctx)).keys()) {
+    for (const store of stores) {
       try {
         const documents = await provider.readStoreSearchDocuments(ctx, owner, store);
         for (const match of matchStoreSearch(documents, ask)) {
@@ -3852,6 +3898,10 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!name) return null;
     const subject = wikiContext.userContext as ActorContext | undefined;
     if (!subject) return false;
+    // #2125: a shared folder is read by permission, `shared-folder-read` on the folder.
+    if (isSharedFolderOwner(name.owner)) {
+      return permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject, 'page-read', name.store);
+    }
     return mayActInPrivateContainer(subject, name.owner, { vault: name.store });
   }
 

@@ -276,17 +276,56 @@ export interface PrivatePageName {
   title: string;
 }
 
+/**
+ * The organization's shared folders (#1775, #2125) are kept as one more
+ * container under the vaults' parent folder, owned by this reserved name
+ * rather than a user: `pages/vaults/shared-folders/{folder}/`, laid out as a
+ * vault is. So the page and file doors, the per-folder page, file and search
+ * indexes, history, trash, backup and every scanner that keeps vault content
+ * out of the shared indexes treat a folder exactly as they treat a vault.
+ * What differs is who may act (a permission, `shared-folder-read` /
+ * `shared-folder-file` on `shared/{folder}`, never the owner rule:
+ * `utils/sharedFolderAccess.ts`), where the key comes from (the server, by
+ * SharedFolderManager), and the name: `shared/{folder}/{title}`, which is
+ * also its URL. No account can be called this (`RESERVED_USERNAMES`).
+ */
+export const SHARED_FOLDER_OWNER = 'shared-folders';
+
+/** A shared folder page's name, and its URL without the leading slash: `shared/{folder}/{title}`. */
+export const SHARED_PAGE_NAME_PREFIX = 'shared/';
+
+/** The first path segment of a shared folder's URL: `/shared/{folder}/{title}`. */
+export const SHARED_URL_SEGMENT = SHARED_PAGE_NAME_PREFIX.slice(0, -1);
+
+/** True when `owner` is the shared folders' container, not a user's. */
+export function isSharedFolderOwner(owner: unknown): boolean {
+  return owner === SHARED_FOLDER_OWNER;
+}
+
 export function formatPrivatePageName(owner: string, store: string, title: string): string {
+  if (isSharedFolderOwner(owner)) return `${SHARED_PAGE_NAME_PREFIX}${store}/${title}`;
   return `${PRIVATE_PAGE_NAME_PREFIX}${owner}/${store}/${title}`;
 }
 
-/** The parts of a private page name, or null when `name` is not one. */
+/**
+ * The parts of a private page name, or null when `name` is not one. A shared
+ * folder's page, `shared/{folder}/{title}`, reads as the container
+ * {@link SHARED_FOLDER_OWNER}'s; `vaults/shared-folders/…` is not a name.
+ */
 export function parsePrivatePageName(name: unknown): PrivatePageName | null {
-  if (typeof name !== 'string' || !name.startsWith(PRIVATE_PAGE_NAME_PREFIX)) return null;
+  if (typeof name !== 'string') return null;
+  if (name.startsWith(SHARED_PAGE_NAME_PREFIX)) {
+    const parts = name.slice(SHARED_PAGE_NAME_PREFIX.length).split('/');
+    if (parts.length !== 2) return null;
+    const [store, title] = parts;
+    if (!isValidStoreId(store) || !title.trim()) return null;
+    return { owner: SHARED_FOLDER_OWNER, store, title };
+  }
+  if (!name.startsWith(PRIVATE_PAGE_NAME_PREFIX)) return null;
   const parts = name.slice(PRIVATE_PAGE_NAME_PREFIX.length).split('/');
   if (parts.length !== 3) return null;
   const [owner, store, title] = parts;
-  if (!owner || !isSafePathSegment(owner) || !isValidStoreId(store) || !title.trim()) return null;
+  if (!owner || !isSafePathSegment(owner) || isSharedFolderOwner(owner) || !isValidStoreId(store) || !title.trim()) return null;
   return { owner, store, title };
 }
 

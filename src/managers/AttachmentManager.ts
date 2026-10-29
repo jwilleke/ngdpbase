@@ -35,7 +35,7 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 // #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
 import type { User } from '../providers/BaseAttachmentProvider.js';
-import { formatPrivatePageName, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isSharedFolderOwner, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
@@ -1092,7 +1092,34 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return out;
   }
 
+  /**
+   * The shared folders `ctx` may open (#2125), as provider locations: the
+   * folders SharedFolderManager's PDP question permits (`shared-folder-read`),
+   * each opened through `ctx`. A folder it may not read is not here at all.
+   */
+  private async sharedFolderStores(ctx: ActorContext): Promise<StoreFileLocation[]> {
+    const folders = this.engine.getManager<{ foldersReadableBy(ctx: ActorContext): Promise<string[]> }>('SharedFolderManager');
+    if (!folders || !ctx) return [];
+    const out: StoreFileLocation[] = [];
+    for (const folder of await folders.foldersReadableBy(ctx)) {
+      try {
+        out.push(await this.vaultLocation(ctx, SHARED_FOLDER_OWNER, folder));
+      } catch {
+        // A folder whose key cannot be used: nothing from it.
+      }
+    }
+    return out;
+  }
+
+  /** The requester's own stores, then the shared folders it may open (#2125): where a file it may read can be. */
+  private async readableStores(ctx: ActorContext): Promise<StoreFileLocation[]> {
+    return [...await this.ownPrivateStores(ctx), ...await this.sharedFolderStores(ctx)];
+  }
+
   private mayReach(ctx: ActorContext, owner: string, resource: string, action: string): boolean {
+    // #2125: a shared folder is listed only when the PDP permitted reading it
+    // (`sharedFolderStores`); the capability is asked after (`mayInVault`).
+    if (isSharedFolderOwner(owner)) return true;
     const pip = this.engine.getManager<{
       canAccessPrivateContainer(subject: unknown, owner: string, resource: string, action: string): boolean;
         }>('PolicyInformationPoint');
@@ -1164,7 +1191,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     action: StoreFileAction
   ): Promise<{ location: StoreFileLocation; entry: StoreFileEntry } | null> {
     if (!this.attachmentProvider) return null;
-    for (const location of await this.ownPrivateStores(ctx)) {
+    for (const location of await this.readableStores(ctx)) {
       const entry = (await this.attachmentProvider.listFilesInStore(location)).find((f) => f.id === attachmentId);
       if (!entry) continue;
       if (!this.mayReach(ctx, location.owner, `attachment:${attachmentId}`, action)) return null;
@@ -1190,6 +1217,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (!found) return null;
     const bytes = await this.attachmentProvider.getFileInStore(found.location, attachmentId);
     if (!bytes) return null;
+    // #2125: every read of a shared folder is recorded, with who read it.
+    if (isSharedFolderOwner(found.location.owner)) {
+      await this.engine.getManager<{ recordRead(ctx: ActorContext, folder: string, what: { attachmentId: string }): Promise<void> }>('SharedFolderManager')
+        ?.recordRead(ctx, found.location.store, { attachmentId });
+    }
     return {
       buffer: bytes.bytes,
       metadata: AttachmentManager.storeFileMetadata(found.entry, found.location.owner, found.location.store)
@@ -1314,7 +1346,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   async getPrivateStoreAttachmentsForPage(pageName: string, ctx: ActorContext): Promise<AttachmentMetadata[]> {
     if (!this.attachmentProvider) return [];
     const out: AttachmentMetadata[] = [];
-    for (const location of await this.ownPrivateStores(ctx)) {
+    for (const location of await this.readableStores(ctx)) {
       if (!this.mayReach(ctx, location.owner, `page-files:${pageName}`, 'view')) continue;
       for (const entry of await this.attachmentProvider.filesInStoreForPage(location, pageName)) {
         out.push(AttachmentManager.storeFileMetadata(entry, location.owner, location.store));
