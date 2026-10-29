@@ -68,7 +68,8 @@ describe('ConsentManager (#1603)', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-1603-'));
     pages = {
       'terms-of-service': { title: 'Terms of Service', version: 1, effective: new Date('2026-10-22T00:00:00Z') },
-      'privacy-policy': { title: 'Privacy Policy', version: '1', effective: '2026-10-22' }
+      'privacy-policy': { title: 'Privacy Policy', version: '1', effective: '2026-10-22' },
+      'recovery-words': { title: 'Your Recovery Words', version: 1, effective: '2026-10-29' }
     };
     users = { ann: { username: 'ann', createdAt: '2026-01-01T00:00:00.000Z' }, bob: { username: 'bob' } };
     holdsProfileManage = new Set(['ann', 'bob']);
@@ -266,7 +267,7 @@ describe('ConsentManager (#1603)', () => {
       expect(cm.addonForPath('/phr/records')).toBe('phr');
       expect(cm.addonForPath('/api/phr/x')).toBe('phr');
       expect(cm.addonForPath('/phrase')).toBeNull();
-      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'phr-terms-of-service']);
+      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'phr-terms-of-service']);
     });
 
     test('an add-on may register only documents named <slug>-…, and only when it is per-person', () => {
@@ -274,6 +275,61 @@ describe('ConsentManager (#1603)', () => {
       expect(() => cm.registerAddonDocuments('phr', { documents: ['ledger-terms-of-service'] })).toThrow(/only documents named 'phr-/);
       expect(() => cm.registerAddonDocuments('phr', { documents: [] })).toThrow(/no documents/);
       expect(() => cm.registerAddonDocuments('ledger', { documents: ['ledger-terms'] })).toThrow(/not per-person/);
+    });
+  });
+
+  describe('the recovery words (#1928)', () => {
+    const WORDS = 'words-set-1';
+
+    test('a confirmation is recorded with who, when, how, the wording\'s version and which set of words, and is audited first', async () => {
+      expect((await cm.pendingFor('ann', 'recovery-words', WORDS)).map((d) => [d.id, d.version])).toEqual([['recovery-words', '1']]);
+      const [record, ...more] = await cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'store-door', WORDS);
+      expect(more).toEqual([]);
+      expect(record).toMatchObject({
+        kind: 'accept', document: 'recovery-words', scope: 'recovery-words', version: '1', effective: '2026-10-29',
+        subject: WORDS, account: '2026-01-01T00:00:00.000Z',
+        context: { by: 'ann', how: 'store-door', origin: 'request', ipAddress: '192.0.2.10' }
+      });
+      expect(Number.isNaN(Date.parse(record.acceptedAt))).toBe(false);
+      expect(audited).toEqual([expect.objectContaining({ eventType: 'consent-grant', resource: 'recovery-words', metadata: expect.objectContaining({ scope: 'recovery-words', version: '1', how: 'store-door', subject: WORDS }) })]);
+      expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
+    });
+
+    test('a changed wording version asks again, and so does a new set of words', async () => {
+      await cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'store-door', WORDS);
+      expect(await cm.pendingFor('ann', 'recovery-words', 'words-set-2')).toHaveLength(1);
+      pages['recovery-words'] = { ...pages['recovery-words'], version: 2 };
+      expect((await cm.pendingFor('ann', 'recovery-words', WORDS)).map((d) => d.version)).toEqual(['2']);
+      await expect(cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'reminder', WORDS)).rejects.toBeInstanceOf(ConsentChangedError);
+      await cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '2' }], 'reminder', WORDS);
+      expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
+    });
+
+    test('with no set of words there is nothing to ask, and nothing can be recorded', async () => {
+      expect(await cm.pendingFor('ann', 'recovery-words')).toEqual([]);
+      await expect(cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'reminder')).rejects.toBeInstanceOf(ConsentRefusedError);
+      expect(audited).toEqual([]);
+    });
+
+    test('it is never core\'s terms: confirming asks nothing of core, and core\'s terms ask nothing of it', async () => {
+      await cm.accept(person('ann'), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'store-door', WORDS);
+      expect((await cm.pendingFor('ann')).map((d) => d.id)).toEqual(['terms-of-service', 'privacy-policy']);
+      expect((await cm.statusFor(person('ann'))).map((s) => s.scope)).toEqual(['core']);
+    });
+
+    test('a proxy cannot confirm for the user represented', async () => {
+      await expect(cm.accept(person('ann', { viaProxy: { grantId: 'g' } }), 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'reminder', WORDS)).rejects.toBeInstanceOf(ConsentRefusedError);
+    });
+
+    test('a missing page asks nothing and needs attention', async () => {
+      pages['recovery-words'] = null;
+      expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
+      expect(cm.getManagerStatus().reason).toMatch(/No 'recovery-words' page/);
+    });
+
+    test('no add-on may take its scope', () => {
+      perPerson.add('recovery-words');
+      expect(() => cm.registerAddonDocuments('recovery-words', { documents: ['recovery-words-x'] })).toThrow(/core keeps for itself/);
     });
   });
 

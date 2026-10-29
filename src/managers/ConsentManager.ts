@@ -10,6 +10,10 @@
  *   (`ngdpbase.consent.documents`, asked at sign-up and at an interactive
  *   sign-in) and each add-on's (asked before its per-person switch turns on,
  *   and again on a version change when the person next uses it).
+ * - __The recovery words (#1928).__ A user's confirmation that they saved
+ *   their recovery words (`RECOVERY_WORDS_CONSENT_SCOPE`), bound to the set
+ *   of words it is about (`subject`): asked where the words are shown, and
+ *   reminded by a banner — it never holds a session.
  *
  * The documents themselves are pages, read when asked (`version:` and
  * `effective:` front matter), never copied. Whether a person has accepted
@@ -34,6 +38,10 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
   CORE_CONSENT_SCOPE,
+  RECOVERY_WORDS_CONSENT_SCOPE,
+  RECOVERY_WORDS_DOCUMENT,
+  RESERVED_CONSENT_SCOPES,
+  SUBJECT_CONSENT_SCOPES,
   type AddonConsentRegistration,
   type ConsentDocument,
   type ConsentRecord,
@@ -139,6 +147,7 @@ class ConsentManager extends BaseManager {
    * twice replaces the first.
    */
   registerAddonDocuments(slug: string, registration: AddonConsentRegistration): void {
+    if (RESERVED_CONSENT_SCOPES.includes(slug)) throw new Error(`'${slug}' is a consent scope core keeps for itself`);
     const addons = this.engine.getManager<{ isPerPerson?(s: string): boolean }>('AddonsManager');
     if (!addons?.isPerPerson?.(slug)) {
       throw new Error(`Add-on '${slug}' is not per-person, so it has no switch for its documents to guard (set "perPerson": true in the "ngdpbase" block of its package.json)`);
@@ -173,10 +182,15 @@ class ConsentManager extends BaseManager {
 
   /** Every document id a person may be asked to accept, core's and every add-on's: the pages that stay readable while they are asked. */
   allDocumentIds(): string[] {
-    return [...this.documentIds(CORE_CONSENT_SCOPE), ...[...this.addons.values()].flatMap((a) => a.documents)];
+    return [
+      ...this.documentIds(CORE_CONSENT_SCOPE),
+      ...this.documentIds(RECOVERY_WORDS_CONSENT_SCOPE),
+      ...[...this.addons.values()].flatMap((a) => a.documents)
+    ];
   }
 
   private documentIds(scope: ConsentScope): string[] {
+    if (scope === RECOVERY_WORDS_CONSENT_SCOPE) return [RECOVERY_WORDS_DOCUMENT];
     if (scope === CORE_CONSENT_SCOPE) {
       const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(CONSENT_DOCUMENTS_KEY, DEFAULT_DOCUMENTS);
       return Array.isArray(configured) ? configured.filter((d): d is string => typeof d === 'string' && d.trim() !== '') : [];
@@ -209,7 +223,10 @@ class ConsentManager extends BaseManager {
     }
     const whose = scope === CORE_CONSENT_SCOPE ? '' : ` (${scope})`;
     if (!meta) {
-      this.problems.set(id, `No '${id}' page${whose}: nobody is asked to accept it. Restore it (Admin → Required Pages Sync for core's) or remove it from ${scope === CORE_CONSENT_SCOPE ? CONSENT_DOCUMENTS_KEY : 'the add-on\'s registration'}.`);
+      const fix = scope === RECOVERY_WORDS_CONSENT_SCOPE
+        ? 'Restore it (Admin → Required Pages Sync)'
+        : `Restore it (Admin → Required Pages Sync for core's) or remove it from ${scope === CORE_CONSENT_SCOPE ? CONSENT_DOCUMENTS_KEY : 'the add-on\'s registration'}`;
+      this.problems.set(id, `No '${id}' page${whose}: nobody is asked to accept it. ${fix}.`);
       return null;
     }
     const version = versionOf(meta['version']);
@@ -239,6 +256,7 @@ class ConsentManager extends BaseManager {
   /** Read every document once, so a missing one shows on the dashboard from start-up. Called after the required pages are seeded. */
   async checkDocuments(): Promise<void> {
     await this.documents(CORE_CONSENT_SCOPE);
+    await this.documents(RECOVERY_WORDS_CONSENT_SCOPE);
     for (const slug of this.addons.keys()) await this.documents(slug);
   }
 
@@ -268,13 +286,19 @@ class ConsentManager extends BaseManager {
    * The documents of `scope` that `username` has not accepted at their
    * current version — what they are to be asked. Empty when there is
    * nothing to ask (no documents, or no consent folder).
+   *
+   * In a scope bound to a subject (#1928, the recovery words) only an
+   * acceptance about `subject` counts, and with no subject there is nothing
+   * to ask: a user with no recovery words has none to confirm.
    */
-  async pendingFor(username: string, scope: ConsentScope = CORE_CONSENT_SCOPE): Promise<ConsentDocument[]> {
+  async pendingFor(username: string, scope: ConsentScope = CORE_CONSENT_SCOPE, subject?: string): Promise<ConsentDocument[]> {
     if (!this.provider || !username) return [];
+    const bound = SUBJECT_CONSENT_SCOPES.includes(scope);
+    if (bound && !subject) return [];
     const docs = await this.documents(scope);
     if (docs.length === 0) return [];
     const records = await this.recordsOf(username);
-    return docs.filter((d) => !records.some((r) => r.document === d.id && r.version === d.version));
+    return docs.filter((d) => !records.some((r) => r.document === d.id && r.version === d.version && (!bound || r.subject === subject)));
   }
 
   /**
@@ -315,10 +339,15 @@ class ConsentManager extends BaseManager {
    * - Each acceptance is recorded as `consent-grant` (on-failure refuse)
    *   before it is stored: a failed audit record refuses the acceptance.
    *
-   * @param how How they were asked: `sign-up`, `sign-in` or `add-on`
+   * - In a scope bound to a subject (#1928) the acceptance is about `subject`
+   *   (which set of recovery words); it is required there.
+   *
+   * @param how How they were asked: `sign-up`, `sign-in` or `add-on`; for the
+   *   recovery words `store-door`, `reminder` or `new-words`
+   * @param subject What the acceptance is about, in a scope bound to one
    * @returns The records written; empty when there was nothing to accept
    */
-  async accept(ctx: ActorContext, scope: ConsentScope, seen: ConsentSeen[], how: string): Promise<ConsentRecord[]> {
+  async accept(ctx: ActorContext, scope: ConsentScope, seen: ConsentSeen[], how: string, subject?: string): Promise<ConsentRecord[]> {
     if (!this.provider) throw new ConsentRefusedError('Consent records cannot be kept on this site right now');
     if (ctx.viaToken || ctx.viaShare || ctx.viaProxy) {
       throw new ConsentRefusedError('Only the person themselves can accept, signed in: not a token, a share link or someone acting for them');
@@ -334,8 +363,10 @@ class ConsentManager extends BaseManager {
     if (!account || account.username !== ctx.username || account.isActive === false) {
       throw new ConsentRefusedError(`No active account '${ctx.username}' to record an acceptance on`);
     }
+    const bound = SUBJECT_CONSENT_SCOPES.includes(scope);
+    if (bound && !subject) throw new ConsentRefusedError(`Nothing to confirm in ${scope}: no subject named`);
 
-    const pending = await this.pendingFor(ctx.username, scope);
+    const pending = await this.pendingFor(ctx.username, scope, bound ? subject : undefined);
     for (const doc of pending) {
       if (!seen.some((s) => s.id === doc.id && s.version === doc.version)) {
         throw new ConsentChangedError(`${doc.title} changed (now version ${doc.version}) while you were reading; read it again`);
@@ -354,6 +385,7 @@ class ConsentManager extends BaseManager {
         effective: doc.effective,
         acceptedAt: new Date().toISOString(),
         ...(account.createdAt ? { account: account.createdAt } : {}),
+        ...(bound ? { subject } : {}),
         context: { by: ctx.username, how, origin: isJobContext(ctx) ? ctx.origin : 'request', ...(ctx.ipAddress ? { ipAddress: ctx.ipAddress } : {}) }
       };
       // Record first, then store: on-failure refuse throws here and nothing is stored.
@@ -365,7 +397,7 @@ class ConsentManager extends BaseManager {
         severity: 'low',
         resource: doc.id,
         resourceType: 'consent-document',
-        metadata: { ...who.metadata, scope, version: doc.version, effective: doc.effective, how }
+        metadata: { ...who.metadata, scope, version: doc.version, effective: doc.effective, how, ...(bound ? { subject } : {}) }
       });
       this.cache.delete(ctx.username);
       await this.provider.append(ctx.username, record);

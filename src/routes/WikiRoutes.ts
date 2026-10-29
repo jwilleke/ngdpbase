@@ -61,7 +61,8 @@ import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type ConsentManager from '../managers/ConsentManager.js';
 import { ConsentChangedError, ConsentRefusedError } from '../managers/ConsentManager.js';
-import { CONSENT_PATH, CORE_CONSENT_SCOPE, type ConsentSeen } from '../types/Consent.js';
+import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, type ConsentDocument, type ConsentSeen } from '../types/Consent.js';
+import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
@@ -115,7 +116,6 @@ import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, keywordsCo
 import {
   kekFor,
   endSessionKeys,
-  hasUserKeys,
   newPrivateStoreHandle,
   setUnlockedDek,
   unlockPrivateStores,
@@ -151,8 +151,7 @@ import {
 } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { FORBIDDEN_TITLE_CHARS, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
-import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
-import { remindRecoveryWords } from '../utils/recoveryWordsReminder.js';
+import { createUserKeys, mnemonicWordCount, recoveryWordsId } from '../utils/privateStoreCrypto.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -6938,12 +6937,6 @@ ${panes}
       if (pagesDirectory) {
         await unlockPrivateStoresWithPassword({ handle: privateStoreHandle, username, password, pagesDirectory });
         await this.adoptSealedPages(username, privateStoreHandle);
-        // #1876: once per person with vault keys, a reminder to keep the recovery words safe.
-        // #2041: addressed, and so deduplicated, by the user's identity @id.
-        const identities = this.engine.getManager('IdentityManager') as IdentityManager | null;
-        void Promise.resolve(identities?.identityIdOf(systemContext(this.engine, 'remind a user of their recovery words: their identity @id (#2041)'), username))
-          .then((id) => remindRecoveryWords(this.engine.getManager('NotificationManager'), id ?? username, () => hasUserKeys(pagesDirectory, username)))
-          .catch((err: unknown) => logger.warn('[private-store] The recovery-words reminder could not be addressed:', err));
       }
     } catch {
       logger.warn('[private-store] could not unlock stores after login');
@@ -7769,7 +7762,11 @@ ${panes}
     const returnTo = safeRedirect(req.query.returnTo);
     // The signed-in person, never the one a proxy acts for: only they can accept their own.
     const signedIn = typeof req.session?.username === 'string' ? req.session.username : '';
-    const pending = (consent && signedIn ? await consent.pendingFor?.(signedIn, scope) : []) ?? [];
+    // #1928: the recovery words are about the user's own words and vaults; never under a proxy.
+    const words = scope === RECOVERY_WORDS_CONSENT_SCOPE ? await this.ownRecoveryWords(req) : null;
+    const pending = scope === RECOVERY_WORDS_CONSENT_SCOPE
+      ? (words ? await recoveryWordsPending(this.engine, req.userContext, words) : [])
+      : (consent && signedIn ? await consent.pendingFor?.(signedIn, scope) : []) ?? [];
     if (pending.length === 0) {
       if (scope === CORE_CONSENT_SCOPE && req.session.consentPending) {
         delete req.session.consentPending;
@@ -7783,9 +7780,10 @@ ${panes}
     res.set('Cache-Control', 'no-store');
     res.render('consent', {
       ...commonData,
-      title: 'Please accept',
+      title: scope === RECOVERY_WORDS_CONSENT_SCOPE ? 'Save your recovery words' : 'Please accept',
       scope,
       documents: pending,
+      recoveryWordsVaults: words?.vaults ?? [],
       // An add-on's prompt can be put off: its switch stays as it is. Core's terms cannot; signing out is the other way.
       canPutOff: scope !== CORE_CONSENT_SCOPE,
       actingFor: Boolean((req.userContext as { viaProxy?: unknown } | undefined)?.viaProxy),
@@ -7813,7 +7811,13 @@ ${panes}
     if (!consent) { again('Consent cannot be recorded on this site right now.'); return; }
     try {
       // The request's own subject, forwarded: ConsentManager refuses a token, share or proxy.
-      await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), scope === CORE_CONSENT_SCOPE ? 'sign-in' : 'add-on');
+      if (scope === RECOVERY_WORDS_CONSENT_SCOPE) {
+        // #1928: from the reminder; about the user's current set of words.
+        const words = await this.ownRecoveryWords(req);
+        if (words) await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), 'reminder', words.wordsId);
+      } else {
+        await consent.accept(wikiContext.userContext, scope, WikiRoutes.consentSeen(body), scope === CORE_CONSENT_SCOPE ? 'sign-in' : 'add-on');
+      }
     } catch (err) {
       if (err instanceof ConsentChangedError) { again(err.message); return; }
       if (err instanceof ConsentRefusedError) {
@@ -7826,6 +7830,16 @@ ${panes}
     }
     if (scope === CORE_CONSENT_SCOPE) delete req.session.consentPending;
     req.session.save(() => res.redirect(returnTo));
+  }
+
+  /**
+   * The signed-in user's own recovery words and the encrypted vaults they
+   * protect (#1928), or null: none, or this request acts for someone else.
+   */
+  private async ownRecoveryWords(req: Request): Promise<Awaited<ReturnType<typeof recoveryWordsState>>> {
+    const subject = req.userContext as (ActorContext & { viaProxy?: unknown; viaToken?: unknown; viaShare?: unknown }) | undefined;
+    if (!subject?.username || subject.username !== req.session?.username || subject.viaProxy || subject.viaToken || subject.viaShare) return null;
+    return recoveryWordsState(this.engine, subject);
   }
 
   /** What a consent form showed: parallel `document` / `version` fields, one pair per document (#1603). */
@@ -9798,6 +9812,60 @@ ${panes}
     return this.privatePageRoute(req, res, action, handler);
   }
 
+  /** The recovery-words document as it stands now (#1928), or null when its page is missing. */
+  private async recoveryWordsDocument(): Promise<ConsentDocument | null> {
+    const consent = this.engine.getManager('ConsentManager');
+    return (await consent?.documents?.(RECOVERY_WORDS_CONSENT_SCOPE))?.[0] ?? null;
+  }
+
+  /**
+   * Whether a words screen's form carries the recovery-words tick (#1928):
+   * `saved=on`, and the document's version it was shown as
+   * `words-document` / `words-version` (`_recovery-words-consent.ejs`).
+   * `changed`: the wording is at another version now, so it is asked again.
+   * With no document page (it is missing; ConsentManager needs attention)
+   * the tick alone is asked.
+   */
+  static recoveryWordsSaved(body: Record<string, unknown>, document: ConsentDocument | null): 'ok' | 'unticked' | 'changed' {
+    if (body.saved !== 'on') return 'unticked';
+    if (!document) return 'ok';
+    const seen = WikiRoutes.consentSeen(body, 'words-');
+    return seen.some((s) => s.id === document.id && s.version === document.version) ? 'ok' : 'changed';
+  }
+
+  /**
+   * Record that the user saved their recovery words (#1928): a consent, through
+   * ConsentManager (who, when, how, the wording's version, and which set of
+   * words). Called once the words screen's step has finished, after its tick
+   * (`recoveryWordsSaved`):
+   *
+   * - the store door, when the user's keys are first made (`how: 'store-door'`);
+   * - HOOK for #1925: the screen that makes a new set of words while signed in
+   *   is to show `_recovery-words-consent.ejs` beside the new words, refuse to
+   *   finish without `recoveryWordsSaved(...) === 'ok'`, and then call this with
+   *   the new envelope's `recoveryWordsId` and `how: 'new-words'`. The new id
+   *   is what makes the reminder come back for the new set.
+   *
+   * Never fails the step: the keys are already written. A refused or failed
+   * record is logged, and the banner then asks the user to confirm.
+   */
+  private async recordRecoveryWordsSaved(req: Request, wordsId: string, document: ConsentDocument | null, how: 'store-door' | 'new-words'): Promise<boolean> {
+    const consent = this.engine.getManager('ConsentManager');
+    const who = req.userContext?.username ?? '?';
+    if (!consent || !document) {
+      logger.warn(`[recovery-words] ${who} confirmed their recovery words, but it could not be recorded: ${consent ? 'the recovery-words page is missing' : 'no ConsentManager'}`);
+      return false;
+    }
+    try {
+      // The request's own subject, forwarded: ConsentManager refuses a token, share or proxy.
+      await consent.accept(req.userContext, RECOVERY_WORDS_CONSENT_SCOPE, [{ id: document.id, version: document.version }], how, wordsId);
+      return true;
+    } catch (err) {
+      logger.warn(`[recovery-words] the confirmation of ${who} could not be recorded; the reminder will ask again:`, err);
+      return false;
+    }
+  }
+
   /** GET /stores/:kind/confirm — type the words back. Never shows them. */
   async storeDoorConfirmPage(req: Request, res: Response) {
     try {
@@ -9806,7 +9874,7 @@ ${panes}
       if (!hasPendingWords(door.handle, door.username, door.kind.id)) {
         return res.redirect(`/stores/${encodeURIComponent(door.kind.id)}`);
       }
-      return await this.renderStoreDoor(req, res, door.kind, { step: 'confirm' });
+      return await this.renderStoreDoor(req, res, door.kind, { step: 'confirm', recoveryWordsDocument: await this.recoveryWordsDocument() });
     } catch (err) {
       logger.error('[store-door] could not show the confirmation:', err);
       return this.renderError(req, res, 500, 'Error', 'The confirmation could not be shown.');
@@ -9823,6 +9891,20 @@ ${panes}
       const door = await this.storeDoorRequest(req, res);
       if (!door) return;
       const { username, handle, kind, pagesDirectory, layout } = door;
+      if (!hasPendingWords(handle, username, kind.id)) return res.redirect(`/stores/${encodeURIComponent(kind.id)}`);
+      // #1928: the step does not finish without "I've saved my recovery words", at the wording shown.
+      // Refused before the words are checked, so they stay pending and nothing is written.
+      const document = await this.recoveryWordsDocument();
+      const saved = WikiRoutes.recoveryWordsSaved(req.body ?? {}, document);
+      if (saved !== 'ok') {
+        return await this.renderStoreDoor(req, res, kind, {
+          step: 'confirm',
+          recoveryWordsDocument: document,
+          error: saved === 'unticked'
+            ? 'Tick "I\'ve saved my recovery words and understand they are the only way back" to finish. Nothing has been saved yet.'
+            : 'The wording about your recovery words changed while you were reading. Read it again, then type your words and tick the box. Nothing has been saved yet.'
+        });
+      }
       const typed: string[] = [];
       for (let i = 1; i <= mnemonicWordCount; i++) {
         const word = req.body?.[`word${i}`];
@@ -9847,6 +9929,7 @@ ${panes}
       } finally {
         kek.fill(0);
       }
+      await this.recordRecoveryWordsSaved(req, recoveryWordsId(envelope), document, 'store-door');
       return await this.renderStoreDoor(req, res, kind, { step: 'done' });
     } catch (err) {
       logger.error('[store-door] could not confirm the words:', err);

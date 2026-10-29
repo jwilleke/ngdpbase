@@ -4,14 +4,19 @@
     documents. Each document links to its page, which stays readable while they are asked. The
     form says which version of each they were shown (document / version pairs), so an acceptance is
     never recorded for a version they did not see. Locals: scope, documents (ConsentDocument[]),
-    canPutOff, actingFor, returnTo, error, csrfToken. %>
+    canPutOff, actingFor, returnTo, error, csrfToken; recoveryWordsVaults for the recovery-words scope (#1928):
+    the user's own confirmation that they saved their recovery words, reached from the reminder banner. It never
+    holds the session, so "Not now" just goes back. %>
+<% const _rw = scope === 'recovery-words'; %>
+<% const _rwVaults = typeof recoveryWordsVaults !== 'undefined' ? recoveryWordsVaults : []; %>
+<% const _rwName = function (v) { return v === 'default' ? 'your private pages' : '"' + v + '"'; }; %>
 
 <div class="container-fluid">
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-6">
             <div class="card mt-5" data-consent-scope="<%= scope %>">
                 <div class="card-header">
-                    <h4 class="mb-0"><%= scope === 'core' ? 'Please accept the terms' : 'Please accept to use ' + scope %></h4>
+                    <h4 class="mb-0"><%= _rw ? 'Save your recovery words' : (scope === 'core' ? 'Please accept the terms' : 'Please accept to use ' + scope) %></h4>
                 </div>
                 <div class="card-body">
                     <% if (error) { %>
@@ -21,7 +26,13 @@
                     <div class="alert alert-info" role="alert">You are acting for someone else. Only they can accept these, signed in themselves.</div>
                     <% } %>
                     <p>
-                        <% if (scope === 'core') { %>
+                        <% if (_rw) { %>
+                        Your encrypted <%= _rwVaults.length === 1 ? 'vault' : 'vaults' %>
+                        <% _rwVaults.forEach(function (v, i) { %><%= i === 0 ? '' : (i === _rwVaults.length - 1 ? ' and ' : ', ') %><strong data-recovery-words-vault="<%= v %>"><%= _rwName(v) %></strong><% }) %>
+                        <%= _rwVaults.length === 1 ? 'is' : 'are' %> locked with your own key. Nobody, not even an administrator, can open
+                        <%= _rwVaults.length === 1 ? 'its' : 'their' %> files. If you lose your password, your 12 recovery words are the only way back;
+                        without them those files are lost for good. They were shown to you once, when your first encrypted vault was made.
+                        <% } else if (scope === 'core') { %>
                         Before you go on, read and accept the following. When one of them changes, you are asked again the next time you sign in.
                         <% } else { %>
                         <%= scope %> has its own terms. Read and accept them to use it. When they change, you are asked again the next time you use it.
@@ -45,12 +56,14 @@
                         <% }) %>
                         <div class="form-check mb-3">
                             <input class="form-check-input" type="checkbox" name="accept" id="consent-accept" required>
-                            <label class="form-check-label" for="consent-accept">I have read and accept <%= documents.length === 1 ? 'it' : 'them' %></label>
+                            <label class="form-check-label" for="consent-accept"><%= _rw ? 'I\'ve saved my recovery words and understand they are the only way back' : 'I have read and accept ' + (documents.length === 1 ? 'it' : 'them') %></label>
                         </div>
-                        <button type="submit" class="btn btn-primary" <%= actingFor ? 'disabled' : '' %>>Accept and continue</button>
+                        <button type="submit" class="btn btn-primary" <%= actingFor ? 'disabled' : '' %>><%= _rw ? 'Confirm' : 'Accept and continue' %></button>
                     </form>
                     <hr>
-                    <% if (canPutOff) { %>
+                    <% if (_rw) { %>
+                    <p class="small text-muted mb-0">Not now? <a href="<%= returnTo %>">Go back</a>. Nothing is held up; the reminder stays until you confirm.</p>
+                    <% } else if (canPutOff) { %>
                     <p class="small text-muted mb-0">Not now? <a href="/profile">Go to your profile</a>, where you can turn <%= scope %> off.</p>
                     <% } else { %>
                     <form action="/logout" method="POST" class="m-0">

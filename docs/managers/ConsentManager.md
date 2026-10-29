@@ -1,7 +1,7 @@
 ---
 name: ConsentManager
 description: What each user has accepted — the site's terms and add-ons' documents — and asking them; append-only records per account (#1603)
-dateModified: '2026-10-24'
+dateModified: '2026-10-29'
 category: managers
 code: src/managers/ConsentManager.ts
 ---
@@ -35,9 +35,9 @@ A page that is missing, or has no `version:`, is not asked for and blocks nothin
 | Method | For |
 | --- | --- |
 | `documents(scope)` | the documents of `core` or an add-on's slug, as they stand now |
-| `pendingFor(username, scope)` | what that user has not accepted at its current version: what to ask |
+| `pendingFor(username, scope, subject?)` | what that user has not accepted at its current version (about `subject`, in a scope bound to one): what to ask |
 | `statusFor(ctx)` | "Your consents": each document of core's and of each registered add-on, with the acceptance of the current version and the latest of any version |
-| `accept(ctx, scope, seen, how)` | record the acceptance of every pending document of `scope`; see below |
+| `accept(ctx, scope, seen, how, subject?)` | record the acceptance of every pending document of `scope`; see below |
 | `registerAddonDocuments(slug, { documents, paths? })` | an add-on's documents, at load ([below](#add-ons)) |
 | `registeredAddons()`, `addonForPath(path)`, `allDocumentIds()` | for the consent gate and the profile |
 | `removeAccount(username, ctx)` | the account was deleted ([below](#deleting-an-account)) |
@@ -76,6 +76,18 @@ engine.getManager('ConsentManager')?.registerAddonDocuments('phr', {
 - __Turning it on:__ `AddonsManager`'s per-user switch (`host.setEnabledForPerson`) refuses to go from off to on while any of the add-on's documents is pending, with `ConsentRequiredError`. The profile shows the documents on the add-on's card with an "I accept" box; `POST /preferences` records that acceptance first, then runs the add-ons' saves, so the switch flips only after the record exists. A switch refused for consent is reported back to the user.
 - __A version change__ asks again when the user next uses the add-on, separately from core's terms: under a registered `path`, the consent gate sends a user who has the add-on on to `/consent?scope=<slug>`. Without `paths` they are asked when they next turn it on, and "Your consents" shows it as changed.
 - Turning the add-on off withdraws nothing; its acceptance stays recorded.
+- `core` and `recovery-words` are core's scopes: an add-on with either slug is refused.
+
+## The recovery words
+
+A user's confirmation that they saved their 12 recovery words ([#1928](https://github.com/jwilleke/ngdpbase/issues/1928), operator decisions 2026-10-28) is a consent in the scope `recovery-words` (`RECOVERY_WORDS_CONSENT_SCOPE`). Its document is the required page `recovery-words` (Your Recovery Words), whose `version:` is the version of the wording; raising it asks everyone with encrypted vaults again.
+
+- __One per user, not per vault.__ A user has one set of words: one KEK, wrapped by the password and by the words, and each vault's DEK under it. The record is bound to that set by `subject`, `recoveryWordsId(envelope)` (a digest of the recovery wrap, `src/utils/privateStoreCrypto.ts`): a password change keeps it, a new set of words changes it, so a new set asks again. `pendingFor` and `accept` take the subject; in this scope, with no subject there is nothing to ask and `accept` refuses.
+- __Asked where the words are shown.__ The store door's confirm step, when the user's keys are first made, has the required tick "I've saved my recovery words and understand they are the only way back" (`views/_recovery-words-consent.ejs`, checked by `WikiRoutes.recoveryWordsSaved`); the step does not finish without it, nor when the wording's version changed since the form was shown. It is recorded after the commit (`how: store-door`, `WikiRoutes.recordRecoveryWordsSaved`). A record that cannot be written leaves the vault made and the reminder asks.
+- __A new set of words__ ([#1925](https://github.com/jwilleke/ngdpbase/issues/1925), not built): its screen shows the same partial beside the new words, refuses without `recoveryWordsSaved(...) === 'ok'`, and records through `recordRecoveryWordsSaved` with the new envelope's id and `how: new-words`.
+- __The reminder, never the gate.__ `src/middleware/recoveryWordsNotice.ts`, mounted after the consent gate, holds nothing. On a page read of the home page (`/` and the front page it lands on, `/view/<ngdpbase.front-page>`, by name or slug; operator, 2026-10-29), the dashboard (`/admin`), `/profile`, `/my/vaults`, or one of the user's encrypted vaults' pages (`/stores/<vault>`, `/vaults/<them>/<vault>/…`), a user with keys and at least one encrypted vault (`recoveryWordsState`, `src/utils/recoveryWordsConsent.ts`) who has not accepted the current version for their current set gets `res.locals.recoveryWordsNotice` (`message`, `link`). The header shows it, naming the vaults, with "I have saved them" linking to `/consent?scope=recovery-words&returnTo=<this page>`, where the tick records it (`how: reminder`). "Go back" leaves it showing. Never for a token, a share link or a proxy. Unlike core's banner it reads files (the user's `user-keys.json` and each vault's `store.json`), so it is asked on those pages only (the front-page check is one config read); an error shows no banner that time.
+- __Not in "Your consents".__ `statusFor` lists core's and the add-ons' documents; the recovery-words records are kept and audited (`consent-grant` with `subject`) like any other.
+- __The org shared folders' words__ ([#1775](https://github.com/jwilleke/ngdpbase/issues/1775), not built) are meant to reuse this: a scope of their own in `SUBJECT_CONSENT_SCOPES`, bound to that folder's set of words.
 
 ## Deleting an account
 

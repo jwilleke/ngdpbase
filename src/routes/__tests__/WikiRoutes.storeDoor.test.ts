@@ -10,6 +10,7 @@ import { privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath
 import { clearUnlockedPrivateStores, dekFor, kekFor } from '../../utils/privateStoreUnlock';
 import { clearPendingWords } from '../../utils/privateStoreDoor';
 import { vaultKindCategories } from '../../test-support/vaults';
+import { recoveryWordsId } from '../../utils/privateStoreCrypto';
 
 type Res = {
   render: ReturnType<typeof vi.fn>;
@@ -44,6 +45,11 @@ describe('store door routes (#1414)', () => {
   };
   /** #1414 step 2: where the addon owning `yourphr` stands. */
   let ownerState: string;
+  /** #1928: the recovery-words document as it stands, and the consents recorded. */
+  let wordsVersion: string;
+  let consent: { documents: ReturnType<typeof vi.fn>; accept: ReturnType<typeof vi.fn> };
+  /** The tick and the wording's version a confirm form sends (#1928). */
+  const TICK = { saved: 'on', 'words-document': 'recovery-words', 'words-version': '1' };
 
   const req = (kind: string, body: Record<string, unknown> = {}, userContext: Record<string, unknown> = subject) =>
     ({ params: { kind }, body: { _csrf: 't', ...body }, userContext, ip: '203.0.113.7', get: () => undefined, session: {} }) as never;
@@ -56,7 +62,13 @@ describe('store door routes (#1414)', () => {
     ownerState = 'loaded';
     pagesDir = path.join(testDir, 'pages');
     audit = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => {}) };
+    wordsVersion = '1';
+    consent = {
+      documents: vi.fn(async (scope: string) => (scope === 'recovery-words' ? [{ id: 'recovery-words', scope, title: 'Your Recovery Words', version: wordsVersion, effective: null }] : [])),
+      accept: vi.fn(async () => [])
+    };
     const managers: Record<string, unknown> = {
+      ConsentManager: consent,
       ConfigurationManager: {
         getProperty: (key: string, def: unknown) => (key in config ? config[key] : def),
         getResolvedDataPath: () => pagesDir
@@ -202,7 +214,7 @@ describe('store door routes (#1414)', () => {
 
     res = newRes();
     const typed = Object.fromEntries(words.map((w, i) => [`word${i + 1}`, w]));
-    await routes.storeDoorConfirm(req('vault', typed), res);
+    await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), res);
     expect(renderedStep(res)).toBe('done');
 
     expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(true);
@@ -218,6 +230,67 @@ describe('store door routes (#1414)', () => {
     expect(dekFor(subject as never, 'molly', 'vault')).toBeDefined();
   });
 
+  describe('"I\'ve saved my recovery words" (#1928)', () => {
+    async function showWords(): Promise<Record<string, string>> {
+      const res = newRes();
+      await routes.storeDoorEnter(req('vault', { password: 'right-pw' }), res);
+      return Object.fromEntries(renderedWords(res).map((w, i) => [`word${i + 1}`, w]));
+    }
+
+    test('the confirm step shows the wording at its current version', async () => {
+      await showWords();
+      const res = newRes();
+      await routes.storeDoorConfirmPage(req('vault'), res);
+      expect(res.render.mock.calls.at(-1)?.[1]).toMatchObject({ step: 'confirm', recoveryWordsDocument: { id: 'recovery-words', version: '1' } });
+    });
+
+    test('the step refuses to finish without the tick: nothing written, the same words still finish it once ticked', async () => {
+      const typed = await showWords();
+      let res = newRes();
+      await routes.storeDoorConfirm(req('vault', typed), res);
+      expect(renderedStep(res)).toBe('confirm');
+      expect((res.render.mock.calls.at(-1)?.[1] as { error?: string }).error).toMatch(/I've saved my recovery words and understand they are the only way back/);
+      expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(false);
+      expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'vault'))).toBe(false);
+      expect(consent.accept).not.toHaveBeenCalled();
+
+      res = newRes();
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), res);
+      expect(renderedStep(res)).toBe('done');
+    });
+
+    test('once finished, the confirmation is recorded as a consent: the user, the wording\'s version, how, and which set of words', async () => {
+      const typed = await showWords();
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), newRes());
+      const envelope = await fs.readJson(privateUserKeysPath(pagesDir, 'molly'));
+      expect(consent.accept).toHaveBeenCalledTimes(1);
+      expect(consent.accept).toHaveBeenCalledWith(subject, 'recovery-words', [{ id: 'recovery-words', version: '1' }], 'store-door', recoveryWordsId(envelope));
+    });
+
+    test('a changed wording version asks again before anything is written', async () => {
+      const typed = await showWords();
+      wordsVersion = '2';
+      let res = newRes();
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), res);
+      expect(res.render.mock.calls.at(-1)?.[1]).toMatchObject({ step: 'confirm', recoveryWordsDocument: { version: '2' }, error: expect.stringMatching(/changed while you were reading/) });
+      expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(false);
+
+      res = newRes();
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK, 'words-version': '2' }), res);
+      expect(renderedStep(res)).toBe('done');
+      expect(consent.accept).toHaveBeenCalledWith(subject, 'recovery-words', [{ id: 'recovery-words', version: '2' }], 'store-door', expect.any(String));
+    });
+
+    test('a confirmation that cannot be recorded never undoes the vault (the reminder asks instead)', async () => {
+      consent.accept.mockRejectedValue(new Error('consent folder gone'));
+      const typed = await showWords();
+      const res = newRes();
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), res);
+      expect(renderedStep(res)).toBe('done');
+      expect(await fs.readJson(storeMetaPath(pagesDir, 'molly', 'vault'))).toMatchObject({ encrypt: true });
+    });
+  });
+
   test('a miss shows a NEW set; out of attempts, nothing was created', async () => {
     let res = newRes();
     await routes.storeDoorEnter(req('vault', { password: 'right-pw' }), res);
@@ -225,12 +298,12 @@ describe('store door routes (#1414)', () => {
 
     const wrong = Object.fromEntries(first.map((_, i) => [`word${i + 1}`, 'nope']));
     res = newRes();
-    await routes.storeDoorConfirm(req('vault', wrong), res);
+    await routes.storeDoorConfirm(req('vault', { ...wrong, ...TICK }), res);
     expect(renderedStep(res)).toBe('words');
     expect(renderedWords(res)).not.toEqual(first);
 
     res = newRes();
-    await routes.storeDoorConfirm(req('vault', Object.fromEntries(first.map((w, i) => [`word${i + 1}`, w]))), res);
+    await routes.storeDoorConfirm(req('vault', { ...Object.fromEntries(first.map((w, i) => [`word${i + 1}`, w])), ...TICK }), res);
     expect(renderedStep(res)).toBe('exhausted');
     expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(false);
     expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'vault'))).toBe(false);

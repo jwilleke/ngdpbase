@@ -117,6 +117,8 @@ The words exist only while that screen is open. `holdWordsForConfirmation()` kee
 
 `confirmAttempts()` is `1 + ngdpbase.stores.recovery.confirmretries`, so the shipped default is two attempts, each with its own new set of words.
 
+The confirm step also asks "I've saved my recovery words and understand they are the only way back" ([#1928](https://github.com/jwilleke/ngdpbase/issues/1928), `views/_recovery-words-consent.ejs`). `POST /stores/:kind/confirm` refuses to finish without the tick, or when the wording's version changed since the form was shown (`WikiRoutes.recoveryWordsSaved`), before the words are checked, so they stay pending and nothing is written. After the commit it is recorded as a consent (`ConsentManager`, scope `recovery-words`, `how: store-door`), bound to the new set of words by `recoveryWordsId(envelope)` (a digest of the recovery wrap: a password change keeps it, a new set of words changes it). A record that cannot be written never undoes the vault; the reminder banner asks instead ([ConsentManager.md](managers/ConsentManager.md#the-recovery-words)).
+
 ### The commit
 
 `commitStoreCopy()` writes `user-keys.json` first when this commit creates the user's KEK, then `store.json`. Both are written with the `wx` flag, so an existing file is a refusal rather than an overwrite — replacing a `store.json` would lose the wrapped DEK and with it every byte of the store. If the `store.json` write fails after a new key file was written, the key file is removed: a key never outlives the store it was made for.
