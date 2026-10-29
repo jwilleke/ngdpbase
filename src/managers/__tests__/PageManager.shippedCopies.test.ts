@@ -57,6 +57,21 @@ describe('PageManager shipped system-categories and shipped copies (#1503)', () 
     expect([...await manager.shippedSystemCategories()].sort()).toEqual(['documentation', 'system']);
   });
 
+  test("an enabled add-on's pages add their system-categories; one without a system-category is addon", async () => {
+    await writeShipped('a', { title: 'A', 'system-category': 'system' });
+    const addonDir = path.join(root, 'demo-pages');
+    await fs.ensureDir(addonDir);
+    await fs.writeFile(path.join(addonDir, 'x.md'), matter.stringify('Body.\n', { title: 'X' }));
+    await fs.writeFile(path.join(addonDir, 'y.md'), matter.stringify('Body.\n', { title: 'Y', 'system-category': 'Guide' }));
+    const getManager = (manager as unknown as { engine: { getManager: ReturnType<typeof vi.fn> } }).engine.getManager;
+    const configManager = getManager('ConfigurationManager') as unknown;
+    getManager.mockImplementation((name: string) => (name === 'ConfigurationManager'
+      ? configManager
+      : name === 'AddonsManager' ? { getEnabledAddonPagesDirectories: () => [{ name: 'demo', pagesDir: addonDir }] } : null));
+
+    expect([...await manager.shippedSystemCategories()].sort()).toEqual(['addon', 'guide', 'system']);
+  });
+
   test('they are read once', async () => {
     await writeShipped('a', { title: 'A', 'system-category': 'system' });
     expect([...await manager.shippedSystemCategories()]).toEqual(['system']);

@@ -991,12 +991,13 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should prevent deletion of required pages', async () => {
-        // Page metadata with system category makes isRequiredPage() return true
-        // isRequiredPage() uses getPageMetadata() for the category check
+        // #1503: a shipped page (its uuid in the seeded-pages record) is admin-only to delete
         mockPageManager.getPageMetadata.mockResolvedValue({
           title: 'TestPage',
+          uuid: 'shipped-uuid',
           'system-category': 'system'
         });
+        mockPageManager.isShippedPageCopy = vi.fn().mockResolvedValueOnce(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage', 'system-category': 'system' }

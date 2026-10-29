@@ -1926,9 +1926,11 @@ class WikiRoutes {
   }
 
   /**
-   * The system-categories required-pages/ ships, lower-cased (#1503): the
-   * values its files' frontmatter carries, as PageManager reads them. Used to
-   * decide whether a page is protected (admin-only edit, never private).
+   * The system-categories that ship pages, lower-cased (#1503): the values the
+   * frontmatter of required-pages/ and the add-ons' pages carries, as
+   * PageManager reads them. Only for category questions — moving a page into
+   * one is admin-only, and the #1377 not-in-release check. Whether a page is
+   * shipped is {@link isRequiredPage}, per page.
    */
   async getRequiredPageCategories(): Promise<string[]> {
     try {
@@ -2801,26 +2803,22 @@ ${panes}
     return off;
   }
 
+  /**
+   * Whether a page is a shipped page (#1503, operator 2026-10-29): a copy of
+   * an original from required-pages/ or an add-on's pages, decided per page by
+   * its uuid in the seeded-pages record. Shipped pages are admin-only to edit,
+   * delete or rename, and never private. A page made on this site is not one,
+   * whatever its system-category.
+   */
   async isRequiredPage(pageName: string, ctx: ActorContext): Promise<boolean> {
-    // Check if page has a protected system-category
     try {
       const pageManager = this.engine.getManager('PageManager');
+      if (typeof pageManager?.isShippedPageCopy !== 'function') return false;
       const metadata = await pageManager.getPageMetadata(pageName, ctx);
-      if (metadata) {
-        const systemCategory = (metadata['system-category'] || '').toLowerCase();
-        const category = (metadata.category || '').toLowerCase();
-
-        // Protected categories that require admin permission to edit: the ones
-        // required-pages/ ships (#1503)
-        const protectedCategories = await this.getRequiredPageCategories();
-
-        if (protectedCategories.includes(systemCategory) ||
-            protectedCategories.includes(category)) {
-          return true;
-        }
-      }
+      const uuid = typeof metadata?.uuid === 'string' ? metadata.uuid : '';
+      return uuid ? await pageManager.isShippedPageCopy(uuid) : false;
     } catch (err: unknown) {
-      logger.error('Error checking page category:', err);
+      logger.error('Error checking whether a page is shipped:', err);
     }
 
     return false;
@@ -4071,8 +4069,9 @@ ${panes}
       // from disk after the user set the page back to published.
       if (!statusValue) delete (metadata).status;
 
-      // Mark a page user-modified when it is a copy of a shipped original: its
-      // uuid is in the seeded-pages record (#1503, decided per page)
+      // A shipped page is a copy of a shipped original (required-pages/ or an
+      // add-on's pages): its uuid is in the seeded-pages record (#1503, decided
+      // per page). Saving one marks it user-modified.
       const _pageUuid = typeof existingPage?.metadata?.uuid === 'string' ? existingPage.metadata.uuid : '';
       let shippedCopy = false;
       try {
@@ -4093,17 +4092,20 @@ ${panes}
       )];
       const unknownTagWarning = _unknownTags.length > 0 ? _unknownTags.join(',') : undefined;
 
-      // Prevent required-pages from being marked private (they live in GitHub).
+      // A shipped page is never private.
       // #639: also check the new top-level field; either signal counts.
-      const isCurrentlyRequired = await this.isRequiredPage(pageName, req.userContext);
+      const isCurrentlyRequired = shippedCopy;
       if (isCurrentlyRequired && (privateFlag || userKeywordsArray.includes('private'))) {
         return res.status(400).send('Required pages cannot be marked as private');
       }
 
-      // Check if the new metadata will make this a required page
-      const willBeRequired = (await this.getRequiredPageCategories()).includes(
-        ((metadata['system-category'] as string) || '').toLowerCase()
-      );
+      // Moving a page into a system-category that ships pages is admin-only
+      // (#1503): a move, not a page already in it — whether that page is
+      // shipped is decided per page above.
+      const _newCategory = ((metadata['system-category'] as string) || '').toLowerCase();
+      const _oldCategory = String(existingPage?.metadata?.['system-category'] ?? '').toLowerCase();
+      const willBeRequired = _newCategory !== _oldCategory &&
+        (await this.getRequiredPageCategories()).includes(_newCategory);
       if (isCurrentlyRequired || willBeRequired) {
         if (
           !currentUser ||

@@ -590,8 +590,8 @@ class PageManager extends BaseManager implements CatalogSource {
   private formerTitleIndex: Map<string, string | typeof AMBIGUOUS> | null = null;
   private providerClass?: string;
 
-  /** The system-categories required-pages/ ships, read once ({@link shippedSystemCategories}, #1503). */
-  private shippedCategoriesRead: Promise<Set<string>> | null = null;
+  /** The system-categories each shipped source ships, read once ({@link shippedSystemCategories}, #1503). */
+  private shippedCategoriesRead = new Map<string, Promise<Set<string>>>();
 
   /**
    * Creates a new PageManager instance
@@ -1162,42 +1162,61 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * The system-categories whose pages ship in required-pages/ (#1503), lower-
-   * cased: the `system-category:` values found in its files' frontmatter, read
-   * once. No setting names them (operator, 2026-09-28); today they are
-   * `system` and `documentation`. A file the seed would exclude is left out.
+   * The system-categories that ship pages (#1503), lower-cased: the
+   * `system-category:` values in the frontmatter of required-pages/ (read
+   * once) and of each enabled add-on's pages (read once per add-on; a page
+   * without one is `addon`, as the seed stamps it). No setting names them
+   * (operator, 2026-09-28). A file the seed would exclude is left out.
+   *
+   * Only for category questions (moving a page into one, the #1377 check):
+   * whether a page is shipped is {@link isShippedPageCopy}, per page.
    */
-  shippedSystemCategories(): Promise<Set<string>> {
-    // A failed read is not kept: the next call reads again.
-    this.shippedCategoriesRead ??= this.readShippedSystemCategories().then((found) => {
-      if (!found) this.shippedCategoriesRead = null;
-      return found ?? new Set<string>();
-    });
-    return this.shippedCategoriesRead;
+  async shippedSystemCategories(): Promise<Set<string>> {
+    const found = new Set(await this.categoriesShippedBy('required-pages', () => this.requiredPagesSource()));
+    const addons = this.engine.getManager<{ getEnabledAddonPagesDirectories?(): Array<{ name: string; pagesDir: string }> }>('AddonsManager');
+    for (const { name, pagesDir } of addons?.getEnabledAddonPagesDirectories?.() ?? []) {
+      for (const category of await this.categoriesShippedBy(`addon:${name}:${pagesDir}`, () => this.addonPagesSource(name, pagesDir))) found.add(category);
+    }
+    return found;
   }
 
-  private async readShippedSystemCategories(): Promise<Set<string> | null> {
+  /** One shipped source's system-categories, read once; a failed read is not kept, so the next call reads again. */
+  private categoriesShippedBy(key: string, source: () => ShippedPageSource): Promise<Set<string>> {
+    let read = this.shippedCategoriesRead.get(key);
+    if (!read) {
+      read = this.readShippedSystemCategories(source).then((found) => {
+        if (!found) this.shippedCategoriesRead.delete(key);
+        return found ?? new Set<string>();
+      });
+      this.shippedCategoriesRead.set(key, read);
+    }
+    return read;
+  }
+
+  private async readShippedSystemCategories(sourceOf: () => ShippedPageSource): Promise<Set<string> | null> {
     const found = new Set<string>();
     try {
-      const source = this.requiredPagesSource();
+      const source = sourceOf();
       if (!(await fse.pathExists(source.dir))) return found;
       for (const file of (await fse.readdir(source.dir)).filter((f: string) => f.endsWith('.md'))) {
         const { data } = parsePageFrontmatter(await fse.readFile(path.join(source.dir, file), 'utf8'));
-        const category = data['system-category'];
-        if (typeof category === 'string' && category.trim() && !source.exclude?.(data)) found.add(category.trim().toLowerCase());
+        if (source.exclude?.(data)) continue;
+        const category = source.extraMetadata?.(data)['system-category'] ?? data['system-category'];
+        if (typeof category === 'string' && category.trim()) found.add(category.trim().toLowerCase());
       }
     } catch (err) {
-      logger.warn('[PageManager] Could not read the system-categories required-pages/ ships:', err);
+      logger.warn('[PageManager] Could not read the system-categories a shipped source ships:', err);
       return null;
     }
     return found;
   }
 
   /**
-   * Whether a page on the site is a copy of a shipped original (#1503): its
-   * uuid is in the site's seeded-pages record, from required-pages/ or an
-   * add-on. Decided per page, so a page someone creates on the site in a
-   * shipped system-category is not taken for a shipped one.
+   * Whether a page on the site is a shipped page (#1503): a copy of a shipped
+   * original, its uuid in the site's seeded-pages record, from required-pages/
+   * or an add-on's pages alike (operator, 2026-10-29). Decided per page, so a
+   * page someone creates on the site in a shipped system-category is not
+   * taken for a shipped one. Shipped pages are admin-only and never private.
    */
   async isShippedPageCopy(uuid: string): Promise<boolean> {
     return Boolean(uuid) && (await this.loadSeededRecord()).hasUuid(uuid);
@@ -2217,7 +2236,12 @@ class PageManager extends BaseManager implements CatalogSource {
     const storedAs = pageSystemCategory
       ? this.engine.getManager<ValidationManager>('ValidationManager')?.getCategoryStored(pageSystemCategory)
       : null;
-    const cannotBePrivate = storedAs === 'none' || storedAs === 'public';
+    // A shipped page (required-pages/ or an add-on's, decided per page) is
+    // never private either. The record is read only when private is asked for.
+    const uuidOf = (v: unknown): string => (typeof v === 'string' ? v : '');
+    const shippedUuid = uuidOf((existingPage?.metadata as Record<string, unknown> | undefined)?.uuid) || uuidOf((rawMetadata as Record<string, unknown>).uuid);
+    const cannotBePrivate = storedAs === 'none' || storedAs === 'public' ||
+      ((rawMetadata as Record<string, unknown>).private === true && await this.isShippedPageCopy(shippedUuid).catch(() => false));
 
     // #639 Slice E: top-level `private: true` is the canonical privacy signal.
     // The Slice B back-compat path that scanned user-keywords for 'private' (or

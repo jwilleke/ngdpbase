@@ -73,6 +73,7 @@ The journal's entry in `addons/journal/config/default-config.json` (#1507) has t
 - __`enabled`__: whether users can choose the category when creating or moving a page. Visibility only: whether a page may be edited is policy. Set `false` when only the add-on assigns the category.
 - __`default`__: never `true` on an add-on's entry (such an entry is refused). Exactly one entry, `general`, is the default.
 - __`page-badge`__: optional `{ color, label, title }`, shown beside the page title.
+- __Your seeded pages are shipped pages__ ([#1503](https://github.com/jwilleke/ngdpbase/issues/1503), operator 2026-10-29), exactly like `required-pages/` ones, decided per page by the seeded-pages record: only admins may edit, delete or rename them, they are never private (even in a system-category with a vault), and an edit marks them `user-modified`. A page a user makes in your system-category is not shipped. The system-categories your pages carry also count as shipped ones: moving a page into one is admin-only.
 - __`source`__: removed ([#1503](https://github.com/jwilleke/ngdpbase/issues/1503)). Leave it out. An entry that still carries it is ignored, with one info line at startup naming every such entry; where pages are stored is `storageLocation` alone.
 
 ### Value types are exact

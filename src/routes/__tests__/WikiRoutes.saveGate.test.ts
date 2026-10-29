@@ -103,7 +103,8 @@ describe('savePage asks the editor’s doors (#1542)', () => {
   // #1503: decided per page, by the seeded-pages record, not by the system-category.
   test('a shipped copy is marked user-modified when saved; a page made on the site is not', async () => {
     for (const shipped of [true, false]) {
-      const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit'], pageAllows: true });
+      // A shipped page is admin-only to edit, so the admin edits it here.
+      const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit', 'admin-system'], pageAllows: true });
       const isShippedPageCopy = vi.fn().mockResolvedValue(shipped);
       Object.assign(pageManager, { isShippedPageCopy });
       await new WikiRoutes(engine).savePage(req(CONTRIBUTOR), res());
@@ -111,6 +112,67 @@ describe('savePage asks the editor’s doors (#1542)', () => {
       const metadata = pageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
       expect(metadata['user-modified']).toBe(shipped ? true : undefined);
     }
+  });
+
+  // #1503 (operator, 2026-10-29): a seeded add-on page is a shipped page like a required page.
+  describe('a seeded add-on page is shipped; a site-made page in the same category is not', () => {
+    const addonEngine = (shipped: boolean, granted: string[]) => {
+      const built = makeEngine({ existing: true, granted, pageAllows: true });
+      // The author is the saving user, so the owner's-move check passes and the shipped check is what answers.
+      const metadata = { title: 'TestPage', uuid: 'u1', author: 'jim', 'system-category': 'addon', ...(shipped ? { addon: 'demo' } : {}) };
+      built.pageManager.getPage.mockResolvedValue({ content: 'old', metadata });
+      built.pageManager.getPageMetadata.mockResolvedValue(metadata);
+      Object.assign(built.pageManager, {
+        isShippedPageCopy: vi.fn().mockResolvedValue(shipped),
+        deletePageWithContext: vi.fn().mockResolvedValue(true)
+      });
+      return built;
+    };
+    const addonReq = (user: unknown, body: Record<string, unknown> = {}) => {
+      const r = req(user);
+      return { ...r, body: { ...r.body, 'system-category': 'addon', ...body } };
+    };
+    const EDITOR = ['page-read', 'page-create', 'page-edit', 'page-delete'];
+
+    test('a non-admin cannot edit the seeded add-on page', async () => {
+      const { engine, pageManager } = addonEngine(true, EDITOR);
+      const r = res();
+      await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR), r);
+      expect(pageManager.savePage).not.toHaveBeenCalled();
+      expect(r.status).toHaveBeenCalledWith(403);
+    });
+
+    test('an admin can, and the page is marked user-modified', async () => {
+      const { engine, pageManager } = addonEngine(true, [...EDITOR, 'admin-system']);
+      await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR), res());
+      expect((pageManager.savePage.mock.calls[0][2] as Record<string, unknown>)['user-modified']).toBe(true);
+    });
+
+    test('the seeded add-on page cannot be made private, even by an admin', async () => {
+      const { engine, pageManager } = addonEngine(true, [...EDITOR, 'admin-system']);
+      const r = res();
+      await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR, { 'private-present': '1', private: 'true' }), r);
+      expect(pageManager.savePage).not.toHaveBeenCalled();
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(r.send).toHaveBeenCalledWith('Required pages cannot be marked as private');
+    });
+
+    test('a non-admin cannot delete the seeded add-on page', async () => {
+      const { engine, pageManager } = addonEngine(true, EDITOR);
+      const routes = new WikiRoutes(engine) as unknown as { deletePage(q: unknown, r: unknown): Promise<unknown>; renderError: unknown };
+      const renderError = vi.fn().mockResolvedValue(undefined);
+      routes.renderError = renderError;
+      await routes.deletePage({ ...addonReq(CONTRIBUTOR), method: 'POST' }, res());
+      expect(renderError).toHaveBeenCalledWith(expect.anything(), expect.anything(), 403, 'Access Denied', 'Only administrators can delete this page');
+      expect(pageManager.deletePageWithContext).not.toHaveBeenCalled();
+    });
+
+    test('a site-made page in the same category is not shipped: a non-admin may edit it, unmarked', async () => {
+      const { engine, pageManager } = addonEngine(false, EDITOR);
+      await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR), res());
+      expect(pageManager.savePage).toHaveBeenCalled();
+      expect((pageManager.savePage.mock.calls[0][2] as Record<string, unknown>)['user-modified']).toBeUndefined();
+    });
   });
 
   test('a save refused because the encrypted vault is not open answers 409 with what to do, not 500 (#1834)', async () => {
