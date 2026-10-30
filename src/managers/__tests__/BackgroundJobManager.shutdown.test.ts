@@ -8,6 +8,11 @@
  * The signal tests run a real child process (__fixtures__/scheduledJobProcess.ts)
  * and send it SIGTERM (Docker, k8s), SIGINT (PM2, a terminal) or SIGKILL.
  * Each test works in its own temporary directory and removes only that.
+ *
+ * The child is the real node process (`node --import tsx`), not the tsx CLI:
+ * the CLI runs node as its own child, and a SIGKILL sent to the CLI orphans
+ * that node for ever (#2152). Every child is killed, if still alive, in
+ * afterEach.
  */
 vi.unmock('../BackgroundJobManager');
 
@@ -21,7 +26,9 @@ import WikiEngine from '../../WikiEngine';
 
 const SLOT = '2026-10-09T10:00:00.000Z';
 const FIXTURE = path.join(__dirname, '__fixtures__', 'scheduledJobProcess.ts');
-const TSX = path.resolve(__dirname, '..', '..', '..', 'node_modules', '.bin', 'tsx');
+// `--import tsx` resolves against the child's cwd: the repo root, whose tsx the suite already uses.
+const ROOT = path.resolve(__dirname, '..', '..', '..');
+const children = new Set<ChildProcess>();
 
 let dir: string;
 let clock: number;
@@ -35,7 +42,14 @@ beforeEach(() => {
   events = [];
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // No process outlives its test (#2152): kill what is still running and wait for it to go.
+  await Promise.all([...children].map((child) => new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
+    child.once('exit', () => resolve());
+    child.kill('SIGKILL');
+  })));
+  children.clear();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -162,7 +176,9 @@ describe('handOff, in one process', () => {
 describe('a real process, ended by a signal', () => {
   function startProcess(mode: 'cooperative' | 'stubborn', started: 'slot' | 'hand' = 'slot'): Promise<ChildProcess> {
     return new Promise((resolve, reject) => {
-      const child = spawn(TSX, [FIXTURE, dir, mode, started], { stdio: ['ignore', 'pipe', 'pipe'] });
+      // stdin is a pipe the fixture watches: when this process goes, the pipe closes and the fixture exits.
+      const child = spawn(process.execPath, ['--import', 'tsx', FIXTURE, dir, mode, started], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+      children.add(child);
       let out = '';
       child.stdout?.on('data', (chunk: Buffer) => {
         out += chunk.toString();
