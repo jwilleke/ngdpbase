@@ -2177,6 +2177,20 @@
         "on-failure": "refuse"
       }
     },
+    "shared-folder-words-replace": {
+      "description": "An administrator, with a fresh sign-in, replaced the organization's shared-folders recovery words with a new set they typed back (#2144): who, the new set and the set it replaced (ids, never the words) and how many folder keys were sealed for the new set. The old words stop opening the folders. Recorded before the new set is saved, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "recovery-words-export": {
+      "description": "Recovery words still waiting to be confirmed were downloaded as a file or opened to print (#2144): who, which words (the shared folders' or a user's vault key), the set's id and how, never the words. Recorded before the words are sent, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "shared-folder-key-create": {
       "description": "A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it",
       "grantable": false,

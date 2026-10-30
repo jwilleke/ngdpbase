@@ -1,6 +1,6 @@
 ---
 name: SharedFolderManager
-description: The organization's shared folders — each folder's own key, wrapped under the shared-folders key and sealed for the organization's recovery words, and the folders at /shared/{name}, opened by permission (#1775, #2124, #2125)
+description: The organization's shared folders — each folder's own key, wrapped under the shared-folders key and sealed for the organization's recovery words, and the folders at /shared/{name}, opened by permission; the words shown once with Download and Print, typed back, and replaced by a new set (#1775, #2124, #2125, #2144)
 dateModified: '2026-10-30'
 category: managers
 code: src/managers/SharedFolderManager.ts
@@ -30,7 +30,7 @@ Everything else it asks for:
 | A folder's files | AttachmentManager, through the file door |
 | The admin's "I have saved the words" | ConsentManager, scope `shared-folders-recovery-words` |
 | Whether the shared-folders key is saved off the server | BackupManager (`ngdpbase.backup.shared-folders-key-saved-fingerprint`) |
-| The audit records | AuditManager (`shared-folder-words-create`, `shared-folder-key-create`, `shared-folder-create`, `shared-folder-read`; the writes are the page and file doors' own) |
+| The audit records | AuditManager (`shared-folder-words-create`, `shared-folder-words-replace`, `shared-folder-words-discard`, `recovery-words-export`, `shared-folder-key-create`, `shared-folder-create`, `shared-folder-read`; the writes are the page and file doors' own) |
 
 ## The server key
 
@@ -50,12 +50,23 @@ Made on an admin's action, on Admin → Backup ("Make the recovery words"), not 
 - At first start no one is there to see them; they would have to sit on disk until an admin looked, which defeats keeping them off the server.
 - The first folder (slice 2) would bundle two steps; a folder cannot be made until the words exist and are confirmed (`createFolderKey` refuses), so slice 2 sends the admin here first.
 
-The steps:
+The steps, the same two as the store door's ([#2144](https://github.com/jwilleke/ngdpbase/issues/2144)):
 
 - `prepareRecoveryWords(ctx)` makes 12 BIP39 words and returns them with a token. Nothing is saved: the words wait in memory, for that admin only, for `ngdpbase.shared-folders.words-pending-minutes` (default 15). A second call replaces them.
-- The page (`views/admin-shared-folders-words.ejs`, `no-store`) shows them once with the required tick from `_recovery-words-consent.ejs` and the wording's version.
-- `POST /admin/backup/shared-folders/words/save` refuses without the tick, or when the wording's version changed: the words are discarded (`discardRecoveryWords`), never shown again, and nothing is saved. With it, `saveRecoveryWords(ctx, token)` records `shared-folder-words-create` (on-failure refuse) and then writes them, naming the admin they were shown to (`shownTo`). The route then records the consent (`how: setup`), bound to the set of words (`recoveryWordsInfo().wordsId`).
-- A second set is refused while one is saved. An __unconfirmed__ set can be discarded (below); replacing a __confirmed__ set, which retires the old one, is a later slice.
+- __Shown once.__ `POST /admin/backup/shared-folders/words` renders the words step of `views/admin-shared-folders-words.ejs` (`no-store`): the 12 words and a copy box, with __Download as a file__ and __Print__ (`_recovery-words-show.ejs`, shared with the store door). Both post the token to `…/words/download` or `…/words/print`; `pendingRecoveryWords(ctx, token, how)` records `recovery-words-export` (who, `set: shared-folders`, the set's id, `how`; never the words; on-failure refuse) and hands back the words still waiting, which the route sends as a plain text file (attachment) or a print view (`recovery-words-print.ejs`), both `no-store`, nothing kept. The sheet (`src/utils/recoveryWordsFile.ts`) names the site (`ngdpbase.application-name`, `ngdpbase.application.base-url`), when the words were made in the server's local time, the numbered words, what they are for and that the server does not keep them; no key material. Once saved, the words are gone and cannot be downloaded or made again.
+- __Typed back.__ "I have written them down" opens `GET …/words/confirm` (`waitingWords(ctx)`, never the words): all 12 typed back (`_recovery-words-typeback.ejs`, read by `WikiRoutes.typedRecoveryWords`, as the store door does) and the required tick from `_recovery-words-consent.ejs` with the wording's version; the button is "I have saved them — finish".
+- `POST …/words/save` saves nothing without the tick, when the wording's version changed, or when the words typed do not match (`SharedFolderWordsMismatchError`, compared with `sameMnemonic`): it says so and shows the confirm step again while the words wait. With all three, `saveRecoveryWords(ctx, token, typed)` records `shared-folder-words-create` (on-failure refuse) and then writes them, naming the admin they were shown to (`shownTo`). The route then records the consent (`how: setup`), bound to the set of words (`recoveryWordsInfo().wordsId`). "Cancel" or "Start over" (`POST …/words/cancel`, `discardRecoveryWords`) forgets the words; nothing is saved.
+- A second set is refused while one is saved (`prepareRecoveryWords`). An __unconfirmed__ set can be discarded (below); any saved set is replaced with a new set (below).
+
+### A new set of words (#2144)
+
+On Admin → Backup, "Make a new set of recovery words" (`POST /admin/backup/shared-folders/words/new`), shown once a set is confirmed or protects folder keys:
+
+- `prepareNewRecoveryWords(ctx)` needs `admin-system` and a fresh sign-in: the PDP is asked `config-manage` too, the step-up permission Admin → Backup's key pages ask, so a sign-in older than `ngdpbase.auth.step-up.max-age-minutes` is sent to `/auth/reauth` first (the route asks it with `permitted`, so the prompt is the usual one). The new words wait as the first set does, marked with the set they replace.
+- Shown, downloaded or printed, and typed back exactly as the first set; until then nothing changes and the old words keep working. Cancelled, abandoned or expired, the old set stays.
+- `saveRecoveryWords` asks the fresh sign-in again, then, in one step under the keys file's lock: every folder key is opened with the server key and its recovery copy sealed for the new words; `shared-folder-words-replace` is recorded (who, the new set, the set it replaces, how many folder keys; on-failure refuse); and the new set and the sealed copies are written as one file, renamed into place. The old words then open nothing. A failure anywhere before the rename (a key that will not open, the record, the write) leaves the old file and the old words as they were. Refused when the saved set changed while the new one waited.
+- The route records the consent again for the new set (`how: new-words`), naming the admin who made it; the banner and Admin → Backup then follow the new set. This is also how a set nobody can confirm any more, one that protects folder keys and so cannot be discarded, is cleared.
+- A backup taken before the new set still holds `keys.json` as it was, with the folder keys sealed for the old words; restoring it brings the old words back with it.
 
 ### Confirmed before any folder key (operator, 2026-10-29)
 
@@ -84,8 +95,11 @@ A folder is the one fact this manager adds in slice 2: its name, with its key in
 | `recoveryWordsInfo()` | the words as made (`wordsId`, `madeAt`, `shownTo`, `protectsFolders`), never the words; null before |
 | `unavailableReason()` | why the keys cannot be used now, or null |
 | `prepareRecoveryWords(ctx)` | make the words to show once; returns `{ token, words }` |
-| `saveRecoveryWords(ctx, token)` | save them after the tick; returns `wordsId` |
-| `discardRecoveryWords(ctx)` | forget unsaved words |
+| `prepareNewRecoveryWords(ctx)` | make a new set to replace the saved one (`admin-system`, fresh sign-in); returns `{ token, words }` |
+| `waitingWords(ctx)` | the words waiting for `ctx` (`token`, `replacing`), never the words; null when none |
+| `pendingRecoveryWords(ctx, token, how)` | the waiting words to download or print, recorded first (`recovery-words-export`) |
+| `saveRecoveryWords(ctx, token, typed)` | save them once all 12 are typed back (a new set re-seals every folder key); returns `wordsId` |
+| `discardRecoveryWords(ctx)` | forget unsaved words (a set they were to replace stays) |
 | `recoveryWordsConfirmed()` | whether the admin shown the words confirmed them, at the current wording |
 | `discardUnconfirmedWords(ctx)` | discard saved words nobody confirmed (any admin) |
 | `createFolderKey(ctx, folderId)` | make a folder's key, under the server key and for the words; needs confirmed words |
@@ -120,8 +134,8 @@ Every method takes the caller's context. The words and `createFolder` ask the PD
 - Files reach a folder only by upload onto one of its pages; the attachment browser and the asset search list the requester's own vaults and the shared pool, not folders.
 - A proxy acting for a user reaches the folders the PDP permits the subject it acts as, bounded by the grant's ceiling; no folder-specific proxy rule exists.
 - Titles of folder pages are not struck from logs and audit records, unlike a vault's: the audit record names what was opened (decision 5).
-- Later: rotation of the server key (decision 3), recovery with the words after a lost key and making a new set of words (decision 4), add-on folders (decision 9), trash and purge (decision 10).
-- A set confirmed and then asked again by a new wording version, whose admin is gone, cannot be discarded once it protects folder keys: its reminder stays until replacing a confirmed set is built (a later slice). An unconfirmed set protecting no folder can always be discarded.
+- Later: rotation of the server key (decision 3), recovery with the words after a lost key (decision 4), add-on folders (decision 9), trash and purge (decision 10).
+- A new set's fresh sign-in is asked as `config-manage`, the step-up permission Admin → Backup's key pages ask; there is no step-up permission of the words' own.
 - A backup taken without the backup key leaves `.env` out, so its `keys.json` needs the recovery words on a new server (recovery is a later slice).
 
 ## See also

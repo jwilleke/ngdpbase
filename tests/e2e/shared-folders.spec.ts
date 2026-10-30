@@ -82,8 +82,12 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     await page.goto('/admin/backup');
     if (await page.locator('#shared-folders-words-none').count()) {
       await Promise.all([page.waitForURL(/\/admin\/backup\/shared-folders\/words$/), page.locator('#shared-folders-words-make button').click()]);
+      // #2144: all 12 typed back, then the tick.
+      const words = (await page.locator('#shared-folders-words-copy').inputValue()).split(' ');
+      await Promise.all([page.waitForURL(/\/words\/confirm$/), page.getByRole('link', { name: 'I have written them down' }).click()]);
+      for (let i = 0; i < words.length; i++) await page.fill(`#word${i + 1}`, words[i]);
       await page.check('#recovery-words-saved');
-      await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.getByRole('button', { name: 'Save the recovery words' }).click()]);
+      await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.getByRole('button', { name: 'I have saved them — finish' }).click()]);
     }
     await expect(page.locator('#shared-folders-words-confirmed')).toBeVisible();
     if (!(await page.locator('#shared-folders-list a[href="/shared/default"]').count())) {

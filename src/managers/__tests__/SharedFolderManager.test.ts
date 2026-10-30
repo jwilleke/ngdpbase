@@ -19,13 +19,19 @@
  * - the confirmed check in discardUnconfirmedWords (skipped): the "confirmed
  *   set cannot be discarded" test went red;
  * - #2095, `executive` left out of SHIPPED_SHARED_FOLDERS: the "shipped
- *   folders" and "made at start" tests went red.
+ *   folders" and "made at start" tests went red;
+ * - #2144, the typed-back check in saveRecoveryWords (skipped): the "words
+ *   that do not match" tests went red;
+ * - #2144, a new set keeping each folder's old recovery copy (not sealed
+ *   again): the "old words no longer open them" tests went red;
+ * - #2144, the fresh sign-in asked again at save (skipped): the "needs a
+ *   fresh sign-in" test went red.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import SharedFolderManager, { SharedFolderRefusedError, SharedFoldersUnavailableError } from '../SharedFolderManager';
+import SharedFolderManager, { SharedFolderRefusedError, SharedFoldersUnavailableError, SharedFolderWordsMismatchError } from '../SharedFolderManager';
 import { SHARED_FOLDERS_KEY_ENV } from '../../utils/sharedFoldersKey';
 import { newRecoveryWords } from '../../utils/privateStoreCrypto';
 import { pdpOver } from '../../test-support/policyDecisionPoint';
@@ -45,6 +51,8 @@ describe('SharedFolderManager (#2124)', () => {
   /** `user/wordsId` pairs ConsentManager holds a current confirmation for. */
   let confirmed: Set<string>;
   let wordingPage: boolean;
+  /** Who the PDP permits `config-manage` now: a fresh sign-in (step-up, #2144). */
+  let fresh: Set<string>;
   const savedKey = process.env[SHARED_FOLDERS_KEY_ENV];
 
   /** The manager over `dir`; `pdp` replaces the stand-in PDP (the shipped policies' test). */
@@ -60,7 +68,7 @@ describe('SharedFolderManager (#2124)', () => {
           (scope === 'shared-folders-recovery-words' && wordingPage && !confirmed.has(`${u}/${subject}`) ? [{ id: scope }] : [])
       },
       PolicyDecisionPoint: pdp ?? {
-        permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && s.isAuthenticated && admins.has(s.username)),
+        permits: (s: Subj, a: string) => Promise.resolve(s.isAuthenticated && (a === 'admin-system' ? admins.has(s.username) : a === 'config-manage' && fresh.has(s.username))),
         decide: (s: Subj, r: { action: string; attributes: Record<string, unknown> }) =>
           Promise.resolve({ permit: r.action === 'shared-folder-read' && s.isAuthenticated && readers.has(`${s.username}:${String(r.attributes['shared-folder'])}`) })
       },
@@ -81,7 +89,7 @@ describe('SharedFolderManager (#2124)', () => {
   /** Make and save the recovery words as `who`, and (unless told not to) record their confirmation; returns the words. */
   const setUpWords = async (m: SharedFolderManager, who = 'ann', confirm = true): Promise<string> => {
     const { token, words } = await m.prepareRecoveryWords(admin(who));
-    const wordsId = await m.saveRecoveryWords(admin(who), token);
+    const wordsId = await m.saveRecoveryWords(admin(who), token, words.join(' '));
     if (confirm) confirmed.add(`${who}/${wordsId}`);
     return words.join(' ');
   };
@@ -95,6 +103,7 @@ describe('SharedFolderManager (#2124)', () => {
     auditFails = false;
     confirmed = new Set();
     wordingPage = true;
+    fresh = new Set(['ann', 'bob']);
   });
 
   afterEach(() => {
@@ -112,7 +121,7 @@ describe('SharedFolderManager (#2124)', () => {
       expect(m.recoveryWordsInfo()).toBeNull();
       expect(fs.existsSync(path.join(dir, 'keys.json'))).toBe(false);
 
-      const wordsId = await m.saveRecoveryWords(admin(), token);
+      const wordsId = await m.saveRecoveryWords(admin(), token, words.join(' '));
       const info = m.recoveryWordsInfo();
       expect(info).toMatchObject({ wordsId, shownTo: 'ann' });
       expect(audited.map((e) => [e.eventType, e.user, (e.metadata as Record<string, unknown>).wordsId])).toEqual([['shared-folder-words-create', 'ann', wordsId]]);
@@ -125,22 +134,23 @@ describe('SharedFolderManager (#2124)', () => {
 
     test('a token that is not the one shown to this admin saves nothing, and the words are discarded', async () => {
       const m = await build();
-      const { token } = await m.prepareRecoveryWords(admin('ann'));
-      await expect(m.saveRecoveryWords(admin('bob'), token)).rejects.toBeInstanceOf(SharedFolderRefusedError);
-      await expect(m.saveRecoveryWords(admin('ann'), 'not-the-token')).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      const { token, words } = await m.prepareRecoveryWords(admin('ann'));
+      const typed = words.join(' ');
+      await expect(m.saveRecoveryWords(admin('bob'), token, typed)).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      await expect(m.saveRecoveryWords(admin('ann'), 'not-the-token', typed)).rejects.toBeInstanceOf(SharedFolderRefusedError);
       // Discarded: the right token no longer works either.
-      await expect(m.saveRecoveryWords(admin('ann'), token)).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      await expect(m.saveRecoveryWords(admin('ann'), token, typed)).rejects.toBeInstanceOf(SharedFolderRefusedError);
       expect(m.recoveryWordsInfo()).toBeNull();
     });
 
     test('discarded words cannot be saved', async () => {
       const m = await build();
-      const { token } = await m.prepareRecoveryWords(admin());
+      const { token, words } = await m.prepareRecoveryWords(admin());
       m.discardRecoveryWords(admin());
-      await expect(m.saveRecoveryWords(admin(), token)).rejects.toThrow(/no longer waiting/);
+      await expect(m.saveRecoveryWords(admin(), token, words.join(' '))).rejects.toThrow(/no longer waiting/);
     });
 
-    test('a second set is refused once one is saved (a new set is a later slice)', async () => {
+    test('a second set is refused once one is saved: a saved set is replaced with a new set (#2144)', async () => {
       const m = await build();
       await setUpWords(m);
       await expect(m.prepareRecoveryWords(admin('bob'))).rejects.toThrow(/already have recovery words/);
@@ -148,9 +158,9 @@ describe('SharedFolderManager (#2124)', () => {
 
     test('a failed audit record refuses: nothing is saved', async () => {
       const m = await build();
-      const { token } = await m.prepareRecoveryWords(admin());
+      const { token, words } = await m.prepareRecoveryWords(admin());
       auditFails = true;
-      await expect(m.saveRecoveryWords(admin(), token)).rejects.toThrow();
+      await expect(m.saveRecoveryWords(admin(), token, words.join(' '))).rejects.toThrow();
       expect(m.recoveryWordsInfo()).toBeNull();
       expect(fs.existsSync(path.join(dir, 'keys.json'))).toBe(false);
     });
@@ -159,6 +169,164 @@ describe('SharedFolderManager (#2124)', () => {
       const m = await build();
       admins.delete('ann');
       await expect(m.prepareRecoveryWords(admin())).rejects.toThrow(/needs admin-system/);
+    });
+  });
+
+  describe('typed back before anything is saved (#2144)', () => {
+    test('words that do not match save nothing, and the same words can be typed again while they wait', async () => {
+      const m = await build();
+      const { token, words } = await m.prepareRecoveryWords(admin());
+      const wrong = [...words.slice(0, 11), words[11] === 'abandon' ? 'ability' : 'abandon'].join(' ');
+      await expect(m.saveRecoveryWords(admin(), token, wrong)).rejects.toBeInstanceOf(SharedFolderWordsMismatchError);
+      await expect(m.saveRecoveryWords(admin(), token, '')).rejects.toBeInstanceOf(SharedFolderWordsMismatchError);
+      expect(m.recoveryWordsInfo()).toBeNull();
+      expect(fs.existsSync(path.join(dir, 'keys.json'))).toBe(false);
+      expect(audited).toEqual([]);
+      // Still waiting: the right words, typed with capitals and extra spaces, save them.
+      expect(m.waitingWords(admin())).toEqual({ token, replacing: false });
+      await m.saveRecoveryWords(admin(), token, `  ${words.join('   ').toUpperCase()} `);
+      expect(m.recoveryWordsInfo()?.shownTo).toBe('ann');
+      expect(m.waitingWords(admin())).toBeNull();
+    });
+  });
+
+  describe('downloading or printing words that wait (#2144)', () => {
+    test('hands over the waiting words, recorded first with who, which set and how, never the words', async () => {
+      const m = await build();
+      const { token, words } = await m.prepareRecoveryWords(admin());
+      const got = await m.pendingRecoveryWords(admin(), token, 'download');
+      expect(got.words).toEqual(words);
+      await m.pendingRecoveryWords(admin(), token, 'print');
+      expect(audited.map((e) => [e.eventType, e.user, (e.metadata as Record<string, unknown>).how, (e.metadata as Record<string, unknown>).wordsId]))
+        .toEqual([['recovery-words-export', 'ann', 'download', got.wordsId], ['recovery-words-export', 'ann', 'print', got.wordsId]]);
+      for (const w of words) expect(JSON.stringify(audited)).not.toMatch(new RegExp(`\\b${w}\\b`));
+      // The set downloaded is the set saved.
+      expect(await m.saveRecoveryWords(admin(), token, words.join(' '))).toBe(got.wordsId);
+      // Once saved they are gone: nothing to download.
+      await expect(m.pendingRecoveryWords(admin(), token, 'download')).rejects.toThrow(/no longer waiting/);
+    });
+
+    test('refused for another admin or a wrong token, and a failed record hands nothing over', async () => {
+      const m = await build();
+      const { token } = await m.prepareRecoveryWords(admin());
+      await expect(m.pendingRecoveryWords(admin('bob'), token, 'download')).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      await expect(m.pendingRecoveryWords(admin(), 'not-the-token', 'download')).rejects.toBeInstanceOf(SharedFolderRefusedError);
+      auditFails = true;
+      await expect(m.pendingRecoveryWords(admin(), token, 'download')).rejects.toThrow(/audit device full/);
+      // A refused export does not discard the words.
+      expect(m.waitingWords(admin())?.token).toBe(token);
+    });
+  });
+
+  describe('a new set of words (#2144)', () => {
+    /** Make a new set as `who`, typed back; returns the new words. */
+    const replaceWords = async (m: SharedFolderManager, who = 'ann'): Promise<string> => {
+      const { token, words } = await m.prepareNewRecoveryWords(admin(who));
+      const wordsId = await m.saveRecoveryWords(admin(who), token, words.join(' '));
+      confirmed.add(`${who}/${wordsId}`);
+      return words.join(' ');
+    };
+
+    test('seals every folder key for the new words; the old words no longer open them; recorded with both sets', async () => {
+      const m = await build();
+      const oldWords = await setUpWords(m);
+      await m.createFolderKey(admin(), 'executive');
+      await m.createFolderKey(admin(), 'default');
+      const oldId = m.recoveryWordsInfo()!.wordsId;
+      const keys = { executive: await m.openFolderKey(admin(), 'executive'), default: await m.openFolderKey(admin(), 'default') };
+
+      const newWords = await replaceWords(m, 'bob');
+      const info = m.recoveryWordsInfo()!;
+      expect(info.wordsId).not.toBe(oldId);
+      expect(info.shownTo).toBe('bob');
+      for (const name of ['executive', 'default'] as const) {
+        expect((await m.openFolderKeyWithWords(admin(), name, newWords)).equals(keys[name])).toBe(true);
+        await expect(m.openFolderKeyWithWords(admin(), name, oldWords)).rejects.toThrow(/recovery phrase does not unwrap/);
+        // The server key still opens the same key: only the recovery copy changed.
+        expect((await m.openFolderKey(admin(), name)).equals(keys[name])).toBe(true);
+      }
+      const json = JSON.parse(fs.readFileSync(path.join(dir, 'keys.json'), 'utf8')) as { folders: Record<string, { wordsId: string }> };
+      expect(Object.values(json.folders).map((f) => f.wordsId)).toEqual([info.wordsId, info.wordsId]);
+      const replace = audited.find((e) => e.eventType === 'shared-folder-words-replace');
+      expect(replace).toMatchObject({ user: 'bob', metadata: expect.objectContaining({ wordsId: info.wordsId, replaces: oldId, folders: 2 }) });
+      expect(JSON.stringify(audited)).not.toContain(newWords);
+      // After a restart too.
+      const restarted = await build();
+      expect((await restarted.openFolderKeyWithWords(admin(), 'executive', newWords)).equals(keys.executive)).toBe(true);
+    });
+
+    test('needs a fresh sign-in, to make the set and again to save it', async () => {
+      const m = await build();
+      await setUpWords(m);
+      fresh.delete('ann');
+      await expect(m.prepareNewRecoveryWords(admin())).rejects.toThrow(/fresh sign-in/);
+      fresh.add('ann');
+      const { token, words } = await m.prepareNewRecoveryWords(admin());
+      const before = m.recoveryWordsInfo()!.wordsId;
+      fresh.delete('ann');
+      await expect(m.saveRecoveryWords(admin(), token, words.join(' '))).rejects.toThrow(/fresh sign-in/);
+      expect(m.recoveryWordsInfo()!.wordsId).toBe(before);
+      // Still waiting: with a fresh sign-in it finishes.
+      fresh.add('ann');
+      await m.saveRecoveryWords(admin(), token, words.join(' '));
+      expect(m.recoveryWordsInfo()!.wordsId).not.toBe(before);
+    });
+
+    test('only an admin; and not before a first set exists', async () => {
+      const m = await build();
+      await expect(m.prepareNewRecoveryWords(admin())).rejects.toThrow(/no recovery words yet/);
+      await setUpWords(m);
+      admins.delete('bob');
+      await expect(m.prepareNewRecoveryWords(admin('bob'))).rejects.toThrow(/needs admin-system/);
+    });
+
+    test('a failure keeps the old set: a failed record, or the file not renamed into place', async () => {
+      const m = await build();
+      const oldWords = await setUpWords(m);
+      await m.createFolderKey(admin(), 'executive');
+      const oldId = m.recoveryWordsInfo()!.wordsId;
+      const keysBefore = fs.readFileSync(path.join(dir, 'keys.json'), 'utf8');
+
+      const first = await m.prepareNewRecoveryWords(admin());
+      auditFails = true;
+      await expect(m.saveRecoveryWords(admin(), first.token, first.words.join(' '))).rejects.toThrow(/audit device full/);
+      auditFails = false;
+      const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('disk gone'));
+      await expect(m.saveRecoveryWords(admin(), first.token, first.words.join(' '))).rejects.toThrow(/disk gone/);
+      rename.mockRestore();
+
+      for (const manager of [m, await build()]) {
+        expect(manager.recoveryWordsInfo()!.wordsId).toBe(oldId);
+        expect((await manager.openFolderKeyWithWords(admin(), 'executive', oldWords)).length).toBe(32);
+        await expect(manager.openFolderKeyWithWords(admin(), 'executive', first.words.join(' '))).rejects.toThrow();
+      }
+      expect(fs.readFileSync(path.join(dir, 'keys.json'), 'utf8')).toBe(keysBefore);
+    });
+
+    test('an unconfirmed new set can be discarded or left, and the old set stays; words that do not match change nothing', async () => {
+      const m = await build();
+      const oldWords = await setUpWords(m);
+      await m.createFolderKey(admin(), 'executive');
+      const oldId = m.recoveryWordsInfo()!.wordsId;
+      const { token, words } = await m.prepareNewRecoveryWords(admin());
+      expect(m.waitingWords(admin())).toEqual({ token, replacing: true });
+      await expect(m.saveRecoveryWords(admin(), token, oldWords)).rejects.toBeInstanceOf(SharedFolderWordsMismatchError);
+      m.discardRecoveryWords(admin());
+      await expect(m.saveRecoveryWords(admin(), token, words.join(' '))).rejects.toThrow(/no longer waiting/);
+      expect(m.recoveryWordsInfo()!.wordsId).toBe(oldId);
+      expect((await m.openFolderKeyWithWords(admin(), 'executive', oldWords)).length).toBe(32);
+      expect(audited.some((e) => e.eventType === 'shared-folder-words-replace')).toBe(false);
+    });
+
+    test('replaces a set that protects folders and was never confirmed again, whose reminder nobody could clear', async () => {
+      const m = await build();
+      await setUpWords(m);
+      await m.createFolderKey(admin(), 'executive');
+      confirmed.clear(); // a new wording version asks again, and ann is gone
+      await expect(m.discardUnconfirmedWords(admin('bob'))).rejects.toThrow(/protect shared folders/);
+      const newWords = await replaceWords(m, 'bob');
+      expect(await m.recoveryWordsConfirmed()).toBe(true);
+      expect((await m.openFolderKeyWithWords(admin('bob'), 'executive', newWords)).length).toBe(32);
     });
   });
 

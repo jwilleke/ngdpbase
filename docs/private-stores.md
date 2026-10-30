@@ -89,6 +89,7 @@ A user's copy of a kind is created when they walk through its door — never at 
 | `POST /stores/:kind` | Walk through. Creates at once, or shows the words screen |
 | `GET /stores/:kind/confirm` | Type the words back. Never shows them |
 | `POST /stores/:kind/confirm` | The last gate: a match commits, a miss shows a new set |
+| `POST /stores/:kind/words/download`, `/words/print` | The words still waiting, as a text file or a print view (#2144); recorded first, `no-store` |
 
 An addon's kind is served only while that addon is loaded (`AddonsManager.storeOwnerState`, `storeDoorState`). Failed to load, turned off, or not installed, every door route answers `503` with `step: 'closed'` and the reason, and creates nothing. Nothing is removed in any state, and turning the addon back on reopens the store with every user's keys as they were. Turning it off is warned, never refused: `AddonsManager.storeDisableWarnings` counts the users holding a copy of each kind it owns, for the Disable confirmation and the success message.
 
@@ -116,6 +117,8 @@ The words exist only while that screen is open. `holdWordsForConfirmation()` kee
 - out of attempts: everything is forgotten and nothing was ever created
 
 `confirmAttempts()` is `1 + ngdpbase.stores.recovery.confirmretries`, so the shipped default is two attempts, each with its own new set of words.
+
+The words screen offers __Download as a file__ and __Print__ ([#2144](https://github.com/jwilleke/ngdpbase/issues/2144), `views/_recovery-words-show.ejs`, shared with the shared folders' words page). Both post to `/stores/:kind/words/download` or `/print`, which take the words this session still holds (`pendingWordsOf()`), record `recovery-words-export` first (who, `set: store`, the vault kind, the set's id and how; never the words; on-failure refuse) and answer `no-store`: a plain text file naming the site, when the words were made in the server's local time and the 12 numbered words, or a print view of the same (`src/utils/recoveryWordsFile.ts`). Nothing is kept; once the words are confirmed or forgotten there is nothing to send. The confirm step's inputs are `views/_recovery-words-typeback.ejs`, read by `WikiRoutes.typedRecoveryWords`.
 
 The confirm step also asks "I've saved my recovery words and understand they are the only way back" ([#1928](https://github.com/jwilleke/ngdpbase/issues/1928), `views/_recovery-words-consent.ejs`). `POST /stores/:kind/confirm` refuses to finish without the tick, or when the wording's version changed since the form was shown (`WikiRoutes.recoveryWordsSaved`), before the words are checked, so they stay pending and nothing is written. After the commit it is recorded as a consent (`ConsentManager`, scope `recovery-words`, `how: store-door`), bound to the new set of words by `recoveryWordsId(envelope)` (a digest of the recovery wrap: a password change keeps it, a new set of words changes it). A record that cannot be written never undoes the vault; the reminder banner asks instead ([ConsentManager.md](managers/ConsentManager.md#the-recovery-words)).
 

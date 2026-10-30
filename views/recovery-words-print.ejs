@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<%# #2144 — recovery words to print: the same sheet as the downloaded file (utils/recoveryWordsFile.ts), and nothing
+    else of the site. Served no-store from the set still waiting to be confirmed; opens the browser's print dialog.
+    Locals: sheet (RecoveryWordsSheet), cspNonce. %>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title><%= sheet.title %></title>
+  <style nonce="<%= locals.cspNonce %>">
+    body { font-family: Georgia, 'Times New Roman', serif; color: #000; background: #fff; margin: 2rem; max-width: 40rem; }
+    h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+    p { margin: 0.25rem 0; }
+    ol { columns: 2; font-size: 1.25rem; line-height: 2; margin: 1.5rem 0; padding-left: 2rem; }
+    .note { margin-top: 1rem; }
+    @media print { body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <h1><%= sheet.title %></h1>
+  <p>Site: <%= sheet.siteName %> (<%= sheet.siteUrl %>)</p>
+  <p>Made: <%= sheet.made %></p>
+  <ol id="recovery-words-print">
+    <% sheet.words.forEach(function(word) { %><li><strong><%= word %></strong></li><% }); %>
+  </ol>
+  <p class="note"><%= sheet.purpose %></p>
+  <p class="note"><%= sheet.notStored %></p>
+  <script nonce="<%= locals.cspNonce %>">window.addEventListener('load', function () { window.print(); });</script>
+</body>
+</html>

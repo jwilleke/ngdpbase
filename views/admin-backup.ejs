@@ -121,6 +121,14 @@
             </form>
             <% } %>
             <% } %>
+            <% if (sfWords.pending.length === 0 || sfWords.protectsFolders) { %>
+            <%# #2144: a new set replaces this one; asks for a fresh sign-in. The old words work until the new set is typed back. %>
+            <p class="small mt-2 mb-1">Lost the words, or no longer sure they are safe? Make a new set: you are asked to sign in again, the new words are shown once to you, and when you have typed them back every shared folder is locked under them and the old words stop working. Until then the old words stay.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words/new" id="shared-folders-words-new" class="mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-warning btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-redo"></i> Make a new set of recovery words</button>
+            </form>
+            <% } %>
             <% } %>
             <% const sfNames = locals.sharedFolderNames || []; %>
             <h6 class="mt-3">Folders</h6>
