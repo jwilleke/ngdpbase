@@ -158,12 +158,15 @@ test.describe('Import screen (#2021)', () => {
     expect(view?.status()).toBe(200);
   });
 
-  test('a user who may use no receiver is told so, with no upload form', async ({ browser }) => {
+  // #2118: every account may hand a takeout back into its own private store, so a
+  // reader is offered that and nothing else: never pages, even when asked for them.
+  test('a reader is offered only their own private store, never pages', async ({ browser }) => {
     const { context, page } = await signIn(browser, READER);
     try {
       await page.goto('/import?receiver=core.pages');
-      await expect(page.locator('#importNothing')).toBeVisible();
-      await expect(page.locator('#importForm')).toHaveCount(0);
+      await expect(page.locator('#importNothing')).toHaveCount(0);
+      await expect(page.locator('#importReceiver option')).toHaveCount(1);
+      await expect(page.locator('#importReceiver')).toHaveValue('core.private-store');
       // Another user's runs are not theirs to see.
       await expect(page.locator('#importRuns [data-run-state]')).toHaveCount(0);
     } finally {
