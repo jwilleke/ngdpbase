@@ -1,0 +1,25 @@
+<%# #2144 — new recovery words shown once, with "Download as a file" and "Print": the store door's words step and
+    the shared folders' words page. Both buttons post to the route that still holds this set (nothing is kept once it
+    is confirmed), which records the request and answers no-store. Locals: words (string[]), copyId (the copy box's
+    id), listId (optional), downloadAction and printAction (URLs), exportFields (optional hidden fields, such as the
+    token), csrfToken. %>
+<% const _rwFields = typeof exportFields !== 'undefined' && exportFields ? exportFields : {}; %>
+<ol class="row list-unstyled g-2 mb-3"<% if (typeof listId !== 'undefined' && listId) { %> id="<%= listId %>"<% } %>>
+  <% words.forEach(function(word, i) { %>
+  <li class="col-6 col-md-4"><span class="text-muted"><%= i + 1 %>.</span> <strong data-word><%= word %></strong></li>
+  <% }); %>
+</ol>
+<label for="<%= copyId %>" class="form-label small text-muted">The same words, to copy</label>
+<textarea id="<%= copyId %>" class="form-control mb-3" rows="2" readonly><%= words.join(' ') %></textarea>
+<div class="d-flex flex-wrap gap-2 mb-3" data-recovery-words-export>
+  <form method="POST" action="<%= downloadAction %>" class="mb-0">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <% Object.keys(_rwFields).forEach(function(name) { %><input type="hidden" name="<%= name %>" value="<%= _rwFields[name] %>"><% }); %>
+    <button type="submit" class="btn btn-outline-secondary"><i class="fas fa-file-download"></i> Download as a file</button>
+  </form>
+  <form method="POST" action="<%= printAction %>" target="_blank" class="mb-0">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <% Object.keys(_rwFields).forEach(function(name) { %><input type="hidden" name="<%= name %>" value="<%= _rwFields[name] %>"><% }); %>
+    <button type="submit" class="btn btn-outline-secondary"><i class="fas fa-print"></i> Print</button>
+  </form>
+</div>

@@ -84,9 +84,11 @@ describe('the shared folders\' recovery-words banner (#2124)', () => {
     expect(n?.message).toMatch(/ann was shown them and has not confirmed/);
     // They can discard the unconfirmed set and make their own (operator, 2026-10-29) ...
     expect(n?.message).toMatch(/discard this set on Admin → Backup and make a new one, then confirm it yourself/);
-    // ... but not one that protects folder keys.
+    // ... but not one that protects folder keys: that one they replace with a new set (#2144).
     words.protectsFolders = true;
-    expect(notice(await run('/admin', 'bob'))?.message).not.toMatch(/discard/);
+    const replace = notice(await run('/admin', 'bob'))?.message;
+    expect(replace).not.toMatch(/discard/);
+    expect(replace).toMatch(/make a new set on Admin → Backup and confirm it yourself/);
     // The admin shown them is never told to discard.
     words.protectsFolders = false;
     expect(notice(await run('/admin', 'ann'))?.message).not.toMatch(/discard/);
