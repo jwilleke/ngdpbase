@@ -51,6 +51,19 @@ export function envKeyNames(content: string): string[] {
   return Object.keys(dotenv.parse(content)).sort();
 }
 
+/**
+ * One `.env` line setting `name` to `value` (#2134): unquoted, or quoted only
+ * when it must be, so the boot's reader (`dotenv.parse`) reads `value` back
+ * exactly. Throws for a value no single line can carry.
+ */
+export function envFileLine(name: string, value: string): string {
+  for (const form of [value, `'${value}'`, `"${value}"`, `\`${value}\``]) {
+    const line = `${name}=${form}`;
+    if (dotenv.parse(line)[name] === value) return line;
+  }
+  throw new Error(`${name} cannot be written as one .env line`);
+}
+
 /** A short fingerprint of a set of `.env` names (#1976): the first 16 hex digits of a SHA-256 of the sorted names, one per line. */
 export function envKeyNamesFingerprint(names: readonly string[]): string {
   return createHash('sha256').update([...names].sort().join('\n')).digest('hex').slice(0, 16);

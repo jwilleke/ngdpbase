@@ -16,6 +16,9 @@
     <input type="text" class="form-control font-monospace mb-2" id="backup-key-value" value="<%= key %>" readonly autocomplete="off" spellcheck="false">
     <p class="small text-muted" id="backup-key-fingerprint-note">Fingerprint: <code id="backup-key-fingerprint"><%= fingerprint %></code> — a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint on Admin → Backup.</p>
 
+    <a class="btn btn-outline-primary btn-sm" id="backup-key-file-download" href="/admin/backup/key/file"><i class="fas fa-file-download"></i> Download key file</a>
+    <p class="small text-muted mt-1 mb-0" id="backup-key-file-note">This file holds only the backup key, with its fingerprint and how to restore with it; keep it off this server, as safe as a password manager.</p>
+
     <form method="POST" action="/admin/backup/key/saved" id="backup-key-confirm" class="mt-4">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="hidden" name="fingerprint" value="<%= fingerprint %>">

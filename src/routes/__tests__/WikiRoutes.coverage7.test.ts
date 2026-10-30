@@ -152,6 +152,8 @@ const mockExportManager = {
 
 // #1938: what the instance .env holds, byte for byte (no real secret).
 const ENV_FILE = 'NGDPBASE_SESSION_SECRET=not-a-secret\nNGDPBASE_BACKUP_KEY=not-a-key\n# a comment, kept\n';
+// #2134: what BackupManager hands the route; the route sends it as it is.
+const KEY_FILE = '# ngdpbase backup key\nNGDPBASE_BACKUP_KEY=not-a-key\n';
 
 const mockBackupManager = {
   getAutoBackupStatus: vi.fn(),
@@ -171,6 +173,8 @@ const mockBackupManager = {
   confirmBackupKeySaved: vi.fn(),
   // #1938
   revealInstanceEnv: vi.fn(),
+  // #2134
+  revealBackupKeyFile: vi.fn(),
   // #1945
   getStagedSiteRestore: vi.fn(),
   siteRestoreScope: vi.fn(),
@@ -346,6 +350,7 @@ function resetMocks() {
   mockBackupManager.revealBackupKey.mockReturnValue('the-backup-key-value');
   mockBackupManager.confirmBackupKeySaved.mockResolvedValue(undefined);
   mockBackupManager.revealInstanceEnv.mockResolvedValue(Buffer.from(ENV_FILE));
+  mockBackupManager.revealBackupKeyFile.mockResolvedValue({ fingerprint: 'abcdef0123456789', text: KEY_FILE });
   mockBackupManager.getStagedSiteRestore.mockReturnValue(null);
   mockBackupManager.siteRestoreScope.mockReturnValue({ restored: ['the databases'], notRestored: ['sign-in sessions'] });
   mockBackupManager.cancelStagedRestore.mockResolvedValue({ scope: 'databases', source: 'b.json.gz' });
@@ -1049,6 +1054,41 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).get('/admin/backup/env');
       expect(res.status).toBe(302);
       expect(decodeURIComponent(res.headers.location)).toMatch(/error=This site has no \.env file to download/);
+    });
+  });
+
+  describe('GET /admin/backup/key/file — download the backup key file (#2134)', () => {
+    test('sends the key file as a text attachment named after the site and the fingerprint, never cached', async () => {
+      // Sabotage (2026-10-30): dropping the Cache-Control header, or the attachment disposition, turns this red.
+      const res = await request(app).get('/admin/backup/key/file');
+      expect(res.status).toBe(200);
+      expect(res.text).toBe(KEY_FILE);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
+      expect(res.headers['content-disposition']).toBe('attachment; filename="ngdpbase-backup-key-abcdef0123456789.txt"');
+      expect(mockBackupManager.revealBackupKeyFile).toHaveBeenCalledWith(expect.objectContaining({ username: expect.any(String) }));
+    });
+
+    test('refused without config-manage (or its fresh sign-in): the key is never read', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      const res = await request(app).get('/admin/backup/key/file');
+      expect(res.status).not.toBe(200);
+      expect(res.text).not.toContain('NGDPBASE_BACKUP_KEY=');
+      expect(mockBackupManager.revealBackupKeyFile).not.toHaveBeenCalled();
+    });
+
+    test('a site with no backup key: 404', async () => {
+      mockBackupManager.revealBackupKeyFile.mockResolvedValue(null);
+      const res = await request(app).get('/admin/backup/key/file');
+      expect(res.status).toBe(404);
+      expect(res.headers['content-disposition']).toBeUndefined();
+    });
+
+    test('a record that cannot be written sends nothing', async () => {
+      mockBackupManager.revealBackupKeyFile.mockRejectedValue(new Error('audit disk full'));
+      const res = await request(app).get('/admin/backup/key/file');
+      expect(res.status).toBe(500);
+      expect(res.headers['content-disposition']).toBeUndefined();
     });
   });
 
