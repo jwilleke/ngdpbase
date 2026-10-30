@@ -360,6 +360,26 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(elsewhere.files.map(f => f.status)).toEqual(['duplicate']);
   });
 
+  // Code review of #2160, finding 2 (operator, 2026-10-30): the store's uuid check decides for a page, not the fingerprint.
+  test('a page deleted since an import comes back when the same takeout is imported again', async () => {
+    await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
+    const archive = await takeoutOf(VAULT);
+    await emptyStore(VAULT);
+    expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['imported']);
+
+    expect(await pages.deletePage(name(VAULT, UUID_A), MOLLY)).toBe(true);
+    expect(await pages.getPage(name(VAULT, UUID_A), MOLLY)).toBeNull();
+
+    const again = await upload(VAULT, archive);
+
+    expect(again.files.map(f => f.status)).toEqual(['imported']);
+    const back = await pages.getPage(name(VAULT, UUID_A), MOLLY);
+    expect(back?.content.trim()).toBe('Cholesterol 180.');
+    expect(isSealedBytes(await fs.readFile(path.join(privateStoreRoot(pagesDir, 'molly', VAULT), `${UUID_A}.md`)))).toBe(true);
+    // Once it is back, a third import leaves it as it is.
+    expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged']);
+  });
+
   test('a page edited since the takeout is a duplicate, and the live page wins', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);

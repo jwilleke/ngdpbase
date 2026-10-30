@@ -9,7 +9,9 @@
  * - zips are unpacked and noise is dropped before any shim sees a file;
  * - every file is fingerprinted (SHA-256); a file whose fingerprint the scope
  *   already took (`imported`, `duplicate`, `unchanged`) is skipped as
- *   `unchanged`; a `partial`, `failed` or `refused` file is tried again (#2010). A
+ *   `unchanged`; a `partial`, `failed` or `refused` file is tried again (#2010).
+ *   A receiver that `rechecks` items is handed those of a taken file again,
+ *   and its own check decides (#2118). A
  *   shim whose duplicates are per item skips the items whose key the scope
  *   has seen instead. The scope is bound to the receiver and the user the run
  *   is for ({@link boundScope}, #2013);
@@ -337,6 +339,8 @@ interface FilePlan {
   shim: RegisteredShim | null;
   /** Set when the file goes no further: its status, and whether the ledger records it. */
   stop?: { status: IceFileStatus; message?: string; refs?: string[]; record: boolean };
+  /** Already taken, but the receiver `rechecks` some of its items: read again for those only (#2118). */
+  recheck?: boolean;
 }
 
 /**
@@ -361,6 +365,7 @@ async function planFile(upload: IceUpload, request: IceRunRequest, receiver: Reg
     return { file, sha256, last, shim, stop: { status: 'unreadable', message, record: true } };
   }
   if (shim?.duplicates !== 'item' && last && DONE.has(last.status)) {
+    if (receiver.rechecks) return { file, sha256, last, shim, recheck: true };
     return { file, sha256, last, shim, stop: { status: 'unchanged', refs: last.refs, message: `already imported ${last.at}`, record: false } };
   }
   return { file, sha256, last, shim };
@@ -444,7 +449,7 @@ export async function keepOriginalsAtUpload(siteDeps: IceRunDeps, request: IceRu
   const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
   for (const upload of files) {
     const plan = await planFile(upload, request, receiver, deps, scope);
-    if (plan.stop || !plan.sha256 || !plan.file) continue;
+    if (plan.stop || plan.recheck || !plan.sha256 || !plan.file) continue;
     if (plan.last?.original?.door === door) continue;
     let outcome: ReceiveOutcome;
     // #2061: this one call may keep the receiver's declared types into its own vault.
@@ -669,6 +674,10 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
           fr.duplicates++;
           continue;
         }
+        if (plan.recheck && !receiver.rechecks?.(item)) {
+          fr.duplicates++;
+          continue;
+        }
         let leafKey: string | undefined;
         if (!perItem) {
           const base = itemKeyOf(sha256, chain, item, 0);
@@ -676,7 +685,7 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
           occurrences.set(base, seen + 1);
           leafKey = seen === 0 ? base : itemKeyOf(sha256, chain, item, seen);
         }
-        if (leafKey && retry && await deps.ledger.hasItem(scope, leafKey)) {
+        if (leafKey && retry && !plan.recheck && await deps.ledger.hasItem(scope, leafKey)) {
           fr.duplicates++;
           continue;
         }
@@ -753,6 +762,11 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
       fr.message = err instanceof Error ? err.message : String(err);
     }
     if (retry) fr.refs = [...new Set([...(plan.last?.refs ?? []), ...fr.refs])];
+    if (plan.recheck && fr.status === 'unchanged' && plan.last) {
+      // #2118: rechecked and still held: as the fingerprint skip leaves it, unrecorded.
+      fr.message = `already imported ${plan.last.at}`;
+      continue;
+    }
     if (fr.status !== 'imported') {
       for (const key of storedKeys) await deps.ledger.recordItem(scope, key);
     }

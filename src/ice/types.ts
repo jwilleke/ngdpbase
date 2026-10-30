@@ -400,6 +400,16 @@ export interface IceReceiver {
    */
   innerZipsAsFiles?: boolean;
   /**
+   * The items this receiver checks for itself whether it still holds
+   * (#2118, operator 2026-10-30): a takeout's page, by its uuid, so one
+   * deleted since an earlier import comes back when the same takeout is
+   * imported again. A file whose fingerprint the scope already took is then
+   * read again, and only these of its items go to `receive`; the rest are
+   * duplicates. When nothing new is stored it stays `unchanged`, unrecorded,
+   * as the fingerprint skip leaves it. Without this, the fingerprint decides.
+   */
+  rechecks?(item: IceItem): boolean;
+  /**
    * The places within this receiver this context may import into (#2118):
    * a user's own private stores. The receiver's own rule (D5). A receiver
    * with targets takes a run only with one of them (`IceRunRequest.target`),

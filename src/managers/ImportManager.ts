@@ -1135,9 +1135,11 @@ class ImportManager extends BaseManager {
    *   upload into it in the request, with the request's key, and an import
    *   into it is confidential (#2110): no file or page name is logged.
    * - Importing the same takeout again leaves the store as the first import
-   *   did (operator, 2026-09-25). The engine skips a file it already took
-   *   (fingerprints), and the file door returns a file the store already
-   *   holds. A page whose uuid the store holds is `duplicate`: unchanged, or
+   *   did (operator, 2026-09-25), except that a page deleted since comes
+   *   back (operator, 2026-10-30). The engine skips a file it already took
+   *   (fingerprints), but a page with a uuid is read again (`rechecks`) and
+   *   the uuid check below decides. The file door returns a file the store
+   *   already holds. A page whose uuid the store holds is `duplicate`: unchanged, or
    *   changed since the download, and then the page here is kept. A uuid
    *   used elsewhere on the site is `duplicate`, the page named only when
    *   the user may view it. A title held by a DIFFERENT page lands beside
@@ -1154,6 +1156,8 @@ class ImportManager extends BaseManager {
       writesEncrypted: true,
       // A zip the store held is one of its files: brought back as it was, not unpacked.
       innerZipsAsFiles: true,
+      // A page by its uuid, not the fingerprint: one deleted since an earlier import comes back.
+      rechecks: (item) => { const data = item.data as TakeoutData | undefined; return data?.entry === 'page' && !!data.uuid; },
       mayUse: (ctx) => this.mayImportIntoOwnStore(ctx),
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),
