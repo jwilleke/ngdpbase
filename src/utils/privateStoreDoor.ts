@@ -299,6 +299,16 @@ export function hasPendingWords(handle: string, username: string, store: string)
   return live(handle, username, store) !== undefined;
 }
 
+/**
+ * The words this session is part-way through confirming for `store`, to
+ * download or print (#2144), or undefined: none, or they expired. Once
+ * confirmed or abandoned they are gone.
+ */
+export function pendingWordsOf(handle: string, username: string, store: string): { words: string[]; madeAt: Date; envelope: UserKeyEnvelope } | undefined {
+  const entry = live(handle, username, store);
+  return entry ? { words: entry.mnemonic.split(' '), madeAt: new Date(entry.startedAt), envelope: entry.envelope } : undefined;
+}
+
 export type ConfirmOutcome =
   | { status: 'confirmed'; kek: Buffer; envelope: UserKeyEnvelope }
   | { status: 'retry'; mnemonic: string; attemptsLeft: number }

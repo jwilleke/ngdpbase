@@ -230,6 +230,50 @@ describe('store door routes (#1414)', () => {
     expect(dekFor(subject as never, 'molly', 'vault')).toBeDefined();
   });
 
+  describe('Download and Print while the words wait (#2144)', () => {
+    type ExportRes = Res & { setHeader: ReturnType<typeof vi.fn> };
+    const exportRes = (): ExportRes => Object.assign(newRes(), { setHeader: vi.fn() });
+    const exported = () => audit.logAuditEvent.mock.calls.map((c) => c[0] as Record<string, unknown>).filter((e) => e.eventType === 'recovery-words-export');
+
+    test('a plain text file of the waiting words: no-store, an attachment, audited with the set and never the words; gone once confirmed', async () => {
+      const shown = newRes();
+      await routes.storeDoorEnter(req('vault', { password: 'right-pw' }), shown);
+      const words = renderedWords(shown);
+
+      const res = exportRes();
+      await routes.storeDoorWordsExport(req('vault'), res, 'download');
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringMatching(/^attachment; filename=".*recovery-words\.txt"$/));
+      const text = res.send.mock.calls[0][0] as string;
+      words.forEach((w, i) => expect(text).toContain(`${String(i + 1).padStart(2, ' ')}. ${w}\n`));
+      expect(text).toMatch(/encrypted vaults/);
+      expect(exported()).toEqual([expect.objectContaining({ user: 'molly', metadata: expect.objectContaining({ set: 'store', store: 'vault', how: 'download' }) })]);
+      for (const w of words) expect(JSON.stringify(exported())).not.toMatch(new RegExp(`\\b${w}\\b`));
+      // Nothing is made by downloading.
+      expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(false);
+
+      const printed = exportRes();
+      await routes.storeDoorWordsExport(req('vault'), printed, 'print');
+      expect(printed.render).toHaveBeenCalledWith('recovery-words-print', { sheet: expect.objectContaining({ words }) });
+
+      const typed = Object.fromEntries(words.map((w, i) => [`word${i + 1}`, w]));
+      await routes.storeDoorConfirm(req('vault', { ...typed, ...TICK }), newRes());
+      const after = exportRes();
+      await routes.storeDoorWordsExport(req('vault'), after, 'download');
+      expect(after.send).not.toHaveBeenCalled();
+      expect(after.redirect).toHaveBeenCalledWith('/stores/vault');
+    });
+
+    test('a record that cannot be written sends nothing', async () => {
+      await routes.storeDoorEnter(req('vault', { password: 'right-pw' }), newRes());
+      audit.logAuditEvent.mockRejectedValue(new Error('audit device full'));
+      const res = exportRes();
+      await routes.storeDoorWordsExport(req('vault'), res, 'download');
+      expect(res.send).not.toHaveBeenCalled();
+      expect(renderError).toHaveBeenCalledWith(expect.anything(), expect.anything(), 500, 'Error', expect.any(String));
+    });
+  });
+
   describe('"I\'ve saved my recovery words" (#1928)', () => {
     async function showWords(): Promise<Record<string, string>> {
       const res = newRes();

@@ -1,0 +1,12 @@
+<%# #1414, #2144 — type the recovery words back, all of them, in order: proof they were kept. Inside the confirm form
+    of the store door and of the shared folders' words page; the route reads word1..wordN (WikiRoutes.typedRecoveryWords)
+    and saves nothing unless they match. Locals: wordCount. %>
+<div class="row g-2 mb-3" data-recovery-words-typeback>
+  <% for (let i = 1; i <= wordCount; i++) { %>
+    <div class="col-6 col-md-4">
+      <label class="form-label small text-muted" for="word<%= i %>"><%= i %>.</label>
+      <input type="text" class="form-control" id="word<%= i %>" name="word<%= i %>"
+             autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    </div>
+  <% } %>
+</div>

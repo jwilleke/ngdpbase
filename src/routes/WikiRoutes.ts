@@ -65,6 +65,8 @@ import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, SHARED_
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
+import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
+import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
@@ -131,6 +133,7 @@ import {
   confirmWords,
   hasPendingWords,
   holdWordsForConfirmation,
+  pendingWordsOf,
   storeCopyExists,
   storeKindFromConfig,
   storeKindIds,
@@ -10075,12 +10078,7 @@ ${panes}
             : 'The wording about your recovery words changed while you were reading. Read it again, then type your words and tick the box. Nothing has been saved yet.'
         });
       }
-      const typed: string[] = [];
-      for (let i = 1; i <= mnemonicWordCount; i++) {
-        const word = req.body?.[`word${i}`];
-        typed.push(typeof word === 'string' ? word : '');
-      }
-      const outcome = confirmWords(handle, username, kind.id, typed.join(' '));
+      const outcome = confirmWords(handle, username, kind.id, WikiRoutes.typedRecoveryWords(req.body ?? {}));
       if (outcome.status === 'none') return res.redirect(`/stores/${encodeURIComponent(kind.id)}`);
       if (outcome.status === 'exhausted') return await this.renderStoreDoor(req, res, kind, { step: 'exhausted' });
       if (outcome.status === 'retry') {
@@ -10105,6 +10103,62 @@ ${panes}
       logger.error('[store-door] could not confirm the words:', err);
       return this.renderError(req, res, 500, 'Error', 'The private store could not be created. Nothing was saved.');
     }
+  }
+
+  /**
+   * POST /stores/:kind/words/download and /print (#2144) — the words this
+   * session is part-way through confirming, as a file or a print view, while
+   * they still wait. Recorded first (`recovery-words-export`, never the
+   * words); with none waiting, back to the door.
+   */
+  async storeDoorWordsExport(req: Request, res: Response, how: RecoveryWordsExport) {
+    try {
+      const door = await this.storeDoorRequest(req, res);
+      if (!door) return;
+      const waiting = pendingWordsOf(door.handle, door.username, door.kind.id);
+      if (!waiting) return res.redirect(`/stores/${encodeURIComponent(door.kind.id)}`);
+      await recordRecoveryWordsExport(this.auditSink(), req.userContext, { set: 'store', store: door.kind.id, wordsId: recoveryWordsId(waiting.envelope), how });
+      return await this.sendRecoveryWords(req, res, how, 'store', waiting);
+    } catch (err) {
+      logger.error('[store-door] could not send the recovery words:', getErrorMessage(err));
+      return this.renderError(req, res, 500, 'Error', 'The recovery words could not be downloaded or printed. Write them down from the page instead.');
+    }
+  }
+
+  /**
+   * The words typed back on a confirm step (#1414, #2144): `word1`..`word12`
+   * from `_recovery-words-typeback.ejs`, joined with spaces; a missing word
+   * is empty, so it cannot match.
+   */
+  static typedRecoveryWords(body: Record<string, unknown>): string {
+    const typed: string[] = [];
+    for (let i = 1; i <= mnemonicWordCount; i++) {
+      const word = body[`word${i}`];
+      typed.push(typeof word === 'string' ? word : '');
+    }
+    return typed.join(' ');
+  }
+
+  /**
+   * Send recovery words still waiting to be confirmed (#2144), already
+   * recorded by the caller: a plain text file (`download`) or the print view
+   * (`print`), both no-store, nothing kept. The sheet names the site
+   * (`ngdpbase.application-name`, `ngdpbase.application.base-url`, else this
+   * request's address), when they were made in the server's local time, and
+   * what they are for; never key material.
+   */
+  private async sendRecoveryWords(req: Request, res: Response, how: RecoveryWordsExport, set: RecoveryWordsSet, waiting: { words: string[]; madeAt: Date }): Promise<void> {
+    const configured = this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.application.base-url', '');
+    const siteUrl = (typeof configured === 'string' && configured ? configured : `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+    const sheet = recoveryWordsSheet({ set, siteName: this.siteName(), siteUrl, words: waiting.words, madeAt: waiting.madeAt });
+    res.setHeader('Cache-Control', 'no-store');
+    if (how === 'download') {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${recoveryWordsFilename(this.siteName(), set)}"`);
+      res.send(recoveryWordsText(sheet));
+      return;
+    }
+    res.render('recovery-words-print', { sheet });
   }
 
   /**
@@ -13156,26 +13210,94 @@ ${panes}
    * POST /admin/backup/shared-folders/words — make the organization's 12
    * shared-folders recovery words and show them, once, to this admin (#2124,
    * epic #1775 decision 4; `admin-system`, which SharedFolderManager asks
-   * again). Nothing is saved until they tick "I have saved them" on this
-   * page (`adminSharedFoldersWordsSave`). Never cached, never logged.
+   * again), with Download and Print (#2144). Nothing is saved until they type
+   * all 12 back and tick "I have saved them" (`adminSharedFoldersWordsSave`).
+   * Never cached, never logged.
    */
   async adminSharedFoldersWords(req: Request, res: Response) {
+    return this.showNewSharedFoldersWords(req, res, false);
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/words/new — make a new set of the
+   * shared folders' recovery words to replace the saved set (#2144):
+   * `admin-system` with a fresh sign-in (the step-up of `config-manage`, as
+   * Admin → Backup's key pages ask), which SharedFolderManager asks again.
+   * Shown and confirmed exactly as the first set; until then the old words
+   * keep working.
+   */
+  async adminSharedFoldersNewWords(req: Request, res: Response) {
+    return this.showNewSharedFoldersWords(req, res, true);
+  }
+
+  private async showNewSharedFoldersWords(req: Request, res: Response, replacing: boolean): Promise<void> {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      if (replacing && !(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return res.redirect('/admin/backup?error=' + encodeURIComponent('Shared folders are not available on this site'));
+      const { token, words } = replacing
+        ? await folders.prepareNewRecoveryWords(wikiContext.userContext)
+        : await folders.prepareRecoveryWords(wikiContext.userContext);
+      return await this.renderSharedFoldersWords(req, res, { step: 'words', replacing, words, token });
+    } catch (err: unknown) {
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+    }
+  }
+
+  /** The shared folders' words page (#2124, #2144), one step at a time: `words` (shown once) or `confirm` (typed back). Never cached. */
+  private async renderSharedFoldersWords(req: Request, res: Response, view: { step: 'words' | 'confirm'; replacing: boolean; token: string; words?: string[]; error?: string }): Promise<void> {
+    res.setHeader('Cache-Control', 'no-store');
+    const commonData = await this.getCommonTemplateData(req);
+    res.render('admin-shared-folders-words', {
+      ...commonData,
+      title: 'Shared folders: recovery words',
+      words: [],
+      wordCount: mnemonicWordCount,
+      error: '',
+      ...view,
+      recoveryWordsDocument: await this.recoveryWordsDocument(SHARED_FOLDERS_WORDS_CONSENT_SCOPE),
+      csrfToken: req.session.csrfToken || ''
+    });
+  }
+
+  /** GET /admin/backup/shared-folders/words/confirm — type the words back (#2144). Never shows them; with none waiting for this admin, back to Admin → Backup. */
+  async adminSharedFoldersWordsConfirmPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const waiting = wikiContext.userContext ? this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.waitingWords(wikiContext.userContext) : null;
+      if (!waiting) return res.redirect('/admin/backup?error=' + encodeURIComponent('No recovery words are waiting to be confirmed. Make a new set.') + '#shared-folders-key');
+      return await this.renderSharedFoldersWords(req, res, { step: 'confirm', ...waiting });
+    } catch (err: unknown) {
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+    }
+  }
+
+  /** POST /admin/backup/shared-folders/words/cancel — discard the words waiting for this admin (#2144); nothing is saved, and a set they were to replace stays. */
+  async adminSharedFoldersWordsCancel(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+    if (wikiContext.userContext) this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.discardRecoveryWords(wikiContext.userContext);
+    return res.redirect('/admin/backup?success=' + encodeURIComponent('Nothing was saved; the words shown were discarded.') + '#shared-folders-key');
+  }
+
+  /**
+   * POST /admin/backup/shared-folders/words/download and /print (#2144) —
+   * the words still waiting for this admin, as a file or a print view.
+   * SharedFolderManager records the request (`recovery-words-export`) before
+   * handing them over; once confirmed they are gone and cannot be sent.
+   */
+  async adminSharedFoldersWordsExport(req: Request, res: Response, how: RecoveryWordsExport) {
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
       const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
       if (!folders || !wikiContext.userContext) return res.redirect('/admin/backup?error=' + encodeURIComponent('Shared folders are not available on this site'));
-      const { token, words } = await folders.prepareRecoveryWords(wikiContext.userContext);
-      res.setHeader('Cache-Control', 'no-store');
-      const commonData = await this.getCommonTemplateData(req);
-      return res.render('admin-shared-folders-words', {
-        ...commonData,
-        title: 'Shared folders: recovery words',
-        words,
-        token,
-        recoveryWordsDocument: await this.recoveryWordsDocument(SHARED_FOLDERS_WORDS_CONSENT_SCOPE),
-        csrfToken: req.session.csrfToken || ''
-      });
+      const token = typeof req.body?.token === 'string' ? req.body.token : '';
+      const waiting = await folders.pendingRecoveryWords(wikiContext.userContext, token, how);
+      return await this.sendRecoveryWords(req, res, how, 'shared-folders', waiting);
     } catch (err: unknown) {
       return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
     }
@@ -13183,10 +13305,13 @@ ${panes}
 
   /**
    * POST /admin/backup/shared-folders/words/save — the admin shown the words
-   * confirms they saved them (#2124). Refused without the tick, or when the
-   * wording's version changed: then the words shown are discarded, never
-   * shown again, and nothing is saved. Otherwise SharedFolderManager saves
-   * them and the confirmation is recorded as a consent (`how: setup`).
+   * proves they kept them (#2124, #2144): all 12 typed back and the tick.
+   * Without the tick, with the wording's version changed, or with words that
+   * do not match, nothing is saved and the confirm step is shown again while
+   * the words wait. A new set asks the fresh sign-in again. Otherwise
+   * SharedFolderManager saves them (a new set re-seals every folder key and
+   * retires the old words) and the confirmation is recorded as a consent
+   * (`how: setup`, or `new-words` for a new set).
    */
   async adminSharedFoldersWordsSave(req: Request, res: Response) {
     const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
@@ -13196,16 +13321,32 @@ ${panes}
       const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
       if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
       const body = (req.body ?? {}) as Record<string, unknown>;
+      const token = typeof body.token === 'string' ? body.token : '';
+      const waiting = folders.waitingWords(wikiContext.userContext);
+      if (!waiting || waiting.token !== token) {
+        folders.discardRecoveryWords(wikiContext.userContext);
+        return back('error', 'Those recovery words are no longer waiting to be saved. Nothing was saved; make a new set.');
+      }
+      if (waiting.replacing && !(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const again = (error: string): Promise<void> => this.renderSharedFoldersWords(req, res, { step: 'confirm', ...waiting, error });
       const document = await this.recoveryWordsDocument(SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
       const saved = WikiRoutes.recoveryWordsSaved(body, document);
       if (saved !== 'ok') {
-        folders.discardRecoveryWords(wikiContext.userContext);
-        return back('error', saved === 'unticked'
-          ? 'Nothing was saved: the words were not confirmed as saved, so they have been discarded. Make a new set and tick "I have saved them" to finish.'
-          : 'Nothing was saved: the wording about the recovery words changed while you were reading, so the words have been discarded. Make a new set.');
+        return await again(saved === 'unticked'
+          ? 'Nothing was saved: tick "I have saved these recovery words" and type all 12 again to finish.'
+          : 'Nothing was saved: the wording about the recovery words changed while you were reading. Read it again, then type the words and tick the box.');
       }
-      const wordsId = await folders.saveRecoveryWords(wikiContext.userContext, typeof body.token === 'string' ? body.token : '');
-      await this.recordRecoveryWordsSaved(req, wordsId, document, 'setup', SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
+      let wordsId: string;
+      try {
+        wordsId = await folders.saveRecoveryWords(wikiContext.userContext, token, WikiRoutes.typedRecoveryWords(body));
+      } catch (err: unknown) {
+        if (err instanceof SharedFolderWordsMismatchError) return await again(err.message);
+        throw err;
+      }
+      await this.recordRecoveryWordsSaved(req, wordsId, document, waiting.replacing ? 'new-words' : 'setup', SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
+      if (waiting.replacing) {
+        return back('success', 'The new recovery words are saved, and the old words no longer open the shared folders. Keep the new ones off this server, with the organization\'s important papers, and destroy the old ones.');
+      }
       // #2125, #2095: with the words confirmed, the shipped folders can be made: /shared/default and /shared/executive.
       const made = await folders.ensureShippedFolders(wikiContext.userContext).catch((err: unknown) => {
         logger.warn(`[shared folders] The shipped shared folders were not made: ${getErrorMessage(err)}`);
@@ -17853,6 +17994,8 @@ ${panes}
     app.post('/stores/:kind', (req: Request, res: Response) => this.storeDoorEnter(req, res));
     app.get('/stores/:kind/confirm', (req: Request, res: Response) => this.storeDoorConfirmPage(req, res));
     app.post('/stores/:kind/confirm', (req: Request, res: Response) => this.storeDoorConfirm(req, res));
+    app.post('/stores/:kind/words/download', (req: Request, res: Response) => this.storeDoorWordsExport(req, res, 'download'));
+    app.post('/stores/:kind/words/print', (req: Request, res: Response) => this.storeDoorWordsExport(req, res, 'print'));
     app.get('/my/journal', (req: Request, res: Response) => this.myJournalPage(req, res));
     app.get('/my/links', (req: Request, res: Response) => this.myLinksPage(req, res));
     // #1004 — captures made by the #881 bookmarklet; 404s when capture is off
@@ -17924,6 +18067,11 @@ ${panes}
     app.get('/admin/backup/env', (req: Request, res: Response) => void this.adminBackupEnv(req, res));
     app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
     app.post('/admin/backup/shared-folders/words', (req: Request, res: Response) => void this.adminSharedFoldersWords(req, res));
+    app.post('/admin/backup/shared-folders/words/new', (req: Request, res: Response) => void this.adminSharedFoldersNewWords(req, res));
+    app.get('/admin/backup/shared-folders/words/confirm', (req: Request, res: Response) => void this.adminSharedFoldersWordsConfirmPage(req, res));
+    app.post('/admin/backup/shared-folders/words/cancel', (req: Request, res: Response) => void this.adminSharedFoldersWordsCancel(req, res));
+    app.post('/admin/backup/shared-folders/words/download', (req: Request, res: Response) => void this.adminSharedFoldersWordsExport(req, res, 'download'));
+    app.post('/admin/backup/shared-folders/words/print', (req: Request, res: Response) => void this.adminSharedFoldersWordsExport(req, res, 'print'));
     app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
     app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
     app.post('/admin/backup/shared-folders/folders', (req: Request, res: Response) => void this.adminSharedFoldersCreate(req, res));

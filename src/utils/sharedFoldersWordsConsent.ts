@@ -38,5 +38,7 @@ export function sharedFoldersWordsMessage(state: SharedFoldersWordsInfo, viewer:
   return viewer === state.shownTo
     ? `${stake} You were shown them once; confirm you have saved them off this server.`
     : `${stake} ${state.shownTo} was shown them and has not confirmed saving them yet.` +
-      (state.protectsFolders ? '' : ' If they cannot, discard this set on Admin → Backup and make a new one, then confirm it yourself.');
+      (state.protectsFolders
+        ? ' If they cannot, make a new set on Admin → Backup and confirm it yourself.'
+        : ' If they cannot, discard this set on Admin → Backup and make a new one, then confirm it yourself.');
 }

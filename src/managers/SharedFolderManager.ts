@@ -53,6 +53,7 @@ import {
   newRecoveryWords,
   openKekCopy,
   recoveryWordsId,
+  sameMnemonic,
   sealKekCopy,
   unwrapDek,
   unwrapKekWithMnemonic,
@@ -69,6 +70,7 @@ import {
 } from '../utils/sharedFolderAccess.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { SHARED_FOLDERS_WORDS_CONSENT_SCOPE } from '../types/Consent.js';
+import { recordRecoveryWordsExport, type RecoveryWordsExport } from '../utils/recoveryWordsFile.js';
 import {
   currentSharedFoldersKey,
   SHARED_FOLDERS_KEY_ENV,
@@ -132,9 +134,22 @@ interface KeysFile {
 /** The recovery words shown to an admin and not yet saved. Held in memory only. */
 interface PendingWords {
   token: string;
+  /** The words themselves, only while they wait: to check them typed back, and to download or print them (#2144). */
+  mnemonic: string;
   recoveryWrap: WrappedBlob;
   personKey: PersonKey;
+  /** When they were made (ms). */
+  madeAt: number;
   expiresAt: number;
+  /** The set these words replace (its `wordsId`), or null: the first set (#2144). */
+  replaces: string | null;
+}
+
+/** The words waiting for this admin, as the confirm step needs them: never the words. */
+export interface WaitingWords {
+  token: string;
+  /** Whether they replace a set already saved (a new set, #2144). */
+  replacing: boolean;
 }
 
 /** What Admin → Backup shows about the organization's recovery words: never the words. */
@@ -150,6 +165,13 @@ export interface SharedFoldersWordsInfo {
 /** The door said no: not allowed, or the request does not fit the state. Nothing was changed. */
 export class SharedFolderRefusedError extends Error {
   override readonly name = 'SharedFolderRefusedError';
+}
+
+/** The words typed back are not the ones shown (#2144). Nothing was saved; the words still wait, to be typed again. */
+export class SharedFolderWordsMismatchError extends SharedFolderRefusedError {
+  constructor() {
+    super('Those words are not the ones shown. Nothing was saved. Check what you wrote down and type all 12 again, or start over with a new set');
+  }
 }
 
 /** The keys cannot be used right now (no server key, or not the one they were made under); the message says why. */
@@ -168,6 +190,13 @@ interface Pdp {
 
 /** The permission every door here asks in this slice. */
 const ADMIN_PERMISSION = 'admin-system';
+
+/**
+ * Asked as well as `admin-system` to replace a saved set of words (#2144): the
+ * step-up permission Admin → Backup's key actions ask (the backup key, `.env`),
+ * so the PDP refuses it without a fresh sign-in.
+ */
+const FRESH_SIGN_IN_PERMISSION = 'config-manage';
 
 class SharedFolderManager extends BaseManager {
   readonly description = 'The organization\'s shared folders: each folder\'s key, the organization key and the recovery words (#1775, #2124)';
@@ -272,29 +301,83 @@ class SharedFolderManager extends BaseManager {
    * that admin's `saveRecoveryWords` with the returned token, for
    * `ngdpbase.shared-folders.words-pending-minutes`. A second call replaces
    * the first set unsaved. Refused while a set is saved: an unconfirmed set is
-   * discarded first (`discardUnconfirmedWords`); replacing a confirmed set is a
-   * later slice.
+   * discarded first (`discardUnconfirmedWords`), and a saved set is replaced
+   * with `prepareNewRecoveryWords`.
    */
   async prepareRecoveryWords(ctx: ActorContext): Promise<{ token: string; words: string[] }> {
     await this.requireAdmin(ctx);
     this.requireUsable();
     if (this.file?.recovery) throw new SharedFolderRefusedError('The shared folders already have recovery words');
+    return this.holdNewWords(ctx, null);
+  }
+
+  /**
+   * Make a new set of recovery words to replace the saved set (#2144): the
+   * admin `ctx`, with a fresh sign-in (`admin-system` and the step-up
+   * permission). Shown and confirmed exactly as the first set; nothing changes
+   * until `saveRecoveryWords` with all 12 typed back, which seals every folder
+   * key for the new words and retires the old ones. Abandoned or discarded
+   * (`discardRecoveryWords`), the old set stays.
+   */
+  async prepareNewRecoveryWords(ctx: ActorContext): Promise<{ token: string; words: string[] }> {
+    await this.requireAdmin(ctx);
+    await this.requireFreshSignIn(ctx);
+    this.requireUsable();
+    const current = this.file?.recovery;
+    if (!current) throw new SharedFolderRefusedError('The shared folders have no recovery words yet: make them first');
+    return this.holdNewWords(ctx, recoveryWordsId(current));
+  }
+
+  /** Make 12 words and hold them, for `ctx` only, until saved, discarded or expired. Replaces any set waiting for them. */
+  private async holdNewWords(ctx: ActorContext, replaces: string | null): Promise<{ token: string; words: string[] }> {
     const kek = randomBytes(32);
     try {
       const { mnemonic, recoveryWrap } = newRecoveryWords(kek);
       const personKey = await newPersonKey(kek);
       const token = randomUUID();
-      const minutes = this.pendingMinutes();
-      this.pending.set(ctx.username, { token, recoveryWrap, personKey, expiresAt: Date.now() + minutes * 60_000 });
+      const now = Date.now();
+      this.pending.set(ctx.username, { token, mnemonic, recoveryWrap, personKey, madeAt: now, expiresAt: now + this.pendingMinutes() * 60_000, replaces });
       return { token, words: mnemonic.split(' ') };
     } finally {
       kek.fill(0);
     }
   }
 
-  /** Forget the words shown to `ctx` and not saved: they are never shown again. */
+  /** The words waiting for `ctx` to type them back, or null: none, or they expired. Never the words. */
+  waitingWords(ctx: ActorContext): WaitingWords | null {
+    const shown = this.livePending(ctx);
+    return shown ? { token: shown.token, replacing: shown.replaces !== null } : null;
+  }
+
+  /**
+   * The words waiting for `ctx`, to download as a file or print (#2144),
+   * while they still wait: once saved they are gone and cannot be made again.
+   * Recorded first as `recovery-words-export` (who, which set, how; never the
+   * words; on-failure refuse). Refused for a token that is not the one shown
+   * to them, or expired; the words are not discarded by a refused export.
+   */
+  async pendingRecoveryWords(ctx: ActorContext, token: string, how: RecoveryWordsExport): Promise<{ words: string[]; madeAt: Date; wordsId: string }> {
+    await this.requireAdmin(ctx);
+    const shown = this.livePending(ctx);
+    if (!shown || shown.token !== token) throw new SharedFolderRefusedError('Those recovery words are no longer waiting to be saved, so they cannot be downloaded or printed. Make a new set');
+    const wordsId = recoveryWordsId(shown);
+    await recordRecoveryWordsExport(this.engine.getManager<AuditEventSink>('AuditManager'), ctx, { set: 'shared-folders', wordsId, how });
+    return { words: shown.mnemonic.split(' '), madeAt: new Date(shown.madeAt), wordsId };
+  }
+
+  /** Forget the words shown to `ctx` and not saved: they are never shown again. A set they were to replace stays. */
   discardRecoveryWords(ctx: ActorContext): void {
     this.pending.delete(ctx.username);
+  }
+
+  /** The words waiting for `ctx`, or undefined; expired words are forgotten. */
+  private livePending(ctx: ActorContext): PendingWords | undefined {
+    const shown = this.pending.get(ctx.username);
+    if (shown && shown.expiresAt < Date.now()) {
+      this.pending.delete(ctx.username);
+      return undefined;
+    }
+    return shown;
   }
 
   /**
@@ -334,44 +417,102 @@ class SharedFolderManager extends BaseManager {
   }
 
   /**
-   * Save the recovery words shown to `ctx` (`prepareRecoveryWords`), once
-   * they confirmed they saved them: the caller asks for the tick first, and
-   * records the confirmation with ConsentManager after (`wordsId`). Recorded
-   * as `shared-folder-words-create` before it is saved (on-failure refuse).
-   * Refused when the token is not the one shown to them, has expired, or a
-   * set was saved meanwhile.
+   * Save the recovery words shown to `ctx` (`prepareRecoveryWords` or
+   * `prepareNewRecoveryWords`) once they proved they kept them: `typed` is
+   * all 12 typed back (#2144). The caller asks for the tick first, and records
+   * the confirmation with ConsentManager after (`wordsId`).
+   *
+   * - A token that is not the one shown to them, or expired: refused, and the
+   *   words are discarded.
+   * - Words that do not match: `SharedFolderWordsMismatchError`; nothing is
+   *   saved and the words still wait, to be typed again.
+   * - The first set: recorded as `shared-folder-words-create`, then saved.
+   *   Refused when a set was saved meanwhile.
+   * - A new set (#2144): asks the fresh sign-in again, seals every folder key
+   *   again for the new words from its server-key wrap, records
+   *   `shared-folder-words-replace`, then writes the new set and the sealed
+   *   keys as one file renamed into place: the old words stop opening the
+   *   folders, and on any failure before that the old set stays as it was.
+   *   Refused when the saved set changed meanwhile.
+   *
+   * Each record is on-failure refuse, written before the save.
    *
    * @returns Which set of words was saved (`recoveryWordsId`)
    */
-  async saveRecoveryWords(ctx: ActorContext, token: string): Promise<string> {
+  async saveRecoveryWords(ctx: ActorContext, token: string, typed: string): Promise<string> {
     await this.requireAdmin(ctx);
-    this.requireUsable();
-    const shown = this.pending.get(ctx.username);
-    if (!shown || shown.token !== token || shown.expiresAt < Date.now()) {
+    const wrapKey = this.requireUsable();
+    const shown = this.livePending(ctx);
+    if (!shown || shown.token !== token) {
       this.pending.delete(ctx.username);
       throw new SharedFolderRefusedError('Those recovery words are no longer waiting to be saved. Nothing was saved; make a new set');
     }
+    if (!sameMnemonic(typed, shown.mnemonic)) throw new SharedFolderWordsMismatchError();
+    if (shown.replaces !== null) await this.requireFreshSignIn(ctx);
     return this.serial.run(KEYS_FILE, async () => {
-      if (this.file?.recovery) throw new SharedFolderRefusedError('The shared folders already have recovery words');
-      const recovery: RecoveryRecord = { recoveryWrap: shown.recoveryWrap, personKey: shown.personKey, madeAt: new Date().toISOString(), shownTo: ctx.username };
+      const current = this.file?.recovery ?? null;
+      const changed = shown.replaces === null ? current !== null : !current || recoveryWordsId(current) !== shown.replaces;
+      if (changed) {
+        this.pending.delete(ctx.username);
+        throw new SharedFolderRefusedError(shown.replaces === null
+          ? 'The shared folders already have recovery words'
+          : 'The shared folders\' recovery words changed while these were waiting. Nothing was saved; make a new set');
+      }
+      const recovery: RecoveryRecord = { recoveryWrap: shown.recoveryWrap, personKey: shown.personKey, madeAt: new Date(shown.madeAt).toISOString(), shownTo: ctx.username };
       const wordsId = recoveryWordsId(recovery);
+      const file = this.fileOrNew();
       const who = actorOf(ctx);
+      const sink = this.engine.getManager<AuditEventSink>('AuditManager');
       // Record first, then save: a failed record refuses and nothing is written.
-      await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
-        eventType: AUDIT_EVENT.SHARED_FOLDER_WORDS_CREATE,
-        ...who,
-        action: 'shared-folder-words-create',
-        result: 'success',
-        severity: 'high',
-        resource: 'shared-folders',
-        resourceType: 'shared-folders-recovery-words',
-        metadata: { ...who.metadata, wordsId }
-      });
-      await this.writeKeysFile({ ...this.fileOrNew(), recovery });
+      if (shown.replaces === null) {
+        await recordAuditEvent(sink, {
+          eventType: AUDIT_EVENT.SHARED_FOLDER_WORDS_CREATE,
+          ...who,
+          action: 'shared-folder-words-create',
+          result: 'success',
+          severity: 'high',
+          resource: 'shared-folders',
+          resourceType: 'shared-folders-recovery-words',
+          metadata: { ...who.metadata, wordsId }
+        });
+        await this.writeKeysFile({ ...file, recovery });
+      } else {
+        const folders = await this.sealedForWords(file.folders, wrapKey, recovery, wordsId);
+        await recordAuditEvent(sink, {
+          eventType: AUDIT_EVENT.SHARED_FOLDER_WORDS_REPLACE,
+          ...who,
+          action: 'shared-folder-words-replace',
+          result: 'success',
+          severity: 'high',
+          resource: 'shared-folders',
+          resourceType: 'shared-folders-recovery-words',
+          metadata: { ...who.metadata, wordsId, replaces: shown.replaces, folders: Object.keys(folders).length }
+        });
+        await this.writeKeysFile({ ...file, recovery, folders });
+      }
       this.pending.delete(ctx.username);
-      logger.info(`🗝️  [SharedFolderManager] the shared folders' recovery words were made and shown to ${ctx.username}`);
+      logger.info(`🗝️  [SharedFolderManager] ${shown.replaces === null ? 'the shared folders\' recovery words were made' : 'a new set of the shared folders\' recovery words replaced the old one'}, shown to ${ctx.username}`);
       return wordsId;
     });
+  }
+
+  /**
+   * Every folder key in `folders`, its recovery copy sealed again for the
+   * words of `recovery` (#2144), opened with the server key. Nothing is
+   * written; a key that cannot be opened throws, and the caller keeps the
+   * old set.
+   */
+  private async sealedForWords(folders: Record<string, FolderKeyRecord>, wrapKey: Buffer, recovery: RecoveryRecord, wordsId: string): Promise<Record<string, FolderKeyRecord>> {
+    const out: Record<string, FolderKeyRecord> = {};
+    for (const [name, entry] of Object.entries(folders)) {
+      const dek = unwrapDek(wrapKey, { encrypt: true, dekWrap: entry.serverWrap });
+      try {
+        out[name] = { ...entry, recoveryCopy: await sealKekCopy(recovery.personKey.publicKey, dek), wordsId };
+      } finally {
+        dek.fill(0);
+      }
+    }
+    return out;
   }
 
   // ── Folder keys ────────────────────────────────────────────────────────
@@ -607,6 +748,14 @@ class SharedFolderManager extends BaseManager {
     const pdp = this.engine.getManager<Pdp>('PolicyDecisionPoint');
     if (!ctx?.username || !pdp || !(await pdp.permits(ctx, ADMIN_PERMISSION))) {
       throw new SharedFolderRefusedError(`${ctx?.username ?? 'Nobody'} may not manage the shared folders' keys (needs ${ADMIN_PERMISSION})`);
+    }
+  }
+
+  /** The fresh sign-in a new set of words needs (#2144): the PDP applies step-up to `FRESH_SIGN_IN_PERMISSION`. */
+  private async requireFreshSignIn(ctx: ActorContext): Promise<void> {
+    const pdp = this.engine.getManager<Pdp>('PolicyDecisionPoint');
+    if (!ctx?.username || !pdp || !(await pdp.permits(ctx, FRESH_SIGN_IN_PERMISSION))) {
+      throw new SharedFolderRefusedError(`${ctx?.username ?? 'Nobody'} may not make a new set of the shared folders' recovery words without a fresh sign-in (needs ${FRESH_SIGN_IN_PERMISSION})`);
     }
   }
 
