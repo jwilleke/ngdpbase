@@ -53,6 +53,7 @@ import type FileManager from './FileManager.js';
 import logger from '../utils/logger.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
 import { readTakeout } from '../utils/privateStoreImport.js';
+import { TAKEOUT_FILE_INDEX } from '../utils/privateStoreExport.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig, systemCategoryVaults, type PrivateStoreLayout } from '../utils/privateStorePath.js';
@@ -387,6 +388,9 @@ function titleFromFileName(name: string): string {
 const TAKEOUT_PAGE_UNCHANGED = 'already here, unchanged';
 const TAKEOUT_PAGE_CHANGED = 'changed since the download; the page here was kept';
 const TAKEOUT_PAGE_ELSEWHERE = 'already on this site';
+/** A takeout's files are under `attachments/`; its pages are not. */
+const isTakeoutFile = (f: IceFileReport): boolean => f.name.includes('/attachments/');
+const isFailedEntry = (f: IceFileReport): boolean => ['partial', 'refused', 'failed', 'unreadable'].includes(f.status);
 
 class ImportManager extends BaseManager {
   /** Registry of format converters */
@@ -1145,7 +1149,9 @@ class ImportManager extends BaseManager {
    *   the user may view it. A title held by a DIFFERENT page lands beside
    *   it as `Title (imported)`.
    * - The original is the file itself: none is kept or cited (D11), as for `core.files`.
-   * - The run is recorded as one act, `store-import`, with counts only.
+   * - The run is recorded as one act, `store-import`, with counts only, and
+   *   kept as a report page in the store, sealed when the store is (operator,
+   *   2026-09-25 and 2026-10-30): see {@link keepRunReport}.
    */
   private privateStoreReceiver(): IceReceiver {
     return {
@@ -1161,7 +1167,14 @@ class ImportManager extends BaseManager {
       mayUse: (ctx) => this.mayImportIntoOwnStore(ctx),
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),
-      runDone: (ctx, report) => this.recordStoreImport(ctx, report),
+      runDone: async (ctx, report) => {
+        // A failure here costs the report page, never the import or its audit record.
+        const unlinked = await this.keepRunReport(ctx, report).catch((err: unknown) => {
+          logger.warn(`[ImportManager] the import report for run ${report.runId} could not be kept (${errorClassOf(err)})`);
+          return 0;
+        });
+        await this.recordStoreImport(ctx, report, unlinked);
+      },
       // #2110: a page the user may read, by PageManager's own read decision. A file's id is not linked.
       linkFor: async (ref: string, ctx: ActorContext): Promise<string | null> => {
         const pageManager = this.engine.getManager<PageManager>('PageManager');
@@ -1272,7 +1285,8 @@ class ImportManager extends BaseManager {
       const here = await pageManager.getPage(nameIn(store, page.uuid), ctx);
       if (here) {
         const same = (here.content ?? '').trim() === body.trim();
-        return { status: 'duplicate', message: same ? TAKEOUT_PAGE_UNCHANGED : TAKEOUT_PAGE_CHANGED };
+        // Named, so the run's report can read which files it links to.
+        return { status: 'duplicate', ref: nameIn(store, page.uuid), message: same ? TAKEOUT_PAGE_UNCHANGED : TAKEOUT_PAGE_CHANGED };
       }
       const ownStores = await pageManager.listOwnStoreIds(ctx);
       const elsewhere = await this.whereUuidLives(pageManager, ctx, page.uuid, ownStores.filter(s => s !== store), nameIn);
@@ -1308,20 +1322,17 @@ class ImportManager extends BaseManager {
    * each file went, as counts. Never a page's or a file's name (#1461); each
    * file's own record is its door's (`asset-upload`, a sealed store's by id).
    * The counts use the old door's keys, so whatever reads the event reads
-   * one shape (`filesUnlinked` aside: the engine does not count it).
+   * one shape.
    */
-  private async recordStoreImport(ctx: ActorContext, report: IceRunReport): Promise<void> {
+  private async recordStoreImport(ctx: ActorContext, report: IceRunReport, filesUnlinked: number): Promise<void> {
     const sink = this.engine.getManager<AuditEventSink>('AuditManager');
     const who = actorOf(ctx);
     const owner = ctx.username;
     const store = report.target ?? '';
     const count = (status: string): number => report.files.filter(f => f.status === status).length;
-    // A takeout's files are under `attachments/`; its pages are not.
-    const isFile = (f: IceFileReport): boolean => f.name.includes('/attachments/');
-    const pages = report.files.filter(f => !isFile(f) && f.status !== 'noise');
-    const files = report.files.filter(isFile);
+    const pages = report.files.filter(f => !isTakeoutFile(f) && f.status !== 'noise');
+    const files = report.files.filter(isTakeoutFile);
     const pagesSaying = (start: string): number => pages.filter(p => p.status === 'duplicate' && p.message?.startsWith(start)).length;
-    const failed = (f: IceFileReport): boolean => ['partial', 'refused', 'failed', 'unreadable'].includes(f.status);
     const ownerId = await this.engine.getManager<IdentityManager>('IdentityManager')
       ?.identityIdOf(systemContext(this.engine, 'record a takeout import: the owner identity @id (#2041)'), owner);
     await recordAuditEvent(sink, {
@@ -1345,9 +1356,10 @@ class ImportManager extends BaseManager {
         pagesUnchanged: pages.filter(p => p.status === 'unchanged').length + pagesSaying(TAKEOUT_PAGE_UNCHANGED),
         pagesChanged: pagesSaying(TAKEOUT_PAGE_CHANGED),
         pagesElsewhere: pagesSaying(TAKEOUT_PAGE_ELSEWHERE),
-        pagesFailed: pages.filter(failed).length,
+        pagesFailed: pages.filter(isFailedEntry).length,
         files: files.filter(f => f.status === 'imported' || f.status === 'duplicate').length,
-        fileErrors: files.filter(failed).length,
+        fileErrors: files.filter(isFailedEntry).length,
+        filesUnlinked,
         leftOut: count('noise')
       }
     }, (err) => logger.warn('[ImportManager] the store-import audit record failed:', err));
@@ -2746,6 +2758,79 @@ class ImportManager extends BaseManager {
       }
     }
 
+    await this.keepTakeoutReport(ctx, report, storedFiles, bodiesInStore, options.sourceName);
+    return report;
+  }
+
+  /**
+   * An engine run into `core.private-store` as the takeout report the old
+   * door keeps (code review of #2160, finding 3; operator, 2026-10-30), from
+   * the run's per-file status. Only a run that read a takeout keeps one.
+   * A file the run skipped as already imported is in neither count.
+   *
+   * @returns How many files no page links to
+   */
+  private async keepRunReport(ctx: ActorContext, run: IceRunReport): Promise<number> {
+    // A takeout's member is `{upload}/{path in the zip}`; an upload not read as a zip has no `/`.
+    const members = run.files.filter(f => f.name.includes('/'));
+    if (!run.target || members.length === 0) return 0;
+    const { pageManager } = this.privateStoreSetup();
+    const inZip = (f: IceFileReport): string => f.name.slice(f.name.indexOf('/') + 1);
+    const elsewhere = new RegExp(`^${TAKEOUT_PAGE_ELSEWHERE} as (.+); not imported$`);
+    const report: TakeoutImportReport = { store: run.target, pages: [], files: 0, fileErrors: [], unlinkedFiles: [], ignored: [] };
+    const storedFiles: Array<{ name: string; id: string }> = [];
+    const bodiesInStore: string[] = [];
+    for (const f of members) {
+      if (f.status === 'noise') {
+        // The file index is read with the files it names, as the old door reads it.
+        if (path.posix.basename(f.name) !== TAKEOUT_FILE_INDEX) report.ignored.push(inZip(f));
+        continue;
+      }
+      const name = path.posix.basename(f.name);
+      if (isTakeoutFile(f)) {
+        if (isFailedEntry(f)) report.fileErrors.push({ name, message: f.message ?? f.status });
+        else if (f.status === 'imported' || f.status === 'duplicate') {
+          report.files++;
+          if (f.refs[0]) storedFiles.push({ name, id: f.refs[0] });
+        }
+        continue;
+      }
+      // A takeout names a page's file by its title.
+      const title = name.replace(/\.md$/i, '');
+      if (isFailedEntry(f)) {
+        report.pages.push({ title, outcome: 'failed', message: f.message ?? f.status });
+        continue;
+      }
+      const ref = f.refs[0];
+      if (ref) bodiesInStore.push((await pageManager.getPage(ref, ctx))?.content ?? '');
+      const where = f.message?.match(elsewhere)?.[1];
+      if (f.status === 'imported' && ref) report.pages.push({ title, outcome: 'imported', importedAs: ref });
+      else if (f.message === TAKEOUT_PAGE_CHANGED) report.pages.push({ title, outcome: 'changed-since-takeout' });
+      else if (f.message?.startsWith(TAKEOUT_PAGE_ELSEWHERE)) report.pages.push({ title, outcome: 'uuid-elsewhere', ...(where ? { where } : {}) });
+      else report.pages.push({ title, outcome: 'unchanged' });
+    }
+    const sources = [...new Set(members.map(f => f.name.slice(0, f.name.indexOf('/'))))];
+    await this.keepTakeoutReport(ctx, report, storedFiles, bodiesInStore, sources.join(', '));
+    return report.unlinkedFiles.length;
+  }
+
+  /**
+   * A takeout import's report, kept (operator, 2026-09-25): which files no
+   * page now in the store links to, counted in the log, and a page in the
+   * store it is about, sealed exactly when the store is, so it can name what
+   * a log may not. A failure to save it costs the record, never the import.
+   */
+  private async keepTakeoutReport(
+    ctx: ActorContext,
+    report: TakeoutImportReport,
+    storedFiles: ReadonlyArray<{ name: string; id: string }>,
+    bodiesInStore: readonly string[],
+    sourceName?: string
+  ): Promise<void> {
+    const { pageManager } = this.privateStoreSetup();
+    const owner = ctx.username;
+    const { store } = report;
+    const nameIn = (s: string, key: string): string => formatPrivatePageName(owner, s, key);
     report.unlinkedFiles = storedFiles
       .filter(f => !bodiesInStore.some(b => linksToAttachment(b, f.id)))
       .map(f => f.name);
@@ -2755,9 +2840,6 @@ class ImportManager extends BaseManager {
       + `${report.pages.filter(p => p.outcome === 'imported').length} page(s), ${report.files} file(s)`
       + (report.unlinkedFiles.length ? `, ${report.unlinkedFiles.length} file(s) no page in the store links to` : ''));
 
-    // The report, kept (operator, 2026-09-25): a page in the store it is about,
-    // sealed exactly when the store is, so it can name what a log may not. A
-    // failure here costs the record, never the import.
     try {
       const when = new Date();
       const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
@@ -2765,7 +2847,7 @@ class ImportManager extends BaseManager {
       const title = await freeImportTitle(`${stamp}-import-report`, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
       const saved = await pageManager.savePage(
         nameIn(store, title),
-        this.takeoutReportMarkdown(report, { owner, when, sourceName: options.sourceName }),
+        this.takeoutReportMarkdown(report, { owner, when, ...(sourceName ? { sourceName } : {}) }),
         { title, private: true, store },
         ctx
       );
@@ -2773,7 +2855,6 @@ class ImportManager extends BaseManager {
     } catch (err) {
       logger.warn(`[ImportManager] the import report for ${owner}'s store '${store}' could not be saved: ${(err as Error).message}`);
     }
-    return report;
   }
 
   /** The import report page's markdown. Private links are `[Title|store/Title]` (#1457). */

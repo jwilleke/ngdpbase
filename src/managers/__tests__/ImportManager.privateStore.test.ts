@@ -502,6 +502,64 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(importer.getImportRun(loose, MOLLY)?.files.map(f => f.status)).toEqual(['unreadable']);
   });
 
+  /** The import report pages in `store`. */
+  const reportsIn = async (store: string): Promise<Array<{ name: string; title: string; uuid: string }>> =>
+    (await pages.listVaultPages(MOLLY, 'molly', store)).filter(p => p.title.includes('-import-report'));
+
+  // Code review of #2160, finding 3 (operator, 2026-10-30): the report the old door kept (operator, 2026-09-25).
+  test('a run keeps its report as a page in the store, sealed, counting the files no page links to', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/${SECRET}.md`, bytes: Buffer.from(`---\ntitle: ${SECRET}\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 scan') },
+      { path: `${VAULT}/attachments/${SECRET}.jpg`, bytes: Buffer.from('jpeg bytes') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: {
+          'old-id': { id: 'old-id', fileName: 'attachments/scan.pdf', name: 'scan.pdf' },
+          'old-2': { id: 'old-2', fileName: `attachments/${SECRET}.jpg`, name: `${SECRET}.jpg` }
+        } }))
+      }
+    ]);
+
+    await upload(VAULT, archive);
+
+    const reports = await reportsIn(VAULT);
+    expect(reports.map(r => r.title)).toEqual([expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}-import-report$/)]);
+    const content = (await pages.getPage(reports[0].name, MOLLY))?.content ?? '';
+    expect(content).toContain('**takeout-vault.zip**');
+    expect(content).toContain('- Pages imported: 1');
+    expect(content).toContain(`[${SECRET}|${VAULT}/${SECRET}] — imported`);
+    expect(content).toContain('- Files stored: 2 (1 not linked from any page)');
+    expect(content).toContain(`## Files no page links to\n\nStored in this store, but no page here links to them.\n\n- ${SECRET}.jpg\n`);
+    // The file index is read, not left out.
+    expect(content).not.toContain('Left out');
+    // Counted in the audit record, as the old door counted it; named only in the report.
+    expect(audit.logAuditEvent.mock.calls.map(c => c[0] as Record<string, unknown>).find(e => e.eventType === 'store-import'))
+      .toMatchObject({ metadata: expect.objectContaining({ filesUnlinked: 1 }) });
+    expect(logged()).not.toContain(SECRET);
+    // Sealed as the store is: neither its title nor its words are anywhere on disk.
+    expect(await filesContaining('import-report')).toEqual([]);
+    expect(await filesContaining('no page links to')).toEqual([]);
+    expect(isSealedBytes(await fs.readFile(path.join(privateStoreRoot(pagesDir, 'molly', VAULT), `${reports[0].uuid}.md`)))).toBe(true);
+  });
+
+  test('a second run adds its own report; a run that reads no takeout writes none', async () => {
+    await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
+    const archive = await takeoutOf(VAULT);
+    await emptyStore(VAULT);
+    await upload(VAULT, archive);
+    await upload(VAULT, archive);
+
+    const reports = await reportsIn(VAULT);
+    expect(reports).toHaveLength(2);
+    const contents = await Promise.all(reports.map(async r => (await pages.getPage(r.name, MOLLY))?.content ?? ''));
+    expect(contents.filter(c => c.includes('- Pages imported: 1'))).toHaveLength(1);
+    expect(contents.filter(c => c.includes('- Already here, unchanged: 1'))).toHaveLength(1);
+
+    await upload(VAULT, Buffer.from('not a zip'));
+    expect(await reportsIn(VAULT)).toHaveLength(2);
+  });
+
   test('her recent imports list the takeout, with the store it went into, by fingerprint (#2161)', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);
