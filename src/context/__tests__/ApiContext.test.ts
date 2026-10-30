@@ -267,6 +267,9 @@ describe('#1745 ApiContext#requirePermission() answers step-up with the way to r
     const authManager = {
       engine: null as unknown,
       askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
+      // #2154: a page's form POST is kept to be redone after the prompt.
+      stepUpReplays: new Map(),
+      keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); },
       recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); }
     };
     const engine = {
@@ -327,6 +330,9 @@ describe('#1431 ApiContext#enforceDeny() turns a deny decision into the refusal'
     const authManager = {
       engine: null as unknown,
       askForFreshSignIn: vi.fn(function (this: unknown, ...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this, a); }),
+      // #2154: a page's form POST is kept to be redone after the prompt.
+      stepUpReplays: new Map(),
+      keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); },
       recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); }
     };
     const engine = {

@@ -24,6 +24,9 @@ function routes(opts: { stale?: boolean; holds?: string[]; extend?: (...a: unkno
     requiredAalFor: vi.fn(() => 1),
     engine: null as unknown,
     askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
+    // #2154: a page's form POST is kept to be redone after the prompt.
+    stepUpReplays: new Map(),
+    keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); },
     recordReauth: vi.fn().mockResolvedValue(undefined)
   };
   const tokens = { extend: vi.fn(opts.extend ?? (() => Promise.resolve({ id: 'tok_1', expiresAt: '2026-10-13T00:00:00.000Z' }))) };
