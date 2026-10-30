@@ -874,7 +874,9 @@ export const VIEW_PERMISSIONS = [
   // #1930: the dashboard's Contacts entry (read) and the contacts page's change controls.
   'identity-read', 'identity-manage',
   // #2093: the header's Executive Hub entry.
-  'executive-read'
+  'executive-read',
+  // #2120: a page's "Export this page" entry.
+  'page-export'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
