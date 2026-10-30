@@ -440,6 +440,12 @@ class WikiEngine extends Engine {
     // PageManager.initialize() time neither exists yet.
     await pageManager.seedRequiredPages();
 
+    // #2095: the shipped shared folders (/shared/default, /shared/executive)
+    // are made once the recovery words are confirmed; a site that confirmed
+    // them before a shipped folder existed gets it here. After the seed, so
+    // the words' wording page (ConsentManager's document) is there.
+    await sharedFolderManager.ensureShippedFoldersAtBoot();
+
     // #1457: rewrite `[Title]` to `[store/Title]` in the private pages that
     // mean it, once per store. Here because it is a page write: it goes
     // through the door, which needs the same managers a seed does. Only the

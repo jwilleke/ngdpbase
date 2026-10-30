@@ -9957,9 +9957,9 @@ ${panes}
    * POST /admin/backup/shared-folders/folders — make a shared folder
    * (#2125). Admins only; SharedFolderManager asks `admin-system` again and
    * refuses until the recovery words are confirmed. Until the Shared folders
-   * screen (slice 3) a new folder other than `default` is read only by
-   * admins (`shared-folder-admin-read`): a policy naming `shared/<name>`
-   * gives anyone else access, and anyone at all `shared-folder-file`.
+   * screen (slice 3) a new folder is opened by admins (`shared-folder-admin`:
+   * read and file) and read by executives (`shared-folder-executive-read`): a
+   * policy naming `shared/<name>` gives anyone else access.
    */
   async adminSharedFoldersCreate(req: Request, res: Response) {
     const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
@@ -13206,12 +13206,13 @@ ${panes}
       }
       const wordsId = await folders.saveRecoveryWords(wikiContext.userContext, typeof body.token === 'string' ? body.token : '');
       await this.recordRecoveryWordsSaved(req, wordsId, document, 'setup', SHARED_FOLDERS_WORDS_CONSENT_SCOPE);
-      // #2125: with the words confirmed, /shared/default can be made: the folder every signed-in user may open.
-      const madeDefault = await folders.ensureDefaultFolder(wikiContext.userContext).catch((err: unknown) => {
-        logger.warn(`[shared folders] /shared/default was not made: ${getErrorMessage(err)}`);
-        return false;
+      // #2125, #2095: with the words confirmed, the shipped folders can be made: /shared/default and /shared/executive.
+      const made = await folders.ensureShippedFolders(wikiContext.userContext).catch((err: unknown) => {
+        logger.warn(`[shared folders] The shipped shared folders were not made: ${getErrorMessage(err)}`);
+        return [] as string[];
       });
-      return back('success', `The shared folders' recovery words are saved. Keep them off this server, with the organization's important papers.${madeDefault ? ' The shared folder /shared/default is made, open to every signed-in user.' : ''}`);
+      const madeNote = made.length > 0 ? ` The shared folder${made.length > 1 ? 's' : ''} ${made.map((n) => `/shared/${n}`).join(' and ')} ${made.length > 1 ? 'are' : 'is'} made.` : '';
+      return back('success', `The shared folders' recovery words are saved. Keep them off this server, with the organization's important papers.${madeNote}`);
     } catch (err: unknown) {
       return back('error', getErrorMessage(err));
     }

@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-25
+dateModified: 2026-10-30
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -30,7 +30,7 @@ Nothing else is an allow or a deny:
 - __A policy subject is a role, or a scheduled job.__ A decision matches `role` subjects and `{ "type": "job", "value": "<job id>" }` ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)), the two in `SUBJECT_MATCHERS` (`src/managers/PolicyEvaluator.ts`); `PolicyValidator` accepts those two and refuses any other type (`authenticated`, `user` and the rest), which would match nobody and grant nothing. To grant every user, name the role every account is given (`ngdpbase.user.account-roles`, shipped `vault-owner`), as core's `signed-in-self-service` does; see the [add-ons guide](addons-developer-guide.md#permissions).
 - Who holds a permission, such as the administrators a notice goes to, is `PolicyDecisionPoint.usersHolding(action)` (`'admin-system'`), each account asked through `userHoldsPermission`; never a list of role names. Null means there is no UserManager to ask; treat it, and an empty list, as nobody to tell, and log only, since an empty `targetUsers` means every user ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). A notice for administrators is never built by hand: call `NotificationManager.notifyAdmins({ level, title, message })`, which asks `usersHolding('admin-system')`, sets the `system` type and `targetUsers`, and, with nobody to tell, creates nothing and logs only ([#2040](https://github.com/jwilleke/ngdpbase/issues/2040)). A test (`NotificationManager.adminNoticesGuard.test.ts`) fails when any source file creates a `type: 'system'` notification with no `targetUsers`.
 - __Who may decide a request for review is a permission__ ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072)). A request names its `decidePermission`; `ReviewManager` lists a request only to a caller the PDP permits it to (`permits`), decides with `pdp.decide` (so step-up applies), notifies `usersHolding(decidePermission)`, and runs the add-on's handler with the decider's context, never a system context. Filing asks no permission (only add-on code reaches it, for a handler it registered under its own slug); a route that lets users file asks its own permission first, as forms asks `form-submit`. A refusal is `ReviewRefusedError` with the decision; `/reviews` answers it as any page route does ([ReviewManager](../managers/ReviewManager.md)).
-- __The Executive Hub is a permission too__ ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093)). `/executive` asks `executive-read`, which the shipped `executive` role holds alone; the role reads what the organization keeps (pages, files, media, accounts and identity records) and writes nothing. Its one action, deciding requests for the board, comes from the decide permissions add-ons grant to `executive` in their own policies, decided by `ReviewManager` as above. An add-on's hub card names its own read permission and is shown only to a viewer the PDP permits it (`AddonsManager.executiveCardsFor`). A user's own vaults stay closed to the role by the vault container rule, not by anything the hub does.
+- __The Executive Hub is a permission too__ ([#2093](https://github.com/jwilleke/ngdpbase/issues/2093)). `/executive` asks `executive-read`, which the shipped `executive-permissions` policy delegates to the `executive` role alone. Its shipped policies delegate reading what the organization keeps (pages, files, media, accounts and identity records, every shared folder) and `shared-folder-file` on `shared/executive` alone, so its holders add, edit and delete in the Executive shared folder and write nothing else ([Roles, permissions and policies](#roles-permissions-and-policies)). Its one other action, deciding requests for the board, comes from the decide permissions add-ons grant to `executive` in their own policies, decided by `ReviewManager` as above. An add-on's hub card names its own read permission and is shown only to a viewer the PDP permits it (`AddonsManager.executiveCardsFor`). A user's own vaults stay closed to the role by the vault container rule, not by anything the hub does.
 - A proxy ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) is a subject carrying `viaProxy`: the user represented in `username` and `roles`, the actor and grant in the claim. Forward it like `viaToken`; never decide on `ctx.username === owner` without `mayActInPrivateContainer`, because a proxy's username is the owner's. A proxy reaches the owner's encrypted vaults only through `dekFor` / `unlockedStoreIdsFor`, from the key copy the owner sealed to the proxy (slice 5); never hand a proxy subject `kekFor`, a `privateStoreHandle` or the owner's key bag, and never log or record a key, a copy or a user's private key. A job carries no key of any kind: a job enqueued under a proxy keeps the claim (the actor, the grant, its scopes) but never its `keyHandle`. `jobContextFromRequest` drops it, `BackgroundJobManager` strips it from every context it stores or hands a job (`withoutKeyHandle`), so no run record holds one, and `copyFor` refuses a job context; encrypted-store work for a proxy happens in the request ([#2047](https://github.com/jwilleke/ngdpbase/issues/2047)). The ceiling is the PDP's (grant ∩ the user represented ∩ the actor, re-read live), and a check that a subject is delegated before asking it is `carriesCeiling`, which includes the proxy. A record of what a proxy did names both users: build its "who" with `actorOf(ctx)` (or forward `viaProxy` to a content builder), never `user: ctx.username`, which would record the user represented as having done it (`npm run lint:audit-attribution`). Never build a proxy subject anywhere but `AuthManager.subjectActingFor`, which the session middleware calls on every request with the live grant; a route that needs the signed-in user rather than the subject reads `viaProxy.actor`. A door that takes a caller for a decision takes the subject, never its username: under a proxy the username is the user represented, and `userHoldsPermission(username, …)` would decide with their roles unbounded (the audit queries take the subject for this reason). A credential made under a proxy grant (an agent token, an approved device) belongs to the user represented, records the proxy and the grant (`approvedBy`, `proxyGrantId`), is checked against the live grant at every use, and is revoked when the grant ends (slice 6); never mint or approve one for a proxy subject without asking the PDP with that subject, which bounds it by the grant and by both users.
 - A role name in code, `roles.includes('admin')`, is the same defect when it is the allow. The static test `src/routes/__tests__/WikiRoutes.permissionGates.test.ts` keeps `hasRole(` out of `src/routes/WikiRoutes.ts`. The one `updates.roles.includes('admin')` there validates submitted form data (an external account cannot be given the admin role); it is not an authorization decision.
 
@@ -84,7 +84,132 @@ Hand the deciders the context as you were given it. `pdp.decide`, `pdp.permits` 
 
 ## A shared folder opens by permission
 
-A shared folder's pages and files ([#2125](https://github.com/jwilleke/ngdpbase/issues/2125); [SharedFolderManager](../managers/SharedFolderManager.md#folders)) are read with `shared-folder-read` and added to, changed and deleted with `shared-folder-file`, asked of the PDP with the caller's context and the folder as the policy resource (`shared-folder`, `shared/<name>`), through `permitsInSharedFolder` in `src/utils/sharedFolderAccess.ts`. Never a role, never the vault owner rule, never the vault policy, and never a share link. A folder lists no roles; a policy names the folder. Administrators read every folder through the shipped `shared-folder-admin-read` policy (`shared-folder-read` on `shared/*`, (operator, 2026-10-29, [#2125](https://github.com/jwilleke/ngdpbase/issues/2125))), never write in one without `shared-folder-file` from a policy naming it. Reading opens the folder's key, so a key in hand is never permission to write: the page door asks `shared-folder-file` itself (`PageManager.assertMayFileInSharedFolder`, in `savePage` and `deletePage`), and the file door asks per action (`AttachmentManager.mayInVault`). Code that reaches a folder goes through the page and file doors, which already ask; a new door asks `SharedFolderManager.mayInFolder` (or `permitsInSharedFolder`) for the action it does. A folder's key reaches the store I/O only for a context the PDP has permitted on that folder, so never copy a subject (`{ ...ctx }`) before reading a folder: the copy holds no key.
+A shared folder's pages and files ([#2125](https://github.com/jwilleke/ngdpbase/issues/2125); [SharedFolderManager](../managers/SharedFolderManager.md#folders)) are read with `shared-folder-read` and added to, changed and deleted with `shared-folder-file`, asked of the PDP with the caller's context and the folder as the policy resource (`shared-folder`, `shared/<name>`), through `permitsInSharedFolder` in `src/utils/sharedFolderAccess.ts`. Never a role, never the vault owner rule, never the vault policy, and never a share link. A folder lists no roles; a policy names the folder. The shipped folder policies (`shared-folder-default`, `shared-folder-admin`, `shared-folder-executive-read`, `shared-folder-executive-file`; operator, 2026-10-30, [#2095](https://github.com/jwilleke/ngdpbase/issues/2095)) are the examples under [Roles, permissions and policies](#roles-permissions-and-policies); a site delegates `shared-folder-file` on a folder to anyone else (a secretary on `shared/executive`) by its own policy, never by a new permission. Reading opens the folder's key, so a key in hand is never permission to write: the page door asks `shared-folder-file` itself (`PageManager.assertMayFileInSharedFolder`, in `savePage` and `deletePage`), and the file door asks per action (`AttachmentManager.mayInVault`). Code that reaches a folder goes through the page and file doors, which already ask; a new door asks `SharedFolderManager.mayInFolder` (or `permitsInSharedFolder`) for the action it does. A folder's key reaches the store I/O only for a context the PDP has permitted on that folder, so never copy a subject (`{ ...ctx }`) before reading a folder: the copy holds no key.
+
+## Roles, permissions and policies
+
+How access fits together. The full rules of evaluation are in [access-policies.md](../access-policies.md); this is the model a developer works from, with the shipped policies as examples.
+
+- A __permission__ is a named action, such as `page-edit` or `shared-folder-file`, declared in `ngdpbase.permissions.definitions`. Code only ever asks for a permission (`hasPermission`, `canAccess`, `pdp.decide`), never a role.
+- A __role__ is a name in `ngdpbase.roles.definitions` that accounts hold. It grants nothing by itself; its description says what the policies naming it add up to.
+- A __policy__ in `ngdpbase.access.policies` connects them:
+  - `subjects`: who, a `role` (or a scheduled `job`);
+  - `resources`: what, a resource type and a pattern, such as `page` / `*` or `shared-folder` / `shared/executive`;
+  - `actions`: which permissions;
+  - `effect`: `allow` or `deny`;
+  - `priority`: policies are tried highest first, and the first one whose subjects, resources and actions all match decides. No match is a refusal.
+
+### Aiming a permission at a resource
+
+A policy's resource pattern aims its permissions at the resources it matches (micromatch globs). A check names the resource it is about, and only policies whose pattern matches it count: `shared/*` matches every shared folder, `shared/executive` that folder alone, `page` / `*` every public page (not a vault page, whose name holds a `/`). So one permission, `shared-folder-file`, is "file in the Executive shared folder" in one policy and "file in every shared folder" in another; no per-folder permission is needed.
+
+### Capability check and resource check
+
+- A __capability check__ asks a permission with no resource (`pdp.permits(ctx, 'admin-system')`, `hasPermission('page-delete')`): "may this subject do this kind of thing at all?".
+- A __resource check__ asks it about one resource (`canAccess('edit', page)`, `permitsInSharedFolder(pdp, ctx, 'page-read', 'executive')`), with the resource's attributes, such as `shared-folder: shared/executive` or the page's `vault`.
+
+A resource attribute is supplied only when that resource is asked about, so a grant aimed at a `shared-folder` or a `vault` never answers a capability check or a check on anything else: `pdp.permits(ctx, 'shared-folder-read')` is false for every account, administrators included.
+
+### Examples
+
+Every account (the role `ngdpbase.user.account-roles` gives every account, never anonymous) may read and file in `/shared/default`:
+
+```json
+{
+  "id": "shared-folder-default",
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "vault-owner" }],
+  "resources": [{ "type": "shared-folder", "pattern": "shared/default" }],
+  "actions": ["shared-folder-read", "shared-folder-file"]
+}
+```
+
+Administrators read and file in every shared folder:
+
+```json
+{
+  "id": "shared-folder-admin",
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "admin" }],
+  "resources": [{ "type": "shared-folder", "pattern": "shared/*" }],
+  "actions": ["shared-folder-read", "shared-folder-file"]
+}
+```
+
+Executives read every shared folder, and file only in `/shared/executive` (two policies, one aim each). Their own vaults stay their owners': a vault is not a shared folder, and the vault container rule admits only the owner.
+
+```json
+{
+  "id": "shared-folder-executive-read",
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "executive" }],
+  "resources": [{ "type": "shared-folder", "pattern": "shared/*" }],
+  "actions": ["shared-folder-read"]
+}
+```
+
+```json
+{
+  "id": "shared-folder-executive-file",
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "executive" }],
+  "resources": [{ "type": "shared-folder", "pattern": "shared/executive" }],
+  "actions": ["shared-folder-file"]
+}
+```
+
+A site delegates filing in `/shared/executive` to its secretary, with a role and a policy of its own (not shipped):
+
+```json
+{
+  "id": "site-secretary-files-executive",
+  "effect": "allow",
+  "priority": 60,
+  "subjects": [{ "type": "role", "value": "secretary" }],
+  "resources": [{ "type": "shared-folder", "pattern": "shared/executive" }],
+  "actions": ["shared-folder-read", "shared-folder-file"]
+}
+```
+
+Administrators hold the page and site permissions on every public page (abridged; the shipped list is longer):
+
+```json
+{
+  "id": "admin-full-access",
+  "priority": 100,
+  "effect": "allow",
+  "subjects": [{ "type": "role", "value": "admin" }],
+  "resources": [{ "type": "page", "pattern": "*" }],
+  "actions": ["page-read", "page-edit", "page-create", "page-delete", "admin-system"]
+}
+```
+
+### A site's own role and policy
+
+A site adds both in its `app-custom-config.json` (on the instance's data volume, never in a manifest), the top layer of the configuration merge ([configuration-developer-guide.md](configuration-developer-guide.md)): the role as an entry of the `ngdpbase.roles.definitions` map, the policy as an entry of `ngdpbase.access.policies`, which merges with the shipped list by `id`, so the shipped policies stay. An add-on does the same in its own `config/default-config.json` ([add-ons guide](addons-developer-guide.md#permissions)). Adding a role or a policy grants no new permission name: grant an existing one, aimed at the resource.
+
+```json
+{
+  "ngdpbase.roles.definitions": {
+    "secretary": { "name": "secretary", "displayname": "Secretary", "description": "Files the board's papers in the Executive shared folder", "issystem": false }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "site-secretary-files-executive",
+      "effect": "allow",
+      "priority": 60,
+      "subjects": [{ "type": "role", "value": "secretary" }],
+      "resources": [{ "type": "shared-folder", "pattern": "shared/executive" }],
+      "actions": ["shared-folder-read", "shared-folder-file"]
+    }
+  ]
+}
+```
+
+### Who can do X here
+
+- On the site: Admin → Roles (`/admin/roles`) lists each role's permissions as the policies grant them, marking a grant that applies only somewhere (a vault, a folder); the policies themselves, with their resources, are `ngdpbase.access.policies` in Admin → Configuration. Find the policies that name the permission, read their resource patterns, then their subjects; the highest-priority match wins.
+- In code: `PolicyDecisionPoint.usersHolding(action)` lists the accounts holding a permission, and `SharedFolderManager.foldersReadableBy(ctx)` the folders one subject may open. Never compare role names.
 
 ## A closed account holds nothing
 
@@ -154,7 +279,7 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 ## Known gaps
 
 - [#1925](https://github.com/jwilleke/ngdpbase/issues/1925) — a user cannot make a new set of recovery words while signed in yet. When it is built, its screen asks the recovery-words consent for the new set (the hook is `WikiRoutes.recordRecoveryWordsSaved`, `how: new-words`); until then a user who lost their words can only keep the reminder.
-- [#1775](https://github.com/jwilleke/ngdpbase/issues/1775) — shared folders: slices 1 and 2 are built ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124), [#2125](https://github.com/jwilleke/ngdpbase/issues/2125)). A folder other than `default` is read by administrators and opened to anyone else, or added to by anyone, only through a policy written in configuration until the admin Shared folders screen ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)); `/shared/executive` ([#2095](https://github.com/jwilleke/ngdpbase/issues/2095)), rotation, recovery with the words, a new set of words, add-on folders and deleting a folder come later ([SharedFolderManager](../managers/SharedFolderManager.md#known-gaps)).
+- [#1775](https://github.com/jwilleke/ngdpbase/issues/1775) — shared folders: slices 1 and 2 and `/shared/executive` are built ([#2124](https://github.com/jwilleke/ngdpbase/issues/2124), [#2125](https://github.com/jwilleke/ngdpbase/issues/2125), [#2095](https://github.com/jwilleke/ngdpbase/issues/2095)). A folder other than `default` and `executive` opens to anyone but administrators (read and file) and executives (read), only through a policy written in configuration until the admin Shared folders screen ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)); rotation, recovery with the words, a new set of words, add-on folders and deleting a folder come later ([SharedFolderManager](../managers/SharedFolderManager.md#known-gaps)).
 - [#1999](https://github.com/jwilleke/ngdpbase/issues/1999) — a job id's `<slug>.` prefix is enforced in an add-on's policies but not at `registerJob`, which cannot tell its caller.
 - [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — proxy access is complete (slices 1–7), reachable while `ngdpbase.auth.proxy-access.enabled` is on. The private-store risk (a proxy's username matching the owner's) is closed, and the audit queries take the subject. Left: the "Jim acted for you" entries wait for the sign-in history page ([#1766](https://github.com/jwilleke/ngdpbase/issues/1766)); after a proxy approves a device, the browser's provider session stays signed in as the user represented, so the proxy's own app sign-in is refused (fails closed) until that session ends.
 - [#2093](https://github.com/jwilleke/ngdpbase/issues/2093) — the `executive` role reads through the ordinary page decision, so a one-off page whose `audience` or `access` list leaves `executive` out stays closed to it until whoever owns the page adds the role. The add-ons' own screens carry no audience (above), so they open to it through the add-ons' grants ([#2094](https://github.com/jwilleke/ngdpbase/issues/2094)); a site that seeded those pages before then keeps their old lists until the add-on's upgrade clears them.

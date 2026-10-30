@@ -9,16 +9,20 @@
  * opens the folders it may read before it reaches the door, as the session
  * middleware does (`permitsInSharedFolder`). The admin test swaps in the real
  * PolicyDecisionPoint over the SHIPPED policies, so what it asserts is what
- * `shared-folder-admin-read` grants an admin: read every folder, write none.
+ * `shared-folder-admin` grants an admin (read and file in every folder) and
+ * the executive policies grant an executive (read every folder, file only in
+ * shared/executive and shared/default; #2095).
  *
  * Sabotaged once (then restored): the key gate (`sharedFolderKeyFor` handing
  * the key to any context): "a reader of one folder", "a grant removed" and
  * "a context nothing asked about" went red — the provider read the other
  * folder's page for a reader the PDP never permitted.
- * And the shipped `shared-folder-admin-read` policy (removed): the admin test
- * went red (the admin read and found nothing). And the write door's
- * shared-folder check (`assertMayFileInSharedFolder`, absent): the admin test
- * went red — reading opens the folder's key, and the admin's save landed.
+ * And the shipped admin folder policy (removed, then named
+ * `shared-folder-admin-read`): the admin test went red (the admin read and
+ * found nothing). And the write door's shared-folder check
+ * (`assertMayFileInSharedFolder`, absent): the executive test went red —
+ * reading opens the folder's key, and the executive's save in shared/finance
+ * landed.
  */
 
 vi.unmock('../PageManager');
@@ -45,6 +49,9 @@ const MINUTES = formatPrivatePageName(SHARED_FOLDER_OWNER, 'default', 'Minutes')
 const BOARD = formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'Board pack');
 const MINUTES_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const BOARD_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+/** A folder no shipped policy names but the admin and executive ones (shared/*). */
+const LEDGER = formatPrivatePageName(SHARED_FOLDER_OWNER, 'finance', 'Ledger notes');
+const LEDGER_UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 describe('shared folders hold pages through the page door (#2125)', () => {
   let testDir: string;
@@ -64,20 +71,20 @@ describe('shared folders hold pages through the page door (#2125)', () => {
   /** A request's subject, with the folders it may read opened as the middleware opens them. */
   const request = async (username: string, roles?: string[]): Promise<ActorContext> => {
     const ctx = actor(username, roles);
-    for (const folder of ['default', 'executive']) await permitsInSharedFolder(pdp, ctx, 'shared-folder-read', folder);
+    for (const folder of ['default', 'executive', 'finance']) await permitsInSharedFolder(pdp, ctx, 'shared-folder-read', folder);
     return ctx;
   };
 
   beforeEach(async () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-folder-pages-'));
     pagesDir = path.join(testDir, 'pages');
-    for (const folder of ['default', 'executive']) {
+    for (const folder of ['default', 'executive', 'finance']) {
       keys[folder] = randomBytes(32);
       await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, SHARED_FOLDER_OWNER, folder)));
       await fs.writeJson(storeMetaPath(pagesDir, SHARED_FOLDER_OWNER, folder), { kind: 'shared-folder', encrypt: true });
     }
     setSharedFolderKeySource((folder) => (keys[folder] ? Buffer.from(keys[folder]) : undefined));
-    grants = new Set(['ann:shared/default', 'ann:shared/executive', 'rita:shared/default']);
+    grants = new Set(['ann:shared/default', 'ann:shared/executive', 'ann:shared/finance', 'rita:shared/default']);
     pdp = standIn as never;
 
     const configManager = {
@@ -168,25 +175,56 @@ describe('shared folders hold pages through the page door (#2125)', () => {
     expect((await manager.listVaultPages(await request('rita'), SHARED_FOLDER_OWNER, 'default')).map((p) => p.name)).toEqual([MINUTES]);
   });
 
-  test('an admin reads and finds every folder by the shipped policies, and adds, edits and deletes nothing there', async () => {
+  test('an admin reads, finds, adds, edits and deletes in every folder by the shipped policies (#2095)', async () => {
     await manager.savePage(MINUTES, 'The quince budget was approved.', { uuid: MINUTES_UUID }, await request('ann'));
     await manager.savePage(BOARD, 'The quince merger stays confidential.', { uuid: BOARD_UUID }, await request('ann'));
     pdp = await pdpOver(shipped);
 
-    // No policy names shared/executive for anyone; shared-folder-admin-read covers shared/*.
+    // shared-folder-admin covers shared/*: read and file.
     const ada = await request('ada', ['admin', 'vault-owner']);
     expect((await manager.getPage(BOARD, ada))?.content).toContain('merger');
     expect((await manager.listVaultPages(ada, SHARED_FOLDER_OWNER, 'executive')).map((p) => p.name)).toEqual([BOARD]);
     const hits = await manager.searchSharedFolderPages(ada, ['default', 'executive'], { query: 'quince' });
     expect(hits.map((h) => h.name).sort()).toEqual([BOARD, MINUTES].sort());
-    await expect(manager.savePage(BOARD, 'changed', { uuid: BOARD_UUID }, ada)).rejects.toThrow();
-    await expect(manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'New'), 'new', {}, ada)).rejects.toThrow();
-    await expect(manager.deletePage(BOARD, ada)).rejects.toThrow();
-    expect((await manager.getPage(BOARD, await request('ada', ['admin', 'vault-owner'])))?.content).toContain('merger');
+    await manager.savePage(BOARD, 'The quince merger is announced.', { uuid: BOARD_UUID }, ada);
+    await manager.savePage(LEDGER, 'The quince ledger.', { uuid: LEDGER_UUID }, ada);
+    expect((await manager.getPage(LEDGER, await request('ada', ['admin', 'vault-owner'])))?.content).toContain('ledger');
+    await manager.deletePage(LEDGER, await request('ada', ['admin', 'vault-owner']));
+    expect(await manager.getPage(LEDGER, await request('ada', ['admin', 'vault-owner']))).toBeNull();
+    expect((await manager.getPage(BOARD, await request('ada', ['admin', 'vault-owner'])))?.content).toContain('announced');
 
     // An ordinary account: shared/default (every account), and nothing of shared/executive.
     const rita = await request('rita', ['editor', 'vault-owner']);
     expect(await manager.getPage(BOARD, rita)).toBeNull();
     expect((await manager.searchSharedFolderPages(rita, ['default', 'executive'], { query: 'quince' })).map((h) => h.name)).toEqual([MINUTES]);
+    await expect(manager.savePage(BOARD, 'changed', { uuid: BOARD_UUID }, rita)).rejects.toThrow();
+    await expect(manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'New'), 'new', {}, rita)).rejects.toThrow();
+  });
+
+  test('an executive reads every folder, files in shared/executive, and is refused filing anywhere else (#2095)', async () => {
+    await manager.savePage(BOARD, 'The quince merger stays confidential.', { uuid: BOARD_UUID }, await request('ann'));
+    await manager.savePage(LEDGER, 'The quince ledger.', { uuid: LEDGER_UUID }, await request('ann'));
+    pdp = await pdpOver(shipped);
+    const eve = () => request('eve', ['reader', 'vault-owner', 'executive']);
+
+    // Reads every folder.
+    expect((await manager.getPage(LEDGER, await eve()))?.content).toContain('ledger');
+    expect((await manager.getPage(BOARD, await eve()))?.content).toContain('merger');
+    const hits = await manager.searchSharedFolderPages(await eve(), ['default', 'executive', 'finance'], { query: 'quince' });
+    expect(hits.map((h) => h.name).sort()).toEqual([BOARD, LEDGER].sort());
+
+    // Adds, edits and deletes in shared/executive.
+    const minutes = formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'Board minutes');
+    await manager.savePage(minutes, 'Minutes of the board.', {}, await eve());
+    await manager.savePage(BOARD, 'The quince merger is announced.', { uuid: BOARD_UUID }, await eve());
+    expect((await manager.getPage(BOARD, await eve()))?.content).toContain('announced');
+    await manager.deletePage(minutes, await eve());
+    expect(await manager.getPage(minutes, await eve())).toBeNull();
+
+    // Refused in any other folder it reads: its key is open to the executive, the page door still refuses.
+    await expect(manager.savePage(LEDGER, 'changed', { uuid: LEDGER_UUID }, await eve())).rejects.toThrow();
+    await expect(manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'finance', 'New'), 'new', {}, await eve())).rejects.toThrow();
+    await expect(manager.deletePage(LEDGER, await eve())).rejects.toThrow();
+    expect((await manager.getPage(LEDGER, await eve()))?.content?.trim()).toBe('The quince ledger.');
   });
 });

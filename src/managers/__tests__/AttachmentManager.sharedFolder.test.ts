@@ -44,7 +44,7 @@ describe('an upload from inside a shared folder goes into the folder (#2125)', (
     pagesDir = path.join(tmp, 'pages');
     storageDir = path.join(tmp, 'attachments');
     await fs.ensureDir(storageDir);
-    for (const folder of ['default', 'executive']) {
+    for (const folder of ['default', 'executive', 'finance']) {
       keys[folder] = randomBytes(32);
       await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, SHARED_FOLDER_OWNER, folder)));
       await fs.writeJson(storeMetaPath(pagesDir, SHARED_FOLDER_OWNER, folder), { kind: 'shared-folder', encrypt: true });
@@ -110,9 +110,22 @@ describe('an upload from inside a shared folder goes into the folder (#2125)', (
     expect(await publicFiles()).toEqual([]);
   });
 
-  test('an admin, who reads every folder, is refused: reading is not filing', async () => {
-    await expect(upload(subject('ada', ['admin', 'vault-owner']), 'executive')).rejects.toThrow(/Permission denied/);
-    expect(await folderFiles('executive')).toEqual([]);
+  test('an executive, who reads every folder, is refused in any but executive: reading is not filing (#2095)', async () => {
+    const eve = subject('eve', ['reader', 'vault-owner', 'executive']);
+    await expect(upload(eve, 'finance')).rejects.toThrow(/Permission denied/);
+    expect(await folderFiles('finance')).toEqual([]);
+    expect(await publicFiles()).toEqual([]);
+    // In shared/executive the executive files.
+    expect(idOf(await upload(eve, 'executive'))).toBeTruthy();
+    expect((await folderFiles('executive')).filter((f) => f.endsWith('.txt'))).toHaveLength(1);
+  });
+
+  test('an admin files in every folder (#2095)', async () => {
+    const ada = subject('ada', ['admin', 'vault-owner']);
+    for (const folder of ['executive', 'finance']) {
+      expect(idOf(await upload(ada, folder))).toBeTruthy();
+      expect((await folderFiles(folder)).filter((f) => f.endsWith('.txt'))).toHaveLength(1);
+    }
     expect(await publicFiles()).toEqual([]);
   });
 });
