@@ -510,6 +510,7 @@ audited.
 | `recovery-words-export` | Recovery words still waiting to be confirmed were downloaded as a file or opened to print (#2144): who, which words (the shared folders' or a user's vault key), the set's id and how, never the words. Recorded before the words are sent, which cannot proceed without it | refuse | yes |
 | `shared-folder-key-create` | A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it | refuse | yes |
 | `shared-folder-create` | An administrator created a shared folder (#2125): which folder and who. Recorded before the folder is made, which cannot proceed without it | refuse | yes |
+| `shared-folder-access-change` | An administrator changed who may read and who may file in a shared folder on the Shared folders screen (#2126): which folder, who, and the roles before and after for each. Recorded before the folder's policies are written, which cannot proceed without it | refuse | yes |
 | `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
