@@ -315,7 +315,7 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       const signedInAt = session.signedInAt as number;
       session.signedInAt = signedInAt - 31 * DAY;
 
-      await manager.completeReauth(req, passwordResult, 'password');
+      await manager.completeReauth(req, passwordResult, 'password', '/');
 
       expect(session.signedInAt).toBe(signedInAt - 31 * DAY);
       expect(checkSessionLimits(session, Date.now(), { idleMs: 0, capMs: 30 * DAY }).end).toBe('max-age');

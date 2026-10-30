@@ -59,13 +59,17 @@
     return new Error((body && body.error) || 'Request failed');
   }
 
-  function getJSON(url) {
-    return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
-      return r.json().then(function (body) {
-        if (!r.ok) throw failed(body);
-        return body;
-      });
+  // #2145: an answer that is not JSON (a proxy's error page, a plain-text 500)
+  // is a failure the person is told about, never a parse error or a stall.
+  function readJSON(r) {
+    return r.json().catch(function () { return null; }).then(function (body) {
+      if (!r.ok || !body) throw failed(body || { error: 'The server answered ' + r.status + '. Try again.' });
+      return body;
     });
+  }
+
+  function getJSON(url) {
+    return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(readJSON);
   }
 
   function postJSON(url, body) {
@@ -74,12 +78,7 @@
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body)
-    }).then(function (r) {
-      return r.json().then(function (out) {
-        if (!r.ok) throw failed(out);
-        return out;
-      });
-    });
+    }).then(readJSON);
   }
 
   function showError(el, message) {
@@ -115,6 +114,9 @@
   });
 
   // Step-up (#1525): confirm it is you with a passkey, then return to the page that asked.
+  // #2145: the server names a page to return to (never a file, which would save
+  // and leave this page stalled); anything but its `ok` is shown, and the button
+  // is usable again.
   document.querySelectorAll('[data-passkey-reauth]').forEach(function (button) {
     button.classList.remove('d-none');
     button.addEventListener('click', function () {
@@ -129,7 +131,10 @@
         .then(function (cred) {
           return postJSON('/auth/passkey/reauth/verify', { response: credentialJSON(cred), next: button.dataset.next || '/' });
         })
-        .then(function (out) { window.location.href = out.redirect || '/'; })
+        .then(function (out) {
+          if (!out.ok) throw new Error(out.error || 'That did not work.');
+          window.location.href = out.redirect || '/';
+        })
         .catch(function (err) {
           button.disabled = false;
           showError(errorEl, err && err.name === 'NotAllowedError' ? 'Cancelled.' : (err.message || 'That did not work.'));

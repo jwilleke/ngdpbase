@@ -860,6 +860,7 @@ void (async (): Promise<void> => {
     passkeyRelyingParty?(): unknown;
     subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
     actingForChoices?(req: Request): { grants: unknown[] } | null;
+    takeStepUpNotice?(req: Request): boolean;
   } | null;
   const roleManager = engine.getManager('RoleManager') as {
     roleIdleTimeouts?(): Record<string, number>;
@@ -958,6 +959,8 @@ void (async (): Promise<void> => {
           // enrolled — the person keeps it, and every page says to add one.
           const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
           if (awaiting.length > 0) res.locals.aalEnrolNag = { roles: awaiting };
+          // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
+          if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
           if (stepDown && stepDown.steppedDown.length > 0) {
             res.locals.aalStepDown = {

@@ -6,7 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import { ApiError, sendApiError } from '../ApiContext';
 
-function appRefusing(err: ApiError, mode: 'json' | 'text' | 'page') {
+function appRefusing(err: ApiError, mode: 'json' | 'text' | 'page' | 'download') {
   const app = express();
   app.get('/thing', (_req, res) => sendApiError(res, err, mode));
   return app;
@@ -23,6 +23,12 @@ describe('sendApiError', () => {
     const res = await request(appRefusing(new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fthing'), 'page')).get('/thing');
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/auth/reauth?next=%2Fthing');
+  });
+
+  test('download (#2145): a link to a file is answered as a page, so a step-up refusal redirects too', async () => {
+    const res = await request(appRefusing(new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fadmin%2Fbackup'), 'download')).get('/thing');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/auth/reauth?next=%2Fadmin%2Fbackup');
   });
 
   test('page: a 401 redirects to sign-in, returning to the page', async () => {

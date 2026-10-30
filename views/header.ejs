@@ -635,6 +635,13 @@
                     <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
                 </div>
                 <% } %>
+                <% if (typeof stepUpConfirmed !== 'undefined' && stepUpConfirmed) { %>
+                <%# #2145: back from "Confirm it is you" for a form, a button or a download, which a redirect cannot redo. Once. %>
+                <div class="alert alert-success d-flex align-items-center gap-2 mt-2" role="status" data-step-up-confirmed>
+                    <i class="fas fa-user-check" aria-hidden="true"></i>
+                    <span>Confirmed — you can do it now.</span>
+                </div>
+                <% } %>
                 <% if (typeof aalEnrolNag !== 'undefined' && aalEnrolNag && aalEnrolNag.roles.length > 0) { %>
                 <%# #1690: the role is held at AAL1 only because no passkey is enrolled. Shown on every page,
                     never dismissible, until one is (operator, 2026-10-08). %>
