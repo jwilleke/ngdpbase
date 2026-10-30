@@ -6878,7 +6878,7 @@ ${panes}
    */
   async reauthContinue(req: Request, res: Response): Promise<void> {
     if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'page'))) return;
-    const answer = this.engine.getManager<AuthManager>('AuthManager')?.takeStepUpReplay(req, req.query.replay) ?? null;
+    const answer = await this.engine.getManager<AuthManager>('AuthManager')?.takeStepUpReplay(req, req.query.replay) ?? null;
     res.set('Cache-Control', 'no-store');
     if (!answer) {
       await this.renderError(req, res, 410, 'Nothing to carry on with', 'This confirmation was already used, or it has expired. Go back and try again.');
