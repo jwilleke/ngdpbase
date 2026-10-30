@@ -116,6 +116,92 @@ export function preambleSuspicion(columns: readonly string[]): string | null {
   return looksLikeProse ? only : null;
 }
 
+/** A cell holding HTML markup: a tag or a comment. */
+const HTML_IN_CELL = /<!--[\s\S]*?-->|<\/?[A-Za-z!][^>]*>/g;
+
+/** A cell a spreadsheet would run as a formula (CSV injection): it starts with = + - @, a tab or a CR. */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+/** A plain number, which may start with + or -: data, not a formula. */
+const PLAIN_NUMBER = /^[+-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?%?$/;
+
+/**
+ * Clean CSV text before it is kept as a file (#2149): HTML is taken out of
+ * every cell, and a cell a spreadsheet would run as a formula gets a leading
+ * `'`, so it shows as text (the usual CSV-injection defence). Only the cells
+ * that change are rewritten, quoted; every other byte is kept as it was.
+ * Returns how many cells of each kind were cleaned.
+ */
+export function cleanCsvText(text: string, delimiter = ','): { text: string; html: number; formulas: number } {
+  const delim = delimiter || ',';
+  let html = 0;
+  let formulas = 0;
+  let out = '';
+  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  out += text.slice(0, i);
+  const n = text.length;
+  while (i <= n) {
+    // One field, from i to the next delimiter or line end outside quotes.
+    const start = i;
+    let value = '';
+    if (text[i] === '"') {
+      i++;
+      while (i < n) {
+        if (text[i] === '"') {
+          if (text[i + 1] === '"') { value += '"'; i += 2; continue; }
+          i++;
+          break;
+        }
+        value += text[i++];
+      }
+      // Anything after the closing quote and before the delimiter stays as written.
+      while (i < n && text[i] !== delim && text[i] !== '\n' && text[i] !== '\r') value += text[i++];
+    } else {
+      while (i < n && text[i] !== delim && text[i] !== '\n' && text[i] !== '\r') value += text[i++];
+    }
+    let cleaned = value.replace(HTML_IN_CELL, '');
+    if (cleaned !== value) html++;
+    if (FORMULA_START.test(cleaned) && !PLAIN_NUMBER.test(cleaned.trim())) {
+      cleaned = `'${cleaned}`;
+      formulas++;
+    }
+    out += cleaned === value ? text.slice(start, i) : `"${cleaned.replace(/"/g, '""')}"`;
+    if (i >= n) break;
+    // The separator after the field: a delimiter, CRLF, LF or CR, kept as written.
+    if (text[i] === '\r' && text[i + 1] === '\n') { out += '\r\n'; i += 2; } else { out += text[i]; i++; }
+    if (i === n) break;
+  }
+  return { text: out, html, formulas };
+}
+
+/**
+ * How a CSV is read and written back for cleaning (#2149), so its bytes stay
+ * its own: UTF-16 with a byte-order mark as UTF-16; valid UTF-8 as UTF-8;
+ * anything else (Latin-1, Windows-1252 and the like) one byte to one
+ * character and back, which round-trips every byte exactly. The characters
+ * cleaning looks for (`, " < > = + - @`, tab, line ends) are ASCII, the same
+ * byte in each of these.
+ */
+export function csvEncoding(bytes: Buffer): { text: string; encode: (text: string) => Buffer } {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return { text: bytes.toString('utf16le'), encode: (t) => Buffer.from(t, 'utf16le') };
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    const swapped = Buffer.from(bytes);
+    swapped.subarray(0, swapped.length - (swapped.length % 2)).swap16();
+    return {
+      text: swapped.toString('utf16le'),
+      encode: (t) => { const out = Buffer.from(t, 'utf16le'); return out.swap16(); }
+    };
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    return { text, encode: (t) => Buffer.from(t, 'utf8') };
+  } catch {
+    return { text: bytes.toString('latin1'), encode: (t) => Buffer.from(t, 'latin1') };
+  }
+}
+
 /** Order-independent, content-addressed id for a row with no natural id. */
 function stableRowId(raw: RawRecord): string {
   const s = Object.keys(raw).sort().map(k => `${k}=${String(raw[k])}`).join('\x1f');
@@ -158,5 +244,23 @@ export const csvShim: IceShim = {
       });
     }
     return { items: recordItems(input, rows.map(r => csvRecord(r, opts)), warnings) };
+  },
+
+  // #2149: a CSV kept as a file is cleaned of HTML and formulas in its cells.
+  async clean(input) {
+    const original = input.bytes ?? Buffer.from(input.text ?? '', 'utf8');
+    const tab = input.name.toLowerCase().endsWith('.tsv') || input.mediaType === 'text/tab-separated-values';
+    // #2149: read in the file's own encoding and written back in it, so a byte outside the cells cleaned never changes.
+    const { encode, text: source } = csvEncoding(original);
+    const { text, html, formulas } = cleanCsvText(source, tab ? '\t' : ',');
+    const removed: IceWarning[] = [];
+    if (html) removed.push({ kind: 'csv-html', detail: `removed HTML from ${html} cell${html === 1 ? '' : 's'}` });
+    if (formulas) {
+      removed.push({
+        kind: 'csv-formula',
+        detail: `${formulas} cell${formulas === 1 ? '' : 's'} began with a formula character (= + - @); each now starts with ' so a spreadsheet shows it as text`
+      });
+    }
+    return { bytes: removed.length > 0 ? encode(text) : original, removed };
   }
 };

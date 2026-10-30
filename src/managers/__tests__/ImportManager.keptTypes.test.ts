@@ -120,6 +120,8 @@ describe('ImportManager — the media types a receiver keeps (#2061)', () => {
     jobs = new BackgroundJobManager(engine);
     managers['BackgroundJobManager'] = jobs;
     importManager = new ImportManager(engine);
+    // #2149: FileManager has the engine vet every file it keeps.
+    managers['ImportManager'] = importManager;
     await importManager.initialize();
     importManager.setImportLedger(new MemoryIceLedger());
 

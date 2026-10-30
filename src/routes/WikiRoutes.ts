@@ -204,6 +204,8 @@ import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
 import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
+import { IceVetRefused } from '../ice/vet.js';
+import type FileManager from '../managers/FileManager.js';
 import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
@@ -5710,6 +5712,63 @@ ${panes}
         success: false,
         error: message
       });
+    }
+  }
+
+  /**
+   * GET /files/places — the Upload file dialog's places (#2149): FileManager's
+   * offer for this user (only places they may upload to) and the one
+   * selected at first, where they are working (`path`, `page`). An
+   * affordance: it records nothing and refuses nothing.
+   */
+  async uploadFilePlaces(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const files = this.engine.getManager<FileManager>('FileManager');
+    if (!files) return res.status(503).json({ success: false, error: 'Files are not available right now' });
+    const text = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+    const { places, defaultKey } = await files.uploadPlaces(wikiContext.userContext, {
+      path: text(req.query.path),
+      pageName: text(req.query.page)
+    });
+    return res.json({ success: true, places: places.map(p => ({ key: p.key, label: p.label })), defaultKey });
+  }
+
+  /**
+   * POST /files/upload — the Upload file dialog (#2149). The place is a key
+   * the dialog was offered; FileManager resolves it against the places this
+   * user may write to, so a place they were not offered is refused. `put`
+   * asks the permission, has ICE vet and clean the file, stores the cleaned
+   * copy and records it; the answer says what cleaning removed.
+   */
+  async uploadFile(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    try {
+      const files = this.engine.getManager<FileManager>('FileManager');
+      if (!files) return res.status(503).json({ success: false, error: 'Files are not available right now' });
+      if (!req.file) return res.status(400).json({ success: false, error: 'No file was sent' });
+      const place = await files.placeForKey(wikiContext.userContext, typeof req.body.place === 'string' ? req.body.place : '');
+      if (!place) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
+      const description = typeof req.body.description === 'string' && req.body.description ? req.body.description : req.file.originalname;
+      const stored = await files.put(
+        wikiContext.userContext,
+        place,
+        { bytes: req.file.buffer, info: { originalName: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size } },
+        { description, wikiContext }
+      );
+      return res.json({
+        success: true,
+        attachmentId: stored.identifier,
+        name: typeof stored.name === 'string' ? stored.name : req.file.originalname,
+        url: stored.url,
+        encodingFormat: stored.encodingFormat,
+        cleaned: stored.cleaned ?? []
+      });
+    } catch (err: unknown) {
+      if (err instanceof IceVetRefused) return res.status(422).json({ success: false, error: err.message });
+      const message = getErrorMessage(err) || 'Error uploading file';
+      if (message.startsWith('Permission denied')) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
+      logger.error('Error uploading a file:', err);
+      return res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -18224,6 +18283,19 @@ ${panes}
     app.get('/capture', (req: Request, res: Response) => this.captureForm(req, res));
     app.post('/capture', (req: Request, res: Response) => this.captureSubmit(req, res));
     app.get('/capture/install', (req: Request, res: Response) => this.captureInstall(req, res));
+
+    // #2149: the Upload file dialog — FileManager's places, and its one upload door.
+    app.get('/files/places', (req: Request, res: Response) => void this.uploadFilePlaces(req, res));
+    app.post('/files/upload', (req: Request, res: Response) => {
+      attachmentUpload.single('file')(req, res, (err: unknown) => {
+        if (err) {
+          const tooLarge = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+          res.status(400).json({ success: false, error: tooLarge ? 'The file is larger than this site takes' : 'The file could not be read' });
+          return;
+        }
+        void this.uploadFile(req, res);
+      });
+    });
 
     app.post('/attachments/upload', (req: Request, res: Response) => {
       attachmentUpload.single('file')(req, res, (err: unknown) => {
