@@ -208,7 +208,7 @@ A site adds both in its `app-custom-config.json` (on the instance's data volume,
 
 ### Who can do X here
 
-- On the site: Admin → Roles (`/admin/roles`) lists each role's permissions as the policies grant them, marking a grant that applies only somewhere (a vault, a folder); the policies themselves, with their resources, are `ngdpbase.access.policies` in Admin → Configuration. Find the policies that name the permission, read their resource patterns, then their subjects; the highest-priority match wins.
+- On the site: Admin → Roles (`/admin/roles`) lists each role's permissions as the policies grant them, marking a grant that applies only somewhere (a vault, a folder); the policies themselves, with their resources, are `ngdpbase.access.policies` in Admin → Configuration. Admin → Shared folders (`/admin/shared-folders`) shows, per folder, the roles its own policies give and every other policy that reaches it ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)). Find the policies that name the permission, read their resource patterns, then their subjects; the highest-priority match wins.
 - In code: `PolicyDecisionPoint.usersHolding(action)` lists the accounts holding a permission, and `SharedFolderManager.foldersReadableBy(ctx)` the folders one subject may open. Never compare role names.
 
 ## A closed account holds nothing

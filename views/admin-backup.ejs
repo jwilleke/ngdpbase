@@ -145,7 +145,7 @@
                 <div class="col-auto"><input type="text" name="name" class="form-control form-control-sm" placeholder="<%= sfNames.includes('default') ? 'folder name' : 'default' %>" value="<%= sfNames.includes('default') ? '' : 'default' %>" pattern="[a-z0-9]+(-[a-z0-9]+)*" required aria-label="Folder name"></div>
                 <div class="col-auto"><button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-folder-plus"></i> Make a shared folder</button></div>
             </form>
-            <p class="small text-muted mt-1 mb-0">Administrators can read every folder. A new folder other than <code>default</code> opens to no one else, and is added to by no one, until a policy gives <code>shared-folder-read</code> or <code>shared-folder-file</code> on <code>shared/&lt;name&gt;</code>.</p>
+            <p class="small text-muted mt-1 mb-0">Administrators can read every folder. Who else may read and add to each folder is set on <a href="/admin/shared-folders">Admin → Shared folders</a>.</p>
             <% } %>
         </div>
     </div>
