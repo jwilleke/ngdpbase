@@ -43,6 +43,8 @@ export const AUDIT_EVENT = {
   AUTHORIZATION_DENY: 'authorization-deny',
   /** A full backup written; where it went and who asked */
   BACKUP_CREATE: 'backup-create',
+  /** An administrator downloaded the backup key file from the backup-key page (#2134): who, and the key's fingerprint, never the key. Recorded before the file is made, which cannot proceed without it */
+  BACKUP_KEY_DOWNLOAD: 'backup-key-download',
   /** A restore of a backup's databases started from Admin → Backup: which backup and who asked; recorded before the fresh backup and the staging, which cannot proceed without it (#1723) */
   BACKUP_RESTORE: 'backup-restore',
   /** A staged restore (site or databases-only) put in place at start: which backup, when it was taken, who started the restore and which parts were applied; written into the restored audit log, so the log itself says a restore happened (#1876) */

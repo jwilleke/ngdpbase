@@ -1688,9 +1688,35 @@ class FileSystemProvider extends BasePageProvider {
    * @returns The conflicting field, or null when both are free
    */
   protected findLiveNameConflict(title: string, slug?: string): 'title' | 'slug' | null {
-    if (this.titleIndex.has(String(title).toLowerCase())) return 'title';
-    if (slug && this.slugIndex.has(String(slug).toLowerCase())) return 'slug';
+    if (this.uuidHoldingName('title', String(title))) return 'title';
+    if (slug && this.uuidHoldingName('slug', String(slug))) return 'slug';
     return null;
+  }
+
+  /**
+   * The uuid of the page that holds `name` as its title, or as its slug (#2140).
+   *
+   * This is the store's uniqueness rule, and the one place it is written: a
+   * name is held when it is the same text ignoring case, as the title and
+   * slug indexes fold it. A title is compared with titles and a slug with
+   * slugs. Never plural or fuzzy matching: that is how a link finds a page
+   * (`getPage`), not whether a name is taken, so "Reviews" and "review" are
+   * two names. A vault page's title is matched in its own vault, as
+   * `resolvePageInfo` finds it there.
+   *
+   * @param field - Which name: 'title' or 'slug'
+   * @param name - The title or slug
+   * @param ctx - Who is asking: a sealed vault's index needs its owner's key
+   * @returns The holder's uuid, or null when no page holds it
+   */
+  uuidHoldingName(field: 'title' | 'slug', name: string, ctx?: ActorContext): string | null {
+    if (!name || typeof name !== 'string') return null;
+    if (field === 'title') {
+      const privateName = parsePrivatePageName(name);
+      if (privateName) return this.resolvePrivatePageInfo(privateName, ctx)?.uuid ?? null;
+    }
+    const key = (field === 'title' ? this.titleIndex : this.slugIndex).get(name.toLowerCase());
+    return key ? this.pageCache.get(key)?.uuid ?? null : null;
   }
 
   /**
@@ -1711,12 +1737,8 @@ class FileSystemProvider extends BasePageProvider {
    * @returns {boolean} True if another page already has this title
    */
   titleExistsForDifferentPage(title: string, excludeUuid?: string): boolean {
-    const canonicalKey = this.titleIndex.get(title.toLowerCase());
-    if (!canonicalKey) return false;
-    const existing = this.pageCache.get(canonicalKey);
-    if (!existing) return false;
-    if (excludeUuid && existing.uuid === excludeUuid) return false;
-    return true;
+    const holder = this.uuidHoldingName('title', title);
+    return holder !== null && !(excludeUuid && holder === excludeUuid);
   }
 
   /**

@@ -79,7 +79,7 @@
             <div class="d-flex gap-3 align-items-center flex-wrap mb-3">
                 <% if (counts.uuidMismatch > 0) { %>
                 <span class="badge bg-danger fs-6 px-3 py-2"
-                      title="Page exists at this slug under a different UUID — reconcile required">
+                      title="A different page with the same name already exists on this site">
                     <i class="fas fa-exclamation-triangle me-1"></i> <%= counts.uuidMismatch %> UUID Mismatch
                 </span>
                 <% } %>
@@ -110,11 +110,11 @@
             <div class="d-flex gap-2 flex-wrap">
                 <% if (counts.uuidMismatch > 0) { %>
                 <button class="btn btn-warning" onclick="adoptUuidAll()"
-                        title="Keep NAS page content; rename file to canonical UUID">
+                        title="For every mismatched page: keep the page already here and make it the shipped page">
                     <i class="fas fa-id-card me-1"></i> Adopt UUID for All (<%= counts.uuidMismatch %>)
                 </button>
                 <button class="btn btn-outline-danger" onclick="reconcileAllMismatches()"
-                        title="Overwrite live content with required-pages/ source">
+                        title="For every mismatched page: move the page already here to the trash and add the shipped page">
                     <i class="fas fa-exchange-alt me-1"></i> Replace with Source (<%= counts.uuidMismatch %>)
                 </button>
                 <% } %>
@@ -156,6 +156,11 @@
                     <% if (comparison.length === 0) { %>
                         <div class="p-4 text-muted">No required-pages source files found.</div>
                     <% } else { %>
+                    <% if (counts.uuidMismatch > 0) { %>
+                    <div class="px-3 pt-3">
+                        <%- include('_uuid-mismatch-help', { mismatchHelp: { actions: ['diff', 'adopt', 'replace', 'decline', 'all'] } }) %>
+                    </div>
+                    <% } %>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="pagesTable">
                             <thead class="table-light">
@@ -216,17 +221,17 @@
                                         <% if (page.status === 'uuid-mismatch') { %>
                                         <button class="btn btn-sm btn-outline-info"
                                                 onclick="showDiff('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', '<%= page.liveUuid %>')"
-                                                title="Compare source vs live content">
+                                                title="Compare the shipped page with the page already here">
                                             <i class="fas fa-code-branch"></i> Diff
                                         </button>
                                         <button class="btn btn-sm btn-warning"
                                                 onclick="adoptUuidOne('<%= page.uuid %>', '<%= page.liveUuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
-                                                title="Keep NAS content, rename to canonical UUID">
+                                                title="Keep the page already here and make it this shipped page">
                                             <i class="fas fa-id-card"></i> Adopt UUID
                                         </button>
                                         <button class="btn btn-sm btn-outline-danger"
                                                 onclick="reconcileOne('<%= page.uuid %>', '<%= page.liveUuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
-                                                title="Replace live content with required-pages/ source">
+                                                title="Move the page already here to the trash and add the shipped page">
                                             <i class="fas fa-exchange-alt"></i> Replace
                                         </button>
                                         <button class="btn btn-sm btn-outline-secondary"
@@ -344,6 +349,11 @@
                     <% } %>
                 </div>
                 <div class="card-body p-0">
+                    <% if (addonCounts.uuidMismatch > 0) { %>
+                    <div class="px-3 pt-3">
+                        <%- include('_uuid-mismatch-help', { mismatchHelp: { actions: ['decline'] } }) %>
+                    </div>
+                    <% } %>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="addonPagesTable">
                             <thead class="table-light">

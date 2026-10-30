@@ -34,7 +34,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
-  const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')) };
+  const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')), revealBackupKeyFile: vi.fn().mockResolvedValue({ fingerprint: '0123456789abcdef', text: 'X=1\n' }) };
   const managers: Record<string, unknown> = {
     OidcManager: oidc,
     BackupManager: backup,
@@ -192,6 +192,28 @@ describe('coming back from a fresh sign-in (#2145)', () => {
     await env.r.reauthWithPassword(req(s, { body: { password: 'right', next: '/admin/backup' } }), out);
     expect(out.redirect).toHaveBeenCalledWith('/admin/backup');
     expect(s.stepUpConfirmed).toBe('/admin/backup');
+  });
+});
+
+describe('downloading the backup key file (#2134)', () => {
+  test('a stale session is sent to re-authenticate and the key is never read', async () => {
+    // Sabotage (2026-10-30): asking holdsPermission instead of permitted() turns this red.
+    const { r, backup, audit } = routes(true);
+    const out = res();
+    await r.adminBackupKeyFile(req(session(), { method: 'GET', originalUrl: '/admin/backup/key/file', get: (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup/key' : 'ua') }), out);
+    // #2145: a download returns to the page with the link, not to the file.
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fkey');
+    expect(backup.revealBackupKeyFile).not.toHaveBeenCalled();
+    expect(out.send).not.toHaveBeenCalled();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'config-manage' }));
+  });
+
+  test('a fresh session gets the file', async () => {
+    const { r, backup } = routes(false);
+    const out = { ...res(), setHeader: vi.fn() };
+    await r.adminBackupKeyFile(req(session(), { method: 'GET', originalUrl: '/admin/backup/key/file' }), out);
+    expect(backup.revealBackupKeyFile).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }));
+    expect(out.send).toHaveBeenCalledWith('X=1\n');
   });
 });
 

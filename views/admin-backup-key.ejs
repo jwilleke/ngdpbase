@@ -8,12 +8,16 @@
 
     <div class="alert alert-warning">
         <p class="mb-2"><strong>Copy this key somewhere safe that is not this server</strong>: your password manager, or written on paper and kept somewhere safe. Anyone with the key and a backup file can read that backup.</p>
+        <p class="mb-2" id="backup-key-where">The key is kept only on this server, in its <code>.env</code> file (or its environment). <strong>No backup contains it</strong>, so if this server is lost, the only copies are the ones you saved.</p>
         <p class="mb-0">To restore on a new server, put it in that server's <code>.env</code> as <code>NGDPBASE_BACKUP_KEY</code> <strong>before it first starts</strong> (or replace the key that server made for itself, then restart).</p>
     </div>
 
     <label for="backup-key-value" class="form-label">NGDPBASE_BACKUP_KEY</label>
     <input type="text" class="form-control font-monospace mb-2" id="backup-key-value" value="<%= key %>" readonly autocomplete="off" spellcheck="false">
-    <p class="small text-muted">Fingerprint: <code id="backup-key-fingerprint"><%= fingerprint %></code></p>
+    <p class="small text-muted" id="backup-key-fingerprint-note">Fingerprint: <code id="backup-key-fingerprint"><%= fingerprint %></code> — a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint on Admin → Backup.</p>
+
+    <a class="btn btn-outline-primary btn-sm" id="backup-key-file-download" href="/admin/backup/key/file"><i class="fas fa-file-download"></i> Download key file</a>
+    <p class="small text-muted mt-1 mb-0" id="backup-key-file-note">This file holds only the backup key, with its fingerprint and how to restore with it; keep it off this server, as safe as a password manager.</p>
 
     <form method="POST" action="/admin/backup/key/saved" id="backup-key-confirm" class="mt-4">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
