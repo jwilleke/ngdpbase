@@ -14,6 +14,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
 import PolicyEvaluator from '../PolicyEvaluator';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
@@ -68,7 +69,7 @@ describe('vault files answer to vault-owner (#1539)', () => {
     (evaluator as unknown as { configManager: unknown }).configManager = configManager;
     managers.PolicyEvaluator = evaluator;
     managers.PolicyDecisionPoint = new PolicyDecisionPoint(engine);
-    manager = new AttachmentManager(engine);
+    manager = withFilesDoor(new AttachmentManager(engine));
     const provider = new BasicAttachmentProvider(engine);
     await provider.initialize();
     (manager as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;

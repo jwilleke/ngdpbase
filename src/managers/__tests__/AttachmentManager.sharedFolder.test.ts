@@ -9,7 +9,7 @@
  * is ever saved here: PageManager answers that no page exists.
  *
  * Sabotaged once (then restored): the shared-folder destination in
- * uploadAttachment (removed, so the page owner came from getPrivatePageOwner
+ * uploadAttachment, now FileManager.placeForPageUpload (#2148) (removed, so the page owner came from getPrivatePageOwner
  * alone): all three went red — every upload went to the public pool, let in
  * by site-wide asset-upload.
  */
@@ -22,9 +22,10 @@ import os from 'os';
 import path from 'path';
 import { randomBytes } from 'crypto';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
 import { formatPrivatePageName, SHARED_FOLDER_OWNER, storeMetaPath } from '../../utils/privateStorePath';
-import { setSharedFolderKeySource } from '../../utils/sharedFolderAccess';
+import { permitsInSharedFolder, setSharedFolderKeySource } from '../../utils/sharedFolderAccess';
 import { isSealedBytes } from '../../utils/privateStoreCrypto';
 import { pdpOver } from '../../test-support/policyDecisionPoint';
 import type { ActorContext } from '../../context/ActorContext';
@@ -63,16 +64,23 @@ describe('an upload from inside a shared folder goes into the folder (#2125)', (
         return def;
       }
     };
+    const pdp = await pdpOver(shipped);
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
       AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() },
       // No page is saved: there is no private page owner to find.
       PageManager: { getPrivatePageOwner: () => Promise.resolve(null), listVaultPages: () => Promise.resolve([]) },
       PolicyInformationPoint: { canUserAccessPage: () => Promise.resolve(false) },
-      PolicyDecisionPoint: await pdpOver(shipped)
+      PolicyDecisionPoint: pdp,
+      // #2148: FileManager's door asks the folder's own question (SharedFolderManager.mayInFolder).
+      SharedFolderManager: {
+        folderNames: () => Object.keys(keys),
+        mayInFolder: (ctx: ActorContext, action: string, folder: string) =>
+          Promise.resolve(folder in keys ? permitsInSharedFolder(pdp, ctx, action, folder) : false)
+      }
     };
     const engine = { getManager: (name: string) => managers[name] ?? null } as never;
-    manager = new AttachmentManager(engine);
+    manager = withFilesDoor(new AttachmentManager(engine));
     const provider = new BasicAttachmentProvider(engine);
     await provider.initialize();
     (manager as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;

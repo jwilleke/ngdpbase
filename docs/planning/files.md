@@ -2,7 +2,7 @@
 
 One file layer: every file the site keeps, pages included, owned by one manager, coming in and going out through one doorway, and seen in one browser. Epic [#1851](https://github.com/jwilleke/ngdpbase/issues/1851) (its [decision log](https://github.com/jwilleke/ngdpbase/issues/1851#issuecomment-6236003946) holds the earlier review); upload work [#2135](https://github.com/jwilleke/ngdpbase/issues/2135); import and export [ICE, #1979](https://github.com/jwilleke/ngdpbase/issues/1979) ([ice-planing.md](ice-planing.md)). Terms follow [docs/GLOSSARY.md](../GLOSSARY.md).
 
-Status: design decided (operator, 2026-10-30, brainstorm). Not built. Today FileManager only reads (`list`, `get`, `findByName`); every write goes through `AttachmentManager.uploadAttachment`, which picks the destination from the page being edited ([storage-developer-guide.md](../guides/storage-developer-guide.md#files-one-record-one-door)).
+Status: design decided (operator, 2026-10-30, brainstorm). Step 1 built ([#2148](https://github.com/jwilleke/ngdpbase/issues/2148)): FileManager writes through one door, `put(ctx, place, file)`, into a chosen place (permission per place, sealing, audit), with AttachmentManager as the storage underneath, and `placesWritableBy(ctx)` lists the places a user may write to. Today's callers still upload onto a page (`AttachmentManager.uploadAttachment`), whose place FileManager infers from the page until steps 2 and 3 move them; that call goes through `put` ([storage-developer-guide.md](../guides/storage-developer-guide.md#files-one-record-one-door)). Steps 2 to 4 are not built.
 
 ## Decisions (operator, 2026-10-30)
 

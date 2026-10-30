@@ -53,6 +53,8 @@ import { resolveUploadMime } from '../utils/sniffMime.js';
 import { ATTACHMENT_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { keepAllowsInto } from '../ice/originalKeep.js';
 import type { OriginalKeep } from '../ice/types.js';
+import type FileManager from './FileManager.js';
+import type { FilePlace } from '../types/File.js';
 import { storeKindFromConfig } from '../utils/privateStoreDoor.js';
 import type NotificationManager from './NotificationManager.js';
 
@@ -139,23 +141,25 @@ export interface FileInfo {
   size: number;
 }
 
+/** A file handed to the write door (#2148): its bytes, and what the uploader said about them. */
+export interface PutFile {
+  bytes: Buffer;
+  info: FileInfo;
+}
+
 /**
- * Upload options interface
+ * What else a write carries (#2148). None of it decides where the file goes:
+ * that is the place the caller passed to `FileManager.put`.
  */
-export interface UploadOptions {
+export interface PutOptions {
+  /**
+   * The page that shows the file, recorded as a mention (and on the audit
+   * record of an unsealed place). Never the place: a page only links to a file.
+   */
   pageName?: string;
   description?: string;
   /** WikiContext for the current request — audit IP fallback */
   wikiContext?: import('../context/WikiContext.js').default;
-  /**
-   * Private-store destination (#1396): the upload dialog's checkbox. Decides
-   * only when `pageName` is not a private page — an upload onto a private page
-   * is always private, in that page's author's store (#1398). Absent or false
-   * otherwise keeps the public attachments pool.
-   */
-  private?: boolean;
-  /** Store id when private with no private page; default from ConfigurationManager defaultstoreid */
-  store?: string;
   /**
    * An import's keep at upload (#2061): the `OriginalKeep` the engine handed
    * the receiver's `keepOriginal`, passed on unchanged. Honoured only while
@@ -171,6 +175,24 @@ export interface UploadOptions {
    * record names the file by id only, so it is not recorded there.
    */
   importedFrom?: string;
+}
+
+/**
+ * The page-tied upload's options (#1396, #1398): today's callers name the page
+ * they upload onto and the dialog's Private tick, and FileManager turns that
+ * into a place (`placeForPageUpload`) until #2149/#2150 move them to a place
+ * the user chose.
+ */
+export interface UploadOptions extends PutOptions {
+  /**
+   * Private-store destination (#1396): the upload dialog's checkbox. Decides
+   * only when `pageName` is not a private page — an upload onto a private page
+   * is always private, in that page's author's store (#1398). Absent or false
+   * otherwise keeps the public attachments pool.
+   */
+  private?: boolean;
+  /** Store id when private with no private page; default from ConfigurationManager defaultstoreid */
+  store?: string;
 }
 
 // #1179: the acting methods below take an `ActorContext` — the request's
@@ -638,165 +660,127 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Upload an attachment
+   * Upload a file onto a page: the page-tied path its current callers use
+   * (the editor's upload route, imports, NCM image localization, thumbnails).
    *
-   * @param {Buffer} fileBuffer - File data
-   * @param {FileInfo} fileInfo - { originalName, mimeType, size }
-   * @param {UploadOptions} options - Upload options
-   * @param {string} options.pageName - Page uploaded onto (optional). A private page forces the upload private, into its author's store (#1398)
-   * @param {string} options.description - File description
-   * @param {boolean} options.private - Private-store destination for an upload with no private page (#1396)
-   * @param {string} options.store - Store id when private with no private page; else ConfigurationManager defaultstoreid
+   * #2148: this decides nothing. Where the file goes is FileManager's
+   * (`placeForPageUpload`, kept until #2149/#2150 move these callers to a
+   * place the user chose), and the write is FileManager's one door, `put`,
+   * which asks the permission for that place and then has this manager store
+   * it ({@link storeInPlace}). One write path, not two.
+   *
+   * @param fileBuffer - File data
+   * @param fileInfo - { originalName, mimeType, size }
    * @param ctx - Who is uploading (#1179): the request's subject, or a JobContext for an in-engine caller. Mandatory and positional.
-   * @returns {Promise<AttachmentMetadata>} Attachment metadata
+   * @param options - The page it is uploaded onto, the private tick and store, description, keep, importedFrom
+   * @returns Attachment metadata
    */
   async uploadAttachment(fileBuffer: Buffer, fileInfo: FileInfo, ctx: ActorContext, options: UploadOptions = {}): Promise<AttachmentMetadata> {
+    const files = this.engine.getManager<FileManager>('FileManager');
+    if (!files) {
+      throw new Error('AttachmentManager requires FileManager: every upload goes through its door (#2148)');
+    }
+    const place = await files.placeForPageUpload(ctx, options);
+    return files.put(ctx, place, { bytes: fileBuffer, info: fileInfo }, options);
+  }
+
+  /**
+   * Store a file in `place` (#2148): the storage underneath FileManager's
+   * door. Only `FileManager.put` calls this, after it has asked the
+   * permission for the place; nothing here decides where a file goes or who
+   * may put it there.
+   *
+   * What it does, as the place requires: the type read from the bytes
+   * (#1624); the uploader recorded by identity @id, and nobody uploads
+   * anonymously (#1926, #2097); a vault or shared folder keeps the file in its
+   * own store, sealed when the store is (#1460, #1394); an import's kept
+   * original honoured only in its user's own vault (#2061); and the upload
+   * audited, a sealed store's file by id only (#2048).
+   */
+  async storeInPlace(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<AttachmentMetadata> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
-
+    const fileBuffer = file.bytes;
     // #1624: the type is what the bytes show, not what the browser declared.
     // The allow-list check and the served Content-Type both use this.
-    fileInfo = { ...fileInfo, mimeType: resolveUploadMime(fileBuffer, fileInfo.mimeType) };
-
-    // Destination (#1398): a new upload onto a private page is always private
-    // and belongs to that page's author — the author owns the page and every
-    // attachment uploaded onto it, whoever uploads. With no private page,
-    // options.private === true → the uploader's store; otherwise the public pool.
+    const fileInfo: FileInfo = { ...file.info, mimeType: resolveUploadMime(fileBuffer, file.info.mimeType) };
     const pageName = options.pageName;
-    let isPrivatePage = false;
-    let pageCreator: string | undefined;
-    let pageStore: string | undefined;
-    // #2125 (operator, 2026-10-29): an upload from inside /shared/<name> goes
-    // into that folder, because that is where the user is working, whether or
-    // not the page is saved yet; never the public pool. It is asked
-    // `shared-folder-file` on the folder (`mayInVault` below, before any bytes
-    // are stored), the same answer the page tiers give a folder page.
-    const named = pageName ? parsePrivatePageName(pageName) : null;
-    const inSharedFolder = named !== null && isSharedFolderOwner(named.owner);
-    const pageOwner = inSharedFolder
-      ? { creator: named.owner, store: named.store }
-      : pageName
-        ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
-        : null;
-    // A private container is its owner's: nobody else writes into it unless the
-    // owner delegated. The decision is the page's own — PolicyInformationPoint Tier 0 via
-    // the cross-page check — so the rule has one home and a refusal is recorded
-    // (authorization-deny). Refused before any bytes are stored.
-    if (pageOwner && pageName && !inSharedFolder) {
-      await this.assertMayEditPage(ctx, pageName);
-    }
-    // A share visitor has no container of their own to put a private file in.
-    if (!pageOwner && options.private === true && ctx.viaShare) {
-      throw new Error('Permission denied: a shared link cannot store private files');
-    }
-    // #1539: a private upload is asked with the vault it lands in (below); a
-    // public one, site-wide.
-    if (!(pageOwner || options.private === true) && !(await this.checkPermission('asset-upload', ctx))) {
-      throw new Error('Permission denied: You do not have permission to upload attachments');
-    }
-    if (pageOwner || options.private === true) {
+    // #1926: asked after policy (FileManager.put) and before anything is written.
+    const author = AttachmentManager.uploaderOf(ctx);
+
+    if (place.kind !== 'public') {
+      const owner = place.kind === 'shared-folder' ? SHARED_FOLDER_OWNER : place.owner;
+      const store = place.kind === 'shared-folder' ? place.folder : place.vault;
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      if (!configManager) {
+      // #1394: sealed-store writes need the session DEK. Not a PageManager field.
+      const pagesDirectory = configManager?.getResolvedDataPath?.(
+        'ngdpbase.page.provider.filesystem.storagedir',
+        './data/pages'
+      );
+      if (!configManager || !pagesDirectory) {
         throw new Error('AttachmentManager requires ConfigurationManager');
       }
       const layout = privateStoreLayoutFromConfig((key, fallback) =>
         configManager.getProperty(key, fallback)
       );
-      isPrivatePage = true;
-      pageCreator = pageOwner ? pageOwner.creator : ctx.username;
-      pageStore = pageOwner ? pageOwner.store : (options.store ?? layout.defaultStoreId);
-      if (!(await this.mayInVault(ctx, 'asset-upload', pageCreator, pageStore, 'upload'))) {
-        throw new Error('Permission denied: You do not have permission to upload attachments');
-      }
-      const author = AttachmentManager.uploaderOf(ctx);
       // #2097: the uploader is recorded by identity @id (the username when there is none).
       const authorRef = await this.userReference(author);
-
-      // #1394: sealed-store writes need the session DEK. Not a PageManager field.
-      const pagesDirectory = configManager.getResolvedDataPath?.(
-        'ngdpbase.page.provider.filesystem.storagedir',
-        './data/pages'
-      );
-      if (pagesDirectory) {
-        await assertContextCanWriteStore(ctx, {
-          pagesDirectory,
-          owner: pageCreator,
-          store: pageStore,
-          layout
-        });
-        // #1460: ANY private store keeps its files itself — bytes named
-        // {uuid}.ext in the store's `attachments/` folder, listed in the
-        // store's own index, never in the global metadata. The condition is
-        // "this page is in a private store", not "the store is sealed"
-        // (#1400's gate): encryption decides whether the bytes are ciphertext
-        // at rest, not whether the store owns its own catalogue.
-        //
-        // With a plain store there is no key, so nothing about reading it back
-        // can lean on one: ownership alone decides, through
-        // `mayActInPrivateContainer` / the PIP's container rule, exactly as
-        // the page door decides a private page ({@link ownPrivateStores}).
-        //
-        // Duplicate detection is per store, so a private upload whose bytes
-        // match a PUBLIC attachment lands here rather than returning the
-        // public record.
-        const io = await storeFileIO(ctx, { pagesDirectory, owner: pageCreator, store: pageStore, layout });
-        // #2061: an import keeping an original into the receiver's own vault.
-        const keep = options.keep && keepAllowsInto(options.keep, {
-          uploader: author,
-          owner: pageCreator,
-          vaultAddon: storeKindFromConfig((key, fallback) => configManager.getProperty(key, fallback), pageStore)?.owner ?? null
-        }) ? options.keep : null;
-        const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
-          { owner: pageCreator, store: pageStore, io },
-          fileBuffer,
-          {
-            originalName: fileInfo.originalName,
-            mimeType: fileInfo.mimeType,
-            description: options.description || '',
-            author: authorRef,
-            ...(pageName ? { pageName } : {}),
-            ...(keep ? { keptOriginal: { types: keep.types } } : {})
-          }
-        ));
-        // #1461: a private file is logged by id — never by its filename.
-        logger.info(`📎 Uploaded a file into ${pageCreator}'s private store '${pageStore}' (${entry.id})`);
-        // #2048: an encrypted store's file is recorded by id and store only.
-        await this.recordAttachmentEvent('upload', ctx, io.sealed
-          ? { attachmentId: entry.id, sealedStore: { owner: pageCreator, store: pageStore } }
-          : {
-            attachmentId: entry.id,
-            filename: fileInfo.originalName,
-            pageName: pageName ?? null,
-            sizeBytes: fileInfo.size ?? null,
-            ...(options.importedFrom ? { importedFrom: options.importedFrom } : {})
-          }, options.wikiContext);
-        return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
-      }
+      await assertContextCanWriteStore(ctx, { pagesDirectory, owner, store, layout });
+      // #1460: ANY private store keeps its files itself — bytes named
+      // {uuid}.ext in the store's `attachments/` folder, listed in the
+      // store's own index, never in the global metadata. Encryption decides
+      // whether the bytes are ciphertext at rest, not whether the store owns
+      // its own catalogue. Duplicate detection is per store, so a private
+      // upload whose bytes match a PUBLIC attachment lands here rather than
+      // returning the public record.
+      const io = await storeFileIO(ctx, { pagesDirectory, owner, store, layout });
+      // #2061: an import keeping an original into the receiver's own vault.
+      const keep = options.keep && keepAllowsInto(options.keep, {
+        uploader: author,
+        owner,
+        vaultAddon: storeKindFromConfig((key, fallback) => configManager.getProperty(key, fallback), store)?.owner ?? null
+      }) ? options.keep : null;
+      const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
+        { owner, store, io },
+        fileBuffer,
+        {
+          originalName: fileInfo.originalName,
+          mimeType: fileInfo.mimeType,
+          description: options.description || '',
+          author: authorRef,
+          ...(pageName ? { pageName } : {}),
+          ...(keep ? { keptOriginal: { types: keep.types } } : {})
+        }
+      ));
+      // #1461: a private file is logged by id — never by its filename.
+      logger.info(`📎 Uploaded a file into ${owner}'s private store '${store}' (${entry.id})`);
+      // #2048: an encrypted store's file is recorded by id and store only.
+      await this.recordAttachmentEvent('upload', ctx, io.sealed
+        ? { attachmentId: entry.id, sealedStore: { owner, store } }
+        : {
+          attachmentId: entry.id,
+          filename: fileInfo.originalName,
+          pageName: pageName ?? null,
+          sizeBytes: fileInfo.size ?? null,
+          ...(options.importedFrom ? { importedFrom: options.importedFrom } : {})
+        }, options.wikiContext);
+      return AttachmentManager.storeFileMetadata(entry, owner, store);
     }
 
     // #1926: the uploader is recorded by username, never an email; #2097: by
     // identity @id, the username only when there is none.
-    const uploader = { username: await this.userReference(AttachmentManager.uploaderOf(ctx)) };
-
-    // Create metadata (include privacy flags for provider). Destination is the
-    // page store (#1386); ciphertext of those bytes is later.
-    const metadata: AttachmentMetadataInput & {
-      isPrivatePage?: boolean;
-      pageCreator?: string;
-      store?: string;
-    } = {
+    const uploader = { username: await this.userReference(author) };
+    const metadata: AttachmentMetadataInput & { isPrivatePage?: boolean } = {
       description: options.description || '',
       isFamilyFriendly: true,
-      isPrivatePage,
-      pageCreator,
-      store: isPrivatePage ? pageStore : undefined
+      isPrivatePage: false
     };
 
     // Store attachment via provider
     const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, uploader));
 
-    logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}, store: ${pageStore ?? ''}]` : ''}`);
+    logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})`);
 
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in
@@ -923,8 +907,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return username;
   }
 
-  /** A file is added to a private page only by someone who may edit it: the page's own decision (#1398). */
-  private async assertMayEditPage(ctx: ActorContext, pageName: string): Promise<void> {
+  /**
+   * A file is added to a private page only by someone who may edit it: the
+   * page's own decision (#1398). Asked here by `attachToPage`, and by
+   * FileManager's page-tied upload (#2148).
+   */
+  async assertMayEditPage(ctx: ActorContext, pageName: string): Promise<void> {
     const acl = this.engine.getManager<{
       canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
         }>('PolicyInformationPoint');
@@ -1186,9 +1174,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   /**
    * May `ctx` do `permission` to `what` in `owner`'s vault `store` (#1539)?
    * The container rule, then the capability asked with the vault, so
-   * `vault-owner` decides — the same rule as a vault page.
+   * `vault-owner` decides — the same rule as a vault page. FileManager's
+   * write door asks it for a vault (#2148), so the rule has one home.
    */
-  private mayInVault(ctx: ActorContext, permission: string, owner: string, store: string, what: string): Promise<boolean> {
+  mayInVault(ctx: ActorContext, permission: string, owner: string, store: string, what: string): Promise<boolean> {
     return permitsInVault(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, permission,
       { owner, vault: store, resource: formatPrivatePageName(owner, store, `attachment:${what}`) });
   }

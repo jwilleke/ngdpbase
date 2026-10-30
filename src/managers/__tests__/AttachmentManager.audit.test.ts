@@ -18,6 +18,7 @@
  * for the callers somebody remembered.
  */
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import { jobContextFromSystem } from '../../context/JobContext';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
@@ -43,7 +44,7 @@ function makeEngine(sink: Recorded[], opts: { auditFails?: boolean; noAudit?: bo
 
 /** A manager with a stubbed provider, so only the audit behaviour is under test. */
 function makeManager(engine: never, provider: Record<string, unknown>) {
-  const m = new AttachmentManager(engine);
+  const m = withFilesDoor(new AttachmentManager(engine));
   (m as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
   return m;
 }

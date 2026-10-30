@@ -11,6 +11,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
 import { storeMetaPath, formatPrivatePageName } from '../../utils/privateStorePath';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
@@ -75,7 +76,7 @@ describe('AttachmentManager.listOwnUnusedVaultFiles (#1517)', () => {
     vaultPages = { 'molly/default': [DIARY] };
     clearUnlockedPrivateStores();
     const engine = makeEngine();
-    manager = new AttachmentManager(engine);
+    manager = withFilesDoor(new AttachmentManager(engine));
     const provider = new BasicAttachmentProvider(engine);
     await provider.initialize();
     (manager as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
