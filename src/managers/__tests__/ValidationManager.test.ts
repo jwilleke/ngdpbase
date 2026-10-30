@@ -399,79 +399,71 @@ describe('ValidationManager', () => {
 
   describe('checkConflicts', () => {
     let mockPageManager;
+    const ctx = { username: 'admin' };
 
     beforeEach(() => {
-      mockPageManager = { getPage: vi.fn() };
+      // getPage is the link resolver (plurals, fuzzy); checkConflicts must never ask it (#2140).
+      mockPageManager = { uuidHoldingName: vi.fn().mockReturnValue(null), getPage: vi.fn() };
       mockEngine.getManager.mockReturnValue(mockPageManager);
     });
 
-    test('returns no conflict when page does not exist', async () => {
-      mockPageManager.getPage.mockResolvedValue(null);
+    test('returns no conflict when no page holds the slug or title', async () => {
       const uuid = uuidv4();
 
-      const result = await validationManager.checkConflicts(uuid, 'Test Page', 'test-page');
+      const result = await validationManager.checkConflicts(uuid, 'Test Page', 'test-page', ctx);
 
       expect(result.hasConflict).toBe(false);
       expect(result.conflictType).toBeNull();
+      expect(mockPageManager.uuidHoldingName).toHaveBeenCalledWith('slug', 'test-page', ctx);
+      expect(mockPageManager.uuidHoldingName).toHaveBeenCalledWith('title', 'Test Page', ctx);
+      expect(mockPageManager.getPage).not.toHaveBeenCalled();
     });
 
-    test('detects uuid-mismatch when slug exists under different UUID', async () => {
+    test('detects uuid-mismatch when slug is held under a different UUID', async () => {
       const sourceUuid = uuidv4();
       const liveUuid = uuidv4();
-      mockPageManager.getPage.mockResolvedValue({ uuid: liveUuid });
+      mockPageManager.uuidHoldingName.mockImplementation((field) => (field === 'slug' ? liveUuid : null));
 
-      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', 'test-page');
+      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', 'test-page', ctx);
 
       expect(result.hasConflict).toBe(true);
       expect(result.conflictType).toBe('uuid-mismatch');
       expect(result.conflictingUuid).toBe(liveUuid);
     });
 
-    test('returns no conflict when slug exists under same UUID', async () => {
+    test('returns no conflict when the slug and title are held by the same UUID', async () => {
       const uuid = uuidv4();
-      mockPageManager.getPage.mockResolvedValue({ uuid });
+      mockPageManager.uuidHoldingName.mockReturnValue(uuid);
 
-      const result = await validationManager.checkConflicts(uuid, 'Test Page', 'test-page');
+      const result = await validationManager.checkConflicts(uuid, 'Test Page', 'test-page', ctx);
 
       expect(result.hasConflict).toBe(false);
       expect(result.conflictType).toBeNull();
     });
 
-    test('detects title-duplicate when title exists under different UUID', async () => {
+    test('detects title-duplicate when title is held under a different UUID', async () => {
       const sourceUuid = uuidv4();
       const liveUuid = uuidv4();
-      // slug lookup returns null, title lookup returns conflicting page
-      mockPageManager.getPage
-        .mockResolvedValueOnce(null)       // slug check
-        .mockResolvedValue({ uuid: liveUuid }); // title check
+      mockPageManager.uuidHoldingName.mockImplementation((field) => (field === 'title' ? liveUuid : null));
 
-      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', 'test-page');
+      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', 'test-page', ctx);
 
       expect(result.hasConflict).toBe(true);
       expect(result.conflictType).toBe('title-duplicate');
       expect(result.conflictingUuid).toBe(liveUuid);
     });
 
-    test('treats getPage error as no conflict', async () => {
-      mockPageManager.getPage.mockRejectedValue(new Error('Provider error'));
-      const uuid = uuidv4();
-
-      const result = await validationManager.checkConflicts(uuid, 'Test Page', 'test-page');
-
-      expect(result.hasConflict).toBe(false);
-      expect(result.conflictType).toBeNull();
-    });
-
     test('skips slug check when slug is empty', async () => {
       const sourceUuid = uuidv4();
       const liveUuid = uuidv4();
-      mockPageManager.getPage.mockResolvedValue({ uuid: liveUuid });
+      mockPageManager.uuidHoldingName.mockReturnValue(liveUuid);
 
-      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', '');
+      const result = await validationManager.checkConflicts(sourceUuid, 'Test Page', '', ctx);
 
       // No slug to check, falls through to title check → title-duplicate
       expect(result.hasConflict).toBe(true);
       expect(result.conflictType).toBe('title-duplicate');
+      expect(mockPageManager.uuidHoldingName).not.toHaveBeenCalledWith('slug', expect.anything(), expect.anything());
     });
   });
 

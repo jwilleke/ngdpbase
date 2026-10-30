@@ -2463,6 +2463,13 @@
         "on-failure": "continue"
       }
     },
+    "backup-key-download": {
+      "description": "An administrator downloaded the backup key file from the backup-key page (#2134): who, and the key's fingerprint, never the key. Recorded before the file is made, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "addon-install": {
       "description": "An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830)",
       "grantable": false,

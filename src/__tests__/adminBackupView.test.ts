@@ -129,6 +129,32 @@ describe('#1876 Admin → Backup, the backup key', () => {
   });
 });
 
+describe('#2133 Admin → Backup says where the backup key is, and what the fingerprint is', () => {
+  const key = { set: true, fingerprint: 'abcdef0123456789', saved: false };
+  const envKeys = (holdsBackupKey: boolean) => ({ names: ['NGDPBASE_BACKUP_KEY'], fingerprint: '0123456789abcdef', recorded: true, added: [], removed: [], holdsBackupKey, holdsSharedFoldersKey: false });
+  const where = 'No backup contains it, so if this server is lost, the only copies are the ones you saved. Keep it somewhere safe off this server (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.';
+
+  test('a key in .env: kept only in .env, in no backup; the download includes it', async () => {
+    const doc = await render({ backupKey: key, envKeys: envKeys(true) });
+    expect(text(doc.querySelector('#backup-key-where'))).toBe(`Every backup is encrypted with this site's backup key. The key is kept only on this server, in its .env file. ${where}`);
+    expect(text(doc.querySelector('#backup-key-fingerprint-note'))).toBe('Fingerprint: abcdef0123456789 — a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint here.');
+    expect(text(doc.querySelector('#backup-env-holds-key'))).toBe('This file includes the backup key (the copy of .env inside a backup does not).');
+  });
+
+  test('a key set in the environment: not in .env, and the download does not include it', async () => {
+    const doc = await render({ backupKey: key, envKeys: envKeys(false) });
+    expect(text(doc.querySelector('#backup-key-where'))).toContain('The key is kept only on this server, in its environment (it is not in its .env file). No backup contains it');
+    expect(text(doc.querySelector('#backup-env-holds-key'))).toBe("This file does not include the backup key, because this site's key is set outside it: save the key itself as well.");
+  });
+
+  test('the .env not readable: either place; no claim about the download; none without a key', async () => {
+    const doc = await render({ backupKey: key });
+    expect(text(doc.querySelector('#backup-key-where'))).toContain('in its .env file or its environment. No backup contains it');
+    expect(doc.querySelector('#backup-env-holds-key')).toBeNull();
+    expect((await render({ backupKey: { set: false, fingerprint: null, saved: false }, envKeys: envKeys(false) })).querySelector('#backup-env-holds-key')).toBeNull();
+  });
+});
+
 describe('#1876 the page that shows the backup key', () => {
   test('shows the key to copy, its fingerprint, and the confirmation it is saved', async () => {
     const page = path.join(__dirname, '../../views/admin-backup-key.ejs');
@@ -137,6 +163,9 @@ describe('#1876 the page that shows the backup key', () => {
     expect((doc.querySelector('#backup-key-value') as HTMLInputElement).value).toBe('the-key-to-copy');
     expect(doc.querySelector('#backup-key-confirm input[name=fingerprint]')?.getAttribute('value')).toBe('abcdef0123456789');
     expect(doc.querySelector('#backup-key-confirm')?.getAttribute('action')).toBe('/admin/backup/key/saved');
+    // #2133: where the key is and is not, and what the fingerprint is.
+    expect(text(doc.querySelector('#backup-key-where'))).toBe('The key is kept only on this server, in its .env file (or its environment). No backup contains it, so if this server is lost, the only copies are the ones you saved.');
+    expect(text(doc.querySelector('#backup-key-fingerprint-note'))).toBe('Fingerprint: abcdef0123456789 — a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint on Admin → Backup.');
   });
 });
 

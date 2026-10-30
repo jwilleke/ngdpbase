@@ -1,0 +1,20 @@
+<%# #2138 — when a job last ran, one line under its button on the /admin
+    dashboard: the newest run that ended (BackgroundJobManager.lastFinishedRun),
+    when it ended, who asked, and completed or failed; "never" when there is
+    none, or "not run since the server started" for a job whose history is in
+    memory only. Times go out as <time datetime data-local-time> with the UTC
+    text as the fallback; /js/local-time.js shows them in the viewer's own
+    zone. The dashboard's script fills the same parts when a run it started
+    ends (updateLastRun in admin-dashboard.ejs).
+    Locals: jobId, label, entry (JobLastRun, or null when the job is not registered). %>
+<% if (entry) { %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+  const run = entry.lastRun;
+%>
+<div class="small text-muted" data-job-last-run="<%= jobId %>">
+    <%= label %>:
+    <span data-part="never"<%= run ? ' hidden' : '' %>><em><%= entry.sinceStart ? 'not run since the server started' : 'never' %></em></span>
+    <span data-part="run"<%= run ? '' : ' hidden' %>><time datetime="<%= run ? run.completedAt : '' %>" data-local-time><%= run ? utc(run.completedAt) : '' %></time><span data-part="who"><%= run ? (run.ranBy ? ' by ' + run.ranBy : '') : '' %></span>, <span data-part="status" class="<%= run && run.status === 'failed' ? 'text-danger' : 'text-success' %>"><%= run ? run.status : '' %></span></span>
+</div>
+<% } %>

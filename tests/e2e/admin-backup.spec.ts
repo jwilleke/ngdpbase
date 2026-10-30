@@ -73,6 +73,10 @@ test.describe('Admin Backup', () => {
     await page.goto('/admin/backup');
     const fingerprint = (await page.locator('#backup-key-card #backup-key-fingerprint').textContent())?.trim() ?? '';
     expect(fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    // #2133: where the key is and is not, and what the fingerprint is.
+    await expect(page.locator('#backup-key-card #backup-key-where')).toContainText('The key is kept only on this server');
+    await expect(page.locator('#backup-key-card #backup-key-where')).toContainText('No backup contains it, so if this server is lost, the only copies are the ones you saved.');
+    await expect(page.locator('#backup-key-card #backup-key-fingerprint-note')).toContainText('a short check, not the key');
     // Saved or not, the card links nowhere else for the key; the key page is the one place it is shown.
     const response = await page.request.get('/admin/backup/key');
     expect(response.status()).toBe(200);
@@ -80,6 +84,8 @@ test.describe('Admin Backup', () => {
     await page.goto('/admin/backup/key');
     await expect(page.locator('#backup-key-value')).not.toHaveValue('');
     await expect(page.locator('#backup-key-fingerprint')).toHaveText(fingerprint);
+    await expect(page.locator('#backup-key-where')).toContainText('No backup contains it');
+    await expect(page.locator('#backup-key-fingerprint-note')).toContainText('A site you restore to should show the same fingerprint');
     await expect(page.locator('#backup-key-confirm input[name="fingerprint"]')).toHaveValue(fingerprint);
     // (Confirming is left to the admin: it records a setting.)
   });
@@ -102,6 +108,10 @@ test.describe('Admin Backup', () => {
     const local = process.env.FAST_STORAGE ? path.join(process.env.FAST_STORAGE, '.env') : '';
     if (local && fs.existsSync(local)) expect(body.equals(fs.readFileSync(local))).toBe(true);
     else expect(body.toString('utf8')).toMatch(/^NGDPBASE_[A-Z_]+=/m);
+    // #2133: the card says whether the file includes the backup key, and it does when it says so.
+    const holds = page.locator('#backup-key-card #backup-env-holds-key');
+    if ((await holds.textContent())?.includes('This file includes the backup key')) expect(body.toString('utf8')).toMatch(/^NGDPBASE_BACKUP_KEY=/m);
+    else await expect(holds).toContainText('This file does not include the backup key');
   });
 
   test('the whole-site restore is on every instance, says what it puts back and what it needs, and waits for the site name (#1945)', async ({ page }) => {

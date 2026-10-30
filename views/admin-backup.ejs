@@ -36,8 +36,9 @@
                 This site has <strong>no backup key</strong> (<code>NGDPBASE_BACKUP_KEY</code>). Backups are not encrypted, and they leave out the sign-in credentials (passkeys, authenticator apps), the databases and the <code>.env</code> keys. Restart the site to have one made.
             </div>
             <% } else { %>
-            <p>Every backup is encrypted with this site's backup key. It is the <strong>one thing to keep safe off this server</strong> (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.</p>
-            <p class="mb-2">Fingerprint: <code id="backup-key-fingerprint"><%= backupKey.fingerprint %></code> <span class="text-muted small">— check that the copy you keep has this fingerprint on Admin → Backup of any site you restore to.</span></p>
+            <% const keyEnv = locals.envKeys || null; %>
+            <p id="backup-key-where">Every backup is encrypted with this site's backup key. The key is kept only on this server, <% if (!keyEnv) { %>in its <code>.env</code> file or its environment<% } else if (keyEnv.holdsBackupKey) { %>in its <code>.env</code> file<% } else { %>in its environment (it is not in its <code>.env</code> file)<% } %>. <strong>No backup contains it</strong>, so if this server is lost, the only copies are the ones you saved. Keep it somewhere safe off this server (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.</p>
+            <p class="mb-2" id="backup-key-fingerprint-note">Fingerprint: <code id="backup-key-fingerprint"><%= backupKey.fingerprint %></code> <span class="text-muted small">— a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint here.</span></p>
             <% if (backupKey.saved) { %>
             <p class="text-success mb-0" id="backup-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed this key is saved off the server.</p>
             <% } else { %>
@@ -49,7 +50,7 @@
             <% } %>
             <hr>
             <div id="backup-env">
-                <p class="mb-2">You can also download a copy of the site's <code>.env</code> file, the backup key included.</p>
+                <p class="mb-2">You can also download a copy of the site's <code>.env</code> file.<% if (backupKey.set && locals.envKeys) { %> <span id="backup-env-holds-key"><% if (locals.envKeys.holdsBackupKey) { %>This file includes the backup key (the copy of <code>.env</code> inside a backup does not).<% } else { %>This file does not include the backup key, because this site's key is set outside it: save the key itself as well.<% } %></span><% } %></p>
                 <div class="alert alert-warning mb-2" id="backup-env-warning">
                     <i class="fas fa-exclamation-triangle"></i> This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.
                 </div>

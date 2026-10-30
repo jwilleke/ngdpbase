@@ -1,0 +1,32 @@
+<%#
+  What a UUID Mismatch is and what each of its buttons does, in the admin's
+  words (#2140). Drawn above a table that has a mismatched row, listing only
+  the buttons that table offers.
+
+  locals: mismatchHelp, one object (an include also sees its parent's data),
+  with:
+    actions  which buttons to explain, in order: any of 'diff', 'adopt',
+             'replace', 'decline', 'all'
+%>
+<div class="alert alert-light border small mb-3" data-testid="uuid-mismatch-help">
+    <p class="mb-2">
+        <span class="badge bg-danger">UUID Mismatch</span>
+        A different page with the same name already exists on this site. Its title or slug is the same as the shipped
+        page's, so the shipped page can't be added next to it. Choose what to do with each one:
+    </p>
+    <ul class="mb-0">
+        <% mismatchHelp.actions.forEach((action) => { %>
+        <% if (action === 'diff') { %>
+        <li data-help="diff"><strong>Diff</strong> shows the shipped page and the page already here side by side. It changes nothing.</li>
+        <% } else if (action === 'adopt') { %>
+        <li data-help="adopt"><strong>Adopt UUID</strong> keeps the page already here, with its text and history, and makes it this shipped page from now on, so later updates are offered for it. Use it only when the page here really is this page, such as an older copy.</li>
+        <% } else if (action === 'replace') { %>
+        <li data-help="replace"><strong>Replace</strong> moves the page already here to the trash and adds the shipped page in its place.</li>
+        <% } else if (action === 'decline') { %>
+        <li data-help="decline"><strong>Don't Seed Here</strong> keeps the page already here, unchanged, and stops offering the shipped page on this site. You can undo it under Not Seeded Here.</li>
+        <% } else if (action === 'all') { %>
+        <li data-help="all"><strong>Adopt UUID for All</strong> and <strong>Replace with Source</strong> do Adopt UUID, or Replace, for every mismatched page at once.</li>
+        <% } %>
+        <% }) %>
+    </ul>
+</div>

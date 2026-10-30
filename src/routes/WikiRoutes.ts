@@ -181,7 +181,7 @@ import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult, AuthAttempt } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
-import { JobActionError } from '../managers/BackgroundJobManager.js';
+import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
 import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
@@ -12462,6 +12462,17 @@ ${panes}
         logger.warn('[adminDashboard] Backup health could not be read:', backupErr);
       }
 
+      // #2138: when each Reindex and Rebuild last ran, under the Page and Media Management buttons.
+      const jobLastRuns: Record<string, JobLastRun | null> = {};
+      try {
+        const jobManager = this.engine.getManager('BackgroundJobManager');
+        for (const jobId of ['pages.reindex', 'pages.rebuild', 'media.rescan', 'media.rebuild', 'media.folder-scan']) {
+          jobLastRuns[jobId] = await jobManager.lastFinishedRun(jobId);
+        }
+      } catch (jobErr) {
+        logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
+      }
+
       const degraded = (this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
       }).getDegradedManagers?.() ?? [];
@@ -12514,6 +12525,7 @@ ${panes}
         attentionManagers: degraded.filter((m) => m.kind === 'attention'),
         backupHealth,
         formatBytes,
+        jobLastRuns,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
@@ -13173,13 +13185,38 @@ ${panes}
       if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
       const content = await backupManager.revealInstanceEnv(wikiContext.userContext);
       if (!content) return res.redirect('/admin/backup?error=' + encodeURIComponent('This site has no .env file to download.'));
-      const stem = this.siteName().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'ngdpbase';
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${stem}.env"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${this.siteFileStem()}.env"`);
       return res.send(content);
     } catch (err: unknown) {
       logger.error('Error sending the instance .env:', getErrorMessage(err));
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /admin/backup/key/file — the backup key alone, as a small text file
+   * named `<site>-backup-key-<fingerprint>.txt`, for an admin to keep off the
+   * server without the rest of `.env` (#2134). The same door as the key page
+   * and Download .env: `config-manage`, with its fresh sign-in (step-up);
+   * never cached; recorded by BackupManager as `backup-key-download` before
+   * the file is made; never logged; no copy kept on the server.
+   */
+  async adminBackupKeyFile(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const backupManager = this.engine.getManager<BackupManager>('BackupManager');
+      if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
+      const file = await backupManager.revealBackupKeyFile(wikiContext.userContext);
+      if (!file) return await this.renderError(req, res, 404, 'No backup key', 'This site has no backup key. Restart the site to have one made.');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${this.siteFileStem()}-backup-key-${file.fingerprint}.txt"`);
+      return res.send(file.text);
+    } catch (err: unknown) {
+      logger.error('Error sending the backup key file:', getErrorMessage(err));
       return res.status(500).send('Internal server error');
     }
   }
@@ -13472,6 +13509,11 @@ ${panes}
   private siteName(): string {
     const name = this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.application-name', '');
     return typeof name === 'string' ? name : '';
+  }
+
+  /** The site name as a download's file name starts (#1938, #2134): safe characters only, `ngdpbase` when there is none. */
+  private siteFileStem(): string {
+    return this.siteName().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'ngdpbase';
   }
 
   /** Stream one stored backup as a .tar (#1723 D2): never built in memory. */
@@ -18065,6 +18107,7 @@ ${panes}
     app.post('/admin/backup/restore/cancel', (req: Request, res: Response) => void this.adminBackupRestoreCancel(req, res));
     app.get('/admin/backup/key', (req: Request, res: Response) => void this.adminBackupKey(req, res));
     app.get('/admin/backup/env', (req: Request, res: Response) => void this.adminBackupEnv(req, res));
+    app.get('/admin/backup/key/file', (req: Request, res: Response) => void this.adminBackupKeyFile(req, res));
     app.post('/admin/backup/key/saved', (req: Request, res: Response) => void this.adminBackupKeySaved(req, res));
     app.post('/admin/backup/shared-folders/words', (req: Request, res: Response) => void this.adminSharedFoldersWords(req, res));
     app.post('/admin/backup/shared-folders/words/new', (req: Request, res: Response) => void this.adminSharedFoldersNewWords(req, res));

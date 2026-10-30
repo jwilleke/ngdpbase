@@ -1093,8 +1093,11 @@ class ValidationManager extends BaseManager {
   /**
    * Check for conflicts with existing pages (duplicate title, slug, or UUID mismatch).
    *
-   * Used when saving a new page or comparing required-pages sources against live pages.
-   * Checks slug first (most precise), then title.
+   * Used when saving a page and when comparing shipped pages (required pages,
+   * add-on pages) against live pages. Checks slug first (most precise), then
+   * title. A name clashes only when another page holds exactly that title or
+   * slug (`PageManager.uuidHoldingName`), never by the plural or fuzzy
+   * matching a link uses (#2140).
    *
    * @async
    * @param {string} uuid - The UUID of the page being checked
@@ -1104,39 +1107,28 @@ class ValidationManager extends BaseManager {
    */
   async checkConflicts(uuid: string, title: string, slug: string, ctx: ActorContext): Promise<ConflictCheckResult> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) return { hasConflict: false, conflictType: null };
 
     // Check slug conflict first — most specific identifier
-    if (slug && pageManager) {
-      try {
-        const existing = await pageManager.getPage(slug, ctx);
-        if (existing && existing.uuid && existing.uuid !== uuid) {
-          return {
-            hasConflict: true,
-            conflictType: 'uuid-mismatch',
-            conflictingUuid: existing.uuid,
-            message: `A page with slug '${slug}' already exists under UUID ${existing.uuid}`
-          };
-        }
-      } catch {
-        // treat as no conflict
-      }
+    const slugHolder = slug ? pageManager.uuidHoldingName('slug', slug, ctx) : null;
+    if (slugHolder && slugHolder !== uuid) {
+      return {
+        hasConflict: true,
+        conflictType: 'uuid-mismatch',
+        conflictingUuid: slugHolder,
+        message: `A page with slug '${slug}' already exists under UUID ${slugHolder}`
+      };
     }
 
     // Check title conflict
-    if (title && pageManager) {
-      try {
-        const existing = await pageManager.getPage(title, ctx);
-        if (existing && existing.uuid && existing.uuid !== uuid) {
-          return {
-            hasConflict: true,
-            conflictType: 'title-duplicate',
-            conflictingUuid: existing.uuid,
-            message: `A page with title '${title}' already exists under UUID ${existing.uuid}`
-          };
-        }
-      } catch {
-        // treat as no conflict
-      }
+    const titleHolder = title ? pageManager.uuidHoldingName('title', title, ctx) : null;
+    if (titleHolder && titleHolder !== uuid) {
+      return {
+        hasConflict: true,
+        conflictType: 'title-duplicate',
+        conflictingUuid: titleHolder,
+        message: `A page with title '${title}' already exists under UUID ${titleHolder}`
+      };
     }
 
     return { hasConflict: false, conflictType: null };
