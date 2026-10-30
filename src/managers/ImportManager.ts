@@ -74,9 +74,13 @@ import { boundScope, convertChain, isConfidentialReceiver, keepOriginalsAtUpload
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
+import { IceExportFailed, checkExportSize, exportChains, runExportChain, type IceExportSettings } from '../ice/runExport.js';
+import { exportShims } from '../ice/shims/export.js';
+import { PdfUnavailableError } from '../export/pdfEngine.js';
+import type ExportManager from './ExportManager.js';
 import type {
-  IceFileReport, IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, IceTarget, IceUpload, IceVetResult, OriginalChoice, ReceiveInfo,
-  ReceiveOutcome, RecentImport, RegisteredReceiver, RegisteredShim, ShimTools
+  IceExportFormat, IceExportReport, IceExportRequest, IceExportSource, IceFileReport, IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim,
+  IceTarget, IceUpload, IceVetResult, OriginalChoice, ReceiveInfo, ReceiveOutcome, RecentImport, RegisteredExportSource, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../ice/types.js';
 import { pageUrl } from '../utils/pageUrl.js';
 
@@ -312,6 +316,18 @@ export class ImportUploadRefused extends Error {
 }
 
 /** One page's outcome in a takeout import (#1472). */
+/**
+ * An export that is not started (#2120): the thing is not there, the user may
+ * not export it, or the format is not one offered for it. A route answers it
+ * as "not found", so it never tells the user which.
+ */
+export class IceExportRefused extends Error {
+  constructor(message = 'Nothing to export here.') {
+    super(message);
+    this.name = 'IceExportRefused';
+  }
+}
+
 export type TakeoutPageOutcome =
   | { title: string; outcome: 'imported'; importedAs: string }
   | { title: string; outcome: 'unchanged' }
@@ -350,6 +366,12 @@ const DEFAULT_NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._
 
 /** D11's three choices, in the order the import screen offers them. */
 const ORIGINAL_CHOICES: readonly OriginalChoice[] = ['none', 'cite', 'keep'];
+
+/** What an export run reads from configuration (#2120): the engine's limits, and how long a made file is kept. */
+interface ExportRunSettings extends IceExportSettings {
+  keepMinutes: number;
+  maxHeldBytes: number;
+}
 
 /** A receiver the import screen may offer this user (#2021): its id, label and original-file choices (D11). */
 export interface UsableReceiver {
@@ -402,13 +424,17 @@ class ImportManager extends BaseManager {
   private readonly receiverRegistry = new Map<string, RegisteredReceiver>();
   /** ICE: runs this process knows about, oldest first. */
   private readonly iceRuns = new Map<string, IceRunReport>();
-  /** ICE: runs waiting for the background job, each with its own context. */
-  private readonly iceQueue: Array<{ request: IceRunRequest; ctx: JobContext; report: IceRunReport }> = [];
+  /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
+  private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
   private iceDraining = false;
   /** ICE: the last background run id the queue was handed to. */
   private iceLastJobRunId: string | null = null;
   private iceLedger: IceLedger | null = null;
+  /** ICE export (#2120): the owners' doors for reading what is exported, by id. */
+  private readonly exportSourceRegistry = new Map<string, RegisteredExportSource>();
+  /** ICE export: runs this process holds, oldest first, each with its file once made. Never written to disk. */
+  private readonly exportRuns = new Map<string, { report: IceExportReport; file?: Buffer; timer?: NodeJS.Timeout }>();
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -440,6 +466,20 @@ class ImportManager extends BaseManager {
     for (const shim of VETTING_SHIMS) this.registerShim('core', shim);
     // #2118: reads a takeout for the private-store receiver.
     this.registerShim('core', takeoutShim);
+
+    // #2120: export starts from the thing being exported. Pages first; core's
+    // out shims make NCM, HTML, Markdown and PDF (#1974) from them.
+    this.registerExportSource('core', this.pagesExportSource());
+    for (const shim of exportShims({
+      renderDocument: (item) => this.exportManager().renderPageDocument(typeof item.metadata?.['title'] === 'string' ? item.metadata['title'] : item.name, {
+        content: item.text ?? '',
+        ...(typeof item.metadata?.['lastModified'] === 'string' ? { lastModified: item.metadata['lastModified'] } : {}),
+        ...(typeof item.metadata?.['system-category'] === 'string' ? { 'system-category': item.metadata['system-category'] } : {}),
+        ...(Array.isArray(item.metadata?.['user-keywords']) ? { 'user-keywords': (item.metadata['user-keywords'] as unknown[]).map(String) } : {})
+      }),
+      htmlToPdf: (ctx, html) => this.exportManager().htmlToPdf(ctx, html),
+      pdfAvailable: () => this.engine.getManager<ExportManager>('ExportManager')?.isPdfConfigured() ?? false
+    })) this.registerShim('core', shim);
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
   }
@@ -708,7 +748,7 @@ class ImportManager extends BaseManager {
 
   private async enqueueResolved(request: IceRunRequest, ctx: JobContext, scope: string): Promise<string> {
     const report = this.newRunReport(request, ctx, scope);
-    this.iceQueue.push({ request, ctx, report });
+    this.iceQueue.push({ ctx, run: () => this.executeRun(request, ctx, report) });
     await this.kickIceQueue(ctx);
     return report.runId;
   }
@@ -789,6 +829,169 @@ class ImportManager extends BaseManager {
   /** Use this ledger instead of the file one: a test's, or a database table's. */
   setImportLedger(ledger: IceLedger): void {
     this.iceLedger = ledger;
+  }
+
+  // ── ICE: export (#2120) ──────────────────────────────────────────────────
+
+  /**
+   * Register an export source (#2120): the owner's door for reading what is
+   * exported, checking its existing read permission (D5). Core's is
+   * `core.pages`.
+   *
+   * @returns The source's id, `<owner>.<name>`
+   * @throws Error when the source is malformed or its id is taken
+   */
+  registerExportSource(owner: string, source: IceExportSource): string {
+    const id = `${owner}.${source?.name}`;
+    if (!source || !ICE_NAME.test(source.name)) throw new Error(`ICE export source '${id}': a name is lower-case letters, numbers and dashes`);
+    if (this.exportSourceRegistry.has(id)) throw new Error(`ICE export source '${id}' is already registered`);
+    if (!source.yields || typeof source.mayExport !== 'function' || typeof source.read !== 'function') {
+      throw new Error(`ICE export source '${id}': declare yields, mayExport() and read()`);
+    }
+    this.exportSourceRegistry.set(id, { ...source, id, owner });
+    return id;
+  }
+
+  /**
+   * The formats the Export action offers this context for one thing (#2120):
+   * none when the source's owner would not let it export the thing (asked
+   * as an affordance, recording nothing), else each `out` shim, switched on,
+   * that can make a file from what the source yields.
+   */
+  async exportFormatsFor(sourceId: string, ref: string, ctx: ActorContext): Promise<IceExportFormat[]> {
+    const source = this.exportSourceRegistry.get(sourceId);
+    if (!source || !ctx?.username) return [];
+    if (!await source.mayExport(ref, ctx).catch(() => false)) return [];
+    return [...this.exportChainsFor(source)].map(([id, chain]) => ({
+      id, label: chain[chain.length - 1].label ?? id, chain: chain.map(s => s.id)
+    }));
+  }
+
+  /**
+   * Start an export (#2120), from the request that asked: the source reads
+   * the thing now, with the request's own context, so its owner's door
+   * decides with everything the request carries (step-up, a vault's key)
+   * and records the export. The shims run off the request path, in the ICE
+   * background job, as the user's own job context. Returns the run id at once.
+   *
+   * @throws IceExportRefused when the thing is not there, the user may not
+   *   export it, or the format is not one offered for it
+   * @throws IceExportFailed when the thing is larger than this site exports
+   */
+  async startExport(request: IceExportRequest, ctx: ActorContext): Promise<string> {
+    if (!ctx?.username) throw new Error('ImportManager.startExport requires an ActorContext');
+    const source = this.exportSourceRegistry.get(request.source);
+    if (!source) throw new IceExportRefused();
+    const chain = this.exportChainsFor(source).get(request.format);
+    if (!chain) throw new IceExportRefused('That format is not offered here.');
+    const items = await source.read(request.ref, ctx, { format: request.format });
+    if (!items || items.length === 0) throw new IceExportRefused();
+    const settings = this.exportSettings();
+    checkExportSize(items, settings.maxBytes);
+
+    const jobCtx = jobContextFromRequest(ctx);
+    const report: IceExportReport = {
+      runId: uuidv4(), source: source.id, ref: request.ref, format: request.format, chain: chain.map(s => s.id),
+      username: ctx.username, state: 'queued'
+    };
+    this.holdExportRun(report);
+    this.iceQueue.push({ ctx: jobCtx, run: () => this.executeExport(report, items, chain, jobCtx, settings) });
+    await this.kickIceQueue(jobCtx);
+    return report.runId;
+  }
+
+  /** An export's status, to the user it runs as; null to anyone else, and once it is let go. */
+  getExportRun(runId: string, ctx: ActorContext): IceExportReport | null {
+    const held = this.exportRuns.get(runId);
+    return held && ctx?.username && held.report.username === ctx.username ? held.report : null;
+  }
+
+  /** An export's file, to the user it runs as, while it is kept; null otherwise. */
+  exportFile(runId: string, ctx: ActorContext): { name: string; mediaType: string; bytes: Buffer } | null {
+    const held = this.exportRuns.get(runId);
+    if (!held?.file || !held.report.file || !ctx?.username || held.report.username !== ctx.username) return null;
+    return { name: held.report.file.name, mediaType: held.report.file.mediaType, bytes: held.file };
+  }
+
+  /** The source's formats now: the enabled out shims' chains from what it yields. */
+  private exportChainsFor(source: RegisteredExportSource): Map<string, RegisteredShim[]> {
+    return exportChains(this.enabledShims(), source.yields, this.exportSettings().maxChainDepth);
+  }
+
+  private async executeExport(report: IceExportReport, items: IceItem[], chain: RegisteredShim[], ctx: JobContext, settings: ExportRunSettings): Promise<void> {
+    report.state = 'running';
+    report.startedAt = new Date().toISOString();
+    try {
+      const file = await runExportChain(items, chain, (shim) => ({ ...this.shimTools(shim), ctx }), settings);
+      const bytes = file.bytes ?? Buffer.alloc(0);
+      report.file = { name: path.basename(file.name), mediaType: file.mediaType ?? 'application/octet-stream', size: bytes.length };
+      report.expiresAt = new Date(Date.now() + settings.keepMinutes * 60_000).toISOString();
+      report.state = 'done';
+      this.keepExportFile(report.runId, bytes, settings);
+    } catch (err) {
+      report.state = 'failed';
+      // What the user is shown: our own reasons as they are, anything else in general terms.
+      report.error = err instanceof IceExportFailed ? err.message
+        : err instanceof PdfUnavailableError ? 'PDF export is not available on this site right now.'
+          : 'The export could not be made.';
+      // What is exported may be private: the log gives the run and the error's class, never its message.
+      logger.error(`[ImportManager] export run ${report.runId} (${report.format}) failed (${errorClassOf(err)})`);
+    } finally {
+      report.finishedAt = new Date().toISOString();
+    }
+  }
+
+  /** Hold a new run, letting the oldest go beyond `ngdpbase.export.engine.max-kept-runs`. */
+  private holdExportRun(report: IceExportReport): void {
+    this.exportRuns.set(report.runId, { report });
+    const keep = this.numberSetting('ngdpbase.export.engine.max-kept-runs', 100);
+    for (const oldest of [...this.exportRuns.keys()]) {
+      if (this.exportRuns.size <= keep) break;
+      this.dropExportRun(oldest);
+    }
+  }
+
+  /**
+   * Keep a made file in memory until `keep-minutes` have passed, never on
+   * disk: an export of a sealed vault's page must not rest unencrypted. The
+   * oldest files are let go first when all of them would hold more than
+   * `ngdpbase.export.engine.max-held-bytes`.
+   */
+  private keepExportFile(runId: string, bytes: Buffer, settings: ExportRunSettings): void {
+    const held = this.exportRuns.get(runId);
+    if (!held) return;
+    held.file = bytes;
+    held.timer = setTimeout(() => this.dropExportRun(runId), settings.keepMinutes * 60_000);
+    held.timer.unref();
+    let total = [...this.exportRuns.values()].reduce((sum, r) => sum + (r.file?.length ?? 0), 0);
+    for (const [id, run] of this.exportRuns) {
+      if (total <= settings.maxHeldBytes || id === runId) break;
+      if (!run.file) continue;
+      total -= run.file.length;
+      this.dropExportRun(id);
+    }
+  }
+
+  private dropExportRun(runId: string): void {
+    const held = this.exportRuns.get(runId);
+    if (held?.timer) clearTimeout(held.timer);
+    this.exportRuns.delete(runId);
+  }
+
+  /** `ngdpbase.export.engine.*`: every limit an export applies is configuration (the chain's length is import's). */
+  private exportSettings(): ExportRunSettings {
+    return {
+      maxBytes: this.numberSetting('ngdpbase.export.engine.max-bytes', 26_214_400),
+      maxChainDepth: this.numberSetting('ngdpbase.import.engine.max-chain-depth', 5),
+      keepMinutes: this.numberSetting('ngdpbase.export.engine.keep-minutes', 30),
+      maxHeldBytes: this.numberSetting('ngdpbase.export.engine.max-held-bytes', 268_435_456)
+    };
+  }
+
+  private exportManager(): ExportManager {
+    const exportManager = this.engine.getManager<ExportManager>('ExportManager');
+    if (!exportManager) throw new Error('ExportManager unavailable — cannot export');
+    return exportManager;
   }
 
   /**
@@ -882,7 +1085,7 @@ class ImportManager extends BaseManager {
 
   /**
    * Hand the queue to the background job. One job run drains every queued
-   * import, each under its own context. A job run that has finished draining
+   * import and export, each under its own context. A job run that has finished draining
    * but is not yet marked done answers `enqueue` with its old run id; then
    * try again shortly, so nothing queued is stranded.
    */
@@ -890,15 +1093,15 @@ class ImportManager extends BaseManager {
     if (this.iceDraining) return;
     const jobs = this.engine.getManager<BackgroundJobManager>('BackgroundJobManager');
     if (typeof jobs?.enqueue !== 'function' || typeof jobs.registerJob !== 'function') {
-      throw new Error('ImportManager.enqueueImport: BackgroundJobManager unavailable');
+      throw new Error('ImportManager: BackgroundJobManager unavailable');
     }
     if (!jobs.getRegisteredJobIds().includes(ICE_JOB_ID)) {
       jobs.registerJob({
         id: ICE_JOB_ID,
-        displayName: 'Import (ICE engine)',
+        displayName: 'Import and export (ICE engine)',
         // An import must not be repeated unchecked after a restart (#1746).
         persist: false,
-        // Each job run takes only the imports of the person it runs as, so its
+        // Each job run takes only the work of the person it runs as, so its
         // record names who the work was for (P1); the next person's get a job
         // run of their own.
         run: async (_progress, jobCtx) => {
@@ -910,7 +1113,7 @@ class ImportManager extends BaseManager {
               break;
             }
             const [next] = this.iceQueue.splice(at, 1);
-            await this.executeRun(next.request, next.ctx, next.report);
+            await next.run();
             done++;
           }
           const waiting = this.iceQueue[0];
@@ -919,7 +1122,7 @@ class ImportManager extends BaseManager {
               this.kickIceQueue(waiting.ctx).catch((err: unknown) => logger.error('[ImportManager] ICE queue could not be handed to its job:', err));
             }, 0).unref();
           }
-          return { success: true, summary: `${done} import run(s)` };
+          return { success: true, summary: `${done} import or export run(s)` };
         }
       });
     }
@@ -1057,6 +1260,58 @@ class ImportManager extends BaseManager {
         const pageManager = this.engine.getManager<PageManager>('PageManager');
         if (typeof pageManager?.mayShowPage !== 'function') return null;
         return await pageManager.mayShowPage(ref, ctx) ? pageUrl(ref) : null;
+      }
+    };
+  }
+
+  /**
+   * `core.pages` as an export source (#2120, D5: pages export checks
+   * `page-export`). A page is offered for export when its reader may see it
+   * and holds `page-export` (affordances, recording nothing). Reading it
+   * for export asks `page-export` of the PDP, then reads through the page
+   * door (`readPage`), which decides `page-read` on the page and records a
+   * refusal; the export is recorded as `page-export`, with the format.
+   */
+  private pagesExportSource(): IceExportSource {
+    return {
+      name: 'pages',
+      label: 'Pages',
+      yields: 'ncm',
+      mayExport: async (ref: string, ctx: ActorContext): Promise<boolean> => {
+        const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+        const pageManager = this.engine.getManager<PageManager>('PageManager');
+        if (typeof pdp?.holds !== 'function' || typeof pageManager?.mayShowPage !== 'function') return false;
+        return await pdp.holds(ctx, 'page-export') && await pageManager.mayShowPage(ref, ctx);
+      },
+      read: async (ref: string, ctx: ActorContext, info): Promise<IceItem[] | null> => {
+        if (!(await this.permits(ctx, 'page-export'))) return null;
+        const pageManager = this.engine.getManager<PageManager>('PageManager');
+        if (typeof pageManager?.readPage !== 'function') return null;
+        const read = await pageManager.readPage(ref, ctx);
+        if (!read.ok) return null;
+        const who = actorOf(ctx);
+        await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+          eventType: AUDIT_EVENT.PAGE_EXPORT,
+          ...who,
+          action: 'page-export',
+          result: 'success',
+          severity: ctx.viaToken ? 'medium' : 'low',
+          resource: read.name,
+          resourceType: 'page',
+          metadata: { ...who.metadata, pageName: read.name, format: info.format }
+        }, (err) => logger.warn('[ImportManager] the page-export audit record failed:', err));
+        const metadata = read.metadata;
+        return [{
+          kind: 'ncm',
+          name: read.name,
+          text: read.value.content,
+          metadata: {
+            title: read.name,
+            ...(metadata.lastModified ? { lastModified: String(metadata.lastModified) } : {}),
+            ...(metadata['system-category'] ? { 'system-category': String(metadata['system-category']) } : {}),
+            ...(Array.isArray(metadata['user-keywords']) ? { 'user-keywords': metadata['user-keywords'] } : {})
+          }
+        }];
       }
     };
   }
