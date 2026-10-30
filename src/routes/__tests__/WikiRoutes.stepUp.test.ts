@@ -30,8 +30,12 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     // #1758: step-up is AuthManager's — the real answer, record and completion, on this double.
     engine: null as unknown,
     askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
+    // #2154: a page's form POST is kept to be redone after the prompt.
+    stepUpReplays: new Map(),
+    keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); },
     recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); },
-    completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); }
+    completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); },
+    takeStepUpReplay(...a: Parameters<AuthManager['takeStepUpReplay']>) { return AuthManager.prototype.takeStepUpReplay.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
   const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')), revealBackupKeyFile: vi.fn().mockResolvedValue({ fingerprint: '0123456789abcdef', text: 'X=1\n' }) };
@@ -145,7 +149,7 @@ describe('coming back from a fresh sign-in (#2145)', () => {
       metadata: expect.objectContaining({ detail: expect.stringContaining('passkey for config-manage') }) }));
   });
 
-  test('a form POST lands on the page with the form, which says it can be done now', async () => {
+  test('a form POST that cannot be redone (no form body) lands on the page with the form, which says it can be done now', async () => {
     const { s, out } = await stepUpThenPasskey(
       (r, sess) => r.renameOwnCredential(req(sess, { body: { label: 'Phone' } }), res()), '/profile');
     expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/profile' });
@@ -192,6 +196,93 @@ describe('coming back from a fresh sign-in (#2145)', () => {
     await env.r.reauthWithPassword(req(s, { body: { password: 'right', next: '/admin/backup' } }), out);
     expect(out.redirect).toHaveBeenCalledWith('/admin/backup');
     expect(s.stepUpConfirmed).toBe('/admin/backup');
+  });
+});
+
+describe('a form POST carries on after a fresh sign-in (#2154)', () => {
+  const passkeyOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] });
+  /** A browser's form POST on session `sid`. */
+  const formPost = (s: Record<string, unknown>, sid: string, body: Record<string, unknown>) =>
+    req(s, { sessionID: sid, body, is: (t: string) => (t === 'application/x-www-form-urlencoded' ? t : false) });
+  const continueTo = (s: Record<string, unknown>, sid: string, next: string) =>
+    req(s, { method: 'GET', sessionID: sid, originalUrl: next, query: { replay: new URL(next, 'http://x').searchParams.get('replay') } });
+
+  /** Rename the passkey on a stale session, then confirm with a passkey; the prompt's return. */
+  async function staleRenameThenPasskey() {
+    const env = routes(true, passkeyOk);
+    const s = session();
+    const asked = res();
+    await env.r.renameOwnCredential(formPost(s, 'sid-1', { _csrf: 't-old', label: 'Phone' }), asked);
+    const reauth = String(asked.redirect.mock.calls[0]?.[0]);
+    const next = new URL(reauth, 'http://x').searchParams.get('next') ?? '';
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const out = res();
+    await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next } }), out);
+    return { ...env, s, next, out };
+  }
+
+  test('the confirmation returns to the continue page, which posts the same fields to the same address once', async () => {
+    const { r, authManager, s, next, out } = await staleRenameThenPasskey();
+    expect(next).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
+    expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: next });
+    expect(s.stepUpConfirmed).toBeUndefined();
+    expect(authManager.renameCredential).not.toHaveBeenCalled();
+
+    const page = res();
+    await r.reauthContinue(continueTo(s, 'sid-1', next), page);
+    // The session's own CSRF token, not the one kept: the CSRF check runs again on the POST.
+    expect(page.render).toHaveBeenCalledWith('reauth-continue', expect.objectContaining({
+      action: '/profile/credentials/cred-1/rename', fields: [['label', 'Phone']], back: '/profile', csrfToken: 't'
+    }));
+    expect(page.set).toHaveBeenCalledWith('Cache-Control', 'no-store');
+
+    // The browser's POST from that page does the action, on its own door.
+    const done = res();
+    await r.renameOwnCredential(formPost(s, 'sid-1', { _csrf: 't', label: 'Phone' }), done);
+    expect(authManager.renameCredential).toHaveBeenCalledTimes(1);
+    expect(done.redirect).toHaveBeenCalledWith('/profile?success=Renamed');
+  });
+
+  test('a second replay is refused', async () => {
+    const { r, s, next } = await staleRenameThenPasskey();
+    await r.reauthContinue(continueTo(s, 'sid-1', next), res());
+    const again = res();
+    await r.reauthContinue(continueTo(s, 'sid-1', next), again);
+    expect(again.status).toHaveBeenCalledWith(410);
+    expect(again.render).not.toHaveBeenCalledWith('reauth-continue', expect.anything());
+  });
+
+  test('a replay from another session is refused, and spent', async () => {
+    const { r, s, next } = await staleRenameThenPasskey();
+    const other = res();
+    await r.reauthContinue(continueTo(session(), 'sid-2', next), other);
+    expect(other.status).toHaveBeenCalledWith(410);
+    expect(other.render).not.toHaveBeenCalledWith('reauth-continue', expect.anything());
+    const mine = res();
+    await r.reauthContinue(continueTo(s, 'sid-1', next), mine);
+    expect(mine.status).toHaveBeenCalledWith(410);
+  });
+
+  test('the prompt\'s Cancel goes back to the page with nothing redone', async () => {
+    const env = routes(true, passkeyOk);
+    const s = session();
+    const asked = res();
+    await env.r.renameOwnCredential(formPost(s, 'sid-1', { _csrf: 't-old', label: 'Phone' }), asked);
+    const next = new URL(String(asked.redirect.mock.calls[0]?.[0]), 'http://x').searchParams.get('next') ?? '';
+    // Still stale; profile-manage never steps up.
+    env.authManager.stepUpNeeded.mockImplementation((action: string) => action !== 'profile-manage');
+    const out = res();
+    await env.r.reauthContinue(continueTo(s, 'sid-1', next), out);
+    expect(out.redirect).toHaveBeenCalledWith('/profile');
+    expect(out.render).not.toHaveBeenCalled();
+  });
+
+  test('a page GET is unchanged: it returns to itself', async () => {
+    const env = routes(true, passkeyOk);
+    const out = res();
+    await env.r.adminBackupKey(req(session(), { method: 'GET', sessionID: 'sid-1', originalUrl: '/admin/backup/key' }), out);
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fkey');
   });
 });
 

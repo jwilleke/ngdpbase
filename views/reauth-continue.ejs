@@ -1,0 +1,32 @@
+<%- include('header', { pageName: '' }) %>
+<%# #2154 — after a fresh sign-in, the form POST that asked for it is sent again:
+    the same fields, to the same address, with this session's CSRF token, so the
+    CSRF check and the action's own door run again. Sent by the script; without
+    one, the person presses Carry on. Never cached (the route sets no-store). %>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="card mt-4">
+        <div class="card-header">
+          <h4 class="mb-0"><i class="fas fa-user-shield"></i> Confirmed</h4>
+        </div>
+        <div class="card-body">
+          <form method="POST" action="<%= action %>" id="reauth-continue" class="mb-0">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <% fields.forEach(function (field) { %>
+              <input type="hidden" name="<%= field[0] %>" value="<%= field[1] %>">
+            <% }) %>
+            <p>Carrying on with what you asked to do&hellip;</p>
+            <noscript><button type="submit" class="btn btn-primary">Carry on</button></noscript>
+          </form>
+          <p class="small mt-3 mb-0">If nothing happens, <a href="<%= back %>">go back</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="<%= locals.cspNonce %>">
+  document.getElementById('reauth-continue').submit();
+</script>
+
+<%- include('footer') %>

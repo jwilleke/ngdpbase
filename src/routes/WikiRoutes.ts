@@ -68,7 +68,7 @@ import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -6867,6 +6867,26 @@ ${panes}
       return;
     }
     await this.completeReauth(req, res, result, 'password', next, 'page');
+  }
+
+  /**
+   * GET /auth/reauth/continue — after a fresh sign-in, redo the form POST that
+   * asked for it (#2154). The page posts the kept fields to the same address
+   * with this session's CSRF token, so the CSRF check and the action's own
+   * door run again. Single-use: one already used, or another session's, is
+   * refused; one the prompt was cancelled for only goes back.
+   */
+  async reauthContinue(req: Request, res: Response): Promise<void> {
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'page'))) return;
+    const answer = await this.engine.getManager<AuthManager>('AuthManager')?.takeStepUpReplay(req, req.query.replay) ?? null;
+    res.set('Cache-Control', 'no-store');
+    if (!answer) {
+      await this.renderError(req, res, 410, 'Nothing to carry on with', 'This confirmation was already used, or it has expired. Go back and try again.');
+      return;
+    }
+    if (!('action' in answer)) { res.redirect(answer.back); return; }
+    const commonData = await this.getCommonTemplateData(req);
+    res.render('reauth-continue', { ...commonData, title: 'Carrying on', ...answer });
   }
 
   /** GET /auth/passkey/reauth/options — a passkey challenge for step-up (#1525), for the signed-in person only. */
@@ -18040,6 +18060,7 @@ ${panes}
     app.get('/profile/second-factor/email/confirm', (req: Request, res: Response) => { void this.confirmEmailSecondFactor(req, res); });
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
+    app.get(STEP_UP_CONTINUE_PATH, (req: Request, res: Response) => { void this.reauthContinue(req, res); });
     app.get('/auth/passkey/reauth/options', (req: Request, res: Response) => { void this.passkeyReauthOptions(req, res); });
     app.post('/auth/passkey/reauth/verify', (req: Request, res: Response) => { void this.passkeyReauthVerify(req, res); });
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });
