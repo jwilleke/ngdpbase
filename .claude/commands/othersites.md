@@ -9,8 +9,9 @@ Run the operator's update + validation cycle across the locally-installed ngdpba
 | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | `"The Fairways"` | Satellite checkout. Its base URL is `http://jminm4-fairways.localhost:2121`, which is also its passkey domain: run its E2E with `E2E_BASE_URL=http://jminm4-fairways.localhost:2121`, or the sign-in setup cannot add the test passkey and every spec is skipped |
 | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | `"jimstest"` | This repo / primary dev instance |
 | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | `"ngdpbase temp build"` | Throwaway build sandbox |
+| `/Volumes/hd2A/workspaces/github/ngdpbase-yourphr` | 3921 | (folder name, `ngdpbase-yourphr`) | The site that runs the yourPHR `phr` add-on. Base URL `http://phr.localhost:3921` (also its passkey domain): run its E2E with `E2E_BASE_URL=http://phr.localhost:3921`. `PORT` is in `data/.env` (no root `.env`). It loads the add-on from the local `yourphr` checkout (`addons-path` includes `/Volumes/hd2A/workspaces/github/yourphr/addons`), so it runs whatever branch is checked out there — never pull, build or switch branches in `yourphr` from this flow. Added 2026-10-30 |
 
-All three are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` with `PROJECT_NAME`, `PORT`, `FAST_STORAGE`, `SLOW_STORAGE`. Their issues land in `jwilleke/ngdpbase`, not in satellite repos (per `feedback_cross_repo_coordination`).
+All four are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` (root, or `<FAST_STORAGE>/.env`) with `PROJECT_NAME`, `PORT`, `FAST_STORAGE`, `SLOW_STORAGE`. Their issues land in `jwilleke/ngdpbase`, not in satellite repos (per `feedback_cross_repo_coordination`).
 
 This table is the __single source of truth__ for the instance list. Other skills should link here rather than keep their own copy — `/semver`, `/check-addons` and `/session-commit-local` all drifted out of sync until v3.67.1.
 
@@ -20,7 +21,7 @@ The `geohazardwatch` repo is a separate satellite with its own tracker and is __
 
 `/othersites` runs in one of two modes — pick based on how it was invoked:
 
-- __Standalone (default)__ — operator typed `/othersites` directly. Process __all three__ instances.
+- __Standalone (default)__ — operator typed `/othersites` directly. Process __all four__ instances.
 - __Satellite-only__ — `/othersites` was invoked from `/session-commit` Step 5 (no version bump) and jimstest was validated on the __exact commit being propagated__ in `/session-commit` Step 3 pre-flight. Only then __skip jimstest__ here and process the two satellites. Avoids double build+restart+test on the operator's working instance.
 
 __Satellite-only is valid ONLY when no commit has landed since the jimstest validation.__ After a `/semver` bump, the version-bump + release commit land *after* the pre-flight gate, so pre-flight validated *pre-release* code — jimstest is then stale relative to what the satellites will pull. In that case jimstest MUST be rebuilt + restarted + fully tested on the __release commit FIRST__, before any satellite. `/semver` Step 8a now does this explicitly; if you reach `/othersites` from a release flow and Step 8a was not performed, process jimstest FIRST on the final commit, then the satellites. jimstest (source of truth) must never lag the satellites. See `feedback_jimstest_first` in memory.
