@@ -329,7 +329,13 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(await filesContaining(SECRET)).toEqual([]);
     expect(await filesContaining('Taken')).toEqual([]);
     const again = await upload(VAULT, archive);
-    expect(again.files.filter(f => f.status === 'unchanged')).toHaveLength(3);
+    // Pages and the file alike (code review of #2160, finding 6); the refused page is tried again.
+    expect(byPath(again)).toMatchObject({
+      [`${VAULT}/${SECRET}.md`]: ['unchanged', expect.anything()],
+      [`${VAULT}/Taken.md`]: ['unchanged', expect.anything()],
+      [`${VAULT}/attachments/${SECRET}.pdf`]: ['unchanged', expect.anything()],
+      [`${VAULT}/${SECRET} 2.md`]: ['refused', expect.anything()]
+    });
     const recent = await importer.recentImportsFor(MOLLY);
     expect(recent.length).toBeGreaterThan(0);
     expect(JSON.stringify(recent)).not.toContain(SECRET);
