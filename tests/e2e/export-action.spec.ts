@@ -15,12 +15,12 @@ test.use({ storageState: './tests/e2e/.auth/user.json' });
 
 test.describe('Export action (#2120)', () => {
   test('a page links to its own Export action', async ({ page }) => {
-    await page.goto('/view/Main');
-    await expect(page.locator('a[href="/export/page/Main"]')).toHaveCount(1);
+    await page.goto('/view/Welcome');
+    await expect(page.locator('a[href="/export/page/Welcome"]')).toHaveCount(1);
   });
 
   test('only the page formats are offered, and HTML comes back as a download', async ({ page }) => {
-    await page.goto('/export/page/Main');
+    await page.goto('/export/page/Welcome');
     const labels = await page.locator('#exportForm .form-check-label').allTextContents();
     expect(labels).toEqual(['NCM (.md, as stored)', 'HTML (.html)', 'Markdown (.md)']);
 
@@ -28,7 +28,7 @@ test.describe('Export action (#2120)', () => {
     const download = page.waitForEvent('download');
     await page.locator('#exportStart').click();
     const file = await download;
-    expect(file.suggestedFilename()).toBe('Main.html');
+    expect(file.suggestedFilename()).toBe('Welcome.html');
     await expect(page.locator('#exportDownload')).toBeVisible();
   });
 
