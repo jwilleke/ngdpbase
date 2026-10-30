@@ -73,7 +73,7 @@ export type CorePermission =
   | 'share-revoke'
   /** Add, edit and delete pages and files in a shared folder (/shared/<name>, #2125). Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>). The writes themselves are recorded by the page and file doors (page-create, page-edit, page-delete, asset-upload, asset-delete) */
   | 'shared-folder-file'
-  /** Open a shared folder (/shared/<name>, #2125): its pages, their history and its files. Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>); a folder lists no roles. Shipped granted on shared/default to every account */
+  /** Open a shared folder (/shared/<name>, #2125): its pages, their history and its files. Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>); a folder lists no roles. Shipped granted on shared/default to every account, and on every folder (shared/*) to admin */
   | 'shared-folder-read'
   /** Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it */
   | 'store-create'

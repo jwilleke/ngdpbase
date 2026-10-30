@@ -11,7 +11,9 @@ import { instanceOrigin, signInWithPassword } from './fixtures/helpers';
  * is read and changed through the page door, sealed with the folder's key; a
  * file uploaded onto it is served only to a reader of the folder; site search
  * finds it for a reader of the folder and for nobody else. A folder no policy
- * names opens to nobody, not even the admin, and is found by no search.
+ * names is read by an admin (the shipped `shared-folder-admin-read` policy:
+ * listed on /shared, opened) but not added to, edited or deleted in by them,
+ * and opens to no ordinary account (404).
  *
  * Shared folders need the organization's recovery words confirmed, which is
  * once per site, and a folder cannot be deleted yet (slice 10 of the epic,
@@ -101,9 +103,36 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     await expect(page.locator('[data-testid="shared-folder-pages"]')).toContainText(TITLE);
     await page.goto('/shared');
     await expect(page.locator('[data-testid="shared-folders-list"]')).toContainText('default');
-    // The closed folder is not listed even to the admin: no policy names it.
-    await expect(page.locator('[data-testid="shared-folders-list"]')).not.toContainText(CLOSED);
-    expect(await statusOf(page, `/shared/${CLOSED}`)).toBe(404);
+  });
+
+  test('an admin reads a folder no policy names, and adds, edits and deletes nothing there', async ({ page }) => {
+    // Listed and opened: shared-folder-admin-read gives every admin shared-folder-read on shared/*.
+    await page.goto('/shared');
+    await expect(page.locator(`[data-testid="shared-folders-list"] a[href="/shared/${CLOSED}"]`)).toBeVisible();
+    expect(await statusOf(page, `/shared/${CLOSED}`)).toBe(200);
+    await page.goto(`/shared/${CLOSED}`);
+    await expect(page.locator('[data-testid="shared-folder-empty"]')).toBeVisible();
+    // No shared-folder-file: no new-page form, and every write is refused as a page that is not there.
+    await expect(page.locator('[data-testid="shared-folder-new"]')).toHaveCount(0);
+    expect(await statusOf(page, `/shared/${CLOSED}?new=${encodeURIComponent(TITLE)}`)).toBe(404);
+    const pagePath = `/shared/${CLOSED}/${encodeURIComponent(TITLE)}`;
+    expect(await statusOf(page, `${pagePath}/edit`)).toBe(404);
+    const csrf = await csrfFrom(page);
+    const saved = await page.request.post(`${pagePath}/save`, { form: { _csrf: csrf, content: `The ${WORD} closed note.` }, maxRedirects: 0 });
+    expect(saved.status()).toBe(404);
+    const deleted = await page.request.post(`${pagePath}/delete`, { form: { _csrf: csrf }, maxRedirects: 0 });
+    expect(deleted.status()).toBe(404);
+    // A file from inside the folder goes into the folder or nowhere, never the public pool: refused.
+    const up = await page.request.post(`/attachments/upload/${encodeURIComponent(`shared/${CLOSED}/${TITLE}`)}`, {
+      headers: { 'X-CSRF-Token': csrf },
+      multipart: { file: { name: `closed-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`file ${WORD}`) } }
+    });
+    expect(up.ok()).toBe(false);
+    // Nothing landed: the folder is still empty, and search finds no closed note.
+    await page.goto(`/shared/${CLOSED}`);
+    await expect(page.locator('[data-testid="shared-folder-empty"]')).toBeVisible();
+    await page.goto(`/search?q=${WORD}`);
+    await expect(page.locator('body')).not.toContainText('closed note');
   });
 
   test('a file uploaded onto the page is the folder\'s, served to its readers only', async ({ page, browser }) => {
@@ -124,6 +153,20 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     const visitor = await anon.newPage();
     await visitor.goto('/');
     expect([403, 404]).toContain(await statusOf(visitor, `/attachments/${id}`));
+
+    // From a page not saved yet, the file still goes into the folder: served to its readers, to nobody signed out.
+    const early = await page.request.post(`/attachments/upload/${encodeURIComponent(`shared/default/${TITLE} draft`)}`, {
+      headers: { 'X-CSRF-Token': await csrfFrom(page) },
+      multipart: { file: { name: `draft-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`draft ${WORD}`) } }
+    });
+    expect(early.ok()).toBe(true);
+    const earlyBody = await early.json() as { attachment?: { id?: string; identifier?: string } };
+    const earlyId = earlyBody.attachment?.identifier ?? earlyBody.attachment?.id;
+    expect(earlyId).toBeTruthy();
+    const earlyGot = await page.request.get(`/attachments/${earlyId}`);
+    expect(earlyGot.status()).toBe(200);
+    expect(await earlyGot.text()).toBe(`draft ${WORD}`);
+    expect([403, 404]).toContain(await statusOf(visitor, `/attachments/${earlyId}`));
     await anon.close();
   });
 
@@ -149,7 +192,10 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
       await expect(person.page.getByText(`The ${WORD} minutes.`)).toBeVisible();
       await person.page.goto(`/search?q=${RUN}`);
       await expect(person.page.locator('body')).toContainText(TITLE);
+      // An ordinary account: the closed folder is neither listed nor opened.
       expect(await statusOf(person.page, `/shared/${CLOSED}`)).toBe(404);
+      await person.page.goto('/shared');
+      await expect(person.page.locator('body')).not.toContainText(CLOSED);
     } finally {
       await person.context.close();
     }

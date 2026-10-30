@@ -2080,7 +2080,7 @@
       }
     },
     "shared-folder-read": {
-      "description": "Open a shared folder (/shared/<name>, #2125): its pages, their history and its files. Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>); a folder lists no roles. Shipped granted on shared/default to every account",
+      "description": "Open a shared folder (/shared/<name>, #2125): its pages, their history and its files. Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>); a folder lists no roles. Shipped granted on shared/default to every account, and on every folder (shared/*) to admin",
       "label": "Open shared folders",
       "icon": "folder-open",
       "color": "#6c757d",
@@ -3117,7 +3117,7 @@
     {
       "id": "shared-folder-default",
       "name": "Shared Folder: default",
-      "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it",
+      "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it, except that administrators may read every folder (shared-folder-admin-read)",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -3135,6 +3135,28 @@
       "actions": [
         "shared-folder-read",
         "shared-folder-file"
+      ]
+    },
+    {
+      "id": "shared-folder-admin-read",
+      "name": "Shared Folders: administrators read",
+      "description": "Administrators may open every shared folder (#2125, operator 2026-10-29): its pages, their history and its files, the folder list on /shared and the folder's search. Read only: adding, editing and deleting in a folder (shared-folder-file) still needs a policy naming that folder",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "shared-folder",
+          "pattern": "shared/*"
+        }
+      ],
+      "actions": [
+        "shared-folder-read"
       ]
     },
     {

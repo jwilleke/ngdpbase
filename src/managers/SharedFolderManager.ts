@@ -453,8 +453,9 @@ class SharedFolderManager extends BaseManager {
    * Make shared folder `name` (#2125): its key (`createFolderKey`, which
    * needs the recovery words confirmed) and its place for pages, sealed with
    * that key. Admins only (decision 8) until the Shared folders screen
-   * (slice 3). A new folder opens to nobody until a policy names
-   * `shared/<name>`; `default` is shipped open to every signed-in user.
+   * (slice 3). A new folder is read only by admins (`shared-folder-admin-read`)
+   * and filed into by nobody until a policy names `shared/<name>`; `default`
+   * is shipped open to every signed-in user.
    * Recorded as `shared-folder-create` before anything is made (on-failure
    * refuse). Refused when it exists.
    */
