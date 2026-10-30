@@ -57,6 +57,23 @@ describe('the takeout shim (#2118)', () => {
     expect(read['vault/files-index.json']).toEqual({ items: [], skip: expect.stringContaining('file index') });
   });
 
+  // #2162: once per archive, not once per member: a large index times many members held the event loop.
+  test('reads the file index and finds the root once per archive, whatever its member count', async () => {
+    const entries: Array<[string, string]> = [['vault/files-index.json', INDEX], ['vault/Medical notes.md', PAGE]];
+    for (let i = 0; i < 50; i++) entries.push([`vault/attachments/f${i}.txt`, `file ${i}`]);
+    const zip = await packZip(entries.map(([p, text]) => ({ path: p, bytes: Buffer.from(text) })));
+    const { files } = expandUploads([{ name: 'takeout-vault.zip', bytes: zip }], LIMITS, 3);
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      for (const f of files) {
+        await takeoutShim.read!({ kind: 'file', name: f.name, bytes: f.bytes, archive: f.archive }, TOOLS);
+      }
+      expect(parse).toHaveBeenCalledTimes(1);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   test('a takeout zipped again inside another folder is still found', async () => {
     const read = await readAll([
       ['takeout-vault-2026-09-25/vault/Medical notes.md', PAGE],

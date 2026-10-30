@@ -109,6 +109,32 @@ function readIndex(bytes: Buffer | undefined): Map<string, StoreFileEntry> {
   return byPath;
 }
 
+/** What a takeout's layout is, worked out once per archive (#2162). */
+interface TakeoutLayout {
+  /** The takeout's folder, with its `/`; `''` at the archive's root. */
+  prefix: string;
+  /** The file index's records, by path in the takeout. */
+  index: Map<string, StoreFileEntry>;
+}
+
+/**
+ * Each archive's layout, keyed by its `paths`, which the engine shares among
+ * every member of one archive (#2162). Parsing the index and finding the
+ * root for every member would make one upload's cost the index's size times
+ * its member count, all of it synchronous.
+ */
+const layouts = new WeakMap<readonly string[], TakeoutLayout>();
+
+function layoutOf(archive: IceArchiveView): TakeoutLayout {
+  const held = layouts.get(archive.paths);
+  if (held) return held;
+  const root = takeoutRoot(archive.paths);
+  const prefix = root ? `${root}/` : '';
+  const layout = { prefix, index: readIndex(archive.read(`${prefix}${TAKEOUT_FILE_INDEX}`)) };
+  layouts.set(archive.paths, layout);
+  return layout;
+}
+
 /**
  * A link to the file `id`, as `/attachments/{id}`: whole ids only, since an
  * id followed by more id characters is a different id.
@@ -147,7 +173,7 @@ export async function freeImportTitle(title: string, isTaken: (candidate: string
 }
 
 /** A page member: its frontmatter, title and uuid, and the takeout's files its body links to. */
-function readPage(input: IceItem, archive: IceArchiveView, inRoot: string, prefix: string): IceItem {
+function readPage(input: IceItem, archive: IceArchiveView, inRoot: string, { prefix, index }: TakeoutLayout): IceItem {
   const stem = inRoot.slice(0, -'.md'.length);
   const text = (input.bytes ?? Buffer.alloc(0)).toString('utf8');
   let metadata: Record<string, unknown> = {};
@@ -164,7 +190,7 @@ function readPage(input: IceItem, archive: IceArchiveView, inRoot: string, prefi
   const uuid = typeof metadata.uuid === 'string' && metadata.uuid.trim() ? metadata.uuid.trim() : undefined;
 
   const files: TakeoutLinkedFile[] = [];
-  for (const [inTakeout, record] of readIndex(archive.read(`${prefix}${TAKEOUT_FILE_INDEX}`))) {
+  for (const [inTakeout, record] of index) {
     const memberPath = `${prefix}${inTakeout}`;
     if (!linksToAttachment(body, record.id) || !archive.read(memberPath)) continue;
     files.push({
@@ -186,17 +212,17 @@ async function read(input: IceItem): Promise<ShimReadResult> {
   // The engine unpacks a zip inside a zip too. A takeout's own files that are
   // zips arrive so, unpacked: they are not a takeout, and are left out.
   if (archive.name.includes('/')) return { items: [], skip: 'inside a zip within the takeout; a zip the store held is not brought back' };
-  const root = takeoutRoot(archive.paths);
-  const prefix = root ? `${root}/` : '';
+  const layout = layoutOf(archive);
+  const { prefix } = layout;
   if (!archive.path.startsWith(prefix)) return { items: [], skip: 'outside the takeout\'s folder; left out' };
   const inRoot = archive.path.slice(prefix.length);
 
   if (inRoot === TAKEOUT_FILE_INDEX) return { items: [], skip: 'the takeout\'s file index, read with the files it names' };
   if (!inRoot.includes('/') && inRoot.toLowerCase().endsWith('.md')) {
-    return { items: [readPage(input, archive, inRoot, prefix)] };
+    return { items: [readPage(input, archive, inRoot, layout)] };
   }
   if (inRoot.startsWith(`${ATTACHMENTS_DIR}/`) && !inRoot.slice(ATTACHMENTS_DIR.length + 1).includes('/')) {
-    const record = readIndex(archive.read(`${prefix}${TAKEOUT_FILE_INDEX}`)).get(inRoot);
+    const record = layout.index.get(inRoot);
     const name = record?.name || path.posix.basename(inRoot);
     const data: TakeoutFileData = {
       entry: 'file', name,
