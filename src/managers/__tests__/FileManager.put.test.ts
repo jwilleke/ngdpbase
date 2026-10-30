@@ -356,7 +356,7 @@ describe('FileManager writes (#2148)', () => {
       expect(stored.cleaned).toEqual([expect.stringMatching(/removed 1 script element/), expect.stringMatching(/removed 1 event handler/)]);
       const kept = await poolText();
       expect(kept).not.toMatch(/script|onload|steal/i);
-      expect(kept).toContain('<rect width="4"/>');
+      expect(kept).toContain('<rect width="4"></rect>');
       expect(uploadRecords()).toHaveLength(1);
       expect(uploadRecords()[0].metadata).toMatchObject({ filename: 'logo.svg', cleaned: stored.cleaned });
     });

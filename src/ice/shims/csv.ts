@@ -174,6 +174,34 @@ export function cleanCsvText(text: string, delimiter = ','): { text: string; htm
   return { text: out, html, formulas };
 }
 
+/**
+ * How a CSV is read and written back for cleaning (#2149), so its bytes stay
+ * its own: UTF-16 with a byte-order mark as UTF-16; valid UTF-8 as UTF-8;
+ * anything else (Latin-1, Windows-1252 and the like) one byte to one
+ * character and back, which round-trips every byte exactly. The characters
+ * cleaning looks for (`, " < > = + - @`, tab, line ends) are ASCII, the same
+ * byte in each of these.
+ */
+export function csvEncoding(bytes: Buffer): { text: string; encode: (text: string) => Buffer } {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return { text: bytes.toString('utf16le'), encode: (t) => Buffer.from(t, 'utf16le') };
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    const swapped = Buffer.from(bytes);
+    swapped.subarray(0, swapped.length - (swapped.length % 2)).swap16();
+    return {
+      text: swapped.toString('utf16le'),
+      encode: (t) => { const out = Buffer.from(t, 'utf16le'); return out.swap16(); }
+    };
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    return { text, encode: (t) => Buffer.from(t, 'utf8') };
+  } catch {
+    return { text: bytes.toString('latin1'), encode: (t) => Buffer.from(t, 'latin1') };
+  }
+}
+
 /** Order-independent, content-addressed id for a row with no natural id. */
 function stableRowId(raw: RawRecord): string {
   const s = Object.keys(raw).sort().map(k => `${k}=${String(raw[k])}`).join('\x1f');
@@ -222,7 +250,9 @@ export const csvShim: IceShim = {
   async clean(input) {
     const original = input.bytes ?? Buffer.from(input.text ?? '', 'utf8');
     const tab = input.name.toLowerCase().endsWith('.tsv') || input.mediaType === 'text/tab-separated-values';
-    const { text, html, formulas } = cleanCsvText(original.toString('utf8'), tab ? '\t' : ',');
+    // #2149: read in the file's own encoding and written back in it, so a byte outside the cells cleaned never changes.
+    const { encode, text: source } = csvEncoding(original);
+    const { text, html, formulas } = cleanCsvText(source, tab ? '\t' : ',');
     const removed: IceWarning[] = [];
     if (html) removed.push({ kind: 'csv-html', detail: `removed HTML from ${html} cell${html === 1 ? '' : 's'}` });
     if (formulas) {
@@ -231,6 +261,6 @@ export const csvShim: IceShim = {
         detail: `${formulas} cell${formulas === 1 ? '' : 's'} began with a formula character (= + - @); each now starts with ' so a spreadsheet shows it as text`
       });
     }
-    return { bytes: removed.length > 0 ? Buffer.from(text, 'utf8') : original, removed };
+    return { bytes: removed.length > 0 ? encode(text) : original, removed };
   }
 };
