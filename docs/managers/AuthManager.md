@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-10-25'
+dateModified: '2026-10-30'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -77,7 +77,8 @@ Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-revea
 - __Everyday self-service__ (`profile-manage`) is never on the list, so viewing your pages or changing the theme never prompts (decided 2026-10-04).
 - __Where it's checked__: inside the route's permission check (`permitted()` in WikiRoutes, and the few handlers that ask `hasPermission()` themselves). A page action goes to `/auth/reauth?next=…`; a JSON action answers 403 with `reauth`, which `passkey.js` follows.
 - __The prompt__ (`/auth/reauth`) offers a passkey when one is enrolled, and the password when the roles accept one. Success adds the factor to the session's sign-in (`reauthenticated`: factors joined, assessment redone, sign-in time moved to now) and returns to the page. A POST is not replayed; the form is filled in again.
-- __Audit and throttle__: `reauth-prompt`, `reauth-success` and `reauth-failure` are recorded. Wrong passwords count toward the sign-in throttle like every other secret check.
+- __Where the prompt returns__ (#2145): a page GET returns to itself, which does the action. Anything a redirect cannot redo returns to the page it was started from (`reauthReturnTo`): a form POST, a script's request (`json`), and a link to a file, which its route asks in `download` mode (Admin → Backup's Download .env and backup downloads); going back to the file itself saved it and left the browser on the prompt. `askForFreshSignIn` keeps the pending step-up on the session (`pendingStepUp`: permission, return, whether returning redoes it) and saves the session before the answer goes out. `completeReauth(req, result, method, next)` takes it when `next` matches: the success is recorded against that permission, and when returning does not redo the action the page there says "Confirmed — you can do it now" once (`takeStepUpNotice`, read by the session middleware for the header).
+- __Audit and throttle__: `reauth-prompt`, `reauth-success` and `reauth-failure` are recorded. A prompt and its success name the permission (`resource`); a success with no pending prompt (the page opened directly) names the method, and its detail always does. Wrong passwords count toward the sign-in throttle like every other secret check.
 
 ## Passkeys (#448)
 

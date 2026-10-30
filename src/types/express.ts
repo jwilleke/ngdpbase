@@ -17,7 +17,7 @@
  */
 import type { ShareGrant } from './Share.js';
 import type { ProxyClaim } from '../managers/UserManager.js';
-import type { SignInRecord, PendingConnection, OutsideChoice } from '../managers/AuthManager.js';
+import type { SignInRecord, PendingConnection, OutsideChoice, PendingStepUp } from '../managers/AuthManager.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -37,6 +37,10 @@ declare module 'express-session' {
     signIn?: SignInRecord;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */
     passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate' | 'reauth'; expires: number };
+    /** The step-up asked for and not yet given (#2145): its permission, where it returns, whether returning redoes it. */
+    pendingStepUp?: PendingStepUp;
+    /** The path whose next page view says "Confirmed — you can do it now" after a step-up (#2145). */
+    stepUpConfirmed?: string;
     /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
     pendingSignIn?: string;
     pendingRedirect?: string;

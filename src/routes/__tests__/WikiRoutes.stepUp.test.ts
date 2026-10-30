@@ -108,11 +108,90 @@ describe('downloading the instance .env (#1938)', () => {
     const { r, backup, audit } = routes(true);
     const out = res();
     await r.adminBackupEnv(req(session(), { method: 'GET', originalUrl: '/admin/backup/env', get: (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup' : 'ua') }), out);
-    // A GET comes back to itself: after the fresh sign-in the download starts.
-    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fenv');
+    // #2145: a download comes back to the page that linked it, not to itself:
+    // returning to the file saved it and left the browser on the prompt.
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup');
     expect(backup.revealInstanceEnv).not.toHaveBeenCalled();
     expect(out.send).not.toHaveBeenCalled();
     expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'config-manage' }));
+  });
+});
+
+describe('coming back from a fresh sign-in (#2145)', () => {
+  const fromBackup = (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup' : 'ua');
+  const passkeyOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] });
+
+  /** Ask for the step-up with `ask`, then give it with a passkey on the same session. */
+  async function stepUpThenPasskey(ask: (r: ReturnType<typeof routes>['r'], s: Record<string, unknown>) => Promise<void>, next: string) {
+    const env = routes(true, passkeyOk);
+    const s = session();
+    await ask(env.r, s);
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const out = res();
+    await env.r.passkeyReauthVerify(req(s, { body: { response: {}, next } }), out);
+    return { ...env, s, out };
+  }
+
+  test('a download: the passkey answer names the page with the link, says it can be done now, and records the permission', async () => {
+    // Sabotage (2026-10-30): passing 'page' for the .env download sent the browser back to the file — the stall.
+    const { s, out, audit, backup } = await stepUpThenPasskey(
+      (r, sess) => r.adminBackupEnv(req(sess, { method: 'GET', originalUrl: '/admin/backup/env', get: fromBackup }), res()), '/admin/backup');
+    expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/admin/backup' });
+    expect(s.stepUpConfirmed).toBe('/admin/backup');
+    expect(s.pendingStepUp).toBeUndefined();
+    expect(backup.revealInstanceEnv).not.toHaveBeenCalled();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-success', resource: 'config-manage',
+      metadata: expect.objectContaining({ detail: expect.stringContaining('passkey for config-manage') }) }));
+  });
+
+  test('a form POST lands on the page with the form, which says it can be done now', async () => {
+    const { s, out } = await stepUpThenPasskey(
+      (r, sess) => r.renameOwnCredential(req(sess, { body: { label: 'Phone' } }), res()), '/profile');
+    expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/profile' });
+    expect(s.stepUpConfirmed).toBe('/profile');
+  });
+
+  test('a page GET opens the page again, which does the action: no note', async () => {
+    const { s, out, audit } = await stepUpThenPasskey(
+      (r, sess) => r.adminBackupKey(req(sess, { method: 'GET', originalUrl: '/admin/backup/key' }), res()), '/admin/backup/key');
+    expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/admin/backup/key' });
+    expect(s.stepUpConfirmed).toBeUndefined();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-success', resource: 'config-manage' }));
+  });
+
+  test('a prompt opened without a pending step-up records the method and says nothing', async () => {
+    const { r, audit } = routes(false, passkeyOk);
+    const s = session();
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const out = res();
+    await r.passkeyReauthVerify(req(s, { body: { response: {}, next: '/admin/backup' } }), out);
+    expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/admin/backup' });
+    expect(s.stepUpConfirmed).toBeUndefined();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-success', resource: 'passkey' }));
+  });
+
+  test('a session that cannot be saved is a JSON error the passkey script shows, not a text page', async () => {
+    const { r } = routes(false, passkeyOk);
+    const s = session();
+    s.save = vi.fn((cb: (e?: unknown) => void) => cb(new Error('disk full')));
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const out = res();
+    await r.passkeyReauthVerify(req(s, { body: { response: {}, next: '/profile' } }), out);
+    expect(out.status).toHaveBeenCalledWith(500);
+    expect(out.json).toHaveBeenCalledWith({ error: 'Your confirmation could not be saved; try again' });
+    expect(out.send).not.toHaveBeenCalled();
+  });
+
+  test('the password path comes back the same way', async () => {
+    const env = routes(true, () => Promise.resolve({ success: true, username: 'molly', provider: 'password', factors: [] }));
+    const s = session();
+    await env.r.adminBackupEnv(req(s, { method: 'GET', originalUrl: '/admin/backup/env', get: fromBackup }), res());
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    const out = res();
+    await env.r.reauthWithPassword(req(s, { body: { password: 'right', next: '/admin/backup' } }), out);
+    expect(out.redirect).toHaveBeenCalledWith('/admin/backup');
+    expect(s.stepUpConfirmed).toBe('/admin/backup');
   });
 });
 
@@ -122,8 +201,8 @@ describe('downloading the backup key file (#2134)', () => {
     const { r, backup, audit } = routes(true);
     const out = res();
     await r.adminBackupKeyFile(req(session(), { method: 'GET', originalUrl: '/admin/backup/key/file', get: (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup/key' : 'ua') }), out);
-    // A GET comes back to itself: after the fresh sign-in the download starts.
-    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fkey%2Ffile');
+    // #2145: a download returns to the page with the link, not to the file.
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fbackup%2Fkey');
     expect(backup.revealBackupKeyFile).not.toHaveBeenCalled();
     expect(out.send).not.toHaveBeenCalled();
     expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'config-manage' }));

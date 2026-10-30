@@ -437,6 +437,8 @@ jobs:
           NGDPBASE_SYSTEM_USER: ci-system
           # #1603: CI's instance is throwaway, so consent.spec.ts may raise the terms version.
           E2E_CONSENT_BUMP: '1'
+          # #2145: likewise reauth-return.spec.ts may shorten the step-up window while it runs.
+          E2E_STEP_UP_WINDOW: '1'
           CI: true
 
       - name: Upload E2E test results

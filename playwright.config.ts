@@ -125,7 +125,7 @@ export default defineConfig({
     // Chromium tests (main browser) - excludes files owned by dedicated viewport projects
     {
       name: 'chromium',
-      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)|plugin-pagination\.spec\.(js|ts)|consent\.spec\.(js|ts)/,
+      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)|plugin-pagination\.spec\.(js|ts)|consent\.spec\.(js|ts)|reauth-return\.spec\.(js|ts)/,
       use: {
         browserName: 'chromium',
         // Use setup project for authenticated tests
@@ -215,6 +215,21 @@ export default defineConfig({
       dependencies: ['setup-fresh-maintenance']
     },
 
+    // #2145: coming back from "Confirm it is you". With E2E_STEP_UP_WINDOW=1 it
+    // shortens the site's step-up window while it waits for a sign-in to go
+    // stale, which would send every spec running beside it to the prompt; so
+    // it runs alone, after maintenance, and puts the window back before
+    // consent runs.
+    {
+      name: 'chromium-step-up',
+      testMatch: /reauth-return\.spec\.(js|ts)/,
+      use: {
+        browserName: 'chromium',
+        storageState: './tests/e2e/.auth/user.json'
+      },
+      dependencies: ['chromium-maintenance']
+    },
+
     // #1603: the terms prompt. Last, on its own: with E2E_CONSENT_BUMP=1 it
     // raises the terms version, which asks every account again at its next
     // sign-in — a spec signing in fresh in parallel would meet the prompt.
@@ -225,7 +240,7 @@ export default defineConfig({
         browserName: 'chromium',
         storageState: './tests/e2e/.auth/user.json'
       },
-      dependencies: ['chromium-maintenance']
+      dependencies: ['chromium-step-up']
     }
   ],
 

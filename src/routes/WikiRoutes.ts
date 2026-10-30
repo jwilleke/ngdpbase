@@ -68,7 +68,7 @@ import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -179,7 +179,7 @@ import type AssetService from '../managers/AssetService.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
-import type { AuthenticateResult, AuthAttempt } from '../managers/AuthManager.js';
+import type { AuthenticateResult, AuthAttempt, ReauthMode } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
@@ -2274,11 +2274,11 @@ class WikiRoutes {
     wikiContext: { userContext: { isAuthenticated?: boolean } | null },
     req: Request,
     res: Response,
-    mode: 'json' | 'page' | 'text',
+    mode: ReauthMode,
     permission?: string
   ): Promise<void> {
     const anonymous = !wikiContext.userContext?.isAuthenticated;
-    if (mode === 'page') {
+    if (answeredWithPage(mode)) {
       if (anonymous) { sendApiError(res, new ApiError(401, 'Authentication required'), 'page'); return; }
       await this.renderError(req, res, 403, 'Access Denied', permission
         ? `You do not have permission to do this (${permission})`
@@ -2363,7 +2363,7 @@ class WikiRoutes {
     permission: CorePermission,
     req: Request,
     res: Response,
-    mode: 'json' | 'page' | 'text',
+    mode: ReauthMode,
     // #1539: the page the action is on, when there is one — a vault page is
     // then asked through the vault check, not the caller's site-wide role.
     pageName?: string
@@ -2391,7 +2391,7 @@ class WikiRoutes {
     permission: CorePermission,
     req: Request,
     res: Response,
-    mode: 'json' | 'page' | 'text'
+    mode: ReauthMode
   ): Promise<boolean> {
     if (await wikiContext.hasPermission(permission)) return true;
     if (!(await wikiContext.holdsPermission(permission))) return true;
@@ -2404,7 +2404,7 @@ class WikiRoutes {
    * bridge asks the same permission check — policy, then step-up — rather
    * than a copy of it. Answers the refusal itself; true to proceed.
    */
-  async permitRequest(req: Request, res: Response, permission: CorePermission, mode: 'json' | 'page' | 'text'): Promise<boolean> {
+  async permitRequest(req: Request, res: Response, permission: CorePermission, mode: ReauthMode): Promise<boolean> {
     return this.permitted(this.createWikiContext(req), permission, req, res, mode);
   }
 
@@ -2420,13 +2420,13 @@ class WikiRoutes {
     permission: string,
     req: Request,
     res: Response,
-    mode: 'json' | 'page' | 'text'
+    mode: ReauthMode
   ): Promise<void> {
     // #1758: step-up is AuthManager's; without it the refusal carries no way to re-authenticate.
     const answer = await this.engine.getManager<AuthManager>('AuthManager')?.askForFreshSignIn(req, wikiContext.userContext, permission, mode)
       ?? { permission, delegated: false, error: 'A fresh sign-in is needed' };
     // A delegated credential gets no reauth; in page mode it is answered as JSON, as before.
-    sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' && !answer.reauth ? 'json' : mode);
+    sendApiError(res, new ApiError(403, answer.error, answer.reauth), answeredWithPage(mode) && !answer.reauth ? 'json' : mode);
   }
 
   private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
@@ -6807,7 +6807,7 @@ ${panes}
       await this.renderReauth(req, res, { error: 'That password is not correct.' });
       return;
     }
-    await this.completeReauth(req, res, result, 'password', () => res.redirect(next));
+    await this.completeReauth(req, res, result, 'password', next, 'page');
   }
 
   /** GET /auth/passkey/reauth/options — a passkey challenge for step-up (#1525), for the signed-in person only. */
@@ -6840,16 +6840,21 @@ ${panes}
       res.status(401).json({ error: 'That passkey did not confirm this account' });
       return;
     }
-    await this.completeReauth(req, res, result, 'passkey', () => res.json({ ok: true, redirect: safeRedirect(body.next) }));
+    await this.completeReauth(req, res, result, 'passkey', safeRedirect(body.next), 'json');
   }
 
-  /** Record the fresh factor on the session's sign-in, audit it, and answer. */
-  private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, answer: () => void): Promise<void> {
+  /**
+   * Record the fresh factor on the session's sign-in, audit it, and answer:
+   * a redirect to `next` for the password form, `{ ok, redirect }` for the
+   * passkey script. Saved before answering, so the next request is fresh.
+   */
+  private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, next: string, mode: 'json' | 'page'): Promise<void> {
     // #1758: re-authentication completes in AuthManager; the route saves and answers.
-    await this.engine.getManager<AuthManager>('AuthManager')?.completeReauth(req, result, method);
+    await this.engine.getManager<AuthManager>('AuthManager')?.completeReauth(req, result, method, next);
     req.session.save((err) => {
-      if (err) { res.status(500).send('Session save failed'); return; }
-      answer();
+      // #2145: the passkey script shows a failure only when it is JSON.
+      if (err) { if (mode === 'json') res.status(500).json({ error: 'Your confirmation could not be saved; try again' }); else res.status(500).send('Session save failed'); return; }
+      if (mode === 'json') res.json({ ok: true, redirect: next }); else res.redirect(next);
     });
   }
 
@@ -13180,7 +13185,7 @@ ${panes}
   async adminBackupEnv(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'download'))) return;
       const backupManager = this.engine.getManager<BackupManager>('BackupManager');
       if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
       const content = await backupManager.revealInstanceEnv(wikiContext.userContext);
@@ -13206,7 +13211,7 @@ ${panes}
   async adminBackupKeyFile(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'download'))) return;
       const backupManager = this.engine.getManager<BackupManager>('BackupManager');
       if (!backupManager || !wikiContext.userContext) return res.redirect('/admin/backup?error=BackupManager+not+available');
       const file = await backupManager.revealBackupKeyFile(wikiContext.userContext);
@@ -13534,7 +13539,7 @@ ${panes}
   async adminBackupDownload(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'download'))) return;
       const backupManager = this.engine.getManager('BackupManager');
       const filename = String(req.params.filename ?? '');
       if (!backupManager || !(await backupManager.findStoredBackup(filename))) {

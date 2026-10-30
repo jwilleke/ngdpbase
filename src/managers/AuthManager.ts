@@ -773,8 +773,29 @@ export interface SignInRecord extends Assurance {
   at: string;
 }
 
-/** How a refused request wants its answer: a page to redirect, JSON, or plain text (#1745). */
-export type ReauthMode = 'json' | 'page' | 'text';
+/**
+ * How a refused request wants its answer: a page to redirect, JSON, or plain
+ * text (#1745). `download` is a GET that answers with a file: refused like a
+ * page, but returned to the page that linked it, since going back to the file
+ * itself saves it and leaves the browser on the prompt (#2145).
+ */
+export type ReauthMode = 'json' | 'page' | 'text' | 'download';
+
+/** Whether a refusal in `mode` is answered by sending the browser to a page: a page, or a file a page links to (#2145). */
+export function answeredWithPage(mode: ReauthMode): boolean {
+  return mode === 'page' || mode === 'download';
+}
+
+/**
+ * A step-up asked for and not yet given, kept on the session (#2145): which
+ * permission it was for, where the prompt returns, and whether going there
+ * does the action again (a page GET) or only brings the person back to it.
+ */
+export interface PendingStepUp {
+  permission: string;
+  next: string;
+  replays: boolean;
+}
 
 /** The step-up answer (#1525, #1635), for the caller to send in its own form. */
 export interface FreshSignInAnswer {
@@ -791,8 +812,8 @@ export interface FreshSignInAnswer {
 /**
  * Where to return after re-authenticating: this page for a page GET, and the
  * page the person was on for anything else — a POST (the form is filled in
- * again; a POST body is not replayed) or a script's request for data (#1738).
- * Always a path on this site.
+ * again; a POST body is not replayed), a script's request for data (#1738) or
+ * a file download (#2145). Always a path on this site.
  */
 export function reauthReturnTo(req: Request, mode: ReauthMode = 'page'): string {
   if (req.method === 'GET' && mode === 'page') return safeRedirect(req.originalUrl || '/');
@@ -2717,11 +2738,21 @@ class AuthManager extends BaseManager {
     const delegated = Boolean(user.viaToken || user.viaShare);
     await this.recordReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
     if (delegated) return { permission, delegated, error: 'This needs a fresh sign-in by the person; a token cannot give one' };
+    const next = reauthReturnTo(req, mode);
+    // #2145: what the prompt was for, so its success is recorded against it and,
+    // when returning does not redo the action, the page says it can be done now.
+    if (req.session) {
+      req.session.pendingStepUp = { permission, next, replays: req.method === 'GET' && mode === 'page' };
+      // Saved before the answer goes out: the browser follows a redirect on its
+      // headers, before express-session's own save at the end lands, and the
+      // prompt's request would read (and write back) the session without it.
+      await new Promise<void>((resolve) => { if (typeof req.session.save === 'function') req.session.save(() => resolve()); else resolve(); });
+    }
     return {
       permission,
       delegated,
       error: 'A fresh sign-in is needed',
-      reauth: `/auth/reauth?next=${encodeURIComponent(reauthReturnTo(req, mode))}`
+      reauth: `/auth/reauth?next=${encodeURIComponent(next)}`
     };
   }
 
@@ -2743,13 +2774,38 @@ class AuthManager extends BaseManager {
   /**
    * A re-authentication completes (#1525, #1758): the session's sign-in record
    * gains the fresh factor, and the success is recorded. The route saves the
-   * session and answers.
+   * session and answers, sending the browser to `next`.
+   *
+   * #2145: when `next` is where the pending prompt returns, the success is
+   * recorded against the permission it was for (otherwise, a prompt opened
+   * directly, against the method), and when going there does not redo the
+   * action (a form POST, a script's request, a download) the page there says
+   * it can be done now (`takeStepUpNotice`).
    */
-  async completeReauth(req: Request, result: AuthenticateResult, method: string): Promise<SignInRecord | null> {
+  async completeReauth(req: Request, result: AuthenticateResult, method: string, next: string): Promise<SignInRecord | null> {
     const record = this.reauthenticated(req.session.signIn, result);
     if (record) req.session.signIn = record;
-    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', method, `re-authenticated with ${method}; acr ${record?.acr ?? 'unknown'}`);
+    const pending = req.session.pendingStepUp;
+    delete req.session.pendingStepUp;
+    const answered = pending && pending.next === next ? pending : undefined;
+    if (answered && !answered.replays) req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? method,
+      `re-authenticated with ${method}${answered ? ` for ${answered.permission}` : ''}; acr ${record?.acr ?? 'unknown'}`);
     return record;
+  }
+
+  /**
+   * Whether this request's page says "Confirmed — you can do it now" (#2145):
+   * the first page the browser opens after a re-authentication that could not
+   * redo the action, when it is the page the prompt returned to. Any page
+   * opened clears it, so it is said once.
+   */
+  takeStepUpNotice(req: Request): boolean {
+    const path = req.session?.stepUpConfirmed;
+    if (typeof path !== 'string') return false;
+    if (req.method !== 'GET' || !(req.get('accept') ?? '').includes('text/html')) return false;
+    delete req.session.stepUpConfirmed;
+    return req.path === path;
   }
 
   /**
