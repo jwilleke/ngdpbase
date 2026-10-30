@@ -10702,7 +10702,11 @@ ${panes}
    * The request's own context goes to `enqueueUpload` (#2034): an original
    * the receiver keeps in an encrypted store is kept now, while the user's
    * key is in this request. If that is refused, the upload is refused with
-   * why, and nothing is queued.
+   * why, and nothing is queued. An import into a receiver whose own door may
+   * write into an encrypted store (a takeout into a private store, #2118)
+   * runs in this request, with its key, and answers when it has ended.
+   * `target` names the place within a receiver that has places: one of
+   * those `receiversFor` gives this user.
    */
   async importUpload(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
@@ -10744,6 +10748,12 @@ ${panes}
     const receiverId = typeof req.body?.receiver === 'string' ? req.body.receiver : '';
     const receiver = (await importManager.receiversFor(currentUser)).find(r => r.id === receiverId);
     if (!receiver) return res.status(403).json({ success: false, error: 'You cannot import into that.' });
+    // #2118: a receiver with places takes one of those it offers this user; any other takes none.
+    const askedTarget = typeof req.body?.target === 'string' && req.body.target ? req.body.target : undefined;
+    const target = receiver.targets?.find(t => t.id === askedTarget)?.id;
+    if (receiver.targets ? !target : askedTarget !== undefined) {
+      return res.status(400).json({ success: false, error: receiver.targets ? 'Choose where to import into.' : 'That import has no places to choose from.' });
+    }
     const asked = typeof req.body?.original === 'string' && req.body.original ? req.body.original : undefined;
     const original = receiver.originals.allowed.find(c => c === asked);
     if (asked !== undefined && !original) {
@@ -10771,6 +10781,7 @@ ${panes}
           }))
         },
         receiver: receiver.id,
+        ...(target ? { target } : {}),
         ...(original ? { original } : {})
       }, currentUser);
       return res.status(202).json({ success: true, runId });

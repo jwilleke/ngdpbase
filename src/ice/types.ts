@@ -66,6 +66,29 @@ export interface IceItem {
    * (a feed entry): an item whose key the engine has seen before is skipped.
    */
   itemKey?: string;
+  /**
+   * The archive the file was unpacked from (#2118), when it was: what lies
+   * beside it, for a shim whose format spans the files of an archive (a
+   * takeout's pages link to its files by the ids its file index names).
+   * The engine still hands each file to the shims on its own.
+   */
+  archive?: IceArchiveView;
+}
+
+/**
+ * The archive a file was unpacked from (#2118): this file's own path in it,
+ * and every member, read only. Paths are the archive's own, `/`-separated.
+ * Never part of an item's key: what an item is, is its content.
+ */
+export interface IceArchiveView {
+  /** The archive's name, as the file's `name` begins: `takeout.zip`. */
+  name: string;
+  /** This file's path within the archive. */
+  path: string;
+  /** Every member's path, in the archive's order. */
+  paths: readonly string[];
+  /** A member's bytes, or undefined when there is no such member. */
+  read(memberPath: string): Buffer | undefined;
 }
 
 /**
@@ -116,6 +139,13 @@ export interface ShimReadResult {
    * records plus a partial note): the file's status is then `partial`, with this.
    */
   partial?: string;
+  /**
+   * Set, with no items, when the file is part of its format's layout and
+   * holds nothing to import on its own (#2118): a takeout's file index, read
+   * through the archive by the files it names. The file's status is then
+   * `noise`, with this, and the ledger records nothing for it.
+   */
+  skip?: string;
 }
 
 /**
@@ -259,6 +289,12 @@ export interface ReceiveInfo {
    * taken there: never a silent replace.
    */
   givenName?: string;
+  /**
+   * The place within the receiver the run goes to (#2118), for a receiver
+   * with `targets`: one its `targets` gave the user the run is for, checked
+   * by the engine before the run. The receiver's door still checks it.
+   */
+  target?: string;
 }
 
 /** What a receiver's `fileDone` is told (#2109). */
@@ -282,6 +318,12 @@ export interface ReceiveOutcome {
    * so the same bytes uploaded again are told the same.
    */
   heldAs?: string;
+}
+
+/** A place within a receiver (#2118): a user's private store. */
+export interface IceTarget {
+  id: string;
+  label?: string;
 }
 
 /**
@@ -342,6 +384,46 @@ export interface IceReceiver {
    * before the run is queued; the run reuses what was kept and needs no key.
    */
   keepsEncrypted?: boolean;
+  /**
+   * `receive` itself may write into an encrypted store (a takeout into a
+   * sealed private store, #2118), which only a request holding the user's
+   * unlocked key can write. The engine then runs an upload into it during
+   * the upload request, with the request's own context, instead of as a
+   * background job: no key is ever carried into a job (#2034's decision).
+   * An import into it is confidential (#2110).
+   */
+  writesEncrypted?: boolean;
+  /**
+   * A zip inside an uploaded zip is handed on as a file, not unpacked
+   * (#2118): for a receiver whose format holds zips as content (a takeout's
+   * files). Without it, the engine unpacks nested zips too.
+   */
+  innerZipsAsFiles?: boolean;
+  /**
+   * The items this receiver checks for itself whether it still holds
+   * (#2118, operator 2026-10-30): a takeout's page, by its uuid, so one
+   * deleted since an earlier import comes back when the same takeout is
+   * imported again. A file whose fingerprint the scope already took is then
+   * read again, and only these of its items go to `receive`; the rest are
+   * duplicates. When nothing new is stored it stays `unchanged`, unrecorded,
+   * as the fingerprint skip leaves it. Without this, the fingerprint decides.
+   */
+  rechecks?(item: IceItem): boolean;
+  /**
+   * The places within this receiver this context may import into (#2118):
+   * a user's own private stores. The receiver's own rule (D5). A receiver
+   * with targets takes a run only with one of them (`IceRunRequest.target`),
+   * which the engine checks against this before the run, binds into the
+   * ledger scope, and hands on in every item's `ReceiveInfo.target`.
+   */
+  targets?(ctx: ActorContext): Promise<IceTarget[]>;
+  /**
+   * Called once when a run into this receiver has read every file (#2118),
+   * with its report: a receiver that records the run as one act (a
+   * takeout's `store-import` audit event). Not called for a refused run. A
+   * throw is the run's failure.
+   */
+  runDone?(ctx: ActorContext, report: IceRunReport): Promise<void>;
   /** The original-file choices this receiver offers (D11). Without it: all three. */
   originals?: IceOriginalChoices;
   /**
@@ -371,6 +453,8 @@ export interface IceUpload {
    * drops it on a zip). Checked by the engine against the receiver's `names`.
    */
   givenName?: string;
+  /** The archive the engine unpacked this file from (#2118); set by the engine, never by a caller. */
+  archive?: IceArchiveView;
 }
 
 /**
@@ -428,6 +512,12 @@ export interface IceRunRequest {
    * client sent.
    */
   options?: Record<string, unknown>;
+  /**
+   * The place within the receiver (#2118), for a receiver with `targets`:
+   * one of those it gives the user the run is for. Required for such a
+   * receiver and refused for any other.
+   */
+  target?: string;
 }
 
 /** Per-file status (first slice). */
@@ -471,6 +561,8 @@ export interface IceFileReport {
 export interface IceRunReport {
   runId: string;
   receiver: string;
+  /** The place within the receiver (#2118), when it has places. */
+  target?: string;
   scope: string;
   /** Who it ran as. */
   username: string;
@@ -525,6 +617,9 @@ export interface RecentImport {
   /** The receiver it went into. */
   receiver: string;
   receiverLabel?: string;
+  /** The place within it (#2118), when the receiver has places. */
+  target?: string;
+  targetLabel?: string;
   /** How many references the receiver gave (pages, records). */
   refs: number;
   /** Where the user can open the first of them (`linkFor`), when they may. */

@@ -2,7 +2,7 @@
  * Reading a takeout handed back for import (#1472).
  */
 
-import { freeImportTitle, readTakeout, rewriteAttachmentLinks } from '../privateStoreImport';
+import { readTakeout } from '../privateStoreImport';
 import type { ZipEntry } from '../zipArchive';
 
 const entry = (p: string, text: string): ZipEntry => ({ path: p, bytes: Buffer.from(text) });
@@ -72,24 +72,5 @@ describe('readTakeout (#1472)', () => {
 
     expect(t.files).toEqual([expect.objectContaining({ name: 'a.jpg' })]);
     expect(t.files[0].oldId).toBeUndefined();
-  });
-});
-
-describe('rewriteAttachmentLinks (#1472)', () => {
-  test('points each old id at its new one, whole ids only', () => {
-    const ids = new Map([['abc', 'NEW']]);
-
-    expect(rewriteAttachmentLinks('![x](/attachments/abc) [y](/attachments/abc-2) /attachments/abc.', ids))
-      .toBe('![x](/attachments/NEW) [y](/attachments/abc-2) /attachments/NEW.');
-  });
-});
-
-describe('freeImportTitle (#1472)', () => {
-  test('the title itself when free, else "(imported)", then "(imported 2)"', async () => {
-    const taken = new Set(['notes', 'notes (imported)']);
-    const isTaken = async (t: string): Promise<boolean> => taken.has(t.toLowerCase());
-
-    expect(await freeImportTitle('Fresh', isTaken)).toBe('Fresh');
-    expect(await freeImportTitle('Notes', isTaken)).toBe('Notes (imported 2)');
   });
 });

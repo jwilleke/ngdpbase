@@ -316,6 +316,46 @@ describe('POST /import: the name of what a single upload becomes (#2130)', () =>
   });
 });
 
+describe('POST /import: the place within a receiver that has places (#2118)', () => {
+  /** An add-on's receiver with places: only `mine` is molly's. */
+  const withPlaces = async () => {
+    const made = await makeApp();
+    made.importManager.registerReceiver('acct', {
+      name: 'places', label: 'Places', accepts: ['ncm'],
+      mayUse: async () => true,
+      targets: async () => [{ id: 'mine' }],
+      receive: async () => ({ status: 'stored' })
+    });
+    return { ...made, enqueue: vi.spyOn(made.importManager, 'enqueueUpload') };
+  };
+
+  test('one of the places it offers travels on the run request', async () => {
+    const { app, enqueue } = await withPlaces();
+    const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'acct.places').field('target', 'mine').attach('files', MD, 'Garden.md');
+    expect(res.status).toBe(202);
+    expect(enqueue.mock.calls[0][0].target).toBe('mine');
+  });
+
+  test('no place, or one it does not offer this user, is a 400, and nothing is queued', async () => {
+    const { app, enqueue } = await withPlaces();
+    for (const target of [undefined, 'theirs']) {
+      const req = request(app).post('/import').set('x-user', 'molly').field('receiver', 'acct.places');
+      const res = await (target ? req.field('target', target) : req).attach('files', MD, 'Garden.md');
+      expect(res.status, String(target)).toBe(400);
+      expect(res.body.error).toMatch(/where to import into/);
+    }
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a place named for a receiver without places is a 400, and nothing is queued', async () => {
+    const { app, enqueue } = await withPlaces();
+    const res = await request(app).post('/import').set('x-user', 'molly').field('receiver', 'core.pages').field('target', 'mine').attach('files', MD, 'Garden.md');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no places/);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /import/runs/:runId (#2021)', () => {
   test('a run is shown to the user it ran as; anyone else, or anonymous, is refused', async () => {
     const { app, jobs } = await makeApp();
