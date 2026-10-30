@@ -11,9 +11,14 @@ import { instanceOrigin, signInWithPassword } from './fixtures/helpers';
  * is read and changed through the page door, sealed with the folder's key; a
  * file uploaded onto it is served only to a reader of the folder; site search
  * finds it for a reader of the folder and for nobody else. A folder no policy
- * names is read by an admin (the shipped `shared-folder-admin-read` policy:
- * listed on /shared, opened) but not added to, edited or deleted in by them,
- * and opens to no ordinary account (404).
+ * names is read, added to, edited and deleted in by an admin (the shipped
+ * `shared-folder-admin` policy, #2095), and opens to no ordinary account (404).
+ *
+ * #2095: `/shared/executive` is made with `/shared/default` once the words are
+ * confirmed. An account holding the executive role reads every folder (the
+ * shipped `shared-folder-executive-read`), adds, edits and deletes in
+ * `/shared/executive` (`shared-folder-executive-file`), and nowhere else but
+ * default; an ordinary account cannot open it.
  *
  * Shared folders need the organization's recovery words confirmed, which is
  * once per site, and a folder cannot be deleted yet (slice 10 of the epic,
@@ -56,6 +61,9 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
 
   const username = `e2e-shared-${RUN}`;
   const password = `pw-${randomUUID()}`;
+  const execName = `e2e-exec-${RUN}`;
+  const execPassword = `pw-${randomUUID()}`;
+  const EXEC_TITLE = `E2E Board ${RUN}`;
 
   test.afterAll(async ({ browser }) => {
     const context = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
@@ -63,7 +71,10 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     await admin.goto('/shared/default');
     const csrf = await csrfFrom(admin);
     await admin.request.post(`/shared/default/${encodeURIComponent(TITLE)}/delete`, { form: { _csrf: csrf } });
-    await admin.request.delete(`/admin/users/${encodeURIComponent(username)}`, { headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' } });
+    await admin.request.post(`/shared/executive/${encodeURIComponent(EXEC_TITLE)}/delete`, { form: { _csrf: csrf } });
+    for (const name of [username, execName]) {
+      await admin.request.delete(`/admin/users/${encodeURIComponent(name)}`, { headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' } });
+    }
     await context.close();
   });
 
@@ -80,6 +91,8 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
       await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
     }
     await expect(page.locator('#shared-folders-list a[href="/shared/default"]')).toBeVisible();
+    // #2095: made with default, with no one asking for it.
+    await expect(page.locator('#shared-folders-list a[href="/shared/executive"]')).toBeVisible();
 
     await page.locator('#shared-folders-create input[name="name"]').fill(CLOSED);
     await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
@@ -105,34 +118,86 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
     await expect(page.locator('[data-testid="shared-folders-list"]')).toContainText('default');
   });
 
-  test('an admin reads a folder no policy names, and adds, edits and deletes nothing there', async ({ page }) => {
-    // Listed and opened: shared-folder-admin-read gives every admin shared-folder-read on shared/*.
+  test('an admin reads, adds, edits and deletes in a folder no policy names (#2095)', async ({ page }) => {
+    // Listed and opened: shared-folder-admin gives every admin shared-folder-read and shared-folder-file on shared/*.
     await page.goto('/shared');
     await expect(page.locator(`[data-testid="shared-folders-list"] a[href="/shared/${CLOSED}"]`)).toBeVisible();
-    expect(await statusOf(page, `/shared/${CLOSED}`)).toBe(200);
     await page.goto(`/shared/${CLOSED}`);
     await expect(page.locator('[data-testid="shared-folder-empty"]')).toBeVisible();
-    // No shared-folder-file: no new-page form, and every write is refused as a page that is not there.
-    await expect(page.locator('[data-testid="shared-folder-new"]')).toHaveCount(0);
-    expect(await statusOf(page, `/shared/${CLOSED}?new=${encodeURIComponent(TITLE)}`)).toBe(404);
+    await expect(page.locator('[data-testid="shared-folder-new"]')).toBeVisible();
     const pagePath = `/shared/${CLOSED}/${encodeURIComponent(TITLE)}`;
-    expect(await statusOf(page, `${pagePath}/edit`)).toBe(404);
     const csrf = await csrfFrom(page);
-    const saved = await page.request.post(`${pagePath}/save`, { form: { _csrf: csrf, content: `The ${WORD} closed note.` }, maxRedirects: 0 });
-    expect(saved.status()).toBe(404);
-    const deleted = await page.request.post(`${pagePath}/delete`, { form: { _csrf: csrf }, maxRedirects: 0 });
-    expect(deleted.status()).toBe(404);
-    // A file from inside the folder goes into the folder or nowhere, never the public pool: refused.
+    const saved = await page.request.post(`${pagePath}/save`, { form: { _csrf: csrf, content: `The ${WORD} closed note.`, 'system-category': 'general' } });
+    expect(saved.ok()).toBe(true);
+    await page.goto(pagePath);
+    await expect(page.getByText(`The ${WORD} closed note.`)).toBeVisible();
+    const edited = await page.request.post(`${pagePath}/save`, { form: { _csrf: await csrfFrom(page), content: `The ${WORD} closed note, edited.`, 'system-category': 'general' } });
+    expect(edited.ok()).toBe(true);
+    await page.goto(pagePath);
+    await expect(page.getByText(`The ${WORD} closed note, edited.`)).toBeVisible();
     const up = await page.request.post(`/attachments/upload/${encodeURIComponent(`shared/${CLOSED}/${TITLE}`)}`, {
-      headers: { 'X-CSRF-Token': csrf },
+      headers: { 'X-CSRF-Token': await csrfFrom(page) },
       multipart: { file: { name: `closed-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`file ${WORD}`) } }
     });
-    expect(up.ok()).toBe(false);
-    // Nothing landed: the folder is still empty, and search finds no closed note.
+    expect(up.ok()).toBe(true);
+    const deleted = await page.request.post(`${pagePath}/delete`, { form: { _csrf: await csrfFrom(page) } });
+    expect(deleted.ok()).toBe(true);
     await page.goto(`/shared/${CLOSED}`);
     await expect(page.locator('[data-testid="shared-folder-empty"]')).toBeVisible();
-    await page.goto(`/search?q=${WORD}`);
-    await expect(page.locator('body')).not.toContainText('closed note');
+  });
+
+  test('an executive reads every folder, files in /shared/executive, and is refused filing elsewhere (#2095)', async ({ page, browser }) => {
+    const made = await page.request.post('/admin/users', {
+      form: { _csrf: await csrfFrom(page), username: execName, email: `${execName}@example.test`, displayName: execName, password: execPassword, roles: 'executive', isTest: 'true' }
+    });
+    expect(made.ok()).toBe(true);
+    const exec = await signIn(browser, execName, execPassword);
+    try {
+      const p = exec.page;
+      // Reads every folder: all three listed and opened.
+      await p.goto('/shared');
+      for (const name of ['default', 'executive', CLOSED]) {
+        await expect(p.locator(`[data-testid="shared-folders-list"] a[href="/shared/${name}"]`)).toBeVisible();
+      }
+      expect(await statusOf(p, `/shared/${CLOSED}`)).toBe(200);
+      await p.goto(`/shared/default/${encodeURIComponent(TITLE)}`);
+      await expect(p.getByText(`The ${WORD} minutes.`)).toBeVisible();
+
+      // Refused filing in a folder it only reads: no new-page form, writes answered as a missing page.
+      await p.goto(`/shared/${CLOSED}`);
+      await expect(p.locator('[data-testid="shared-folder-new"]')).toHaveCount(0);
+      const closedPath = `/shared/${CLOSED}/${encodeURIComponent(EXEC_TITLE)}`;
+      expect(await statusOf(p, `${closedPath}/edit`)).toBe(404);
+      const refused = await p.request.post(`${closedPath}/save`, { form: { _csrf: await csrfFrom(p), content: 'not here', 'system-category': 'general' }, maxRedirects: 0 });
+      expect(refused.status()).toBe(404);
+      const upRefused = await p.request.post(`/attachments/upload/${encodeURIComponent(`shared/${CLOSED}/${EXEC_TITLE}`)}`, {
+        headers: { 'X-CSRF-Token': await csrfFrom(p) },
+        multipart: { file: { name: `exec-closed-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from('not here') } }
+      });
+      expect(upRefused.ok()).toBe(false);
+
+      // Adds, edits and deletes in /shared/executive.
+      await p.goto('/shared/executive');
+      await expect(p.locator('[data-testid="shared-folder-new"]')).toBeVisible();
+      const execPath = `/shared/executive/${encodeURIComponent(EXEC_TITLE)}`;
+      const added = await p.request.post(`${execPath}/save`, { form: { _csrf: await csrfFrom(p), content: `The ${WORD} board pack.`, 'system-category': 'general' } });
+      expect(added.ok()).toBe(true);
+      const edited = await p.request.post(`${execPath}/save`, { form: { _csrf: await csrfFrom(p), content: `The ${WORD} board pack, edited.`, 'system-category': 'general' } });
+      expect(edited.ok()).toBe(true);
+      await p.goto(execPath);
+      await expect(p.getByText(`The ${WORD} board pack, edited.`)).toBeVisible();
+      const up = await p.request.post(`/attachments/upload/${encodeURIComponent(`shared/executive/${EXEC_TITLE}`)}`, {
+        headers: { 'X-CSRF-Token': await csrfFrom(p) },
+        multipart: { file: { name: `board-${RUN}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`board ${WORD}`) } }
+      });
+      expect(up.ok()).toBe(true);
+      const scratch = `/shared/executive/${encodeURIComponent(`${EXEC_TITLE} scratch`)}`;
+      expect((await p.request.post(`${scratch}/save`, { form: { _csrf: await csrfFrom(p), content: 'scratch', 'system-category': 'general' } })).ok()).toBe(true);
+      expect((await p.request.post(`${scratch}/delete`, { form: { _csrf: await csrfFrom(p) } })).ok()).toBe(true);
+      expect(await statusOf(p, scratch)).toBe(404);
+    } finally {
+      await exec.context.close();
+    }
   });
 
   test('a file uploaded onto the page is the folder\'s, served to its readers only', async ({ page, browser }) => {
@@ -192,10 +257,13 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
       await expect(person.page.getByText(`The ${WORD} minutes.`)).toBeVisible();
       await person.page.goto(`/search?q=${RUN}`);
       await expect(person.page.locator('body')).toContainText(TITLE);
-      // An ordinary account: the closed folder is neither listed nor opened.
+      // An ordinary account: the closed folder and /shared/executive are neither listed nor opened.
       expect(await statusOf(person.page, `/shared/${CLOSED}`)).toBe(404);
+      expect(await statusOf(person.page, '/shared/executive')).toBe(404);
+      expect(await statusOf(person.page, `/shared/executive/${encodeURIComponent(EXEC_TITLE)}`)).toBe(404);
       await person.page.goto('/shared');
       await expect(person.page.locator('body')).not.toContainText(CLOSED);
+      await expect(person.page.locator('[data-testid="shared-folders-list"] a[href="/shared/executive"]')).toHaveCount(0);
     } finally {
       await person.context.close();
     }

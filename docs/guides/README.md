@@ -1,7 +1,7 @@
 ---
 name: Developer guides
 description: Index of area developer guides — the door for how to change this codebase
-dateModified: 2026-10-18
+dateModified: 2026-10-30
 category: guides
 ---
 
@@ -11,7 +11,7 @@ Each file is the door for one area: standing rules, a checklist, pointers, and o
 
 | Area | Guide |
 | --- | --- |
-| Security | [security-developer-guide.md](security-developer-guide.md) |
+| Security (roles, permissions and policies: [how they fit together](security-developer-guide.md#roles-permissions-and-policies)) | [security-developer-guide.md](security-developer-guide.md) |
 | Authentication | [authentication-developer-guide.md](authentication-developer-guide.md) |
 | Audit | [audit-developer-guide.md](audit-developer-guide.md) |
 | Configuration | [configuration-developer-guide.md](configuration-developer-guide.md) |

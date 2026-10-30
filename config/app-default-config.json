@@ -2721,7 +2721,7 @@
       "name": "executive",
       "required-aal": 1,
       "displayname": "Executive",
-      "description": "The board or the president: reads everything the organization keeps and decides the requests waiting for the board. Changes nothing else; users' own vaults, health records and sign-in credentials stay private",
+      "description": "The board or the president: reads everything the organization keeps, every shared folder included, adds, edits and deletes in the Executive shared folder (/shared/executive), and decides the requests waiting for the board. Changes nothing else; users' own vaults, health records and sign-in credentials stay private",
       "issystem": true,
       "icon": "landmark",
       "color": "#6f42c1"
@@ -3117,7 +3117,7 @@
     {
       "id": "shared-folder-default",
       "name": "Shared Folder: default",
-      "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it, except that administrators may read every folder (shared-folder-admin-read)",
+      "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it: administrators open and file in every folder (shared-folder-admin), executives read every folder (shared-folder-executive-read) and file in /shared/executive (shared-folder-executive-file)",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -3138,9 +3138,9 @@
       ]
     },
     {
-      "id": "shared-folder-admin-read",
-      "name": "Shared Folders: administrators read",
-      "description": "Administrators may open every shared folder (#2125, operator 2026-10-29): its pages, their history and its files, the folder list on /shared and the folder's search. Read only: adding, editing and deleting in a folder (shared-folder-file) still needs a policy naming that folder",
+      "id": "shared-folder-admin",
+      "name": "Shared Folders: administrators",
+      "description": "Administrators may open every shared folder and add, edit and delete in it (#2125, #2095, operator 2026-10-30): its pages, their history and its files, the folder list on /shared and the folder's search",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -3156,7 +3156,52 @@
         }
       ],
       "actions": [
+        "shared-folder-read",
+        "shared-folder-file"
+      ]
+    },
+    {
+      "id": "shared-folder-executive-read",
+      "name": "Shared Folders: executives read",
+      "description": "Executives may open every shared folder (#2095, operator 2026-10-30): its pages, their history and its files, the folder list on /shared and the folder's search. Read only: adding, editing and deleting is shared-folder-executive-file, in /shared/executive alone. Users' own vaults are not shared folders and stay closed",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "executive"
+        }
+      ],
+      "resources": [
+        {
+          "type": "shared-folder",
+          "pattern": "shared/*"
+        }
+      ],
+      "actions": [
         "shared-folder-read"
+      ]
+    },
+    {
+      "id": "shared-folder-executive-file",
+      "name": "Shared Folders: executives file in /shared/executive",
+      "description": "Executives may add, edit and delete pages and files in /shared/executive (#2095, operator 2026-10-30), and in no other folder but /shared/default. A site may give shared-folder-file on shared/executive to others (e.g. a secretary) by its own policy",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "executive"
+        }
+      ],
+      "resources": [
+        {
+          "type": "shared-folder",
+          "pattern": "shared/executive"
+        }
+      ],
+      "actions": [
+        "shared-folder-file"
       ]
     },
     {

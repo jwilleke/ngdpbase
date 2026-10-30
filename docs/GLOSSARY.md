@@ -473,8 +473,8 @@ Private attachments are stored separately in
 Preferred: __shared folder__. Never "vault", never "shared vault".
 
 A folder of pages and files owned by the organization, not by any user, at
-`/shared/<name>` (`/shared/default` is open to every signed-in user, and every
-administrator may read every folder but add to one only when given it). Opened
+`/shared/<name>` (`/shared/default` is open to every signed-in user, and
+`/shared/executive` holds the board's papers). Opened
 by permission, `shared-folder-read` and `shared-folder-file` on the folder,
 never by a role the folder lists ([SharedFolderManager](managers/SharedFolderManager.md),
 [shared-folders.md](planning/shared-folders.md)). On disk it is kept the way a

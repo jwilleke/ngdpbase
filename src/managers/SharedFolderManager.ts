@@ -43,6 +43,7 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { systemContext } from '../context/bootActions.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
@@ -86,6 +87,12 @@ const FOLDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** The folder every signed-in user may open (decision; the shipped `shared-folder-default` policy). */
 export const DEFAULT_SHARED_FOLDER = 'default';
+
+/** The Executive shared folder (#2095); who opens it is the shipped policies' (`shared-folder-executive-read`, `shared-folder-executive-file`, `shared-folder-admin`). */
+export const EXECUTIVE_SHARED_FOLDER = 'executive';
+
+/** The folders every site has, made once the recovery words are confirmed (#2125, #2095). */
+export const SHIPPED_SHARED_FOLDERS: readonly string[] = [DEFAULT_SHARED_FOLDER, EXECUTIVE_SHARED_FOLDER];
 
 /** Where pages live: a folder is kept under it, as the `shared-folders` container's vault. */
 const PAGES_DIR_KEY = 'ngdpbase.page.provider.filesystem.storagedir';
@@ -453,9 +460,10 @@ class SharedFolderManager extends BaseManager {
    * Make shared folder `name` (#2125): its key (`createFolderKey`, which
    * needs the recovery words confirmed) and its place for pages, sealed with
    * that key. Admins only (decision 8) until the Shared folders screen
-   * (slice 3). A new folder is read only by admins (`shared-folder-admin-read`)
-   * and filed into by nobody until a policy names `shared/<name>`; `default`
-   * is shipped open to every signed-in user.
+   * (slice 3). A new folder is opened by admins (`shared-folder-admin`) and
+   * read by executives (`shared-folder-executive-read`), and by nobody else
+   * until a policy names `shared/<name>`; `default` is shipped open to every
+   * signed-in user.
    * Recorded as `shared-folder-create` before anything is made (on-failure
    * refuse). Refused when it exists.
    */
@@ -491,15 +499,34 @@ class SharedFolderManager extends BaseManager {
   }
 
   /**
-   * Make `/shared/default` when it is not there yet and can be made: the
-   * recovery words are confirmed. Finishing the words does this, so the
-   * folder every signed-in user may open exists from then on. Returns whether
-   * it was made now.
+   * Make the shipped folders (`SHIPPED_SHARED_FOLDERS`: `/shared/default` and
+   * `/shared/executive`) that are not there yet, once they can be made: the
+   * recovery words are confirmed. Finishing the words does this, and so does
+   * every start (`ensureShippedFoldersAtBoot`), so a site that confirmed its
+   * words before a shipped folder existed gets it on its next start.
+   * Idempotent. Returns the folders made now.
    */
-  async ensureDefaultFolder(ctx: ActorContext): Promise<boolean> {
-    if (this.folderNames().includes(DEFAULT_SHARED_FOLDER) || !(await this.recoveryWordsConfirmed())) return false;
-    await this.createFolder(ctx, DEFAULT_SHARED_FOLDER);
-    return true;
+  async ensureShippedFolders(ctx: ActorContext): Promise<string[]> {
+    const missing = SHIPPED_SHARED_FOLDERS.filter((name) => !this.folderNames().includes(name));
+    if (missing.length === 0 || !(await this.recoveryWordsConfirmed())) return [];
+    for (const name of missing) await this.createFolder(ctx, name);
+    return missing;
+  }
+
+  /**
+   * At start, make the shipped folders a site with confirmed words does not
+   * have yet (#2095), under the system context. Best-effort: a failure is
+   * logged and never blocks start-up; nothing is tried while the keys cannot
+   * be used.
+   */
+  async ensureShippedFoldersAtBoot(): Promise<void> {
+    if (this.unavailable) return;
+    try {
+      const made = await this.ensureShippedFolders(systemContext(this.engine, 'make the shipped shared folders a site with confirmed recovery words does not have yet (#2095)'));
+      if (made.length > 0) logger.info(`🗂️  [SharedFolderManager] Made the shipped shared folder(s) ${made.map((n) => `/shared/${n}`).join(', ')} at start`);
+    } catch (err) {
+      logger.warn(`[SharedFolderManager] The shipped shared folders were not made at start: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**

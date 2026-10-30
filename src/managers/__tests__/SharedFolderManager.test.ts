@@ -17,7 +17,9 @@
  * - the confirmation check in createFolderKey (skipped): the "unconfirmed
  *   words" test went red;
  * - the confirmed check in discardUnconfirmedWords (skipped): the "confirmed
- *   set cannot be discarded" test went red.
+ *   set cannot be discarded" test went red;
+ * - #2095, `executive` left out of SHIPPED_SHARED_FOLDERS: the "shipped
+ *   folders" and "made at start" tests went red.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -364,13 +366,58 @@ describe('SharedFolderManager (#2124)', () => {
       expect(fs.existsSync(storeJson('executive'))).toBe(false);
     });
 
-    test('/shared/default is made when the words are confirmed, once', async () => {
+    test('the shipped folders, /shared/default and /shared/executive, are made when the words are confirmed, once (#2095)', async () => {
       const m = await build();
-      expect(await m.ensureDefaultFolder(admin())).toBe(false);
-      await setUpWords(m);
-      expect(await m.ensureDefaultFolder(admin())).toBe(true);
-      expect(m.folderNames()).toEqual(['default']);
-      expect(await m.ensureDefaultFolder(admin())).toBe(false);
+      expect(await m.ensureShippedFolders(admin())).toEqual([]);
+      await setUpWords(m, 'ann', false);
+      expect(await m.ensureShippedFolders(admin())).toEqual([]);
+      expect(m.folderNames()).toEqual([]);
+      confirmed.add(`ann/${m.recoveryWordsInfo()?.wordsId}`);
+      expect(await m.ensureShippedFolders(admin())).toEqual(['default', 'executive']);
+      expect(m.folderNames()).toEqual(['default', 'executive']);
+      expect(fs.existsSync(storeJson('executive'))).toBe(true);
+      expect(await m.ensureShippedFolders(admin())).toEqual([]);
+    });
+
+    describe('made at start (#2095)', () => {
+      /** A PDP that lets the system principal (the fixture's fallback name) manage the keys, as `ngdpbase.system.roles` does. */
+      const systemPdp = {
+        permits: (s: Subj, a: string) => Promise.resolve(a === 'admin-system' && (s.username === 'system' || admins.has(s.username))),
+        decide: () => Promise.resolve({ permit: false })
+      };
+
+      test('a site that confirmed its words before /shared/executive existed gets it on its next start, under the system context', async () => {
+        const before = await build();
+        await setUpWords(before);
+        await before.createFolder(admin(), 'default');
+        audited = [];
+        // The next start.
+        const m = await build(systemPdp);
+        await m.ensureShippedFoldersAtBoot();
+        expect(m.folderNames()).toEqual(['default', 'executive']);
+        expect(fs.existsSync(storeJson('executive'))).toBe(true);
+        const made = audited.filter((e) => e.eventType === 'shared-folder-create');
+        expect(made.map((e) => [e.user, e.resource, (e.metadata as Record<string, unknown>).origin])).toEqual([['system', 'shared/executive', 'boot']]);
+        // Idempotent: the start after that makes nothing.
+        audited = [];
+        const again = await build(systemPdp);
+        await again.ensureShippedFoldersAtBoot();
+        expect(again.folderNames()).toEqual(['default', 'executive']);
+        expect(audited.filter((e) => e.eventType === 'shared-folder-create')).toEqual([]);
+      });
+
+      test('nothing is made at start before the words are confirmed, and a failure never stops the start', async () => {
+        const before = await build();
+        await setUpWords(before, 'ann', false);
+        const m = await build(systemPdp);
+        await m.ensureShippedFoldersAtBoot();
+        expect(m.folderNames()).toEqual([]);
+        // Confirmed, but the record cannot be written: refused, logged, start goes on.
+        confirmed.add(`ann/${m.recoveryWordsInfo()?.wordsId}`);
+        auditFails = true;
+        await expect(m.ensureShippedFoldersAtBoot()).resolves.toBeUndefined();
+        expect(m.folderNames()).toEqual([]);
+      });
     });
 
     test('the folders a reader may open are the PDP\'s answer, folder by folder', async () => {
@@ -386,21 +433,32 @@ describe('SharedFolderManager (#2124)', () => {
       expect(await m.mayInFolder(admin('ann'), 'shared-folder-read', 'ghost')).toBe(false);
     });
 
-    test('by the shipped policies an admin may open every folder and file into none a policy does not name; an ordinary account only default', async () => {
+    test('by the shipped policies an admin opens and files in every folder, an executive reads every folder and files only in executive; an ordinary account only default', async () => {
       const made = await build();
       await setUpWords(made);
       await made.createFolder(admin(), 'default');
       await made.createFolder(admin(), 'executive');
+      await made.createFolder(admin(), 'finance');
       // The same folders, decided by the real PDP over the shipped policies.
       const m = await build(await pdpOver(shipped));
       const ada = { username: 'ada', roles: ['admin', 'vault-owner'], isAuthenticated: true } as never;
-      expect(await m.foldersReadableBy(ada)).toEqual(['default', 'executive']);
-      expect(await m.mayInFolder(ada, 'shared-folder-file', 'executive')).toBe(false);
-      expect(await m.mayInFolder(ada, 'page-edit', 'executive')).toBe(false);
-      expect(await m.mayInFolder(ada, 'shared-folder-file', 'default')).toBe(true);
+      expect(await m.foldersReadableBy(ada)).toEqual(['default', 'executive', 'finance']);
+      for (const folder of ['default', 'executive', 'finance']) {
+        expect(await m.mayInFolder(ada, 'shared-folder-file', folder)).toBe(true);
+        expect(await m.mayInFolder(ada, 'page-edit', folder)).toBe(true);
+      }
+      // #2095: an executive reads every folder and files only in executive (and default, as every account).
+      const eve = { username: 'eve', roles: ['reader', 'vault-owner', 'executive'], isAuthenticated: true } as never;
+      expect(await m.foldersReadableBy(eve)).toEqual(['default', 'executive', 'finance']);
+      expect(await m.mayInFolder(eve, 'shared-folder-file', 'executive')).toBe(true);
+      expect(await m.mayInFolder(eve, 'shared-folder-file', 'default')).toBe(true);
+      expect(await m.mayInFolder(eve, 'shared-folder-file', 'finance')).toBe(false);
+      expect(await m.mayInFolder(eve, 'page-edit', 'finance')).toBe(false);
       const rita = { username: 'rita', roles: ['editor', 'vault-owner'], isAuthenticated: true } as never;
       expect(await m.foldersReadableBy(rita)).toEqual(['default']);
       expect(await m.mayInFolder(rita, 'shared-folder-read', 'executive')).toBe(false);
+      expect(await m.mayInFolder(rita, 'shared-folder-file', 'executive')).toBe(false);
+      expect(await m.mayInFolder(rita, 'shared-folder-read', 'finance')).toBe(false);
       const anon = { username: 'Anonymous', roles: ['anonymous'], isAuthenticated: false } as never;
       expect(await m.foldersReadableBy(anon)).toEqual([]);
     });
