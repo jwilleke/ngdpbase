@@ -19,7 +19,7 @@ Status: design decided (operator, 2026-10-30, brainstorm). Not built. Today File
 
 ## Build order
 
-To be cut into issues under #1851 once the operator agrees the order:
+Approved (operator, 2026-10-30) and filed under #1851: step 1 [#2148](https://github.com/jwilleke/ngdpbase/issues/2148), step 2 [#2149](https://github.com/jwilleke/ngdpbase/issues/2149), step 3 [#2150](https://github.com/jwilleke/ngdpbase/issues/2150).
 
 - 1 FileManager writes: upload to a chosen place (permission per place, sealing, audit), with AttachmentManager as its storage; the places-you-may-write list.
 - 2 ICE in front of it: the Upload file dialog as an ICE import with a keep-as-file receiver; vetting and cleaning in the format shims, with the user told what was removed.
