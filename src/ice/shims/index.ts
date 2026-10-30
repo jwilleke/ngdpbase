@@ -19,6 +19,10 @@ import { xmlShim } from './xml.js';
 import { csvShim } from './csv.js';
 import { rssAtomShim } from './rss-atom.js';
 import { xmlIndexShim } from './xml-index.js';
+import { svgShim } from './svg.js';
 
-/** Every record shim, in registration order. */
+/** Every record shim, in registration order. `core.csv` also cleans a CSV kept as a file (#2149). */
 export const RECORD_SHIMS: readonly IceShim[] = [geojsonShim, restJsonShim, xmlShim, csvShim, rssAtomShim, xmlIndexShim];
+
+/** Shims that only vet a file kept as a file (#2149): they clean and are never picked for a run. */
+export const VETTING_SHIMS: readonly IceShim[] = [svgShim];

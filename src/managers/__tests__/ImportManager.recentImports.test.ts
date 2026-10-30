@@ -44,8 +44,9 @@ function makeEngine(config: Record<string, unknown> = {}, readable: Set<string> 
       refreshPageList: async () => undefined,
       mayShowPage: async (name: string, ctx: ActorContext) => readable.has(`${ctx.username}:${name}`)
     },
-    AttachmentManager: {
-      uploadAttachment: async () => ({ identifier: `att-${++uploads}` })
+    // #2149: the files receiver puts through FileManager's door.
+    FileManager: {
+      put: async () => ({ identifier: `att-${++uploads}` })
     }
   };
   return { getManager: (name: string) => managers[name] ?? null };

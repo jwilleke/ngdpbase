@@ -197,9 +197,11 @@ export type AttachmentDetail =
     stored?: false;
     heldAs?: string;
     offeredAs?: string;
+    /** What vetting removed before the file was kept (#2149): one note per kind, counts only, never content. */
+    cleaned?: string[];
   }
   /** A sealed store's file: `owner` is the store owner's identity @id in the record, `ownerUser` their username beside it (#2041). */
-  | { attachmentId: string; sealedStore: { owner: string; store: string; ownerUser?: string } };
+  | { attachmentId: string; sealedStore: { owner: string; store: string; ownerUser?: string }; cleaned?: string[] };
 
 export type AttachmentInput = CommonInput & { op: AttachmentOp } & AttachmentDetail;
 
@@ -323,6 +325,8 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
       if (input.offeredAs) metadata.offeredAs = input.offeredAs;
     }
   }
+  // #2149: what vetting removed, in either form: kinds and counts, nothing of the file.
+  if (input.cleaned && input.cleaned.length > 0) metadata.cleaned = [...input.cleaned];
 
   const severity: AuditSeverity = op === 'delete'
     ? (viaToken ? 'high' : 'medium')

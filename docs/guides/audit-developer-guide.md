@@ -1,7 +1,7 @@
 ---
 name: Audit developer guide
 description: How to add or change an audit event — the configuration entry, the names module, the emitter, the on-failure rule, the actor, the tests, and the checks that fail
-dateModified: 2026-10-26
+dateModified: 2026-10-30
 category: guides
 relatedModules: [AuditManager, FileAuditProvider, DatabaseAuditProvider]
 ---
@@ -36,7 +36,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 
 Decided by the operator on 2026-10-17 ([#1825](https://github.com/jwilleke/ngdpbase/issues/1825)):
 
-- __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the user acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, AttachmentManager for files, an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares. ReviewManager records a request for review filed, approved, rejected, or approved but not carried out (`review-filed`, `review-approved`, `review-rejected`, `review-failed`; [#2072](https://github.com/jwilleke/ngdpbase/issues/2072)): the request's id, kind, handler and permission, never its summary, details, note or the handler's failure text; the add-on's handler records its own work through its own doors.
+- __The enforcement point records what it allowed.__ The manager that guards a resource (the PEP) records each action it carried out, with the actor, the user acted for, and the resource's `owner` read from storage. It knows what was done ("lab results from Licking Memorial"); core doesn't. Examples: PageManager for pages, FileManager for files (`asset-upload` and `asset-delete`; AttachmentManager, the storage underneath it, records neither, [#2149](https://github.com/jwilleke/ngdpbase/issues/2149)), an add-on's own manager (PhrManager, LedgerManager) for its records, with events it declares. ReviewManager records a request for review filed, approved, rejected, or approved but not carried out (`review-filed`, `review-approved`, `review-rejected`, `review-failed`; [#2072](https://github.com/jwilleke/ngdpbase/issues/2072)): the request's id, kind, handler and permission, never its summary, details, note or the handler's failure text; the add-on's handler records its own work through its own doors.
 - __Core records every refusal.__ A refused attempt is never left to the enforcement point to remember:
   - page and media doors record each denial as `authorization-deny` (`PolicyInformationPoint.logAccessDecision`); an affordance records nothing;
   - `ApiContext.enforceDeny`, the one refusal helper, records the same `authorization-deny` event: actor, the user acted for, action, the resource and its owner when given, and the reason. __Not built yet__ (see [Known gaps](#known-gaps)).

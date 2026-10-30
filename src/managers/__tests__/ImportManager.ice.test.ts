@@ -30,6 +30,16 @@ function makeEngine(config: Record<string, unknown> = {}) {
   /** With `pool.dedupe`, the pool stores by content, as the real one does: the same bytes come back under their first name. */
   const poolBytes = new Map<string, { identifier: string; name: string }>();
   const pool = { dedupe: false };
+  const upload = async (bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => {
+    if (!(GRANTS[ctx.username] ?? []).includes('asset-upload')) throw new Error('Permission denied: You do not have permission to upload attachments');
+    const held = pool.dedupe ? poolBytes.get(bytes.toString('base64')) : undefined;
+    if (held) return held;
+    uploads.push({ name: info.originalName, ctx, ...(options?.importedFrom ? { options: { importedFrom: options.importedFrom } } : {}) });
+    poolNames.add(info.originalName);
+    const record = { identifier: `att-${uploads.length}`, name: info.originalName };
+    poolBytes.set(bytes.toString('base64'), record);
+    return record;
+  };
   const managers: Record<string, unknown> = {
     ConfigurationManager: {
       getProperty: (key: string, fallback: unknown) => (key in config ? config[key] : fallback),
@@ -49,17 +59,15 @@ function makeEngine(config: Record<string, unknown> = {}) {
       },
       refreshPageList: async () => undefined
     },
+    // #2149: the files receiver puts into the public place through FileManager's door.
+    FileManager: {
+      put: async (ctx: ActorContext, place: { kind: string }, file: { bytes: Buffer; info: { originalName: string } }, options?: Record<string, unknown>) => {
+        if (place.kind !== 'public') throw new Error('the files receiver puts into the public place');
+        return upload(file.bytes, file.info, ctx, options);
+      }
+    },
     AttachmentManager: {
-      uploadAttachment: async (bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => {
-        if (!(GRANTS[ctx.username] ?? []).includes('asset-upload')) throw new Error('Permission denied: You do not have permission to upload attachments');
-        const held = pool.dedupe ? poolBytes.get(bytes.toString('base64')) : undefined;
-        if (held) return held;
-        uploads.push({ name: info.originalName, ctx, ...(options?.importedFrom ? { options: { importedFrom: options.importedFrom } } : {}) });
-        poolNames.add(info.originalName);
-        const record = { identifier: `att-${uploads.length}`, name: info.originalName };
-        poolBytes.set(bytes.toString('base64'), record);
-        return record;
-      },
+      uploadAttachment: async (bytes: Buffer, info: { originalName: string }, ctx: ActorContext, options?: Record<string, unknown>) => upload(bytes, info, ctx, options),
       getSharedPoolAttachmentByFilename: async (name: string) => (poolNames.has(name) ? { identifier: 'taken' } : null)
     }
   };
@@ -81,7 +89,9 @@ describe('ImportManager — ICE registry', () => {
   test('today\'s converters are shims into pages, and core registers the pages and files receivers', async () => {
     const { im } = await makeImportManager();
     const shims = im.listShims();
-    expect(shims.filter(s => s.produces !== 'record').map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx']);
+    expect(shims.filter(s => s.produces !== 'record').map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx', 'core.svg']);
+    // #2149: core.svg only cleans a file kept as a file; it hands to no receiver, so no run picks it.
+    expect(shims.find(s => s.id === 'core.svg')).toMatchObject({ produces: 'file', receivers: [] });
     expect(shims.find(s => s.id === 'core.markdown')).toMatchObject({ owner: 'core', direction: 'in', produces: 'ncm', receivers: ['core.pages'], enabled: true });
     // DOCX produces HTML, which chains into the html shim (D9).
     expect(shims.find(s => s.id === 'core.docx')).toMatchObject({ produces: 'html', receivers: [] });
@@ -102,7 +112,7 @@ describe('ImportManager — ICE registry', () => {
     expect(im.registerShim('acct', ok)).toBe('acct.csv');
     expect(() => im.registerShim('acct', ok)).toThrow(/already registered/);
     expect(() => im.registerShim('acct', { ...ok, name: 'Bad Name' })).toThrow(/lower-case/);
-    expect(() => im.registerShim('acct', { ...ok, name: 'noread', read: undefined })).toThrow(/inbound shim has read/);
+    expect(() => im.registerShim('acct', { ...ok, name: 'noread', read: undefined })).toThrow(/inbound shim has read\(\), clean\(\) or both/);
     expect(() => im.registerShim('acct', { ...ok, name: 'pdf', direction: 'both' })).toThrow(/outbound shim has write/);
     expect(() => im.registerReceiver('acct', { name: 'ledger', accepts: ['x'] })).toThrow(/mayUse\(\) and receive\(\)/);
   });

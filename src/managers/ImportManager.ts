@@ -49,6 +49,7 @@ import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
 import type { PageSaveResult } from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
+import type FileManager from './FileManager.js';
 import logger from '../utils/logger.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
 import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks } from '../utils/privateStoreImport.js';
@@ -62,13 +63,14 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { converterShim } from '../ice/converterShim.js';
-import { RECORD_SHIMS } from '../ice/shims/index.js';
+import { RECORD_SHIMS, VETTING_SHIMS } from '../ice/shims/index.js';
+import { vetFile } from '../ice/vet.js';
 import { boundScope, convertChain, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
-  IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, OriginalChoice, ReceiveInfo,
+  IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, IceUpload, IceVetResult, OriginalChoice, ReceiveInfo,
   ReceiveOutcome, RecentImport, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../ice/types.js';
 import { pageUrl } from '../utils/pageUrl.js';
@@ -417,6 +419,8 @@ class ImportManager extends BaseManager {
     // #2109: core's record shims (CSV, GeoJSON, JSON, XML, RSS/Atom, XML index),
     // for any receiver that takes records: a feed, a bank statement.
     for (const shim of RECORD_SHIMS) this.registerShim('core', shim);
+    // #2149: shims that clean a file kept as a file (SVG); core.csv cleans CSV.
+    for (const shim of VETTING_SHIMS) this.registerShim('core', shim);
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
   }
@@ -452,7 +456,9 @@ class ImportManager extends BaseManager {
     if (!shim || !ICE_NAME.test(shim.name)) throw new Error(`ICE shim '${id}': a name is lower-case letters, numbers and dashes`);
     if (this.shimRegistry.has(id)) throw new Error(`ICE shim '${id}' is already registered`);
     if (!['in', 'out', 'both'].includes(shim.direction)) throw new Error(`ICE shim '${id}': direction is in, out or both`);
-    if (shim.direction !== 'out' && typeof shim.read !== 'function') throw new Error(`ICE shim '${id}': an inbound shim has read()`);
+    if (shim.direction !== 'out' && typeof shim.read !== 'function' && typeof shim.clean !== 'function') {
+      throw new Error(`ICE shim '${id}': an inbound shim has read(), clean() or both`);
+    }
     if (shim.direction !== 'in' && typeof shim.write !== 'function') throw new Error(`ICE shim '${id}': an outbound shim has write()`);
     if (!shim.produces || !Array.isArray(shim.receivers) || !shim.accepts) {
       throw new Error(`ICE shim '${id}': declare what it accepts, what it produces, and its receivers`);
@@ -558,6 +564,33 @@ class ImportManager extends BaseManager {
       throw new Error(`ICE receiver '${receiver.id}' does not offer '${request.original}' for the original file`);
     }
     return request;
+  }
+
+  // ── ICE: vetting a file kept as a file (#2149) ───────────────────────────
+
+  /**
+   * Vet one file before it is kept as a file (#2149): its type from its
+   * bytes (#1624), then its format's shim, when that shim is switched on,
+   * cleans it. FileManager asks this for every file it stores, and keeps the
+   * bytes returned, never the ones it sent; `removed` says what was taken
+   * out, for the uploader and the upload's record.
+   *
+   * Runs in the caller's request: cleaning is one linear pass over a file no
+   * larger than the site's upload limit. It decides nothing about permission:
+   * the caller has asked that first.
+   *
+   * @param ctx - Who is keeping the file (P1); only named in the log line when something was cleaned
+   * @throws IceVetRefused when the cleaning shim fails: the file could not be checked, so it is not kept
+   */
+  async vetFile(upload: IceUpload, ctx: ActorContext): Promise<IceVetResult> {
+    if (!ctx?.username) throw new Error('ImportManager.vetFile requires an ActorContext');
+    const shims = [...this.shimRegistry.values()].filter(s => this.isShimEnabled(s.id));
+    const vetted = await vetFile(shims, upload);
+    if (vetted.removed.length > 0) {
+      // Kinds and counts only, never the file's name: it may be going into a sealed vault.
+      logger.info(`[ImportManager] ${vetted.cleanedBy} cleaned a file for ${ctx.username}: ${vetted.removed.map(r => r.kind).join(', ')}`);
+    }
+    return vetted;
   }
 
   // ── ICE: running imports (#1979) ─────────────────────────────────────────
@@ -964,10 +997,10 @@ class ImportManager extends BaseManager {
   }
 
   /**
-   * `core.files` (D4): a file through AttachmentManager's upload door, which
-   * checks `asset-upload` itself. Also where a kept original goes (D11) when
-   * the chosen receiver does not keep its own. It becomes FileManager's write
-   * door once the files layer has one (#1851). A name the user gave (#2130)
+   * `core.files` (D4): a file into the public place through FileManager's
+   * write door, `put` (#2149), which asks `asset-upload` itself and vets the
+   * file. Also where a kept original goes (D11) when the chosen receiver does
+   * not keep its own. A name the user gave (#2130)
    * is the stored file's name; when the shared pool has a file of that name
    * already, the item is refused, never stored beside or over it.
    */
@@ -981,21 +1014,26 @@ class ImportManager extends BaseManager {
       originals: { allowed: ['none'] },
       mayUse: (ctx) => this.permits(ctx, 'asset-upload'),
       receive: async (item: IceItem, ctx: ActorContext, info?: ReceiveInfo): Promise<ReceiveOutcome> => {
-        const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
-        if (!attachmentManager) throw new Error('AttachmentManager unavailable — cannot store a file');
         const bytes = item.bytes ?? Buffer.from(item.text ?? '', 'utf8');
         const ownName = path.basename(item.name);
         const originalName = info?.givenName ?? ownName;
         // #2130, #1855: a name the user chose that is taken is refused, so they can choose another.
-        if (info?.givenName && await attachmentManager.getSharedPoolAttachmentByFilename(originalName)) {
-          return { status: 'refused', message: `A file named "${originalName}" already exists. Choose another name and import it again.` };
+        if (info?.givenName) {
+          const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
+          if (!attachmentManager) throw new Error('AttachmentManager unavailable — cannot check the name given');
+          if (await attachmentManager.getSharedPoolAttachmentByFilename(originalName)) {
+            return { status: 'refused', message: `A file named "${originalName}" already exists. Choose another name and import it again.` };
+          }
         }
+        const files = this.engine.getManager<FileManager>('FileManager');
+        if (!files) throw new Error('FileManager unavailable — cannot store a file');
         try {
-          const stored = await attachmentManager.uploadAttachment(
-            bytes,
-            // The media type is the upload's own: a given name keeps its extension.
-            { originalName, mimeType: item.mediaType || mediaTypeByExtension(ownName), size: bytes.length },
+          // #2149: FileManager's door, into the public place: vetted, stored, recorded.
+          const stored = await files.put(
             ctx,
+            { kind: 'public' },
+            // The media type is the upload's own: a given name keeps its extension.
+            { bytes, info: { originalName, mimeType: item.mediaType || mediaTypeByExtension(ownName), size: bytes.length } },
             { description: `Imported ${item.name}`, ...(info?.givenName ? { importedFrom: ownName } : {}) }
           );
           // #2130: the pool stores by content. The same bytes already there come
@@ -1004,7 +1042,12 @@ class ImportManager extends BaseManager {
           if (info?.givenName && heldAs && heldAs !== info.givenName) {
             return { status: 'duplicate', ref: stored.identifier, heldAs };
           }
-          return { status: 'stored', ref: stored.identifier };
+          // #2149: the user is told what vetting removed.
+          return {
+            status: 'stored',
+            ref: stored.identifier,
+            ...(stored.cleaned?.length ? { message: `Cleaned before it was kept: ${stored.cleaned.join('; ')}` } : {})
+          };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (/permission denied/i.test(message)) return { status: 'refused', message };

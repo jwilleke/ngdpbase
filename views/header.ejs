@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
-    <meta name="ngdp-page-private" content="<%= (typeof pageIsPrivate !== 'undefined' && pageIsPrivate) ? 'true' : 'false' %>" data-page-name="<%= (typeof pageName !== 'undefined' && pageName) ? pageName : '' %>">
     <title><% if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
     <%# #886 — OpenGraph / Twitter card tags. Built by
         src/utils/buildSocialMeta.ts and populated by viewPage(); absent on
@@ -95,6 +94,8 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="/profile"><i class="fas fa-user-cog me-2"></i><%= currentUser.displayName || currentUser.username %></a></li>
+                        <%# #2149: Upload file, for anyone signed in; the dialog offers only the places they may upload to. %>
+                        <li><a class="dropdown-item" href="#" onclick="showUploadFile(); return false;"><i class="fas fa-upload me-2"></i>Upload file</a></li>
                         <%# #1029: permission, not role name — a read-only admin role must see this too %>
                         <% if (typeof canViewAdmin !== 'undefined' && canViewAdmin) { %>
                         <li><a class="dropdown-item" href="/admin"><i class="fas fa-cogs me-2"></i>Admin</a></li>
@@ -146,6 +147,8 @@
                         </button>
                         <div class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                             <a class="dropdown-item" href="/profile"><i class="fas fa-user-cog"></i> Profile</a>
+                            <%# #2149: Upload file, for anyone signed in; the dialog offers only the places they may upload to. %>
+                            <a class="dropdown-item" href="#" id="userMenuUploadFile" onclick="showUploadFile(); return false;"><i class="fas fa-upload"></i> Upload file</a>
                             <% if (typeof can === 'function' && can('executive-read')) { %>
                                 <a class="dropdown-item" href="/executive"><i class="fas fa-landmark"></i> Executive Hub</a>
                             <% } %>
@@ -329,9 +332,6 @@
                                     </a></li>
                                 <% } %>
                                 <% if ((typeof can === 'function' && can('page-create'))) { %>
-                                    <li><a class="dropdown-item" href="#" onclick="showUploadAttachment()">
-                                        <i class="fas fa-paperclip"></i> Upload Attachment
-                                    </a></li>
                                     <li><a class="dropdown-item" href="#" onclick="openBrowseAttachments(); return false;">
                                         <i class="fas fa-photo-video"></i> Browse Assets
                                     </a></li>
@@ -517,9 +517,6 @@
                 </a>
                 <% } %>
                 <% if (_canCreate) { %>
-                <a class="nav-link py-2" href="#" onclick="showUploadAttachment(); <%- _hideOC %> return false;">
-                    <i class="fas fa-paperclip me-2"></i> Upload Attachment
-                </a>
                 <a class="nav-link py-2" href="#" onclick="openBrowseAttachments(); <%- _hideOC %> return false;">
                     <i class="fas fa-photo-video me-2"></i> Browse Assets
                 </a>
@@ -2066,63 +2063,44 @@ function ngdpNcmConvertOpen() {
     });
 }
 
-function showUploadAttachment(pageName) {
-    // pageName may be passed directly (from asset picker) or inferred from URL
-    const inferredFromUrl = !pageName;
+// #2149: the Upload file dialog. FileManager offers the places this user may
+// upload to (GET /files/places) and selects where they are working; the file
+// goes to POST /files/upload, where ICE vets and cleans it and FileManager
+// keeps it in the place chosen. No page owns the file: a page only links to it.
+function showUploadFile(pageName) {
     if (!pageName) {
         const raw = ngdpCurrentPageRaw(true);
         pageName = raw ? decodeURIComponent(raw) : null;
     }
-    // #1398: an upload onto a private page is always private and belongs to the
-    // page's author. The server enforces it; the box only shows it.
-    const privMeta = document.querySelector('meta[name="ngdp-page-private"]');
-    const pageForcesPrivate = !!(pageName && privMeta && privMeta.content === 'true'
-        && (inferredFromUrl || privMeta.dataset.pageName === pageName));
-
-    const titleText = pageName
-        ? 'Upload Attachment \u2014 ' + pageName
-        : 'Upload Attachment';
-    const uploadUrl = pageName
-        ? '/attachments/upload/' + encodeURIComponent(pageName)
-        : '/attachments/upload/';
 
     const modalHTML = `
-        <div class="modal fade" id="uploadAttachmentModal" tabindex="-1">
+        <div class="modal fade" id="uploadFileModal" tabindex="-1" aria-labelledby="uploadFileTitle">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title"><i class="fas fa-paperclip"></i> ${titleText}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <h5 class="modal-title" id="uploadFileTitle"><i class="fas fa-upload"></i> Upload file</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label for="attachmentFile" class="form-label">Select File:</label>
-                            <input type="file" class="form-control" id="attachmentFile">
+                            <label for="uploadFileInput" class="form-label">File</label>
+                            <input type="file" class="form-control" id="uploadFileInput">
                         </div>
                         <div class="mb-3">
-                            <label for="attachmentDescription" class="form-label">Description:</label>
-                            <input type="text" class="form-control" id="attachmentDescription" placeholder="Brief description of the file">
+                            <label for="uploadFilePlace" class="form-label">Where it goes</label>
+                            <select class="form-select" id="uploadFilePlace" disabled>
+                                <option>Loading…</option>
+                            </select>
                         </div>
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="uploadPrivateCheck" ${pageForcesPrivate ? 'checked disabled' : ''}>
-                            <label class="form-check-label" for="uploadPrivateCheck">
-                                ${pageForcesPrivate
-                                    ? 'Private (this page is private, so the file goes in its author\'s private store)'
-                                    : 'Private (store with this user, not the shared attachments pool)'}
-                            </label>
+                        <div class="mb-3">
+                            <label for="uploadFileDescription" class="form-label">Description</label>
+                            <input type="text" class="form-control" id="uploadFileDescription" placeholder="Brief description of the file">
                         </div>
-                        ${pageName ? `
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="attachToPageCheck" checked>
-                            <label class="form-check-label" for="attachToPageCheck">
-                                Attach to this page (adds a link at the end of the page)
-                            </label>
-                        </div>` : ''}
-                        <div id="uploadStatus"></div>
+                        <div id="uploadFileStatus" aria-live="polite"></div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" id="uploadAttachmentSubmit">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" id="uploadFileSubmit" disabled>
                             <i class="fas fa-upload"></i> Upload
                         </button>
                     </div>
@@ -2131,78 +2109,138 @@ function showUploadAttachment(pageName) {
         </div>
     `;
 
-    const existing = document.getElementById('uploadAttachmentModal');
+    const existing = document.getElementById('uploadFileModal');
     if (existing) existing.remove();
-
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-    const modal = new bootstrap.Modal(document.getElementById('uploadAttachmentModal'));
+    const modalEl = document.getElementById('uploadFileModal');
+    const modal = new bootstrap.Modal(modalEl);
     modal.show();
 
-    document.getElementById('attachmentFile').addEventListener('change', function() {
-        const descInput = document.getElementById('attachmentDescription');
-        if (this.files[0] && !descInput.value) {
-            descInput.value = this.files[0].name;
-        }
-    });
+    const placeSelect = document.getElementById('uploadFilePlace');
+    const submit = document.getElementById('uploadFileSubmit');
+    const statusDiv = document.getElementById('uploadFileStatus');
 
-    document.getElementById('uploadAttachmentSubmit').addEventListener('click', function() {
-        uploadAttachmentFile(uploadUrl);
+    document.getElementById('uploadFileInput').addEventListener('change', function () {
+        const descInput = document.getElementById('uploadFileDescription');
+        if (this.files[0] && !descInput.value) descInput.value = this.files[0].name;
     });
+    submit.addEventListener('click', function () { uploadFileSubmit(modal); });
+    modalEl.addEventListener('hidden.bs.modal', function () { this.remove(); });
 
-    document.getElementById('uploadAttachmentModal').addEventListener('hidden.bs.modal', function () {
-        this.remove();
-    });
+    const query = new URLSearchParams({ path: window.location.pathname });
+    if (pageName) query.set('page', pageName);
+    fetch('/files/places?' + query.toString(), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            placeSelect.textContent = '';
+            const places = data && data.success && Array.isArray(data.places) ? data.places : [];
+            if (places.length === 0) {
+                const none = document.createElement('option');
+                none.textContent = 'Nowhere';
+                placeSelect.appendChild(none);
+                uploadFileAlert(statusDiv, 'warning', 'There is nowhere you may upload a file.');
+                return;
+            }
+            places.forEach(function (p) {
+                const option = document.createElement('option');
+                option.value = p.key;
+                option.textContent = p.label;
+                if (p.key === data.defaultKey) option.selected = true;
+                placeSelect.appendChild(option);
+            });
+            placeSelect.disabled = false;
+            submit.disabled = false;
+        })
+        .catch(function () {
+            uploadFileAlert(statusDiv, 'danger', 'Could not load the places you may upload to.');
+        });
 }
 
-async function uploadAttachmentFile(uploadUrl) {
-    const fileInput = document.getElementById('attachmentFile');
-    const description = document.getElementById('attachmentDescription').value;
-    const statusDiv = document.getElementById('uploadStatus');
+/** A Bootstrap alert in `container`, its text set as text (file names never become markup). */
+function uploadFileAlert(container, kind, text) {
+    container.textContent = '';
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-' + kind;
+    alert.textContent = text;
+    container.appendChild(alert);
+    return alert;
+}
+
+async function uploadFileSubmit(modal) {
+    const fileInput = document.getElementById('uploadFileInput');
+    const placeSelect = document.getElementById('uploadFilePlace');
+    const description = document.getElementById('uploadFileDescription').value;
+    const statusDiv = document.getElementById('uploadFileStatus');
+    const submit = document.getElementById('uploadFileSubmit');
 
     if (!fileInput.files[0]) {
-        statusDiv.innerHTML = '<div class="alert alert-warning">Please select a file first.</div>';
+        uploadFileAlert(statusDiv, 'warning', 'Choose a file first.');
         return;
     }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
+    formData.append('place', placeSelect.value);
     formData.append('description', description);
-    const attachCheck = document.getElementById('attachToPageCheck');
-    if (attachCheck) {
-        formData.append('attachToPage', attachCheck.checked ? 'true' : 'false');
-    }
-    const privateCheck = document.getElementById('uploadPrivateCheck');
-    if (privateCheck && privateCheck.checked) {
-        formData.append('private', 'true');
-    }
+    const placeLabel = placeSelect.options[placeSelect.selectedIndex] ? placeSelect.options[placeSelect.selectedIndex].textContent : '';
 
-    statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';
-
+    uploadFileAlert(statusDiv, 'info', 'Uploading…');
+    submit.disabled = true;
     try {
-        const response = await csrfFetch(uploadUrl, { method: 'POST', body: formData });
-        const result = await response.json();
-
-        if (result.success) {
-            const attachLine = result.attachedToPage
-                ? '<small class="text-success">Attached to this page.</small><br>'
-                : (result.attachNote ? `<small class="text-warning">Not linked: ${result.attachNote}</small><br>` : '');
-            statusDiv.innerHTML = `
-                <div class="alert alert-success">
-                    <strong>Upload successful!</strong><br>
-                    ${attachLine}
-                    <small>URL: <code>${result.url}</code></small><br>
-                    <button type="button" class="btn btn-sm btn-primary mt-2" onclick="copyToClipboard('${result.url}')">
-                        Copy URL
-                    </button>
-                </div>
-            `;
-            setTimeout(() => { location.reload(); }, 2000);
-        } else {
-            statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${result.error}</div>`;
+        const response = await csrfFetch('/files/upload', { method: 'POST', body: formData });
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok || !result.success) {
+            uploadFileAlert(statusDiv, 'danger', 'Upload failed: ' + (result.error || ('the server answered ' + response.status)));
+            submit.disabled = false;
+            return;
         }
+        const done = uploadFileAlert(statusDiv, 'success', 'Uploaded ' + result.name + ' to ' + placeLabel + '.');
+        if (Array.isArray(result.cleaned) && result.cleaned.length > 0) {
+            const cleaned = document.createElement('div');
+            cleaned.className = 'alert alert-warning mt-2 mb-0';
+            cleaned.textContent = 'This file was cleaned before it was kept:';
+            const list = document.createElement('ul');
+            list.className = 'mb-0';
+            result.cleaned.forEach(function (note) {
+                const item = document.createElement('li');
+                item.textContent = note;
+                list.appendChild(item);
+            });
+            cleaned.appendChild(list);
+            statusDiv.appendChild(cleaned);
+        }
+        const markup = "[{ATTACH src='" + result.name + "'}]";
+        const code = document.createElement('code');
+        code.className = 'd-block mt-2';
+        code.textContent = markup;
+        done.appendChild(code);
+        const actions = document.createElement('div');
+        actions.className = 'mt-2 d-flex gap-2';
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'btn btn-sm btn-outline-primary';
+        copy.textContent = 'Copy link';
+        copy.addEventListener('click', function () { copyToClipboard(result.url); });
+        actions.appendChild(copy);
+        // In the editor: put the link where the cursor is.
+        if (typeof window.insertAttachmentMarkup === 'function' && document.getElementById('content')) {
+            const insert = document.createElement('button');
+            insert.type = 'button';
+            insert.className = 'btn btn-sm btn-primary';
+            insert.textContent = 'Insert into page';
+            insert.addEventListener('click', function () {
+                window.insertAttachmentMarkup(result.url, result.name, result.encodingFormat);
+                modal.hide();
+            });
+            actions.appendChild(insert);
+        }
+        done.appendChild(actions);
+        fileInput.value = '';
+        submit.disabled = false;
     } catch (error) {
-        statusDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${error.message}</div>`;
+        uploadFileAlert(statusDiv, 'danger', 'Upload failed: ' + error.message);
+        submit.disabled = false;
     }
 }
 
