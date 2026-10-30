@@ -31,7 +31,7 @@ import {
   type DirectoryBackupData
 } from '../utils/directoryBackup.js';
 import { writeTreeArchive } from '../utils/treeArchive.js';
-import { envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
+import { envFileLine, envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANCE_ENV_PART, instanceEnvPath } from '../utils/instanceEnvBackup.js';
 import { readEnvLine } from '../utils/instanceEnvSecret.js';
 import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
@@ -585,6 +585,25 @@ function serverTimeZone(): string {
 function localTime(iso: string | undefined): string {
   const t = iso ? Date.parse(iso) : NaN;
   return Number.isFinite(t) ? new Date(t).toLocaleString() : 'an unknown time';
+}
+
+/**
+ * The backup key file (#2134): what it is, for which site, the key's
+ * fingerprint, when it was saved (the server's local time), how to restore
+ * with it, and the one `NGDPBASE_BACKUP_KEY=` line, written so the boot's
+ * `.env` reader reads the key back exactly.
+ */
+export function backupKeyFileText(input: { site: string; fingerprint: string; key: string; saved: string }): string {
+  return [
+    '# ngdpbase backup key',
+    `# Site: ${input.site}`,
+    `# Fingerprint: ${input.fingerprint}   (Admin → Backup on the restoring site must show the same)`,
+    `# Saved: ${input.saved}`,
+    '# Restore: put the line below in the new server\'s .env before it first starts (or replace its key, then restart).',
+    '# Keep this file off the server, somewhere as safe as a password manager. Anyone with this file and a backup can read that backup.',
+    envFileLine(BACKUP_KEY_ENV, input.key),
+    ''
+  ].join('\n');
 }
 
 /**
@@ -1225,6 +1244,35 @@ class BackupManager extends BaseManager {
    */
   revealBackupKey(): string | null {
     return currentBackupKey() || null;
+  }
+
+  /**
+   * The backup key as a small text file, for an admin to keep off the server
+   * without the rest of `.env` (#2134). The route asks `config-manage`, with
+   * its fresh sign-in. Recorded as `backup-key-download` (who and the
+   * fingerprint, never the key) before the file is made: on-failure refuse,
+   * so a record that cannot be written throws and nothing is sent. Null when
+   * the site has no backup key. Nothing is kept on the server.
+   */
+  async revealBackupKeyFile(ctx: ActorContext): Promise<{ fingerprint: string; text: string } | null> {
+    const key = currentBackupKey();
+    if (!key) return null;
+    const fingerprint = backupKeyFingerprint(key);
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.BACKUP_KEY_DOWNLOAD,
+      ...who,
+      action: 'backup-key-download',
+      result: 'success',
+      severity: 'high',
+      resource: BACKUP_KEY_ENV,
+      resourceType: 'backup-key',
+      metadata: { ...who.metadata, fingerprint }
+    });
+    const name = this.setting<string>('ngdpbase.application-name', '');
+    const baseUrl = this.setting<string>('ngdpbase.application.base-url', '');
+    const site = (name && baseUrl ? `${name} (${baseUrl})` : name || baseUrl) || 'this site';
+    return { fingerprint, text: backupKeyFileText({ site, fingerprint, key, saved: localTime(new Date().toISOString()) }) };
   }
 
   /**
