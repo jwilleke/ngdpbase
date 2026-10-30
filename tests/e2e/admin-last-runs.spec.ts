@@ -30,14 +30,16 @@ test.describe('#2138 — last Reindex and Rebuild runs on the dashboard', () => 
 
     const run = reindex.locator('[data-part=run]');
     await expect(run).toBeVisible({ timeout: 150_000 });
+    const time = reindex.locator('time[data-local-time]');
+    // On a site that has reindexed before, the line already shows the earlier
+    // run: wait until it shows this one, which ended after the click.
+    await expect.poll(async () => Date.parse((await time.getAttribute('datetime')) ?? ''), { timeout: 150_000 })
+      .toBeGreaterThanOrEqual(clickedAt - 5_000);
     await expect(reindex.locator('[data-part=status]')).toHaveText('completed');
     await expect(reindex.locator('[data-part=who]')).toHaveText(/^ by \S+$/);
     await expect(reindex.locator('[data-part=never]')).toBeHidden();
-    const time = reindex.locator('time[data-local-time]');
     // Local time, never the UTC fallback text.
     await expect(time).not.toContainText('UTC');
-    const ended = Date.parse((await time.getAttribute('datetime')) ?? '');
-    expect(ended).toBeGreaterThanOrEqual(clickedAt - 60_000);
 
     // Read back from the run history after a reload.
     await page.reload();
