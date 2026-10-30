@@ -32,7 +32,7 @@ import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
 import VersioningFileProvider from '../../providers/VersioningFileProvider';
 import { withFilesDoor } from '../../test-support/filesDoor';
 import { actor } from '../../test-support/actors';
-import { MemoryIceLedger } from '../../ice/ledger';
+import { FileIceLedger, MemoryIceLedger } from '../../ice/ledger';
 import logger from '../../utils/logger';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceRunReport } from '../../ice/types';
@@ -286,6 +286,33 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(JSON.stringify(redactPrivateNamesDeep(events))).not.toContain(SECRET);
   });
 
+  // #2161: the ledger is plain JSON in the data directory, read by anyone with a backup.
+  test('confidential: the file ledger on disk holds no page title or file name, and still skips a re-import', async () => {
+    importer.setImportLedger(new FileIceLedger(path.join(testDir, 'import-ledger'), 1000));
+    await pages.savePage(name(VAULT, 'Taken'), 'A different page.', { uuid: UUID_B }, MOLLY);
+    const archive = await packZip([
+      { path: `${VAULT}/${SECRET}.md`, bytes: Buffer.from(`---\ntitle: ${SECRET}\nuuid: ${UUID_A}\n---\n\nx\n`) },
+      // Its title is held here by another page: the receiver's message names the title it was given.
+      { path: `${VAULT}/Taken.md`, bytes: Buffer.from('---\ntitle: Taken\n---\n\nmine\n') },
+      { path: `${VAULT}/attachments/${SECRET}.pdf`, bytes: Buffer.from('%PDF-1.4 x') },
+      // Refused, with a message: that is not written either.
+      { path: `${VAULT}/${SECRET} 2.md`, bytes: Buffer.from(`---\ntitle: ${SECRET} 2\nsystem-category: documentation\n---\n\ny\n`) }
+    ]);
+
+    const run = await upload(VAULT, archive);
+    expect(run.files.map(f => f.status).sort()).toEqual(['imported', 'imported', 'imported', 'refused']);
+    // The uploader's own status still names them.
+    expect(run.files.find(f => f.name.endsWith('Taken.md'))?.message).toContain('Taken (imported)');
+
+    expect(await filesContaining(SECRET)).toEqual([]);
+    expect(await filesContaining('Taken')).toEqual([]);
+    const again = await upload(VAULT, archive);
+    expect(again.files.filter(f => f.status === 'unchanged')).toHaveLength(3);
+    const recent = await importer.recentImportsFor(MOLLY);
+    expect(recent.length).toBeGreaterThan(0);
+    expect(JSON.stringify(recent)).not.toContain(SECRET);
+  });
+
   test('importing the same takeout again skips every file as unchanged, and changes nothing', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);
@@ -414,7 +441,7 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(importer.getImportRun(loose, MOLLY)?.files.map(f => f.status)).toEqual(['unreadable']);
   });
 
-  test('her recent imports list the takeout, with the store it went into', async () => {
+  test('her recent imports list the takeout, with the store it went into, by fingerprint (#2161)', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);
     await emptyStore(VAULT);
@@ -422,6 +449,8 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
 
     const recent = await importer.recentImportsFor(MOLLY);
 
-    expect(recent).toEqual([expect.objectContaining({ receiver: RECEIVER, target: VAULT, status: 'imported', link: expect.stringContaining('Medical') })]);
+    // The ledger names nothing of a sealed store: no title, so no link by it either.
+    expect(recent).toEqual([expect.objectContaining({ receiver: RECEIVER, target: VAULT, status: 'imported', name: expect.stringMatching(/^[0-9a-f]{12}$/), refs: 0 })]);
+    expect(recent[0].link).toBeUndefined();
   });
 });

@@ -69,7 +69,7 @@ import { TAKEOUT_KIND, freeImportTitle, linksToAttachment, rewriteAttachmentLink
 import type { FilePlace } from '../types/File.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import { boundScope, convertChain, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
+import { boundScope, convertChain, isConfidentialReceiver, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
 import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
@@ -770,13 +770,11 @@ class ImportManager extends BaseManager {
    * (`keepsEncrypted`), or whose own door writes into one
    * (`writesEncrypted`, #2118). No receiver can declare itself so otherwise. A
    * confidential import's file names are shown to the uploader and kept in
-   * the audit log, and never written to application logs, notices or admin
-   * screens; every other import logs them as before.
+   * the audit log, and never written to application logs, notices, admin
+   * screens or the import ledger (#2161); every other import logs them as before.
    */
   isConfidential(receiverId: string): boolean {
-    const receiver = this.receiverRegistry.get(receiverId);
-    // #2118: or one whose own door may write into a sealed store (`writesEncrypted`).
-    return receiver?.keepsEncrypted === true || receiver?.writesEncrypted === true;
+    return isConfidentialReceiver(this.receiverRegistry.get(receiverId));
   }
 
   /** Use this ledger instead of the file one: a test's, or a database table's. */

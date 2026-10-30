@@ -366,6 +366,44 @@ async function planFile(upload: IceUpload, request: IceRunRequest, receiver: Reg
   return { file, sha256, last, shim };
 }
 
+/**
+ * Is an import into this receiver confidential (#2110)? Only when its
+ * destination is encrypted: a receiver that keeps into a sealed store
+ * (`keepsEncrypted`), or whose own door writes into one (`writesEncrypted`,
+ * #2118). No receiver can declare itself so otherwise.
+ */
+export function isConfidentialReceiver(receiver: Pick<RegisteredReceiver, 'keepsEncrypted' | 'writesEncrypted'> | undefined): boolean {
+  return receiver?.keepsEncrypted === true || receiver?.writesEncrypted === true;
+}
+
+/**
+ * The ledger as a confidential run writes it (#2161): it is plain JSON on
+ * disk, so an entry names nothing of the sealed store. No file name (it is
+ * the file's fingerprint instead), no message, no given or held name, no
+ * reference (a page's reference is its name), no original's name. What it
+ * keeps is what skipping needs: the fingerprint, the status, and an
+ * original's id.
+ */
+function withholdingNames(ledger: IceLedger): IceLedger {
+  return {
+    lastFile: (scope, sha256) => ledger.lastFile(scope, sha256),
+    hasItem: (scope, key) => ledger.hasItem(scope, key),
+    recordItem: (scope, key) => ledger.recordItem(scope, key),
+    seenItems: (scope, keys) => ledger.seenItems(scope, keys),
+    recordItems: (scope, keys) => ledger.recordItems(scope, keys),
+    files: (scope) => ledger.files(scope),
+    recordFile: (scope, entry) => ledger.recordFile(scope, {
+      name: entry.sha256.slice(0, 12), sha256: entry.sha256, size: entry.size, status: entry.status, at: entry.at, refs: [],
+      ...(entry.original ? { original: { ...entry.original, name: '' } } : {})
+    })
+  };
+}
+
+/** The run's deps, with the ledger a confidential receiver's run writes ({@link withholdingNames}). */
+function depsFor(deps: IceRunDeps, receiver: RegisteredReceiver | undefined): IceRunDeps {
+  return isConfidentialReceiver(receiver) ? { ...deps, ledger: withholdingNames(deps.ledger) } : deps;
+}
+
 /** Does this run keep its originals during the upload (#2034)? */
 export function keepsAtUpload(receiver: RegisteredReceiver | undefined, original: OriginalChoice): boolean {
   return original === 'keep' && !!receiver?.keepOriginal && receiver.keepsEncrypted === true;
@@ -392,9 +430,10 @@ export interface UploadKeepResult {
  * then queues nothing. Originals kept before it stay kept, and recorded, so
  * the next try reuses them.
  */
-export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, scope: string): Promise<UploadKeepResult> {
+export async function keepOriginalsAtUpload(siteDeps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, scope: string): Promise<UploadKeepResult> {
+  const receiver = siteDeps.receivers.get(request.receiver);
+  const deps = depsFor(siteDeps, receiver);
   const now = deps.now ?? ((): Date => new Date());
-  const receiver = deps.receivers.get(request.receiver);
   const result: UploadKeepResult = { kept: 0 };
   if (request.source.type !== 'upload') return result;
   if (!receiver?.keepOriginal || !keepsAtUpload(receiver, request.original ?? deps.settings.defaultOriginal)) return result;
@@ -466,9 +505,11 @@ async function refuseAll(deps: IceRunDeps, request: IceRunRequest, receiver: Reg
  * showing while it runs. Never throws for one file's failure; that file's
  * status says why.
  */
-export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
+export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
+  const receiver = siteDeps.receivers.get(request.receiver);
+  // #2161: a confidential run's ledger entries name nothing.
+  const deps = depsFor(siteDeps, receiver);
   const now = deps.now ?? ((): Date => new Date());
-  const receiver = deps.receivers.get(request.receiver);
   report.state = 'running';
   report.startedAt = now().toISOString();
   if (!receiver) {
@@ -574,7 +615,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       if (original === 'keep') {
         const door = keepingDoor(receiver);
         if (keptOriginal?.door === door) {
-          kept = { name: keptOriginal.name, sha256, ref: keptOriginal.ref };
+          kept = { name: keptOriginal.name || upload.name, sha256, ref: keptOriginal.ref };
         } else {
           const outcome = await keepOriginal(file, sha256, receiver, ctx, deps, report.runId);
           if (outcome.status === 'refused' || !outcome.ref) {
