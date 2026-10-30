@@ -106,6 +106,8 @@ Enforces uniqueness before writing:
 | `slug` | Duplicate slug — URL collision |
 | Title (page name) | Duplicate title — same display name as existing page |
 
+A title or slug clashes only on an exact match, ignoring case (`PageManager.uuidHoldingName`), never by the plural matching links use ([#2140](https://github.com/jwilleke/ngdpbase/issues/2140)).
+
 If a conflict is found, `savePageWithContext()` throws an error and the write is aborted. `PageManager` is the single authority on uniqueness — providers do not perform this check.
 
 __Source__: `src/managers/PageManager.ts` ~lines 483–490
