@@ -178,7 +178,7 @@ import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult, AuthAttempt } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
-import { JobActionError } from '../managers/BackgroundJobManager.js';
+import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
 import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
@@ -12408,6 +12408,17 @@ ${panes}
         logger.warn('[adminDashboard] Backup health could not be read:', backupErr);
       }
 
+      // #2138: when each Reindex and Rebuild last ran, under the Page and Media Management buttons.
+      const jobLastRuns: Record<string, JobLastRun | null> = {};
+      try {
+        const jobManager = this.engine.getManager('BackgroundJobManager');
+        for (const jobId of ['pages.reindex', 'pages.rebuild', 'media.rescan', 'media.rebuild', 'media.folder-scan']) {
+          jobLastRuns[jobId] = await jobManager.lastFinishedRun(jobId);
+        }
+      } catch (jobErr) {
+        logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
+      }
+
       const degraded = (this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
       }).getDegradedManagers?.() ?? [];
@@ -12460,6 +12471,7 @@ ${panes}
         attentionManagers: degraded.filter((m) => m.kind === 'attention'),
         backupHealth,
         formatBytes,
+        jobLastRuns,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
