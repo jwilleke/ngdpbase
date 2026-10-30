@@ -475,6 +475,15 @@ abstract class BasePageProvider extends BaseProvider {
   abstract findPage(identifier: string): string | null;
 
   /**
+   * The uuid of the page that holds `name` as its title, or as its slug (#2140)
+   * @param field - Which name: 'title' or 'slug'
+   * @param name - The title or slug
+   * @param ctx - Who is asking: a vault page's title is matched in its vault
+   * @returns The holder's uuid, or null when no page holds it
+   */
+  abstract uuidHoldingName(field: 'title' | 'slug', name: string, ctx: ActorContext): string | null;
+
+  /**
    * Get a page by its UUID
    * @param {string} uuid - Page UUID
    * @returns {Promise<WikiPage | null>} Page or null if not found

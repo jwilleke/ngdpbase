@@ -395,6 +395,43 @@ describe('FileSystemProvider', () => {
       });
     });
 
+    // #2140: whether a name is taken is an exact question. The link resolver
+    // accepts plurals, so "reviews" found the keyword page "review" and the
+    // shipped "Reviews" page was reported as clashing with it.
+    describe('uuidHoldingName (#2140)', () => {
+      test('a plural is not the same name', async () => {
+        await createTestPage(TEST_PAGES_DIR, 'uuid-review', 'review', '# review', { slug: 'review' });
+
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        expect(provider.uuidHoldingName('slug', 'reviews', TEST_ACTOR)).toBeNull();
+        expect(provider.uuidHoldingName('title', 'Reviews', TEST_ACTOR)).toBeNull();
+      });
+
+      test('the same title or slug, ignoring case, is held by that page', async () => {
+        await createTestPage(TEST_PAGES_DIR, 'uuid-review', 'review', '# review', { slug: 'review' });
+
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        expect(provider.uuidHoldingName('slug', 'review', TEST_ACTOR)).toBe('uuid-review');
+        expect(provider.uuidHoldingName('slug', 'Review', TEST_ACTOR)).toBe('uuid-review');
+        expect(provider.uuidHoldingName('title', 'REVIEW', TEST_ACTOR)).toBe('uuid-review');
+      });
+
+      test('a title is not a slug, nor a slug a title', async () => {
+        await createTestPage(TEST_PAGES_DIR, 'uuid-1', 'Main Page', '# m', { slug: 'home' });
+
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        expect(provider.uuidHoldingName('slug', 'Main Page', TEST_ACTOR)).toBeNull();
+        expect(provider.uuidHoldingName('title', 'home', TEST_ACTOR)).toBeNull();
+        expect(provider.uuidHoldingName('slug', '', TEST_ACTOR)).toBeNull();
+      });
+    });
+
     describe('uuidExistsForDifferentPage', () => {
       test('should return false for nonexistent UUID', async () => {
         const provider = new FileSystemProvider(createMockEngine());

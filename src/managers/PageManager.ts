@@ -3563,6 +3563,26 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The uuid of the page that holds `name` as its title, or as its slug (#2140).
+   *
+   * Whether a name is taken — the uniqueness question a save and the shipped
+   * pages screen ask. An exact match, ignoring case, by the store's own rule
+   * (the provider's `uuidHoldingName`); never the plural or fuzzy matching
+   * `getPage` does for links, so "Reviews" is not held by "review".
+   *
+   * @param field - Which name: 'title' or 'slug'
+   * @param name - The title or slug
+   * @param ctx - Who is asking
+   * @returns The holder's uuid, or null when no page holds it
+   */
+  uuidHoldingName(field: 'title' | 'slug', name: string, ctx: ActorContext): string | null {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    return this.provider.uuidHoldingName(field, name, ctx);
+  }
+
+  /**
    * The private titles `ctx` can see in `owner`'s stores, by store id (#1457).
    *
    * For the one question a `[store/Title]` link asks while a PRIVATE page is
