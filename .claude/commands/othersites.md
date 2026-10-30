@@ -6,7 +6,7 @@ Run the operator's update + validation cycle across the locally-installed ngdpba
 
 | Path | Port | `PROJECT_NAME` | Notes |
 |---|---|---|---|
-| `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | `"The Fairways"` | Satellite checkout |
+| `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | `"The Fairways"` | Satellite checkout. Its base URL is `http://jminm4-fairways.localhost:2121`, which is also its passkey domain: run its E2E with `E2E_BASE_URL=http://jminm4-fairways.localhost:2121`, or the sign-in setup cannot add the test passkey and every spec is skipped |
 | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | `"jimstest"` | This repo / primary dev instance |
 | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | `"ngdpbase temp build"` | Throwaway build sandbox |
 
