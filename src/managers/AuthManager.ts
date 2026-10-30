@@ -821,8 +821,8 @@ interface StepUpReplay {
   ready: boolean;
 }
 
-/** What the continue page does (#2154): post `fields` to `action`, or go `back` with nothing redone. */
-export type StepUpReplayAnswer = { action: string; fields: Array<[string, string]> } | { back: string };
+/** What the continue page does (#2154): post `fields` to `action` (`back` is the page it came from), or go `back` with nothing redone. */
+export type StepUpReplayAnswer = { action: string; fields: Array<[string, string]>; back: string } | { back: string };
 
 /**
  * A form POST's fields as they can be posted again to give the same body
@@ -2902,7 +2902,7 @@ class AuthManager extends BaseManager {
       return null;
     }
     if (!kept.ready || Date.now() > kept.expires) return { back: kept.back };
-    return { action: kept.action, fields: kept.fields };
+    return { action: kept.action, fields: kept.fields, back: kept.back };
   }
 
   /**

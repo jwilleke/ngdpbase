@@ -64,7 +64,8 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     const id = new URL(next, 'http://x').searchParams.get('replay') ?? '';
     expect(call('takeStepUpReplay', request({ session: r.session }), id)).toEqual({
       action: '/admin/backup/shared-folders/words/new',
-      fields: [['note', 'hello'], ['roles[]', 'a'], ['roles[]', 'b']]
+      fields: [['note', 'hello'], ['roles[]', 'a'], ['roles[]', 'b']],
+      back: '/admin/backup'
     });
   });
 
