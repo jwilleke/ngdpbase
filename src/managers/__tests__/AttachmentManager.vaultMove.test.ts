@@ -22,6 +22,7 @@ import os from 'os';
 import path from 'path';
 import PageManager from '../PageManager';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import ValidationManager from '../../managers/ValidationManager';
 import FileSystemProvider from '../../providers/FileSystemProvider';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
@@ -123,7 +124,7 @@ describe('a page\'s files go where the page goes (#1842)', () => {
     await provider.initialize();
     pages = new PageManager(engine);
     (pages as unknown as { provider: unknown }).provider = provider;
-    attachments = new AttachmentManager(engine);
+    attachments = withFilesDoor(new AttachmentManager(engine));
     pool = new BasicAttachmentProvider(engine);
     await pool.initialize();
     (attachments as unknown as { attachmentProvider: unknown }).attachmentProvider = pool;

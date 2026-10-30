@@ -4,6 +4,7 @@
  * @jest-environment node
  */
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 function makeConfigManager(overrides: Record<string, unknown> = {}) {
@@ -507,7 +508,8 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
         return null;
       })
     } as unknown as WikiEngine;
-    const mgr = new AttachmentManager(engine);
+    // #2148: an upload is asked at FileManager's door.
+    const mgr = withFilesDoor(new AttachmentManager(engine));
     (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
       deleteAttachment: vi.fn(async () => true),
       updateAttachmentMetadata: vi.fn(async () => true)

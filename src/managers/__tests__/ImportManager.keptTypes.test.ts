@@ -22,6 +22,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager, { type UploadOptions } from '../AttachmentManager';
+import FileManager from '../FileManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import ImportManager, { ImportUploadRefused } from '../ImportManager';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
@@ -114,6 +115,8 @@ describe('ImportManager — the media types a receiver keeps (#2061)', () => {
     await provider.initialize();
     (attachments as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
     managers['AttachmentManager'] = attachments;
+    // #2148: every upload goes through FileManager's door.
+    managers['FileManager'] = new FileManager(engine);
     jobs = new BackgroundJobManager(engine);
     managers['BackgroundJobManager'] = jobs;
     importManager = new ImportManager(engine);

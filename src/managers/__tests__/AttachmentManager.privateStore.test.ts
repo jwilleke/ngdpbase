@@ -12,6 +12,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import {
   TEST_PRIVATE_STORE_KDF,
   createEncryptedStore,
@@ -49,7 +50,7 @@ function makeManager(pagesDir: string, stored: unknown[]) {
       return null;
     }
   } as never;
-  const m = new AttachmentManager(engine);
+  const m = withFilesDoor(new AttachmentManager(engine));
   (m as unknown as { attachmentProvider: unknown }).attachmentProvider = {
     storeAttachment: (...args: unknown[]) => {
       stored.push(args);

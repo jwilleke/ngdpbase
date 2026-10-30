@@ -17,12 +17,20 @@
 import type { AssetRecord } from './Asset.js';
 
 /**
- * Where a file lives: the public area, or one vault. A file is unique by its
- * place plus its name; the same name may exist in two places.
+ * Where a file lives: the public area, one user's vault, or one shared
+ * folder. A file is unique by its place plus its name; the same name may
+ * exist in two places.
+ *
+ * Each place is named by the identifiers the site already uses: a vault by
+ * its owner's username and its vault id (`pages/vaults/{owner}/{vault}/`), a
+ * shared folder by its name (`/shared/{folder}`, SharedFolderManager). The
+ * shared folders' internal container (`SHARED_FOLDER_OWNER`) is never a
+ * vault owner here: a folder is always `{ kind: 'shared-folder' }` (#2148).
  */
 export type FilePlace =
   | { kind: 'public' }
-  | { kind: 'vault'; owner: string; vault: string };
+  | { kind: 'vault'; owner: string; vault: string }
+  | { kind: 'shared-folder'; folder: string };
 
 /**
  * One file, as the door shows it.
@@ -40,7 +48,7 @@ export type FilePlace =
  * - `dateModified` / `editor`: when and by whom it last changed.
  *
  * Added here:
- * - `place`: public, or a vault.
+ * - `place`: public, a vault, or a shared folder.
  * - `owner`: the user it belongs to. A vault's files are the vault owner's.
  *   A public file's owner is its uploader when the record names a user, or
  *   `null` when it does not (`Unknown`, empty, an email used as a name):

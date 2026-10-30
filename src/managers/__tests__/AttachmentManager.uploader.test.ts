@@ -10,6 +10,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import { ANONYMOUS_SUBJECT } from '../UserManager';
 import { jobContextFromRequest } from '../../context/JobContext';
 import type { ActorContext } from '../../context/ActorContext';
@@ -44,7 +45,7 @@ function makeManager(pagesDir: string, identities: unknown = null) {
       return null;
     }
   } as never;
-  const m = new AttachmentManager(engine);
+  const m = withFilesDoor(new AttachmentManager(engine));
   (m as unknown as { attachmentProvider: unknown }).attachmentProvider = {
     storeAttachment: (...args: unknown[]) => {
       stored.push(args);

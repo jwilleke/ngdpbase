@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-10-29'
+dateModified: '2026-10-30'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -54,7 +54,8 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `uploadAttachment(buffer, fileInfo, ctx, options)` | `Promise<Object>` | Upload new attachment, recorded under `ctx`'s username ([below](#who-uploaded-it-1926)) |
+| `uploadAttachment(buffer, fileInfo, ctx, options)` | `Promise<Object>` | Upload onto a page, for today's callers: FileManager decides the place (`placeForPageUpload`) and writes through its door, `put` ([#2148](https://github.com/jwilleke/ngdpbase/issues/2148), [FileManager](FileManager.md#writing-a-file-2148)). Recorded under `ctx`'s username ([below](#who-uploaded-it-1926)) |
+| `storeInPlace(ctx, place, file, options)` | `Promise<Object>` | The storage underneath `FileManager.put`: stores, seals as the place requires, records the upload. Decides neither the place nor the permission; only `put` calls it (#2148) |
 | `getAttachment(id)` | `Promise<{buffer, metadata}>` | Get attachment data and metadata |
 | `getAttachmentMetadata(id)` | `Promise<Object>` | Get metadata only |
 | `getAttachmentsForPage(pageName)` | `Promise<Array>` | List page attachments |

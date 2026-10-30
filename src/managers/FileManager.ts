@@ -1,13 +1,15 @@
 /**
  * FileManager — the one door for files (#1852, epic #1851).
  *
- * This first step only READS. It shows today's attachments as file records
- * (src/types/File.ts): the shared pool as the public place, and every vault
- * the requester may read. Nothing is written, moved or renamed; uploads,
- * per-place indexes and the rest are later steps
+ * It reads today's attachments as file records (src/types/File.ts): the
+ * shared pool as the public place, and every vault the requester may read.
+ * It writes through one door, `put` (#2148): a file goes into the place the
+ * caller chose, after the permission for that place, with AttachmentManager
+ * as the storage underneath; `placesWritableBy` lists the places a user may
+ * write to. Rename, move, delete and per-place indexes are later steps
  * (docs/guides/storage-developer-guide.md).
  *
- * Access is the existing rules, asked at this door:
+ * Read access is the existing rules, asked at this door:
  * - the public place needs `asset-read`, from the PDP;
  * - a vault is read through AttachmentManager's own vault reads, so the
  *   container rule (owner or delegate, never a role, admin included) decides
@@ -20,8 +22,10 @@
 
 import BaseManager from './BaseManager.js';
 import ConfigurationManager from './ConfigurationManager.js';
-import AttachmentManager from './AttachmentManager.js';
+import AttachmentManager, { type AttachmentMetadata, type PutFile, type PutOptions, type UploadOptions } from './AttachmentManager.js';
 import IdentityManager from './IdentityManager.js';
+import type PageManager from './PageManager.js';
+import type SharedFolderManager from './SharedFolderManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
@@ -29,7 +33,8 @@ import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { UNKNOWN_UPLOADER, type AssetRecord } from '../types/Asset.js';
 import type { FileInventory, FilePlace, FileRecord } from '../types/File.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import { systemCategoryVaults } from '../utils/privateStorePath.js';
+import { isSharedFolderOwner, isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig, systemCategoryVaults, type PrivateStoreLayout } from '../utils/privateStorePath.js';
+import { privateStoreIdsOf } from '../utils/privateStoreFiles.js';
 import { planClashRenames, planFileMigration, type FileMigrationReport } from '../utils/fileMigrationPlan.js';
 import logger from '../utils/logger.js';
 
@@ -42,8 +47,9 @@ function recordedOwner(author: string | undefined): string | null {
 }
 
 function samePlace(a: FilePlace, b: FilePlace): boolean {
-  if (a.kind === 'public' || b.kind === 'public') return a.kind === b.kind;
-  return a.owner === b.owner && a.vault === b.vault;
+  if (a.kind === 'vault' && b.kind === 'vault') return a.owner === b.owner && a.vault === b.vault;
+  if (a.kind === 'shared-folder' && b.kind === 'shared-folder') return a.folder === b.folder;
+  return a.kind === 'public' && b.kind === 'public';
 }
 
 class FileManager extends BaseManager {
@@ -138,6 +144,133 @@ class FileManager extends BaseManager {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
     return pdp.permits(ctx, 'asset-read');
+  }
+
+  // ── The write door (#2148) ───────────────────────────────────────────────
+
+  /**
+   * The places `ctx` may put a file in (#2148, operator 2026-10-30): the
+   * public place when the PDP grants `asset-upload`; each of the user's own
+   * vaults the vault rule lets them upload to (the default vault, and every
+   * vault they already have); each shared folder where they hold
+   * `shared-folder-file`. A place they may not write to is never listed.
+   *
+   * Each place is asked exactly as {@link put} asks it, so what is offered is
+   * what the door allows. An affordance: nothing is recorded.
+   */
+  async placesWritableBy(ctx: ActorContext): Promise<FilePlace[]> {
+    if (!ctx) return [];
+    const candidates: FilePlace[] = [{ kind: 'public' }];
+    for (const vault of await this.ownVaultIds(ctx)) candidates.push({ kind: 'vault', owner: ctx.username, vault });
+    for (const folder of this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.folderNames() ?? []) {
+      candidates.push({ kind: 'shared-folder', folder });
+    }
+    const out: FilePlace[] = [];
+    for (const place of candidates) {
+      if (await this.mayPut(ctx, place)) out.push(place);
+    }
+    return out;
+  }
+
+  /**
+   * Put a file in `place` (#2148): the one write door. The permission for
+   * that place is asked first, and a refusal stores nothing; then
+   * AttachmentManager stores it as the place requires (sealed in a sealed
+   * vault or shared folder) and records the upload (a sealed place's file by
+   * id only, #2048). No page decides the place: `options.pageName` is only
+   * the page that shows it.
+   *
+   * @throws Error 'Permission denied: …' when `ctx` may not write there, or
+   *   is nobody (#1926); a route answers it 401 or 403.
+   */
+  async put(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<AttachmentMetadata> {
+    const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    if (!attachments) throw new Error('FileManager requires AttachmentManager');
+    if (!ctx) throw new Error('Permission denied: no context supplied');
+    if (!FileManager.isPlace(place)) throw new Error('Not a place a file can be put in');
+    if (!(await this.mayPut(ctx, place))) {
+      logger.warn(`📎 Permission denied: ${ctx.username} may not put a file in ${FileManager.describePlace(place)}`);
+      throw new Error('Permission denied: You do not have permission to upload attachments');
+    }
+    return attachments.storeInPlace(ctx, place, file, options);
+  }
+
+  /**
+   * The place today's page-tied upload goes to (#1396, #1398, #2125), until
+   * #2149/#2150 move its callers to a place the user chose: an upload onto a
+   * shared folder's page goes into that folder, saved or not; onto a vault
+   * page into that page's vault, by someone who may edit the page; with the
+   * Private tick into the uploader's own vault (`store`, or their default);
+   * otherwise the public place.
+   */
+  async placeForPageUpload(ctx: ActorContext, options: Pick<UploadOptions, 'pageName' | 'private' | 'store'>): Promise<FilePlace> {
+    const pageName = options.pageName;
+    const named = pageName ? parsePrivatePageName(pageName) : null;
+    if (named && isSharedFolderOwner(named.owner)) return { kind: 'shared-folder', folder: named.store };
+    const pageOwner = pageName
+      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
+      : null;
+    if (pageOwner && pageName) {
+      // A private container is its owner's: nobody else writes into it unless
+      // the owner delegated. The page's own decision, refused before any bytes.
+      const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+      if (!attachments) throw new Error('FileManager requires AttachmentManager');
+      await attachments.assertMayEditPage(ctx, pageName);
+      return { kind: 'vault', owner: pageOwner.creator, vault: pageOwner.store };
+    }
+    if (options.private === true) {
+      // A share visitor has no container of their own to put a private file in.
+      if (ctx.viaShare) throw new Error('Permission denied: a shared link cannot store private files');
+      return { kind: 'vault', owner: ctx.username, vault: options.store ?? this.storeLayout().defaultStoreId };
+    }
+    return { kind: 'public' };
+  }
+
+  /** May `ctx` put a file in `place`? The existing rule for each kind, asked of its owner. */
+  private async mayPut(ctx: ActorContext, place: FilePlace): Promise<boolean> {
+    if (place.kind === 'public') {
+      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      return pdp ? pdp.permits(ctx, 'asset-upload') : false;
+    }
+    if (place.kind === 'shared-folder') {
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      return folders ? folders.mayInFolder(ctx, 'asset-upload', place.folder) : false;
+    }
+    const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    return attachments ? attachments.mayInVault(ctx, 'asset-upload', place.owner, place.vault, 'upload') : false;
+  }
+
+  /** The user's own vaults a file may go in: their default vault, and every vault they already have. */
+  private async ownVaultIds(ctx: ActorContext): Promise<string[]> {
+    const username = ctx.username;
+    const pagesDirectory = this.configManager()?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!username || !pagesDirectory) return [];
+    const layout = this.storeLayout();
+    return [...new Set([layout.defaultStoreId, ...await privateStoreIdsOf(pagesDirectory, username, layout)])];
+  }
+
+  private storeLayout(): PrivateStoreLayout {
+    const config = this.configManager();
+    return privateStoreLayoutFromConfig((key, fallback) => config ? config.getProperty(key, fallback) : fallback);
+  }
+
+  /** A well-formed place: a vault is a user's (never the shared folders' container), with valid ids. */
+  private static isPlace(place: FilePlace | null | undefined): boolean {
+    if (!place || typeof place !== 'object') return false;
+    if (place.kind === 'public') return true;
+    if (place.kind === 'shared-folder') return typeof place.folder === 'string' && isValidStoreId(place.folder);
+    if (place.kind === 'vault') {
+      return typeof place.owner === 'string' && place.owner.length > 0 && !isSharedFolderOwner(place.owner)
+        && typeof place.vault === 'string' && isValidStoreId(place.vault);
+    }
+    return false;
+  }
+
+  /** A place in a log line. Ids only, never a file's name. */
+  private static describePlace(place: FilePlace): string {
+    if (place.kind === 'public') return 'the public place';
+    if (place.kind === 'shared-folder') return `shared folder '${place.folder}'`;
+    return `${place.owner}'s vault '${place.vault}'`;
   }
 
   // ── The operator's inventory (#1859) ─────────────────────────────────────

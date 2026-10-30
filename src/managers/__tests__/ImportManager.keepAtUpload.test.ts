@@ -21,6 +21,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { withFilesDoor } from '../../test-support/filesDoor';
 import BackgroundJobManager from '../BackgroundJobManager';
 import ImportManager, { ImportUploadRefused } from '../ImportManager';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
@@ -89,7 +90,7 @@ describe('ImportManager — keeping an original in an encrypted store at upload 
     };
     const engine = { getManager: (name: string) => managers[name] ?? null } as never;
 
-    attachments = new AttachmentManager(engine);
+    attachments = withFilesDoor(new AttachmentManager(engine));
     const provider = new BasicAttachmentProvider(engine);
     await provider.initialize();
     (attachments as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
