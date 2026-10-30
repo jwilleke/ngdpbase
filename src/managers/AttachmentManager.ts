@@ -19,7 +19,7 @@ export const AUDIT_WRITE_FAILED = 'EAUDITWRITE';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
-import { buildAttachmentAuditEvent, type AttachmentDetail } from '../utils/auditEvents.js';
+import type { AttachmentDetail } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -183,6 +183,15 @@ export interface PutOptions {
  * into a place (`placeForPageUpload`) until #2149/#2150 move them to a place
  * the user chose.
  */
+/**
+ * What storage hands back to FileManager (#2149): the stored file's metadata,
+ * and what the upload's audit record says about it, which FileManager records.
+ */
+export interface StoredInPlace {
+  metadata: AttachmentMetadata;
+  record: AttachmentDetail;
+}
+
 export interface UploadOptions extends PutOptions {
   /**
    * Private-store destination (#1396): the upload dialog's checkbox. Decides
@@ -676,12 +685,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @returns Attachment metadata
    */
   async uploadAttachment(fileBuffer: Buffer, fileInfo: FileInfo, ctx: ActorContext, options: UploadOptions = {}): Promise<AttachmentMetadata> {
-    const files = this.engine.getManager<FileManager>('FileManager');
-    if (!files) {
-      throw new Error('AttachmentManager requires FileManager: every upload goes through its door (#2148)');
-    }
+    const files = this.fileManager();
     const place = await files.placeForPageUpload(ctx, options);
     return files.put(ctx, place, { bytes: fileBuffer, info: fileInfo }, options);
+  }
+
+  /** The owner of files (#2148, #2149): every upload goes through its door, and it writes every upload and delete record. */
+  private fileManager(): FileManager {
+    const files = this.engine.getManager<FileManager>('FileManager');
+    if (!files) {
+      throw new Error('AttachmentManager requires FileManager: every upload goes through its door, and it records each upload and delete (#2148, #2149)');
+    }
+    return files;
   }
 
   /**
@@ -693,11 +708,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * What it does, as the place requires: the type read from the bytes
    * (#1624); the uploader recorded by identity @id, and nobody uploads
    * anonymously (#1926, #2097); a vault or shared folder keeps the file in its
-   * own store, sealed when the store is (#1460, #1394); an import's kept
-   * original honoured only in its user's own vault (#2061); and the upload
-   * audited, a sealed store's file by id only (#2048).
+   * own store, sealed when the store is (#1460, #1394); and an import's kept
+   * original honoured only in its user's own vault (#2061). It records
+   * nothing (#2149): it returns what the upload's audit record says (a sealed
+   * store's file by id only, #2048), and FileManager, the owner, records it.
    */
-  async storeInPlace(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<AttachmentMetadata> {
+  async storeInPlace(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<StoredInPlace> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
@@ -756,16 +772,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // #1461: a private file is logged by id — never by its filename.
       logger.info(`📎 Uploaded a file into ${owner}'s private store '${store}' (${entry.id})`);
       // #2048: an encrypted store's file is recorded by id and store only.
-      await this.recordAttachmentEvent('upload', ctx, io.sealed
-        ? { attachmentId: entry.id, sealedStore: { owner, store } }
-        : {
-          attachmentId: entry.id,
-          filename: fileInfo.originalName,
-          pageName: pageName ?? null,
-          sizeBytes: fileInfo.size ?? null,
-          ...(options.importedFrom ? { importedFrom: options.importedFrom } : {})
-        }, options.wikiContext);
-      return AttachmentManager.storeFileMetadata(entry, owner, store);
+      return {
+        metadata: AttachmentManager.storeFileMetadata(entry, owner, store),
+        record: io.sealed
+          ? { attachmentId: entry.id, sealedStore: { owner, store } }
+          : {
+            attachmentId: entry.id,
+            filename: fileInfo.originalName,
+            pageName: pageName ?? null,
+            sizeBytes: fileInfo.size ?? null,
+            ...(options.importedFrom ? { importedFrom: options.importedFrom } : {})
+          }
+      };
     }
 
     // #1926: the uploader is recorded by username, never an email; #2097: by
@@ -782,25 +800,24 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})`);
 
-    // #1183 — at the door. Four write paths (NCM localization, bulk import,
-    // thumbnail render, media browser) produced no record while this lived in
-    // WikiRoutes. on-failure: continue, so a failed record is logged, not fatal.
     // #2130: the pool stores by content. When it already held these bytes,
     // nothing new was stored: the record says so, names the file by the name
     // it is held under, and keeps the name offered apart, never as if stored.
+    // #2149: FileManager writes the record (the owner records); this says what it holds.
     const heldAs = attachmentMetadata.alreadyHeld === true && typeof attachmentMetadata.name === 'string'
       ? attachmentMetadata.name
       : null;
-    await this.recordAttachmentEvent('upload', ctx, {
-      attachmentId: String(attachmentMetadata.identifier ?? ''),
-      filename: heldAs ?? fileInfo.originalName,
-      pageName: pageName ?? null,
-      sizeBytes: fileInfo.size ?? null,
-      ...(options.importedFrom ? { importedFrom: options.importedFrom } : {}),
-      ...(heldAs !== null ? { stored: false, heldAs, offeredAs: fileInfo.originalName } : {})
-    }, options.wikiContext);
-
-    return attachmentMetadata;
+    return {
+      metadata: attachmentMetadata,
+      record: {
+        attachmentId: String(attachmentMetadata.identifier ?? ''),
+        filename: heldAs ?? fileInfo.originalName,
+        pageName: pageName ?? null,
+        sizeBytes: fileInfo.size ?? null,
+        ...(options.importedFrom ? { importedFrom: options.importedFrom } : {}),
+        ...(heldAs !== null ? { stored: false, heldAs, offeredAs: fileInfo.originalName } : {})
+      }
+    };
   }
 
   /**
@@ -2256,7 +2273,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (!meta) {
       if (own) {
         // #2048: an encrypted store's file is recorded by id and store only.
-        await this.recordAttachmentEvent('delete', context, own.location.io.sealed
+        // #2149: the record is FileManager's, the owner of files; this manager records nothing itself.
+        await this.fileManager().recordFileEvent('delete', context, own.location.io.sealed
           ? { attachmentId, sealedStore: { owner: own.location.owner, store: own.location.store } }
           : {
             attachmentId,
@@ -2280,79 +2298,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // the record cannot be written (#1158).
     const filename = typeof meta?.filename === 'string' ? meta.filename : attachmentId;
     const sizeBytes = typeof meta?.size === 'number' ? meta.size : null;
-    await this.recordAttachmentEvent('delete', context, { attachmentId, filename, sizeBytes }, wikiContext);
+    await this.fileManager().recordFileEvent('delete', context, { attachmentId, filename, sizeBytes }, wikiContext);
 
     return await this.writeAttachments(this.attachmentProvider.deleteAttachment(attachmentId));
-  }
-
-  /**
-   * Emit an attachment audit event from the manager that owns the resource.
-   *
-   * `docs/audit-posture.md` states the rule this implements: an action is
-   * "emitted through `recordAuditEvent` (or the manager door that calls it)".
-   * The door is here. Placing it at a route means every future caller has to
-   * remember, which is the thing #1120 exists to end — being audited must not
-   * depend on a producer recalling a method.
-   *
-   * `critical` decides whether a failure to record stops the action.
-   */
-  private async recordAttachmentEvent(
-    op: 'upload' | 'delete',
-    context: ActorContext,
-    detail: AttachmentDetail,
-    wikiContext?: { request?: { ip?: string } | null }
-  ): Promise<void> {
-    // Lazily resolved, matching ConfigurationManager: absent during early boot,
-    // which recordAuditEvent treats as a configuration state, not a failure.
-    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
-    if (!sink) return;
-
-    // #1179: read from the context — who, and the address it came from. The
-    // WikiContext's request IP remains as the fallback for a caller whose
-    // subject predates the address riding on it.
-    const who = actorOf(context);
-    // #2041: a sealed store's owner is named by identity @id in the record; a
-    // name with no account as given.
-    const named: AttachmentDetail = 'sealedStore' in detail
-      ? {
-        ...detail,
-        sealedStore: {
-          ...detail.sealedStore,
-          owner: (await this.engine.getManager<IdentityManager>('IdentityManager')
-            ?.identityIdOf(systemContext(this.engine, 'record a sealed-store file change: the owner identity @id (#2041)'), detail.sealedStore.owner)) ?? detail.sealedStore.owner,
-          ownerUser: detail.sealedStore.owner
-        }
-      }
-      : detail;
-    const event = buildAttachmentAuditEvent({
-      op,
-      username: who.user,
-      ipAddress: who.ipAddress ?? wikiContext?.request?.ip,
-      ...named,
-      // Forwarded, never rebuilt — the delegation rides on the caller's
-      // context (P1). Without it a token-driven upload records as its owner
-      // with no sign a token was involved.
-      viaToken: context.viaToken,
-      viaProxy: context.viaProxy
-    });
-
-    if (op === 'delete') {
-      // critical: rethrows, tagged so a caller can tell an unwritable RECORD
-      // from a failed DELETE. Without the tag the route reported every delete
-      // failure as an audit failure, which sends an operator to the wrong
-      // subsystem.
-      try {
-        await recordAuditEvent(sink, event);
-      } catch (err) {
-        const tagged = err instanceof Error ? err : new Error(String(err));
-        (tagged as Error & { code?: string }).code = AUDIT_WRITE_FAILED;
-        throw tagged;
-      }
-    } else {
-      await recordAuditEvent(sink, event, (err) =>
-        logger.warn(`Audit log failed for attachment.${op} of '${'filename' in detail ? detail.filename : detail.attachmentId}':`, err)
-      );
-    }
   }
 
   /** #1204: an attachment's metadata changed; field NAMES only, at the door both edit paths pass through. */

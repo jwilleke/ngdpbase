@@ -17,6 +17,8 @@
  *   page-tied upload did): "a page name never decides the place" went red.
  * - the sealed-store branch of the audit record (filename always recorded):
  *   the sealed vault and shared folder tests went red.
+ * - #2149: `put` recording the stored record without what vetting removed:
+ *   "an SVG with a script is cleaned" and "a sealed place" went red.
  */
 
 vi.unmock('../../providers/BasicAttachmentProvider');
@@ -41,6 +43,7 @@ import {
 } from '../../utils/privateStoreCrypto';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
 import { pdpOver } from '../../test-support/policyDecisionPoint';
+import { coreVetting } from '../../test-support/filesDoor';
 import type { ActorContext } from '../../context/ActorContext';
 import type { FilePlace } from '../../types/File';
 
@@ -91,6 +94,8 @@ describe('FileManager writes (#2148)', () => {
         }
       },
       PolicyDecisionPoint: pdp,
+      // #2149: every file is vetted by the engine before it is kept.
+      ImportManager: coreVetting,
       AuditManager: { logAuditEvent: audit, flushAuditQueue: () => Promise.resolve() },
       PolicyInformationPoint: {
         canAccessPrivateContainer: (subject: ActorContext, owner: string) => mayActInPrivateContainer(subject, owner),
@@ -335,6 +340,106 @@ describe('FileManager writes (#2148)', () => {
       expect(await files.placeForPageUpload(ed, { private: true, store: 'phr' })).toEqual(vault('ed', 'phr'));
       expect(await files.placeForPageUpload(ed, { private: true })).toEqual(vault('ed'));
       expect(await files.placeForPageUpload(ed, { pageName: 'Main' })).toEqual(PUBLIC);
+    });
+  });
+
+  describe('#2149: ICE vets every file put; FileManager records it', () => {
+    const named = (originalName: string, mimeType: string, text: string) => {
+      const bytes = Buffer.from(text);
+      return { bytes, info: { originalName, mimeType, size: bytes.length } };
+    };
+    const SCRIPTED_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect onload="steal()" width="4"/></svg>';
+    const poolText = async () => fs.readFile(path.join(storageDir, (await poolFiles())[0]), 'utf8');
+
+    test('an SVG with a script is cleaned: the cleaned copy is kept, the caller told, the record says what', async () => {
+      const stored = await files.put(editor(), PUBLIC, named('logo.svg', 'image/svg+xml', SCRIPTED_SVG));
+      expect(stored.cleaned).toEqual([expect.stringMatching(/removed 1 script element/), expect.stringMatching(/removed 1 event handler/)]);
+      const kept = await poolText();
+      expect(kept).not.toMatch(/script|onload|steal/i);
+      expect(kept).toContain('<rect width="4"></rect>');
+      expect(uploadRecords()).toHaveLength(1);
+      expect(uploadRecords()[0].metadata).toMatchObject({ filename: 'logo.svg', cleaned: stored.cleaned });
+    });
+
+    test('the type is read from the bytes: an SVG named .png is cleaned as an SVG and stored as one (#1624)', async () => {
+      const stored = await files.put(editor(), PUBLIC, named('innocent.png', 'image/png', SCRIPTED_SVG));
+      expect(stored.encodingFormat).toBe('image/svg+xml');
+      expect(stored.cleaned?.length).toBe(2);
+      expect(await poolText()).not.toMatch(/script/i);
+    });
+
+    test('a file that needs nothing is kept byte for byte, and neither result nor record mentions cleaning', async () => {
+      const clean = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="2"/></svg>';
+      const stored = await files.put(editor(), PUBLIC, named('dot.svg', 'image/svg+xml', clean));
+      expect(stored.cleaned).toBeUndefined();
+      expect(await poolText()).toBe(clean);
+      expect(uploadRecords()[0].metadata).not.toHaveProperty('cleaned');
+    });
+
+    test('a CSV into a vault: HTML and formulas in cells are cleaned, everything else kept', async () => {
+      await plainVault('ed', 'default');
+      const stored = await files.put(editor(), vault('ed'), named('sheet.csv', 'text/csv', 'name,amount\n<b>Ann</b>,-5\n=HYPERLINK("x"),3\n'));
+      const kept = await fs.readFile(path.join(pagesDir, 'vaults', 'ed', 'default', 'attachments', `${stored.identifier}.csv`), 'utf8');
+      expect(kept).toBe('name,amount\n"Ann",-5\n"\'=HYPERLINK(""x"")",3\n');
+      expect(stored.cleaned).toEqual([expect.stringMatching(/HTML from 1 cell/), expect.stringMatching(/1 cell began with a formula/)]);
+    });
+
+    test('a sealed place: the record says what was cleaned, and still never the file\'s name', async () => {
+      const stored = await files.put(executive(), folder('executive'), named('secret-plan.svg', 'image/svg+xml', SCRIPTED_SVG));
+      const record = uploadRecords()[0];
+      expect(record.metadata).toMatchObject({ attachmentId: stored.identifier, sealed: true, cleaned: stored.cleaned });
+      expect(JSON.stringify(record)).not.toContain('secret-plan');
+    });
+
+    test('a refused put vets nothing: the permission is asked first', async () => {
+      const vet = vi.spyOn(coreVetting, 'vetFile');
+      try {
+        await expect(files.put(reader(), PUBLIC, named('logo.svg', 'image/svg+xml', SCRIPTED_SVG))).rejects.toThrow(/Permission denied/);
+        expect(vet).not.toHaveBeenCalled();
+      } finally {
+        vet.mockRestore();
+      }
+    });
+
+    test('AttachmentManager stores and records nothing itself: the record is FileManager\'s', async () => {
+      const attachments = (files as unknown as { engine: { getManager(n: string): AttachmentManager } }).engine.getManager('AttachmentManager');
+      const { record } = await attachments.storeInPlace(editor(), PUBLIC, aFile());
+      expect(record).toMatchObject({ filename: expect.stringMatching(/^f\d+\.txt$/) });
+      expect(uploadRecords()).toEqual([]);
+    });
+  });
+
+  describe('#2149: the Upload file dialog\'s places', () => {
+    test('only the places put allows, in the user\'s words; the public place first selected elsewhere', async () => {
+      const { places, defaultKey } = await files.uploadPlaces(editor(), { path: '/view/Main', pageName: 'Main' });
+      expect(places.map((p) => [p.key, p.label])).toEqual([
+        ['public', 'Public files'], ['vault:default', 'Your private files'], ['folder:default', 'Shared folder: default']
+      ]);
+      expect(defaultKey).toBe('public');
+      expect(places.map((p) => p.place)).toEqual(await files.placesWritableBy(editor()));
+    });
+
+    test('where they are working is selected: a folder\'s list, a folder\'s page, their own vault\'s page', async () => {
+      expect((await files.uploadPlaces(executive(), { path: '/shared/executive' })).defaultKey).toBe('folder:executive');
+      expect((await files.uploadPlaces(executive(), { path: '/view/x', pageName: 'shared/executive/Minutes' })).defaultKey).toBe('folder:executive');
+      expect((await files.uploadPlaces(editor(), { pageName: 'vaults/ed/default/Notes' })).defaultKey).toBe('vault:default');
+    });
+
+    test('a place they may not upload to is never selected, even where they are working', async () => {
+      // A reader holds no asset-upload and no shared-folder-file on executive: their own vault is first.
+      expect((await files.uploadPlaces(reader(), { path: '/shared/executive' })).defaultKey).toBe('vault:default');
+      // Another user's vault page selects nothing of theirs.
+      expect((await files.uploadPlaces(editor(), { pageName: 'vaults/rose/default/Diary' })).defaultKey).toBe('public');
+      expect(await files.uploadPlaces(ANONYMOUS)).toEqual({ places: [], defaultKey: null });
+    });
+
+    test('placeForKey answers only a key the dialog would offer this user', async () => {
+      expect(await files.placeForKey(editor(), 'vault:default')).toEqual(vault('ed'));
+      expect(await files.placeForKey(executive(), 'folder:executive')).toEqual(folder('executive'));
+      expect(await files.placeForKey(reader(), 'public')).toBeNull();
+      expect(await files.placeForKey(reader(), 'folder:executive')).toBeNull();
+      expect(await files.placeForKey(editor(), 'vault:../rose')).toBeNull();
+      expect(await files.placeForKey(editor(), '')).toBeNull();
     });
   });
 });

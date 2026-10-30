@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
 import FileManager from '../FileManager';
+import { coreVetting } from '../../test-support/filesDoor';
 import BasicAttachmentProvider from '../../providers/BasicAttachmentProvider';
 import { storeMetaPath } from '../../utils/privateStorePath';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
@@ -66,6 +67,7 @@ describe('FileManager — today\'s attachments as file records (#1852)', () => {
         decide: () => Promise.resolve({ permit: true })
       },
       AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() },
+      ImportManager: coreVetting,
       PageManager: { getPrivatePageOwner: () => Promise.resolve(null) },
       PolicyInformationPoint: {
         canAccessPrivateContainer: (subject: ActorContext, owner: string) => mayActInPrivateContainer(subject, owner),

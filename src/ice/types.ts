@@ -174,6 +174,37 @@ export interface IceShim {
   read?(input: IceItem, tools: ShimTools): Promise<ShimReadResult>;
   /** Outbound (export, #1974): not run in the first slice. Required for `out` and `both`. */
   write?(items: IceItem[], tools: ShimTools): Promise<IceItem[]>;
+  /**
+   * Vetting (#2149): clean this format's own kind of risky content out of a
+   * file that is about to be kept as a file (scripts and handlers in an SVG,
+   * HTML and formulas in CSV cells). Returns the cleaned bytes, and one note
+   * per kind of thing removed, saying what and how many, never the content.
+   * An inbound shim has `read()`, `clean()` or both; one with only `clean()`
+   * is never picked for a run.
+   */
+  clean?(input: IceItem): Promise<IceCleanResult>;
+}
+
+/** What a shim's `clean` returns (#2149). `removed` is empty when the file needed nothing. */
+export interface IceCleanResult {
+  bytes: Buffer;
+  removed: IceWarning[];
+}
+
+/**
+ * A file after the engine's vetting (#2149): its type read from its bytes,
+ * and, when its format's shim found something to clean, the cleaned bytes
+ * and what was removed. The caller keeps `bytes`, never the bytes it sent.
+ */
+export interface IceVetResult {
+  name: string;
+  bytes: Buffer;
+  /** From the bytes when they show it (#1624), else the declared or extension type. */
+  mediaType: string;
+  /** What cleaning removed, one note per kind; empty when nothing was. */
+  removed: IceWarning[];
+  /** The shim that cleaned it, when one did. */
+  cleanedBy?: string;
 }
 
 /** A shim the engine holds: its full id, and who registered it. */

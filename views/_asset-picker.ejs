@@ -64,7 +64,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             <button type="button" class="btn btn-primary" id="ap-search-btn">
                 <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Search</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary" id="ap-upload-btn" title="Upload Attachment">
+            <button type="button" class="btn btn-outline-secondary" id="ap-upload-btn" title="Upload file">
                 <i class="fas fa-upload"></i> <span class="d-none d-sm-inline">Upload</span>
             </button>
         </div>
@@ -361,8 +361,8 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     if (sysKwEl)  sysKwEl.addEventListener('change',  function () { _apSearch(0); });
     document.getElementById('ap-search-btn').addEventListener('click', function () { _apSearch(0); });
     document.getElementById('ap-upload-btn').addEventListener('click', function () {
-        if (typeof window.showUploadAttachment === 'function') {
-            window.showUploadAttachment(_apPage_ || null);
+        if (typeof window.showUploadFile === 'function') {
+            window.showUploadFile(_apPage_ || null);
         }
     });
 

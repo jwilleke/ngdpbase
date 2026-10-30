@@ -22,14 +22,16 @@
 
 import BaseManager from './BaseManager.js';
 import ConfigurationManager from './ConfigurationManager.js';
-import AttachmentManager, { type AttachmentMetadata, type PutFile, type PutOptions, type UploadOptions } from './AttachmentManager.js';
+import AttachmentManager, { AUDIT_WRITE_FAILED, type AttachmentMetadata, type PutFile, type PutOptions, type UploadOptions } from './AttachmentManager.js';
 import IdentityManager from './IdentityManager.js';
+import type ImportManager from './ImportManager.js';
 import type PageManager from './PageManager.js';
 import type SharedFolderManager from './SharedFolderManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { buildAttachmentAuditEvent, recordAuditEvent, type AttachmentDetail, type AuditEventSink } from '../utils/auditEvents.js';
 import { UNKNOWN_UPLOADER, type AssetRecord } from '../types/Asset.js';
 import type { FileInventory, FilePlace, FileRecord } from '../types/File.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -44,6 +46,26 @@ const SYSTEM_CATEGORY_KEY = 'ngdpbase.system-category';
 function recordedOwner(author: string | undefined): string | null {
   if (!author || author === UNKNOWN_UPLOADER || author.includes('@')) return null;
   return author;
+}
+
+/**
+ * What `put` hands back (#2149): the stored file's metadata, and, when
+ * vetting cleaned it, what was removed (one note per kind), so the uploader
+ * can be told.
+ */
+export type PutResult = AttachmentMetadata & { cleaned?: string[] };
+
+/** A place the Upload file dialog offers (#2149): its key in the form, the words the user reads, and the place. */
+export interface UploadPlace {
+  key: string;
+  label: string;
+  place: FilePlace;
+}
+
+/** Where the Upload file dialog was opened (#2149): the page's path, and the page it shows, when there is one. */
+export interface UploadWhere {
+  path?: string;
+  pageName?: string;
 }
 
 function samePlace(a: FilePlace, b: FilePlace): boolean {
@@ -174,16 +196,19 @@ class FileManager extends BaseManager {
 
   /**
    * Put a file in `place` (#2148): the one write door. The permission for
-   * that place is asked first, and a refusal stores nothing; then
-   * AttachmentManager stores it as the place requires (sealed in a sealed
-   * vault or shared folder) and records the upload (a sealed place's file by
+   * that place is asked first, and a refusal stores nothing. Then ICE vets
+   * the file (#2149): its type from its bytes, and its format's shim cleans
+   * it; the cleaned copy is the one kept. AttachmentManager stores it as the
+   * place requires (sealed in a sealed vault or shared folder), and this door
+   * records the upload with what vetting removed (a sealed place's file by
    * id only, #2048). No page decides the place: `options.pageName` is only
    * the page that shows it.
    *
    * @throws Error 'Permission denied: …' when `ctx` may not write there, or
    *   is nobody (#1926); a route answers it 401 or 403.
+   * @throws IceVetRefused when the file could not be checked; nothing is stored
    */
-  async put(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<AttachmentMetadata> {
+  async put(ctx: ActorContext, place: FilePlace, file: PutFile, options: PutOptions = {}): Promise<PutResult> {
     const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
     if (!attachments) throw new Error('FileManager requires AttachmentManager');
     if (!ctx) throw new Error('Permission denied: no context supplied');
@@ -192,7 +217,146 @@ class FileManager extends BaseManager {
       logger.warn(`📎 Permission denied: ${ctx.username} may not put a file in ${FileManager.describePlace(place)}`);
       throw new Error('Permission denied: You do not have permission to upload attachments');
     }
-    return attachments.storeInPlace(ctx, place, file, options);
+    const imports = this.engine.getManager<ImportManager>('ImportManager');
+    if (!imports) throw new Error('FileManager requires ImportManager: every file is vetted before it is kept (#2149)');
+    const vetted = await imports.vetFile({
+      name: file.info.originalName,
+      bytes: file.bytes,
+      ...(file.info.mimeType ? { mediaType: file.info.mimeType } : {})
+    }, ctx);
+    const stored = await attachments.storeInPlace(ctx, place, {
+      bytes: vetted.bytes,
+      // A cleaned file is the size of what is kept; otherwise the size given, as before.
+      info: { ...file.info, mimeType: vetted.mediaType, ...(vetted.removed.length > 0 ? { size: vetted.bytes.length } : {}) }
+    }, options);
+    const cleaned = vetted.removed.map(r => r.detail);
+    // #1183, #2149: recorded here, at the owner's door, so every write path is covered.
+    await this.recordFileEvent('upload', ctx, cleaned.length > 0 ? { ...stored.record, cleaned } : stored.record, options.wikiContext);
+    return cleaned.length > 0 ? { ...stored.metadata, cleaned } : stored.metadata;
+  }
+
+  /**
+   * Record a file stored or deleted (#2149: moved here from AttachmentManager,
+   * which stores and records nothing itself). An upload is `continue`: a
+   * failed record is logged, never fatal. A delete is critical: it rethrows,
+   * tagged `AUDIT_WRITE_FAILED`, so the delete does not happen unrecorded and
+   * a caller can tell an unwritable record from a failed delete.
+   *
+   * A sealed store's file is recorded by id and store only (#2048), its
+   * owner by identity @id with the username beside it (#2041).
+   * AttachmentManager's delete door calls this until deleting is FileManager's.
+   */
+  async recordFileEvent(
+    op: 'upload' | 'delete',
+    context: ActorContext,
+    detail: AttachmentDetail,
+    wikiContext?: { request?: { ip?: string } | null }
+  ): Promise<void> {
+    // Lazily resolved: absent during early boot, which recordAuditEvent treats as a configuration state, not a failure.
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    if (!sink) return;
+
+    // #1179: read from the context — who, and the address it came from. The
+    // WikiContext's request IP remains as the fallback for a caller whose
+    // subject predates the address riding on it.
+    const who = actorOf(context);
+    // #2041: a sealed store's owner is named by identity @id in the record; a
+    // name with no account as given.
+    const named: AttachmentDetail = 'sealedStore' in detail
+      ? {
+        ...detail,
+        sealedStore: {
+          ...detail.sealedStore,
+          owner: (await this.engine.getManager<IdentityManager>('IdentityManager')
+            ?.identityIdOf(systemContext(this.engine, 'record a sealed-store file change: the owner identity @id (#2041)'), detail.sealedStore.owner)) ?? detail.sealedStore.owner,
+          ownerUser: detail.sealedStore.owner
+        }
+      }
+      : detail;
+    const event = buildAttachmentAuditEvent({
+      op,
+      username: who.user,
+      ipAddress: who.ipAddress ?? wikiContext?.request?.ip,
+      ...named,
+      // Forwarded, never rebuilt — the delegation rides on the caller's
+      // context (P1). Without it a token-driven upload records as its owner
+      // with no sign a token was involved.
+      viaToken: context.viaToken,
+      viaProxy: context.viaProxy
+    });
+
+    if (op === 'delete') {
+      try {
+        await recordAuditEvent(sink, event);
+      } catch (err) {
+        const tagged = err instanceof Error ? err : new Error(String(err));
+        (tagged as Error & { code?: string }).code = AUDIT_WRITE_FAILED;
+        throw tagged;
+      }
+    } else {
+      await recordAuditEvent(sink, event, (err) =>
+        logger.warn(`Audit log failed for attachment.${op} of '${'filename' in detail ? detail.filename : detail.attachmentId}':`, err)
+      );
+    }
+  }
+
+  // ── The Upload file dialog (#2149) ───────────────────────────────────────
+
+  /**
+   * What the Upload file dialog offers `ctx` (#2149): every place
+   * {@link placesWritableBy} lists, and nothing else, each with the words the
+   * user reads; and the one selected at first: where they are working
+   * ({@link workingPlaceKey}), else the public place, else the first. Never
+   * inferred from whether a page exists. An affordance: nothing is recorded.
+   */
+  async uploadPlaces(ctx: ActorContext, where: UploadWhere = {}): Promise<{ places: UploadPlace[]; defaultKey: string | null }> {
+    const places = (await this.placesWritableBy(ctx)).map((place) => ({ key: FileManager.placeKey(place), label: this.placeLabel(place), place }));
+    const keys = places.map(p => p.key);
+    const working = this.workingPlaceKey(ctx, where);
+    const defaultKey = (working && keys.includes(working) ? working : null)
+      ?? (keys.includes('public') ? 'public' : keys[0] ?? null);
+    return { places, defaultKey };
+  }
+
+  /** The place a dialog key names, when it is one `ctx` may write to (#2149); null otherwise. Never a place it was not offered. */
+  async placeForKey(ctx: ActorContext, key: string): Promise<FilePlace | null> {
+    if (typeof key !== 'string' || !key) return null;
+    return (await this.placesWritableBy(ctx)).find(place => FileManager.placeKey(place) === key) ?? null;
+  }
+
+  /** A place's key in the dialog: `public`, `vault:<id>` (always the user's own) or `folder:<name>`. */
+  static placeKey(place: FilePlace): string {
+    if (place.kind === 'public') return 'public';
+    if (place.kind === 'shared-folder') return `folder:${place.folder}`;
+    return `vault:${place.vault}`;
+  }
+
+  /** The words the user reads for a place. */
+  private placeLabel(place: FilePlace): string {
+    if (place.kind === 'public') return 'Public files';
+    if (place.kind === 'shared-folder') return `Shared folder: ${place.folder}`;
+    if (place.vault === this.storeLayout().defaultStoreId) return 'Your private files';
+    const category = this.vaultCategory(place.vault);
+    const categories = this.configManager()?.getProperty(SYSTEM_CATEGORY_KEY, null) as Record<string, { label?: unknown } | null> | null;
+    const label = category ? categories?.[category]?.label : null;
+    return typeof label === 'string' && label ? `Your ${label} vault` : `Your vault: ${place.vault}`;
+  }
+
+  /**
+   * Where the user is working, as a dialog key (#2149): a shared folder's
+   * list (`/shared/<folder>`) or one of its pages is that folder; a page in
+   * one of their own vaults is that vault. Read from the location, never
+   * from whether a page by that name exists; anywhere else is no place.
+   */
+  private workingPlaceKey(ctx: ActorContext, where: UploadWhere): string | null {
+    const folderPath = typeof where.path === 'string' ? /^\/shared\/([^/?#]+)/.exec(where.path) : null;
+    if (folderPath) return `folder:${decodeURIComponent(folderPath[1])}`;
+    const pageName = typeof where.pageName === 'string' && where.pageName ? where.pageName : null;
+    if (!pageName) return null;
+    const named = parsePrivatePageName(pageName);
+    if (!named) return null;
+    if (isSharedFolderOwner(named.owner)) return `folder:${named.store}`;
+    return named.owner === ctx.username ? `vault:${named.store}` : null;
   }
 
   /**

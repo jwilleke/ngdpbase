@@ -12,7 +12,7 @@
 vi.unmock('../providers/VersioningFileProvider');
 import AuthManager from '../managers/AuthManager';
 import OidcManager from '../managers/OidcManager';
-import AttachmentManager from '../managers/AttachmentManager';
+import FileManager from '../managers/FileManager';
 import VersioningFileProvider from '../providers/VersioningFileProvider';
 import type { WikiEngine } from '../types/WikiEngine';
 import { fakeIdentityManager } from '../test-support/identities';
@@ -73,10 +73,9 @@ describe('#2041 audit metadata.owner is the owner\'s identity @id', () => {
 
   test('a sealed-store file upload', async () => {
     const { engine, rows } = engineWithSink();
-    const attachments = new AttachmentManager(engine) as unknown as {
-      recordAttachmentEvent(op: string, ctx: unknown, detail: unknown): Promise<void>;
-    };
-    await attachments.recordAttachmentEvent('upload', subject, { attachmentId: 'a1', sealedStore: { owner: 'jim', store: 'health' } });
+    // #2149: the file record is FileManager's, the owner of files.
+    const files = new FileManager(engine);
+    await files.recordFileEvent('upload', subject, { attachmentId: 'a1', sealedStore: { owner: 'jim', store: 'health' } });
     expect(rows[0].metadata).toMatchObject({ owner: IDS.jim, ownerUser: 'jim', store: 'health', sealed: true });
   });
 

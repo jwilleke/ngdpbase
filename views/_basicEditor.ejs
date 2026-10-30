@@ -302,7 +302,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                             <span class="badge bg-secondary"><%= typeof pageAttachments !== 'undefined' ? pageAttachments.length : 0 %></span>
                         </label>
                         <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-primary" onclick="showUploadAttachment()">
+                            <button type="button" class="btn btn-outline-primary" onclick="showUploadFile()">
                                 <i class="fas fa-upload"></i> Upload
                             </button>
                             <button type="button" class="btn btn-outline-secondary" onclick="openBrowseAttachments(); return false;">
