@@ -8,9 +8,10 @@ import { signInWithPassword } from './fixtures/helpers';
  * step-up said, and never stalls there. A download (Admin → Backup → Download
  * .env) used to name the file itself: the passkey succeeded, the browser saved
  * the file, and the page stayed on the prompt with its button greyed. Now a
- * download, a form POST and a script's request come back to the page they were
- * started from, which says "Confirmed — you can do it now"; a page GET opens
- * the page; a failure is shown and the button works again.
+ * download and a script's request come back to the page they were started
+ * from, which says "Confirmed — you can do it now"; a page GET opens the page;
+ * a form POST is sent again by itself, once (#2154); a failure is shown and
+ * the button works again.
  *
  * Its own project, after maintenance and before consent (playwright.config.ts).
  * The tests that wait for a sign-in to go stale shorten the site's step-up
@@ -176,16 +177,25 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       await expect(noted(page)).toHaveCount(0);
     });
 
-    test('a form POST comes back to the page with the form, which says it can be done now', async () => {
+    test('a form POST carries on by itself after the passkey, once (#2154)', async () => {
       const page = me().page;
-      await page.goto('/admin/backup');
+      const renamed = `e2e-reauth-renamed-${RUN}`;
+      await page.goto('/profile');
       await page.waitForTimeout(STALE_MS);
-      await page.locator('form[action="/admin/backup/create"] button[type="submit"]').first().click();
+      const form = page.locator(`form[action$="/rename"]:has(input[name="label"][value="e2e-reauth-${RUN}"])`);
+      await form.locator('input[name="label"]').fill(renamed);
+      await form.locator('button[type="submit"]').click();
       await page.waitForURL(/\/auth\/reauth\?/);
-      expect(new URL(page.url()).searchParams.get('next')).toBe('/admin/backup');
+      const next = new URL(page.url()).searchParams.get('next') ?? '';
+      expect(next).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
       await confirmWithPasskey(page);
-      await page.waitForURL(/\/admin\/backup$/, { timeout: 10000 });
-      await expect(noted(page)).toBeVisible();
+      // No second press: the continue page posts the form, and the rename is done.
+      await page.waitForURL(/\/profile\?success=Renamed$/, { timeout: 10000 });
+      await expect(page.locator(`input[name="label"][value="${renamed}"]`)).toHaveCount(1);
+      await expect(noted(page)).toHaveCount(0);
+      // Single-use: the same continue address again redoes nothing.
+      const again = await page.goto(next);
+      expect(again?.status()).toBe(410);
     });
 
     test('a script\'s request comes back to its page, which says it can be done now', async () => {
