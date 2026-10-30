@@ -20,6 +20,9 @@
 import { EXPORT_FILE_KIND } from './types.js';
 import type { ExportShimTools, IceItem, IceKind, RegisteredShim } from './types.js';
 
+/** Core's page export source: pages, read through PageManager's door. */
+export const PAGES_EXPORT_SOURCE = 'core.pages';
+
 /** Configuration an export reads (each a key under `ngdpbase.export.engine.`). */
 export interface IceExportSettings {
   /** The most bytes an export's source, or any step of its chain, may hold. */

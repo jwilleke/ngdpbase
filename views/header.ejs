@@ -415,9 +415,18 @@
                                 <% } %>
                                 <% } %>
                                 <li><hr class="dropdown-divider"></li>
+                                <% if (typeof pageName !== 'undefined' && pageName) { %>
+                                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && typeof can === 'function' && can('page-export')) { %>
+                                <%# #2120: export starts from the page: its Export action offers only the formats that fit it. %>
+                                <li><a class="dropdown-item" href="/export/page/<%= encodeURIComponent(pageName) %>">
+                                    <i class="fas fa-download"></i> Export this page&hellip;
+                                </a></li>
+                                <% } %>
+                                <% } else { %>
                                 <li><a class="dropdown-item" href="/export">
                                     <i class="fas fa-download"></i> Export
                                 </a></li>
+                                <% } %>
                             </ul>
                         </div>
                     </div>

@@ -206,7 +206,8 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
@@ -6456,6 +6457,107 @@ ${panes}
       logger.error('Error exporting to Markdown:', err);
       return res.status(500).send('Error exporting page');
     }
+  }
+
+  /**
+   * GET /export/page/:page — the Export action on a page (#2120, ICE #1979).
+   * Export starts from the thing being exported (operator, 2026-10-28): this
+   * lists only the formats the engine can make from a page, and only when
+   * the page's owner would let this user export it (`exportFormatsFor`: the
+   * page is visible to them and they hold `page-export`). Nothing to offer
+   * is a 404, whatever the reason, as a page they cannot read is. A
+   * signed-in user only: an export is held for the user who asked.
+   */
+  async exportPageFormats(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const pageName = String(req.params.page ?? '');
+      const importManager = this.engine.getManager<ImportManager>('ImportManager');
+      const formats = importManager ? await importManager.exportFormatsFor(PAGES_EXPORT_SOURCE, pageName, currentUser) : [];
+      if (formats.length === 0) return await this.renderError(req, res, 404, 'Page not found', 'There is nothing you can export here.');
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('export-item', {
+        ...commonData,
+        title: `Export ${pageName}`,
+        exportName: pageName,
+        exportBack: pageUrl(pageName),
+        exportAction: `/export/page/${encodeURIComponent(pageName)}`,
+        formats: formats.map(f => ({ id: f.id, label: f.label }))
+      });
+    } catch (err) {
+      logger.error('[export] the Export action failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The export choices could not be shown.');
+    }
+  }
+
+  /**
+   * POST /export/page/:page — start exporting a page (#2120). JSON
+   * `{ format }`: one of the ids the Export action offered. The page is read
+   * now, through its door, as this user; the format is made in the ICE
+   * background job, and the answer is the run id at once (202). A page the
+   * user may not export, or a format not offered for it, is a 404.
+   */
+  async exportPageStart(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    if (!importManager) return res.status(503).json({ success: false, error: 'Export is not available.' });
+    const format: unknown = req.body?.format;
+    if (typeof format !== 'string' || !format) return res.status(400).json({ success: false, error: 'Choose a format.' });
+    try {
+      const runId = await importManager.startExport({ source: PAGES_EXPORT_SOURCE, ref: String(req.params.page ?? ''), format }, currentUser);
+      return res.status(202).json({ success: true, runId });
+    } catch (err) {
+      if (err instanceof IceExportRefused) return res.status(404).json({ success: false, error: err.message });
+      if (err instanceof IceExportFailed) return res.status(413).json({ success: false, error: err.message });
+      // What is exported may be private: the log gives the error's class only.
+      logger.error(`[export] could not start an export for ${currentUser.username} (${errorClassOf(err)})`);
+      return res.status(500).json({ success: false, error: 'The export could not be started.' });
+    }
+  }
+
+  /**
+   * GET /export/runs/:runId — one export's status (#2120), to the user it
+   * runs as. Anyone else's, or one no longer held, is a 404.
+   */
+  async exportRunStatus(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+
+    const run = this.engine.getManager<ImportManager>('ImportManager')?.getExportRun(String(req.params.runId ?? ''), currentUser) ?? null;
+    res.setHeader('Cache-Control', 'no-store');
+    if (!run) return res.status(404).json({ success: false, error: 'No such export.' });
+    return res.json({ success: true, run });
+  }
+
+  /**
+   * GET /export/runs/:runId/download — the file an export made (#2120), to
+   * the user it ran as, while it is kept. Always a download, never shown
+   * inline, and never cached.
+   */
+  async exportRunDownload(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+    const file = this.engine.getManager<ImportManager>('ImportManager')?.exportFile(String(req.params.runId ?? ''), currentUser) ?? null;
+    if (!file) return this.renderError(req, res, 404, 'Not found', 'That export is no longer here. Exports are kept for a short while; make it again.');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.attachment(file.name);
+    res.type(file.mediaType);
+    return res.send(file.bytes);
   }
 
   /**
@@ -18185,6 +18287,11 @@ ${panes}
     app.get('/export', (req: Request, res: Response) => this.exportPage(req, res));
     app.post('/export/html/:page', (req: Request, res: Response) => this.exportPageHtml(req, res));
     app.post('/export/markdown/:page', (req: Request, res: Response) => this.exportPageMarkdown(req, res));
+    // #2120: the Export action on a page, through the ICE engine.
+    app.get('/export/page/:page', (req: Request, res: Response) => void this.exportPageFormats(req, res));
+    app.post('/export/page/:page', (req: Request, res: Response) => void this.exportPageStart(req, res));
+    app.get('/export/runs/:runId', (req: Request, res: Response) => void this.exportRunStatus(req, res));
+    app.get('/export/runs/:runId/download', (req: Request, res: Response) => void this.exportRunDownload(req, res));
     app.get('/exports', (req: Request, res: Response) => this.listExports(req, res));
     app.get('/download/:filename', (req: Request, res: Response) => this.downloadExport(req, res));
     app.delete('/deleteExport/:filename', (req: Request, res: Response) => this.deleteExport(req, res));
