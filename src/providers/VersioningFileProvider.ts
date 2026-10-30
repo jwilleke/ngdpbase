@@ -69,6 +69,15 @@ function messageOf(error: unknown): string {
 }
 
 /**
+ * A page's name for a log line (#1461, #2118): a private page's title stays
+ * out of logs, so it goes by its owner and store; the line's uuid names it.
+ */
+function nameForLog(pageName: string): string {
+  const vault = parsePrivatePageName(pageName);
+  return vault ? `a page in ${vault.owner}'s store '${vault.store}'` : `'${pageName}'`;
+}
+
+/**
  * Page index entry structure
  */
 interface PageIndexEntry {
@@ -2352,7 +2361,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1520: the page's own name, which for a private page is its vault name
     // (redacted in every log line), never the bare title a caller saved it under.
-    logger.info(`[VersioningFileProvider] Saved page '${saved.name}' with versioning`);
+    logger.info(`[VersioningFileProvider] Saved ${nameForLog(saved.name)} with versioning`);
     return saved;
   }
 
@@ -3080,7 +3089,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v1 for page ${pageName} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v1 for ${nameForLog(pageName)} (${uuid})`);
   }
 
   /**
@@ -3109,7 +3118,7 @@ class VersioningFileProvider extends FileSystemProvider {
       // a seed before #1405) starts it here: this save is its v1. Going through
       // the version-diff path instead read a v1 that did not exist and logged a
       // false "Failed to read current content" error for every such page.
-      logger.info(`[VersioningFileProvider] '${pageName}' (${uuid}) has no version history; this save starts it as v1`);
+      logger.info(`[VersioningFileProvider] ${nameForLog(pageName)} (${uuid}) has no version history; this save starts it as v1`);
       await this.createInitialVersion(uuid, pageName, newContent, metadata, location, versions);
       return;
     }
@@ -3204,7 +3213,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v${nextVersion} for page ${pageName} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v${nextVersion} for ${nameForLog(pageName)} (${uuid})`);
   }
 
   /**

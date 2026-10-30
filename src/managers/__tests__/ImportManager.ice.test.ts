@@ -81,7 +81,8 @@ describe('ImportManager — ICE registry', () => {
   test('today\'s converters are shims into pages, and core registers the pages and files receivers', async () => {
     const { im } = await makeImportManager();
     const shims = im.listShims();
-    expect(shims.filter(s => s.produces !== 'record').map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx']);
+    // #2118: and core.takeout, which reads a takeout for the private-store receiver.
+    expect(shims.filter(s => s.produces !== 'record').map(s => s.id)).toEqual(['core.jspwiki', 'core.html', 'core.markdown', 'core.docx', 'core.takeout']);
     expect(shims.find(s => s.id === 'core.markdown')).toMatchObject({ owner: 'core', direction: 'in', produces: 'ncm', receivers: ['core.pages'], enabled: true });
     // DOCX produces HTML, which chains into the html shim (D9).
     expect(shims.find(s => s.id === 'core.docx')).toMatchObject({ produces: 'html', receivers: [] });

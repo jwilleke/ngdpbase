@@ -108,11 +108,12 @@ export const SCOPE_FORM = 'ice2';
  * The scope a run's fingerprints, per-file status and item keys live in
  * (#2013): bound to the receiver and to the user the run is for, by their
  * identity `@id` (else their username, #2041). The engine works it out from
- * the caller's context; a request cannot name another user's. A caller's own
- * `sub` (phr's source id) narrows it within that user's scope, never outside.
+ * the caller's context; a request cannot name another user's. What follows
+ * narrows it within that user's scope, never outside: the place within the
+ * receiver (#2118), then a caller's own sub-scope (phr's source id).
  */
-export function boundScope(receiverId: string, owner: string, sub?: string): string {
-  return [SCOPE_FORM, receiverId, owner, ...(sub ? [sub] : [])].map(encodeURIComponent).join('/');
+export function boundScope(receiverId: string, owner: string, ...subs: Array<string | undefined>): string {
+  return [SCOPE_FORM, receiverId, owner, ...subs.filter((sub): sub is string => !!sub)].map(encodeURIComponent).join('/');
 }
 
 /**
@@ -192,15 +193,17 @@ export interface ChainSpec {
 /**
  * Run a shim, then the shims after it (D9), until each item is done. What
  * came before travels with each item: earlier metadata under later, earlier
- * warnings first. Partial notes are collected into `partial`.
+ * warnings first. Partial notes are collected into `partial`; a shim's note
+ * that the file holds nothing to import on its own (#2118) into `skipped`.
  */
-export async function convertChain(shim: RegisteredShim, input: IceItem, chain: string[], spec: ChainSpec, partial: string[]): Promise<ChainLeaf[]> {
+export async function convertChain(shim: RegisteredShim, input: IceItem, chain: string[], spec: ChainSpec, partial: string[], skipped: string[] = []): Promise<ChainLeaf[]> {
   if (chain.length >= spec.maxChainDepth) {
     throw new Error(`the chain ${[...chain, shim.id].join(' → ')} is longer than ${spec.maxChainDepth} shims`);
   }
   if (typeof shim.read !== 'function') throw new Error(`${shim.id} does not read`);
   const result = await shim.read(input, spec.tools(shim));
   if (result.partial) partial.push(result.partial);
+  if (result.skip && result.items.length === 0) skipped.push(result.skip);
   const here = [...chain, shim.id];
   const leaves: ChainLeaf[] = [];
   for (const produced of result.items) {
@@ -216,7 +219,7 @@ export async function convertChain(shim: RegisteredShim, input: IceItem, chain: 
     }
     const next = spec.shims.find(s => canReadInbound(s) && (s.accepts.kinds ?? []).includes(item.kind) && readable(s, item));
     if (!next) throw new Error(`${shim.id} produced ${item.kind}, and no shim takes ${item.kind} on to ${spec.target}`);
-    leaves.push(...await convertChain(next, item, here, spec, partial));
+    leaves.push(...await convertChain(next, item, here, spec, partial, skipped));
   }
   return leaves;
 }
@@ -319,7 +322,11 @@ function heldName(entry: LedgerFileEntry, receiver: RegisteredReceiver): string 
 
 /** One file as the engine first hands it on: its bytes, and the same bytes as text. */
 function fileItem(upload: IceUpload): IceItem {
-  return { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
+  return {
+    kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'),
+    ...(upload.mediaType ? { mediaType: upload.mediaType } : {}),
+    ...(upload.archive ? { archive: upload.archive } : {})
+  };
 }
 
 /** What the engine decides about one file before converting it. */
@@ -586,6 +593,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       const citation: IceCitation | undefined = original === 'cite' ? { name: upload.name, sha256, importedAt: now().toISOString() } : undefined;
 
       const partial: string[] = [];
+      const skipped: string[] = [];
       const spec: ChainSpec = {
         shims: deps.shims,
         tools,
@@ -593,8 +601,14 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         done: (from, item) => receiver.accepts.includes(item.kind) && handsTo(from, receiver.id),
         target: receiver.id
       };
-      const leaves: ChainLeaf[] = shim ? await convertChain(shim, file, [], spec, partial) : [{ item: file, chain: [] }];
+      const leaves: ChainLeaf[] = shim ? await convertChain(shim, file, [], spec, partial, skipped) : [{ item: file, chain: [] }];
       fr.chain = leaves[0]?.chain ?? (shim ? [shim.id] : []);
+      if (leaves.length === 0 && skipped.length > 0) {
+        // #2118: part of its format's layout, nothing to import on its own: not content, and not recorded.
+        fr.status = 'noise';
+        fr.message = skipped[0];
+        continue;
+      }
 
       const refusals: string[] = [];
       // #2130: a held item the receiver says goes by another name than the one given.
@@ -628,7 +642,8 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         const outcome = await receiver.receive(item, ctx, {
           runId: report.runId, source: { name: upload.name, sha256 }, chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
-          ...(given.name ? { givenName: given.name } : {})
+          ...(given.name ? { givenName: given.name } : {}),
+          ...(request.target !== undefined ? { target: request.target } : {})
         });
         if (outcome.status === 'stored') {
           fr.stored++;
@@ -639,6 +654,8 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         } else if (outcome.status === 'duplicate') {
           fr.duplicates++;
           if (outcome.ref) fr.refs.push(outcome.ref);
+          // #2118: why it is a duplicate, when the receiver says (a page changed since the download).
+          if (outcome.message) said.add(outcome.message);
           if (given.name && outcome.heldAs && outcome.heldAs !== given.name && !heldAs) {
             heldAs = outcome.heldAs;
             heldRef = outcome.ref;
@@ -654,6 +671,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           runId: report.runId, source: { name: upload.name, sha256 }, chain: fr.chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
           ...(given.name ? { givenName: given.name } : {}),
+          ...(request.target !== undefined ? { target: request.target } : {}),
           metadata: { ...(file.metadata ?? {}) }, items: leaves.map(l => l.item)
         });
         if (settled) said.add(settled);
@@ -699,6 +717,9 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
     }
     await record();
   }
+
+  // #2118: the receiver settles the run as one act, once every file is read.
+  if (receiver.runDone) await receiver.runDone(ctx, report);
 
   report.state = 'done';
   report.finishedAt = now().toISOString();
