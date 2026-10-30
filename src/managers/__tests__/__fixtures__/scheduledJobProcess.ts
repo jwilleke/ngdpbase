@@ -1,11 +1,15 @@
 /**
  * A server process, cut down to its scheduler, for the shutdown handoff tests
  * (#1717). It starts the 10:00 slot of an hourly job, saves a checkpoint, says
- * RUNNING on stdout, and waits — for its abort signal (`cooperative`), or for
- * ever (`stubborn`). SIGTERM and SIGINT shut it down the way app.ts does:
+ * RUNNING on stdout once the checkpoint is on disk, and waits — for its abort
+ * signal (`cooperative`), or for ever (`stubborn`). SIGTERM and SIGINT shut it down the way app.ts does:
  * `shutdown()`, then exit.
  *
- * Usage: tsx scheduledJobProcess.ts <state dir> <cooperative|stubborn> [hand]
+ * Usage: node --import tsx scheduledJobProcess.ts <state dir> <cooperative|stubborn> [hand]
+ *
+ * The test spawns it with stdin as a pipe. When the parent goes (a crashed or
+ * killed test run), stdin closes and this process exits, so it can never be
+ * left running on its own (#2152).
  *
  * With `hand` (#1746) the job has no schedule: it is started by hand, by
  * `enqueue`, as jim, and declares itself safe to run again (`persist: true`).
@@ -28,8 +32,20 @@ const engine = {
     : null)
 } as never;
 
+// A checkpoint is written in the background. RUNNING waits until it is on disk,
+// so a SIGKILL sent on RUNNING finds it there (#2152: the orphaned process of the
+// old tsx-CLI spawn used to finish this write after the test had moved on).
+const stateProvider = new FileJobStateProvider(stateDir, { now });
+let checkpointSaved!: () => void;
+const saved = new Promise<void>((resolve) => { checkpointSaved = resolve; });
+const saveCheckpoint = stateProvider.saveCheckpoint.bind(stateProvider);
+stateProvider.saveCheckpoint = async (...args: Parameters<typeof saveCheckpoint>) => {
+  await saveCheckpoint(...args);
+  checkpointSaved();
+};
+
 const manager = new BackgroundJobManager(engine, {
-  stateProvider: new FileJobStateProvider(stateDir, { now }),
+  stateProvider,
   now: () => new Date(clock),
   checkpointThrottleMs: 0
 });
@@ -40,7 +56,7 @@ manager.registerJob({
   ...(byHand ? { persist: true, permission: 'admin-system' } : { schedule: 'hourly' }),
   run: (_progress, ctx) => new Promise((resolve) => {
     ctx.checkpoint({ doneThrough: 311 });
-    process.stdout.write('RUNNING\n');
+    void saved.then(() => process.stdout.write('RUNNING\n'));
     if (mode === 'cooperative') {
       ctx.signal.addEventListener('abort', () => resolve({ success: false, error: 'stopped' }));
     }
@@ -62,5 +78,10 @@ if (byHand) {
   clock = Date.parse('2026-10-09T10:00:05Z');
   await manager.tick();
 }
+// The parent is gone: exit rather than wait for a signal that will never come (#2152).
+process.stdin.on('end', () => process.exit(1));
+process.stdin.on('close', () => process.exit(1));
+process.stdin.resume();
+
 // Keep the process alive until a signal ends it.
 setInterval(() => undefined, 60_000);
