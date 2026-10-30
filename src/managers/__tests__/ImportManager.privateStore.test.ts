@@ -298,8 +298,12 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     const takeout = events.find(e => e.eventType === 'store-import');
     expect(takeout).toMatchObject({
       user: 'molly', action: 'store-import', resource: `private/molly/${VAULT}`,
-      metadata: expect.objectContaining({ store: VAULT, files: 3, imported: 2, refused: 1, ownerUser: 'molly' })
+      metadata: expect.objectContaining({ store: VAULT, pagesImported: 1, pagesFailed: 1, files: 1, fileErrors: 0, ownerUser: 'molly' })
     });
+    // The file's own record is its door's, and names it by its id.
+    const fileId = run.files.find(f => f.name.endsWith('.pdf'))?.refs[0];
+    expect(fileId).toBeTruthy();
+    expect(events.find(e => e.eventType === 'asset-upload')).toMatchObject({ metadata: expect.objectContaining({ attachmentId: fileId, store: VAULT, sealed: true }) });
     // As AuditManager stores them: a page's own record names it by its vault name, which it redacts (#1520).
     expect(JSON.stringify(redactPrivateNamesDeep(events))).not.toContain(SECRET);
   });

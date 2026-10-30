@@ -74,7 +74,7 @@ import { mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import type {
-  IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, IceTarget, IceUpload, IceVetResult, OriginalChoice, ReceiveInfo,
+  IceFileReport, IceItem, IceLedger, IceOriginalChoices, IceReceiver, IceRunReport, IceRunRequest, IceShim, IceTarget, IceUpload, IceVetResult, OriginalChoice, ReceiveInfo,
   ReceiveOutcome, RecentImport, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../ice/types.js';
 import { pageUrl } from '../utils/pageUrl.js';
@@ -383,6 +383,11 @@ function titleFromFileName(name: string): string {
  *
  * Manages content import with extensible format support via converter registry.
  */
+/** What the private-store receiver says of a page it did not import (#2118); its `store-import` record counts them. */
+const TAKEOUT_PAGE_UNCHANGED = 'already here, unchanged';
+const TAKEOUT_PAGE_CHANGED = 'changed since the download; the page here was kept';
+const TAKEOUT_PAGE_ELSEWHERE = 'already on this site';
+
 class ImportManager extends BaseManager {
   /** Registry of format converters */
   private converterRegistry: Map<string, IContentConverter>;
@@ -1263,12 +1268,12 @@ class ImportManager extends BaseManager {
       const here = await pageManager.getPage(nameIn(store, page.uuid), ctx);
       if (here) {
         const same = (here.content ?? '').trim() === body.trim();
-        return { status: 'duplicate', message: same ? 'already here, unchanged' : 'changed since the download; the page here was kept' };
+        return { status: 'duplicate', message: same ? TAKEOUT_PAGE_UNCHANGED : TAKEOUT_PAGE_CHANGED };
       }
       const ownStores = await pageManager.listOwnStoreIds(ctx);
       const elsewhere = await this.whereUuidLives(pageManager, ctx, page.uuid, ownStores.filter(s => s !== store), nameIn);
       if (elsewhere) {
-        return { status: 'duplicate', message: `already on this site${elsewhere.where ? ` as ${elsewhere.where}` : ' elsewhere'}; not imported` };
+        return { status: 'duplicate', message: `${TAKEOUT_PAGE_ELSEWHERE}${elsewhere.where ? ` as ${elsewhere.where}` : ' elsewhere'}; not imported` };
       }
     }
 
@@ -1298,6 +1303,8 @@ class ImportManager extends BaseManager {
    * The run as one act (#1472's `store-import`): who, which store, and how
    * each file went, as counts. Never a page's or a file's name (#1461); each
    * file's own record is its door's (`asset-upload`, a sealed store's by id).
+   * The counts use the old door's keys, so whatever reads the event reads
+   * one shape (`filesUnlinked` aside: the engine does not count it).
    */
   private async recordStoreImport(ctx: ActorContext, report: IceRunReport): Promise<void> {
     const sink = this.engine.getManager<AuditEventSink>('AuditManager');
@@ -1305,6 +1312,12 @@ class ImportManager extends BaseManager {
     const owner = ctx.username;
     const store = report.target ?? '';
     const count = (status: string): number => report.files.filter(f => f.status === status).length;
+    // A takeout's files are under `attachments/`; its pages are not.
+    const isFile = (f: IceFileReport): boolean => f.name.includes('/attachments/');
+    const pages = report.files.filter(f => !isFile(f) && f.status !== 'noise');
+    const files = report.files.filter(isFile);
+    const pagesSaying = (start: string): number => pages.filter(p => p.status === 'duplicate' && p.message?.startsWith(start)).length;
+    const failed = (f: IceFileReport): boolean => ['partial', 'refused', 'failed', 'unreadable'].includes(f.status);
     const ownerId = await this.engine.getManager<IdentityManager>('IdentityManager')
       ?.identityIdOf(systemContext(this.engine, 'record a takeout import: the owner identity @id (#2041)'), owner);
     await recordAuditEvent(sink, {
@@ -1322,14 +1335,15 @@ class ImportManager extends BaseManager {
         ownerUser: owner,
         store,
         runId: report.runId,
-        files: report.files.length,
-        imported: count('imported'),
-        unchanged: count('unchanged'),
-        duplicate: count('duplicate'),
-        partial: count('partial'),
-        refused: count('refused'),
-        failed: count('failed'),
-        unreadable: count('unreadable'),
+        // Unpacked: the engine does not hand on the archive's own size.
+        bytes: report.files.reduce((sum, f) => sum + f.size, 0),
+        pagesImported: pages.filter(p => p.status === 'imported').length,
+        pagesUnchanged: pages.filter(p => p.status === 'unchanged').length + pagesSaying(TAKEOUT_PAGE_UNCHANGED),
+        pagesChanged: pagesSaying(TAKEOUT_PAGE_CHANGED),
+        pagesElsewhere: pagesSaying(TAKEOUT_PAGE_ELSEWHERE),
+        pagesFailed: pages.filter(failed).length,
+        files: files.filter(f => f.status === 'imported' || f.status === 'duplicate').length,
+        fileErrors: files.filter(failed).length,
         leftOut: count('noise')
       }
     }, (err) => logger.warn('[ImportManager] the store-import audit record failed:', err));
