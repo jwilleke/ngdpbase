@@ -9,7 +9,9 @@
  * - zips are unpacked and noise is dropped before any shim sees a file;
  * - every file is fingerprinted (SHA-256); a file whose fingerprint the scope
  *   already took (`imported`, `duplicate`, `unchanged`) is skipped as
- *   `unchanged`; a `partial`, `failed` or `refused` file is tried again (#2010). A
+ *   `unchanged`; a `partial`, `failed` or `refused` file is tried again (#2010).
+ *   A receiver that `rechecks` items is handed those of a taken file again,
+ *   and its own check decides (#2118). A
  *   shim whose duplicates are per item skips the items whose key the scope
  *   has seen instead. The scope is bound to the receiver and the user the run
  *   is for ({@link boundScope}, #2013);
@@ -108,11 +110,12 @@ export const SCOPE_FORM = 'ice2';
  * The scope a run's fingerprints, per-file status and item keys live in
  * (#2013): bound to the receiver and to the user the run is for, by their
  * identity `@id` (else their username, #2041). The engine works it out from
- * the caller's context; a request cannot name another user's. A caller's own
- * `sub` (phr's source id) narrows it within that user's scope, never outside.
+ * the caller's context; a request cannot name another user's. What follows
+ * narrows it within that user's scope, never outside: the place within the
+ * receiver (#2118), then a caller's own sub-scope (phr's source id).
  */
-export function boundScope(receiverId: string, owner: string, sub?: string): string {
-  return [SCOPE_FORM, receiverId, owner, ...(sub ? [sub] : [])].map(encodeURIComponent).join('/');
+export function boundScope(receiverId: string, owner: string, ...subs: Array<string | undefined>): string {
+  return [SCOPE_FORM, receiverId, owner, ...subs.filter((sub): sub is string => !!sub)].map(encodeURIComponent).join('/');
 }
 
 /**
@@ -192,15 +195,17 @@ export interface ChainSpec {
 /**
  * Run a shim, then the shims after it (D9), until each item is done. What
  * came before travels with each item: earlier metadata under later, earlier
- * warnings first. Partial notes are collected into `partial`.
+ * warnings first. Partial notes are collected into `partial`; a shim's note
+ * that the file holds nothing to import on its own (#2118) into `skipped`.
  */
-export async function convertChain(shim: RegisteredShim, input: IceItem, chain: string[], spec: ChainSpec, partial: string[]): Promise<ChainLeaf[]> {
+export async function convertChain(shim: RegisteredShim, input: IceItem, chain: string[], spec: ChainSpec, partial: string[], skipped: string[] = []): Promise<ChainLeaf[]> {
   if (chain.length >= spec.maxChainDepth) {
     throw new Error(`the chain ${[...chain, shim.id].join(' → ')} is longer than ${spec.maxChainDepth} shims`);
   }
   if (typeof shim.read !== 'function') throw new Error(`${shim.id} does not read`);
   const result = await shim.read(input, spec.tools(shim));
   if (result.partial) partial.push(result.partial);
+  if (result.skip && result.items.length === 0) skipped.push(result.skip);
   const here = [...chain, shim.id];
   const leaves: ChainLeaf[] = [];
   for (const produced of result.items) {
@@ -216,7 +221,7 @@ export async function convertChain(shim: RegisteredShim, input: IceItem, chain: 
     }
     const next = spec.shims.find(s => canReadInbound(s) && (s.accepts.kinds ?? []).includes(item.kind) && readable(s, item));
     if (!next) throw new Error(`${shim.id} produced ${item.kind}, and no shim takes ${item.kind} on to ${spec.target}`);
-    leaves.push(...await convertChain(next, item, here, spec, partial));
+    leaves.push(...await convertChain(next, item, here, spec, partial, skipped));
   }
   return leaves;
 }
@@ -319,7 +324,11 @@ function heldName(entry: LedgerFileEntry, receiver: RegisteredReceiver): string 
 
 /** One file as the engine first hands it on: its bytes, and the same bytes as text. */
 function fileItem(upload: IceUpload): IceItem {
-  return { kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'), ...(upload.mediaType ? { mediaType: upload.mediaType } : {}) };
+  return {
+    kind: 'file', name: upload.name, bytes: upload.bytes, text: upload.bytes.toString('utf8'),
+    ...(upload.mediaType ? { mediaType: upload.mediaType } : {}),
+    ...(upload.archive ? { archive: upload.archive } : {})
+  };
 }
 
 /** What the engine decides about one file before converting it. */
@@ -330,6 +339,8 @@ interface FilePlan {
   shim: RegisteredShim | null;
   /** Set when the file goes no further: its status, and whether the ledger records it. */
   stop?: { status: IceFileStatus; message?: string; refs?: string[]; record: boolean };
+  /** Already taken, but the receiver `rechecks` some of its items: read again for those only (#2118). */
+  recheck?: boolean;
 }
 
 /**
@@ -354,9 +365,48 @@ async function planFile(upload: IceUpload, request: IceRunRequest, receiver: Reg
     return { file, sha256, last, shim, stop: { status: 'unreadable', message, record: true } };
   }
   if (shim?.duplicates !== 'item' && last && DONE.has(last.status)) {
+    if (receiver.rechecks) return { file, sha256, last, shim, recheck: true };
     return { file, sha256, last, shim, stop: { status: 'unchanged', refs: last.refs, message: `already imported ${last.at}`, record: false } };
   }
   return { file, sha256, last, shim };
+}
+
+/**
+ * Is an import into this receiver confidential (#2110)? Only when its
+ * destination is encrypted: a receiver that keeps into a sealed store
+ * (`keepsEncrypted`), or whose own door writes into one (`writesEncrypted`,
+ * #2118). No receiver can declare itself so otherwise.
+ */
+export function isConfidentialReceiver(receiver: Pick<RegisteredReceiver, 'keepsEncrypted' | 'writesEncrypted'> | undefined): boolean {
+  return receiver?.keepsEncrypted === true || receiver?.writesEncrypted === true;
+}
+
+/**
+ * The ledger as a confidential run writes it (#2161): it is plain JSON on
+ * disk, so an entry names nothing of the sealed store. No file name (it is
+ * the file's fingerprint instead), no message, no given or held name, no
+ * reference (a page's reference is its name), no original's name. What it
+ * keeps is what skipping needs: the fingerprint, the status, and an
+ * original's id.
+ */
+function withholdingNames(ledger: IceLedger): IceLedger {
+  return {
+    lastFile: (scope, sha256) => ledger.lastFile(scope, sha256),
+    hasItem: (scope, key) => ledger.hasItem(scope, key),
+    recordItem: (scope, key) => ledger.recordItem(scope, key),
+    seenItems: (scope, keys) => ledger.seenItems(scope, keys),
+    recordItems: (scope, keys) => ledger.recordItems(scope, keys),
+    files: (scope) => ledger.files(scope),
+    recordFile: (scope, entry) => ledger.recordFile(scope, {
+      name: entry.sha256.slice(0, 12), sha256: entry.sha256, size: entry.size, status: entry.status, at: entry.at, refs: [],
+      ...(entry.original ? { original: { ...entry.original, name: '' } } : {})
+    })
+  };
+}
+
+/** The run's deps, with the ledger a confidential receiver's run writes ({@link withholdingNames}). */
+function depsFor(deps: IceRunDeps, receiver: RegisteredReceiver | undefined): IceRunDeps {
+  return isConfidentialReceiver(receiver) ? { ...deps, ledger: withholdingNames(deps.ledger) } : deps;
 }
 
 /** Does this run keep its originals during the upload (#2034)? */
@@ -385,9 +435,10 @@ export interface UploadKeepResult {
  * then queues nothing. Originals kept before it stay kept, and recorded, so
  * the next try reuses them.
  */
-export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, scope: string): Promise<UploadKeepResult> {
+export async function keepOriginalsAtUpload(siteDeps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, scope: string): Promise<UploadKeepResult> {
+  const receiver = siteDeps.receivers.get(request.receiver);
+  const deps = depsFor(siteDeps, receiver);
   const now = deps.now ?? ((): Date => new Date());
-  const receiver = deps.receivers.get(request.receiver);
   const result: UploadKeepResult = { kept: 0 };
   if (request.source.type !== 'upload') return result;
   if (!receiver?.keepOriginal || !keepsAtUpload(receiver, request.original ?? deps.settings.defaultOriginal)) return result;
@@ -395,10 +446,10 @@ export async function keepOriginalsAtUpload(deps: IceRunDeps, request: IceRunReq
   if (!await mayReceive(receiver, ctx)) return result;
   const door = receiver.id;
 
-  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
+  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
   for (const upload of files) {
     const plan = await planFile(upload, request, receiver, deps, scope);
-    if (plan.stop || !plan.sha256 || !plan.file) continue;
+    if (plan.stop || plan.recheck || !plan.sha256 || !plan.file) continue;
     if (plan.last?.original?.door === door) continue;
     let outcome: ReceiveOutcome;
     // #2061: this one call may keep the receiver's declared types into its own vault.
@@ -459,9 +510,11 @@ async function refuseAll(deps: IceRunDeps, request: IceRunRequest, receiver: Reg
  * showing while it runs. Never throws for one file's failure; that file's
  * status says why.
  */
-export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
+export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ctx: ActorContext, report: IceRunReport): Promise<IceRunReport> {
+  const receiver = siteDeps.receivers.get(request.receiver);
+  // #2161: a confidential run's ledger entries name nothing.
+  const deps = depsFor(siteDeps, receiver);
   const now = deps.now ?? ((): Date => new Date());
-  const receiver = deps.receivers.get(request.receiver);
   report.state = 'running';
   report.startedAt = now().toISOString();
   if (!receiver) {
@@ -501,7 +554,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
   }
   const tools = runTools(deps, request);
 
-  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth);
+  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
   for (const bad of unreadable) {
     report.files.push({ name: bad.name, size: bad.size, status: 'failed', message: bad.message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
   }
@@ -567,7 +620,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       if (original === 'keep') {
         const door = keepingDoor(receiver);
         if (keptOriginal?.door === door) {
-          kept = { name: keptOriginal.name, sha256, ref: keptOriginal.ref };
+          kept = { name: keptOriginal.name || upload.name, sha256, ref: keptOriginal.ref };
         } else {
           const outcome = await keepOriginal(file, sha256, receiver, ctx, deps, report.runId);
           if (outcome.status === 'refused' || !outcome.ref) {
@@ -586,6 +639,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       const citation: IceCitation | undefined = original === 'cite' ? { name: upload.name, sha256, importedAt: now().toISOString() } : undefined;
 
       const partial: string[] = [];
+      const skipped: string[] = [];
       const spec: ChainSpec = {
         shims: deps.shims,
         tools,
@@ -593,8 +647,14 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         done: (from, item) => receiver.accepts.includes(item.kind) && handsTo(from, receiver.id),
         target: receiver.id
       };
-      const leaves: ChainLeaf[] = shim ? await convertChain(shim, file, [], spec, partial) : [{ item: file, chain: [] }];
+      const leaves: ChainLeaf[] = shim ? await convertChain(shim, file, [], spec, partial, skipped) : [{ item: file, chain: [] }];
       fr.chain = leaves[0]?.chain ?? (shim ? [shim.id] : []);
+      if (leaves.length === 0 && skipped.length > 0) {
+        // #2118: part of its format's layout, nothing to import on its own: not content, and not recorded.
+        fr.status = 'noise';
+        fr.message = skipped[0];
+        continue;
+      }
 
       const refusals: string[] = [];
       // #2130: a held item the receiver says goes by another name than the one given.
@@ -614,6 +674,10 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           fr.duplicates++;
           continue;
         }
+        if (plan.recheck && !receiver.rechecks?.(item)) {
+          fr.duplicates++;
+          continue;
+        }
         let leafKey: string | undefined;
         if (!perItem) {
           const base = itemKeyOf(sha256, chain, item, 0);
@@ -621,14 +685,15 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           occurrences.set(base, seen + 1);
           leafKey = seen === 0 ? base : itemKeyOf(sha256, chain, item, seen);
         }
-        if (leafKey && retry && await deps.ledger.hasItem(scope, leafKey)) {
+        if (leafKey && retry && !plan.recheck && await deps.ledger.hasItem(scope, leafKey)) {
           fr.duplicates++;
           continue;
         }
         const outcome = await receiver.receive(item, ctx, {
           runId: report.runId, source: { name: upload.name, sha256 }, chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
-          ...(given.name ? { givenName: given.name } : {})
+          ...(given.name ? { givenName: given.name } : {}),
+          ...(request.target !== undefined ? { target: request.target } : {})
         });
         if (outcome.status === 'stored') {
           fr.stored++;
@@ -639,6 +704,8 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
         } else if (outcome.status === 'duplicate') {
           fr.duplicates++;
           if (outcome.ref) fr.refs.push(outcome.ref);
+          // #2118: why it is a duplicate, when the receiver says (a page changed since the download).
+          if (outcome.message) said.add(outcome.message);
           if (given.name && outcome.heldAs && outcome.heldAs !== given.name && !heldAs) {
             heldAs = outcome.heldAs;
             heldRef = outcome.ref;
@@ -654,6 +721,7 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
           runId: report.runId, source: { name: upload.name, sha256 }, chain: fr.chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
           ...(given.name ? { givenName: given.name } : {}),
+          ...(request.target !== undefined ? { target: request.target } : {}),
           metadata: { ...(file.metadata ?? {}) }, items: leaves.map(l => l.item)
         });
         if (settled) said.add(settled);
@@ -694,11 +762,19 @@ export async function runImport(deps: IceRunDeps, request: IceRunRequest, ctx: A
       fr.message = err instanceof Error ? err.message : String(err);
     }
     if (retry) fr.refs = [...new Set([...(plan.last?.refs ?? []), ...fr.refs])];
+    if (plan.recheck && fr.status === 'unchanged' && plan.last) {
+      // #2118: rechecked and still held: as the fingerprint skip leaves it, unrecorded.
+      fr.message = `already imported ${plan.last.at}`;
+      continue;
+    }
     if (fr.status !== 'imported') {
       for (const key of storedKeys) await deps.ledger.recordItem(scope, key);
     }
     await record();
   }
+
+  // #2118: the receiver settles the run as one act, once every file is read.
+  if (receiver.runDone) await receiver.runDone(ctx, report);
 
   report.state = 'done';
   report.finishedAt = now().toISOString();

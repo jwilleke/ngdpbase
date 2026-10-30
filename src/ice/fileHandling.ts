@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { resolveUploadMime } from '../utils/sniffMime.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
-import type { IceUpload } from './types.js';
+import type { IceArchiveView, IceUpload } from './types.js';
 
 /**
  * A file's media type by its extension (#2061): how the engine labels a file
@@ -123,17 +123,21 @@ export function isZip(upload: IceUpload): boolean {
  * with the type its request gave it. Limits are per archive (`ZipReadLimits`), so a small
  * archive that expands enormously stops at the budget. An archive that cannot
  * be read is returned in `unreadable`, with why; the rest go on.
+ *
+ * With `innerZipsAsFiles` (#2118), only the uploads themselves are unpacked:
+ * a zip inside one is passed on as a file, like any other member.
  */
 export function expandUploads(
   uploads: readonly IceUpload[],
   limits: ZipReadLimits,
   maxDepth: number,
+  options: { innerZipsAsFiles?: boolean } = {},
   depth = 0
 ): { files: IceUpload[]; unreadable: Array<{ name: string; size: number; message: string }> } {
   const files: IceUpload[] = [];
   const unreadable: Array<{ name: string; size: number; message: string }> = [];
   for (const upload of uploads) {
-    if (!isZip(upload)) {
+    if (!isZip(upload) || (depth > 0 && options.innerZipsAsFiles)) {
       files.push(upload);
       continue;
     }
@@ -148,9 +152,15 @@ export function expandUploads(
       unreadable.push({ name: upload.name, size: upload.bytes.length, message: (err as Error).message });
       continue;
     }
+    // #2118: each member can see what lies beside it, for a format that spans the archive.
+    const byPath = new Map(members.map(m => [m.path, m.bytes] as const));
+    const paths = members.map(m => m.path);
+    const view = (memberPath: string): IceArchiveView => ({
+      name: upload.name, path: memberPath, paths, read: (p: string) => byPath.get(p)
+    });
     const inner = expandUploads(
-      members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes, mediaType: memberMediaType(m.path, m.bytes) })),
-      limits, maxDepth, depth + 1
+      members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes, mediaType: memberMediaType(m.path, m.bytes), archive: view(m.path) })),
+      limits, maxDepth, options, depth + 1
     );
     files.push(...inner.files);
     unreadable.push(...inner.unreadable);

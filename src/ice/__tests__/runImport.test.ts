@@ -6,7 +6,7 @@
  */
 import { packZip } from '../../utils/zipArchive';
 import { MemoryIceLedger } from '../ledger';
-import { keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
+import { boundScope, keepOriginalsAtUpload, runImport, type IceEngineSettings, type IceRunDeps } from '../runImport';
 import type {
   FileDoneInfo, IceItem, IceRunReport, IceRunRequest, ReceiveInfo, ReceiveOutcome, RegisteredReceiver, RegisteredShim, ShimTools
 } from '../types';
@@ -893,5 +893,72 @@ describe('runImport', () => {
       expect((await run(d, req([upload('a.rec', 'a=1')]))).files[0]).toMatchObject({ status: 'imported', stored: 1 });
       expect(received).toHaveLength(2);
     });
+  });
+});
+
+describe('a format that spans an archive (#2118)', () => {
+  /** A shim that reads each member with the archive beside it: an index member is read through the others. */
+  function layoutShim(): RegisteredShim {
+    return {
+      id: 'test.layout', owner: 'test', name: 'layout', direction: 'in',
+      accepts: { canRead: (input) => !!input.archive },
+      produces: 'test.record',
+      receivers: ['test.records'],
+      read: async (input) => {
+        const archive = input.archive!;
+        if (archive.path === 'index.txt') return { items: [], skip: 'the index, read with what it names' };
+        const named = archive.read('index.txt')?.toString('utf8') ?? '';
+        return { items: [{ kind: 'test.record', name: input.name, data: { path: archive.path, named, siblings: archive.paths.length } }] };
+      }
+    };
+  }
+
+  test('each member is handed on its own, with the archive beside it; a member with nothing of its own is noise, unrecorded', async () => {
+    const zip = await packZip([
+      { path: 'index.txt', bytes: Buffer.from('a.dat') },
+      { path: 'a.dat', bytes: Buffer.from('one') }
+    ]);
+    const ledger = new MemoryIceLedger();
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const request: IceRunRequest = { source: { type: 'upload', files: [{ name: 'bundle.zip', bytes: zip }] }, receiver: 'test.records' };
+    const result = await run(deps([layoutShim()], [receiver], ledger), request);
+
+    expect(result.files.map(f => [f.name, f.status, f.message])).toEqual([
+      ['bundle.zip/index.txt', 'noise', 'the index, read with what it names'],
+      ['bundle.zip/a.dat', 'imported', undefined]
+    ]);
+    expect(received.map(r => r.item.data)).toEqual([{ path: 'a.dat', named: 'a.dat', siblings: 2 }]);
+    expect((await ledger.files(report(request).scope)).map(f => f.name)).toEqual(['bundle.zip/a.dat']);
+  });
+
+  test('a file uploaded on its own has no archive', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const result = await run(deps([layoutShim()], [receiver]), { source: { type: 'upload', files: [upload('a.dat', 'one')] }, receiver: 'test.records' });
+    expect(result.files[0].status).toBe('unreadable');
+  });
+
+  test('the request\'s place within the receiver reaches every item, and the receiver settles the run once', async () => {
+    const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+    const done: IceRunReport[] = [];
+    receiver.runDone = async (_ctx, r) => { done.push(r); };
+    const result = await run(deps([recordShim()], [receiver]), {
+      source: { type: 'upload', files: [upload('a.rec', 'a=1\nb=2'), upload('b.rec', 'c=3')] }, receiver: 'test.records', target: 'vault'
+    });
+    expect(received.map(r => r.info.target)).toEqual(['vault', 'vault', 'vault']);
+    expect(done).toEqual([result]);
+  });
+
+  test('a refused run is not settled', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record'], { refuse: () => true });
+    const runDone = vi.fn();
+    receiver.runDone = runDone;
+    await run(deps([recordShim()], [receiver]), { source: { type: 'upload', files: [upload('a.rec', 'a=1')] }, receiver: 'test.records' });
+    expect(runDone).not.toHaveBeenCalled();
+  });
+
+  test('a bound scope narrows by the place, then by the caller\'s own scope', () => {
+    expect(boundScope('core.private-store', 'molly', 'vault')).toBe('ice2/core.private-store/molly/vault');
+    expect(boundScope('phr.records', 'molly', undefined, 'src-1')).toBe('ice2/phr.records/molly/src-1');
+    expect(boundScope('core.pages', 'molly')).toBe('ice2/core.pages/molly');
   });
 });

@@ -2,7 +2,7 @@
 
 <%# #2021: the import screen for the ICE engine (#1979). Any user; only the
     receivers they may use (receiversFor), only their own runs. Locals:
-    receivers [{ id, label, originals: { allowed, default }, names? }], preselected,
+    receivers [{ id, label, originals: { allowed, default }, names?, targets? }], preselected,
     runs (IceRunReport[] still queued or running, newest first),
     recent (RecentImport[] from the ledger, #2110), recentUnavailable,
     limits { maxFiles, maxBytes }.
@@ -28,6 +28,12 @@
                             <option value="<%= r.id %>" <%= r.id === preselected ? 'selected' : '' %>><%= r.label || r.id %></option>
                         <% }); %>
                     </select>
+                </div>
+
+                <%# #2118: where within the receiver, for one with places (a private store). Disabled (so not posted) while hidden. %>
+                <div class="mb-3" id="importTargetRow" hidden>
+                    <label for="importTarget" class="form-label">Into store</label>
+                    <select id="importTarget" name="target" class="form-select" disabled></select>
                 </div>
 
                 <div class="mb-3">
@@ -85,7 +91,7 @@
                     <td class="text-break"><% if (f.givenName) { %><%= f.givenName %> <span class="text-muted">(from <%= f.name %>)</span><% } else { %><%= f.name %><% } %></td>
                     <td><%= RECENT_STATUS[f.status] || f.status %><% if (f.message) { %><div class="text-muted"><%= f.message %></div><% } %></td>
                     <td>
-                        <%= f.receiverLabel || f.receiver %>
+                        <%= f.receiverLabel || f.receiver %><% if (f.target) { %> <span class="text-muted">(<%= f.targetLabel || f.target %>)</span><% } %>
                         <% if (f.link) { %><div><a href="<%= f.link %>">Open</a><% if (f.refs > 1) { %> <span class="text-muted">and <%= f.refs - 1 %> more</span><% } %></div><% } %>
                     </td>
                 </tr>
@@ -134,7 +140,7 @@
         card.id = 'run-' + run.runId;
         card.setAttribute('data-run-state', run.state);
         var head = el('div', 'card-header d-flex justify-content-between align-items-center');
-        var title = el('span', '', 'Into ' + (LABELS[run.receiver] || run.receiver));
+        var title = el('span', '', 'Into ' + (LABELS[run.receiver] || run.receiver) + (run.target ? ' (' + run.target + ')' : ''));
         if (run.startedAt) {
             title.appendChild(document.createTextNode(' · '));
             title.appendChild(localTime(run.startedAt));
@@ -214,6 +220,24 @@
     }
     select.addEventListener('change', showOriginals);
     showOriginals();
+
+    // #2118: a receiver with places offers the ones this user may import into.
+    var targetRow = document.getElementById('importTargetRow');
+    var targetSelect = document.getElementById('importTarget');
+    function showTargets() {
+        var r = data.receivers.find(function (x) { return x.id === select.value; });
+        var targets = (r && r.targets) || [];
+        targetRow.hidden = targets.length === 0;
+        targetSelect.disabled = targetRow.hidden;
+        targetSelect.replaceChildren();
+        targets.forEach(function (t) {
+            var option = el('option', '', t.label || t.id);
+            option.value = t.id;
+            targetSelect.appendChild(option);
+        });
+    }
+    select.addEventListener('change', showTargets);
+    showTargets();
 
     // #2130: one file (not a zip) into a receiver that takes a name gets a name
     // field, pre-filled with the file's own name (for a page, without its extension).
