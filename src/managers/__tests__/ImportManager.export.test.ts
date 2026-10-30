@@ -23,6 +23,8 @@ interface Setup {
   grants?: Record<string, string[]>;
   /** Pages each user may read. */
   readers?: Record<string, string[]>;
+  /** Permissions each user is granted inside their own vault (the vault policy). */
+  vaultGrants?: Record<string, string[]>;
   config?: Record<string, unknown>;
   htmlToPdf?: (ctx: ActorContext, html: string) => Promise<Buffer>;
 }
@@ -30,6 +32,7 @@ interface Setup {
 async function setup(opts: Setup = {}) {
   const grants = opts.grants ?? { alice: ['page-export'], bob: ['page-export'], mallory: [] };
   const readers = opts.readers ?? { alice: ['Trip Notes'], bob: [], mallory: ['Trip Notes'] };
+  const vaultGrants = opts.vaultGrants ?? { alice: ['page-export'], bob: ['page-export'] };
   const config: Record<string, unknown> = { 'ngdpbase.export.pdf.provider': 'local-chrome', ...(opts.config ?? {}) };
   const audits: Array<Record<string, unknown>> = [];
   const pageReads: string[] = [];
@@ -42,7 +45,10 @@ async function setup(opts: Setup = {}) {
     },
     PolicyDecisionPoint: {
       permits: async (ctx: ActorContext, p: string) => (grants[ctx.username] ?? []).includes(p),
-      holds: async (ctx: ActorContext, p: string) => (grants[ctx.username] ?? []).includes(p)
+      holds: async (ctx: ActorContext, p: string) => (grants[ctx.username] ?? []).includes(p),
+      // The vault policy: page-export inside a vault, for the vault's owner (vault-owner).
+      decide: async (ctx: ActorContext, q: { action: string; attributes?: { vault?: string } }) =>
+        ({ permit: q.action === 'page-export' && !!q.attributes?.vault && (vaultGrants[ctx.username] ?? []).includes(q.action) })
     },
     PageManager: {
       mayShowPage: async (ref: string, ctx: ActorContext) => mayRead(ctx, ref),
@@ -102,6 +108,15 @@ describe('exportFormatsFor — the Export action offers only what fits', () => {
   test('no PDF while no provider is chosen; no shim a site switched off', async () => {
     const { im } = await setup({ config: { 'ngdpbase.export.pdf.provider': 'none', 'ngdpbase.import.shims.core.markdown-file.enabled': false } });
     expect((await im.exportFormatsFor('core.pages', 'Trip Notes', ALICE)).map(f => f.id)).toEqual(['core.ncm-file', 'core.html-file']);
+  });
+
+  test('a vault page is decided in the vault: its owner may export it, a site-wide page-export does not reach in', async () => {
+    const DIARY = 'vaults/alice/private/Diary';
+    const { im } = await setup({ readers: { alice: [DIARY], bob: [DIARY] }, grants: { alice: [], bob: ['page-export'] } });
+    expect((await im.exportFormatsFor('core.pages', DIARY, ALICE)).length).toBeGreaterThan(0);
+    // Even were bob let read it, his site-wide grant is not a grant in alice's vault.
+    expect(await im.exportFormatsFor('core.pages', DIARY, BOB)).toEqual([]);
+    await expect(im.startExport({ source: 'core.pages', ref: DIARY, format: 'core.ncm-file' }, BOB)).rejects.toBeInstanceOf(IceExportRefused);
   });
 
   test('an unknown source offers nothing', async () => {

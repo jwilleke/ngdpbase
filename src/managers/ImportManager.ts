@@ -54,9 +54,9 @@ import logger from '../utils/logger.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
 import { readTakeout } from '../utils/privateStoreImport.js';
 import { TAKEOUT_FILE_INDEX } from '../utils/privateStoreExport.js';
-import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { mayActInPrivateContainer, permitsInVault } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
-import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig, systemCategoryVaults, type PrivateStoreLayout } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig, systemCategoryVaults, type PrivateStoreLayout } from '../utils/privateStorePath.js';
 import { jobContextFromRequest, type JobContext } from '../context/JobContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
@@ -1265,10 +1265,25 @@ class ImportManager extends BaseManager {
   }
 
   /**
+   * `page-export` for this page (#2120). For a page in a vault, asked about
+   * the page as the route door asks it (`hasPermissionOn`, #1539): the
+   * container rule, then the capability with the page's vault, so a
+   * site-wide role does not reach in. For any other page, the capability:
+   * held, for an affordance (no step-up), or permitted, for the door.
+   */
+  private async mayExportPage(ctx: ActorContext, pageName: string, affordance: boolean): Promise<boolean> {
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    const vault = parsePrivatePageName(pageName);
+    if (vault) return permitsInVault(pdp, ctx, 'page-export', { owner: vault.owner, vault: vault.store, resource: pageName });
+    if (affordance) return typeof pdp?.holds === 'function' && pdp.holds(ctx, 'page-export');
+    return this.permits(ctx, 'page-export');
+  }
+
+  /**
    * `core.pages` as an export source (#2120, D5: pages export checks
    * `page-export`). A page is offered for export when its reader may see it
    * and holds `page-export` (affordances, recording nothing). Reading it
-   * for export asks `page-export` of the PDP, then reads through the page
+   * for export asks `page-export` ({@link mayExportPage}), then reads through the page
    * door (`readPage`), which decides `page-read` on the page and records a
    * refusal; the export is recorded as `page-export`, with the format.
    */
@@ -1281,10 +1296,10 @@ class ImportManager extends BaseManager {
         const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
         const pageManager = this.engine.getManager<PageManager>('PageManager');
         if (typeof pdp?.holds !== 'function' || typeof pageManager?.mayShowPage !== 'function') return false;
-        return await pdp.holds(ctx, 'page-export') && await pageManager.mayShowPage(ref, ctx);
+        return await this.mayExportPage(ctx, ref, true) && await pageManager.mayShowPage(ref, ctx);
       },
       read: async (ref: string, ctx: ActorContext, info): Promise<IceItem[] | null> => {
-        if (!(await this.permits(ctx, 'page-export'))) return null;
+        if (!(await this.mayExportPage(ctx, ref, false))) return null;
         const pageManager = this.engine.getManager<PageManager>('PageManager');
         if (typeof pageManager?.readPage !== 'function') return null;
         const read = await pageManager.readPage(ref, ctx);
