@@ -11,7 +11,7 @@ import {
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
-import { configFilePaths, enabledEntries, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
+import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -862,9 +862,20 @@ class ConfigurationManager extends BaseManager {
     // value with itself.
     const before = this.customConfig[key];
 
-    this.customConfig[key] = value;
+    // #2126: what is in force afterwards is what a restart would merge. A
+    // list merged by id keeps the shipped and add-on entries beneath the
+    // site's; `undefined` takes the key out of the custom file, so the layers
+    // beneath are in force again (an empty list would replace them all).
+    const declared = this.declaredConfig?.[key];
+    if (value === undefined) {
+      delete this.customConfig[key];
+    } else {
+      this.customConfig[key] = value;
+    }
     if (this.mergedConfig) {
-      this.mergedConfig[key] = value;
+      this.mergedConfig[key] = value === undefined
+        ? declared
+        : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
     }
 
     // Save to custom config file
