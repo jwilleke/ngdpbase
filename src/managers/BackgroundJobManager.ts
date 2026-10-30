@@ -153,6 +153,25 @@ export interface ScheduledJobView {
   runs: JobRunRecord[];
 }
 
+/** A run that ended, as the /admin dashboard shows it (#2138). */
+export interface LastJobRun {
+  startedAt: string;
+  completedAt: string;
+  status: 'completed' | 'failed';
+  /** The username who asked; null for a run its schedule started. */
+  ranBy: string | null;
+}
+
+/** A job's newest ended run (#2138), from {@link BackgroundJobManager.lastFinishedRun}. */
+export interface JobLastRun {
+  jobId: string;
+  displayName: string;
+  /** Null when it has never run — or, with `sinceStart`, not since this server started. */
+  lastRun: LastJobRun | null;
+  /** The job's history is kept in memory only (a maintenance tick, or no job state open): it starts empty at each start. */
+  sinceStart: boolean;
+}
+
 /**
  * A job type that can be registered with the BackgroundJobManager.
  */
@@ -743,6 +762,37 @@ class BackgroundJobManager extends BaseManager {
   async scheduledJobView(jobId: string): Promise<ScheduledJobView | null> {
     const job = this.scheduled.get(jobId);
     return job ? this.viewOf(job, false) : null;
+  }
+
+  /**
+   * The newest run of a job that ended, completed or failed, and who asked
+   * for it (#2138) — what the /admin dashboard shows under Reindex and
+   * Rebuild. Read from the history already kept: the job state, and this
+   * process's own runs for what the state does not hold (a maintenance tick,
+   * or no state open). Null when no job of that id is registered.
+   */
+  async lastFinishedRun(jobId: string): Promise<JobLastRun | null> {
+    const def = this.jobs.get(jobId);
+    if (!def) return null;
+    const provider = this.stateProvider && isFileSafeJobId(jobId) ? this.stateProvider : null;
+    const job = this.scheduled.get(jobId);
+    const ended: LastJobRun[] = [];
+    for (const r of provider ? await provider.listRuns(jobId) : []) {
+      if ((r.status === 'completed' || r.status === 'failed') && r.completedAt) {
+        ended.push({ startedAt: r.startedAt, completedAt: r.completedAt, status: r.status, ranBy: r.slot !== null && !r.requestedBy ? null : r.requestedBy?.username ?? null });
+      }
+    }
+    for (const run of this.runs.values()) {
+      if (run.jobId !== jobId || !run.completedAt || (run.status !== 'completed' && run.status !== 'failed')) continue;
+      ended.push({
+        startedAt: run.startedAt.toISOString(),
+        completedAt: run.completedAt.toISOString(),
+        status: run.status,
+        ranBy: run.requestedBy.origin === 'schedule' ? null : run.requestedBy.username
+      });
+    }
+    const latest = ended.reduce<LastJobRun | null>((best, r) => (!best || r.completedAt > best.completedAt || (r.completedAt === best.completedAt && r.startedAt > best.startedAt) ? r : best), null);
+    return { jobId, displayName: def.displayName, lastRun: latest, sinceStart: !provider || (job ? !job.persist : false) };
   }
 
   private async viewOf(job: ScheduledJob, withRuns: boolean): Promise<ScheduledJobView> {
