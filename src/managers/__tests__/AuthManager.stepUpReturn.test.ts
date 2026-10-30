@@ -13,8 +13,11 @@ function double() {
   const engine = { getManager: (n: string) => (n === 'AuditManager' ? { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('a'); } } : null) };
   const self = {
     engine,
+    stepUpReplays: new Map(),
     reauthenticated: vi.fn(() => ({ provider: 'passkey', factors: [], amr: ['hwk'], aal: 2, acr: 'aal2', mfa: true, at: 'now' })),
-    recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); }
+    recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); },
+    // #2154: a form POST is kept for redoing only when it can be; these requests have no body.
+    keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); }
   };
   const call = <K extends 'askForFreshSignIn' | 'completeReauth' | 'takeStepUpNotice'>(name: K, ...a: Parameters<AuthManager[K]>) =>
     (AuthManager.prototype[name] as (...x: unknown[]) => ReturnType<AuthManager[K]>).apply(self, a);
