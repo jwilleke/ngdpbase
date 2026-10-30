@@ -4,7 +4,7 @@ Epic: [#1979](https://github.com/jwilleke/ngdpbase/issues/1979)
 
 The source of truth for the ICE epic: one engine that brings data in, converts it, and sends it out, with add-ons supplying the format-specific pieces ("shims"). Decisions here are the operator's; development follows this page. Change it when a decision changes, in the same change that ships the code.
 
-Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The user-facing import screen, `/import`, is built ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), 2026-10-24). Every file kept as a file is vetted and cleaned by the engine ([#2149](https://github.com/jwilleke/ngdpbase/issues/2149), 2026-10-30). The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). Every open question is now decided (operator, 2026-10-28).
+Status: design agreed (2026-10-21/22). First slice merged in PR [#1981](https://github.com/jwilleke/ngdpbase/pull/1981) (2026-10-23): the engine, the shim registry and today's converters as shims. The user-facing import screen, `/import`, is built ([#2021](https://github.com/jwilleke/ngdpbase/issues/2021), 2026-10-24). Every file kept as a file is vetted and cleaned by the engine ([#2149](https://github.com/jwilleke/ngdpbase/issues/2149), 2026-10-30). Export runs on the engine, from a page ([#2120](https://github.com/jwilleke/ngdpbase/issues/2120), 2026-10-30). The operator accepted its answers to the open questions it needed (2026-10-23); they are now decisions (see [Open questions](#open-questions)). Every open question is now decided (operator, 2026-10-28).
 
 ## Where this came from
 
@@ -158,10 +158,20 @@ D10 is built: a feed is a URL source fetched by the engine, read by a core shim,
 - __Carry-over.__ Record stores are unchanged on disk, and the receiver's own duplicate check compares the stored hash, so the first fetch after the upgrade finds every unchanged record unchanged: nothing is re-added or dropped. A test copies stores written by the old adapters and proves it for CSV, RSS/Atom and GeoJSON.
 - __Known gaps.__ The feeds' back-off multiplier, staleness window and the 100-item xml-index default are code defaults, as before (the last can be set per site with `ngdpbase.import.shims.core.xml-index.options.maxItems`). A fetch through the engine binds its ledger scope to the system principal's identity, so while the identity store cannot answer, feeds are not fetched ("try again shortly", #2013). While the application database is configured but unavailable, BackgroundJobManager holds every job, `feeds.poll` included (#1892).
 
+### Export through the engine ([#2120](https://github.com/jwilleke/ngdpbase/issues/2120), built 2026-10-30)
+
+Export starts from the thing being exported, and there is no general export screen (operator, 2026-10-28). Built for pages; search results and add-on lists are the follow-up. The reference is [ImportManager.md § Export](../managers/ImportManager.md#export-2120).
+
+- __A source per owner.__ The owner of the data registers an export source: the kind of items it yields, whether a user may export a thing (an affordance, for offering the action) and the door that reads it for export with the user's context. The engine has no export permission of its own (D5); the source asks its owner's existing one. `core.pages` yields `ncm` and asks `page-export` (in the vault for a vault page), then reads through the page door, which decides `page-read`; it records `page-export` with the format.
+- __Only the formats that fit.__ The Export action lists the `out` shims that make a file and can be reached from the source's kind through other `out` shims (D9), each by its shortest chain: NCM as stored, HTML, Markdown (from the rendered page) and PDF for a page. A shim a site switches off, or PDF with no provider chosen, is not offered.
+- __The PDF provider is the first `out` shim__ (#1974): `core.pdf`, HTML → PDF through `ExportManager.htmlToPdf`, after `core.ncm-html` renders the page. It is `out` only; reading a PDF in is not built.
+- __Off the request path.__ The thing is read in the request, so step-up and a vault's key apply as on any read; the shims run in the engine's background job as the user's job context. The file is held in memory for that user only, never written to disk, and let go after a configured time. Size limits and retention are configuration keys under `ngdpbase.export.engine.` with defaults.
+- __Decided here, conservatively, and open for the operator__: the engine's page export asks `page-export` on top of read, as D5 says, while the existing single-page `/export/html` and `/export/markdown` routes stay gated on read only (#1060); the general `/export` screen is left in place, not removed; an export is for signed-in users only, since a run is held for its user.
+
 Later, once the engine has proven itself:
 
 - the vault takeout import;
-- export, including PDF (#1974);
+- export of search results and add-on lists (#2120's follow-up);
 - accounting's statement imports.
 
 ## Open questions
