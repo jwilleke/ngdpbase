@@ -432,6 +432,19 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     await expect(upload('nosuchstore', await claiming(UUID_A))).rejects.toThrow(/choose one of the places/);
   });
 
+  // Security review of #2160 (Low): the receiver's door checks the store itself, whoever calls it.
+  test('the receiver\'s own door refuses a store she cannot write now, or does not have', async () => {
+    const receiver = (importer as unknown as { receiverRegistry: Map<string, { receive: (i: unknown, c: ActorContext, info: unknown) => Promise<{ status: string }> }> })
+      .receiverRegistry.get(RECEIVER);
+    const file = { kind: 'takeout', name: 'x.zip/vault/attachments/a.txt', bytes: Buffer.from('a'), data: { entry: 'file', name: 'a.txt' } };
+    const info = (target: string): unknown => ({ runId: 'r', source: { name: 'x.zip', sha256: 'f' }, chain: [], target });
+
+    expect(await receiver.receive(file, MOLLY_LOCKED, info(VAULT))).toMatchObject({ status: 'refused' });
+    expect(await receiver.receive(file, MOLLY, info('nosuchstore'))).toMatchObject({ status: 'refused' });
+    expect(await fs.pathExists(privateStoreRoot(pagesDir, 'molly', 'nosuchstore'))).toBe(false);
+    expect(await receiver.receive(file, MOLLY, info(VAULT))).toMatchObject({ status: 'stored' });
+  });
+
   test('a file that is not a takeout imports nothing, and says why', async () => {
     const run = await upload(VAULT, Buffer.from('not a zip'));
     expect(run.files.map(f => f.status)).toEqual(['failed']);

@@ -1211,6 +1211,8 @@ class ImportManager extends BaseManager {
     const store = info.target;
     if (!store || !isValidStoreId(store)) return { status: 'refused', message: 'No store was named.' };
     if (!await this.mayImportIntoOwnStore(ctx)) return { status: 'refused', message: 'Only the owner can import into their store.' };
+    // The door's own check, not only the engine's: one of the user's stores this context can write now.
+    if (!(await this.ownStoresWritable(ctx)).includes(store)) return { status: 'refused', message: 'That is not one of your stores you can write now.' };
     const files = this.engine.getManager<FileManager>('FileManager');
     if (!files) throw new Error('FileManager unavailable — cannot store a file');
     const owner = ctx.username;
