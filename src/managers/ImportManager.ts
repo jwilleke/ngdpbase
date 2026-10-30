@@ -1147,6 +1147,8 @@ class ImportManager extends BaseManager {
       accepts: [TAKEOUT_KIND],
       originals: { allowed: ['none'] },
       writesEncrypted: true,
+      // A zip the store held is one of its files: brought back as it was, not unpacked.
+      innerZipsAsFiles: true,
       mayUse: (ctx) => this.mayImportIntoOwnStore(ctx),
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),

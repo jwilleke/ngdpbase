@@ -123,17 +123,21 @@ export function isZip(upload: IceUpload): boolean {
  * with the type its request gave it. Limits are per archive (`ZipReadLimits`), so a small
  * archive that expands enormously stops at the budget. An archive that cannot
  * be read is returned in `unreadable`, with why; the rest go on.
+ *
+ * With `innerZipsAsFiles` (#2118), only the uploads themselves are unpacked:
+ * a zip inside one is passed on as a file, like any other member.
  */
 export function expandUploads(
   uploads: readonly IceUpload[],
   limits: ZipReadLimits,
   maxDepth: number,
+  options: { innerZipsAsFiles?: boolean } = {},
   depth = 0
 ): { files: IceUpload[]; unreadable: Array<{ name: string; size: number; message: string }> } {
   const files: IceUpload[] = [];
   const unreadable: Array<{ name: string; size: number; message: string }> = [];
   for (const upload of uploads) {
-    if (!isZip(upload)) {
+    if (!isZip(upload) || (depth > 0 && options.innerZipsAsFiles)) {
       files.push(upload);
       continue;
     }
@@ -156,7 +160,7 @@ export function expandUploads(
     });
     const inner = expandUploads(
       members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes, mediaType: memberMediaType(m.path, m.bytes), archive: view(m.path) })),
-      limits, maxDepth, depth + 1
+      limits, maxDepth, options, depth + 1
     );
     files.push(...inner.files);
     unreadable.push(...inner.unreadable);

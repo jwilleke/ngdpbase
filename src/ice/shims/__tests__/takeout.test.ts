@@ -132,7 +132,18 @@ describe('the takeout shim (#2118)', () => {
     expect(takeoutShim.accepts.canRead?.(item)).toBe(false);
   });
 
-  test('a zip inside the takeout is left out, not read as a takeout of its own', async () => {
+  test('a zip the store held, left packed as its receiver asks, is one of its files (#2118)', async () => {
+    const inner = await packZip([{ path: 'Other.md', bytes: Buffer.from(PAGE) }]);
+    const zip = await packZip([{ path: 'vault/P.md', bytes: Buffer.from(PAGE) }, { path: 'vault/attachments/old.zip', bytes: inner }]);
+    const { files } = expandUploads([{ name: 'takeout.zip', bytes: zip }], LIMITS, 3, { innerZipsAsFiles: true });
+    const kept = files.find(f => f.name === 'takeout.zip/vault/attachments/old.zip')!;
+    const result = await takeoutShim.read!({ kind: 'file', name: kept.name, bytes: kept.bytes, mediaType: kept.mediaType, archive: kept.archive }, TOOLS);
+    expect(result.items).toHaveLength(1);
+    expect(dataOf(result)).toEqual({ entry: 'file', name: 'old.zip' });
+    expect(result.items[0].bytes?.equals(inner)).toBe(true);
+  });
+
+  test('a zip inside the takeout, were it unpacked, is left out, not read as a takeout of its own', async () => {
     const inner = await packZip([{ path: 'Other.md', bytes: Buffer.from(PAGE) }]);
     const zip = await packZip([{ path: 'vault/P.md', bytes: Buffer.from(PAGE) }, { path: 'vault/attachments/old.zip', bytes: inner }]);
     const { files } = expandUploads([{ name: 'takeout.zip', bytes: zip }], LIMITS, 3);

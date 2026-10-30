@@ -441,7 +441,7 @@ export async function keepOriginalsAtUpload(siteDeps: IceRunDeps, request: IceRu
   if (!await mayReceive(receiver, ctx)) return result;
   const door = receiver.id;
 
-  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth);
+  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
   for (const upload of files) {
     const plan = await planFile(upload, request, receiver, deps, scope);
     if (plan.stop || !plan.sha256 || !plan.file) continue;
@@ -549,7 +549,7 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
   }
   const tools = runTools(deps, request);
 
-  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth);
+  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
   for (const bad of unreadable) {
     report.files.push({ name: bad.name, size: bad.size, status: 'failed', message: bad.message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
   }

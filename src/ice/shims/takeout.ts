@@ -209,9 +209,10 @@ function readPage(input: IceItem, archive: IceArchiveView, inRoot: string, { pre
 async function read(input: IceItem): Promise<ShimReadResult> {
   const archive = input.archive;
   if (!archive) return { items: [], skip: 'not part of a takeout: a takeout is imported as the zip it was downloaded as' };
-  // The engine unpacks a zip inside a zip too. A takeout's own files that are
-  // zips arrive so, unpacked: they are not a takeout, and are left out.
-  if (archive.name.includes('/')) return { items: [], skip: 'inside a zip within the takeout; a zip the store held is not brought back' };
+  // A zip the store held arrives as one of its files: its receiver has the
+  // engine leave zips inside the takeout packed (`innerZipsAsFiles`). Were
+  // one unpacked anyway, its members are not a takeout, and are left out.
+  if (archive.name.includes('/')) return { items: [], skip: 'inside a zip within the takeout; left out' };
   const layout = layoutOf(archive);
   const { prefix } = layout;
   if (!archive.path.startsWith(prefix)) return { items: [], skip: 'outside the takeout\'s folder; left out' };

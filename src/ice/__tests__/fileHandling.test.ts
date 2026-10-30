@@ -69,6 +69,14 @@ describe('expandUploads', () => {
     expect(tooDeep.unreadable[0]).toMatchObject({ name: 'outer.zip/inner.zip', message: expect.stringMatching(/nested more than 1/) });
   });
 
+  test('with innerZipsAsFiles, a zip inside the upload is passed on as a file, not unpacked (#2118)', async () => {
+    const inner = await packZip([{ path: 'deep.md', bytes: Buffer.from('# D') }]);
+    const outer = await packZip([{ path: 'inner.zip', bytes: inner }]);
+    const { files } = expandUploads([{ name: 'outer.zip', bytes: outer }], LIMITS, 3, { innerZipsAsFiles: true });
+    expect(files.map(f => [f.name, f.mediaType, f.archive?.path])).toEqual([['outer.zip/inner.zip', 'application/zip', 'inner.zip']]);
+    expect(files[0].bytes.equals(inner)).toBe(true);
+  });
+
   test('an unreadable archive is reported, and the other uploads go on', () => {
     const { files, unreadable } = expandUploads([
       { name: 'broken.zip', bytes: Buffer.from('not a zip') },

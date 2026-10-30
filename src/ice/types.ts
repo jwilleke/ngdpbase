@@ -394,6 +394,12 @@ export interface IceReceiver {
    */
   writesEncrypted?: boolean;
   /**
+   * A zip inside an uploaded zip is handed on as a file, not unpacked
+   * (#2118): for a receiver whose format holds zips as content (a takeout's
+   * files). Without it, the engine unpacks nested zips too.
+   */
+  innerZipsAsFiles?: boolean;
+  /**
    * The places within this receiver this context may import into (#2118):
    * a user's own private stores. The receiver's own rule (D5). A receiver
    * with targets takes a run only with one of them (`IceRunRequest.target`),

@@ -263,6 +263,24 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(isSealedBytes(await fs.readFile(path.join(privateStoreRoot(pagesDir, 'molly', VAULT), 'attachments', storeFiles[0])))).toBe(true);
   });
 
+  // Code review finding 1 of #2160: the engine unpacked it, and the old door imported it.
+  test('a zip the store held, linked from no page, comes back as a file, whole', async () => {
+    const inner = await packZip([{ path: 'letters/one.txt', bytes: Buffer.from('dear molly') }]);
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\nNo links.\n`) },
+      { path: `${VAULT}/attachments/old.zip`, bytes: inner }
+    ]);
+
+    const run = await upload(VAULT, archive);
+
+    expect(byPath(run)).toEqual({
+      [`${VAULT}/Medical notes.md`]: ['imported', undefined],
+      [`${VAULT}/attachments/old.zip`]: ['imported', undefined]
+    });
+    const id = run.files.find(f => f.name.endsWith('old.zip'))?.refs[0];
+    expect((await attachments.getPrivateStoreAttachment(String(id), MOLLY))?.buffer.equals(inner)).toBe(true);
+  });
+
   test('confidential: no page title or file name in any log, nor in the audit record, which counts the run', async () => {
     const archive = await packZip([
       { path: `${VAULT}/${SECRET}.md`, bytes: Buffer.from(`---\ntitle: ${SECRET}\nuuid: ${UUID_A}\n---\n\nx\n`) },
