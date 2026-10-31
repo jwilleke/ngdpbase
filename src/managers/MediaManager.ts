@@ -317,6 +317,13 @@ class MediaManager extends BaseManager implements CatalogSource {
    * @param result - The ScanResult returned by the provider.
    * @param label  - "Scan" or "Rebuild", for notification wording.
    */
+  /** One path per line, then "and N more" when the provider capped the list (#2191). */
+  private formatFileList(files: string[] | undefined, total: number): string {
+    if (!files || files.length === 0) return ' ';
+    const more = total - files.length;
+    return `\n\n${files.join('\n')}${more > 0 ? `\nand ${more} more` : ''}\n\n`;
+  }
+
   private surfaceScanNotifications(result: ScanResult, label: string): void {
     const nm = this.engine.getManager<NotificationManager>('NotificationManager');
     const notify = (n: { level: string; title: string; message: string }): void => {
@@ -344,7 +351,8 @@ class MediaManager extends BaseManager implements CatalogSource {
       notify({
         level: 'warning',
         title: 'Media files with a partial capture date',
-        message: `${result.partialCaptureDate} media file(s) have a partial EXIF/QuickTime date (year-only, with no month/day) and were defaulted to January 1, so they sort at the start of their year. ` +
+        message: `${result.partialCaptureDate} media file(s) have a partial EXIF/QuickTime date (year-only, with no month/day) and were defaulted to January 1, so they sort at the start of their year.` +
+          this.formatFileList(result.partialCaptureDateFiles, result.partialCaptureDate) +
           'Backfill a full capture date on the source files (e.g. with exiftool\'s DateTimeOriginal) and Reindex for accurate within-year sorting.'
       });
     }
@@ -356,7 +364,8 @@ class MediaManager extends BaseManager implements CatalogSource {
       notify({
         level: 'error',
         title: 'Media files without a capture date',
-        message: `${result.noCaptureDate} media file(s) have no usable capture date (EXIF/QuickTime, and none parseable from the filename) and will sort by file modification time, not capture date. ` +
+        message: `${result.noCaptureDate} media file(s) have no usable capture date (EXIF/QuickTime, and none parseable from the filename) and will sort by file modification time, not capture date.` +
+          this.formatFileList(result.noCaptureDateFiles, result.noCaptureDate) +
           'Backfill the capture date on the source files (e.g. with exiftool\'s DateTimeOriginal) and Reindex for accurate date sorting.'
       });
     }
