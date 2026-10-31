@@ -302,7 +302,7 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     expect(refreshed.metadata.dateTimeOriginal).toBeNull();
     expect(refreshed.metadata.captureDateSource).toBeUndefined();
     expect(result.noCaptureDate).toBe(1);
-    expect(result.noCaptureDateFiles).toEqual(['/store/IMG_4654.jpg']);
+    expect(result.noCaptureDateFiles).toEqual(['IMG_4654.jpg']);
   });
 
   it('#808: a year-only EXIF date is stored at Jan 1, counted as partial (WARN), not as noCaptureDate', async () => {
@@ -320,20 +320,45 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     expect(refreshed.metadata.dateTimeOriginal).toBe('1940-01-01 00:00:00');
     expect(refreshed.metadata.captureDateSource).toBe('exif');
     expect(result.partialCaptureDate).toBe(1);
-    expect(result.partialCaptureDateFiles).toEqual(['/store/1940-photo.jpg']);
+    expect(result.partialCaptureDateFiles).toEqual(['1940-photo.jpg']);
     expect(result.noCaptureDate).toBe(0);
     expect(result.noCaptureDateFiles).toEqual([]);
   });
 
-  it('#2191: the undated-file list is capped but the count stays exact', async () => {
-    const paths = Array.from({ length: 60 }, (_, i) => `/store/IMG_${String(i).padStart(4, '0')}.jpg`);
-    stubFileList(paths);
-    stubExiftoolByPath(Object.fromEntries(paths.map(p => [p, {}])));
+  describe('#2191: capture-date file lists', () => {
+    const undated = (n: number): string[] => Array.from({ length: n }, (_, i) => `/store/IMG_${String(i).padStart(4, '0')}.jpg`);
 
-    const result = await provider.rebuild();
+    it.each([[50, 50], [51, 50], [60, 50]])('%i undated files: count exact, list holds %i', async (n, listed) => {
+      const paths = undated(n);
+      stubFileList(paths);
+      stubExiftoolByPath(Object.fromEntries(paths.map(p => [p, {}])));
 
-    expect(result.noCaptureDate).toBe(60);
-    expect(result.noCaptureDateFiles).toHaveLength(50);
-    expect(new Set(result.noCaptureDateFiles).size).toBe(50);
+      const result = await provider.rebuild();
+
+      expect(result.noCaptureDate).toBe(n);
+      expect(result.noCaptureDateFiles).toHaveLength(listed);
+      expect(new Set(result.noCaptureDateFiles).size).toBe(listed);
+    });
+
+    it('caps the partial-date list too, with the count exact', async () => {
+      const paths = undated(51);
+      stubFileList(paths);
+      stubExiftoolByPath(Object.fromEntries(paths.map(p => [p, { DateTimeOriginal: { year: 1940 } }])));
+
+      const result = await provider.rebuild();
+
+      expect(result.partialCaptureDate).toBe(51);
+      expect(result.partialCaptureDateFiles).toHaveLength(50);
+      expect(result.noCaptureDateFiles).toEqual([]);
+    });
+
+    it('lists paths relative to their media folder, never absolute', async () => {
+      stubFileList(['/store/2019/trip/IMG_1.jpg']);
+      stubExiftoolByPath({ '/store/2019/trip/IMG_1.jpg': {} });
+
+      const result = await provider.rebuild();
+
+      expect(result.noCaptureDateFiles).toEqual(['2019/trip/IMG_1.jpg']);
+    });
   });
 });

@@ -347,7 +347,37 @@ describe('MediaManager — scan/rebuild notifications (#807)', () => {
     await mgr.scanFolders();
     const { message } = (notifyAdmins.mock.calls[0] as unknown as [{ message: string }])[0];
     expect(message).toContain('/photos/1940.jpg');
-    expect(message).not.toContain('more');
+    expect(message).not.toMatch(/\nand \d+ more/);
+  });
+
+  const files = (n: number): string[] => Array.from({ length: n }, (_, i) => `f${i}.jpg`);
+
+  test('50 listed of 50 undated: all named, no "more" line (#2191)', async () => {
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
+      scanned: 50, added: 50, updated: 0, errors: 0, noCaptureDate: 50, noCaptureDateFiles: files(50)
+    });
+    await mgr.scanFolders();
+    const { message } = (notifyAdmins.mock.calls[0] as unknown as [{ message: string }])[0];
+    expect(message).toContain('\nf49.jpg\n');
+    expect(message).not.toMatch(/\nand \d+ more/);
+  });
+
+  test('50 listed of 51 undated: "and 1 more" (#2191)', async () => {
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
+      scanned: 51, added: 51, updated: 0, errors: 0, noCaptureDate: 51, noCaptureDateFiles: files(50)
+    });
+    await mgr.scanFolders();
+    const { message } = (notifyAdmins.mock.calls[0] as unknown as [{ message: string }])[0];
+    expect(message).toContain('\nf49.jpg\nand 1 more\n');
+  });
+
+  test('the partial-date list says "and N more" when capped (#2191)', async () => {
+    const { mgr, notifyAdmins } = makeManagerWithStubProvider({
+      scanned: 60, added: 60, updated: 0, errors: 0, partialCaptureDate: 60, partialCaptureDateFiles: files(50)
+    });
+    await mgr.scanFolders();
+    const { message } = (notifyAdmins.mock.calls[0] as unknown as [{ message: string }])[0];
+    expect(message).toContain('\nf49.jpg\nand 10 more\n');
   });
 
   test('notifies admins (warning level) for partial year-only capture dates (#808)', async () => {

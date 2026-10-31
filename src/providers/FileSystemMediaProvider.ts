@@ -903,6 +903,17 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * Add a file to a capture-date list until CAPTURE_DATE_LIST_CAP (#2191).
+   * The path is relative to the media folder it was found under, so the
+   * notice and its email do not disclose the server's storage layout.
+   */
+  private listCaptureDateFile(list: string[], filePath: string): void {
+    if (list.length >= CAPTURE_DATE_LIST_CAP) return;
+    const root = scanRootFor(filePath, this.config.folders);
+    list.push(root ? path.relative(root, filePath) : path.basename(filePath));
+  }
+
+  /**
    * Process a single media file: stat, EXIF read, index update.
    */
   private async processFile(
@@ -1056,11 +1067,11 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       // but tracked separately — surfaced at WARN, vs no-date at ERROR.
       if (captureDate === null) {
         counters.noCaptureDate++;
-        if (counters.noCaptureDateFiles.length < CAPTURE_DATE_LIST_CAP) counters.noCaptureDateFiles.push(filePath);
+        this.listCaptureDateFile(counters.noCaptureDateFiles, filePath);
         logger.debug(`[FileSystemMediaProvider] No capture date for ${filePath} — will sort by mtime`);
       } else if (partialExifDate) {
         counters.partialCaptureDate++;
-        if (counters.partialCaptureDateFiles.length < CAPTURE_DATE_LIST_CAP) counters.partialCaptureDateFiles.push(filePath);
+        this.listCaptureDateFile(counters.partialCaptureDateFiles, filePath);
         logger.debug(`[FileSystemMediaProvider] Partial capture date (${captureDate}) for ${filePath} — month/day defaulted to Jan 1`);
       }
 

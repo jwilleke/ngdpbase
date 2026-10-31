@@ -83,9 +83,9 @@ abstract class BaseMediaProvider {
 | `updated` | `number` | Existing items refreshed |
 | `errors` | `number` | Files that failed |
 | `noCaptureDate` | `number?` | Items with no usable capture date (exact count) |
-| `noCaptureDateFiles` | `string[]?` | Paths of the first 50 of those, for the admin notice (#2191) |
+| `noCaptureDateFiles` | `string[]?` | Paths (relative to their media folder) of the first 50 of those, for the admin notice (#2191) |
 | `partialCaptureDate` | `number?` | Items with a year-only capture date (exact count) |
-| `partialCaptureDateFiles` | `string[]?` | Paths of the first 50 of those, for the admin notice (#2191) |
+| `partialCaptureDateFiles` | `string[]?` | Paths (relative to their media folder) of the first 50 of those, for the admin notice (#2191) |
 
 ## Implementing a Custom Provider
 

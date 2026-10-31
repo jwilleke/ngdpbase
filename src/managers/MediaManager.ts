@@ -306,6 +306,13 @@ class MediaManager extends BaseManager implements CatalogSource {
     );
   }
 
+  /** One path per line, then "and N more" when the provider capped the list (#2191). */
+  private formatFileList(files: string[] | undefined, total: number): string {
+    if (!files || files.length === 0) return ' ';
+    const more = total - files.length;
+    return `\n\n${files.join('\n')}${more > 0 ? `\nand ${more} more` : ''}\n\n`;
+  }
+
   /**
    * Surface scan/rebuild anomalies to admins via /admin/notifications and the
    * server log (#807). Missing folders, capture-date gaps, and processing
@@ -317,13 +324,6 @@ class MediaManager extends BaseManager implements CatalogSource {
    * @param result - The ScanResult returned by the provider.
    * @param label  - "Scan" or "Rebuild", for notification wording.
    */
-  /** One path per line, then "and N more" when the provider capped the list (#2191). */
-  private formatFileList(files: string[] | undefined, total: number): string {
-    if (!files || files.length === 0) return ' ';
-    const more = total - files.length;
-    return `\n\n${files.join('\n')}${more > 0 ? `\nand ${more} more` : ''}\n\n`;
-  }
-
   private surfaceScanNotifications(result: ScanResult, label: string): void {
     const nm = this.engine.getManager<NotificationManager>('NotificationManager');
     const notify = (n: { level: string; title: string; message: string }): void => {

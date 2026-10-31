@@ -156,9 +156,9 @@ interface ScanResult {
   errors:    number;   // Files that could not be processed
   elapsedMs?: number;  // Optional: elapsed time in ms
   noCaptureDate?: number;           // Items with no usable capture date (exact count)
-  noCaptureDateFiles?: string[];    // Paths of the first 50 of those (#2191)
+  noCaptureDateFiles?: string[];    // Folder-relative paths of the first 50 of those (#2191)
   partialCaptureDate?: number;      // Items with a year-only capture date (exact count)
-  partialCaptureDateFiles?: string[]; // Paths of the first 50 of those (#2191)
+  partialCaptureDateFiles?: string[]; // Folder-relative paths of the first 50 of those (#2191)
 }
 ```
 
