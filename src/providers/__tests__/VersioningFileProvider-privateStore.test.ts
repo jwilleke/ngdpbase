@@ -222,6 +222,28 @@ describe('private store default/ (#1383)', () => {
     expect(lines.join('\n')).not.toContain('Secret Diary Title');
   });
 
+  // #2178: unredacted, each versioning line names the page by its uuid.
+  test('a private page\'s versioning log lines name it by its uuid, never its title', async () => {
+    const lines: string[] = [];
+    const capture = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+    const spies = (['info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(logger, level).mockImplementation(capture as never));
+    const name = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Secret Diary Title');
+    try {
+      const provider = await newProvider();
+      await provider.savePage('Secret Diary Title', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      await provider.savePage(name, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+      await provider.savePage(name, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+    const versioning = lines.filter((l) => /Saved .* with versioning|Created v\d+ for|unchanged since/.test(l));
+    expect(versioning.some((l) => l.includes('Created v1 for'))).toBe(true);
+    expect(versioning.some((l) => l.includes('Created v2 for'))).toBe(true);
+    expect(versioning.some((l) => l.includes('unchanged since'))).toBe(true);
+    for (const line of versioning) expect(line).toContain(`(uuid ${UUID})`);
+    expect(lines.join('\n')).not.toContain('Secret Diary Title');
+  });
+
   test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {
     const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);

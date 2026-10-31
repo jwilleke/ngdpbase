@@ -2308,7 +2308,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Failed to create version for ${saved.name}:`, errorMessage);
+      logger.error(`[VersioningFileProvider] Failed to create version for ${nameForLog(saved.name, { ...metadata, uuid })}:`, errorMessage);
       // Page content is already persisted; a versioning failure is non-fatal.
     }
 
@@ -2353,7 +2353,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1520: the page's own name, which for a private page is its vault name
     // (redacted in every log line), never the bare title a caller saved it under.
-    logger.info(`[VersioningFileProvider] Saved ${nameForLog(saved.name)} with versioning`);
+    logger.info(`[VersioningFileProvider] Saved ${nameForLog(saved.name, { ...metadata, uuid })} with versioning`);
     return saved;
   }
 
@@ -3081,7 +3081,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v1 for ${nameForLog(pageName)} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v1 for ${nameForLog(pageName, { ...metadata, uuid })}`);
   }
 
   /**
@@ -3110,7 +3110,7 @@ class VersioningFileProvider extends FileSystemProvider {
       // a seed before #1405) starts it here: this save is its v1. Going through
       // the version-diff path instead read a v1 that did not exist and logged a
       // false "Failed to read current content" error for every such page.
-      logger.info(`[VersioningFileProvider] ${nameForLog(pageName)} (${uuid}) has no version history; this save starts it as v1`);
+      logger.info(`[VersioningFileProvider] ${nameForLog(pageName, { ...metadata, uuid })} has no version history; this save starts it as v1`);
       await this.createInitialVersion(uuid, pageName, newContent, metadata, location, versions);
       return;
     }
@@ -3122,7 +3122,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // stack identical versions.
     const latest = manifest.versions[manifest.versions.length - 1];
     if (latest?.contentHash && latest.contentHash === DeltaStorage.calculateHash(newContent)) {
-      logger.debug(`[VersioningFileProvider] Content of '${pageName}' (${uuid}) unchanged since v${manifest.currentVersion}; no new version`);
+      logger.debug(`[VersioningFileProvider] Content of ${nameForLog(pageName, { ...metadata, uuid })} unchanged since v${manifest.currentVersion}; no new version`);
       return;
     }
 
@@ -3196,7 +3196,7 @@ class VersioningFileProvider extends FileSystemProvider {
       };
 
       if (isCheckpoint) {
-        logger.info(`[VersioningFileProvider] Created checkpoint at v${nextVersion} for page ${pageName}`);
+        logger.info(`[VersioningFileProvider] Created checkpoint at v${nextVersion} for ${nameForLog(pageName, { ...metadata, uuid })}`);
       }
     }
 
@@ -3205,7 +3205,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v${nextVersion} for ${nameForLog(pageName)} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v${nextVersion} for ${nameForLog(pageName, { ...metadata, uuid })}`);
   }
 
   /**

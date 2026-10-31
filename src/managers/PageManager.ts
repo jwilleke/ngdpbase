@@ -2633,7 +2633,7 @@ class PageManager extends BaseManager implements CatalogSource {
           viaProxy: ctx.viaProxy
         }),
         // #2178: named where it landed, so a private page by its owner and store.
-        (err) => logger.warn(`Audit log failed for page.${op} of ${nameForLog(saved.name, enrichedMetadata)}:`, err)
+        (err) => logger.warn(`Audit log failed for page.${op} of ${nameForLog(saved.name, { ...enrichedMetadata, uuid: saved.uuid })}:`, err)
       );
     }
 
@@ -2641,7 +2641,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // add-ons have loaded — before that every slug is unknown, and the startup
     // report covers the pages written while they load.
     if (this.engine.getManager<{ isInitialized?(): boolean }>('AddonsManager')?.isInitialized?.()) {
-      this.warnUnmatchableAddonAudience(saved.name, enrichedMetadata);
+      this.warnUnmatchableAddonAudience(saved.name, { ...enrichedMetadata, uuid: saved.uuid });
     }
 
     return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers, normalisedTitleFrom };
@@ -2709,11 +2709,11 @@ class PageManager extends BaseManager implements CatalogSource {
       const history = await provider.getVersionHistory?.(current.uuid || identifier, ctx, 1);
       newVersion = history?.[0]?.version ?? null;
     } catch (err) {
-      logger.warn(`[PageManager] Restored ${nameForLog(saved.name, current.metadata)} but could not read its new version number: ${String(err)}`);
+      logger.warn(`[PageManager] Restored ${nameForLog(saved.name, { ...current.metadata, uuid: current.uuid })} but could not read its new version number: ${String(err)}`);
     }
 
     logger.info(
-      `[PageManager] Restored page ${nameForLog(saved.name, current.metadata)} to v${version} as v${newVersion ?? '?'} by ${actorOf(ctx).user}`
+      `[PageManager] Restored page ${nameForLog(saved.name, { ...current.metadata, uuid: current.uuid })} to v${version} as v${newVersion ?? '?'} by ${actorOf(ctx).user}`
     );
     return { ...saved, version: newVersion };
   }
@@ -3091,11 +3091,12 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!ctx) {
       throw new Error('PageManager.deletePage requires an ActorContext');
     }
-    logger.info(`[PageManager] Deleting page: ${nameForLog(identifier)} by user: ${actorOf(ctx).user}`);
     // #2125: only a filer of a shared folder deletes in it.
     await this.assertMayFileInSharedFolder(identifier, ctx);
 
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
+    // #2178: named once found, so a private page by its uuid.
+    logger.info(`[PageManager] Deleting page: ${nameForLog(identifier, before ? { ...before.metadata, uuid: before.uuid } : null)} by user: ${actorOf(ctx).user}`);
     // #1964: nobody outside a page's audience deletes it.
     if (before) await this.assertAudienceAdmits(identifier, before.metadata, ctx);
     // #2097: one write at a time per page, with the authorship conversion.
