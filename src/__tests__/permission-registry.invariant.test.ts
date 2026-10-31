@@ -57,7 +57,10 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   // #1762 slice 2: the private-container rule reads vault-proxy from a proxy grant.
   /\bproxyCarries\(\s*[^,]+,\s*'([^']+)'/g,
   // #2125: a shared folder's door asks the PDP for shared-folder-read / -file on the folder.
-  /\bmayInFolder\(\s*\w+,\s*'([^']+)'/g
+  /\bmayInFolder\(\s*\w+,\s*'([^']+)'/g,
+  // #1979, #2120: ImportManager's receivers and export sources ask the PDP
+  // through their own `permits` (page-create, asset-upload, page-export).
+  /\bthis\.permits\(\s*\w+,\s*'([^']+)'/g
 ];
 
 /**
@@ -87,26 +90,20 @@ const PAGE_ACTION_ALIASES_BLOCK = /PAGE_ACTION_ALIASES = \{([\s\S]*?)\} as const
  * cannot quietly become a place to hide new drift.
  */
 const KNOWN_UNENFORCED: Record<string, string> = {
-  // `page-export` is here for a reason worth reading before "fixing" it.
-  //
-  // Chasing it as an orphan found #1060: the export routes had no
-  // authorization check at all, so a private page was extractable by anyone
-  // who could name it. That is now gated on READ access — the same gate the
-  // view route uses.
-  //
-  // `page-export` itself was deliberately NOT made the gate. For a page the
-  // caller can already read, exporting returns words they are looking at on
-  // screen, so requiring a second permission is friction rather than
-  // protection. The read/export split would earn its keep against a bulk
-  // surface — `ExportManager.exportPagesToHtml` and `exportToMarkdown` both
-  // take arrays — but no route reaches either today. Enforce it on the bulk
-  // route when one is built, on the act that is actually different.
+  // `page-export` was here until #2120. Chasing it as an orphan found #1060:
+  // the export routes had no authorization check at all, so a private page was
+  // extractable by anyone who could name it. Those routes are gated on READ
+  // access, the same gate the view route uses, and only on that: for one page
+  // the caller can already read, a second permission is friction rather than
+  // protection. It was to be enforced on the surface that is actually
+  // different, and ICE's export engine is that surface (it will carry search
+  // results and add-on lists): its page source asks `page-export` beside the
+  // page door's read (operator, D5 in docs/planning/ice-planing.md).
   //
   // The other three #1059 orphans (asset-read, asset-delete, search-page) were
   // enforced in #1059: AttachmentManager.checkPermission became a real
   // UserManager.hasPermission check, asset-read gates attachment serve/thumb,
   // and search-page gates the search surfaces.
-  'page-export': 'ngdpbase#1059'
 };
 
 /**

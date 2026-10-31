@@ -38,6 +38,11 @@ export interface VaultDecider {
   ): Promise<{ permit: boolean }>;
 }
 
+/** The PDP surface {@link holdsInVault} needs. */
+export interface VaultHolder {
+  holds(subject: unknown, action: string, on: { resource: { type: string; id: string }; attributes: Record<string, unknown> }): Promise<boolean>;
+}
+
 export function mayActInPrivateContainer(
   ctx: ActorContext,
   owner: string,
@@ -84,4 +89,20 @@ export async function permitsInVault(
   if (isSharedFolderOwner(where.owner)) return permitsInSharedFolder(pdp, ctx, action, where.vault);
   if (!pdp || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
   return (await pdp.decide(ctx, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
+}
+
+/**
+ * Does `ctx` HOLD `action` inside `owner`'s vault (#2120)? {@link permitsInVault}
+ * without the step-up rule, for an affordance, and to tell a refusal for a
+ * stale sign-in (answered with the step-up prompt) from a plain one. Shared
+ * folders are not asked: `permitsInVault` decides them by permission alone.
+ */
+export async function holdsInVault(
+  pdp: VaultHolder | null | undefined,
+  ctx: ActorContext,
+  action: string,
+  where: { owner: string; vault: string; resource: string }
+): Promise<boolean> {
+  if (isSharedFolderOwner(where.owner) || typeof pdp?.holds !== 'function' || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
+  return pdp.holds(ctx, action, { resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } });
 }

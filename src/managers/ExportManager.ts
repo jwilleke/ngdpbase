@@ -254,6 +254,15 @@ class ExportManager extends BaseManager {
     }
   }
 
+  /**
+   * Is a PDF provider chosen (#2120)? The Export action offers PDF only then.
+   * Whether the chosen one works is known only by rendering, as before.
+   */
+  isPdfConfigured(): boolean {
+    const name = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.export.pdf.provider', PDF_DEFAULTS.provider);
+    return (name ?? PDF_DEFAULTS.provider) !== 'none';
+  }
+
   /** Log why, flag the manager (unless something worse is already shown), and refuse. */
   private pdfUnavailable(reason: string): never {
     logger.warn(`[ExportManager] PDF export unavailable: ${reason}`);
@@ -330,6 +339,25 @@ class ExportManager extends BaseManager {
     const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
     if (!page) {
       throw new Error(`Page '${pageName}' not found`);
+    }
+
+    return this.renderPageDocument(pageName, page, user);
+  }
+
+  /**
+   * One page as a complete HTML document: its content rendered, with the
+   * export's styling and metadata footer. It reads nothing: the caller has
+   * read the page through its door (the page export source, #2120).
+   *
+   * @param pageName - The page's name, its heading
+   * @param page - Its content and metadata
+   * @param user - User object for locale-aware formatting
+   * @returns The HTML document
+   */
+  async renderPageDocument(pageName: string, page: PageForExport, user: ExportUser | null = null): Promise<string> {
+    const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
+    if (!renderingManager) {
+      throw new Error('Required managers not available');
     }
 
     // Render the page content (without user context for exports)

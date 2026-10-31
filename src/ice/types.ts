@@ -14,9 +14,10 @@
  *   noise filter, fingerprints, skipping unchanged files, per-file status,
  *   keeping the original, and running the work as a background job.
  *
- * Only importing is built in the first slice. `out` / `both` shims and the
- * `write` half are declared so export (#1974) and feeds (D10) fit later
- * without changing these shapes.
+ * - An __export source__ is the owner's door for reading the thing being
+ *   exported (#2120): a page, later a search result or an add-on's list. It
+ *   checks the owner's existing read permission (D5) and yields items that
+ *   `out` shims chain into one file to download.
  */
 import type { ActorContext } from '../context/ActorContext.js';
 import type { GuardedFetchOptions, GuardedResponse } from '../http/guardedFetch.js';
@@ -131,6 +132,15 @@ export interface ShimTools {
   options: Record<string, unknown>;
 }
 
+/** What an `out` shim is handed (#2120): a shim's tools, and who the export is for. */
+export interface ExportShimTools extends ShimTools {
+  /**
+   * The job context of the user who asked for the export, for a core shim
+   * that calls a core door with it (the PDF render, P1).
+   */
+  ctx: ActorContext;
+}
+
 /** What a shim's read returns. */
 export interface ShimReadResult {
   items: IceItem[];
@@ -172,8 +182,18 @@ export interface IceShim {
   duplicates?: 'file' | 'item';
   /** Inbound: read one input. Required for `in` and `both`. */
   read?(input: IceItem, tools: ShimTools): Promise<ShimReadResult>;
-  /** Outbound (export, #1974): not run in the first slice. Required for `out` and `both`. */
-  write?(items: IceItem[], tools: ShimTools): Promise<IceItem[]>;
+  /**
+   * Outbound (export, #2120): turn the items into this shim's `produces`.
+   * Required for `out` and `both`. An outbound shim matches its input by
+   * `accepts.kinds` alone; a shim that produces `file` makes the download,
+   * and is what the Export action offers.
+   */
+  write?(items: IceItem[], tools: ExportShimTools): Promise<IceItem[]>;
+  /**
+   * An outbound shim whose engine is missing says so (#2120): PDF with no
+   * provider chosen. The Export action does not offer it. Default: available.
+   */
+  isAvailable?(): boolean;
   /**
    * Vetting (#2149): clean this format's own kind of risky content out of a
    * file that is about to be kept as a file (scripts and handlers in an SVG,
@@ -641,4 +661,111 @@ export interface IceLedger {
   /** Record several item keys in one write (#2109). */
   recordItems(scope: string, itemKeys: string[]): Promise<void>;
   files(scope: string): Promise<LedgerFileEntry[]>;
+}
+
+// ── Export (#2120) ──────────────────────────────────────────────────────────
+
+/**
+ * The kind of the one item an export ends with: a file to download, with
+ * `bytes`, `mediaType` and the `name` it is saved under.
+ */
+export const EXPORT_FILE_KIND = 'file';
+
+/** What an export source is told about the read it is asked for. */
+export interface ExportReadInfo {
+  /** The shim that will make the file (`core.pdf`). */
+  format: string;
+}
+
+/**
+ * The owner's door for reading the thing being exported (#2120, D5): a page
+ * through PageManager, later a search result or an add-on's list. Export
+ * starts from the thing (operator, 2026-10-28): the source says what kind of
+ * items it yields, and only the `out` shims that can make a file from that
+ * kind are offered.
+ */
+export interface IceExportSource {
+  name: string;
+  label?: string;
+  /** The kind of the items it yields, e.g. `ncm` for a page. */
+  yields: IceKind;
+  /**
+   * Would this context be allowed to export `ref`? Asked only to decide
+   * whether to offer the Export action: an affordance, which records nothing.
+   * The owner's existing read rule (D5).
+   */
+  mayExport(ref: string, ctx: ActorContext): Promise<boolean>;
+  /**
+   * Read `ref` for export as `ctx`: the door. It checks the owner's existing
+   * permission, records what its owner records, and answers null when the
+   * thing is not there or `ctx` may not export it, without telling the two apart.
+   */
+  read(ref: string, ctx: ActorContext, info: ExportReadInfo): Promise<IceItem[] | null>;
+  /**
+   * Record how an export of `ref` ended, as its owner records exports: once
+   * the run has ended, with the file made or not. Also called, as a failure,
+   * when what was read is not exported (too large, the site too busy).
+   * Optional; a record that fails is logged, never thrown.
+   */
+  recordExport?(ref: string, ctx: ActorContext, outcome: ExportOutcome): Promise<void>;
+}
+
+/** How an export ended, for its source's record (#2120). */
+export interface ExportOutcome {
+  /** The shim that made, or was to make, the file. */
+  format: string;
+  runId: string;
+  /** The names of the items the source read. */
+  items: string[];
+  result: 'success' | 'failure';
+  /** Why it failed, as the user is told. */
+  reason?: string;
+}
+
+export interface RegisteredExportSource extends IceExportSource {
+  id: string;
+  owner: string;
+}
+
+/** A format the Export action offers: the shim that makes the file, and the shims before it. */
+export interface IceExportFormat {
+  /** The shim that makes the file, `core.pdf`. */
+  id: string;
+  label: string;
+  /** Every shim the export runs through, in order, ending with `id`. */
+  chain: string[];
+}
+
+/** One export, as a caller asks for it. */
+export interface IceExportRequest {
+  /** The export source's id, `core.pages`. */
+  source: string;
+  /** What to export, in the source's own terms: a page's name. */
+  ref: string;
+  /** The format: an id `exportFormatsFor` offered. */
+  format: string;
+}
+
+/** The file an export made, as its status shows it. */
+export interface IceExportFile {
+  name: string;
+  mediaType: string;
+  size: number;
+}
+
+export interface IceExportReport {
+  runId: string;
+  source: string;
+  ref: string;
+  format: string;
+  chain: string[];
+  /** Who it ran as: the only user who sees it or downloads its file. */
+  username: string;
+  state: 'queued' | 'running' | 'done' | 'failed';
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  file?: IceExportFile;
+  /** When the file is let go (`ngdpbase.export.engine.keep-minutes`). */
+  expiresAt?: string;
 }
