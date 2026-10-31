@@ -154,6 +154,14 @@ describe('PageManager names a private page by its uuid in its log lines (#2178)'
     namesOnlyByUuid('Deleting page');
   });
 
+  test('deleting a private page by its bare title (#1520) names it by its uuid', async () => {
+    const existing = [{ title: TITLE, uuid: UUID, content: 'body', metadata: { title: TITLE, uuid: UUID, private: true } }];
+    await makeManager({ existing }).deletePage(TITLE, JIM);
+
+    expect(lineWith('Deleting page')).toContain(`a private page ${BY_UUID}`);
+    namesOnlyByUuid('Deleting page');
+  });
+
   test('restoring a private page names it by its uuid', async () => {
     const existing = [{ title: NAME, uuid: UUID, content: 'body', metadata: { title: TITLE, private: true } }];
     await makeManager({ existing }).restoreVersion(NAME, 1, JIM);
