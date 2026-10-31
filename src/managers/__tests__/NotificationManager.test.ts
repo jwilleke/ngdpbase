@@ -2,6 +2,7 @@ import { fakeIdentityManager } from '../../test-support/identities';
 import { promises as fs } from 'fs';
 import path from 'path';
 import NotificationManager from '../NotificationManager';
+import { formatters as pluginFormatters } from '../PluginManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { loggedText } from './__fixtures__/loggedText';
 
@@ -812,6 +813,7 @@ function makeEscalationEngine({
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'EmailManager') return emailManager;
         if (name === 'UserManager') return userManager;
+        if (name === 'PluginManager') return { formatters: pluginFormatters };
         return undefined;
       })
     },
@@ -926,6 +928,31 @@ describe('NotificationManager — email escalation', () => {
     expect(sendTo).toHaveBeenCalledTimes(2);
     expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'jim@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
     expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'alice@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
+    await mgr.shutdown();
+  });
+
+  test('the HTML email escapes the title and message and keeps one path per line (#2191)', async () => {
+    const sendTo = vi.fn().mockResolvedValue(undefined);
+    const { engine } = makeEscalationEngine({
+      dataDir: tempDir,
+      escalationEnabled: true,
+      sendTo,
+      adminUsers: [{ username: 'jim', email: 'jim@example.com', roles: ['admin'] }]
+    });
+    const mgr = new NotificationManager(engine as any);
+    await mgr.initialize({});
+
+    const evil = '<a href="https://evil.example/login">Sign in to fix dates</a>.jpg';
+    await mgr.createNotification({ level: 'error', title: `Bad <b>${evil}`, message: `Files:\n\na/one.jpg\n${evil}\nand 3 more` });
+    await new Promise(r => setTimeout(r, 20));
+
+    const [, , , text, html] = sendTo.mock.calls[0] as unknown as [unknown, string, string, string, string];
+    expect(html).not.toContain('<a href');
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('&lt;a href=&quot;https://evil.example/login&quot;&gt;');
+    expect(html).toContain('a/one.jpg<br>&lt;a href');
+    expect(html).toContain('<br>and 3 more');
+    expect(text).toContain(evil);
     await mgr.shutdown();
   });
 

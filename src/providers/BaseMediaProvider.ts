@@ -79,8 +79,12 @@ export interface ScanResult {
   skippedTruncated?: boolean;
   /** Number of indexed items with no usable capture date (EXIF/QuickTime) — they sort by file mtime (#807) */
   noCaptureDate?: number;
+  /** Paths of the first items counted in `noCaptureDate`, capped; the count stays exact (#2191) */
+  noCaptureDateFiles?: string[];
   /** Number of indexed items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 (#808) */
   partialCaptureDate?: number;
+  /** Paths of the first items counted in `partialCaptureDate`, capped; the count stays exact (#2191) */
+  partialCaptureDateFiles?: string[];
   /** Number of stale index entries pruned because their file vanished from a scanned folder (#867) */
   removed?: number;
   /** Total elapsed time in milliseconds */

@@ -118,7 +118,35 @@ export interface FactorEntry {
   aal?: Aal;
   acr?: PhishingResistance;
   enabled?: boolean;
+  /**
+   * Where it comes among the second factors offered, lower first; none comes
+   * last (#1523, operator 2026-10-11). A number, because the configuration
+   * merge does not keep a custom entry's place in the list.
+   */
+  preference?: number;
 }
+
+/**
+ * Old provider ids whose entries still govern the provider (#1743; #1523 Q3,
+ * operator 2026-10-31): an entry, or an account's `allowedAuthMethods`, under
+ * the old id is read as the current one.
+ */
+const FACTOR_ALIASES: Readonly<Record<string, string>> = { 'google-oidc': 'oidc:google', 'email-link': 'magic-link' };
+
+/**
+ * Do an account's `allowedAuthMethods` let it use `providerId`? Absent or
+ * empty means any; an old id names the provider it was renamed to (Q3). The
+ * one reading for signing in and for the level the account can reach.
+ */
+const allowsProvider = (allowed: readonly string[] | undefined, providerId: string): boolean =>
+  !allowed || allowed.length === 0 || allowed.some(a => (FACTOR_ALIASES[a] ?? a) === providerId);
+
+/**
+ * The entry that governs the email link as a second factor (#1523 Q3): the
+ * magic link's, since starting a sign-in and confirming one are the same
+ * provider. The second step runs it itself, so it needs no registered provider.
+ */
+const EMAIL_LINK_ENTRY = 'magic-link';
 
 /** A factor as offered: its entry lowered to what the provider's code gives. */
 /**
@@ -269,6 +297,8 @@ export interface PendingSignIn {
   requestLocation?: string | null;
   /** Private-store keys unlocked by the password, held until the sign-in completes or is dropped. */
   privateStoreHandle?: string;
+  /** The level this account's roles require (`requiredAalFor`), so the second factors that reach it are offered first (#1523 Q2). */
+  requiredAal?: Aal;
   /** The second factor, once satisfied. */
   approved?: SatisfiedFactor;
   /** Refused by the person (Deny). */
@@ -326,7 +356,8 @@ export interface ApprovalVisitor {
 
 /** A second factor a person has enrolled and can use now. */
 export interface AvailableSecondFactor {
-  id: 'email-link';
+  /** The second step's method: `email-link` for the email link (its entry is `magic-link`), else the provider id. */
+  id: string;
   label: string;
   /** Where it goes, masked for display (j***@example.com). */
   target: string;
@@ -809,6 +840,15 @@ const STEP_UP_REPLAY_WAIT_MS = 60 * 60_000;
 /** How long a confirmed form POST waits to be redone (#2154), from the confirmation: the browser goes there at once. */
 const STEP_UP_REPLAY_TTL_MS = 2 * 60_000;
 
+/** How many kept form POSTs one session holds at once (#2176): a few tabs' worth, so memory stays bounded. */
+const STEP_UP_REPLAYS_PER_SESSION = 5;
+
+/** How many one account holds across its sessions (#2176): signing in many times does not hold more. */
+const STEP_UP_REPLAYS_PER_ACCOUNT = 10;
+
+/** How many the site holds in all (#2176): each may hold a form body of up to 100 KB, so at most 20 MB. */
+const STEP_UP_REPLAYS_TOTAL = 200;
+
 /** The kept form POST a prompt's `next` names (#2154), or null when it names none. */
 function stepUpReplayId(next: string): string | null {
   const url = new URL(next, 'http://site.invalid');
@@ -825,6 +865,21 @@ const SECRET_FIELD = /password|secret|token|^words$/i;
 /** Drop kept form POSTs past their time (#2154). */
 function dropExpiredReplays(replays: Map<string, StepUpReplay>, now: number): void {
   for (const [id, kept] of replays) if (kept.expires <= now) replays.delete(id);
+}
+
+/**
+ * Drop the oldest of `entries` from `replays` until `room` are left (#2176),
+ * the unconfirmed first: a confirmed one is an action about to be carried out.
+ * `entries` are in the Map's insertion order, oldest first.
+ */
+function dropOldestReplays(replays: Map<string, StepUpReplay>, entries: Array<[string, StepUpReplay]>, room: number): void {
+  const order = [...entries.filter(([, kept]) => !kept.ready), ...entries.filter(([, kept]) => kept.ready)];
+  for (const [id] of order.slice(0, Math.max(0, order.length - room))) replays.delete(id);
+}
+
+/** A kept form POST's address for the log and the audit (#2176): the path, never the query. */
+function replayPath(action: string): string {
+  return new URL(action, 'http://site.invalid').pathname;
 }
 
 /**
@@ -1060,6 +1115,7 @@ class AuthManager extends BaseManager {
     await this.openCredentialsStore(configManager);
     this.registerPasskeys(configManager);
     this.registerOidcProviders(configManager);
+    this.warnIfEmailSecondFactorsDropped();
 
     logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
   }
@@ -1072,26 +1128,65 @@ class AuthManager extends BaseManager {
     if (!configManager) return [{ authproviderid: 'password' }];
     const legacy = configManager.getCustomProperty('ngdpbase.auth.required-factors');
     const custom = configManager.getCustomProperty('ngdpbase.auth.factors');
-    if (Array.isArray(legacy)) {
+    const legacyIds = Array.isArray(legacy) ? legacy.filter((id): id is string => typeof id === 'string') : null;
+    if (legacyIds) {
       logger.warn(
         '[AuthManager] ngdpbase.auth.required-factors is retired — ' +
-        (custom === undefined
-          ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
-          : 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)')
+        (custom !== undefined
+          ? 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)'
+          : legacyIds.some(id => (FACTOR_ALIASES[id] ?? id) === EMAIL_LINK_ENTRY)
+            ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
+            : `converted to ngdpbase.auth.factors entries; rename it in custom config. It lists no ${EMAIL_LINK_ENTRY}, so the email second factor is off: ` +
+              `accounts that enrolled one sign in with one step. List ${EMAIL_LINK_ENTRY} to keep it. (#1523)`)
       );
-      if (custom === undefined) {
-        return legacy.filter((id): id is string => typeof id === 'string').map(id => ({ authproviderid: id }));
-      }
     }
-    const entries = configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
+    const entries: unknown = legacyIds && custom === undefined
+      ? legacyIds.map(id => ({ authproviderid: id }))
+      : configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
     if (!Array.isArray(entries)) {
       logger.error('[AuthManager] ngdpbase.auth.factors is not a list — offering password only. (#1523)');
       return [{ authproviderid: 'password' }];
     }
-    return entries
-      .filter((e): e is FactorEntry => typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string')
-      // #1743: Google's provider is now `oidc:google`; an entry under its old id still governs it.
-      .map(e => (e.authproviderid === 'google-oidc' ? { ...e, authproviderid: 'oidc:google' } : e));
+    // An entry without a string authproviderid is dropped, and it also made
+    // the merge replace the shipped list instead of merging by id.
+    const wellFormed = entries.filter((e): e is FactorEntry => {
+      if (typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string') return true;
+      logger.warn(
+        `[AuthManager] ngdpbase.auth.factors: dropped ${JSON.stringify(e)}, which has no string authproviderid. ` +
+        'A custom list holding such an entry replaces the shipped list rather than merging with it, so every shipped entry it does not restate is off. (#1523)'
+      );
+      return false;
+    });
+    // #1743, #1523 Q3: an entry under an old id governs the provider. The merge
+    // appends a custom entry under the old id after the shipped one, so of two
+    // entries for one provider the later wins, in the earlier one's place.
+    const byProvider = new Map<string, FactorEntry>();
+    for (const e of wellFormed) {
+      const id = FACTOR_ALIASES[e.authproviderid] ?? e.authproviderid;
+      byProvider.set(id, { ...e, authproviderid: id });
+    }
+    const read = [...byProvider.values()];
+    // #1523 Q10: no longer shipped, so only a site's own config still says it.
+    const trusting = read.filter(e => Array.isArray(e.amr) && e.amr.includes('trust')).map(e => e.authproviderid);
+    if (trusting.length > 0) {
+      logger.warn(`[AuthManager] ngdpbase.auth.factors: "amr": ["trust"] on ${trusting.join(', ')} does nothing — trust an outside provider's own second factor with "trust-mfa": true on its entry in ngdpbase.auth.oidc.providers. (#1633)`);
+    }
+    return read;
+  }
+
+  /**
+   * #1523: with the `magic-link` entry off or not listed, an enrolled email
+   * second factor is no longer asked for. The operator may mean that, but it
+   * must not happen silently.
+   */
+  private warnIfEmailSecondFactorsDropped(): void {
+    if (this.factorEntries.some(e => e.authproviderid === EMAIL_LINK_ENTRY && e.enabled !== false)) return;
+    const accounts = new Set((this.credentials?.listKind('email') ?? []).map(r => r.username)).size;
+    if (accounts === 0) return;
+    logger.warn(
+      `[AuthManager] ngdpbase.auth.factors: the ${EMAIL_LINK_ENTRY} entry is off or not listed, so the enrolled email second factor ` +
+      `of ${accounts} account(s) is no longer asked for — they sign in with one step, and magic-link sign-in is off too. (#1523)`
+    );
   }
 
   /**
@@ -1654,9 +1749,7 @@ class AuthManager extends BaseManager {
    */
   async userMayUseProvider(username: string, providerId: string): Promise<boolean> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
-    const allowed = user?.allowedAuthMethods;
-    // #1743: Google's provider was `google-oidc`; an account limited to it keeps it as `oidc:google`.
-    return !allowed || allowed.length === 0 || allowed.includes(providerId) || (providerId === 'oidc:google' && allowed.includes('google-oidc'));
+    return allowsProvider(user?.allowedAuthMethods, providerId);
   }
 
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
@@ -2703,7 +2796,7 @@ class AuthManager extends BaseManager {
   async aalReachFor(username: string): Promise<{ now: Aal; ifEnrolled: Aal }> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
-    const offered = this.getFactors().filter(f => !allowed || allowed.length === 0 || allowed.includes(f.provider));
+    const offered = this.getFactors().filter(f => allowsProvider(allowed, f.provider));
     const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
     const usable = offered.filter(f => {
       const kind = ENROLLED_FACTORS[f.provider];
@@ -2868,12 +2961,18 @@ class AuthManager extends BaseManager {
     // #2154: the confirmation releases the form POST it was asked for, named by
     // `next` itself (the session's pending prompt may be another tab's), and
     // its time to be redone starts now, however long the prompt was open.
+    // Another session's or person's is not released, nor is the success recorded
+    // against its permission: the attempt is a `reauth-failure`, as at the take.
     const kept = this.stepUpReplays.get(stepUpReplayId(next) ?? '');
-    if (kept && kept.sessionId === req.sessionID && kept.username === req.session.username && kept.expires > Date.now()) {
-      kept.ready = true;
-      kept.expires = Date.now() + STEP_UP_REPLAY_TTL_MS;
+    const mine = kept && kept.sessionId === req.sessionID && kept.username === req.session.username ? kept : undefined;
+    if (kept && !mine) {
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} confirmed from another session; not released`);
     }
-    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? kept?.permission ?? method,
+    if (mine && mine.expires > Date.now()) {
+      mine.ready = true;
+      mine.expires = Date.now() + STEP_UP_REPLAY_TTL_MS;
+    }
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? mine?.permission ?? method,
       `re-authenticated with ${method}${answered ? ` for ${answered.permission}` : ''}; acr ${record?.acr ?? 'unknown'}`);
     return record;
   }
@@ -2898,9 +2997,13 @@ class AuthManager extends BaseManager {
   /**
    * Keep a form POST answered with the prompt, to be redone after it
    * (#2154); its id, or null when it cannot be redone exactly. Only a page's
-   * POST by a signed-in person, to an address on this site. One per session:
-   * a new prompt drops the one before, and any past its time. It waits
-   * `STEP_UP_REPLAY_WAIT_MS` for the confirmation, which restarts its clock.
+   * POST by a signed-in person, to an address on this site. Each prompt keeps
+   * its own, so the same button pressed in two tabs loses neither (#2176); a
+   * session keeps at most `STEP_UP_REPLAYS_PER_SESSION`, an account
+   * `STEP_UP_REPLAYS_PER_ACCOUNT` and the site `STEP_UP_REPLAYS_TOTAL`, a new
+   * prompt dropping the oldest past that, unconfirmed first, and any past its
+   * time. It waits `STEP_UP_REPLAY_WAIT_MS` for the confirmation, which
+   * restarts its clock. A session's end drops its own (`dropStepUpReplays`).
    */
   private keepStepUpReplay(req: Request, permission: string, mode: ReauthMode, back: string): string | null {
     const username = req.session.username;
@@ -2911,10 +3014,19 @@ class AuthManager extends BaseManager {
     if (!fields) return null;
     const now = Date.now();
     dropExpiredReplays(this.stepUpReplays, now);
-    for (const [id, kept] of this.stepUpReplays) if (kept.sessionId === req.sessionID) this.stepUpReplays.delete(id);
+    // A Map iterates in insertion order: the oldest come first.
+    const all = (): Array<[string, StepUpReplay]> => Array.from(this.stepUpReplays);
+    dropOldestReplays(this.stepUpReplays, all().filter(([, kept]) => kept.sessionId === req.sessionID), STEP_UP_REPLAYS_PER_SESSION - 1);
+    dropOldestReplays(this.stepUpReplays, all().filter(([, kept]) => kept.username === username), STEP_UP_REPLAYS_PER_ACCOUNT - 1);
+    dropOldestReplays(this.stepUpReplays, all(), STEP_UP_REPLAYS_TOTAL - 1);
     const id = randomBytes(16).toString('hex');
     this.stepUpReplays.set(id, { sessionId: req.sessionID, username, permission, action, fields, back, expires: now + STEP_UP_REPLAY_WAIT_MS, ready: false });
     return id;
+  }
+
+  /** A session ended (#2176): the form POSTs it kept go with it (`endSession`). */
+  dropStepUpReplays(sessionId: string): void {
+    for (const [id, kept] of this.stepUpReplays) if (kept.sessionId === sessionId) this.stepUpReplays.delete(id);
   }
 
   /**
@@ -2935,12 +3047,12 @@ class AuthManager extends BaseManager {
       return null;
     }
     if (kept.sessionId !== req.sessionID || kept.username !== req.session?.username) {
-      logger.warn(`[step-up] a kept form POST for ${kept.action} was asked for from another session; refused`);
-      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${kept.action} asked for from another session`);
+      logger.warn(`[step-up] a kept form POST for ${replayPath(kept.action)} was asked for from another session; refused`);
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} asked for from another session`);
       return null;
     }
     if (now > kept.expires) {
-      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${kept.action} past its time; not redone`);
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} past its time; not redone`);
       if (kept.ready) req.session.stepUpConfirmed = new URL(kept.back, 'http://site.invalid').pathname;
       return { back: kept.back };
     }
@@ -3490,16 +3602,48 @@ class AuthManager extends BaseManager {
   }
 
   /**
-   * The second factors `username` has enrolled and can use now (#1523). Any
-   * enrolled factor works; one that is not truly available (no mail transport)
-   * is not offered. Empty means the sign-in is one step, as before.
+   * Whether the email link can be a second factor now (#1523): its entry in
+   * `ngdpbase.auth.factors` (`magic-link`, or its alias `email-link`) listed
+   * and enabled, mail, and an explicit base-url.
    */
-  secondFactorsFor(username: string): AvailableSecondFactor[] {
+  emailSecondFactorAvailable(): boolean {
+    return this.mailForLinks() !== null && this.factorEntries.some(e => e.authproviderid === EMAIL_LINK_ENTRY && e.enabled !== false);
+  }
+
+  /**
+   * The second factors that may follow `first`, in the order they are offered
+   * (#1523; Q2, operator 2026-10-31): every enabled entry of
+   * `ngdpbase.auth.factors` other than the one the sign-in started with, whose
+   * level is known (its provider registered, or the email link). Those that,
+   * with the first step, reach `requiredAal` come first; then by `preference`,
+   * lower first, an entry with none last. Entry ids.
+   */
+  secondFactorOrder(first: Pick<AuthenticateResult, 'provider' | 'factors'>, requiredAal: number): string[] {
+    const ranked = this.factorEntries.flatMap((entry) => {
+      if (entry.enabled === false || entry.authproviderid === first.provider) return [];
+      const factor = entry.authproviderid === EMAIL_LINK_ENTRY ? EMAIL_FACTOR : this.getFactors().find(f => f.provider === entry.authproviderid);
+      if (!factor) return [];
+      const reaches = this.assess([...(first.factors ?? []), factor]).aal >= requiredAal;
+      return [{ id: entry.authproviderid, reaches, preference: entry.preference ?? Number.MAX_SAFE_INTEGER }];
+    });
+    return ranked.sort((a, b) => Number(b.reaches) - Number(a.reaches) || a.preference - b.preference).map(r => r.id);
+  }
+
+  /**
+   * The second factors `username` has enrolled and can use now (#1523), in
+   * `secondFactorOrder` after the pending sign-in's first step; without one,
+   * by `preference`. Only what the second step can run is offered — today the
+   * email link — and one that is not truly available (no mail transport) is
+   * not. Empty means the sign-in is one step, as before.
+   */
+  secondFactorsFor(username: string, signIn?: Pick<PendingSignIn, 'first' | 'requiredAal'>): AvailableSecondFactor[] {
     const rows = this.credentials?.list(username) ?? [];
     const out: AvailableSecondFactor[] = [];
-    if (this.mailForLinks()) {
-      for (const r of rows.filter((c) => c.kind === 'email')) {
-        out.push({ id: 'email-link', label: 'Email link', target: maskEmail(r.subject) });
+    for (const id of this.secondFactorOrder(signIn?.first ?? {}, signIn?.requiredAal ?? 0)) {
+      if (id === EMAIL_LINK_ENTRY && this.mailForLinks()) {
+        for (const r of rows.filter((c) => c.kind === 'email')) {
+          out.push({ id: 'email-link', label: 'Email link', target: maskEmail(r.subject) });
+        }
       }
     }
     return out;
@@ -3517,7 +3661,7 @@ class AuthManager extends BaseManager {
   needsSecondStep(result: AuthenticateResult): boolean {
     const record = result.success && result.username ? this.signInRecord(result) : null;
     if (!record || record.aal >= 2 || record.amr.includes('email')) return false;
-    return this.secondFactorsFor(result.username as string).length > 0;
+    return this.secondFactorsFor(result.username as string, { first: result }).length > 0;
   }
 
   /**
@@ -3547,6 +3691,9 @@ class AuthManager extends BaseManager {
     const username = await this.storedUsername(first.username);
     if (!username) throw new Error('beginTwoStep: no stored account has that username (#1882)');
     first = { ...first, username };
+    // #1523 Q2: what this account's roles require, so the factors that reach it are offered first.
+    const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+    const requiredAal = this.requiredAalFor((await pip?.subjectFor(username))?.roles ?? [], await this.aalCapFor(username));
     this.sweepPending();
     const handle = randomBytes(24).toString('base64url');
     const now = Date.now();
@@ -3561,7 +3708,8 @@ class AuthManager extends BaseManager {
       requestIp: ctx.ip,
       requestUserAgent: ctx.userAgent,
       requestLocation: ctx.location ?? null,
-      privateStoreHandle: ctx.privateStoreHandle
+      privateStoreHandle: ctx.privateStoreHandle,
+      requiredAal
     });
     // #1532: an expiry is recorded when it happens, not when someone next looks.
     setTimeout(() => this.expirePending(handle), PENDING_SIGN_IN_TTL_MS + 1).unref?.();
@@ -3632,11 +3780,12 @@ class AuthManager extends BaseManager {
   async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable' | 'failed'> {
     const p = this.pendingSignIn(handle, binding);
     if (!p) return 'unavailable';
-    const mail = this.mailForLinks();
+    const mail = this.emailSecondFactorAvailable() ? this.mailForLinks() : null;
     const row = (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email');
     const from = AuthManager.askedFrom(p);
     if (!mail || !row) {
-      await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_SENDFAIL, p, 'error', from, { reason: mail ? 'no email factor enrolled' : 'mail is not configured' });
+      const reason = mail ? 'no email factor enrolled' : this.mailForLinks() ? 'the email link is off in ngdpbase.auth.factors' : 'mail is not configured';
+      await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_SENDFAIL, p, 'error', from, { reason });
       return 'unavailable';
     }
     if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) {
@@ -3824,7 +3973,7 @@ class AuthManager extends BaseManager {
    */
   async startEmailFactorEnrolment(ctx: PermissionSubject, username: string): Promise<'sent' | 'no-email' | 'unavailable' | 'already'> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
-    const mail = this.mailForLinks();
+    const mail = this.emailSecondFactorAvailable() ? this.mailForLinks() : null;
     if (!mail) return 'unavailable';
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const address = typeof user?.email === 'string' ? user.email.trim() : '';

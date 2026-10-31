@@ -11,6 +11,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type { PluginFormatters } from './PluginManager.js';
 import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /**
@@ -638,7 +639,13 @@ class NotificationManager extends BaseManager {
 
     const subject = `[${notification.level.toUpperCase()}] ${notification.title}`;
     const text = `${notification.title}\n\n${notification.message}\n\nLevel: ${notification.level}\nCreated: ${notification.createdAt.toISOString()}`;
-    const html = `<h2>${notification.title}</h2><p>${notification.message}</p><p><strong>Level:</strong> ${notification.level}<br><strong>Created:</strong> ${notification.createdAt.toISOString()}</p>`;
+    // Titles and messages can carry file names (#2191); escape with PluginManager's
+    // formatter (#1820, the one escapeHtml), then keep the line breaks. Its absence
+    // is a wiring fault, not a reason to send a value unescaped.
+    const formatters = this.engine?.getManager<{ formatters?: PluginFormatters }>('PluginManager')?.formatters;
+    if (!formatters) throw new Error('PluginManager is not available to escape the escalation email (#2191)');
+    const { escapeHtml } = formatters;
+    const html =`<h2>${escapeHtml(notification.title)}</h2><p>${escapeHtml(notification.message).replace(/\n/g, '<br>')}</p><p><strong>Level:</strong> ${notification.level}<br><strong>Created:</strong> ${notification.createdAt.toISOString()}</p>`;
 
     const sender = scheduleContext(this.engine, `notification escalation: email ${notification.level} notice`);
     for (const user of withEmail) {
