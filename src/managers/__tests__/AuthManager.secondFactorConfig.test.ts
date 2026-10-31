@@ -36,6 +36,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
   let custom: Record<string, unknown>;
   let roles: string[];
   let logged: string[];
+  let allowedAuthMethods: string[] | undefined;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
 
   /** The site's merged configuration: the shipped file, then the operator's custom file, by the real merge. */
@@ -54,7 +55,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       },
       PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve(action === 'account-security' && s.username === 'molly') },
       UserManager: {
-        getUser: (u: string) => Promise.resolve(u === 'molly' ? { username: 'molly', email: 'molly@example.com' } : null),
+        getUser: (u: string) => Promise.resolve(u === 'molly' ? { username: 'molly', email: 'molly@example.com', allowedAuthMethods } : null),
         hasPassword: () => Promise.resolve(true)
       },
       PolicyInformationPoint: { subjectFor: (u: string) => Promise.resolve(u === 'molly' ? { username: 'molly', roles, isAuthenticated: true } : null) },
@@ -85,6 +86,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
     custom = {};
     roles = ['reader'];
     logged = [];
+    allowedAuthMethods = undefined;
     vi.spyOn(logger, 'warn').mockImplementation(((...args: unknown[]) => { logged.push(args.map(String).join(' ')); return logger; }) as never);
   });
 
@@ -158,6 +160,35 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain('magic-link');
       expect(warnings[0]).toContain('no longer asked for');
+    });
+
+    test('the retired required-factors without magic-link: its warning says the email second factor is off', async () => {
+      custom['ngdpbase.auth.required-factors'] = ['password', 'passkey'];
+      await started();
+      const retired = logged.filter(l => l.includes('required-factors is retired'));
+      expect(retired).toHaveLength(1);
+      expect(retired[0]).toContain('email second factor is off');
+      logged = [];
+      custom['ngdpbase.auth.required-factors'] = ['password', 'email-link'];
+      await started();
+      expect(logged.filter(l => l.includes('email second factor is off'))).toEqual([]);
+    });
+
+    test('a custom factors entry without a string authproviderid: one warning each, saying the shipped list was replaced', async () => {
+      await enrolled();
+      logged = [];
+      custom['ngdpbase.auth.factors'] = [
+        { authproviderid: 'password', primary: true },
+        { authProviderId: 'passkey', primary: true }
+      ];
+      const am = await started();
+      expect(am.getFactors().map(f => f.provider)).toEqual(['password']);
+      const dropped = logged.filter(l => l.includes('no string authproviderid'));
+      expect(dropped).toHaveLength(1);
+      expect(dropped[0]).toContain('authProviderId');
+      expect(dropped[0]).toContain('replaces the shipped list');
+      // The effect on enrolled accounts is named too.
+      expect(logged.filter(l => l.includes('enrolled email second factor'))).toHaveLength(1);
     });
 
     test('no warning when the entry is on, or when no account has an email second factor', async () => {
@@ -236,6 +267,17 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       expect(am.secondFactorOrder(pending.first, pending.requiredAal)).toEqual(['passkey', 'totp', 'magic-link']);
       // Only what the second step can run is offered: the email link (a passkey signs in alone; TOTP's step is #421).
       expect(am.secondFactorsFor('molly', pending).map(f => f.id)).toEqual(['email-link']);
+    });
+  });
+
+  describe('Q3: an old id in allowedAuthMethods', () => {
+    test('google-oidc counts as oidc:google for the level the account can reach, as it does for signing in', async () => {
+      allowedAuthMethods = ['google-oidc'];
+      const am = await started();
+      am.registerProvider({ id: 'oidc:google', displayName: 'Google', factor: { amr: ['hwk'], aal: 2 as const, primary: true }, verify: () => Promise.resolve(null) });
+      expect(await am.userMayUseProvider('molly', 'oidc:google')).toBe(true);
+      // Sabotage check: comparing the raw string offers nothing, and the reach falls to 1.
+      expect((await am.aalReachFor('molly')).now).toBe(2);
     });
   });
 

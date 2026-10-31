@@ -134,6 +134,14 @@ export interface FactorEntry {
 const FACTOR_ALIASES: Readonly<Record<string, string>> = { 'google-oidc': 'oidc:google', 'email-link': 'magic-link' };
 
 /**
+ * Do an account's `allowedAuthMethods` let it use `providerId`? Absent or
+ * empty means any; an old id names the provider it was renamed to (Q3). The
+ * one reading for signing in and for the level the account can reach.
+ */
+const allowsProvider = (allowed: readonly string[] | undefined, providerId: string): boolean =>
+  !allowed || allowed.length === 0 || allowed.some(a => (FACTOR_ALIASES[a] ?? a) === providerId);
+
+/**
  * The entry that governs the email link as a second factor (#1523 Q3): the
  * magic link's, since starting a sign-in and confirming one are the same
  * provider. The second step runs it itself, so it needs no registered provider.
@@ -1096,26 +1104,40 @@ class AuthManager extends BaseManager {
     if (!configManager) return [{ authproviderid: 'password' }];
     const legacy = configManager.getCustomProperty('ngdpbase.auth.required-factors');
     const custom = configManager.getCustomProperty('ngdpbase.auth.factors');
-    if (Array.isArray(legacy)) {
+    const legacyIds = Array.isArray(legacy) ? legacy.filter((id): id is string => typeof id === 'string') : null;
+    if (legacyIds) {
       logger.warn(
         '[AuthManager] ngdpbase.auth.required-factors is retired — ' +
-        (custom === undefined
-          ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
-          : 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)')
+        (custom !== undefined
+          ? 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)'
+          : legacyIds.some(id => (FACTOR_ALIASES[id] ?? id) === EMAIL_LINK_ENTRY)
+            ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
+            : `converted to ngdpbase.auth.factors entries; rename it in custom config. It lists no ${EMAIL_LINK_ENTRY}, so the email second factor is off: ` +
+              `accounts that enrolled one sign in with one step. List ${EMAIL_LINK_ENTRY} to keep it. (#1523)`)
       );
     }
-    const entries: unknown = Array.isArray(legacy) && custom === undefined
-      ? legacy.filter((id): id is string => typeof id === 'string').map(id => ({ authproviderid: id }))
+    const entries: unknown = legacyIds && custom === undefined
+      ? legacyIds.map(id => ({ authproviderid: id }))
       : configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
     if (!Array.isArray(entries)) {
       logger.error('[AuthManager] ngdpbase.auth.factors is not a list — offering password only. (#1523)');
       return [{ authproviderid: 'password' }];
     }
+    // An entry without a string authproviderid is dropped, and it also made
+    // the merge replace the shipped list instead of merging by id.
+    const wellFormed = entries.filter((e): e is FactorEntry => {
+      if (typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string') return true;
+      logger.warn(
+        `[AuthManager] ngdpbase.auth.factors: dropped ${JSON.stringify(e)}, which has no string authproviderid. ` +
+        'A custom list holding such an entry replaces the shipped list rather than merging with it, so every shipped entry it does not restate is off. (#1523)'
+      );
+      return false;
+    });
     // #1743, #1523 Q3: an entry under an old id governs the provider. The merge
     // appends a custom entry under the old id after the shipped one, so of two
     // entries for one provider the later wins, in the earlier one's place.
     const byProvider = new Map<string, FactorEntry>();
-    for (const e of entries.filter((e): e is FactorEntry => typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string')) {
+    for (const e of wellFormed) {
       const id = FACTOR_ALIASES[e.authproviderid] ?? e.authproviderid;
       byProvider.set(id, { ...e, authproviderid: id });
     }
@@ -1703,9 +1725,7 @@ class AuthManager extends BaseManager {
    */
   async userMayUseProvider(username: string, providerId: string): Promise<boolean> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
-    const allowed = user?.allowedAuthMethods;
-    // #1743, #1523 Q3: an account limited to an old id (`google-oidc`, `email-link`) keeps the provider it names.
-    return !allowed || allowed.length === 0 || allowed.some(a => (FACTOR_ALIASES[a] ?? a) === providerId);
+    return allowsProvider(user?.allowedAuthMethods, providerId);
   }
 
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
@@ -2752,7 +2772,7 @@ class AuthManager extends BaseManager {
   async aalReachFor(username: string): Promise<{ now: Aal; ifEnrolled: Aal }> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
-    const offered = this.getFactors().filter(f => !allowed || allowed.length === 0 || allowed.includes(f.provider));
+    const offered = this.getFactors().filter(f => allowsProvider(allowed, f.provider));
     const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
     const usable = offered.filter(f => {
       const kind = ENROLLED_FACTORS[f.provider];
