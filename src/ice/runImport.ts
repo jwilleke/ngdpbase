@@ -693,7 +693,8 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
           runId: report.runId, source: { name: upload.name, sha256 }, chain,
           ...(citation ? { citation } : {}), ...(kept ? { original: kept } : {}),
           ...(given.name ? { givenName: given.name } : {}),
-          ...(request.target !== undefined ? { target: request.target } : {})
+          ...(request.target !== undefined ? { target: request.target } : {}),
+          ...(plan.recheck ? { rechecked: true } : {})
         });
         if (outcome.status === 'stored') {
           fr.stored++;
