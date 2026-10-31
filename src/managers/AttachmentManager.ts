@@ -7,7 +7,6 @@ import { systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
-import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -36,7 +35,7 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 // #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
 import type { User } from '../providers/BaseAttachmentProvider.js';
-import { formatPrivatePageName, isSharedFolderOwner, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isSharedFolderOwner, isValidStoreId, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
@@ -1359,19 +1358,24 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * The id of the file the requester's own store `store` holds with exactly
-   * these bytes, or null when it holds none, or this context cannot open it
-   * (#2171). The store's own duplicate check (its index's fingerprints), read
-   * without storing or recording anything: a takeout import asks it before
-   * putting a file again, so a file deleted since comes back and one still
-   * held writes no second upload record.
+   * The files the requester's own store `store` holds, as fingerprint → id,
+   * or null when this context cannot open it (#2171). The store's own
+   * duplicate check (its index's fingerprints), read without storing or
+   * recording anything: a takeout import reads it once per run and asks it
+   * before putting a file again, so a file deleted since comes back and one
+   * still held writes no second upload record. Only that store is opened.
    */
-  async ownStoreFileHolding(ctx: ActorContext, store: string, bytes: Buffer): Promise<string | null> {
-    if (!this.attachmentProvider) return null;
-    const location = (await this.ownPrivateStores(ctx)).find((l) => l.store === store);
-    if (!location || !this.mayReach(ctx, location.owner, `store-files:${store}`, 'view')) return null;
-    const fingerprint = crypto.createHash('sha256').update(bytes).digest('hex');
-    return (await this.attachmentProvider.listFilesInStore(location)).find((f) => f.fingerprint === fingerprint)?.id ?? null;
+  async ownStoreFingerprints(ctx: ActorContext, store: string): Promise<Map<string, string> | null> {
+    if (!this.attachmentProvider || !isValidStoreId(store) || !ctx?.username || !mayActInPrivateContainer(ctx, ctx.username)) return null;
+    if (!this.mayReach(ctx, ctx.username, `store-files:${store}`, 'view')) return null;
+    let location: StoreFileLocation;
+    try {
+      location = await this.vaultLocation(ctx, ctx.username, store);
+    } catch {
+      // Locked, or a sealed store this context holds no DEK for: never read in the clear.
+      return null;
+    }
+    return new Map((await this.attachmentProvider.listFilesInStore(location)).map((f) => [f.fingerprint, f.id]));
   }
 
   /** The requester's own private-store files uploaded onto `pageName`. */

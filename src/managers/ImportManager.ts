@@ -71,7 +71,7 @@ import type { FilePlace } from '../types/File.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { boundScope, convertChain, isConfidentialReceiver, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
-import { mediaTypeByExtension } from '../ice/fileHandling.js';
+import { fingerprint, mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import { IceExportFailed, checkExportSize, exportChains, exportSize, runExportChain, type IceExportSettings } from '../ice/runExport.js';
@@ -467,6 +467,8 @@ class ImportManager extends BaseManager {
   private readonly receiverRegistry = new Map<string, RegisteredReceiver>();
   /** ICE: runs this process knows about, oldest first. */
   private readonly iceRuns = new Map<string, IceRunReport>();
+  /** ICE (#2171): a rechecking run's store, as fingerprint → id, read once per run and store; dropped when the run ends. */
+  private readonly storeHoldings = new Map<string, Promise<Map<string, string> | null>>();
   /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
   private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
@@ -1194,6 +1196,8 @@ class ImportManager extends BaseManager {
         ? `[ImportManager] ICE run ${report.runId} failed (${errorClassOf(err)})`
         : `[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
       return report;
+    } finally {
+      for (const key of this.storeHoldings.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeHoldings.delete(key);
     }
   }
 
@@ -1555,7 +1559,7 @@ class ImportManager extends BaseManager {
    *   comes back (operator, 2026-10-30; #2171). The engine skips a file it
    *   already took (fingerprints), but a page with a uuid and a file are read
    *   again (`rechecks`): the uuid check below decides for a page, and for a
-   *   file whether the store still holds its bytes (`ownStoreFileHolding`),
+   *   file whether the store still holds its bytes (`ownStoreFingerprints`, read once a run),
    *   so one still held is `duplicate` and not put again (no second upload
    *   record). On a first import the file door returns a file the store
    *   already holds. A page whose uuid the store holds is `duplicate`: unchanged, or
@@ -1657,17 +1661,29 @@ class ImportManager extends BaseManager {
     if (!files || !attachments) throw new Error('FileManager or AttachmentManager unavailable — cannot store a file');
     const owner = ctx.username;
     const place: FilePlace = { kind: 'vault', owner, vault: store };
+    // #2171: read again after an earlier import, a file the store still holds is not put again: no second upload record.
+    // The store's index is read once a run, and learns each file this run puts.
+    const holdings = async (): Promise<Map<string, string> | null> => {
+      if (!info.rechecked) return null;
+      const key = `${info.runId}\0${store}`;
+      let held = this.storeHoldings.get(key);
+      if (!held) {
+        held = attachments.ownStoreFingerprints(ctx, store);
+        this.storeHoldings.set(key, held);
+        held.catch(() => this.storeHoldings.delete(key));
+      }
+      return held;
+    };
+    const heldAgain = async (bytes: Buffer): Promise<string | null> => (await holdings())?.get(fingerprint(bytes)) ?? null;
     const put = async (bytes: Buffer, name: string, mimeType: string | undefined, description: string | undefined): Promise<string | undefined> => {
       const stored = await files.put(
         ctx, place,
         { bytes, info: { originalName: name, mimeType: mimeType || mediaTypeByExtension(name), size: bytes.length } },
         { description: description ?? '' }
       );
+      if (stored.identifier) (await holdings())?.set(fingerprint(bytes), stored.identifier);
       return stored.identifier;
     };
-    // #2171: read again after an earlier import, a file the store still holds is not put again: no second upload record.
-    const heldAgain = async (bytes: Buffer): Promise<string | null> =>
-      info.rechecked ? attachments.ownStoreFileHolding(ctx, store, bytes) : null;
     const data = item.data as TakeoutData | undefined;
 
     try {
