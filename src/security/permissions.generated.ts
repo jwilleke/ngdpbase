@@ -7,7 +7,7 @@
 
 /** Every permission core declares. Addons generate their own union. */
 export type CorePermission =
-  /** Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
+  /** Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in, because the entry carries "step-up": true (#1638) */
   | 'account-security'
   /** View administration screens (read-only, no changes) */
   | 'admin-read'
@@ -27,7 +27,7 @@ export type CorePermission =
   | 'audit-export'
   /** Add a comment, and delete your own; deleting anyone's is admin-system (#1198) */
   | 'comment-create'
-  /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
+  /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in, because the entry carries "step-up": true (#1638) */
   | 'config-manage'
   /** Open the Executive Hub (/executive): the organization's summary cards and the requests waiting for the board (#2093). Held by the executive role; deciding a request still needs that request's own permission */
   | 'executive-read'
@@ -61,7 +61,7 @@ export type CorePermission =
   | 'search-page'
   /** Search users */
   | 'search-user'
-  /** Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed */
+  /** Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in, because the entry carries "step-up": true (#1638). Hashed credentials (agent tokens) and shown-once secrets can never be revealed */
   | 'secret-reveal'
   /** End another person's signed-in session (#1638) */
   | 'session-revoke'
