@@ -35,7 +35,7 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 // #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
 import type { User } from '../providers/BaseAttachmentProvider.js';
-import { formatPrivatePageName, isSharedFolderOwner, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isSharedFolderOwner, isValidStoreId, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
@@ -1355,6 +1355,27 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    */
   async isOwnPrivateStoreFile(attachmentId: string, ctx: ActorContext): Promise<boolean> {
     return (await this.findOwnStoreFile(ctx, attachmentId, 'view')) !== null;
+  }
+
+  /**
+   * The files the requester's own store `store` holds, as fingerprint → id,
+   * or null when this context cannot open it (#2171). The store's own
+   * duplicate check (its index's fingerprints), read without storing or
+   * recording anything: a takeout import reads it once per run and asks it
+   * before putting a file again, so a file deleted since comes back and one
+   * still held writes no second upload record. Only that store is opened.
+   */
+  async ownStoreFingerprints(ctx: ActorContext, store: string): Promise<Map<string, string> | null> {
+    if (!this.attachmentProvider || !isValidStoreId(store) || !ctx?.username || !mayActInPrivateContainer(ctx, ctx.username)) return null;
+    if (!this.mayReach(ctx, ctx.username, `store-files:${store}`, 'view')) return null;
+    let location: StoreFileLocation;
+    try {
+      location = await this.vaultLocation(ctx, ctx.username, store);
+    } catch {
+      // Locked, or a sealed store this context holds no DEK for: never read in the clear.
+      return null;
+    }
+    return new Map((await this.attachmentProvider.listFilesInStore(location)).map((f) => [f.fingerprint, f.id]));
   }
 
   /** The requester's own private-store files uploaded onto `pageName`. */

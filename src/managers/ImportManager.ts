@@ -71,7 +71,7 @@ import type { FilePlace } from '../types/File.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { boundScope, convertChain, isConfidentialReceiver, keepOriginalsAtUpload, receiverLink, runImport, type IceEngineSettings, type IceRunDeps } from '../ice/runImport.js';
-import { mediaTypeByExtension } from '../ice/fileHandling.js';
+import { fingerprint, mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import { IceExportFailed, checkExportSize, exportChains, exportSize, runExportChain, type IceExportSettings } from '../ice/runExport.js';
@@ -467,6 +467,8 @@ class ImportManager extends BaseManager {
   private readonly receiverRegistry = new Map<string, RegisteredReceiver>();
   /** ICE: runs this process knows about, oldest first. */
   private readonly iceRuns = new Map<string, IceRunReport>();
+  /** ICE (#2171): a rechecking run's store, as fingerprint → id, read once per run and store; dropped when the run ends. */
+  private readonly storeHoldings = new Map<string, Promise<Map<string, string> | null>>();
   /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
   private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
@@ -491,10 +493,11 @@ class ImportManager extends BaseManager {
     await super.initialize(config);
 
     // ICE's core receivers (#1979, D4): pages and files, each through its own door.
-    this.registerReceiver('core', this.pagesReceiver());
-    this.registerReceiver('core', this.filesReceiver());
+    // Through the private door: only these may declare writesEncrypted (#2179).
+    this.#registerReceiver('core', this.pagesReceiver(), true);
+    this.#registerReceiver('core', this.filesReceiver(), true);
     // #2118: a takeout handed back into its owner's private store, read by core.takeout.
-    this.registerReceiver('core', this.privateStoreReceiver());
+    this.#registerReceiver('core', this.privateStoreReceiver(), true);
 
     // Register built-in converters
     this.registerConverter(new JSPWikiConverter());
@@ -572,13 +575,30 @@ class ImportManager extends BaseManager {
   /**
    * Register a receiver (D4): a door that already exists. Core's are
    * `core.pages` and `core.files`; an add-on registers its own manager's door
-   * through `host.registerReceiver`.
+   * through `host.registerReceiver`. Refuses `writesEncrypted` from every
+   * caller, whatever owner it names: core registers its own receivers
+   * through the private `#registerReceiver` (#2179).
    *
    * @returns The receiver's id, `<owner>.<name>`
    */
   registerReceiver(owner: string, receiver: IceReceiver): string {
-    const id = `${owner}.${receiver?.name}`;
-    if (!receiver || !ICE_NAME.test(receiver.name)) throw new Error(`ICE receiver '${id}': a name is lower-case letters, numbers and dashes`);
+    return this.#registerReceiver(owner, receiver, false);
+  }
+
+  /**
+   * The registration itself. Only core's own receivers, from `initialize`,
+   * come here with `mayWriteEncrypted`: the public `registerReceiver` is
+   * reachable by any add-on through the engine, whatever owner it names
+   * (#2179), so it never lets a receiver declare `writesEncrypted` (#2110).
+   * The receiver is copied once and the copy is checked and stored, so a
+   * getter cannot answer the check one way and the registry another.
+   */
+  #registerReceiver(owner: string, given: IceReceiver, mayWriteEncrypted: boolean): string {
+    const receiver: IceReceiver = { ...given };
+    const writesEncrypted = receiver.writesEncrypted === true;
+    const keepsEncrypted = receiver.keepsEncrypted === true;
+    const id = `${owner}.${receiver.name}`;
+    if (!given || !ICE_NAME.test(receiver.name)) throw new Error(`ICE receiver '${id}': a name is lower-case letters, numbers and dashes`);
     if (this.receiverRegistry.has(id)) throw new Error(`ICE receiver '${id}' is already registered`);
     if (typeof receiver.receive !== 'function' || typeof receiver.mayUse !== 'function' || !Array.isArray(receiver.accepts)) {
       throw new Error(`ICE receiver '${id}': declare accepts, mayUse() and receive()`);
@@ -586,12 +606,16 @@ class ImportManager extends BaseManager {
     if (receiver.names !== undefined && receiver.names !== 'title' && receiver.names !== 'file') {
       throw new Error(`ICE receiver '${id}': names is 'title' or 'file'`);
     }
+    // #2110: an add-on's receiver is confidential only by keeping originals sealed (`keepsEncrypted`).
+    if (writesEncrypted && !mayWriteEncrypted) {
+      throw new Error(`ICE receiver '${id}': writesEncrypted is core's only; an add-on receiver uses keepsEncrypted`);
+    }
     const types = receiver.originals?.types;
     if (types !== undefined && (!Array.isArray(types) || !types.every(t => typeof t === 'string' && KEPT_MEDIA_TYPE.test(t.trim().toLowerCase())))) {
       throw new Error(`ICE receiver '${id}': originals.types are media types, type/subtype exactly, with no wildcard`);
     }
     this.receiverRegistry.set(id, {
-      ...receiver, id, owner,
+      ...receiver, id, owner, writesEncrypted, keepsEncrypted,
       ...(receiver.originals && types ? { originals: { ...receiver.originals, types: types.map(t => t.trim().toLowerCase()) } } : {})
     });
     return id;
@@ -1194,6 +1218,8 @@ class ImportManager extends BaseManager {
         ? `[ImportManager] ICE run ${report.runId} failed (${errorClassOf(err)})`
         : `[ImportManager] ICE run ${report.runId} failed: ${report.error}`);
       return report;
+    } finally {
+      for (const key of this.storeHoldings.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeHoldings.delete(key);
     }
   }
 
@@ -1551,10 +1577,13 @@ class ImportManager extends BaseManager {
    *   upload into it in the request, with the request's key, and an import
    *   into it is confidential (#2110): no file or page name is logged.
    * - Importing the same takeout again leaves the store as the first import
-   *   did (operator, 2026-09-25), except that a page deleted since comes
-   *   back (operator, 2026-10-30). The engine skips a file it already took
-   *   (fingerprints), but a page with a uuid is read again (`rechecks`) and
-   *   the uuid check below decides. The file door returns a file the store
+   *   did (operator, 2026-09-25), except that a page or a file deleted since
+   *   comes back (operator, 2026-10-30; #2171). The engine skips a file it
+   *   already took (fingerprints), but a page with a uuid and a file are read
+   *   again (`rechecks`): the uuid check below decides for a page, and for a
+   *   file whether the store still holds its bytes (`ownStoreFingerprints`, read once a run),
+   *   so one still held is `duplicate` and not put again (no second upload
+   *   record). On a first import the file door returns a file the store
    *   already holds. A page whose uuid the store holds is `duplicate`: unchanged, or
    *   changed since the download, and then the page here is kept. A uuid
    *   used elsewhere on the site is `duplicate`, the page named only when
@@ -1574,8 +1603,8 @@ class ImportManager extends BaseManager {
       writesEncrypted: true,
       // A zip the store held is one of its files: brought back as it was, not unpacked.
       innerZipsAsFiles: true,
-      // A page by its uuid, not the fingerprint: one deleted since an earlier import comes back.
-      rechecks: (item) => { const data = item.data as TakeoutData | undefined; return data?.entry === 'page' && !!data.uuid; },
+      // A page by its uuid, a file by its bytes, not the fingerprint: one deleted since an earlier import comes back.
+      rechecks: (item) => { const data = item.data as TakeoutData | undefined; return data?.entry === 'file' || (data?.entry === 'page' && !!data.uuid); },
       mayUse: (ctx) => this.mayImportIntoOwnStore(ctx),
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),
@@ -1650,23 +1679,41 @@ class ImportManager extends BaseManager {
     // The door's own check, not only the engine's: one of the user's stores this context can write now.
     if (!(await this.ownStoresWritable(ctx)).includes(store)) return { status: 'refused', message: 'That is not one of your stores you can write now.' };
     const files = this.engine.getManager<FileManager>('FileManager');
-    if (!files) throw new Error('FileManager unavailable — cannot store a file');
+    const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    if (!files || !attachments) throw new Error('FileManager or AttachmentManager unavailable — cannot store a file');
     const owner = ctx.username;
     const place: FilePlace = { kind: 'vault', owner, vault: store };
+    // #2171: read again after an earlier import, a file the store still holds is not put again: no second upload record.
+    // The store's index is read once a run, and learns each file this run puts.
+    const holdings = async (): Promise<Map<string, string> | null> => {
+      if (!info.rechecked) return null;
+      const key = `${info.runId}\0${store}`;
+      let held = this.storeHoldings.get(key);
+      if (!held) {
+        held = attachments.ownStoreFingerprints(ctx, store);
+        this.storeHoldings.set(key, held);
+        held.catch(() => this.storeHoldings.delete(key));
+      }
+      return held;
+    };
+    const heldAgain = async (bytes: Buffer): Promise<string | null> => (await holdings())?.get(fingerprint(bytes)) ?? null;
     const put = async (bytes: Buffer, name: string, mimeType: string | undefined, description: string | undefined): Promise<string | undefined> => {
       const stored = await files.put(
         ctx, place,
         { bytes, info: { originalName: name, mimeType: mimeType || mediaTypeByExtension(name), size: bytes.length } },
         { description: description ?? '' }
       );
+      if (stored.identifier) (await holdings())?.set(fingerprint(bytes), stored.identifier);
       return stored.identifier;
     };
     const data = item.data as TakeoutData | undefined;
 
     try {
       if (data?.entry === 'file') {
-        // The store's door hands back the file it already holds for bytes it has seen.
-        const id = await put(item.bytes ?? Buffer.alloc(0), data.name, data.encodingFormat || item.mediaType, data.description);
+        const bytes = item.bytes ?? Buffer.alloc(0);
+        const held = await heldAgain(bytes);
+        if (held) return { status: 'duplicate', ref: held };
+        const id = await put(bytes, data.name, data.encodingFormat || item.mediaType, data.description);
         return { status: 'stored', ...(id ? { ref: id } : {}) };
       }
       if (data?.entry !== 'page') return { status: 'refused', message: 'Neither a page nor a file of a takeout.' };
@@ -1676,7 +1723,7 @@ class ImportManager extends BaseManager {
       for (const linked of data.files) {
         const bytes = item.archive?.read(linked.path);
         if (!bytes) continue;
-        const id = await put(bytes, linked.name, linked.encodingFormat, linked.description);
+        const id = await heldAgain(bytes) ?? await put(bytes, linked.name, linked.encodingFormat, linked.description);
         if (id) ids.set(linked.oldId, id);
       }
       return await this.saveTakeoutPage(rewriteAttachmentLinks(item.text ?? '', ids), data, store, ctx);

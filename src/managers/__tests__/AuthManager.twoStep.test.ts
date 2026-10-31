@@ -73,7 +73,8 @@ describe('two-step sign-in (#1523)', () => {
     mailOn = true;
     mailFails = false;
     audit = [];
-    config = {};
+    // The site offers the email link (its entry is magic-link's, #1523 Q3), as the shipped config does.
+    config = { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'magic-link' }] };
     consent = null;
   });
 
