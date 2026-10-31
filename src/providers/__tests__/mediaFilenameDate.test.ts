@@ -55,6 +55,24 @@ describe('parseDateFromFilename (#809)', () => {
     test('dashed date with compact time and no trailing text — 2010-05-24-045250.m2ts', () => {
       expect(parseDateFromFilename('2010-05-24-045250.m2ts')).toBe('2010-05-24 04:52:50');
     });
+
+    test('month-name form with commas and time — camera snapshot', () => {
+      expect(parseDateFromFilename('GRM-EAST-G3-20_C9 - November 28, 2024, 18_09_00.png')).toBe('2024-11-28 18:09:00');
+      expect(parseDateFromFilename('Drive - May 29, 2025, 15_11_57.png')).toBe('2025-05-29 15:11:57');
+    });
+
+    test('month-name form with comma, date only — November 28, 2024.png', () => {
+      expect(parseDateFromFilename('November 28, 2024.png')).toBe('2024-11-28 00:00:00');
+    });
+
+    test('fourteen-digit timestamp — 20090420123754.m2ts', () => {
+      expect(parseDateFromFilename('20090420123754.m2ts')).toBe('2009-04-20 12:37:54');
+    });
+
+    test('WhatsApp date-only names — VID-20261003-WA0002.mp4, IMG-20261026-WA0000.jpg', () => {
+      expect(parseDateFromFilename('VID-20261003-WA0002.mp4')).toBe('2026-10-03 00:00:00');
+      expect(parseDateFromFilename('IMG-20261026-WA0000.jpg')).toBe('2026-10-26 00:00:00');
+    });
   });
 
   describe('conservative rejections (return null → caller falls back to mtime)', () => {
@@ -68,6 +86,27 @@ describe('parseDateFromFilename (#809)', () => {
 
     test('long unseparated digit run (serial / id) — 12345678901234.mp4', () => {
       expect(parseDateFromFilename('12345678901234.mp4')).toBeNull();
+    });
+
+    test('digit run longer than fourteen is a serial — 20090420123754123.mp4', () => {
+      expect(parseDateFromFilename('20090420123754123.mp4')).toBeNull();
+    });
+
+    test('fourteen digits with an out-of-range field — 20090420253754.m2ts', () => {
+      expect(parseDateFromFilename('20090420253754.m2ts')).toBeNull();
+    });
+
+    test('Unix-time names stay rejected — 1648245911.jpg, 1788030775012_1.mp4', () => {
+      expect(parseDateFromFilename('1648245911.jpg')).toBeNull();
+      expect(parseDateFromFilename('1788030775012_1.mp4')).toBeNull();
+    });
+
+    test('day/month order is ambiguous — Back - 12-11-2024, 21.12.22 EST.jpg', () => {
+      expect(parseDateFromFilename('Back - 12-11-2024, 21.12.22 EST.jpg')).toBeNull();
+    });
+
+    test('eight digits before a non-WhatsApp suffix stay rejected — 20261003-WB0002.mp4', () => {
+      expect(parseDateFromFilename('20261003-WB0002.mp4')).toBeNull();
     });
 
     test('invalid month — 2026-13-01.jpg', () => {

@@ -49,9 +49,10 @@ function build(y: number, mo: number, d: number, h: number, mi: number, s: numbe
  * digit runs (serials, counters) don't accidentally parse.
  */
 const MATCHERS: ReadonlyArray<(name: string) => string | null> = [
-  // Month-name form: Feb_20_2026[_19_25_04] / February_5_2026
+  // Month-name form: Feb_20_2026[_19_25_04] / February_5_2026 /
+  // November 28, 2024, 18_09_00 (the camera-snapshot spelling, with commas)
   (name) => {
-    const m = name.match(/(?:^|[^A-Za-z])(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[_\- ](\d{1,2})[_\- ](\d{4})(?:[_\- ](\d{1,2})[_\- ](\d{1,2})[_\- ](\d{1,2}))?/i);
+    const m = name.match(/(?:^|[^A-Za-z])(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[_\- ](\d{1,2}),?[_\- ](\d{4})(?:,?[_\- ](\d{1,2})[_\- ](\d{1,2})[_\- ](\d{1,2}))?/i);
     if (!m) return null;
     const mo = MONTHS[m[1].toLowerCase()];
     return build(+m[3], mo, +m[2], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0));
@@ -90,6 +91,25 @@ const MATCHERS: ReadonlyArray<(name: string) => string | null> = [
     const m = name.match(/(?:^|[^\d])(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})/);
     if (!m) return null;
     return build(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6]);
+  },
+
+  // Fourteen digits, YYYYMMDDHHMMSS: 20090420123754.m2ts (AVCHD imports). Exactly
+  // fourteen — a longer run is a serial — and `build` must accept every field,
+  // which is what rejects a serial of this length. The cost matches the
+  // six-digit bet above: a serial that happens to be a valid timestamp reads as
+  // one.
+  (name) => {
+    const m = name.match(/(?:^|[^\d])(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)/);
+    if (!m) return null;
+    return build(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6]);
+  },
+
+  // WhatsApp, date only: VID-20261003-WA0002.mp4. A bare eight-digit run stays
+  // rejected; the -WA#### counter is what makes this one high-confidence.
+  (name) => {
+    const m = name.match(/(?:^|[^\d])(\d{4})(\d{2})(\d{2})-WA\d{4}/);
+    if (!m) return null;
+    return build(+m[1], +m[2], +m[3], 0, 0, 0);
   }
 ];
 
