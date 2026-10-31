@@ -179,6 +179,8 @@ export const AUDIT_EVENT = {
   SHARE_EXTEND: 'share-extend',
   /** Share link revoked; pairs with token-revoke */
   SHARE_REVOKE: 'share-revoke',
+  /** An administrator changed who may read and who may file in a shared folder on the Shared folders screen (#2126): which folder, who, and the roles before and after for each. Recorded once the folder's policies are written; a failed write is recorded as a failure, with the error, and a record that cannot be written puts the policies back */
+  SHARED_FOLDER_ACCESS_CHANGE: 'shared-folder-access-change',
   /** An administrator created a shared folder (#2125): which folder and who. Recorded before the folder is made, which cannot proceed without it */
   SHARED_FOLDER_CREATE: 'shared-folder-create',
   /** A shared folder's own key was made (#2124): which folder and who, never the key. Recorded before the key is saved, which cannot proceed without it */

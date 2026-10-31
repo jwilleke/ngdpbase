@@ -206,7 +206,8 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
@@ -731,6 +732,15 @@ export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowM
  */
 export const signupRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
+/**
+ * Per-user limiter for starting an export (#2120), `POST /export/page/:page`.
+ * Each start reads the thing into memory and queues it for the one ICE job;
+ * `max-queued-per-user` bounds what is held at once, this bounds how fast a
+ * user can come back for more. 20 a minute is well past anyone clicking
+ * Export. Exported so tests can call `.reset()`.
+ */
+export const exportStartRateLimiter = new SimpleRateLimiter({ max: 20, windowMs: 60 * 1000 });
+
 // Configure multer for general attachments (memory storage)
 const attachmentUpload: Multer = multer({
   storage: multer.memoryStorage(),
@@ -873,7 +883,9 @@ export const VIEW_PERMISSIONS = [
   // #1930: the dashboard's Contacts entry (read) and the contacts page's change controls.
   'identity-read', 'identity-manage',
   // #2093: the header's Executive Hub entry.
-  'executive-read'
+  'executive-read',
+  // #2120: a page's "Export this page" entry.
+  'page-export'
 ] as const;
 class WikiRoutes {
   private engine: WikiEngine;
@@ -6459,6 +6471,116 @@ ${panes}
   }
 
   /**
+   * GET /export/page/:page — the Export action on a page (#2120, ICE #1979).
+   * Export starts from the thing being exported (operator, 2026-10-28): this
+   * lists only the formats the engine can make from a page, and only when
+   * the page's owner would let this user export it (`exportFormatsFor`: the
+   * page is visible to them and they hold `page-export`). Nothing to offer
+   * is a 404, whatever the reason, as a page they cannot read is. A
+   * signed-in user only (the engine's rule): an export is held for the user
+   * who asked. Every export route asks `page-export` and nothing else (D5),
+   * the permission the More menu's link is shown for; whether this page may
+   * be exported, in a vault too, is the engine's to say.
+   */
+  async exportPageFormats(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
+
+      const pageName = String(req.params.page ?? '');
+      const importManager = this.engine.getManager<ImportManager>('ImportManager');
+      const formats = importManager ? await importManager.exportFormatsFor(PAGES_EXPORT_SOURCE, pageName, currentUser) : [];
+      if (formats.length === 0) return await this.renderError(req, res, 404, 'Page not found', 'There is nothing you can export here.');
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('export-item', {
+        ...commonData,
+        title: `Export ${pageName}`,
+        exportName: pageName,
+        exportBack: pageUrl(pageName),
+        exportAction: `/export/page/${encodeURIComponent(pageName)}`,
+        formats: formats.map(f => ({ id: f.id, label: f.label }))
+      });
+    } catch (err) {
+      logger.error('[export] the Export action failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The export choices could not be shown.');
+    }
+  }
+
+  /**
+   * POST /export/page/:page — start exporting a page (#2120). JSON
+   * `{ format }`: one of the ids the Export action offered. The page is read
+   * now, through its door, as this user; the format is made in the ICE
+   * background job, and the answer is the run id at once (202). A page the
+   * user may not export, or a format not offered for it, is a 404; one they
+   * may export after a fresh sign-in is step-up's answer. Too many starts,
+   * or too many exports being made, is a 429.
+   */
+  async exportPageStart(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
+
+    const limit = exportStartRateLimiter.consume(currentUser.username);
+    if (!limit.allowed) {
+      const seconds = Math.ceil(limit.retryAfterMs / 1000);
+      res.set('Retry-After', String(seconds));
+      return res.status(429).json({ success: false, error: `Too many exports started. Try again in ${seconds}s.` });
+    }
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    if (!importManager) return res.status(503).json({ success: false, error: 'Export is not available.' });
+    const format: unknown = req.body?.format;
+    if (typeof format !== 'string' || !format) return res.status(400).json({ success: false, error: 'Choose a format.' });
+    try {
+      const runId = await importManager.startExport({ source: PAGES_EXPORT_SOURCE, ref: String(req.params.page ?? ''), format }, currentUser);
+      return res.status(202).json({ success: true, runId });
+    } catch (err) {
+      if (err instanceof IceExportRefused) return res.status(404).json({ success: false, error: err.message });
+      if (err instanceof IceExportNeedsFreshSignIn) return this.askForFreshSignIn(wikiContext, err.permission, req, res, 'json');
+      if (err instanceof IceExportBusy) return res.status(429).json({ success: false, error: err.message });
+      if (err instanceof IceExportFailed) return res.status(413).json({ success: false, error: err.message });
+      // What is exported may be private: the log gives the error's class only.
+      logger.error(`[export] could not start an export for ${currentUser.username} (${errorClassOf(err)})`);
+      return res.status(500).json({ success: false, error: 'The export could not be started.' });
+    }
+  }
+
+  /**
+   * GET /export/runs/:runId — one export's status (#2120), to the user it
+   * runs as. Anyone else's, or one no longer held, is a 404.
+   */
+  async exportRunStatus(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
+
+    const run = this.engine.getManager<ImportManager>('ImportManager')?.getExportRun(String(req.params.runId ?? ''), currentUser) ?? null;
+    res.setHeader('Cache-Control', 'no-store');
+    if (!run) return res.status(404).json({ success: false, error: 'No such export.' });
+    return res.json({ success: true, run });
+  }
+
+  /**
+   * GET /export/runs/:runId/download — the file an export made (#2120), to
+   * the user it ran as, while it is kept. Always a download, never shown
+   * inline, and never cached.
+   */
+  async exportRunDownload(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
+
+    const file = this.engine.getManager<ImportManager>('ImportManager')?.exportFile(String(req.params.runId ?? ''), currentUser) ?? null;
+    if (!file) return this.renderError(req, res, 404, 'Not found', 'That export is no longer here. Exports are kept for a short while; make it again.');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.attachment(file.name);
+    res.type(file.mediaType);
+    return res.send(file.bytes);
+  }
+
+  /**
    * List available exports
    */
   async listExports(req: Request, res: Response) {
@@ -10043,13 +10165,85 @@ ${panes}
   /**
    * POST /admin/backup/shared-folders/folders — make a shared folder
    * (#2125). Admins only; SharedFolderManager asks `admin-system` again and
-   * refuses until the recovery words are confirmed. Until the Shared folders
-   * screen (slice 3) a new folder is opened by admins (`shared-folder-admin`:
-   * read and file) and read by executives (`shared-folder-executive-read`): a
-   * policy naming `shared/<name>` gives anyone else access.
+   * refuses until the recovery words are confirmed. A new folder is opened by
+   * admins (`shared-folder-admin`: read and file) and read by executives
+   * (`shared-folder-executive-read`); who else may read and file is set on
+   * the Shared folders screen (#2126).
    */
   async adminSharedFoldersCreate(req: Request, res: Response) {
-    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    return this.makeSharedFolder(req, res, '/admin/backup', '#shared-folders-key');
+  }
+
+  /**
+   * GET /admin/shared-folders — the Shared folders screen (#2126, epic #1775
+   * decision 8): every folder, who may read and who may file in it (the
+   * site's policies this screen writes, and the other policies in force that
+   * reach it, shown as they are), and a form to make one. `admin-system`,
+   * which SharedFolderManager asks again. Never cached.
+   */
+  async adminSharedFolders(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      const subject = wikiContext.userContext;
+      const list: Array<{ name: string } & Awaited<ReturnType<SharedFolderManager['folderAccess']>>> = [];
+      if (folders && subject) {
+        for (const name of folders.folderNames()) list.push({ name, ...(await folders.folderAccess(subject, name)) });
+      }
+      const commonData = await this.getCommonTemplateData(req);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.render('admin-shared-folders', {
+        ...commonData,
+        title: 'Shared folders',
+        folders: list,
+        roles: folders?.grantableRoles() ?? [],
+        unavailable: folders ? folders.unavailableReason() : 'Shared folders are not available on this site',
+        wordsConfirmed: folders ? await folders.recoveryWordsConfirmed() : false,
+        success: typeof req.query.success === 'string' ? req.query.success : '',
+        error: typeof req.query.error === 'string' ? req.query.error : '',
+        csrfToken: req.session.csrfToken || ''
+      });
+    } catch (err: unknown) {
+      return this.renderError(req, res, 500, 'Error', getErrorMessage(err));
+    }
+  }
+
+  /** POST /admin/shared-folders — make a shared folder from the Shared folders screen (#2126); as Admin → Backup's form. */
+  async adminSharedFoldersMake(req: Request, res: Response) {
+    return this.makeSharedFolder(req, res, '/admin/shared-folders', '');
+  }
+
+  /**
+   * POST /admin/shared-folders/:folder/access — set who may read and who may
+   * file in a folder (#2126): the roles ticked under `read` and `file`,
+   * written as the folder's policies by SharedFolderManager.setFolderAccess,
+   * which asks again and records `shared-folder-access-change`. `admin-system`
+   * and `config-manage`: it writes `ngdpbase.access.policies`, so it asks the
+   * fresh sign-in every configuration write asks (step-up; a stale session
+   * goes to /auth/reauth and comes back, an agent token is refused).
+   */
+  async adminSharedFolderAccess(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/shared-folders?${key}=${encodeURIComponent(message)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      const name = req.params.folder ?? '';
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const roles = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).filter((r): r is string => typeof r === 'string');
+      const changed = await folders.setFolderAccess(wikiContext.userContext, name, { read: roles(body.read), file: roles(body.file) });
+      return back('success', changed ? `Who may read and file in /shared/${name} is saved.` : `Nothing changed in /shared/${name}.`);
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
+    }
+  }
+
+  /** Make the folder named in the form, for `admin-system`, then back to `to` (#2125, #2126). */
+  private async makeSharedFolder(req: Request, res: Response, to: string, anchor: string): Promise<void> {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`${to}?${key}=${encodeURIComponent(message)}${anchor}`);
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
@@ -18185,6 +18379,11 @@ ${panes}
     app.get('/export', (req: Request, res: Response) => this.exportPage(req, res));
     app.post('/export/html/:page', (req: Request, res: Response) => this.exportPageHtml(req, res));
     app.post('/export/markdown/:page', (req: Request, res: Response) => this.exportPageMarkdown(req, res));
+    // #2120: the Export action on a page, through the ICE engine.
+    app.get('/export/page/:page', (req: Request, res: Response) => void this.exportPageFormats(req, res));
+    app.post('/export/page/:page', (req: Request, res: Response) => void this.exportPageStart(req, res));
+    app.get('/export/runs/:runId', (req: Request, res: Response) => void this.exportRunStatus(req, res));
+    app.get('/export/runs/:runId/download', (req: Request, res: Response) => void this.exportRunDownload(req, res));
     app.get('/exports', (req: Request, res: Response) => this.listExports(req, res));
     app.get('/download/:filename', (req: Request, res: Response) => this.downloadExport(req, res));
     app.delete('/deleteExport/:filename', (req: Request, res: Response) => this.deleteExport(req, res));
@@ -18214,6 +18413,10 @@ ${panes}
     app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
     app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
     app.post('/admin/backup/shared-folders/folders', (req: Request, res: Response) => void this.adminSharedFoldersCreate(req, res));
+    // #2126: the Shared folders screen — admin-system, asked by each handler and again by SharedFolderManager.
+    app.get('/admin/shared-folders', (req: Request, res: Response) => void this.adminSharedFolders(req, res));
+    app.post('/admin/shared-folders', (req: Request, res: Response) => void this.adminSharedFoldersMake(req, res));
+    app.post('/admin/shared-folders/:folder/access', (req: Request, res: Response) => void this.adminSharedFolderAccess(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

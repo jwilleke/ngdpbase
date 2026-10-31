@@ -1,0 +1,99 @@
+<%- include('header', { pageName: 'Shared folders' }) %>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-folder-open"></i> Shared folders</h1>
+        <a href="/admin" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <% if (success) { %>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle"></i> <%= success %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <% } %>
+    <% if (error) { %>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-triangle"></i> <%= error %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <% } %>
+
+    <%# #2126: who may read and who may file in each folder is written as policies
+        naming shared/<name>; a folder lists no roles (operator, 2026-10-29). %>
+    <p class="text-muted">
+        Folders the organization owns, at <code>/shared/&lt;name&gt;</code>. Who may open a folder and who may add,
+        edit and delete in it is set here, by role, and saved as access policies on <code>shared/&lt;name&gt;</code>.
+        Other policies may reach a folder too; they are listed under each one and are changed in Admin → Configuration.
+        Every change here is recorded in the audit log.
+    </p>
+
+    <% if (unavailable) { %>
+        <div class="alert alert-warning" id="shared-folders-unavailable"><%= unavailable %></div>
+    <% } %>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-folder-plus"></i> Make a shared folder</h5></div>
+        <div class="card-body">
+            <% if (!wordsConfirmed) { %>
+            <p class="mb-0" id="shared-folders-words-needed">A folder can be made once the shared folders' recovery words are made and confirmed, on <a href="/admin/backup#shared-folders-key">Admin → Backup</a>.</p>
+            <% } else { %>
+            <form method="POST" action="/admin/shared-folders" id="shared-folders-make" class="row g-2 mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="col-auto"><input type="text" name="name" class="form-control form-control-sm" placeholder="folder name" pattern="[a-z0-9]+(-[a-z0-9]+)*" required aria-label="Folder name"></div>
+                <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm"<%- lockedUnless('admin-system') %><%= unavailable ? ' disabled' : '' %>><i class="fas fa-folder-plus"></i> Make</button></div>
+            </form>
+            <p class="small text-muted mt-1 mb-0">Lower case letters, digits and single hyphens. A new folder opens to administrators, and is read by executives, until you give others access below.</p>
+            <% } %>
+        </div>
+    </div>
+
+    <% if (folders.length === 0) { %>
+        <div class="alert alert-info" id="shared-folders-none">No shared folder yet.</div>
+    <% } %>
+
+    <% folders.forEach(function (f) { %>
+    <div class="card mb-3" id="shared-folder-<%= f.name %>">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><a href="/shared/<%= encodeURIComponent(f.name) %>"><code>/shared/<%= f.name %></code></a></h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/admin/shared-folders/<%= encodeURIComponent(f.name) %>/access" class="shared-folder-access">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead>
+                            <tr><th>Role</th><th class="text-center">May read</th><th class="text-center">May add, edit and delete</th></tr>
+                        </thead>
+                        <tbody>
+                            <% roles.forEach(function (r) { %>
+                            <tr>
+                                <td><code><%= r %></code></td>
+                                <td class="text-center"><input class="form-check-input" type="checkbox" name="read" value="<%= r %>" aria-label="<%= r %> may read /shared/<%= f.name %>"<%= f.read.includes(r) ? ' checked' : '' %>></td>
+                                <td class="text-center"><input class="form-check-input" type="checkbox" name="file" value="<%= r %>" aria-label="<%= r %> may file in /shared/<%= f.name %>"<%= f.file.includes(r) ? ' checked' : '' %>></td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small text-muted">Tick both for a role that should open the folder and add to it. <code>vault-owner</code> is every signed-in user.</p>
+                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('config-manage') %>><i class="fas fa-save"></i> Save access</button>
+                <span class="small text-muted ms-2">Asks for a fresh sign-in, as every configuration change does.</span>
+            </form>
+            <% if (f.others.length > 0) { %>
+            <h6 class="mt-3">Also reached by</h6>
+            <ul class="small mb-0">
+                <% f.others.forEach(function (p) { %>
+                <li class="shared-folder-other<%= p.reserved ? ' text-danger' : '' %>" data-policy="<%= p.id %>"><code><%= p.id %></code> (<%= p.name %>): <%= p.effect === 'deny' ? 'denies' : 'gives' %> <%= p.actions.length ? p.actions.join(' and ') : 'nothing in this folder' %> to <%= p.subjects.length ? p.subjects.join(', ') : 'everyone, including anonymous visitors' %><% if (p.reserved) { %>. <strong>It has an id this screen keeps for this folder, and this screen did not write it: saving access here is refused until it is renamed or removed in Admin → Configuration.</strong><% } %></li>
+                <% }) %>
+            </ul>
+            <% } %>
+        </div>
+    </div>
+    <% }) %>
+</div>
+
+<%- include('footer') %>
