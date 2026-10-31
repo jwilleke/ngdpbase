@@ -7233,7 +7233,7 @@ ${panes}
     res.render('login-second-factor', {
       ...commonData,
       title: 'Confirm your sign-in',
-      factors: authManager.secondFactorsFor(pending.username),
+      factors: authManager.secondFactorsFor(pending.username, pending),
       sent: Boolean(pending.lastSentAt),
       notice: typeof req.query.notice === 'string' ? req.query.notice : ''
     });
@@ -9205,7 +9205,7 @@ ${panes}
         : undefined;
       // #1523: offer the email second factor where it can work and is not enrolled yet.
       const offerEmailSecondFactor = Boolean(currentUser?.username
-        && authManagerForProfile?.emailLinksAvailable?.()
+        && authManagerForProfile?.emailSecondFactorAvailable?.()
         && !authManagerForProfile.secondFactorsFor?.(currentUser.username).some((f: { id: string }) => f.id === 'email-link'));
       // #1743: connected outside identities, and the enabled providers this account may still connect.
       const connectedIdentities = currentUser?.username && !credentialsUnavailable

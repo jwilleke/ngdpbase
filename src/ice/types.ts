@@ -315,6 +315,12 @@ export interface ReceiveInfo {
    * by the engine before the run. The receiver's door still checks it.
    */
   target?: string;
+  /**
+   * Set when the file was taken before and is read again only because the
+   * receiver `rechecks` this item (#2171): the receiver's own check decides
+   * whether it still holds it, and one it holds is `duplicate`.
+   */
+  rechecked?: boolean;
 }
 
 /** What a receiver's `fileDone` is told (#2109). */
@@ -410,7 +416,9 @@ export interface IceReceiver {
    * unlocked key can write. The engine then runs an upload into it during
    * the upload request, with the request's own context, instead of as a
    * background job: no key is ever carried into a job (#2034's decision).
-   * An import into it is confidential (#2110).
+   * An import into it is confidential (#2110). Core's only: an add-on
+   * receiver that declares it is refused at registration, so an add-on is
+   * confidential only through `keepsEncrypted`.
    */
   writesEncrypted?: boolean;
   /**
@@ -421,10 +429,11 @@ export interface IceReceiver {
   innerZipsAsFiles?: boolean;
   /**
    * The items this receiver checks for itself whether it still holds
-   * (#2118, operator 2026-10-30): a takeout's page, by its uuid, so one
-   * deleted since an earlier import comes back when the same takeout is
-   * imported again. A file whose fingerprint the scope already took is then
-   * read again, and only these of its items go to `receive`; the rest are
+   * (#2118, operator 2026-10-30): a takeout's page, by its uuid, and a
+   * takeout's file, by its bytes (#2171), so one deleted since an earlier
+   * import comes back when the same takeout is imported again. A file whose
+   * fingerprint the scope already took is then read again, and only these
+   * of its items go to `receive`, with `info.rechecked`; the rest are
    * duplicates. When nothing new is stored it stays `unchanged`, unrecorded,
    * as the fingerprint skip leaves it. Without this, the fingerprint decides.
    */
