@@ -38,6 +38,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   formatPrivatePageName,
+  nameForLog,
   parsePrivatePageName,
   privateDeletedDirectory,
   legacyPrivatePageFilePath,
@@ -66,15 +67,6 @@ function ownEntry<T>(record: Record<string, T>, key: string): T | undefined {
 /** An error's message, for a log line or a `detail` a caller may show. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * A page's name for a log line (#1461, #2118): a private page's title stays
- * out of logs, so it goes by its owner and store; the line's uuid names it.
- */
-function nameForLog(pageName: string): string {
-  const vault = parsePrivatePageName(pageName);
-  return vault ? `a page in ${vault.owner}'s store '${vault.store}'` : `'${pageName}'`;
 }
 
 /**
@@ -617,7 +609,7 @@ class VersioningFileProvider extends FileSystemProvider {
         const priorTime = new Date(this.pageIndex.pages[priorUuid]?.lastModified ?? 0).getTime();
         const thisTime  = new Date(entry.lastModified ?? 0).getTime();
         if (thisTime >= priorTime) {
-          logger.warn(`[VersioningFileProvider] Duplicate title "${title}": retiring UUID ${priorUuid} in favour of ${entry.uuid}`);
+          logger.warn(`[VersioningFileProvider] Duplicate title for ${nameForLog(title, { private: entry.isPrivate })}: retiring UUID ${priorUuid} in favour of ${entry.uuid}`);
           staleUuids.push(priorUuid);
           const priorTitle = this.uuidIndex.get(priorUuid);
           if (priorTitle) {
@@ -627,7 +619,7 @@ class VersioningFileProvider extends FileSystemProvider {
           this.uuidIndex.delete(priorUuid);
           seenTitles.set(titleLower, entry.uuid);
         } else {
-          logger.warn(`[VersioningFileProvider] Duplicate title "${title}": skipping UUID ${entry.uuid} (${priorUuid} is newer)`);
+          logger.warn(`[VersioningFileProvider] Duplicate title for ${nameForLog(title, { private: entry.isPrivate })}: skipping UUID ${entry.uuid} (${priorUuid} is newer)`);
           staleUuids.push(entry.uuid);
           continue;
         }
@@ -1581,6 +1573,11 @@ class VersioningFileProvider extends FileSystemProvider {
     for (const [, pageData] of this.pageCache.entries()) {
       // pageCache is keyed by title — use pageData.uuid for the actual UUID
       const uuid = (pageData).uuid;
+      // #2178: a private page (by its frontmatter or its vault folder) by its uuid, never its title.
+      const isPrivateForLog = pageData.metadata?.private === true ||
+        Boolean(this.pagesDirectory && pageData.filePath &&
+          pathContainsPrivateRoot(this.pagesDirectory, pageData.filePath, this.privateStoreLayout));
+      const logName = nameForLog(pageData.title, { private: isPrivateForLog, uuid });
       try {
         // #806: determine location FIRST so the manifest check probes the
         // correct version tree. The original code defaulted to
@@ -1688,18 +1685,18 @@ class VersioningFileProvider extends FileSystemProvider {
             // Private files already at private/{author}/{uuid}.md don't move.
             if (actualFilePath !== pagePath) {
               await fs.rename(actualFilePath, pagePath);
+              // #2178: a private page's slug-named file holds its title.
               logger.info(
                 '[VersioningFileProvider] Auto-migration: renamed slug-named file ' +
-                `"${path.basename(actualFilePath)}" → "${path.basename(pagePath)}" ` +
-                `for page "${(pageData).title}"`
+                (isPrivateForLog ? '' : `"${path.basename(actualFilePath)}" `) +
+                `→ "${path.basename(pagePath)}" for ${logName}`
               );
             }
           } else {
             logger.warn(
-              '[VersioningFileProvider] Auto-migration: file not found for page ' +
-              `"${(pageData).title}" (uuid: ${uuid}); ` +
+              `[VersioningFileProvider] Auto-migration: file not found for ${logName}; ` +
               `expected "${pagePath}"` +
-              (actualFilePath ? `, also checked "${actualFilePath}"` : '') +
+              (actualFilePath && !isPrivateForLog ? `, also checked "${actualFilePath}"` : '') +
               ' — creating v1 with empty content'
             );
           }
@@ -1736,7 +1733,7 @@ class VersioningFileProvider extends FileSystemProvider {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
-        logger.error(`[VersioningFileProvider] Failed to migrate page ${(pageData).title} (${uuid}): ${errorMessage}`);
+        logger.error(`[VersioningFileProvider] Failed to migrate ${logName}: ${errorMessage}`);
         if (errorStack) {
           logger.debug(errorStack);
         }
@@ -1948,7 +1945,7 @@ class VersioningFileProvider extends FileSystemProvider {
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error(`[VersioningFileProvider] Failed to rebuild index for ${info.title} (${uuid}): ${errorMessage}`);
+        logger.error(`[VersioningFileProvider] Failed to rebuild index for ${nameForLog(info.title, { ...info.metadata, uuid })}: ${errorMessage}`);
         errorCount++;
       }
     }
@@ -1976,9 +1973,9 @@ class VersioningFileProvider extends FileSystemProvider {
     if (incomingTitle) {
       for (const [existingUuid, existingEntry] of Object.entries(this.pageIndex.pages)) {
         if (existingUuid !== uuid && existingEntry.title?.toLowerCase() === incomingTitle) {
+          // #2178: by uuid only; an entry being migrated does not yet say whether it is private.
           logger.warn(
-            `[VersioningFileProvider] Removing duplicate title "${data.title}" ` +
-            `(stale UUID: ${existingUuid}) — replaced by ${uuid}`
+            `[VersioningFileProvider] Removing index entry ${existingUuid}: its title duplicates ${uuid}'s, which replaces it`
           );
           delete this.pageIndex.pages[existingUuid];
           this.pageIndex.pageCount = Math.max(0, (this.pageIndex.pageCount ?? 1) - 1);
@@ -2316,7 +2313,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Failed to create version for ${saved.name}:`, errorMessage);
+      logger.error(`[VersioningFileProvider] Failed to create version for ${nameForLog(saved.name, { ...metadata, uuid })}:`, errorMessage);
       // Page content is already persisted; a versioning failure is non-fatal.
     }
 
@@ -2361,7 +2358,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1520: the page's own name, which for a private page is its vault name
     // (redacted in every log line), never the bare title a caller saved it under.
-    logger.info(`[VersioningFileProvider] Saved ${nameForLog(saved.name)} with versioning`);
+    logger.info(`[VersioningFileProvider] Saved ${nameForLog(saved.name, { ...metadata, uuid })} with versioning`);
     return saved;
   }
 
@@ -2446,11 +2443,13 @@ class VersioningFileProvider extends FileSystemProvider {
     // Get page info before deleting
     const pageData = await this.getPage(identifier, ctx);
     if (!pageData) {
-      logger.warn(`[VersioningFileProvider] Cannot delete - page not found: ${identifier}`);
+      logger.warn(`[VersioningFileProvider] Cannot delete - page not found: ${nameForLog(identifier)}`);
       return false;
     }
 
     const uuid = pageData.uuid;
+    // #2178: a private page by its uuid in every line below, never its title.
+    const logName = nameForLog(identifier, { ...pageData.metadata, uuid });
     // #1371: the deleted record goes beside the live file. Never the
     // required-pages folder, whatever a stale index entry or the category says.
     const location = 'pages' as const;
@@ -2458,7 +2457,7 @@ class VersioningFileProvider extends FileSystemProvider {
     try {
       const info = this.resolvePageInfo(identifier, ctx);
       if (!info) {
-        logger.warn(`[VersioningFileProvider] Cannot delete - unresolvable: ${identifier}`);
+        logger.warn(`[VersioningFileProvider] Cannot delete - unresolvable: ${logName}`);
         return false;
       }
 
@@ -2535,13 +2534,13 @@ class VersioningFileProvider extends FileSystemProvider {
       }
 
       logger.info(
-        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deleter}; ` +
+        `[VersioningFileProvider] Soft-deleted page ${logName} by ${deleter}; ` +
         'versions retained for restore'
       );
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Failed to delete page: ${identifier}`, { error: errorMessage });
+      logger.error(`[VersioningFileProvider] Failed to delete page: ${logName}`, { error: errorMessage });
       return false;
     }
   }
@@ -2699,17 +2698,34 @@ class VersioningFileProvider extends FileSystemProvider {
     return this.withPageWrite(uuid, () => this.restoreDeletedPageNow(uuid));
   }
 
+  /**
+   * #2178: a trash entry's name for a log line. An entry written before
+   * `isPrivate` was recorded (auto-migration does not) is private when its
+   * deleted file's frontmatter says so.
+   */
+  private async deletedPageLogName(uuid: string, entry: PageIndexEntry, trashPath: string): Promise<string> {
+    let isPrivate = entry.isPrivate === true || entry.location === 'private';
+    if (!isPrivate) {
+      isPrivate = await fs.readFile(trashPath, this.encoding)
+        .then((raw) => parsePageFrontmatter(raw).data.private === true)
+        .catch(() => false);
+    }
+    return nameForLog(entry.title, { private: isPrivate, uuid });
+  }
+
   private async restoreDeletedPageNow(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
     const entry = this.pageIndex?.deletedPages?.[uuid];
     if (!entry || !this.pageIndex) {
       return { ok: false, reason: 'not-found' };
     }
 
+    const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+    const logName = await this.deletedPageLogName(uuid, entry, trashPath);
     const conflict = this.findLiveNameConflict(entry.title, entry.slug);
     if (conflict) {
-      logger.warn(
-        `[VersioningFileProvider] Cannot restore ${uuid}: ${conflict} '${conflict === 'title' ? entry.title : entry.slug}' is in use by a live page`
-      );
+      // #2178: a private page's title and slug both hold its title.
+      const inUse = logName.startsWith('a private page') ? '' : ` '${conflict === 'title' ? entry.title : entry.slug}'`;
+      logger.warn(`[VersioningFileProvider] Cannot restore ${logName}: its ${conflict}${inUse} is in use by a live page`);
       return {
         ok: false,
         reason: conflict === 'title' ? 'title-conflict' : 'slug-conflict',
@@ -2717,7 +2733,6 @@ class VersioningFileProvider extends FileSystemProvider {
       };
     }
 
-    const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
     if (!(await fs.pathExists(trashPath))) {
       logger.error(`[VersioningFileProvider] Tombstone for ${uuid} has no file at ${trashPath}`);
       return { ok: false, reason: 'file-missing', detail: trashPath };
@@ -2759,7 +2774,7 @@ class VersioningFileProvider extends FileSystemProvider {
       this.pageIndex.pageCount = Object.keys(this.pageIndex.pages).length;
       await this.savePageIndex();
 
-      logger.info(`[VersioningFileProvider] Restored page '${entry.title}' (${uuid}) with version history`);
+      logger.info(`[VersioningFileProvider] Restored page ${logName} with version history`);
       return { ok: true, title: entry.title };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -2792,10 +2807,11 @@ class VersioningFileProvider extends FileSystemProvider {
 
     try {
       const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+      const logName = await this.deletedPageLogName(uuid, entry, trashPath);
       await fs.remove(trashPath);
       if (this.pageIndex.pages[uuid]) {
         logger.warn(
-          `[VersioningFileProvider] Purging trash entry '${entry.title}' (${uuid}) whose uuid is also a live page; ` +
+          `[VersioningFileProvider] Purging trash entry ${logName} whose uuid is also a live page; ` +
           'its version history belongs to the live page and is kept (#1403)'
         );
       } else {
@@ -2803,7 +2819,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
       delete this.pageIndex.deletedPages?.[uuid];
       await this.savePageIndex();
-      logger.info(`[VersioningFileProvider] Purged deleted page '${entry.title}' (${uuid}) and its versions`);
+      logger.info(`[VersioningFileProvider] Purged deleted page ${logName} and its versions`);
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -3089,7 +3105,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v1 for ${nameForLog(pageName)} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v1 for ${nameForLog(pageName, { ...metadata, uuid })}`);
   }
 
   /**
@@ -3118,7 +3134,7 @@ class VersioningFileProvider extends FileSystemProvider {
       // a seed before #1405) starts it here: this save is its v1. Going through
       // the version-diff path instead read a v1 that did not exist and logged a
       // false "Failed to read current content" error for every such page.
-      logger.info(`[VersioningFileProvider] ${nameForLog(pageName)} (${uuid}) has no version history; this save starts it as v1`);
+      logger.info(`[VersioningFileProvider] ${nameForLog(pageName, { ...metadata, uuid })} has no version history; this save starts it as v1`);
       await this.createInitialVersion(uuid, pageName, newContent, metadata, location, versions);
       return;
     }
@@ -3130,7 +3146,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // stack identical versions.
     const latest = manifest.versions[manifest.versions.length - 1];
     if (latest?.contentHash && latest.contentHash === DeltaStorage.calculateHash(newContent)) {
-      logger.debug(`[VersioningFileProvider] Content of '${pageName}' (${uuid}) unchanged since v${manifest.currentVersion}; no new version`);
+      logger.debug(`[VersioningFileProvider] Content of ${nameForLog(pageName, { ...metadata, uuid })} unchanged since v${manifest.currentVersion}; no new version`);
       return;
     }
 
@@ -3204,7 +3220,7 @@ class VersioningFileProvider extends FileSystemProvider {
       };
 
       if (isCheckpoint) {
-        logger.info(`[VersioningFileProvider] Created checkpoint at v${nextVersion} for page ${pageName}`);
+        logger.info(`[VersioningFileProvider] Created checkpoint at v${nextVersion} for ${nameForLog(pageName, { ...metadata, uuid })}`);
       }
     }
 
@@ -3213,7 +3229,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.addVersionToManifest(manifest, versionMetadata);
     await this.saveManifest(uuid, location, manifest, versions);
 
-    logger.info(`[VersioningFileProvider] Created v${nextVersion} for ${nameForLog(pageName)} (${uuid})`);
+    logger.info(`[VersioningFileProvider] Created v${nextVersion} for ${nameForLog(pageName, { ...metadata, uuid })}`);
   }
 
   /**
@@ -3341,6 +3357,12 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param identifier - Page UUID or title
    * @returns UUID and location, or null if not found
    */
+  /** #2178: a page found by `identifier`, named for a log line by its uuid when private. */
+  private nameForLogOf(identifier: string, ctx: ActorContext): string {
+    const info = this.resolvePageInfo(identifier, ctx);
+    return info ? nameForLog(info.title, { ...info.metadata, uuid: info.uuid }) : nameForLog(identifier);
+  }
+
   private resolveIdentifier(
     identifier: string,
     ctx: ActorContext = ANONYMOUS_SUBJECT
@@ -3376,7 +3398,7 @@ class VersioningFileProvider extends FileSystemProvider {
         })
         .catch(error => {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.warn(`[VersioningFileProvider] Failed to resolve slug '${identifier}':`, errorMessage);
+          logger.warn(`[VersioningFileProvider] Failed to resolve slug of ${this.nameForLogOf(slugKey, ctx)}:`, errorMessage);
           return null;
         });
     }
@@ -3397,7 +3419,7 @@ class VersioningFileProvider extends FileSystemProvider {
         })
         .catch(error => {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.warn(`[VersioningFileProvider] Failed to resolve identifier '${identifier}':`, errorMessage);
+          logger.warn(`[VersioningFileProvider] Failed to resolve ${this.nameForLogOf(identifier, ctx)}:`, errorMessage);
           return null;
         });
     }
