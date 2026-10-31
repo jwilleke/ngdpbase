@@ -60,7 +60,9 @@ describe('sign-in ends with the stored username (#1882)', () => {
     const config = {
       getProperty: (k: string, d: unknown) =>
         k === 'ngdpbase.user.provider.files.users' ? 'users.json' : k === 'ngdpbase.user.provider.files.sessions' ? 'sessions.json'
-          : k === 'ngdpbase.auth.password.enabled' && opts.typedProvider ? false : d,
+          : k === 'ngdpbase.auth.password.enabled' && opts.typedProvider ? false
+            // The site offers the email link (its entry is magic-link's, #1523 Q3), as the shipped config does.
+            : k === 'ngdpbase.auth.factors' ? [{ authproviderid: 'password' }, { authproviderid: 'magic-link' }] : d,
       getCustomProperty: () => undefined,
       getResolvedDataPath: (k: string) => (k === 'ngdpbase.auth.credentials.file' ? path.join(dir, 'credentials.json') : dir),
       isBaseUrlExplicit: () => true,
