@@ -26,6 +26,7 @@ import {
   privateUserDir,
   privateUserKeysPath,
   privateVersionDirectory,
+  nameForLog,
   storeMetaPath
 } from '../privateStorePath';
 
@@ -341,5 +342,20 @@ describe('vault folders come from the system-category entries (#1504)', () => {
     const layout = privateStoreLayoutFromConfig((_key, fallback) => fallback);
     expect(layout.privateRoot).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.privateRoot);
     expect(layout.defaultStoreId).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId);
+  });
+});
+
+describe('a page\'s name for a log line keeps a private title out (#1461, #2178)', () => {
+  test('a private page goes by its owner and store', () => {
+    expect(nameForLog('vaults/jim/default/Secret Diary')).toBe("a page in jim's store 'default'");
+  });
+
+  test('a private page saved under its bare title goes by no name', () => {
+    expect(nameForLog('Secret Diary', { private: true })).toBe('a private page');
+  });
+
+  test('a public page goes by its name', () => {
+    expect(nameForLog('Garden Plan')).toBe("'Garden Plan'");
+    expect(nameForLog('Garden Plan', { private: false })).toBe("'Garden Plan'");
   });
 });

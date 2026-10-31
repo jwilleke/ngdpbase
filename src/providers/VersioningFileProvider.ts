@@ -38,6 +38,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   formatPrivatePageName,
+  nameForLog,
   parsePrivatePageName,
   privateDeletedDirectory,
   legacyPrivatePageFilePath,
@@ -66,15 +67,6 @@ function ownEntry<T>(record: Record<string, T>, key: string): T | undefined {
 /** An error's message, for a log line or a `detail` a caller may show. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * A page's name for a log line (#1461, #2118): a private page's title stays
- * out of logs, so it goes by its owner and store; the line's uuid names it.
- */
-function nameForLog(pageName: string): string {
-  const vault = parsePrivatePageName(pageName);
-  return vault ? `a page in ${vault.owner}'s store '${vault.store}'` : `'${pageName}'`;
 }
 
 /**

@@ -330,6 +330,18 @@ export function parsePrivatePageName(name: unknown): PrivatePageName | null {
 }
 
 /**
+ * A page's name for a log line (#1461, #2118, #2178): a private page's title
+ * stays out of logs, so it goes by its owner and store. A private page saved
+ * under its bare title (#1520) is known only by its `metadata`, and goes by
+ * no name at all.
+ */
+export function nameForLog(pageName: string, metadata?: { private?: unknown } | null): string {
+  const vault = parsePrivatePageName(pageName);
+  if (vault) return `a page in ${vault.owner}'s store '${vault.store}'`;
+  return metadata?.private === true ? 'a private page' : `'${pageName}'`;
+}
+
+/**
  * The name a page an identifier opened is known by: its title — the
  * identifier may be a uuid or slug, and every downstream index is keyed by
  * title — or, for a vault page, its vault name (#1539). A vault page's bare
