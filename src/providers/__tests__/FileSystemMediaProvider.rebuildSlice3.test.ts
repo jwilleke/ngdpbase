@@ -302,6 +302,7 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     expect(refreshed.metadata.dateTimeOriginal).toBeNull();
     expect(refreshed.metadata.captureDateSource).toBeUndefined();
     expect(result.noCaptureDate).toBe(1);
+    expect(result.noCaptureDateFiles).toEqual(['/store/IMG_4654.jpg']);
   });
 
   it('#808: a year-only EXIF date is stored at Jan 1, counted as partial (WARN), not as noCaptureDate', async () => {
@@ -319,6 +320,20 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     expect(refreshed.metadata.dateTimeOriginal).toBe('1940-01-01 00:00:00');
     expect(refreshed.metadata.captureDateSource).toBe('exif');
     expect(result.partialCaptureDate).toBe(1);
+    expect(result.partialCaptureDateFiles).toEqual(['/store/1940-photo.jpg']);
     expect(result.noCaptureDate).toBe(0);
+    expect(result.noCaptureDateFiles).toEqual([]);
+  });
+
+  it('#2191: the undated-file list is capped but the count stays exact', async () => {
+    const paths = Array.from({ length: 60 }, (_, i) => `/store/IMG_${String(i).padStart(4, '0')}.jpg`);
+    stubFileList(paths);
+    stubExiftoolByPath(Object.fromEntries(paths.map(p => [p, {}])));
+
+    const result = await provider.rebuild();
+
+    expect(result.noCaptureDate).toBe(60);
+    expect(result.noCaptureDateFiles).toHaveLength(50);
+    expect(new Set(result.noCaptureDateFiles).size).toBe(50);
   });
 });

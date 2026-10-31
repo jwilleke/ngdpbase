@@ -135,6 +135,15 @@ interface MediaIndexFile {
  */
 const SKIPPED_REPORT_CAP = 1000;
 
+/**
+ * Maximum paths carried per capture-date list in a ScanResult (#2191).
+ *
+ * A sibling of SKIPPED_REPORT_CAP, not the same constant: these paths go into
+ * an admin notice and its email, which must stay readable, so the cap is far
+ * smaller. The counts are always exact; only the lists are capped.
+ */
+const CAPTURE_DATE_LIST_CAP = 50;
+
 /** Exact skip tallies, computed before the report list is capped (#1056). */
 interface SkipTotals {
   total: number;
@@ -154,8 +163,12 @@ interface ScanCounters {
   skipped: SkippedEntry[];
   /** Items indexed with no usable capture date — surfaced to admins (#807) */
   noCaptureDate: number;
+  /** #2191 — the first CAPTURE_DATE_LIST_CAP of those paths */
+  noCaptureDateFiles: string[];
   /** Items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 — surfaced at WARN (#808) */
   partialCaptureDate: number;
+  /** #2191 — the first CAPTURE_DATE_LIST_CAP of those paths */
+  partialCaptureDateFiles: string[];
   /** Stale index entries pruned because their file vanished from a scanned folder (#867) */
   removed: number;
 }
@@ -288,7 +301,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
 
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, noCaptureDateFiles: [], partialCaptureDate: 0, partialCaptureDateFiles: [], removed: 0 };
     const missingFolders: string[] = [];
     const startMs = Date.now();
     logger.info(
@@ -651,7 +664,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     );
 
     const alternates = entry.alternates;
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, noCaptureDateFiles: [], partialCaptureDate: 0, partialCaptureDateFiles: [], removed: 0 };
     await this.processFile(entry.filePath, counters, true);
     if (counters.errors > 0) {
       throw new Error(`Metadata written but re-index failed for ${entry.filename} — run a rescan`);
@@ -1043,9 +1056,11 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       // but tracked separately — surfaced at WARN, vs no-date at ERROR.
       if (captureDate === null) {
         counters.noCaptureDate++;
+        if (counters.noCaptureDateFiles.length < CAPTURE_DATE_LIST_CAP) counters.noCaptureDateFiles.push(filePath);
         logger.debug(`[FileSystemMediaProvider] No capture date for ${filePath} — will sort by mtime`);
       } else if (partialExifDate) {
         counters.partialCaptureDate++;
+        if (counters.partialCaptureDateFiles.length < CAPTURE_DATE_LIST_CAP) counters.partialCaptureDateFiles.push(filePath);
         logger.debug(`[FileSystemMediaProvider] Partial capture date (${captureDate}) for ${filePath} — month/day defaulted to Jan 1`);
       }
 
