@@ -34,6 +34,8 @@
     var form = document.getElementById('exportForm');
     var status = document.getElementById('exportStatus');
     var start = document.getElementById('exportStart');
+    // How long the page waits for a file: 400 checks, about ten minutes.
+    var MAX_TRIES = 400;
 
     function show(kind, text, link) {
         status.className = 'mt-3 alert alert-' + kind;
@@ -46,6 +48,16 @@
             a.textContent = 'Download';
             status.appendChild(a);
         }
+    }
+
+    // Check again later, or, after MAX_TRIES, stop and say so.
+    function again(runId, tries, wait) {
+        if (tries + 1 >= MAX_TRIES) {
+            show('warning', 'This export is taking longer than expected. Try again later.');
+            start.disabled = false;
+            return;
+        }
+        setTimeout(function () { poll(runId, tries + 1); }, wait);
     }
 
     function poll(runId, tries) {
@@ -62,11 +74,11 @@
                 } else if (run.state === 'failed') {
                     show('danger', run.error || 'The export could not be made.');
                     start.disabled = false;
-                } else if (tries < 400) {
-                    setTimeout(function () { poll(runId, tries + 1); }, 1500);
+                } else {
+                    again(runId, tries, 1500);
                 }
             })
-            .catch(function () { if (tries < 400) setTimeout(function () { poll(runId, tries + 1); }, 3000); });
+            .catch(function () { again(runId, tries, 3000); });
     }
 
     form.addEventListener('submit', function (e) {
@@ -83,6 +95,8 @@
             .then(function (r) { return r.json(); })
             .then(function (body) {
                 if (body && body.success && body.runId) poll(body.runId, 0);
+                // Step-up: the export needs a fresh sign-in, which comes back here.
+                else if (body && body.reauth) window.location.href = body.reauth;
                 else { show('danger', (body && body.error) || 'The export could not be started.'); start.disabled = false; }
             })
             .catch(function () { show('danger', 'The export could not be started.'); start.disabled = false; });
