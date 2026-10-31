@@ -402,6 +402,16 @@ describe('ImportManager — the name a user gives what an upload becomes (#2130)
     expect(im.givenNameProblem('core.pages', 'Garden', 'a.md')).toBe('A name can be up to 5 characters.');
   });
 
+  // Code review finding 7 of #2160: no add-on receiver can make itself confidential this way (#2110).
+  test('only core may declare a receiver whose own door writes encrypted', async () => {
+    const { im } = await makeImportManager();
+    const sealed = { name: 'sealed', accepts: ['x'], writesEncrypted: true, mayUse: async () => true, receive: async () => ({ status: 'stored' as const }) };
+    expect(() => im.registerReceiver('acct', sealed)).toThrow(/writesEncrypted is core's only/);
+    expect(im.isConfidential('acct.sealed')).toBe(false);
+    expect(im.registerReceiver('core', sealed)).toBe('core.sealed');
+    expect(im.isConfidential('core.sealed')).toBe(true);
+  });
+
   test('a receiver declares names as title or file, nothing else', async () => {
     const { im } = await makeImportManager();
     expect(() => im.registerReceiver('acct', { name: 'odd', accepts: ['x'], names: 'path' as never, mayUse: async () => true, receive: async () => ({ status: 'stored' }) }))
