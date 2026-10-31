@@ -809,6 +809,9 @@ const STEP_UP_REPLAY_WAIT_MS = 60 * 60_000;
 /** How long a confirmed form POST waits to be redone (#2154), from the confirmation: the browser goes there at once. */
 const STEP_UP_REPLAY_TTL_MS = 2 * 60_000;
 
+/** How many kept form POSTs one session holds at once (#2176): a few tabs' worth, so memory stays bounded. */
+const STEP_UP_REPLAYS_PER_SESSION = 5;
+
 /** The kept form POST a prompt's `next` names (#2154), or null when it names none. */
 function stepUpReplayId(next: string): string | null {
   const url = new URL(next, 'http://site.invalid');
@@ -2898,8 +2901,10 @@ class AuthManager extends BaseManager {
   /**
    * Keep a form POST answered with the prompt, to be redone after it
    * (#2154); its id, or null when it cannot be redone exactly. Only a page's
-   * POST by a signed-in person, to an address on this site. One per session:
-   * a new prompt drops the one before, and any past its time. It waits
+   * POST by a signed-in person, to an address on this site. Each prompt keeps
+   * its own, so the same button pressed in two tabs loses neither (#2176); a
+   * session keeps at most `STEP_UP_REPLAYS_PER_SESSION`, a new prompt dropping
+   * the oldest past that, and any past its time. It waits
    * `STEP_UP_REPLAY_WAIT_MS` for the confirmation, which restarts its clock.
    */
   private keepStepUpReplay(req: Request, permission: string, mode: ReauthMode, back: string): string | null {
@@ -2911,7 +2916,9 @@ class AuthManager extends BaseManager {
     if (!fields) return null;
     const now = Date.now();
     dropExpiredReplays(this.stepUpReplays, now);
-    for (const [id, kept] of this.stepUpReplays) if (kept.sessionId === req.sessionID) this.stepUpReplays.delete(id);
+    // A Map iterates in insertion order: the session's oldest come first.
+    const mine = Array.from(this.stepUpReplays).filter(([, kept]) => kept.sessionId === req.sessionID);
+    for (const [id] of mine.slice(0, Math.max(0, mine.length - STEP_UP_REPLAYS_PER_SESSION + 1))) this.stepUpReplays.delete(id);
     const id = randomBytes(16).toString('hex');
     this.stepUpReplays.set(id, { sessionId: req.sessionID, username, permission, action, fields, back, expires: now + STEP_UP_REPLAY_WAIT_MS, ready: false });
     return id;

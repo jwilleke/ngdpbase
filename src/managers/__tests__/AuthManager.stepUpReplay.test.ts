@@ -195,12 +195,52 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     expect(await call('takeStepUpReplay', request({ session: r.session }), id)).toEqual({ back: '/admin/backup' });
   });
 
-  test('a new prompt on the session drops the one before it', async () => {
+  test('the same button in two tabs: confirming the first prompt carries out its own POST, once (#2176)', async () => {
+    const { call, failures } = double();
+    const r = request();
+    const nextOf = (a: { reauth?: string }) => new URL(a.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    const replayOf = (next: string) => new URL(next, 'http://x').searchParams.get('replay') ?? '';
+    const first = nextOf(await call('askForFreshSignIn', r, {}, 'config-manage', 'page'));
+    const second = nextOf(await call('askForFreshSignIn', r, {}, 'config-manage', 'page'));
+
+    await call('completeReauth', r, result, 'passkey', first);
+    expect(await call('takeStepUpReplay', request({ session: r.session }), replayOf(first))).toEqual(expect.objectContaining({ action: '/admin/backup/shared-folders/words/new' }));
+    expect(await call('takeStepUpReplay', request({ session: r.session }), replayOf(first))).toBeNull();
+
+    // The first confirmation released only its own: the second tab's waits for
+    // its own confirmation, and is then carried out once too.
+    await call('completeReauth', r, result, 'passkey', second);
+    expect(await call('takeStepUpReplay', request({ session: r.session }), replayOf(second))).toEqual(expect.objectContaining({ action: '/admin/backup/shared-folders/words/new' }));
+    expect(await call('takeStepUpReplay', request({ session: r.session }), replayOf(second))).toBeNull();
+    expect(failures()).toEqual([
+      'kept form POST not found: already used, past its time, or unknown',
+      'kept form POST not found: already used, past its time, or unknown'
+    ]);
+  });
+
+  test('confirming one prompt does not release another prompt on the session (#2176)', async () => {
+    const { call } = double();
+    const r = request();
+    const nextOf = (a: { reauth?: string }) => new URL(a.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    const first = nextOf(await call('askForFreshSignIn', r, {}, 'config-manage', 'page'));
+    const second = nextOf(await call('askForFreshSignIn', r, {}, 'config-manage', 'page'));
+    await call('completeReauth', r, result, 'passkey', first);
+    // Never confirmed: it only goes back.
+    const id = new URL(second, 'http://x').searchParams.get('replay') ?? '';
+    expect(await call('takeStepUpReplay', request({ session: r.session }), id)).toEqual({ back: '/admin/backup' });
+  });
+
+  test('a session keeps at most a few: past that, a new prompt drops the oldest (#2176)', async () => {
     const { call, self } = double();
-    const first = await askAndConfirm(call);
-    await askAndConfirm(call);
-    expect(self.stepUpReplays.size).toBe(1);
-    expect(await call('takeStepUpReplay', request(), first)).toBeNull();
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const answer = await call('askForFreshSignIn', request(), {}, 'config-manage', 'page');
+      ids.push(new URL(new URL(answer.reauth ?? '', 'http://x').searchParams.get('next') ?? '', 'http://x').searchParams.get('replay') ?? '');
+    }
+    await askAndConfirm(call, request({ sessionID: 'sid-2' }));
+    expect(self.stepUpReplays.size).toBe(6);
+    expect(self.stepUpReplays.has(ids[0])).toBe(false);
+    for (const id of ids.slice(1)) expect(self.stepUpReplays.has(id)).toBe(true);
   });
 
   test('what cannot be replayed exactly returns to the page with the note, as before (#2145)', async () => {
