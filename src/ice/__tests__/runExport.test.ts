@@ -4,7 +4,7 @@
  * through the PDF door as the run's user, and the limits hold.
  */
 import { exportChains, runExportChain, IceExportFailed } from '../runExport';
-import { exportShims, exportFileName, type ExportShimDoors } from '../shims/export';
+import { exportShims, exportFileName, withoutRemoteUrls, type ExportShimDoors } from '../shims/export';
 import type { ExportShimTools, IceItem, IceShim, RegisteredShim } from '../types';
 import type { ActorContext } from '../../context/ActorContext';
 
@@ -140,5 +140,44 @@ describe('exportFileName', () => {
   test('the title, without anything a file system refuses', () => {
     expect(exportFileName({ kind: 'html', name: 'x', metadata: { title: 'a/b:c*?' } }, '.pdf')).toBe('a-b-c-.pdf');
     expect(exportFileName({ kind: 'html', name: 'Fallback' }, '.md')).toBe('Fallback.md');
+  });
+});
+
+describe('withoutRemoteUrls — the HTML a PDF provider gets loads nothing (#2120)', () => {
+  const HOSTILE = '<!DOCTYPE html><html><head>'
+    + '<base href="http://10.0.0.5/"><link rel="stylesheet" href="http://10.0.0.5/s.css"><meta http-equiv="refresh" content="0;url=http://10.0.0.5/">'
+    + '<style>@import url(http://10.0.0.5/i.css); body{background:url("http://169.254.169.254/latest/meta-data/")} .ok{background:url(data:image/png;base64,AA)} .set{background:image-set("http://10.0.0.5/x.png" 1x)}</style>'
+    + '</head><body><h1>Trip Notes</h1>'
+    + '<img src="http://10.0.0.5:9200/_cat/indices"><img srcset="http://10.0.0.5/a.png 1x"><img src="data:image/png;base64,AAAA">'
+    + '<div style="background-image:url(\'https://example.org/i.png\')">x</div>'
+    + '<svg><image href="http://10.0.0.5/s.svg"/><use xlink:href="http://10.0.0.5/u.svg#a"/></svg>'
+    + '<iframe src="http://10.0.0.5/"></iframe><object data="http://10.0.0.5/o"></object><embed src="http://10.0.0.5/e">'
+    + '<video poster="http://10.0.0.5/p.png"></video><table background="http://10.0.0.5/t.png"></table>'
+    + '<a href="https://example.org/a">a link</a></body></html>';
+
+  test('every URL that is not data: is taken out, in attributes and in CSS; data: and links stay', () => {
+    const out = withoutRemoteUrls(HOSTILE);
+    expect(out).not.toMatch(/10\.0\.0\.5|169\.254\.169\.254|example\.org\/i\.png/);
+    expect(out).not.toMatch(/<(base|link|meta|iframe|object|embed)\b/i);
+    expect(out).toContain('<img src="data:image/png;base64,AAAA">');
+    expect(out).toContain('url(data:image/png;base64,AA)');
+    expect(out).toContain('<a href="https://example.org/a">a link</a>');
+    expect(out).toContain('<h1>Trip Notes</h1>');
+  });
+
+  test('core.pdf hands the provider the HTML with them taken out', async () => {
+    const d = doors();
+    const [pdf] = registered(exportShims(d)).filter(s => s.id === 'core.pdf');
+    await runExportChain([{ kind: 'html', name: 'Trip Notes', text: HOSTILE }], [pdf], tools(ALICE), { maxBytes: 1024 * 1024, maxChainDepth: 5 });
+    expect(d.pdfCalls).toHaveLength(1);
+    expect(d.pdfCalls[0].html).not.toMatch(/10\.0\.0\.5|169\.254\.169\.254/);
+    expect(d.pdfCalls[0].html).toContain('<h1>Trip Notes</h1>');
+  });
+
+  test('the HTML file export is left as it is: only what goes to a PDF provider is changed', async () => {
+    const d = doors();
+    const [html] = registered(exportShims(d)).filter(s => s.id === 'core.html-file');
+    const file = await runExportChain([{ kind: 'html', name: 'Trip Notes', text: HOSTILE }], [html], tools(ALICE), { maxBytes: 1024 * 1024, maxChainDepth: 5 });
+    expect(file.bytes!.toString()).toBe(HOSTILE);
   });
 });
