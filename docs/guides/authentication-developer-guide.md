@@ -95,7 +95,7 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 
 - 1 Write it as an `AuthProvider` and register it with `AuthManager.registerProvider` (an add-on registers it at load). No route calls it directly.
 - 2 Declare its `amr`, `aal` and `acr` honestly, by SP 800-63B. Configuration can lower them; nothing can raise them.
-- 3 Add it to `ngdpbase.auth.factors` (shipped, or in the add-on's `config/default-config.json`), with `primary` set only if it can start a sign-in on its own.
+- 3 Add it to `ngdpbase.auth.factors` (shipped, or in the add-on's `config/default-config.json`), with `primary` set only if it can start a sign-in on its own. A second factor also gets a `preference` (where it is offered, lower first) and its runner in `secondFactorsFor`, or it is never offered.
 - 4 If it must be enrolled before it counts (a key, an app), add it to `ENROLLED_FACTORS`, store its rows through the credentials store, and offer enrolment on the profile's sign-in methods.
 - 5 Its sign-ins produce a `signInRecord`, and success and failure are audited (`authentication-success` / `authentication-failed`) through `AuditManager.logAuthentication`.
 - 6 Tests: the assessed level with and without it; a role at AAL2 kept or stepped down as the table above says; the audit records written. Sabotage each once.
