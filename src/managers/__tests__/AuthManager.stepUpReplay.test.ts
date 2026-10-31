@@ -2,7 +2,7 @@
  * #2154 — a form POST that asked for a fresh sign-in carries on by itself
  * after it. The prompt keeps the form's fields in memory (never the session
  * store), tied to the session and the person; a confirmation, however late,
- * releases them once for five minutes, to the same address, by POST.
+ * releases them once for two minutes, to the same address, by POST.
  */
 import type { Request } from 'express';
 import AuthManager from '../AuthManager';
@@ -123,13 +123,13 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     }
   });
 
-  test('five minutes after the confirmation it goes back with the note, recorded as a failure', async () => {
+  test('two minutes after the confirmation it goes back with the note, recorded as a failure', async () => {
     vi.useFakeTimers();
     try {
       const { call, failures } = double();
       const r = request();
       const late = await askAndConfirm(call, r);
-      vi.advanceTimersByTime(5 * 60_000 + 1);
+      vi.advanceTimersByTime(2 * 60_000 + 1);
       expect(await call('takeStepUpReplay', request({ session: r.session }), late)).toEqual({ back: '/admin/backup' });
       expect(r.session.stepUpConfirmed).toBe('/admin/backup');
       expect(failures()).toEqual(['kept form POST for /admin/backup/shared-folders/words/new past its time; not redone']);
@@ -159,6 +159,40 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
       expect(answer.reauth).toBe('/auth/reauth?next=%2Fadmin%2Fbackup');
       expect(self.stepUpReplays.size).toBe(0);
     }
+  });
+
+  test('the confirmation releases the POST its own prompt named, whatever the session last asked for', async () => {
+    const { call } = double();
+    const r = request();
+    const first = await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
+    const pendingFirst = r.session.pendingStepUp;
+    const second = await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
+    const next = new URL(second.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    expect(next).not.toBe(new URL(first.reauth ?? '', 'http://x').searchParams.get('next'));
+    // A double click: the first POST's session save lands last.
+    r.session.pendingStepUp = pendingFirst;
+    await call('completeReauth', r, result, 'passkey', next);
+    const id = new URL(next, 'http://x').searchParams.get('replay') ?? '';
+    expect(await call('takeStepUpReplay', request({ session: r.session }), id)).toEqual(expect.objectContaining({ action: '/admin/backup/shared-folders/words/new' }));
+
+    // Another tab's confirmation already cleared the pending prompt.
+    const third = await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
+    const thirdNext = new URL(third.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    delete r.session.pendingStepUp;
+    await call('completeReauth', r, result, 'passkey', thirdNext);
+    const thirdId = new URL(thirdNext, 'http://x').searchParams.get('replay') ?? '';
+    expect(await call('takeStepUpReplay', request({ session: r.session }), thirdId)).toEqual(expect.objectContaining({ action: expect.any(String) }));
+  });
+
+  test('a confirmation in another session, or by another person, does not release it', async () => {
+    const { call } = double();
+    const r = request();
+    const answer = await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
+    const next = new URL(answer.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    await call('completeReauth', request({ sessionID: 'sid-2' }), result, 'passkey', next);
+    await call('completeReauth', request({ session: { username: 'mallory' } }), result, 'passkey', next);
+    const id = new URL(next, 'http://x').searchParams.get('replay') ?? '';
+    expect(await call('takeStepUpReplay', request({ session: r.session }), id)).toEqual({ back: '/admin/backup' });
   });
 
   test('a new prompt on the session drops the one before it', async () => {

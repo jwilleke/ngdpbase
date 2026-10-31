@@ -806,8 +806,14 @@ export const STEP_UP_CONTINUE_PATH = '/auth/reauth/continue';
 /** How long a kept form POST waits for its fresh sign-in (#2154): reading the prompt may take a while. */
 const STEP_UP_REPLAY_WAIT_MS = 60 * 60_000;
 
-/** How long a confirmed form POST waits to be redone (#2154), from the confirmation: as long as the passkey challenge. */
-const STEP_UP_REPLAY_TTL_MS = 5 * 60_000;
+/** How long a confirmed form POST waits to be redone (#2154), from the confirmation: the browser goes there at once. */
+const STEP_UP_REPLAY_TTL_MS = 2 * 60_000;
+
+/** The kept form POST a prompt's `next` names (#2154), or null when it names none. */
+function stepUpReplayId(next: string): string | null {
+  const url = new URL(next, 'http://site.invalid');
+  return url.pathname === STEP_UP_CONTINUE_PATH ? url.searchParams.get('replay') : null;
+}
 
 /**
  * Field names whose value is a secret (#2154): a password, recovery words, a
@@ -2859,14 +2865,15 @@ class AuthManager extends BaseManager {
     delete req.session.pendingStepUp;
     const answered = pending && pending.next === next ? pending : undefined;
     if (answered && !answered.replays) req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
-    // #2154: the confirmation releases the form POST it was asked for, and its
-    // time to be redone starts now, however long the prompt was open.
-    const kept = answered?.replay ? this.stepUpReplays.get(answered.replay) : undefined;
-    if (kept && kept.sessionId === req.sessionID && kept.expires > Date.now()) {
+    // #2154: the confirmation releases the form POST it was asked for, named by
+    // `next` itself (the session's pending prompt may be another tab's), and
+    // its time to be redone starts now, however long the prompt was open.
+    const kept = this.stepUpReplays.get(stepUpReplayId(next) ?? '');
+    if (kept && kept.sessionId === req.sessionID && kept.username === req.session.username && kept.expires > Date.now()) {
       kept.ready = true;
       kept.expires = Date.now() + STEP_UP_REPLAY_TTL_MS;
     }
-    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? method,
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? kept?.permission ?? method,
       `re-authenticated with ${method}${answered ? ` for ${answered.permission}` : ''}; acr ${record?.acr ?? 'unknown'}`);
     return record;
   }

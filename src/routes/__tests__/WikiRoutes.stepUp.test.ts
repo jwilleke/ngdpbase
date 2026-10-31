@@ -10,7 +10,7 @@ import AuthManager from '../../managers/AuthManager';
 
 const res = () => ({
   status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), redirect: vi.fn().mockReturnThis(),
-  send: vi.fn().mockReturnThis(), render: vi.fn().mockReturnThis(), set: vi.fn().mockReturnThis()
+  send: vi.fn().mockReturnThis(), render: vi.fn().mockReturnThis(), set: vi.fn().mockReturnThis(), setHeader: vi.fn().mockReturnThis()
 });
 const session = (): Record<string, unknown> => ({ username: 'molly', isAuthenticated: true, save: vi.fn((cb: (e?: unknown) => void) => cb()) });
 
@@ -38,10 +38,12 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     takeStepUpReplay(...a: Parameters<AuthManager['takeStepUpReplay']>) { return AuthManager.prototype.takeStepUpReplay.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
+  const folders = { prepareNewRecoveryWords: vi.fn().mockResolvedValue({ token: 'tok', words: ['abandon', 'ability'] }) };
   const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')), revealBackupKeyFile: vi.fn().mockResolvedValue({ fingerprint: '0123456789abcdef', text: 'X=1\n' }) };
   const managers: Record<string, unknown> = {
     OidcManager: oidc,
     BackupManager: backup,
+    SharedFolderManager: folders,
     AuthManager: authManager,
     // #1635: the PDP decides step-up. This double grants by policy and asks
     // AuthManager about freshness exactly as the real PDP does; `holds` is the
@@ -59,7 +61,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   authManager.engine = engine;
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>> & { getCommonTemplateData: unknown };
   (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({ csrfToken: 't' });
-  return { r, authManager, audit, oidc, backup };
+  return { r, authManager, audit, oidc, backup, folders };
 }
 
 const req = (s: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -276,6 +278,42 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     await env.r.reauthContinue(continueTo(s, 'sid-1', next), out);
     expect(out.redirect).toHaveBeenCalledWith('/profile');
     expect(out.render).not.toHaveBeenCalled();
+  });
+
+  test('Admin → Backup → Make a new set of recovery words is made after the passkey, with no second press (the issue\'s case)', async () => {
+    const env = routes(true, passkeyOk);
+    // Only the backup key pages' permission steps up, as configured.
+    env.authManager.stepUpNeeded.mockImplementation((action: string) => action === 'config-manage');
+    const s = session();
+    const fromBackup = (h: string) => (h === 'referer' ? 'https://wiki.example.com/admin/backup' : 'ua');
+    const press = (csrf: string) => req(s, {
+      sessionID: 'sid-1', originalUrl: '/admin/backup/shared-folders/words/new', body: { _csrf: csrf }, get: fromBackup,
+      is: (t: string) => (t === 'application/x-www-form-urlencoded' ? t : false),
+      userContext: { username: 'molly', roles: ['admin'], isAuthenticated: true }
+    });
+    const asked = res();
+    await env.r.adminSharedFoldersNewWords(press('t-old'), asked);
+    const next = new URL(String(asked.redirect.mock.calls[0]?.[0]), 'http://x').searchParams.get('next') ?? '';
+    expect(next).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
+    expect(env.folders.prepareNewRecoveryWords).not.toHaveBeenCalled();
+
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const confirmed = res();
+    await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next } }), confirmed);
+    expect(confirmed.json).toHaveBeenCalledWith({ ok: true, redirect: next });
+
+    const page = res();
+    await env.r.reauthContinue(continueTo(s, 'sid-1', next), page);
+    expect(page.render).toHaveBeenCalledWith('reauth-continue', expect.objectContaining({
+      action: '/admin/backup/shared-folders/words/new', fields: [], back: '/admin/backup', csrfToken: 't'
+    }));
+
+    // The continue page's own POST makes the new set.
+    const made = res();
+    await env.r.adminSharedFoldersNewWords(press('t'), made);
+    expect(env.folders.prepareNewRecoveryWords).toHaveBeenCalledTimes(1);
+    expect(made.render).toHaveBeenCalledWith('admin-shared-folders-words', expect.objectContaining({ step: 'words', replacing: true }));
   });
 
   test('a page GET is unchanged: it returns to itself', async () => {

@@ -7003,7 +7003,7 @@ ${panes}
     const answer = await this.engine.getManager<AuthManager>('AuthManager')?.takeStepUpReplay(req, req.query.replay) ?? null;
     res.set('Cache-Control', 'no-store');
     if (!answer) {
-      await this.renderError(req, res, 410, 'Nothing to carry on with', 'This confirmation was already used, or it has expired. Go back and try again.');
+      await this.renderError(req, res, 410, 'Nothing to carry on with', 'This confirmation was already used, has expired, or was replaced by one you started after it. Go back and press it again.');
       return;
     }
     if (!('action' in answer)) { res.redirect(answer.back); return; }
