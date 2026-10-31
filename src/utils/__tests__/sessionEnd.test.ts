@@ -39,6 +39,15 @@ describe('#1670 endSession', () => {
     await new Promise(r => setImmediate(r));
   });
 
+  test('drops the form POSTs the session kept for a fresh sign-in (#2176), signed in or not', () => {
+    const dropStepUpReplays = vi.fn();
+    const engine = { getManager: (name: string) => (name === 'AuthManager' ? { dropStepUpReplays } : null) };
+    endSession(engine, { id: 'sid-1', username: 'alice' }, 'logout', {});
+    endSession(engine, { id: 'sid-2' }, 'superseded', {});
+    endSession(engine, { username: 'alice' }, 'logout', {});
+    expect(dropStepUpReplays.mock.calls).toEqual([['sid-1'], ['sid-2']]);
+  });
+
   test('works with no audit manager', () => {
     expect(() => endSession({ getManager: () => null }, { username: 'alice' }, 'logout', {})).not.toThrow();
   });

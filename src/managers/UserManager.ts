@@ -1809,7 +1809,7 @@ class UserManager extends BaseManager {
       if (typeof session.username !== 'string' || session.username === '') continue;
       const reason = await which(session as Record<string, unknown> & { username: string });
       if (!reason) continue;
-      endSession(this.engine, session, reason, from);
+      endSession(this.engine, { ...session, id: sid }, reason, from);
       await store.destroy(sid);
       ended++;
     }
