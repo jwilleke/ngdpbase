@@ -19,6 +19,20 @@ import { packZip, readZip, crc32, type ZipEntry } from '../zipArchive';
 
 const run = promisify(execFile);
 
+/**
+ * The name of the first member whose data fails its CRC, or null if none does.
+ * Not `python3 -m zipfile -t`: that exits 0 on a corrupt archive and only
+ * words the problem on stdout, which is not an interface.
+ */
+async function testzip(archivePath: string): Promise<string | null> {
+  const { stdout } = await run('python3', [
+    '-c',
+    'import json, sys, zipfile; print(json.dumps(zipfile.ZipFile(sys.argv[1]).testzip()))',
+    archivePath
+  ]);
+  return JSON.parse(stdout) as string | null;
+}
+
 let dir: string;
 
 /** Bytes that are not valid UTF-8 — a decrypted attachment, an image. */
@@ -41,7 +55,7 @@ afterEach(async () => {
  * CP437 — it reported `Caf+?` for a correctly flagged `Café` and failed. That
  * is the extractor being twenty years old, not the archive being wrong, but a
  * test oracle that cannot read a correct archive is no oracle. The integrity
- * test below uses `python3 -m zipfile -t` for the same reason, and so that no
+ * tests below use Python's `zipfile` for the same reason, and so that no
  * test needs the `unzip` binary (#2184).
  */
 async function extract(archive: Buffer): Promise<string> {
@@ -128,7 +142,7 @@ describe("packZip — verified by extracting with Python's zipfile (#1387)", () 
     }
   });
 
-  test('python3 -m zipfile -t reports no errors, so the CRCs and the directory agree', async () => {
+  test('ZipFile.testzip() finds no bad member, so the data and the directory CRCs agree', async () => {
     const archive = await packZip([
       { path: 'a.md', bytes: Buffer.from('alpha') },
       { path: 'b/b.bin', bytes: BINARY }
@@ -136,21 +150,45 @@ describe("packZip — verified by extracting with Python's zipfile (#1387)", () 
     const archivePath = path.join(dir, 'check.zip');
     await fs.writeFile(archivePath, archive);
 
-    const { stdout } = await run('python3', ['-m', 'zipfile', '-t', archivePath]);
-    // `-t` exits 0 even when it finds a bad CRC; it says so on stdout instead.
-    expect(stdout).toMatch(/Done testing/i);
-    expect(stdout).not.toMatch(/corrupt/i);
+    expect(await testzip(archivePath)).toBeNull();
   });
 
-  test('python3 -m zipfile -t fails when one byte of an entry is corrupted', async () => {
+  test('ZipFile.testzip() names the member when one byte of its data is corrupted', async () => {
     const archive = await packZip([{ path: 'a.md', bytes: Buffer.from('alpha beta gamma') }]);
     // The first entry's data starts after its 30-byte local header and name.
     archive[30 + 'a.md'.length] ^= 0xff;
     const archivePath = path.join(dir, 'corrupt.zip');
     await fs.writeFile(archivePath, archive);
 
-    const { stdout } = await run('python3', ['-m', 'zipfile', '-t', archivePath]);
-    expect(stdout).toMatch(/corrupt.*a\.md/i);
+    expect(await testzip(archivePath)).toBe('a.md');
+  });
+
+  test("each local header's CRC equals the one in the central directory", async () => {
+    const archive = await packZip([
+      { path: 'a.md', bytes: Buffer.from('alpha') },
+      { path: 'b/b.bin', bytes: BINARY }
+    ]);
+    const archivePath = path.join(dir, 'headers.zip');
+    await fs.writeFile(archivePath, archive);
+
+    // `testzip()` reads the central directory, so it cannot see a bad local
+    // header; read both CRCs and compare them.
+    const script = [
+      'import json, struct, sys, zipfile',
+      'out = []',
+      'with zipfile.ZipFile(sys.argv[1]) as z, open(sys.argv[1], "rb") as f:',
+      '    for i in z.infolist():',
+      '        f.seek(i.header_offset)',
+      '        out.append([i.filename, struct.unpack("<I", f.read(30)[14:18])[0], i.CRC])',
+      'print(json.dumps(out))'
+    ].join('\n');
+    const { stdout } = await run('python3', ['-c', script, archivePath]);
+    const rows = JSON.parse(stdout) as Array<[string, number, number]>;
+
+    expect(rows.map(([name]) => name)).toEqual(['a.md', 'b/b.bin']);
+    for (const [, local, central] of rows) {
+      expect(local).toBe(central);
+    }
   });
 
   test('a leading slash is dropped — an archive never writes to an absolute path', async () => {
