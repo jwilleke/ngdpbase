@@ -278,8 +278,11 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       const PAGE_NAME = `${TEST_PAGE_PREFIX}-FormsStepUp-${RUN}`;
       const DEFINITIONS_KEY = 'ngdpbase.permissions.definitions';
       const SUBMIT = `/api/forms/submit/${FORM_ID}`;
-      let definitions: string | null = null;
+      /** Whether this run marked form-submit "step-up", so the teardown takes it out again. */
+      let marked = false;
       let formsOn = true;
+      /** The site has its own permission definitions: they are left alone, and these cases skipped. */
+      let ownDefinitions = false;
 
       /** An administrator's page from the shared sign-in, which the builder and the editor need. */
       async function asAdmin<T>(browser: Browser, work: (page: Page) => Promise<T>): Promise<T> {
@@ -291,10 +294,11 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
         }
       }
 
-      async function setDefinitions(page: Page, value: string): Promise<void> {
+      /** Set the definitions; `null` takes the key out of app-custom-config.json, so the shipped and add-on entries are in force again. */
+      async function setDefinitions(page: Page, value: string | null): Promise<void> {
         const saved = await page.request.post('/admin/configuration', {
           headers: { 'X-CSRF-Token': await csrfFrom(page), 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
-          form: { property: DEFINITIONS_KEY, value }
+          form: value === null ? { property: DEFINITIONS_KEY } : { property: DEFINITIONS_KEY, value }
         });
         expect(saved.status(), await saved.text()).toBe(200);
       }
@@ -338,17 +342,23 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
         const page = me().page;
         await confirmNow(page);
         await page.goto('/admin/configuration');
-        definitions = await page.locator(`form:has(input[name="property"][value="${DEFINITIONS_KEY}"]) input[name="value"]`).first().inputValue();
+        // The screen shows the merged map, and a write of it lands whole in
+        // app-custom-config.json. A site with none of its own gets the key taken
+        // out again afterwards; one with its own is not touched.
+        ownDefinitions = (await page.locator(`#nav-custom form:has(input[name="property"][value="${DEFINITIONS_KEY}"])`).count()) > 0;
+        if (ownDefinitions) return;
+        const definitions = await page.locator(`form:has(input[name="property"][value="${DEFINITIONS_KEY}"]) input[name="value"]`).first().inputValue();
         const entries = JSON.parse(definitions) as Record<string, Record<string, unknown>>;
         expect(entries['form-submit'], 'the forms add-on declares form-submit').toBeTruthy();
+        marked = true;
         await setDefinitions(page, JSON.stringify({ ...entries, 'form-submit': { ...entries['form-submit'], 'step-up': true } }));
       });
 
       test.afterAll(async ({ browser }) => {
         if (!formsOn) return;
-        if (definitions !== null && person) {
+        if (marked && person) {
           await confirmNow(person.page);
-          await setDefinitions(person.page, definitions);
+          await setDefinitions(person.page, null);
         }
         await asAdmin(browser, async (page) => {
           await deletePage(page, PAGE_NAME);
@@ -359,52 +369,61 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
 
       test('confirmed in the popup, the form is sent once more, once, with what was typed', async () => {
         test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        test.skip(ownDefinitions, 'this site has its own permission definitions; they are not changed');
         const page = me().page;
         const submits = watchSubmits(page);
-        await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
-        await page.waitForTimeout(STALE_MS);
-        await form(page).locator('[name="note"]').fill(TYPED);
-        const opened = page.waitForEvent('popup');
-        await form(page).locator('[type="submit"]').click();
-        const popup = await opened;
-        await popup.waitForURL(/\/auth\/reauth\?/);
-        expect(page.url()).toContain('/view/');
-        await lendPasskey(popup);
-        await confirmWithPasskey(popup);
-        // The page closes the popup once the sign-in is fresh, and sends the form.
-        await popup.waitForEvent('close', { timeout: 15000 });
-        await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 10000 });
-        await expect.poll(() => submits.length).toBe(2);
-        expect(submits.map((s) => s.status)).toEqual([403, 200]);
-        expect(JSON.parse(submits[0].body)).toEqual({ note: TYPED });
-        expect(submits[1].body).toBe(submits[0].body);
-        // Nothing more is sent afterwards.
-        await page.waitForTimeout(3000);
-        expect(submits).toHaveLength(2);
-        page.removeAllListeners('requestfinished');
+        try {
+          await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+          await page.waitForTimeout(STALE_MS);
+          await form(page).locator('[name="note"]').fill(TYPED);
+          const opened = page.waitForEvent('popup');
+          await form(page).locator('[type="submit"]').click();
+          const popup = await opened;
+          await popup.waitForURL(/\/auth\/reauth\?/);
+          expect(page.url()).toContain('/view/');
+          await lendPasskey(popup);
+          await confirmWithPasskey(popup);
+          // The page closes the popup once the sign-in is fresh, and sends the form.
+          await popup.waitForEvent('close', { timeout: 15000 });
+          await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 10000 });
+          await expect.poll(() => submits.length).toBe(2);
+          expect(submits.map((s) => s.status)).toEqual([403, 200]);
+          expect(JSON.parse(submits[0].body)).toEqual({ note: TYPED });
+          expect(submits[1].body).toBe(submits[0].body);
+          // Nothing more is sent afterwards.
+          await page.waitForTimeout(3000);
+          expect(submits).toHaveLength(2);
+        } finally {
+          page.removeAllListeners('requestfinished');
+        }
       });
 
       test('a cancelled prompt sends nothing and leaves the form as typed', async () => {
         test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        test.skip(ownDefinitions, 'this site has its own permission definitions; they are not changed');
         const page = me().page;
         const submits = watchSubmits(page);
-        await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
-        await page.waitForTimeout(STALE_MS);
-        await form(page).locator('[name="note"]').fill(TYPED);
-        const opened = page.waitForEvent('popup');
-        await form(page).locator('[type="submit"]').click();
-        const popup = await opened;
-        await popup.getByRole('link', { name: 'Cancel', exact: true }).click();
-        await popup.waitForEvent('close', { timeout: 15000 });
-        await expect(result(page)).toContainText('not confirmed, so nothing was sent');
-        await expect(form(page).locator('[name="note"]')).toHaveValue(TYPED);
-        await expect(form(page).locator('[type="submit"]')).toBeEnabled();
-        expect(submits.map((s) => s.status)).toEqual([403]);
-        page.removeAllListeners('requestfinished');
+        try {
+          await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+          await page.waitForTimeout(STALE_MS);
+          await form(page).locator('[name="note"]').fill(TYPED);
+          const opened = page.waitForEvent('popup');
+          await form(page).locator('[type="submit"]').click();
+          const popup = await opened;
+          await popup.getByRole('link', { name: 'Cancel', exact: true }).click();
+          await popup.waitForEvent('close', { timeout: 15000 });
+          await expect(result(page)).toContainText('not confirmed, so nothing was sent');
+          await expect(form(page).locator('[name="note"]')).toHaveValue(TYPED);
+          await expect(form(page).locator('[type="submit"]')).toBeEnabled();
+          expect(submits.map((s) => s.status)).toEqual([403]);
+        } finally {
+          page.removeAllListeners('requestfinished');
+        }
       });
 
       test('with the popup blocked, the prompt opens in a new tab and the form is sent once it is confirmed', async () => {
         test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        test.skip(ownDefinitions, 'this site has its own permission definitions; they are not changed');
         const { context } = me();
         const page = await context.newPage();
         try {
