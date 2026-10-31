@@ -155,8 +155,16 @@ interface ScanResult {
   updated:   number;   // Existing items refreshed
   errors:    number;   // Files that could not be processed
   elapsedMs?: number;  // Optional: elapsed time in ms
+  noCaptureDate?: number;           // Items with no usable capture date (exact count)
+  noCaptureDateFiles?: string[];    // Folder-relative paths of the first 50 of those (#2191)
+  partialCaptureDate?: number;      // Items with a year-only capture date (exact count)
+  partialCaptureDateFiles?: string[]; // Folder-relative paths of the first 50 of those (#2191)
 }
 ```
+
+### Capture-date notices
+
+After a scan or rebuild, MediaManager tells admins (admin notice and email) about files with no usable capture date ("Media files without a capture date") and files with a partial, year-only one ("Media files with a partial capture date"). The notice names the files, one path per line, so the operator can backfill the dates without digging in `media-index.json`. The lists hold the first 50 paths (`CAPTURE_DATE_LIST_CAP` in `FileSystemMediaProvider.ts`); when there are more, the notice ends the list with "and N more". The counts are always exact.
 
 ## Excluding Files and Directories
 
