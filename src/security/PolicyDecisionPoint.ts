@@ -256,10 +256,11 @@ export class PolicyDecisionPoint extends BaseManager {
    * {@link permits}, which is "may it act now", and named so: an affordance
    * (show the reveal button, show the sign-in methods section) asks this, so a
    * person whose sign-in is not fresh still sees the way to the prompt that
-   * makes it fresh. A door never asks this.
+   * makes it fresh. A door never asks this. `on` asks it about a resource,
+   * as {@link decide} does (#2120: a vault page's export).
    */
-  async holds(subject: DecisionInput, action: string): Promise<boolean> {
-    return (await this.evaluate(subject, { action }, false)).permit;
+  async holds(subject: DecisionInput, action: string, on: Omit<DecisionRequest, 'action'> = {}): Promise<boolean> {
+    return (await this.evaluate(subject, { ...on, action }, false)).permit;
   }
 
   /**

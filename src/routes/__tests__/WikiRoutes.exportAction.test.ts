@@ -5,7 +5,10 @@
  *   - export starts from the page: only the formats the engine can make
  *     from a page are listed, and nothing (a 404) to a user who may not
  *     read it or does not hold `page-export` (D5);
- *   - an anonymous visitor is sent to sign in;
+ *   - an anonymous visitor is sent to sign in; a signed-in user needs no
+ *     permission beyond the page's `page-export` (no `profile-manage`);
+ *   - a user whose sign-in is too old for `page-export` gets the step-up
+ *     answer, and too many starts a 429;
  *   - the export runs in the background as the user who asked, and its
  *     status and file are theirs alone;
  *   - end to end, a page comes back as a PDF: through a stand-in renderer
@@ -20,8 +23,8 @@ import express from 'express';
 import request from 'supertest';
 import type { Request, Response } from 'express';
 import { PDFDocument } from 'pdf-lib';
-import WikiRoutes from '../WikiRoutes';
-import ImportManager from '../../managers/ImportManager';
+import WikiRoutes, { exportStartRateLimiter } from '../WikiRoutes';
+import ImportManager, { IceExportBusy } from '../../managers/ImportManager';
 import ExportManager from '../../managers/ExportManager';
 import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import { resolveChromium, type PdfJob, type PdfJobResult } from '../../export/pdfEngine';
@@ -33,15 +36,23 @@ const GRANTS: Record<string, string[]> = {
   alice: ['profile-manage', 'page-export'],
   bob: ['profile-manage', 'page-export'],
   rita: ['profile-manage'],
+  // The shipped `executive` role: page-read and page-export, no profile-manage.
+  erin: ['page-export'],
+  // Holds page-export, but signed in too long ago for it (step-up).
+  sam: ['profile-manage', 'page-export'],
   Anonymous: []
 };
+/** Whose sign-in is not fresh enough: they hold their grants, and are permitted none of the step-up ones. */
+const STALE = new Set(['sam']);
 /** Who may read the page. */
-const READERS = new Set(['alice', 'rita']);
+const READERS = new Set(['alice', 'rita', 'erin', 'sam']);
 
 const USERS: Record<string, { username: string; isAuthenticated: boolean; roles: string[] }> = {
   alice: { username: 'alice', isAuthenticated: true, roles: ['reader'] },
   bob: { username: 'bob', isAuthenticated: true, roles: ['reader'] },
   rita: { username: 'rita', isAuthenticated: true, roles: ['reader'] },
+  erin: { username: 'erin', isAuthenticated: true, roles: ['executive'] },
+  sam: { username: 'sam', isAuthenticated: true, roles: ['reader'] },
   Anonymous: { username: 'Anonymous', isAuthenticated: false, roles: ['anonymous'] }
 };
 
@@ -61,7 +72,7 @@ async function makeApp(renderer: ((job: PdfJob) => Promise<PdfJobResult>) | null
       getResolvedDataPath: (_key: string, fallback: string) => fallback
     },
     PolicyDecisionPoint: {
-      permits: async (subject: { username: string }, p: string) => (GRANTS[subject.username] ?? []).includes(p),
+      permits: async (subject: { username: string }, p: string) => !STALE.has(subject.username) && (GRANTS[subject.username] ?? []).includes(p),
       holds: async (subject: { username: string }, p: string) => (GRANTS[subject.username] ?? []).includes(p)
     },
     PageManager: {
@@ -75,6 +86,10 @@ async function makeApp(renderer: ((job: PdfJob) => Promise<PdfJobResult>) | null
     },
     RenderingManager: {
       renderMarkdown: async (content: string) => `<p>${content}</p>`
+    },
+    AuthManager: {
+      askForFreshSignIn: async (req: Request, _user: unknown, permission: string) =>
+        ({ permission, delegated: false, error: 'A fresh sign-in is needed', reauth: `/auth/reauth?next=${encodeURIComponent(req.originalUrl)}` })
     }
   };
   const engine = { getManager: (name: string) => managers[name] ?? null };
@@ -97,8 +112,11 @@ async function makeApp(renderer: ((job: PdfJob) => Promise<PdfJobResult>) | null
   const routes = new WikiRoutes(engine);
   vi.spyOn(routes, 'createWikiContext').mockImplementation((req: Request) => ({
     userContext: req.userContext,
-    hasPermission: async (p: string) => (GRANTS[(req.userContext as { username: string }).username] ?? []).includes(p),
-    holdsPermission: async () => false
+    hasPermission: async (p: string) => {
+      const who = (req.userContext as { username: string }).username;
+      return !STALE.has(who) && (GRANTS[who] ?? []).includes(p);
+    },
+    holdsPermission: async (p: string) => (GRANTS[(req.userContext as { username: string }).username] ?? []).includes(p)
   }) as never);
   vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({ csrfToken: 't' });
   vi.spyOn(routes, 'renderError').mockImplementation((async (_q: Request, s: Response, status: number) => { s.status(status).send('error'); }) as never);
@@ -120,6 +138,8 @@ async function makeApp(renderer: ((job: PdfJob) => Promise<PdfJobResult>) | null
 }
 
 const pageUrl = `/export/page/${encodeURIComponent(PAGE)}`;
+
+beforeEach(() => exportStartRateLimiter.reset());
 
 /** Start an export as `user` and wait until it has ended. */
 async function exportAs(app: express.Express, user: string, format: string) {
@@ -163,10 +183,13 @@ describe('GET /export/page/:page — the Export action offers only what fits', (
     ]);
   });
 
-  test('a user who may not read the page, or does not hold page-export, gets a 404 and nothing offered', async () => {
-    const { app } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+  test('a user who may not read the page gets a 404 and nothing offered; one without page-export is refused at the door', async () => {
+    const { app, importManager } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
     expect((await request(app).get(pageUrl).set('x-user', 'bob')).status).toBe(404);
-    expect((await request(app).get(pageUrl).set('x-user', 'rita')).status).toBe(404);
+    const asked = vi.spyOn(importManager, 'exportFormatsFor');
+    expect((await request(app).get(pageUrl).set('x-user', 'rita')).status).toBe(403);
+    expect((await request(app).post(pageUrl).set('x-user', 'rita').send({ format: 'core.html-file' })).status).toBe(403);
+    expect(asked).not.toHaveBeenCalled();
   });
 });
 
@@ -200,9 +223,10 @@ describe('POST /export/page/:page and the run', () => {
     expect(file.headers['cache-control']).toBe('no-store');
     expect((file.body as Buffer).equals(FAKE_PDF)).toBe(true);
 
-    // Anyone else neither sees it nor downloads it.
-    expect((await request(app).get(`/export/runs/${runId}`).set('x-user', 'rita')).status).toBe(404);
-    expect((await request(app).get(`/export/runs/${runId}/download`).set('x-user', 'rita')).status).toBe(404);
+    // Anyone else, page-export or not, neither sees it nor downloads it.
+    expect((await request(app).get(`/export/runs/${runId}`).set('x-user', 'bob')).status).toBe(404);
+    expect((await request(app).get(`/export/runs/${runId}/download`).set('x-user', 'bob')).status).toBe(404);
+    expect((await request(app).get(`/export/runs/${runId}`).set('x-user', 'rita')).status).toBe(403);
   });
 
   test('a PDF engine that fails gives a failed run with a plain reason, and no file', async () => {
@@ -223,6 +247,59 @@ describe('POST /export/page/:page and the run', () => {
     const md = await exportAs(app, 'alice', 'core.markdown-file');
     const mdFile = await request(app).get(`/export/runs/${md.runId}/download`).set('x-user', 'alice');
     expect(mdFile.text).toContain('# Trip Notes\n\nPacked light: one bag.');
+  });
+});
+
+describe('who may use the routes (#2120): page-export, nothing more', () => {
+  test('a user holding page-export without profile-manage (the executive role) is offered, starts, sees and downloads an export', async () => {
+    const { app } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+    const offered = await request(app).get(pageUrl).set('x-user', 'erin');
+    expect(offered.body.view).toBe('export-item');
+    const { runId, run } = await exportAs(app, 'erin', 'core.html-file');
+    expect(run.state).toBe('done');
+    const file = await request(app).get(`/export/runs/${runId}/download`).set('x-user', 'erin');
+    expect(file.status).toBe(200);
+    expect(file.text).toContain('Packed light: one bag.');
+  });
+
+  test('an anonymous visitor is refused every export route, as unauthenticated', async () => {
+    const { app } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+    expect((await request(app).post(pageUrl).send({ format: 'core.html-file' })).status).toBe(401);
+    expect((await request(app).get('/export/runs/x')).status).toBe(401);
+    expect((await request(app).get('/export/runs/x/download')).status).toBe(302);
+  });
+
+  test('a user whose sign-in is too old for page-export gets the step-up answer, not a 404', async () => {
+    const { app, pdfJobs } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+    const page = await request(app).get(pageUrl).set('x-user', 'sam');
+    expect(page.status).toBe(302);
+    expect(page.headers.location).toBe(`/auth/reauth?next=${encodeURIComponent(pageUrl)}`);
+    const res = await request(app).post(pageUrl).set('x-user', 'sam').send({ format: 'core.pdf' });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ success: false, reauth: `/auth/reauth?next=${encodeURIComponent(pageUrl)}` });
+    expect(pdfJobs).toEqual([]);
+  });
+});
+
+describe('starting too many exports (#2120)', () => {
+  test('more than 20 starts a minute by one user is a 429 with Retry-After, before the page is read', async () => {
+    const { app, importManager } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+    const started = vi.spyOn(importManager, 'startExport');
+    for (let i = 0; i < 20; i++) exportStartRateLimiter.consume('alice');
+    const res = await request(app).post(pageUrl).set('x-user', 'alice').send({ format: 'core.html-file' });
+    expect(res.status).toBe(429);
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+    expect(started).not.toHaveBeenCalled();
+    // Another user is not held up by it.
+    expect((await request(app).post(pageUrl).set('x-user', 'erin').send({ format: 'core.html-file' })).status).toBe(202);
+  });
+
+  test('an export refused as busy (max-queued-per-user, a full site) is a 429 with the reason', async () => {
+    const { app, importManager } = await makeApp(async () => ({ ok: true, pdf: FAKE_PDF }));
+    vi.spyOn(importManager, 'startExport').mockRejectedValue(new IceExportBusy('You already have 3 exports being made.'));
+    const res = await request(app).post(pageUrl).set('x-user', 'alice').send({ format: 'core.html-file' });
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe('You already have 3 exports being made.');
   });
 });
 

@@ -81,8 +81,8 @@ export function exportChains(shims: readonly RegisteredShim[], kind: IceKind, ma
   return found;
 }
 
-/** The bytes an item holds, its text counted as UTF-8. */
-function sizeOf(items: readonly IceItem[]): number {
+/** The bytes items hold, their text counted as UTF-8. */
+export function exportSize(items: readonly IceItem[]): number {
   return items.reduce((sum, i) => sum + (i.bytes?.length ?? 0) + (i.text ? Buffer.byteLength(i.text) : 0), 0);
 }
 
@@ -92,7 +92,7 @@ function sizeOf(items: readonly IceItem[]): number {
  * @throws IceExportFailed when they are
  */
 export function checkExportSize(items: readonly IceItem[], maxBytes: number): void {
-  if (sizeOf(items) > maxBytes) {
+  if (exportSize(items) > maxBytes) {
     throw new IceExportFailed(`This export is larger than this site allows (${Math.round(maxBytes / 1024 / 1024)} MB).`);
   }
 }

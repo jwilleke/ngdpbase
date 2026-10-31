@@ -673,7 +673,7 @@ export const EXPORT_FILE_KIND = 'file';
 
 /** What an export source is told about the read it is asked for. */
 export interface ExportReadInfo {
-  /** The shim that will make the file (`core.pdf`): for the source's own record of the export. */
+  /** The shim that will make the file (`core.pdf`). */
   format: string;
 }
 
@@ -701,6 +701,25 @@ export interface IceExportSource {
    * thing is not there or `ctx` may not export it, without telling the two apart.
    */
   read(ref: string, ctx: ActorContext, info: ExportReadInfo): Promise<IceItem[] | null>;
+  /**
+   * Record how an export of `ref` ended, as its owner records exports: once
+   * the run has ended, with the file made or not. Also called, as a failure,
+   * when what was read is not exported (too large, the site too busy).
+   * Optional; a record that fails is logged, never thrown.
+   */
+  recordExport?(ref: string, ctx: ActorContext, outcome: ExportOutcome): Promise<void>;
+}
+
+/** How an export ended, for its source's record (#2120). */
+export interface ExportOutcome {
+  /** The shim that made, or was to make, the file. */
+  format: string;
+  runId: string;
+  /** The names of the items the source read. */
+  items: string[];
+  result: 'success' | 'failure';
+  /** Why it failed, as the user is told. */
+  reason?: string;
 }
 
 export interface RegisteredExportSource extends IceExportSource {

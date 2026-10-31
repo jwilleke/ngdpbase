@@ -206,7 +206,7 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
@@ -731,6 +731,15 @@ export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowM
  * intended consumer of those flags. Exported so tests can call `.reset()`.
  */
 export const signupRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
+
+/**
+ * Per-user limiter for starting an export (#2120), `POST /export/page/:page`.
+ * Each start reads the thing into memory and queues it for the one ICE job;
+ * `max-queued-per-user` bounds what is held at once, this bounds how fast a
+ * user can come back for more. 20 a minute is well past anyone clicking
+ * Export. Exported so tests can call `.reset()`.
+ */
+export const exportStartRateLimiter = new SimpleRateLimiter({ max: 20, windowMs: 60 * 1000 });
 
 // Configure multer for general attachments (memory storage)
 const attachmentUpload: Multer = multer({
@@ -6468,14 +6477,16 @@ ${panes}
    * the page's owner would let this user export it (`exportFormatsFor`: the
    * page is visible to them and they hold `page-export`). Nothing to offer
    * is a 404, whatever the reason, as a page they cannot read is. A
-   * signed-in user only: an export is held for the user who asked.
+   * signed-in user only (the engine's rule): an export is held for the user
+   * who asked. Every export route asks `page-export` and nothing else (D5),
+   * the permission the More menu's link is shown for; whether this page may
+   * be exported, in a vault too, is the engine's to say.
    */
   async exportPageFormats(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+      if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
 
       const pageName = String(req.params.page ?? '');
       const importManager = this.engine.getManager<ImportManager>('ImportManager');
@@ -6502,14 +6513,21 @@ ${panes}
    * `{ format }`: one of the ids the Export action offered. The page is read
    * now, through its door, as this user; the format is made in the ICE
    * background job, and the answer is the run id at once (202). A page the
-   * user may not export, or a format not offered for it, is a 404.
+   * user may not export, or a format not offered for it, is a 404; one they
+   * may export after a fresh sign-in is step-up's answer. Too many starts,
+   * or too many exports being made, is a 429.
    */
   async exportPageStart(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
 
+    const limit = exportStartRateLimiter.consume(currentUser.username);
+    if (!limit.allowed) {
+      const seconds = Math.ceil(limit.retryAfterMs / 1000);
+      res.set('Retry-After', String(seconds));
+      return res.status(429).json({ success: false, error: `Too many exports started. Try again in ${seconds}s.` });
+    }
     const importManager = this.engine.getManager<ImportManager>('ImportManager');
     if (!importManager) return res.status(503).json({ success: false, error: 'Export is not available.' });
     const format: unknown = req.body?.format;
@@ -6519,6 +6537,8 @@ ${panes}
       return res.status(202).json({ success: true, runId });
     } catch (err) {
       if (err instanceof IceExportRefused) return res.status(404).json({ success: false, error: err.message });
+      if (err instanceof IceExportNeedsFreshSignIn) return this.askForFreshSignIn(wikiContext, err.permission, req, res, 'json');
+      if (err instanceof IceExportBusy) return res.status(429).json({ success: false, error: err.message });
       if (err instanceof IceExportFailed) return res.status(413).json({ success: false, error: err.message });
       // What is exported may be private: the log gives the error's class only.
       logger.error(`[export] could not start an export for ${currentUser.username} (${errorClassOf(err)})`);
@@ -6533,8 +6553,7 @@ ${panes}
   async exportRunStatus(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
 
     const run = this.engine.getManager<ImportManager>('ImportManager')?.getExportRun(String(req.params.runId ?? ''), currentUser) ?? null;
     res.setHeader('Cache-Control', 'no-store');
@@ -6550,8 +6569,7 @@ ${panes}
   async exportRunDownload(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
 
     const file = this.engine.getManager<ImportManager>('ImportManager')?.exportFile(String(req.params.runId ?? ''), currentUser) ?? null;
     if (!file) return this.renderError(req, res, 404, 'Not found', 'That export is no longer here. Exports are kept for a short while; make it again.');
