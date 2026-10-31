@@ -51,7 +51,7 @@ import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf, newCspNonce } from './utils/securityHeaders.js';
 import { checkSessionAccount, type AccountEndReason } from './utils/sessionAccount.js';
-import { effectiveIdleTimeoutMs, IDLE_STATUS_PATH } from './utils/sessionIdle.js';
+import { countsAsActivity, effectiveIdleTimeoutMs } from './utils/sessionIdle.js';
 import { anonymousSessionMs, checkSessionLimits, DEFAULT_ANONYMOUS_SESSION_MS, DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from './utils/sessionLimits.js';
 import { throttlePerCopyWarning } from './utils/LoginThrottle.js';
 import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
@@ -937,7 +937,7 @@ void (async (): Promise<void> => {
             : 'idle past ngdpbase.session.idle-timeout-minutes (#1546)');
         } else {
           if (verdict.stampSignedIn) req.session.signedInAt = now;
-          if (req.path !== IDLE_STATUS_PATH && verdict.touch) req.session.lastActivity = now;
+          if (countsAsActivity(req.path) && verdict.touch) req.session.lastActivity = now;
         }
       }
 
