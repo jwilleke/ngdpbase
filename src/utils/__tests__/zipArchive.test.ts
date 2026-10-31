@@ -7,7 +7,7 @@
  * archive, extracts it, and compares the bytes that come out.
  *
  * The extractor is Python's `zipfile`; see `extract()` for why it is not the
- * `unzip` binary.
+ * `unzip` binary. No test here needs `unzip` installed.
  */
 
 import path from 'path';
@@ -40,8 +40,9 @@ afterEach(async () => {
  * which predates the UTF-8 filename flag and mangles any non-ASCII name into
  * CP437 — it reported `Caf+?` for a correctly flagged `Café` and failed. That
  * is the extractor being twenty years old, not the archive being wrong, but a
- * test oracle that cannot read a correct archive is no oracle. `unzip -t` is
- * still used below for integrity, where its age does not matter.
+ * test oracle that cannot read a correct archive is no oracle. The integrity
+ * test below uses `python3 -m zipfile -t` for the same reason, and so that no
+ * test needs the `unzip` binary (#2184).
  */
 async function extract(archive: Buffer): Promise<string> {
   const archivePath = path.join(dir, 'takeout.zip');
@@ -57,7 +58,7 @@ async function extract(archive: Buffer): Promise<string> {
   return outDir;
 }
 
-describe('packZip — verified by extracting with the system unzip (#1387)', () => {
+describe("packZip — verified by extracting with Python's zipfile (#1387)", () => {
   test('a file comes back byte for byte, including bytes that are not UTF-8', async () => {
     const out = await extract(await packZip([{ path: 'photo.jpg', bytes: BINARY }]));
 
@@ -127,7 +128,7 @@ describe('packZip — verified by extracting with the system unzip (#1387)', () 
     }
   });
 
-  test('unzip -t reports no errors, so the CRCs and the directory agree', async () => {
+  test('python3 -m zipfile -t reports no errors, so the CRCs and the directory agree', async () => {
     const archive = await packZip([
       { path: 'a.md', bytes: Buffer.from('alpha') },
       { path: 'b/b.bin', bytes: BINARY }
@@ -135,8 +136,21 @@ describe('packZip — verified by extracting with the system unzip (#1387)', () 
     const archivePath = path.join(dir, 'check.zip');
     await fs.writeFile(archivePath, archive);
 
-    const { stdout } = await run('unzip', ['-t', archivePath]);
-    expect(stdout).toMatch(/No errors detected/i);
+    const { stdout } = await run('python3', ['-m', 'zipfile', '-t', archivePath]);
+    // `-t` exits 0 even when it finds a bad CRC; it says so on stdout instead.
+    expect(stdout).toMatch(/Done testing/i);
+    expect(stdout).not.toMatch(/corrupt/i);
+  });
+
+  test('python3 -m zipfile -t fails when one byte of an entry is corrupted', async () => {
+    const archive = await packZip([{ path: 'a.md', bytes: Buffer.from('alpha beta gamma') }]);
+    // The first entry's data starts after its 30-byte local header and name.
+    archive[30 + 'a.md'.length] ^= 0xff;
+    const archivePath = path.join(dir, 'corrupt.zip');
+    await fs.writeFile(archivePath, archive);
+
+    const { stdout } = await run('python3', ['-m', 'zipfile', '-t', archivePath]);
+    expect(stdout).toMatch(/corrupt.*a\.md/i);
   });
 
   test('a leading slash is dropped — an archive never writes to an absolute path', async () => {
