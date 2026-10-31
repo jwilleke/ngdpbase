@@ -2210,6 +2210,13 @@
         "on-failure": "refuse"
       }
     },
+    "shared-folder-access-change": {
+      "description": "An administrator changed who may read and who may file in a shared folder on the Shared folders screen (#2126): which folder, who, and the roles before and after for each. Recorded once the folder's policies are written; a failed write is recorded as a failure, with the error, and a record that cannot be written puts the policies back",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
     "proxy-switch": {
       "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the user represented, actor the user signed in (#1762)",
       "grantable": false,

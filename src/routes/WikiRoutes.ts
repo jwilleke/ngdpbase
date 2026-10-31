@@ -10165,13 +10165,85 @@ ${panes}
   /**
    * POST /admin/backup/shared-folders/folders — make a shared folder
    * (#2125). Admins only; SharedFolderManager asks `admin-system` again and
-   * refuses until the recovery words are confirmed. Until the Shared folders
-   * screen (slice 3) a new folder is opened by admins (`shared-folder-admin`:
-   * read and file) and read by executives (`shared-folder-executive-read`): a
-   * policy naming `shared/<name>` gives anyone else access.
+   * refuses until the recovery words are confirmed. A new folder is opened by
+   * admins (`shared-folder-admin`: read and file) and read by executives
+   * (`shared-folder-executive-read`); who else may read and file is set on
+   * the Shared folders screen (#2126).
    */
   async adminSharedFoldersCreate(req: Request, res: Response) {
-    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/backup?${key}=${encodeURIComponent(message)}#shared-folders-key`);
+    return this.makeSharedFolder(req, res, '/admin/backup', '#shared-folders-key');
+  }
+
+  /**
+   * GET /admin/shared-folders — the Shared folders screen (#2126, epic #1775
+   * decision 8): every folder, who may read and who may file in it (the
+   * site's policies this screen writes, and the other policies in force that
+   * reach it, shown as they are), and a form to make one. `admin-system`,
+   * which SharedFolderManager asks again. Never cached.
+   */
+  async adminSharedFolders(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      const subject = wikiContext.userContext;
+      const list: Array<{ name: string } & Awaited<ReturnType<SharedFolderManager['folderAccess']>>> = [];
+      if (folders && subject) {
+        for (const name of folders.folderNames()) list.push({ name, ...(await folders.folderAccess(subject, name)) });
+      }
+      const commonData = await this.getCommonTemplateData(req);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.render('admin-shared-folders', {
+        ...commonData,
+        title: 'Shared folders',
+        folders: list,
+        roles: folders?.grantableRoles() ?? [],
+        unavailable: folders ? folders.unavailableReason() : 'Shared folders are not available on this site',
+        wordsConfirmed: folders ? await folders.recoveryWordsConfirmed() : false,
+        success: typeof req.query.success === 'string' ? req.query.success : '',
+        error: typeof req.query.error === 'string' ? req.query.error : '',
+        csrfToken: req.session.csrfToken || ''
+      });
+    } catch (err: unknown) {
+      return this.renderError(req, res, 500, 'Error', getErrorMessage(err));
+    }
+  }
+
+  /** POST /admin/shared-folders — make a shared folder from the Shared folders screen (#2126); as Admin → Backup's form. */
+  async adminSharedFoldersMake(req: Request, res: Response) {
+    return this.makeSharedFolder(req, res, '/admin/shared-folders', '');
+  }
+
+  /**
+   * POST /admin/shared-folders/:folder/access — set who may read and who may
+   * file in a folder (#2126): the roles ticked under `read` and `file`,
+   * written as the folder's policies by SharedFolderManager.setFolderAccess,
+   * which asks again and records `shared-folder-access-change`. `admin-system`
+   * and `config-manage`: it writes `ngdpbase.access.policies`, so it asks the
+   * fresh sign-in every configuration write asks (step-up; a stale session
+   * goes to /auth/reauth and comes back, an agent token is refused).
+   */
+  async adminSharedFolderAccess(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/shared-folders?${key}=${encodeURIComponent(message)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
+      const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
+      if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
+      const name = req.params.folder ?? '';
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const roles = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).filter((r): r is string => typeof r === 'string');
+      const changed = await folders.setFolderAccess(wikiContext.userContext, name, { read: roles(body.read), file: roles(body.file) });
+      return back('success', changed ? `Who may read and file in /shared/${name} is saved.` : `Nothing changed in /shared/${name}.`);
+    } catch (err: unknown) {
+      return back('error', getErrorMessage(err));
+    }
+  }
+
+  /** Make the folder named in the form, for `admin-system`, then back to `to` (#2125, #2126). */
+  private async makeSharedFolder(req: Request, res: Response, to: string, anchor: string): Promise<void> {
+    const back = (key: 'success' | 'error', message: string): void => res.redirect(`${to}?${key}=${encodeURIComponent(message)}${anchor}`);
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
@@ -18341,6 +18413,10 @@ ${panes}
     app.post('/admin/backup/shared-folders/words/save', (req: Request, res: Response) => void this.adminSharedFoldersWordsSave(req, res));
     app.post('/admin/backup/shared-folders/words/discard', (req: Request, res: Response) => void this.adminSharedFoldersWordsDiscard(req, res));
     app.post('/admin/backup/shared-folders/folders', (req: Request, res: Response) => void this.adminSharedFoldersCreate(req, res));
+    // #2126: the Shared folders screen — admin-system, asked by each handler and again by SharedFolderManager.
+    app.get('/admin/shared-folders', (req: Request, res: Response) => void this.adminSharedFolders(req, res));
+    app.post('/admin/shared-folders', (req: Request, res: Response) => void this.adminSharedFoldersMake(req, res));
+    app.post('/admin/shared-folders/:folder/access', (req: Request, res: Response) => void this.adminSharedFolderAccess(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
     );

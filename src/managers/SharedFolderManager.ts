@@ -65,9 +65,13 @@ import { isValidStoreId, privateStoreLayoutFromConfig, SHARED_FOLDER_OWNER, stor
 import {
   permitsInSharedFolder,
   setSharedFolderKeySource,
+  SHARED_FOLDER_FILE,
   SHARED_FOLDER_READ,
+  SHARED_FOLDER_RESOURCE_TYPE,
   sharedFolderResource
 } from '../utils/sharedFolderAccess.js';
+import type PolicyEvaluator from './PolicyEvaluator.js';
+import type { Policy } from '../types/Policy.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { SHARED_FOLDERS_WORDS_CONSENT_SCOPE } from '../types/Consent.js';
 import { recordRecoveryWordsExport, type RecoveryWordsExport } from '../utils/recoveryWordsFile.js';
@@ -98,6 +102,91 @@ export const SHIPPED_SHARED_FOLDERS: readonly string[] = [DEFAULT_SHARED_FOLDER,
 
 /** Where pages live: a folder is kept under it, as the `shared-folders` container's vault. */
 const PAGES_DIR_KEY = 'ngdpbase.page.provider.filesystem.storagedir';
+
+/** The access policies, which the Shared folders screen writes the site's own entries of (#2126). */
+const POLICIES_KEY = 'ngdpbase.access.policies';
+/** The roles a folder's access may name. */
+const ROLES_KEY = 'ngdpbase.roles.definitions';
+/**
+ * The ids of the policies the Shared folders screen writes (#2126):
+ * `shared-folder-access-<name>-read` and `shared-folder-access-<name>-file`.
+ * Reserved for the screen: no shipped policy has this prefix
+ * (`shared-folder-executive-read` grants on `shared/*`, not one folder). A
+ * policy with one of a folder's two ids that the screen did not write (an
+ * add-on's, or the site's own in another shape) is shown under the folder and
+ * blocks saving it, never hidden or overwritten.
+ */
+const ACCESS_POLICY_PREFIX = 'shared-folder-access-';
+/** The priority of the screen's policies: that of the shipped folder policies. */
+const ACCESS_POLICY_PRIORITY = 60;
+/**
+ * The role an anonymous visitor holds. Never given a folder: a folder is for
+ * signed-in users, never public (#1775).
+ */
+const ANONYMOUS_ROLE = 'anonymous';
+
+/** Who may read and who may file in a folder, as the Shared folders screen sets it (#2126). */
+export interface SharedFolderAccess {
+  /** Roles granted `shared-folder-read` on `shared/<name>` by the screen's policy. */
+  read: string[];
+  /** Roles granted `shared-folder-file` on `shared/<name>` by the screen's policy. */
+  file: string[];
+}
+
+/** A policy in force that reaches a folder and that the screen did not write: shipped, an add-on's, or the site's own. Shown, never changed here. */
+export interface SharedFolderOtherPolicy {
+  id: string;
+  name: string;
+  effect: string;
+  /** Its subjects as written (`role:editor`, `job:nightly`); empty: everyone, anonymous visitors included. */
+  subjects: string[];
+  /** Which of `shared-folder-read` and `shared-folder-file` it decides, as the PDP matches actions (an empty list or `*` is both). */
+  actions: string[];
+  /** It has an id the screen writes for this folder: saving the folder is refused until it is renamed or removed. */
+  reserved: boolean;
+}
+
+/** The id of the screen's policy for reading or filing in folder `name`. */
+function accessPolicyId(name: string, kind: 'read' | 'file'): string {
+  return `${ACCESS_POLICY_PREFIX}${name}-${kind}`;
+}
+
+/** The screen's policy granting `shared-folder-read` or `shared-folder-file` on `shared/<name>` to `roles`. */
+function accessPolicy(name: string, kind: 'read' | 'file', roles: string[]): Policy {
+  return {
+    id: accessPolicyId(name, kind),
+    name: `Shared folder ${name}: ${kind === 'read' ? 'read' : 'file'}`,
+    description: kind === 'read'
+      ? `Who may open /shared/${name}: its pages, their history and its files. Set on Admin → Shared folders (#2126)`
+      : `Who may add, edit and delete pages and files in /shared/${name}. Set on Admin → Shared folders (#2126)`,
+    priority: ACCESS_POLICY_PRIORITY,
+    effect: 'allow',
+    subjects: roles.map((value) => ({ type: 'role', value })),
+    resources: [{ type: SHARED_FOLDER_RESOURCE_TYPE, pattern: sharedFolderResource(name) }],
+    actions: [kind === 'read' ? SHARED_FOLDER_READ : SHARED_FOLDER_FILE]
+  };
+}
+
+/**
+ * Whether `p` has the shape `accessPolicy` writes for folder `name`: allow, one
+ * or more role subjects, the one resource and the one action. Any other shape
+ * under the screen's id is not the screen's.
+ */
+function isScreenPolicy(p: Policy, name: string, kind: 'read' | 'file'): boolean {
+  const subjects = p.subjects ?? [];
+  const resources = p.resources ?? [];
+  const actions = p.actions ?? [];
+  return p.id === accessPolicyId(name, kind)
+    && p.effect === 'allow'
+    && subjects.length > 0 && subjects.every((x) => x.type === 'role' && typeof x.value === 'string')
+    && resources.length === 1 && resources[0].type === SHARED_FOLDER_RESOURCE_TYPE && resources[0].pattern === sharedFolderResource(name)
+    && actions.length === 1 && actions[0] === (kind === 'read' ? SHARED_FOLDER_READ : SHARED_FOLDER_FILE);
+}
+
+/** The roles a policy the screen wrote names, sorted. */
+function rolesOf(p: Policy | undefined): string[] {
+  return (p?.subjects ?? []).map((x) => String(x.value)).sort();
+}
 
 /** The organization's recovery words, as kept: never the words. */
 interface RecoveryRecord {
@@ -192,9 +281,10 @@ interface Pdp {
 const ADMIN_PERMISSION = 'admin-system';
 
 /**
- * Asked as well as `admin-system` to replace a saved set of words (#2144): the
- * step-up permission Admin → Backup's key actions ask (the backup key, `.env`),
- * so the PDP refuses it without a fresh sign-in.
+ * Asked as well as `admin-system` to replace a saved set of words (#2144) and
+ * to change who may read and file in a folder (#2126): the step-up permission
+ * every configuration write asks (Admin → Configuration, the backup key,
+ * `.env`), so the PDP refuses it without a fresh sign-in.
  */
 const FRESH_SIGN_IN_PERMISSION = 'config-manage';
 
@@ -715,6 +805,158 @@ class SharedFolderManager extends BaseManager {
     });
   }
 
+  // ── Access, as the Shared folders screen sets it (#2126) ─────────────────
+
+  /**
+   * Who may read and who may file in folder `name`, as the Shared folders
+   * screen set it: the roles its own policies (`shared-folder-access-<name>-read`
+   * / `-file`, in the site's custom configuration, in the shape the screen
+   * writes) name, and every other policy in force that reaches the folder,
+   * shown as it is, matched as PolicyEvaluator matches it. A policy with one of
+   * the screen's ids that the screen did not write is shown, marked
+   * `reserved`. `admin-system`, as the screen is. Display only: the PDP
+   * decides every access.
+   */
+  async folderAccess(ctx: ActorContext, name: string): Promise<SharedFolderAccess & { others: SharedFolderOtherPolicy[] }> {
+    await this.requireAdmin(ctx);
+    const evaluator = this.engine.getManager<PolicyEvaluator>('PolicyEvaluator');
+    if (!evaluator) throw new SharedFoldersUnavailableError('There is no policy evaluator to say which policies reach the folder');
+    const { own, reserved, inForce } = this.accessState(name);
+    const resource = sharedFolderResource(name);
+    const ownIds = new Set([accessPolicyId(name, 'read'), accessPolicyId(name, 'file')]);
+    // As the PDP asks it (permitsInSharedFolder): the folder as the page name and as the attribute.
+    const actionsOf = (p: Policy): string[] => [SHARED_FOLDER_READ, SHARED_FOLDER_FILE].filter((a) => evaluator.matchesAction(p.actions, a));
+    const reaches = (p: Policy): boolean => actionsOf(p).length > 0 && evaluator.matchesResource(p.resources, resource, { [SHARED_FOLDER_RESOURCE_TYPE]: resource });
+    return {
+      read: rolesOf(own.read),
+      file: rolesOf(own.file),
+      others: inForce
+        .filter((p) => reserved.includes(p.id) || (!ownIds.has(p.id) && reaches(p)))
+        .map((p) => ({
+          id: p.id,
+          name: p.name ?? p.id,
+          effect: p.effect === 'deny' ? 'deny' : 'allow',
+          subjects: (p.subjects ?? []).map((x) => `${x.type}:${x.value}`),
+          actions: actionsOf(p),
+          reserved: reserved.includes(p.id)
+        }))
+    };
+  }
+
+  /** The roles a folder's access may name: every role there is but `anonymous`, by name. */
+  grantableRoles(): string[] {
+    const roles = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(ROLES_KEY, {});
+    return Object.keys(roles && typeof roles === 'object' ? roles : {}).filter((r) => r !== ANONYMOUS_ROLE).sort();
+  }
+
+  /**
+   * Set who may read and who may file in folder `name` (#2126, decision 8):
+   * writes the site's policies `shared-folder-access-<name>-read` (granting
+   * `shared-folder-read` on `shared/<name>`) and `-file` (`shared-folder-file`)
+   * to the roles given, through ConfigurationManager, and removes one whose
+   * list is empty. `admin-system`, with a fresh sign-in (the step-up
+   * permission, as every other configuration write asks). Refused for a folder
+   * that does not exist, a role that does not exist, `anonymous` (a folder is
+   * never public), and a folder one of whose ids holds a policy the screen did
+   * not write (it is never overwritten). Recorded as
+   * `shared-folder-access-change` (who, the folder, the roles before and
+   * after) once the write has succeeded; a failed write is recorded as a
+   * failure, and a record that cannot be written puts the policies back
+   * (on-failure refuse). ConfigurationManager records the configuration
+   * change as well. Nothing is written or recorded when nothing changes.
+   * Returns whether it changed.
+   *
+   * Only the screen's own policies change: a shipped or add-on policy, or one
+   * the site wrote elsewhere, still applies (`folderAccess` shows them).
+   */
+  async setFolderAccess(ctx: ActorContext, name: string, access: SharedFolderAccess): Promise<boolean> {
+    await this.requireAdmin(ctx);
+    await this.requireFreshSignIn(ctx, 'change who may read and file in a shared folder');
+    if (!this.folderNames().includes(name)) throw new SharedFolderRefusedError(`There is no shared folder '${name}'`);
+    const known = new Set(this.grantableRoles());
+    const tidy = (roles: string[]): string[] => [...new Set(roles)].sort();
+    const next: SharedFolderAccess = { read: tidy(access.read), file: tidy(access.file) };
+    for (const role of [...next.read, ...next.file]) {
+      if (role === ANONYMOUS_ROLE) throw new SharedFolderRefusedError('A shared folder is never opened to anonymous visitors');
+      if (!known.has(role)) throw new SharedFolderRefusedError(`There is no role '${role}'`);
+    }
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!config) throw new SharedFoldersUnavailableError('There is no configuration to write the folder\'s policies to');
+    // One change at a time, so two admins saving at once do not lose either's.
+    return this.serial.run(POLICIES_KEY, async () => {
+      const { own, reserved } = this.accessState(name);
+      if (reserved.length > 0) {
+        throw new SharedFolderRefusedError(`Policy ${reserved.map((id) => `'${id}'`).join(' and ')} has an id this screen keeps for /shared/${name}, and this screen did not write it. Nothing was saved. Rename or remove it in Admin → Configuration first`);
+      }
+      const before: SharedFolderAccess = { read: rolesOf(own.read), file: rolesOf(own.file) };
+      if (before.read.join() === next.read.join() && before.file.join() === next.file.join()) return false;
+      // Every entry the site has, those without an id included: only the screen's two for this folder change.
+      const site = this.siteAccessPolicies();
+      const ours = new Set([accessPolicyId(name, 'read'), accessPolicyId(name, 'file')]);
+      const written = [
+        ...site.filter((p) => !(p && typeof p === 'object' && ours.has((p as Policy).id))),
+        ...(['read', 'file'] as const).filter((kind) => next[kind].length > 0).map((kind) => accessPolicy(name, kind, next[kind]))
+      ];
+      const who = actorOf(ctx);
+      const record = (result: 'success' | 'failure', error?: string): Promise<unknown> => recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+        eventType: AUDIT_EVENT.SHARED_FOLDER_ACCESS_CHANGE,
+        ...who,
+        action: 'shared-folder-access-change',
+        result,
+        severity: 'high',
+        resource: sharedFolderResource(name),
+        resourceType: 'shared-folder',
+        metadata: { ...who.metadata, folder: name, before, after: next, ...(error ? { error } : {}) }
+      });
+      // Never an empty list: it would replace every shipped policy (ConfigurationManager.setProperty).
+      const put = (list: unknown[]): Promise<unknown> => config.setProperty(POLICIES_KEY, list.length > 0 ? list : undefined, ctx);
+      try {
+        await put(written);
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await record('failure', error).catch((auditErr: unknown) => logger.error(`[SharedFolderManager] could not record the failed access change of '${name}': ${String(auditErr)}`));
+        throw err;
+      }
+      try {
+        await record('success');
+      } catch (err) {
+        // on-failure refuse: the change does not stand without its record.
+        await put(site);
+        throw err;
+      }
+      logger.info(`🗂️  [SharedFolderManager] ${ctx.username} set who may read (${next.read.join(', ') || 'nobody'}) and file (${next.file.join(', ') || 'nobody'}) in shared folder '${name}'`);
+      return true;
+    });
+  }
+
+  /**
+   * Folder `name`'s access as the screen sees it: the screen's own policies
+   * (the site's entry under each id, in the shape `accessPolicy` writes), the
+   * ids holding a policy the screen did not write (the site's in another
+   * shape, a deny say, or one in force from a shipped or add-on layer), and
+   * the policies in force.
+   */
+  private accessState(name: string): { own: { read?: Policy; file?: Policy }; reserved: string[]; inForce: Policy[] } {
+    const site = this.siteAccessPolicies().filter((p): p is Policy => !!p && typeof p === 'object' && typeof (p as Policy).id === 'string');
+    const inForce = this.engine.getManager<{ policies(): Policy[] }>('PolicyDecisionPoint')?.policies() ?? [];
+    const own: { read?: Policy; file?: Policy } = {};
+    const reserved: string[] = [];
+    for (const kind of ['read', 'file'] as const) {
+      const id = accessPolicyId(name, kind);
+      const mine = site.find((p) => p.id === id);
+      const live = inForce.find((p) => p.id === id);
+      if ((mine && !isScreenPolicy(mine, name, kind)) || (live && (!mine || !isScreenPolicy(live, name, kind)))) reserved.push(id);
+      else if (mine) own[kind] = mine;
+    }
+    return { own, reserved, inForce };
+  }
+
+  /** The site's own entries of the access policies (the custom configuration layer), as they are: never the shipped or an add-on's. */
+  private siteAccessPolicies(): unknown[] {
+    const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getCustomProperty(POLICIES_KEY);
+    return Array.isArray(raw) ? raw : [];
+  }
+
   /** The pages directory and the configured vault layout, where folders are kept. */
   private pagesPlace(): { pagesDirectory: string; layout: ReturnType<typeof privateStoreLayoutFromConfig> } | null {
     const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -751,11 +993,15 @@ class SharedFolderManager extends BaseManager {
     }
   }
 
-  /** The fresh sign-in a new set of words needs (#2144): the PDP applies step-up to `FRESH_SIGN_IN_PERMISSION`. */
-  private async requireFreshSignIn(ctx: ActorContext): Promise<void> {
+  /**
+   * The fresh sign-in a new set of words (#2144) and an access change (#2126)
+   * need: the PDP applies step-up to `FRESH_SIGN_IN_PERMISSION`, and never
+   * grants it to a delegated credential (an agent token).
+   */
+  private async requireFreshSignIn(ctx: ActorContext, what = 'make a new set of the shared folders\' recovery words'): Promise<void> {
     const pdp = this.engine.getManager<Pdp>('PolicyDecisionPoint');
     if (!ctx?.username || !pdp || !(await pdp.permits(ctx, FRESH_SIGN_IN_PERMISSION))) {
-      throw new SharedFolderRefusedError(`${ctx?.username ?? 'Nobody'} may not make a new set of the shared folders' recovery words without a fresh sign-in (needs ${FRESH_SIGN_IN_PERMISSION})`);
+      throw new SharedFolderRefusedError(`${ctx?.username ?? 'Nobody'} may not ${what} without a fresh sign-in (needs ${FRESH_SIGN_IN_PERMISSION})`);
     }
   }
 

@@ -1533,6 +1533,58 @@ describe('ConfigurationManager', () => {
     });
   });
 
+  // #2126: a list merged by id (the access policies) is written by the Shared
+  // folders screen one site entry at a time. The custom file then holds only
+  // the site's entries; what is in force must still be shipped ⊕ site, as it
+  // is after a restart, not the site's entries alone.
+  describe('setProperty on a list merged by id (#2126)', () => {
+    const POLICIES = 'ngdpbase.access.policies';
+    const actor = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
+    const shipped = [{ id: 'shipped-a', priority: 1 }, { id: 'shipped-b', priority: 2 }];
+
+    async function makeCm() {
+      await fs.ensureDir(path.join(tempDir, 'data', 'config'));
+      await fs.writeJson(path.join(tempDir, 'config', 'app-default-config.json'), { [POLICIES]: shipped, 'ngdpbase.plain.list': ['a', 'b'] }, { spaces: 2 });
+      const cm = new ConfigurationManager({ getManager: vi.fn(() => null) });
+      await cm.initialize();
+      return cm;
+    }
+
+    test('the site\'s entries are written alone, and what is in force is shipped and site together, as after a restart', async () => {
+      const cm = await makeCm();
+      await cm.setProperty(POLICIES, [{ id: 'site-x', priority: 3 }], actor);
+      expect((await fs.readJson(cm.getCustomConfigPath()))[POLICIES]).toEqual([{ id: 'site-x', priority: 3 }]);
+      const now = (cm.getProperty(POLICIES) as Array<{ id: string }>).map((p) => p.id);
+      expect(now).toEqual(['shipped-a', 'shipped-b', 'site-x']);
+      const restarted = new ConfigurationManager({ getManager: vi.fn(() => null) });
+      await restarted.initialize();
+      expect((restarted.getProperty(POLICIES) as Array<{ id: string }>).map((p) => p.id)).toEqual(now);
+    });
+
+    test('a site entry with a shipped id overrides that one', async () => {
+      const cm = await makeCm();
+      await cm.setProperty(POLICIES, [{ id: 'shipped-b', priority: 9 }, { id: 'site-x' }], actor);
+      expect(cm.getProperty(POLICIES)).toEqual([{ id: 'shipped-a', priority: 1 }, { id: 'shipped-b', priority: 9 }, { id: 'site-x' }]);
+    });
+
+    test('undefined takes the key out of the custom file: the layers beneath are in force again, now and after a restart', async () => {
+      const cm = await makeCm();
+      await cm.setProperty(POLICIES, [{ id: 'site-x' }], actor);
+      await cm.setProperty(POLICIES, undefined, actor);
+      expect(await fs.readJson(cm.getCustomConfigPath())).not.toHaveProperty(POLICIES);
+      expect(cm.getProperty(POLICIES)).toEqual(shipped);
+      const restarted = new ConfigurationManager({ getManager: vi.fn(() => null) });
+      await restarted.initialize();
+      expect(restarted.getProperty(POLICIES)).toEqual(shipped);
+    });
+
+    test('a list not merged by id is still replaced', async () => {
+      const cm = await makeCm();
+      await cm.setProperty('ngdpbase.plain.list', ['c'], actor);
+      expect(cm.getProperty('ngdpbase.plain.list')).toEqual(['c']);
+    });
+  });
+
   // #1117 slice 2: the filter namespace said the wrong thing —
   // `ngdpbase.filters.security.block-on-save` is a write-path gate, not
   // a markup option. Keys move to `ngdpbase.filters.*`; legacy custom-config

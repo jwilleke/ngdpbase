@@ -62,7 +62,7 @@ await configManager.setProperty('ngdpbase.application-name', 'My Wiki');
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
 | `getProperty(key, default)` | `any` | Get property with optional default |
-| `setProperty(key, value)` | `Promise<void>` | Set and persist custom property |
+| `setProperty(key, value, ctx)` | `Promise<void>` | Set and persist a custom property, audited with `ctx`. What is in force afterwards is what a restart would merge: a list merged by `id` (the access policies) keeps the shipped and add-on entries beneath the site's; `undefined` takes the key out of the custom file (an empty list would replace every entry beneath it) ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)) |
 | `getAllProperties()` | `Object` | Get all merged properties |
 | `getCustomProperties()` | `Object` | Get only custom overrides |
 | `getDefaultProperties()` | `Object` | Get default values |
