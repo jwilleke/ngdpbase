@@ -60,6 +60,8 @@ declare module 'linkedom' {
     getElementById(id: string): LinkedomElement | null;
     querySelector(selector: string): LinkedomElement | null;
     querySelectorAll(selector: string): LinkedomElement[];
+    /** The whole document as HTML, its doctype included. */
+    toString(): string;
   }
 
   function parseHTML(html: string): { document: LinkedomDocument };

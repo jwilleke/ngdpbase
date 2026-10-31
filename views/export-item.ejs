@@ -1,0 +1,107 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #2120: the Export action on one thing (a page), through the ICE engine.
+    Export starts from the thing: only the formats the engine can make from
+    it are listed, and only to a user who may export it. Locals: exportName
+    (what is exported), exportBack (where it is), exportAction (the POST
+    URL), formats [{ id, label }]. The start is posted with csrfFetch; the
+    file is made in the background and offered for download when ready. %>
+<div class="container mt-4" id="exportScreen">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h2 mb-0"><i class="fas fa-download"></i> Export &ldquo;<%= exportName %>&rdquo;</h1>
+        <a href="<%= exportBack %>" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
+    </div>
+
+    <form id="exportForm" class="card mb-4" data-action="<%= exportAction %>">
+        <div class="card-body">
+            <fieldset class="mb-3">
+                <legend class="form-label fs-6">Format</legend>
+                <% formats.forEach(function(f, i) { %>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="format" value="<%= f.id %>" id="format-<%= i %>" <%= i === 0 ? 'checked' : '' %>>
+                        <label class="form-check-label" for="format-<%= i %>"><%= f.label %></label>
+                    </div>
+                <% }); %>
+            </fieldset>
+            <button type="submit" class="btn btn-primary" id="exportStart"><i class="fas fa-file-export"></i> Export</button>
+            <div id="exportStatus" class="mt-3" aria-live="polite"></div>
+        </div>
+    </form>
+</div>
+
+<script nonce="<%= locals.cspNonce %>">
+(function () {
+    var form = document.getElementById('exportForm');
+    var status = document.getElementById('exportStatus');
+    var start = document.getElementById('exportStart');
+    // How long the page waits for a file: 400 checks, about ten minutes.
+    var MAX_TRIES = 400;
+
+    function show(kind, text, link) {
+        status.className = 'mt-3 alert alert-' + kind;
+        status.textContent = text;
+        if (link) {
+            var a = document.createElement('a');
+            a.href = link;
+            a.className = 'btn btn-success ms-2';
+            a.id = 'exportDownload';
+            a.textContent = 'Download';
+            status.appendChild(a);
+        }
+    }
+
+    // Check again later, or, after MAX_TRIES, stop and say so.
+    function again(runId, tries, wait) {
+        if (tries + 1 >= MAX_TRIES) {
+            show('warning', 'This export is taking longer than expected. Try again later.');
+            start.disabled = false;
+            return;
+        }
+        setTimeout(function () { poll(runId, tries + 1); }, wait);
+    }
+
+    function poll(runId, tries) {
+        fetch('/export/runs/' + encodeURIComponent(runId), { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (body) {
+                var run = body && body.run;
+                if (!run) { show('danger', (body && body.error) || 'The export is no longer here.'); start.disabled = false; return; }
+                if (run.state === 'done') {
+                    var url = '/export/runs/' + encodeURIComponent(runId) + '/download';
+                    show('success', 'Ready: ' + run.file.name + '.', url);
+                    start.disabled = false;
+                    window.location.href = url;
+                } else if (run.state === 'failed') {
+                    show('danger', run.error || 'The export could not be made.');
+                    start.disabled = false;
+                } else {
+                    again(runId, tries, 1500);
+                }
+            })
+            .catch(function () { again(runId, tries, 3000); });
+    }
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var chosen = form.querySelector('input[name="format"]:checked');
+        if (!chosen) return;
+        start.disabled = true;
+        show('info', 'Preparing your export…');
+        window.csrfFetch(form.getAttribute('data-action'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ format: chosen.value })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (body) {
+                if (body && body.success && body.runId) poll(body.runId, 0);
+                // Step-up: the export needs a fresh sign-in, which comes back here.
+                else if (body && body.reauth) window.location.href = body.reauth;
+                else { show('danger', (body && body.error) || 'The export could not be started.'); start.disabled = false; }
+            })
+            .catch(function () { show('danger', 'The export could not be started.'); start.disabled = false; });
+    });
+})();
+</script>
+
+<%- include('footer') %>
