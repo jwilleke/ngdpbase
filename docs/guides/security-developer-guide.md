@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-30
+dateModified: 2026-10-31
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -73,7 +73,7 @@ Rules:
 Nobody but an administrator sets or changes a page's `system-category` (operator, 2026-10-29, [#1503](https://github.com/jwilleke/ngdpbase/issues/1503)). The rule is one method, `PageManager.systemCategoryForWrite(ctx, requested, current, fallback)`, which asks the PDP for `admin-system` with the requester's context, never a role name.
 
 - For anyone else, a new page is the default system-category (`general`; a takeout import, the system-category whose vault it goes into) and an existing page keeps its own. A request naming any other is refused with a 403, "Only administrators can set a page's system category", never silently rewritten.
-- Every write path that takes a system-category from a request asks it: the create form, the editor and raw editor (`/save`, which also covers rename and the Private-box move), the ingest API and the takeout import. A path that sets the category itself (capture, the profile page, an add-on's own pages) is the feature's choice, not the requester's, and does not ask.
+- Every write path that takes a system-category from a request asks it: the create form, the editor and raw editor (`/save`, which also covers rename and the Private-box move), the ingest API and both takeout import doors, `POST /my/takeout/import` and `core.private-store` on `/import` (`systemCategoryForWrite` in `src/managers/ImportManager.ts`, [#2118](https://github.com/jwilleke/ngdpbase/issues/2118)). A path that sets the category itself (capture, the profile page, an add-on's own pages) is the feature's choice, not the requester's, and does not ask.
 - The editor's picker is shown to administrators only; that is an affordance, the server is the door.
 
 ## Every security-relevant call carries a context
