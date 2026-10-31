@@ -7011,6 +7011,22 @@ ${panes}
     res.render('reauth-continue', { ...commonData, title: 'Carrying on', ...answer });
   }
 
+  /**
+   * GET /auth/reauth/status — whether this session's sign-in is fresh enough
+   * for step-up now (#2193). A page that opened the prompt in another window
+   * asks it, then sends its request again. Only a yes or no about the caller's
+   * own session; the request it sends is decided again on its own.
+   */
+  async reauthStatus(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    const user = wikiContext.userContext;
+    const fresh = this.engine.getManager<AuthManager>('AuthManager')
+      ?.signInFresh(user.signIn, user.roles ?? [], Boolean(user.viaToken || user.viaShare), undefined, user.aalCap) ?? false;
+    res.set('Cache-Control', 'no-store');
+    res.json({ fresh });
+  }
+
   /** GET /auth/passkey/reauth/options — a passkey challenge for step-up (#1525), for the signed-in person only. */
   async passkeyReauthOptions(req: Request, res: Response): Promise<void> {
     if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'json'))) return;
@@ -18255,6 +18271,7 @@ ${panes}
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
     app.get(STEP_UP_CONTINUE_PATH, (req: Request, res: Response) => { void this.reauthContinue(req, res); });
+    app.get('/auth/reauth/status', (req: Request, res: Response) => { void this.reauthStatus(req, res); });
     app.get('/auth/passkey/reauth/options', (req: Request, res: Response) => { void this.passkeyReauthOptions(req, res); });
     app.post('/auth/passkey/reauth/verify', (req: Request, res: Response) => { void this.passkeyReauthVerify(req, res); });
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });

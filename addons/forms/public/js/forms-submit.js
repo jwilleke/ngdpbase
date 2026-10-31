@@ -7,22 +7,67 @@
   window.__ngdpFormsSubmitLoaded = true;
 
   // Messages are set as text, never as HTML: a handler's error may echo what was typed.
-  function showAlert(result, kind, icon, message, reauth) {
+  function showAlert(result, kind, icon, message, newTab) {
     result.replaceChildren();
     const box = document.createElement('div');
     box.className = 'alert alert-' + kind;
     const i = document.createElement('i');
     i.className = 'fas ' + icon + ' me-2';
     box.append(i, document.createTextNode(message));
-    // A step-up refusal (#1745): the way to re-authenticate, back to this page.
-    if (typeof reauth === 'string' && reauth.startsWith('/auth/reauth?')) {
+    // #2193: a link opens in a new tab, so this page and what was typed stay.
+    if (newTab) {
       const link = document.createElement('a');
-      link.href = reauth;
+      link.href = newTab.href;
+      link.target = '_blank';
+      link.rel = 'noopener';
       link.className = 'alert-link ms-2';
-      link.textContent = 'Sign in again';
+      link.textContent = newTab.text;
       box.append(link);
     }
     result.append(box);
+  }
+
+  // ── A fresh sign-in (step-up, #1745, #2193) ───────────────────────────
+  // A refusal for a fresh sign-in keeps the page: the prompt opens in another
+  // window, the page asks whether this session's sign-in is fresh yet, then
+  // sends the same JSON once more. Nothing typed leaves the page before that,
+  // and the server decides the request again when it comes.
+
+  const STEP_UP_PROMPT = '/auth/reauth';
+  const STEP_UP_STATUS = '/auth/reauth/status';
+  const STEP_UP_POLL_MS = 1500;
+  /** How long a page waits for a prompt it cannot see, opened in a new tab. */
+  const STEP_UP_WAIT_MS = 10 * 60 * 1000;
+
+  /** Only this site's prompt, as core sends it (sendApiError). */
+  function isPrompt(reauth) {
+    return typeof reauth === 'string' && reauth.startsWith(STEP_UP_PROMPT + '?');
+  }
+
+  /** Whether this session's sign-in is fresh now; false when it cannot tell. */
+  async function signInFresh() {
+    try {
+      const res = await fetch(STEP_UP_STATUS, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      return res.ok && (await res.json()).fresh === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Whether the popup has been on the prompt and gone on from it: confirmed
+   * or cancelled, both go to the page it came back to. Closed counts too.
+   */
+  function promptOver(wait) {
+    if (!wait.popup) return false;
+    if (wait.popup.closed) return true;
+    try {
+      const at = wait.popup.location.pathname;
+      if (at === STEP_UP_PROMPT) wait.seen = true;
+      return wait.seen && at !== STEP_UP_PROMPT;
+    } catch {
+      return false; // not readable while it loads
+    }
   }
 
   function clearFieldErrors(form) {
@@ -229,6 +274,92 @@
     if (form.dataset.ngdpBound) return;
     form.dataset.ngdpBound = '1';
     let inFlight = false;
+    // #2193: the wait for a fresh sign-in, while there is one. Whichever sends
+    // first, the wait or a press of Submit, ends it, so the form is sent once.
+    let waiting = null;
+
+    function stopWaiting() {
+      if (waiting?.popup && !waiting.popup.closed) waiting.popup.close();
+      waiting = null;
+    }
+
+    /** POST the form's JSON. `retried`: this is the send after a fresh sign-in. */
+    async function send(body, retried) {
+      inFlight = true;
+      const btn = form.querySelector('[type=submit]');
+      if (btn) btn.disabled = true;
+      result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
+
+      try {
+        // #727: form submission is state-changing — needs the CSRF
+        // token (#663 app-wide middleware). csrfFetch injects
+        // X-CSRF-Token; without it the POST gets a text/plain 403.
+        const res = await (window.csrfFetch || fetch)('/api/forms/submit/' + encodeURIComponent(formId), {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+        const json = await res.json();
+
+        if (json.ok) {
+          form.reset();
+          form.classList.add('d-none');
+          showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
+        } else {
+          // What was typed stays in the form; each field's message goes next to it.
+          showFieldErrors(form, json.fields);
+          if (isPrompt(json.reauth) && !retried) {
+            waitForFreshSignIn(json.reauth, body);
+          } else if (isPrompt(json.reauth)) {
+            // Asked again right after one: never a loop of prompts.
+            showAlert(result, 'danger', 'fa-exclamation-circle', 'This still needs a fresh sign-in, so nothing was sent. Your form is as you typed it; press Submit to try again.');
+          } else {
+            showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.');
+          }
+          if (btn) btn.disabled = false;
+        }
+      } catch {
+        showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
+        if (btn) btn.disabled = false;
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    /**
+     * Open the prompt in a popup (or offer it in a new tab when the popup is
+     * blocked) and wait, keeping `body`, until the sign-in is fresh.
+     */
+    function waitForFreshSignIn(reauth, body) {
+      const popup = window.open(reauth, 'ngdp-step-up', 'popup,width=520,height=680');
+      const wait = { popup, body, seen: false, until: Date.now() + STEP_UP_WAIT_MS };
+      waiting = wait;
+      if (popup) {
+        showAlert(result, 'info', 'fa-user-shield', 'This needs a fresh sign-in. Confirm it is you in the window that opened; your form is kept here and sent once you have.');
+      } else {
+        showAlert(result, 'warning', 'fa-user-shield', 'This needs a fresh sign-in, and your browser blocked the window for it. Your form is kept here and sent once you have confirmed.',
+          { href: reauth, text: 'Confirm it is you in a new tab' });
+      }
+      setTimeout(() => { void poll(wait); }, STEP_UP_POLL_MS);
+    }
+
+    async function poll(wait) {
+      if (waiting !== wait) return;
+      // Looked at before asking: a prompt left after its confirmation is
+      // answered fresh, since the confirmation is saved before it moves on.
+      const over = promptOver(wait);
+      const fresh = await signInFresh();
+      if (waiting !== wait) return;
+      if (fresh) {
+        stopWaiting();
+        void send(wait.body, true);
+      } else if (over || Date.now() > wait.until) {
+        stopWaiting();
+        showAlert(result, 'warning', 'fa-exclamation-triangle', 'The fresh sign-in was not confirmed, so nothing was sent. Your form is as you typed it; press Submit to try again.');
+      } else {
+        setTimeout(() => { void poll(wait); }, STEP_UP_POLL_MS);
+      }
+    }
 
     const checklists = Array.from(form.querySelectorAll('[data-checklist]'));
     const checklistNames = new Set(checklists.map((group) => group.dataset.checklist));
@@ -318,38 +449,9 @@
       }
 
       clearFieldErrors(form);
-      inFlight = true;
-      const btn = form.querySelector('[type=submit]');
-      if (btn) btn.disabled = true;
-      result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
-
-      try {
-        // #727: form submission is state-changing — needs the CSRF
-        // token (#663 app-wide middleware). csrfFetch injects
-        // X-CSRF-Token; without it the POST gets a text/plain 403.
-        const res = await (window.csrfFetch || fetch)('/api/forms/submit/' + encodeURIComponent(formId), {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(data),
-        });
-        const json = await res.json();
-
-        if (json.ok) {
-          form.reset();
-          form.classList.add('d-none');
-          showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
-        } else {
-          // What was typed stays in the form; each field's message goes next to it.
-          showFieldErrors(form, json.fields);
-          showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.', json.reauth);
-          if (btn) btn.disabled = false;
-        }
-      } catch {
-        showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
-        if (btn) btn.disabled = false;
-      } finally {
-        inFlight = false;
-      }
+      // A press while waiting for a fresh sign-in sends now; the wait sends nothing.
+      stopWaiting();
+      await send(JSON.stringify(data), false);
     });
   }
 

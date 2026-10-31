@@ -3160,10 +3160,25 @@ class AuthManager extends BaseManager {
   stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
     const policy = this.stepUpPolicy();
     if (!policy.permissions.has(permission)) return false;
-    if (delegated) return true;
+    return !this.freshUnder(policy.maxAgeMs, signIn, roles, delegated, now, cap);
+  }
+
+  /**
+   * Whether `signIn` is fresh enough for every step-up permission (#2193): the
+   * window and the level are one for all of them, so a page waiting on its
+   * prompt asks this without naming the permission. With step-up off, every
+   * sign-in is.
+   */
+  signInFresh(signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
+    const policy = this.stepUpPolicy();
+    return policy.permissions.size === 0 || this.freshUnder(policy.maxAgeMs, signIn, roles, delegated, now, cap);
+  }
+
+  private freshUnder(maxAgeMs: number, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number, cap?: number): boolean {
+    if (delegated) return false;
     const need = Math.max(this.requiredAalFor(roles, cap), 1);
-    const since = now - policy.maxAgeMs;
-    return !(signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
+    const since = now - maxAgeMs;
+    return (signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
   }
 
   /**

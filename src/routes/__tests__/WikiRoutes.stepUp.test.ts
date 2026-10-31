@@ -18,6 +18,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   const audit: Array<Record<string, unknown>> = [];
   const authManager = {
     stepUpNeeded: vi.fn(() => needed),
+    signInFresh: vi.fn(() => false),
     renameCredential: vi.fn().mockResolvedValue(true),
     revokeDelegation: vi.fn().mockResolvedValue(true),
     passkeyAuthenticationOptions: vi.fn().mockResolvedValue({ challenge: 'c1' }),
@@ -343,6 +344,39 @@ describe('downloading the backup key file (#2134)', () => {
     await r.adminBackupKeyFile(req(session(), { method: 'GET', originalUrl: '/admin/backup/key/file' }), out);
     expect(backup.revealBackupKeyFile).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }));
     expect(out.send).toHaveBeenCalledWith('X=1\n');
+  });
+});
+
+describe('a page waiting on its prompt asks whether the sign-in is fresh now (#2193)', () => {
+  const status = (userContext: Record<string, unknown>) => req(session(), { method: 'GET', originalUrl: '/auth/reauth/status', userContext });
+  const molly = { username: 'molly', roles: ['reader'], isAuthenticated: true, aalCap: 1, signIn: { factors: [] } };
+
+  test('answers only whether this session\'s sign-in is fresh, never cached', async () => {
+    const { r, authManager } = routes(false);
+    authManager.signInFresh.mockReturnValue(true);
+    const out = res();
+    await r.reauthStatus(status(molly), out);
+    expect(authManager.signInFresh).toHaveBeenCalledWith(molly.signIn, ['reader'], false, undefined, 1);
+    expect(out.set).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(out.json).toHaveBeenCalledWith({ fresh: true });
+  });
+
+  test('a stale sign-in, or a delegated credential, is not fresh', async () => {
+    const { r, authManager } = routes(false);
+    const out = res();
+    await r.reauthStatus(status(molly), out);
+    expect(out.json).toHaveBeenCalledWith({ fresh: false });
+    await r.reauthStatus(status({ ...molly, viaToken: { id: 't', name: 'bot', scopes: ['profile-manage'] } }), res());
+    expect(authManager.signInFresh).toHaveBeenLastCalledWith(molly.signIn, ['reader'], true, undefined, 1);
+  });
+
+  test('asked like the prompt itself, profile-manage: a caller refused it learns nothing', async () => {
+    const env = routes(false);
+    (env.r as unknown as { permitted: () => Promise<boolean> }).permitted = vi.fn((_c, _p, _q, s: ReturnType<typeof res>) => { s.status(401).json({ error: 'Sign in' }); return Promise.resolve(false); }) as never;
+    const out = res();
+    await env.r.reauthStatus(status({ username: 'anonymous', roles: ['anonymous'] }), out);
+    expect(env.authManager.signInFresh).not.toHaveBeenCalled();
+    expect(out.json).not.toHaveBeenCalledWith(expect.objectContaining({ fresh: expect.anything() }));
   });
 });
 

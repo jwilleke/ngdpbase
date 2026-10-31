@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-10-30'
+dateModified: '2026-10-31'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -72,7 +72,7 @@ The window is one site-wide value for every step-up permission, shipped at 60 mi
 Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-reveal`, `token-mint`, `token-extend`, `proxy-grant`. An add-on marks its own permissions the same way. A `permissions` list still set under `ngdpbase.auth.step-up` in a custom config (the shape before #1638) is honoured, with a warning naming where it moved.
 
 - __Decided at the door__ (#1635): `PolicyDecisionPoint.decide()` applies step-up itself, so every door that asks the PDP — a route, `AuthManager`'s credential methods, `AgentTokenManager`, an add-on's `requirePermission` — gets it, and none can forget it. A granted permission whose sign-in is not fresh is refused with reason `step-up`; `WikiRoutes.permitted()` turns that into the `/auth/reauth` prompt. The request subject carries `signIn` for this. Work with no request (a `JobSubject`: timers, operator commands) is not asked. An affordance (show this button) asks `holds` — policy alone — so a user whose sign-in is not fresh still sees the way to the prompt.
-- __Fresh__ (`stepUpNeeded`) means a factor satisfied within the window that reaches the level the user's roles require. An admin (AAL2) re-authenticates with a passkey; others with a passkey or their password. A known device never counts.
+- __Fresh__ (`stepUpNeeded`) means a factor satisfied within the window that reaches the level the user's roles require. `signInFresh` asks the same without a permission, for `GET /auth/reauth/status`, which a forms add-on page waiting on its prompt in another window asks ([#2193](https://github.com/jwilleke/ngdpbase/issues/2193)). An admin (AAL2) re-authenticates with a passkey; others with a passkey or their password. A known device never counts.
 - __Delegated credentials__ (agent tokens, app tokens, shares) never satisfy step-up. They're refused outright, not sent to a prompt.
 - __Everyday self-service__ (`profile-manage`) is never on the list, so viewing your pages or changing the theme never prompts (decided 2026-10-04).
 - __Where it's checked__: inside the route's permission check (`permitted()` in WikiRoutes, and the few handlers that ask `hasPermission()` themselves). A page action goes to `/auth/reauth?next=…`; a JSON action answers 403 with `reauth`, which `passkey.js` follows.

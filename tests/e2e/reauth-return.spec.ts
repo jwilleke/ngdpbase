@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import type { Browser, BrowserContext, CDPSession, Page } from '@playwright/test';
+import type { Browser, BrowserContext, CDPSession, Page, Request } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword } from './fixtures/helpers';
+import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_PAGE_PREFIX } from './fixtures/helpers';
 
 /**
  * #2145 — after "Confirm it is you" with a passkey the browser goes where the
@@ -11,7 +11,9 @@ import { signInWithPassword } from './fixtures/helpers';
  * download and a script's request come back to the page they were started
  * from, which says "Confirmed — you can do it now"; a page GET opens the page;
  * a form POST is sent again by itself, once (#2154); a failure is shown and
- * the button works again.
+ * the button works again. A form the forms add-on shows keeps its page: the
+ * prompt opens in a popup (or a new tab when the popup is blocked), and the
+ * form is sent once it is confirmed, once, with what was typed (#2193).
  *
  * Its own project, after maintenance and before consent (playwright.config.ts).
  * The tests that wait for a sign-in to go stale shorten the site's step-up
@@ -42,23 +44,24 @@ async function csrfFrom(page: Page): Promise<string> {
   return token;
 }
 
-let person: { context: BrowserContext; page: Page; cdp: CDPSession } | null = null;
+interface Person { context: BrowserContext; page: Page; cdp: CDPSession; authenticatorId: string }
+let person: Person | null = null;
 
 /** The test account's browser, signed in with its passkey in beforeAll. */
-function me(): { context: BrowserContext; page: Page; cdp: CDPSession } {
+function me(): Person {
   if (!person) throw new Error('the test account did not sign in (beforeAll)');
   return person;
 }
 
+const AUTHENTICATOR = { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } as const;
+
 /** A test account holding admin, signed in with a passkey from a virtual authenticator. */
-async function signInWithPasskey(browser: Browser): Promise<{ context: BrowserContext; page: Page; cdp: CDPSession }> {
+async function signInWithPasskey(browser: Browser): Promise<Person> {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, acceptDownloads: true });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   await cdp.send('WebAuthn.enable');
-  await cdp.send('WebAuthn.addVirtualAuthenticator', {
-    options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-  });
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: AUTHENTICATOR });
   await signInWithPassword(page, USERNAME, PASSWORD);
   await page.goto('/profile');
   await page.fill('#passkey-label', `e2e-reauth-${RUN}`);
@@ -69,7 +72,27 @@ async function signInWithPasskey(browser: Browser): Promise<{ context: BrowserCo
   await page.goto('/login');
   await page.locator('[data-passkey-signin]').click();
   await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 15000 });
-  return { context, page, cdp };
+  return { context, page, cdp, authenticatorId };
+}
+
+/**
+ * #2193: the passkey in another window of the test account's browser (a
+ * popup or a tab). A virtual authenticator belongs to one page, so the
+ * credential is copied there. The site refuses a passkey whose counter does
+ * not move forward, so the copy counts on from well past the original, and the
+ * original then from well past the copy.
+ */
+async function lendPasskey(window: Page): Promise<void> {
+  const { context, cdp, authenticatorId } = me();
+  const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
+  const there = await context.newCDPSession(window);
+  await there.send('WebAuthn.enable');
+  const { authenticatorId: lent } = await there.send('WebAuthn.addVirtualAuthenticator', { options: AUTHENTICATOR });
+  for (const credential of credentials) {
+    await there.send('WebAuthn.addCredential', { authenticatorId: lent, credential: { ...credential, signCount: credential.signCount + 1000 } });
+    await cdp.send('WebAuthn.removeCredential', { authenticatorId, credentialId: credential.credentialId });
+    await cdp.send('WebAuthn.addCredential', { authenticatorId, credential: { ...credential, signCount: credential.signCount + 2000 } });
+  }
 }
 
 /** Press "Confirm with a passkey" on the prompt the page is on. */
@@ -210,6 +233,168 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       await confirmWithPasskey(page);
       await page.waitForURL(/\/profile$/, { timeout: 10000 });
       await expect(noted(page)).toBeVisible();
+    });
+
+    test.describe('a form the forms add-on shows, its permission marked "step-up" (#2193)', () => {
+      const FORM_ID = `e2e-2193-${RUN}`;
+      const PAGE_NAME = `${TEST_PAGE_PREFIX}-FormsStepUp-${RUN}`;
+      const DEFINITIONS_KEY = 'ngdpbase.permissions.definitions';
+      const SUBMIT = `/api/forms/submit/${FORM_ID}`;
+      let definitions: string | null = null;
+      let formsOn = true;
+
+      /** An administrator's page from the shared sign-in, which the builder and the editor need. */
+      async function asAdmin<T>(browser: Browser, work: (page: Page) => Promise<T>): Promise<T> {
+        const admin = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
+        try {
+          return await work(await admin.newPage());
+        } finally {
+          await admin.close();
+        }
+      }
+
+      async function setDefinitions(page: Page, value: string): Promise<void> {
+        const saved = await page.request.post('/admin/configuration', {
+          headers: { 'X-CSRF-Token': await csrfFrom(page), 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
+          form: { property: DEFINITIONS_KEY, value }
+        });
+        expect(saved.status(), await saved.text()).toBe(200);
+      }
+
+      /** Confirm on the prompt, so a change to the configuration (config-manage, step-up) goes through. */
+      async function confirmNow(page: Page): Promise<void> {
+        await page.goto('/auth/reauth?next=%2Fprofile');
+        await confirmWithPasskey(page);
+        await page.waitForURL(/\/profile$/);
+      }
+
+      /** Each POST of the form, its body and the status it was answered with. */
+      function watchSubmits(page: Page): Array<{ body: string; status: number }> {
+        const seen: Array<{ body: string; status: number }> = [];
+        page.on('requestfinished', (request: Request) => {
+          if (request.method() !== 'POST' || new URL(request.url()).pathname !== SUBMIT) return;
+          void request.response().then((r) => seen.push({ body: request.postData() ?? '', status: r?.status() ?? 0 }));
+        });
+        return seen;
+      }
+
+      const form = (page: Page) => page.locator(`form[data-ngdp-form="${FORM_ID}"]`);
+      const result = (page: Page) => page.locator(`#form-result-${FORM_ID}`);
+      const TYPED = `typed before the prompt ${RUN}`;
+
+      test.beforeAll(async ({ browser }) => {
+        formsOn = await asAdmin(browser, async (page) => {
+          if ((await page.request.get('/addons/forms/builder/new')).status() === 404) return false;
+          const token = await csrfFrom(page);
+          const made = await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder`, {
+            headers: { 'X-CSRF-Token': token },
+            form: { _csrf: token, id: FORM_ID, title: `E2E ${FORM_ID}`, fieldsJson: JSON.stringify([{ name: 'note', type: 'text', label: 'Note', required: true }]) },
+            maxRedirects: 0
+          });
+          expect(made.status(), 'create the form').toBe(302);
+          await createPluginPage(page, PAGE_NAME, `[{Form id='${FORM_ID}'}]`);
+          return true;
+        });
+        if (!formsOn) return;
+        // The forms add-on's own permission, form-submit, marked "step-up" in its entry.
+        const page = me().page;
+        await confirmNow(page);
+        await page.goto('/admin/configuration');
+        definitions = await page.locator(`form:has(input[name="property"][value="${DEFINITIONS_KEY}"]) input[name="value"]`).first().inputValue();
+        const entries = JSON.parse(definitions) as Record<string, Record<string, unknown>>;
+        expect(entries['form-submit'], 'the forms add-on declares form-submit').toBeTruthy();
+        await setDefinitions(page, JSON.stringify({ ...entries, 'form-submit': { ...entries['form-submit'], 'step-up': true } }));
+      });
+
+      test.afterAll(async ({ browser }) => {
+        if (!formsOn) return;
+        if (definitions !== null && person) {
+          await confirmNow(person.page);
+          await setDefinitions(person.page, definitions);
+        }
+        await asAdmin(browser, async (page) => {
+          await deletePage(page, PAGE_NAME);
+          const token = await csrfFrom(page);
+          await page.request.post(`${await instanceOrigin(page)}/addons/forms/builder/${FORM_ID}/delete`, { headers: { 'X-CSRF-Token': token }, form: { _csrf: token }, maxRedirects: 0 });
+        });
+      });
+
+      test('confirmed in the popup, the form is sent once more, once, with what was typed', async () => {
+        test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        const page = me().page;
+        const submits = watchSubmits(page);
+        await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+        await page.waitForTimeout(STALE_MS);
+        await form(page).locator('[name="note"]').fill(TYPED);
+        const opened = page.waitForEvent('popup');
+        await form(page).locator('[type="submit"]').click();
+        const popup = await opened;
+        await popup.waitForURL(/\/auth\/reauth\?/);
+        expect(page.url()).toContain('/view/');
+        await lendPasskey(popup);
+        await confirmWithPasskey(popup);
+        // The page closes the popup once the sign-in is fresh, and sends the form.
+        await popup.waitForEvent('close', { timeout: 15000 });
+        await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 10000 });
+        await expect.poll(() => submits.length).toBe(2);
+        expect(submits.map((s) => s.status)).toEqual([403, 200]);
+        expect(JSON.parse(submits[0].body)).toEqual({ note: TYPED });
+        expect(submits[1].body).toBe(submits[0].body);
+        // Nothing more is sent afterwards.
+        await page.waitForTimeout(3000);
+        expect(submits).toHaveLength(2);
+        page.removeAllListeners('requestfinished');
+      });
+
+      test('a cancelled prompt sends nothing and leaves the form as typed', async () => {
+        test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        const page = me().page;
+        const submits = watchSubmits(page);
+        await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+        await page.waitForTimeout(STALE_MS);
+        await form(page).locator('[name="note"]').fill(TYPED);
+        const opened = page.waitForEvent('popup');
+        await form(page).locator('[type="submit"]').click();
+        const popup = await opened;
+        await popup.getByRole('link', { name: 'Cancel', exact: true }).click();
+        await popup.waitForEvent('close', { timeout: 15000 });
+        await expect(result(page)).toContainText('not confirmed, so nothing was sent');
+        await expect(form(page).locator('[name="note"]')).toHaveValue(TYPED);
+        await expect(form(page).locator('[type="submit"]')).toBeEnabled();
+        expect(submits.map((s) => s.status)).toEqual([403]);
+        page.removeAllListeners('requestfinished');
+      });
+
+      test('with the popup blocked, the prompt opens in a new tab and the form is sent once it is confirmed', async () => {
+        test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        const { context } = me();
+        const page = await context.newPage();
+        try {
+          // A popup blocker answers window.open with null.
+          await page.addInitScript(() => { window.open = () => null; });
+          const submits = watchSubmits(page);
+          await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+          await page.waitForTimeout(STALE_MS);
+          await form(page).locator('[name="note"]').fill(TYPED);
+          await form(page).locator('[type="submit"]').click();
+          const link = result(page).getByRole('link', { name: 'Confirm it is you in a new tab' });
+          await expect(link).toBeVisible();
+          const opened = context.waitForEvent('page');
+          await link.click();
+          const tab = await opened;
+          await tab.waitForURL(/\/auth\/reauth\?/);
+          await lendPasskey(tab);
+          await confirmWithPasskey(tab);
+          await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 15000 });
+          await expect.poll(() => submits.length).toBe(2);
+          expect(submits.map((s) => s.status)).toEqual([403, 200]);
+          expect(submits[1].body).toBe(submits[0].body);
+          expect(JSON.parse(submits[1].body)).toEqual({ note: TYPED });
+          await tab.close();
+        } finally {
+          await page.close();
+        }
+      });
     });
   });
 });
