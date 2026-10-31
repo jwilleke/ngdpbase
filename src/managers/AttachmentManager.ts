@@ -7,6 +7,7 @@ import { systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
+import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -1355,6 +1356,22 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    */
   async isOwnPrivateStoreFile(attachmentId: string, ctx: ActorContext): Promise<boolean> {
     return (await this.findOwnStoreFile(ctx, attachmentId, 'view')) !== null;
+  }
+
+  /**
+   * The id of the file the requester's own store `store` holds with exactly
+   * these bytes, or null when it holds none, or this context cannot open it
+   * (#2171). The store's own duplicate check (its index's fingerprints), read
+   * without storing or recording anything: a takeout import asks it before
+   * putting a file again, so a file deleted since comes back and one still
+   * held writes no second upload record.
+   */
+  async ownStoreFileHolding(ctx: ActorContext, store: string, bytes: Buffer): Promise<string | null> {
+    if (!this.attachmentProvider) return null;
+    const location = (await this.ownPrivateStores(ctx)).find((l) => l.store === store);
+    if (!location || !this.mayReach(ctx, location.owner, `store-files:${store}`, 'view')) return null;
+    const fingerprint = crypto.createHash('sha256').update(bytes).digest('hex');
+    return (await this.attachmentProvider.listFilesInStore(location)).find((f) => f.fingerprint === fingerprint)?.id ?? null;
   }
 
   /** The requester's own private-store files uploaded onto `pageName`. */
