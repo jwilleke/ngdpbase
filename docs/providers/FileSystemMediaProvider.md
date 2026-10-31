@@ -121,6 +121,14 @@ Priority order:
 
 ---
 
+## Capture Date From The Filename
+
+A file with no usable EXIF or QuickTime date takes its capture date from its filename, recorded as `captureDateSource: 'filename'`. The parser is `packages/media-date`, shared with mjs-media-handling so both read a name the same way. Its [README](../../packages/media-date/README.md) lists the rules.
+
+Missing parts get fixed fake values: month `06`, day `15`, time `11:59:00`. So `scan-1990.jpg` indexes as `1990-06-15 11:59:00`. These dates are invented, and `captureDateSource` is what tells them from a camera's.
+
+---
+
 ## Event Name Parsing
 
 Filename convention: `YYYY-MM-DD-EventName-NNN.ext`
