@@ -41,7 +41,7 @@ import {
   syncRowState,
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
-import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
+import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
@@ -68,7 +68,7 @@ import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -6952,6 +6952,8 @@ ${panes}
     if (typeof user.username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
     const authManager = this.engine.getManager<AuthManager>('AuthManager');
     const next = safeRedirect(req.query.next ?? (req.body as { next?: unknown } | undefined)?.next);
+    // #2193: a script's prompt, carried to the confirmation and to Cancel.
+    const prompt = stepUpPromptId(req.query.prompt ?? (req.body as { prompt?: unknown } | undefined)?.prompt) ?? '';
     const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
@@ -6959,6 +6961,7 @@ ${panes}
       ...commonData,
       title: 'Confirm it is you',
       next,
+      prompt,
       needsPasskey,
       hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
       hasPassword: await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false,
@@ -6988,7 +6991,7 @@ ${panes}
       await this.renderReauth(req, res, { error: 'That password is not correct.' });
       return;
     }
-    await this.completeReauth(req, res, result, 'password', next, 'page');
+    await this.completeReauth(req, res, result, 'password', next, 'page', (req.body as { prompt?: unknown }).prompt);
   }
 
   /**
@@ -7012,19 +7015,35 @@ ${panes}
   }
 
   /**
-   * GET /auth/reauth/status — whether this session's sign-in is fresh enough
-   * for step-up now (#2193). A page that opened the prompt in another window
-   * asks it, then sends its request again. Only a yes or no about the caller's
-   * own session; the request it sends is decided again on its own.
+   * GET /auth/reauth/status?prompt=<id> — whether this session's sign-in is
+   * fresh enough for step-up now, and where the caller's own prompt is
+   * (#2193): waiting, confirmed, cancelled or unknown. A page that opened the
+   * prompt in another window asks it, and sends its request again only once
+   * that prompt is confirmed. About the caller's own session only; it writes
+   * nothing to it (nor counts as activity, `STEP_UP_STATUS_PATH`), and the
+   * request it sends is decided again on its own.
    */
   async reauthStatus(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
     if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
     const user = wikiContext.userContext;
-    const fresh = this.engine.getManager<AuthManager>('AuthManager')
-      ?.signInFresh(user.signIn, user.roles ?? [], Boolean(user.viaToken || user.viaShare), undefined, user.aalCap) ?? false;
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const fresh = authManager?.signInFresh(user.signIn, user.roles ?? [], Boolean(user.viaToken || user.viaShare), undefined, user.aalCap) ?? false;
     res.set('Cache-Control', 'no-store');
-    res.json({ fresh });
+    res.json({ fresh, prompt: authManager?.stepUpPromptState(req, req.query.prompt) ?? 'unknown' });
+  }
+
+  /**
+   * POST /auth/reauth/cancel — the prompt's Cancel for a script's prompt
+   * (#2193): marks it cancelled, so the page waiting on it, in whichever
+   * window, stops, and goes back to `next`.
+   */
+  async reauthCancel(req: Request, res: Response): Promise<void> {
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'page'))) return;
+    const body = req.body as { prompt?: unknown; next?: unknown };
+    this.engine.getManager<AuthManager>('AuthManager')?.cancelStepUpPrompt(req, body.prompt);
+    const next = safeRedirect(body.next);
+    req.session.save(() => res.redirect(next));
   }
 
   /** GET /auth/passkey/reauth/options — a passkey challenge for step-up (#1525), for the signed-in person only. */
@@ -7057,7 +7076,7 @@ ${panes}
       res.status(401).json({ error: 'That passkey did not confirm this account' });
       return;
     }
-    await this.completeReauth(req, res, result, 'passkey', safeRedirect(body.next), 'json');
+    await this.completeReauth(req, res, result, 'passkey', safeRedirect(body.next), 'json', (body as { prompt?: unknown }).prompt);
   }
 
   /**
@@ -7065,9 +7084,9 @@ ${panes}
    * a redirect to `next` for the password form, `{ ok, redirect }` for the
    * passkey script. Saved before answering, so the next request is fresh.
    */
-  private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, next: string, mode: 'json' | 'page'): Promise<void> {
+  private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, next: string, mode: 'json' | 'page', prompt?: unknown): Promise<void> {
     // #1758: re-authentication completes in AuthManager; the route saves and answers.
-    await this.engine.getManager<AuthManager>('AuthManager')?.completeReauth(req, result, method, next);
+    await this.engine.getManager<AuthManager>('AuthManager')?.completeReauth(req, result, method, next, prompt);
     req.session.save((err) => {
       // #2145: the passkey script shows a failure only when it is JSON.
       if (err) { if (mode === 'json') res.status(500).json({ error: 'Your confirmation could not be saved; try again' }); else res.status(500).send('Session save failed'); return; }
@@ -18271,7 +18290,8 @@ ${panes}
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
     app.get(STEP_UP_CONTINUE_PATH, (req: Request, res: Response) => { void this.reauthContinue(req, res); });
-    app.get('/auth/reauth/status', (req: Request, res: Response) => { void this.reauthStatus(req, res); });
+    app.get(STEP_UP_STATUS_PATH, (req: Request, res: Response) => { void this.reauthStatus(req, res); });
+    app.post('/auth/reauth/cancel', (req: Request, res: Response) => { void this.reauthCancel(req, res); });
     app.get('/auth/passkey/reauth/options', (req: Request, res: Response) => { void this.passkeyReauthOptions(req, res); });
     app.post('/auth/passkey/reauth/verify', (req: Request, res: Response) => { void this.passkeyReauthVerify(req, res); });
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });

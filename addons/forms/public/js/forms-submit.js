@@ -29,9 +29,10 @@
 
   // ── A fresh sign-in (step-up, #1745, #2193) ───────────────────────────
   // A refusal for a fresh sign-in keeps the page: the prompt opens in another
-  // window, the page asks whether this session's sign-in is fresh yet, then
-  // sends the same JSON once more. Nothing typed leaves the page before that,
-  // and the server decides the request again when it comes.
+  // window, the page asks whether its own prompt (the refusal's `prompt` id)
+  // has been confirmed, then sends the same JSON once more. Another tab's
+  // confirmation sends nothing here (#2176's rule). Nothing typed leaves the
+  // page before that, and the server decides the request again when it comes.
 
   const STEP_UP_PROMPT = '/auth/reauth';
   const STEP_UP_STATUS = '/auth/reauth/status';
@@ -44,13 +45,21 @@
     return typeof reauth === 'string' && reauth.startsWith(STEP_UP_PROMPT + '?');
   }
 
-  /** Whether this session's sign-in is fresh now; false when it cannot tell. */
-  async function signInFresh() {
+  /** The prompt id a refusal's `reauth` names, or '' when it names none. */
+  function promptId(reauth) {
+    return new URL(reauth, window.location.origin).searchParams.get('prompt') || '';
+  }
+
+  /**
+   * Where this page's prompt is: `{ fresh, prompt }`, `prompt` one of
+   * waiting, confirmed, cancelled or unknown. Null when it cannot tell.
+   */
+  async function promptStatus(prompt) {
     try {
-      const res = await fetch(STEP_UP_STATUS, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-      return res.ok && (await res.json()).fresh === true;
+      const res = await fetch(STEP_UP_STATUS + '?prompt=' + encodeURIComponent(prompt), { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      return res.ok ? await res.json() : null;
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -328,11 +337,11 @@
 
     /**
      * Open the prompt in a popup (or offer it in a new tab when the popup is
-     * blocked) and wait, keeping `body`, until the sign-in is fresh.
+     * blocked) and wait, keeping `body`, until that prompt is confirmed.
      */
     function waitForFreshSignIn(reauth, body) {
       const popup = window.open(reauth, 'ngdp-step-up', 'popup,width=520,height=680');
-      const wait = { popup, body, seen: false, until: Date.now() + STEP_UP_WAIT_MS };
+      const wait = { popup, body, prompt: promptId(reauth), seen: false, until: Date.now() + STEP_UP_WAIT_MS };
       waiting = wait;
       if (popup) {
         showAlert(result, 'info', 'fa-user-shield', 'This needs a fresh sign-in. Confirm it is you in the window that opened; your form is kept here and sent once you have.');
@@ -348,12 +357,13 @@
       // Looked at before asking: a prompt left after its confirmation is
       // answered fresh, since the confirmation is saved before it moves on.
       const over = promptOver(wait);
-      const fresh = await signInFresh();
+      const status = await promptStatus(wait.prompt);
       if (waiting !== wait) return;
-      if (fresh) {
+      if (status?.prompt === 'confirmed' && status.fresh === true) {
         stopWaiting();
         void send(wait.body, true);
-      } else if (over || Date.now() > wait.until) {
+      } else if (over || (status && status.prompt !== 'waiting') || Date.now() > wait.until) {
+        // Cancelled (in a popup or a new tab), closed, or no longer known.
         stopWaiting();
         showAlert(result, 'warning', 'fa-exclamation-triangle', 'The fresh sign-in was not confirmed, so nothing was sent. Your form is as you typed it; press Submit to try again.');
       } else {

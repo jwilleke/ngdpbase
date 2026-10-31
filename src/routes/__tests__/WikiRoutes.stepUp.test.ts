@@ -36,6 +36,9 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     keepStepUpReplay(...a: unknown[]) { return (AuthManager.prototype as unknown as { keepStepUpReplay: (...x: unknown[]) => unknown }).keepStepUpReplay.apply(this, a); },
     recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); },
     completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); },
+    // #2193: a script's request names its own prompt.
+    cancelStepUpPrompt(...a: Parameters<AuthManager['cancelStepUpPrompt']>) { return AuthManager.prototype.cancelStepUpPrompt.apply(this as never, a); },
+    stepUpPromptState(...a: Parameters<AuthManager['stepUpPromptState']>) { return AuthManager.prototype.stepUpPromptState.apply(this as never, a); },
     takeStepUpReplay(...a: Parameters<AuthManager['takeStepUpReplay']>) { return AuthManager.prototype.takeStepUpReplay.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
@@ -87,8 +90,8 @@ describe('step-up at the route door (#1525)', () => {
     const out = res();
     await r.passkeyRegisterOptions(req(session(), { method: 'GET', originalUrl: '/auth/passkey/register/options' }), out);
     expect(out.status).toHaveBeenCalledWith(403);
-    // Not the data URL: returning there showed the person raw JSON.
-    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: '/auth/reauth?next=%2Fprofile' }));
+    // Not the data URL: returning there showed the person raw JSON. #2193: it names its own prompt.
+    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: expect.stringMatching(/^\/auth\/reauth\?next=%2Fprofile&prompt=[0-9a-f]{32}$/) }));
   });
 
   test('a delegated credential is refused outright, never sent to a prompt', async () => {
@@ -347,26 +350,95 @@ describe('downloading the backup key file (#2134)', () => {
   });
 });
 
-describe('a page waiting on its prompt asks whether the sign-in is fresh now (#2193)', () => {
-  const status = (userContext: Record<string, unknown>) => req(session(), { method: 'GET', originalUrl: '/auth/reauth/status', userContext });
+describe('a page waiting on its prompt asks whether that prompt is confirmed (#2193)', () => {
+  const status = (s: Record<string, unknown>, userContext: Record<string, unknown>, prompt?: unknown) =>
+    req(s, { method: 'GET', originalUrl: '/auth/reauth/status', query: prompt === undefined ? {} : { prompt }, userContext });
   const molly = { username: 'molly', roles: ['reader'], isAuthenticated: true, aalCap: 1, signIn: { factors: [] } };
+  const passwordOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'password', factors: [] });
 
-  test('answers only whether this session\'s sign-in is fresh, never cached', async () => {
-    const { r, authManager } = routes(false);
-    authManager.signInFresh.mockReturnValue(true);
+  /** A script's request refused on session `s`: the prompt id its `reauth` names. */
+  async function refusedPrompt(env: ReturnType<typeof routes>, s: Record<string, unknown>): Promise<string> {
     const out = res();
-    await r.reauthStatus(status(molly), out);
-    expect(authManager.signInFresh).toHaveBeenCalledWith(molly.signIn, ['reader'], false, undefined, 1);
+    await env.r.passkeyRegisterOptions(req(s, { method: 'GET', originalUrl: '/auth/passkey/register/options' }), out);
+    const { reauth } = (out.json.mock.calls[0] as [{ reauth: string }])[0];
+    return new URL(reauth, 'http://x').searchParams.get('prompt') ?? '';
+  }
+
+  test('answers whether the sign-in is fresh and where this prompt is, never cached, and writes nothing to the session', async () => {
+    const env = routes(true);
+    const s = session();
+    const prompt = await refusedPrompt(env, s);
+    env.authManager.stepUpNeeded.mockReturnValue(false); // the double asks it of every permission
+    env.authManager.signInFresh.mockReturnValue(true);
+    const before = JSON.stringify(s);
+    const out = res();
+    await env.r.reauthStatus(status(s, molly, prompt), out);
+    expect(env.authManager.signInFresh).toHaveBeenCalledWith(molly.signIn, ['reader'], false, undefined, 1);
     expect(out.set).toHaveBeenCalledWith('Cache-Control', 'no-store');
-    expect(out.json).toHaveBeenCalledWith({ fresh: true });
+    expect(out.json).toHaveBeenCalledWith({ fresh: true, prompt: 'waiting' });
+    expect(JSON.stringify(s)).toBe(before);
   });
 
-  test('a stale sign-in, or a delegated credential, is not fresh', async () => {
-    const { r, authManager } = routes(false);
+  test('the password confirmation confirms the prompt it was opened for, and no other', async () => {
+    // Sabotage (2026-10-31): dropping body.prompt in reauthWithPassword turns this red.
+    const env = routes(true, passwordOk);
+    const s = session();
+    const mine = await refusedPrompt(env, s);
+    const other = await refusedPrompt(env, s);
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    await env.r.reauthWithPassword(req(s, { body: { password: 'right', next: '/profile', prompt: mine } }), res());
+    const answers: unknown[] = [];
+    for (const prompt of [mine, other, 'f'.repeat(32)]) {
+      const out = res();
+      await env.r.reauthStatus(status(s, molly, prompt), out);
+      answers.push((out.json.mock.calls[0] as [{ prompt: string }])[0].prompt);
+    }
+    expect(answers).toEqual(['confirmed', 'waiting', 'unknown']);
+  });
+
+  test('the passkey confirmation confirms its prompt too', async () => {
+    const env = routes(true, () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] }));
+    const s = session();
+    const prompt = await refusedPrompt(env, s);
+    env.authManager.stepUpNeeded.mockReturnValue(false); // the double asks it of every permission
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    await env.r.passkeyReauthVerify(req(s, { body: { response: {}, next: '/profile', prompt } }), res());
     const out = res();
-    await r.reauthStatus(status(molly), out);
-    expect(out.json).toHaveBeenCalledWith({ fresh: false });
-    await r.reauthStatus(status({ ...molly, viaToken: { id: 't', name: 'bot', scopes: ['profile-manage'] } }), res());
+    await env.r.reauthStatus(status(s, molly, prompt), out);
+    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'confirmed' }));
+  });
+
+  test('the prompt page carries its id, only a well-formed one, to the confirmation and to Cancel', async () => {
+    const env = routes(false);
+    const id = '0123456789abcdef0123456789abcdef';
+    const out = res();
+    await env.r.reauthPage(req(session(), { method: 'GET', originalUrl: '/auth/reauth', query: { next: '/profile', prompt: id } }), out);
+    expect(out.render).toHaveBeenCalledWith('reauth', expect.objectContaining({ prompt: id }));
+    const bad = res();
+    await env.r.reauthPage(req(session(), { method: 'GET', originalUrl: '/auth/reauth', query: { next: '/profile', prompt: '"><script>' } }), bad);
+    expect(bad.render).toHaveBeenCalledWith('reauth', expect.objectContaining({ prompt: '' }));
+  });
+
+  test('Cancel marks the prompt cancelled, saves the session, and goes back on this site', async () => {
+    const env = routes(true);
+    const s = session();
+    const prompt = await refusedPrompt(env, s);
+    env.authManager.stepUpNeeded.mockReturnValue(false); // the double asks it of every permission
+    const out = res();
+    await env.r.reauthCancel(req(s, { body: { prompt, next: '/view/Ledger' } }), out);
+    expect(s.save).toHaveBeenCalled();
+    expect(out.redirect).toHaveBeenCalledWith('/view/Ledger');
+    const asked = res();
+    await env.r.reauthStatus(status(s, molly, prompt), asked);
+    expect(asked.json).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'cancelled' }));
+    const away = res();
+    await env.r.reauthCancel(req(s, { body: { prompt, next: 'https://evil.example/' } }), away);
+    expect(away.redirect).toHaveBeenCalledWith('/');
+  });
+
+  test('a delegated credential is never fresh', async () => {
+    const { r, authManager } = routes(false);
+    await r.reauthStatus(status(session(), { ...molly, viaToken: { id: 't', name: 'bot', scopes: ['profile-manage'] } }), res());
     expect(authManager.signInFresh).toHaveBeenLastCalledWith(molly.signIn, ['reader'], true, undefined, 1);
   });
 
@@ -374,9 +446,12 @@ describe('a page waiting on its prompt asks whether the sign-in is fresh now (#2
     const env = routes(false);
     (env.r as unknown as { permitted: () => Promise<boolean> }).permitted = vi.fn((_c, _p, _q, s: ReturnType<typeof res>) => { s.status(401).json({ error: 'Sign in' }); return Promise.resolve(false); }) as never;
     const out = res();
-    await env.r.reauthStatus(status({ username: 'anonymous', roles: ['anonymous'] }), out);
+    await env.r.reauthStatus(status(session(), { username: 'anonymous', roles: ['anonymous'] }), out);
     expect(env.authManager.signInFresh).not.toHaveBeenCalled();
     expect(out.json).not.toHaveBeenCalledWith(expect.objectContaining({ fresh: expect.anything() }));
+    const cancel = res();
+    await env.r.reauthCancel(req(session(), { body: { prompt: 'a'.repeat(32), next: '/' } }), cancel);
+    expect(cancel.redirect).not.toHaveBeenCalled();
   });
 });
 

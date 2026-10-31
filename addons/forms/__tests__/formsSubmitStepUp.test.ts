@@ -3,12 +3,13 @@
  *
  * #2193 — a form refused for a fresh sign-in (step-up) keeps the page and what
  * was typed. The prompt opens in another window (a popup, or a new tab when the
- * popup is blocked); the page asks `/auth/reauth/status` until the sign-in is
- * fresh, then sends the same JSON once more, once. A prompt cancelled or closed
- * sends nothing and leaves the form as typed.
+ * popup is blocked); the page asks `/auth/reauth/status` about its own prompt
+ * (the `prompt` id in the refusal's `reauth`) until that prompt is confirmed,
+ * then sends the same JSON once more, once. Its prompt cancelled or closed, or
+ * another tab's prompt confirmed, sends nothing.
  *
  * These run the shipped file in jsdom, with `fetch`, `window.open` and the
- * timers it waits on replaced.
+ * timers it waits on replaced. Pages made with one `server` share a session.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -20,8 +21,16 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CODE = readFileSync(path.resolve(__dirname, '../public/js/forms-submit.js'), 'utf8');
 
-const REAUTH = '/auth/reauth?next=%2Fview%2FLedger';
-const REFUSED = { success: false, error: 'A fresh sign-in is needed', reauth: REAUTH };
+const PROMPT = '0123456789abcdef0123456789abcdef';
+const OTHER_PROMPT = 'fedcba9876543210fedcba9876543210';
+const reauthFor = (prompt: string) => `/auth/reauth?next=%2Fview%2FLedger&prompt=${prompt}`;
+const refusedFor = (prompt: string) => ({ success: false, error: 'A fresh sign-in is needed', reauth: reauthFor(prompt) });
+const REAUTH = reauthFor(PROMPT);
+const REFUSED = refusedFor(PROMPT);
+
+/** The session the pages share: whether its sign-in is fresh, and each prompt's state. */
+interface Session { fresh: boolean; prompts: Record<string, string> }
+const newSession = (): Session => ({ fresh: false, prompts: {} });
 
 /** The prompt's window as the page sees it: where it is, and whether it was closed. */
 interface FakePopup { closed: boolean; location: { pathname: string }; close(): void }
@@ -35,9 +44,13 @@ interface StepUpPage {
   /** What `window.open` was called with; null entries mean it was blocked. */
   opened: Array<{ url: string; target: string }>;
   popup: FakePopup;
-  /** The answer to the next status request. */
-  fresh: boolean;
+  session: Session;
+  /** This page's prompt confirmed: the sign-in is fresh, and the prompt says so. */
+  confirm(): void;
+  /** This page's prompt cancelled (its Cancel, in whichever window it is). */
+  cancel(): void;
   submit(): void;
+  type(name: string, value: string): void;
   /** Run the queued polls and the promises they start. */
   flush(): Promise<void>;
   text(): string;
@@ -48,7 +61,7 @@ interface StepUpPage {
  * A page with one form. `answers` are the submit route's answers in order;
  * `blocked` makes `window.open` return null as a popup blocker does.
  */
-function stepUpPage(answers: unknown[], { blocked = false } = {}): StepUpPage {
+function stepUpPage(answers: unknown[], { blocked = false, session = newSession(), prompt = PROMPT } = {}): StepUpPage {
   const dom = new JSDOM(`<!doctype html><body><div class="ngdp-form card"><div class="card-body">
     <div id="form-result-led"></div>
     <form data-ngdp-form="led" novalidate>
@@ -64,7 +77,9 @@ function stepUpPage(answers: unknown[], { blocked = false } = {}): StepUpPage {
     asked: 0,
     opened: [],
     popup: { closed: false, location: { pathname: '/auth/reauth' }, close() { this.closed = true; } },
-    fresh: false,
+    session,
+    confirm() { session.fresh = true; session.prompts[prompt] = 'confirmed'; },
+    cancel() { session.prompts[prompt] = 'cancelled'; },
     submit() {
       const form = dom.window.document.querySelector('form[data-ngdp-form="led"]') as HTMLFormElement;
       form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -76,17 +91,23 @@ function stepUpPage(answers: unknown[], { blocked = false } = {}): StepUpPage {
         due.forEach((fn) => fn());
       }
     },
+    type(name, value) { (dom.window.document.querySelector(`[name="${name}"]`) as HTMLInputElement).value = value; },
     text: () => (dom.window.document.getElementById('form-result-led')?.textContent ?? '').trim(),
     value: (name) => ((dom.window.document.querySelector(`[name="${name}"]`) as HTMLInputElement).value)
   };
   const answer = (body: unknown, status = 200) => Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) });
   win.fetch = (url: string, init: { method?: string; body?: string } = {}) => {
-    if (url === '/auth/reauth/status') {
+    if (url.startsWith('/auth/reauth/status')) {
       state.asked++;
-      return answer({ fresh: state.fresh });
+      const asked = new URL(url, 'https://site.test').searchParams.get('prompt') ?? '';
+      return answer({ fresh: session.fresh, prompt: session.prompts[asked] ?? 'unknown' });
     }
     state.posts.push(init.body ?? '');
     const next = answers.shift();
+    // The refusal starts its prompt on the server, waiting.
+    const reauth = (next as { reauth?: string } | undefined)?.reauth;
+    const minted = reauth ? new URL(reauth, 'https://site.test').searchParams.get('prompt') : null;
+    if (minted) session.prompts[minted] = 'waiting';
     return next === undefined ? new Promise(() => {}) : answer(next, (next as { reauth?: string }).reauth ? 403 : 200);
   };
   win.open = (url: string, target: string) => {
@@ -118,7 +139,7 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     p.submit();
     await p.flush();
     expect(p.posts).toEqual([TYPED]);
-    p.fresh = true;
+    p.confirm();
     p.popup.location.pathname = '/view/Ledger';
     await p.flush();
     await p.flush();
@@ -131,7 +152,7 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     const p = stepUpPage([REFUSED]);
     p.submit();
     await p.flush();
-    p.fresh = true;
+    p.confirm();
     p.submit();
     p.submit();
     await p.flush();
@@ -143,6 +164,7 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     const p = stepUpPage([REFUSED]);
     p.submit();
     await p.flush();
+    p.cancel();
     p.popup.location.pathname = '/view/Ledger'; // Cancel goes back to the page
     await p.flush();
     expect(p.posts).toEqual([TYPED]);
@@ -175,7 +197,7 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     expect(link.target).toBe('_blank');
     expect(link.rel).toBe('noopener');
     expect(p.text()).toMatch(/blocked/);
-    p.fresh = true;
+    p.confirm();
     await p.flush();
     expect(p.posts).toEqual([TYPED, TYPED]);
     expect(p.text()).toMatch(/Your submission was received/);
@@ -185,7 +207,7 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     const p = stepUpPage([REFUSED, REFUSED]);
     p.submit();
     await p.flush();
-    p.fresh = true;
+    p.confirm();
     await p.flush();
     await p.flush();
     expect(p.posts).toEqual([TYPED, TYPED]);
@@ -199,5 +221,72 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     await p.flush();
     expect(p.opened).toEqual([]);
     expect(p.asked).toBe(0);
+  });
+
+  it('two tabs waiting: confirming one tab\'s prompt sends that tab\'s form only (#2176\'s rule)', async () => {
+    // Sabotage (2026-10-31): sending on `fresh` alone, as 0a30d9ce did, turns this red.
+    const session = newSession();
+    const a = stepUpPage([REFUSED, { ok: true }], { session, prompt: PROMPT });
+    const b = stepUpPage([refusedFor(OTHER_PROMPT), { ok: true }], { session, prompt: OTHER_PROMPT });
+    a.submit();
+    b.submit();
+    await a.flush();
+    await b.flush();
+    a.confirm();
+    await a.flush();
+    await b.flush();
+    await a.flush();
+    await b.flush();
+    expect(a.posts).toEqual([TYPED, TYPED]);
+    expect(b.posts).toEqual([TYPED]);
+    expect(b.popup.closed).toBe(false);
+    expect(b.text()).toMatch(/Confirm it is you in the window that opened/);
+    // B's own confirmation sends B's form, once.
+    b.confirm();
+    await b.flush();
+    await b.flush();
+    expect(b.posts).toEqual([TYPED, TYPED]);
+  });
+
+  it('a blocked popup: Cancel in the new tab ends the wait, and a later fresh sign-in sends nothing', async () => {
+    const session = newSession();
+    const p = stepUpPage([REFUSED, { ok: true }], { blocked: true, session });
+    p.submit();
+    await p.flush();
+    p.cancel();
+    await p.flush();
+    expect(p.text()).toMatch(/not confirmed, so nothing was sent/);
+    expect(p.value('memo')).toBe('Refund for the hall');
+    expect((p.doc.querySelector('[type=submit]') as HTMLButtonElement).disabled).toBe(false);
+    // Another step-up confirmed later, for anything, does not send this form.
+    session.fresh = true;
+    await p.flush();
+    await p.flush();
+    expect(p.posts).toEqual([TYPED]);
+  });
+
+  it('a blocked popup: another tab\'s confirmation does not send this form', async () => {
+    const session = newSession();
+    const p = stepUpPage([REFUSED, { ok: true }], { blocked: true, session });
+    p.submit();
+    await p.flush();
+    session.fresh = true;
+    session.prompts[OTHER_PROMPT] = 'confirmed';
+    await p.flush();
+    await p.flush();
+    expect(p.posts).toEqual([TYPED]);
+    expect(p.text()).toMatch(/blocked/);
+  });
+
+  it('ten minutes with no answer from a new tab ends the wait', async () => {
+    const p = stepUpPage([REFUSED], { blocked: true });
+    const win = p.doc.defaultView as unknown as { Date: { now(): number } };
+    const start = win.Date.now();
+    p.submit();
+    await p.flush();
+    win.Date.now = () => start + 11 * 60 * 1000;
+    await p.flush();
+    expect(p.text()).toMatch(/not confirmed, so nothing was sent/);
+    expect(p.posts).toEqual([TYPED]);
   });
 });

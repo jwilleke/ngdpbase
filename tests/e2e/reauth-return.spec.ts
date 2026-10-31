@@ -13,7 +13,8 @@ import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_
  * a form POST is sent again by itself, once (#2154); a failure is shown and
  * the button works again. A form the forms add-on shows keeps its page: the
  * prompt opens in a popup (or a new tab when the popup is blocked), and the
- * form is sent once it is confirmed, once, with what was typed (#2193).
+ * form is sent once its own prompt is confirmed, once, with what was typed;
+ * its Cancel, in a popup or a new tab, sends nothing (#2193).
  *
  * Its own project, after maintenance and before consent (playwright.config.ts).
  * The tests that wait for a sign-in to go stale shorten the site's step-up
@@ -379,11 +380,11 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
           const opened = page.waitForEvent('popup');
           await form(page).locator('[type="submit"]').click();
           const popup = await opened;
-          await popup.waitForURL(/\/auth\/reauth\?/);
+          await popup.waitForURL(/\/auth\/reauth\?.*prompt=[0-9a-f]{32}/);
           expect(page.url()).toContain('/view/');
           await lendPasskey(popup);
           await confirmWithPasskey(popup);
-          // The page closes the popup once the sign-in is fresh, and sends the form.
+          // The page closes the popup once its prompt is confirmed, and sends the form.
           await popup.waitForEvent('close', { timeout: 15000 });
           await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 10000 });
           await expect.poll(() => submits.length).toBe(2);
@@ -410,7 +411,7 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
           const opened = page.waitForEvent('popup');
           await form(page).locator('[type="submit"]').click();
           const popup = await opened;
-          await popup.getByRole('link', { name: 'Cancel', exact: true }).click();
+          await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
           await popup.waitForEvent('close', { timeout: 15000 });
           await expect(result(page)).toContainText('not confirmed, so nothing was sent');
           await expect(form(page).locator('[name="note"]')).toHaveValue(TYPED);
@@ -447,6 +448,32 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
           expect(submits.map((s) => s.status)).toEqual([403, 200]);
           expect(submits[1].body).toBe(submits[0].body);
           expect(JSON.parse(submits[1].body)).toEqual({ note: TYPED });
+          await tab.close();
+        } finally {
+          await page.close();
+        }
+      });
+
+      test('with the popup blocked, Cancel in the new tab ends the wait and sends nothing', async () => {
+        test.skip(!formsOn, 'forms add-on not enabled on this instance');
+        test.skip(ownDefinitions, 'this site has its own permission definitions; they are not changed');
+        const { context } = me();
+        const page = await context.newPage();
+        try {
+          await page.addInitScript(() => { window.open = () => null; });
+          const submits = watchSubmits(page);
+          await page.goto(`/view/${encodeURIComponent(PAGE_NAME)}`);
+          await page.waitForTimeout(STALE_MS);
+          await form(page).locator('[name="note"]').fill(TYPED);
+          await form(page).locator('[type="submit"]').click();
+          const opened = context.waitForEvent('page');
+          await result(page).getByRole('link', { name: 'Confirm it is you in a new tab' }).click();
+          const tab = await opened;
+          await tab.waitForURL(/\/auth\/reauth\?/);
+          await tab.getByRole('button', { name: 'Cancel', exact: true }).click();
+          await expect(result(page)).toContainText('not confirmed, so nothing was sent', { timeout: 10000 });
+          await expect(form(page).locator('[name="note"]')).toHaveValue(TYPED);
+          expect(submits.map((s) => s.status)).toEqual([403]);
           await tab.close();
         } finally {
           await page.close();
