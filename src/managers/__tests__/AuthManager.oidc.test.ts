@@ -915,6 +915,9 @@ describe('AuthManager outside sign-in (#1743)', () => {
     });
   });
   describe('#1532: an outside sign-in at AAL1 takes the second step, as a password does', () => {
+    // The site offers the email link (its entry is magic-link's, #1523 Q3), as the shipped config does.
+    beforeEach(() => { config['ngdpbase.auth.factors'] = [{ authproviderid: 'password' }, { authproviderid: 'magic-link' }]; });
+
     /** Ann's identity connected and her email enrolled as a second factor, the real way (the link from the mailbox). */
     const enrolledAnn = async (): Promise<AuthManager> => {
       mailbox = [];
