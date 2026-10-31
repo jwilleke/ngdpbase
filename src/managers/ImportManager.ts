@@ -586,6 +586,10 @@ class ImportManager extends BaseManager {
     if (receiver.names !== undefined && receiver.names !== 'title' && receiver.names !== 'file') {
       throw new Error(`ICE receiver '${id}': names is 'title' or 'file'`);
     }
+    // #2110: an add-on's receiver is confidential only by keeping originals sealed (`keepsEncrypted`).
+    if (receiver.writesEncrypted && owner !== 'core') {
+      throw new Error(`ICE receiver '${id}': writesEncrypted is core's only; an add-on receiver uses keepsEncrypted`);
+    }
     const types = receiver.originals?.types;
     if (types !== undefined && (!Array.isArray(types) || !types.every(t => typeof t === 'string' && KEPT_MEDIA_TYPE.test(t.trim().toLowerCase())))) {
       throw new Error(`ICE receiver '${id}': originals.types are media types, type/subtype exactly, with no wildcard`);
