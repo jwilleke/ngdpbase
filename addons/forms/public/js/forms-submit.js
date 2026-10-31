@@ -292,6 +292,31 @@
       waiting = null;
     }
 
+    /** The form's values as the JSON it sends; nested onBehalfOf[name] keys become an object. */
+    function collect() {
+      const raw = new FormData(form);
+      const data = {};
+      // A checklist is always an array of the ticked values, even when empty.
+      for (const name of checklistNames) data[name] = [];
+      // Lines are an array of row objects, the sent rows only.
+      for (const group of lineGroups) data[group.dataset.lines] = keptRows(group).map(rowValues);
+      for (const [key, value] of raw.entries()) {
+        if (linePrefixes.some((prefix) => key.startsWith(prefix))) continue;
+        if (checklistNames.has(key)) {
+          data[key].push(value);
+          continue;
+        }
+        const nested = key.match(/^(\w+)\[(\w+)\]$/);
+        if (nested) {
+          if (!data[nested[1]]) data[nested[1]] = {};
+          data[nested[1]][nested[2]] = value;
+        } else {
+          data[key] = value;
+        }
+      }
+      return JSON.stringify(data);
+    }
+
     /** POST the form's JSON. `retried`: this is the send after a fresh sign-in. */
     async function send(body, retried) {
       inFlight = true;
@@ -361,7 +386,9 @@
       if (waiting !== wait) return;
       if (status?.prompt === 'confirmed' && status.fresh === true) {
         stopWaiting();
-        void send(wait.body, true);
+        // Edits made while confirming are not overwritten by what was kept.
+        if (collect() === wait.body) void send(wait.body, true);
+        else showAlert(result, 'info', 'fa-info-circle', 'You changed the form while confirming, so nothing was sent. Your sign-in is confirmed; press Submit to send the form as it is now.');
       } else if (over || (status && status.prompt !== 'waiting') || Date.now() > wait.until) {
         // Cancelled (in a popup or a new tab), closed, or no longer known.
         stopWaiting();
@@ -436,32 +463,10 @@
       }
       form.classList.remove('was-validated');
 
-      // Collect form data — handle nested onBehalfOf[name] keys
-      const raw = new FormData(form);
-      const data = {};
-      // A checklist is always an array of the ticked values, even when empty.
-      for (const name of checklistNames) data[name] = [];
-      // Lines are an array of row objects, the sent rows only.
-      for (const group of lineGroups) data[group.dataset.lines] = keptRows(group).map(rowValues);
-      for (const [key, value] of raw.entries()) {
-        if (linePrefixes.some((prefix) => key.startsWith(prefix))) continue;
-        if (checklistNames.has(key)) {
-          data[key].push(value);
-          continue;
-        }
-        const nested = key.match(/^(\w+)\[(\w+)\]$/);
-        if (nested) {
-          if (!data[nested[1]]) data[nested[1]] = {};
-          data[nested[1]][nested[2]] = value;
-        } else {
-          data[key] = value;
-        }
-      }
-
       clearFieldErrors(form);
       // A press while waiting for a fresh sign-in sends now; the wait sends nothing.
       stopWaiting();
-      await send(JSON.stringify(data), false);
+      await send(collect(), false);
     });
   }
 

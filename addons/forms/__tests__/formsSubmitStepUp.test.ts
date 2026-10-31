@@ -6,7 +6,8 @@
  * popup is blocked); the page asks `/auth/reauth/status` about its own prompt
  * (the `prompt` id in the refusal's `reauth`) until that prompt is confirmed,
  * then sends the same JSON once more, once. Its prompt cancelled or closed, or
- * another tab's prompt confirmed, sends nothing.
+ * another tab's prompt confirmed, sends nothing; nor does a form changed while
+ * it waited.
  *
  * These run the shipped file in jsdom, with `fetch`, `window.open` and the
  * timers it waits on replaced. Pages made with one `server` share a session.
@@ -276,6 +277,26 @@ describe('forms-submit.js — a fresh sign-in keeps the form (#2193)', () => {
     await p.flush();
     expect(p.posts).toEqual([TYPED]);
     expect(p.text()).toMatch(/blocked/);
+  });
+
+  it('a form changed while waiting is not sent as it was: the page says so and keeps the change', async () => {
+    // Sabotage (2026-10-31): resending wait.body without comparing, as 0a30d9ce did, turns this red.
+    const p = stepUpPage([REFUSED, { ok: true }]);
+    p.submit();
+    await p.flush();
+    p.type('amount', '152.00');
+    p.confirm();
+    p.popup.location.pathname = '/view/Ledger';
+    await p.flush();
+    await p.flush();
+    expect(p.posts).toEqual([TYPED]);
+    expect(p.text()).toMatch(/You changed the form while confirming/);
+    expect(p.value('amount')).toBe('152.00');
+    expect((p.doc.querySelector('[type=submit]') as HTMLButtonElement).disabled).toBe(false);
+    // Submit sends it as it is now.
+    p.submit();
+    await p.flush();
+    expect(p.posts).toEqual([TYPED, JSON.stringify({ memo: 'Refund for the hall', amount: '152.00' })]);
   });
 
   it('ten minutes with no answer from a new tab ends the wait', async () => {
