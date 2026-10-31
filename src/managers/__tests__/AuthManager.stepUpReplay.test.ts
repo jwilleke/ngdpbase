@@ -21,7 +21,10 @@ function double() {
     (AuthManager.prototype[name] as (...x: unknown[]) => ReturnType<AuthManager[K]>).apply(self, a);
   /** The `reauth-failure` details recorded. */
   const failures = () => audit.logAuditEvent.mock.calls.map(([e]) => e).filter(e => e.eventType === 'reauth-failure').map(e => (e.metadata as { detail: string }).detail);
-  return { call, self, failures };
+  /** The resource each `reauth-success` was recorded against. */
+  const successes = () => audit.logAuditEvent.mock.calls.map(([e]) => e).filter(e => e.eventType === 'reauth-success').map(e => e.resource);
+  const drop = (sessionId: string) => AuthManager.prototype.dropStepUpReplays.apply(self, [sessionId]);
+  return { call, self, failures, successes, drop };
 }
 
 type Over = Partial<{ method: string; originalUrl: string; sessionID: string; type: string; body: unknown; session: Record<string, unknown> }>;
@@ -184,15 +187,22 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     expect(await call('takeStepUpReplay', request({ session: r.session }), thirdId)).toEqual(expect.objectContaining({ action: expect.any(String) }));
   });
 
-  test('a confirmation in another session, or by another person, does not release it', async () => {
-    const { call } = double();
-    const r = request();
+  test('a confirmation in another session, or by another person, does not release it, and is recorded as a failure', async () => {
+    const { call, failures, successes } = double();
+    const r = request({ originalUrl: '/admin/backup/shared-folders/words/new?folder=secret-name' });
     const answer = await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
     const next = new URL(answer.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
     await call('completeReauth', request({ sessionID: 'sid-2' }), result, 'passkey', next);
     await call('completeReauth', request({ session: { username: 'mallory' } }), result, 'passkey', next);
     const id = new URL(next, 'http://x').searchParams.get('replay') ?? '';
     expect(await call('takeStepUpReplay', request({ session: r.session }), id)).toEqual({ back: '/admin/backup' });
+    // Their own re-authentication is not recorded against the other session's
+    // permission, and the address is recorded without its query (#2176).
+    expect(successes()).toEqual(['passkey', 'passkey']);
+    expect(failures()).toEqual([
+      'kept form POST for /admin/backup/shared-folders/words/new confirmed from another session; not released',
+      'kept form POST for /admin/backup/shared-folders/words/new confirmed from another session; not released'
+    ]);
   });
 
   test('the same button in two tabs: confirming the first prompt carries out its own POST, once (#2176)', async () => {
@@ -241,6 +251,46 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     expect(self.stepUpReplays.size).toBe(6);
     expect(self.stepUpReplays.has(ids[0])).toBe(false);
     for (const id of ids.slice(1)) expect(self.stepUpReplays.has(id)).toBe(true);
+  });
+
+  test('a confirmed POST is not dropped for an unconfirmed one: the sixth prompt drops the oldest unconfirmed (#2176)', async () => {
+    const { call, self } = double();
+    const r = request();
+    const nextOf = (a: { reauth?: string }) => new URL(a.reauth ?? '', 'http://x').searchParams.get('next') ?? '';
+    const replayOf = (next: string) => new URL(next, 'http://x').searchParams.get('replay') ?? '';
+    const nexts: string[] = [];
+    for (let i = 0; i < 5; i++) nexts.push(nextOf(await call('askForFreshSignIn', r, {}, 'config-manage', 'page')));
+    await call('completeReauth', r, result, 'passkey', nexts[0]);
+    await call('askForFreshSignIn', r, {}, 'config-manage', 'page');
+    expect(self.stepUpReplays.has(replayOf(nexts[1]))).toBe(false);
+    expect(await call('takeStepUpReplay', request({ session: r.session }), replayOf(nexts[0]))).toEqual(expect.objectContaining({ action: '/admin/backup/shared-folders/words/new' }));
+  });
+
+  test('an account keeps at most ten across its sessions, and the site two hundred (#2176)', async () => {
+    const { call, self } = double();
+    const keep = async (over: Over) => {
+      const answer = await call('askForFreshSignIn', request(over), {}, 'config-manage', 'page');
+      return new URL(new URL(answer.reauth ?? '', 'http://x').searchParams.get('next') ?? '', 'http://x').searchParams.get('replay') ?? '';
+    };
+    // Signing in again and again does not hold more: three sessions of five.
+    const molly: string[] = [];
+    for (let s = 0; s < 3; s++) for (let i = 0; i < 5; i++) molly.push(await keep({ sessionID: `molly-${s}` }));
+    expect(Array.from(self.stepUpReplays.values()).filter(k => k.username === 'molly')).toHaveLength(10);
+    expect(molly.slice(0, 5).some(id => self.stepUpReplays.has(id))).toBe(false);
+
+    // Nor do many accounts: the site's oldest go past two hundred.
+    for (let u = 0; u < 200; u++) await keep({ sessionID: `sid-u${u}`, session: { username: `user-${u}` } });
+    expect(self.stepUpReplays.size).toBe(200);
+    expect(molly.some(id => self.stepUpReplays.has(id))).toBe(false);
+  });
+
+  test('a session\'s end drops the POSTs it kept, and only those (#2176)', async () => {
+    const { call, self, drop } = double();
+    await call('askForFreshSignIn', request(), {}, 'config-manage', 'page');
+    await call('askForFreshSignIn', request(), {}, 'config-manage', 'page');
+    await call('askForFreshSignIn', request({ sessionID: 'sid-2' }), {}, 'config-manage', 'page');
+    drop('sid-1');
+    expect(Array.from(self.stepUpReplays.values()).map(k => k.sessionId)).toEqual(['sid-2']);
   });
 
   test('what cannot be replayed exactly returns to the page with the note, as before (#2145)', async () => {

@@ -812,6 +812,12 @@ const STEP_UP_REPLAY_TTL_MS = 2 * 60_000;
 /** How many kept form POSTs one session holds at once (#2176): a few tabs' worth, so memory stays bounded. */
 const STEP_UP_REPLAYS_PER_SESSION = 5;
 
+/** How many one account holds across its sessions (#2176): signing in many times does not hold more. */
+const STEP_UP_REPLAYS_PER_ACCOUNT = 10;
+
+/** How many the site holds in all (#2176): each may hold a form body of up to 100 KB, so at most 20 MB. */
+const STEP_UP_REPLAYS_TOTAL = 200;
+
 /** The kept form POST a prompt's `next` names (#2154), or null when it names none. */
 function stepUpReplayId(next: string): string | null {
   const url = new URL(next, 'http://site.invalid');
@@ -828,6 +834,21 @@ const SECRET_FIELD = /password|secret|token|^words$/i;
 /** Drop kept form POSTs past their time (#2154). */
 function dropExpiredReplays(replays: Map<string, StepUpReplay>, now: number): void {
   for (const [id, kept] of replays) if (kept.expires <= now) replays.delete(id);
+}
+
+/**
+ * Drop the oldest of `entries` from `replays` until `room` are left (#2176),
+ * the unconfirmed first: a confirmed one is an action about to be carried out.
+ * `entries` are in the Map's insertion order, oldest first.
+ */
+function dropOldestReplays(replays: Map<string, StepUpReplay>, entries: Array<[string, StepUpReplay]>, room: number): void {
+  const order = [...entries.filter(([, kept]) => !kept.ready), ...entries.filter(([, kept]) => kept.ready)];
+  for (const [id] of order.slice(0, Math.max(0, order.length - room))) replays.delete(id);
+}
+
+/** A kept form POST's address for the log and the audit (#2176): the path, never the query. */
+function replayPath(action: string): string {
+  return new URL(action, 'http://site.invalid').pathname;
 }
 
 /**
@@ -2871,12 +2892,18 @@ class AuthManager extends BaseManager {
     // #2154: the confirmation releases the form POST it was asked for, named by
     // `next` itself (the session's pending prompt may be another tab's), and
     // its time to be redone starts now, however long the prompt was open.
+    // Another session's or person's is not released, nor is the success recorded
+    // against its permission: the attempt is a `reauth-failure`, as at the take.
     const kept = this.stepUpReplays.get(stepUpReplayId(next) ?? '');
-    if (kept && kept.sessionId === req.sessionID && kept.username === req.session.username && kept.expires > Date.now()) {
-      kept.ready = true;
-      kept.expires = Date.now() + STEP_UP_REPLAY_TTL_MS;
+    const mine = kept && kept.sessionId === req.sessionID && kept.username === req.session.username ? kept : undefined;
+    if (kept && !mine) {
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} confirmed from another session; not released`);
     }
-    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? kept?.permission ?? method,
+    if (mine && mine.expires > Date.now()) {
+      mine.ready = true;
+      mine.expires = Date.now() + STEP_UP_REPLAY_TTL_MS;
+    }
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', answered?.permission ?? mine?.permission ?? method,
       `re-authenticated with ${method}${answered ? ` for ${answered.permission}` : ''}; acr ${record?.acr ?? 'unknown'}`);
     return record;
   }
@@ -2903,9 +2930,11 @@ class AuthManager extends BaseManager {
    * (#2154); its id, or null when it cannot be redone exactly. Only a page's
    * POST by a signed-in person, to an address on this site. Each prompt keeps
    * its own, so the same button pressed in two tabs loses neither (#2176); a
-   * session keeps at most `STEP_UP_REPLAYS_PER_SESSION`, a new prompt dropping
-   * the oldest past that, and any past its time. It waits
-   * `STEP_UP_REPLAY_WAIT_MS` for the confirmation, which restarts its clock.
+   * session keeps at most `STEP_UP_REPLAYS_PER_SESSION`, an account
+   * `STEP_UP_REPLAYS_PER_ACCOUNT` and the site `STEP_UP_REPLAYS_TOTAL`, a new
+   * prompt dropping the oldest past that, unconfirmed first, and any past its
+   * time. It waits `STEP_UP_REPLAY_WAIT_MS` for the confirmation, which
+   * restarts its clock. A session's end drops its own (`dropStepUpReplays`).
    */
   private keepStepUpReplay(req: Request, permission: string, mode: ReauthMode, back: string): string | null {
     const username = req.session.username;
@@ -2916,12 +2945,19 @@ class AuthManager extends BaseManager {
     if (!fields) return null;
     const now = Date.now();
     dropExpiredReplays(this.stepUpReplays, now);
-    // A Map iterates in insertion order: the session's oldest come first.
-    const mine = Array.from(this.stepUpReplays).filter(([, kept]) => kept.sessionId === req.sessionID);
-    for (const [id] of mine.slice(0, Math.max(0, mine.length - STEP_UP_REPLAYS_PER_SESSION + 1))) this.stepUpReplays.delete(id);
+    // A Map iterates in insertion order: the oldest come first.
+    const all = (): Array<[string, StepUpReplay]> => Array.from(this.stepUpReplays);
+    dropOldestReplays(this.stepUpReplays, all().filter(([, kept]) => kept.sessionId === req.sessionID), STEP_UP_REPLAYS_PER_SESSION - 1);
+    dropOldestReplays(this.stepUpReplays, all().filter(([, kept]) => kept.username === username), STEP_UP_REPLAYS_PER_ACCOUNT - 1);
+    dropOldestReplays(this.stepUpReplays, all(), STEP_UP_REPLAYS_TOTAL - 1);
     const id = randomBytes(16).toString('hex');
     this.stepUpReplays.set(id, { sessionId: req.sessionID, username, permission, action, fields, back, expires: now + STEP_UP_REPLAY_WAIT_MS, ready: false });
     return id;
+  }
+
+  /** A session ended (#2176): the form POSTs it kept go with it (`endSession`). */
+  dropStepUpReplays(sessionId: string): void {
+    for (const [id, kept] of this.stepUpReplays) if (kept.sessionId === sessionId) this.stepUpReplays.delete(id);
   }
 
   /**
@@ -2942,12 +2978,12 @@ class AuthManager extends BaseManager {
       return null;
     }
     if (kept.sessionId !== req.sessionID || kept.username !== req.session?.username) {
-      logger.warn(`[step-up] a kept form POST for ${kept.action} was asked for from another session; refused`);
-      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${kept.action} asked for from another session`);
+      logger.warn(`[step-up] a kept form POST for ${replayPath(kept.action)} was asked for from another session; refused`);
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} asked for from another session`);
       return null;
     }
     if (now > kept.expires) {
-      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${kept.action} past its time; not redone`);
+      await this.recordReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', kept.permission, `kept form POST for ${replayPath(kept.action)} past its time; not redone`);
       if (kept.ready) req.session.stepUpConfirmed = new URL(kept.back, 'http://site.invalid').pathname;
       return { back: kept.back };
     }
