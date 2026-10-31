@@ -3,24 +3,35 @@
  * GET /admin/shared-folders lists the folders and who may read and file in
  * each; POST /admin/shared-folders makes one; POST
  * /admin/shared-folders/:folder/access sets who may read and file. Admins
- * only (`admin-system`); every create and access change is recorded.
+ * only (`admin-system`); an access change also asks `config-manage`, the
+ * fresh sign-in every configuration write asks. Every create and access
+ * change is recorded. The screen's data is rendered through the real view.
  *
  * A real SharedFolderManager over a per-test mkdtemp folder (removed
- * afterwards, never a data/ tree) and a random server key; the configuration,
- * ConsentManager, the PDP and the audit sink are stand-ins.
+ * afterwards, never a data/ tree) and a random server key, and the real
+ * PolicyEvaluator's matching; the configuration, ConsentManager, the PDP,
+ * AuthManager's step-up answer and the audit sink are stand-ins.
  *
  * Sabotaged once each (then restored):
  * - the admin-system check in adminSharedFolderAccess (skipped): the
  *   non-admin test went red on the access route;
  * - the admin-system check in adminSharedFolders (skipped): the non-admin
- *   test went red on the screen.
+ *   test went red on the screen;
+ * - the config-manage check in adminSharedFolderAccess (skipped): the stale
+ *   sign-in and agent token tests went red (the manager still refused, but
+ *   with an error redirect, not the reauth prompt);
+ * - `p.subjects` renamed in the view: the render test went red.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import ejs from 'ejs';
 import WikiRoutes from '../WikiRoutes';
 import SharedFolderManager from '../../managers/SharedFolderManager';
+import PolicyEvaluator from '../../managers/PolicyEvaluator';
+import type { Policy } from '../../types/Policy';
 import { SHARED_FOLDERS_KEY_ENV } from '../../utils/sharedFoldersKey';
 
 type Res = {
@@ -39,6 +50,10 @@ const newRes = (): Res => {
 
 const ROLES = { admin: {}, editor: {}, reader: {}, 'vault-owner': {}, anonymous: {} };
 
+const VIEW = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../views/admin-shared-folders.ejs');
+/** The view without its header and footer includes, which need the whole page's data. */
+const TEMPLATE = fs.readFileSync(VIEW, 'utf8').replace(/<%- include\('(header|footer)'[^%]*%>/g, '');
+
 describe('the Shared folders screen under /admin (#2126)', () => {
   let dir: string;
   let routes: WikiRoutes;
@@ -48,11 +63,18 @@ describe('the Shared folders screen under /admin (#2126)', () => {
   let setProperty: ReturnType<typeof vi.fn>;
   let renderError: ReturnType<typeof vi.fn>;
   /** The signed-in subject of each request: an admin unless a test says otherwise. */
-  let subject: { username: string; roles: string[]; isAuthenticated: boolean };
+  let subject: { username: string; roles: string[]; isAuthenticated: boolean; viaToken?: unknown };
+  /** Whether the sign-in is fresh: the PDP permits the step-up permission `config-manage`. */
+  let fresh: boolean;
+  /** The policies in force, as the PDP lists them. */
+  let inForce: Policy[];
   const savedKey = process.env[SHARED_FOLDERS_KEY_ENV];
   const ann = { username: 'ann', roles: ['admin'], isAuthenticated: true };
   const rita = { username: 'rita', roles: ['editor'], isAuthenticated: true };
   const isAdmin = (s: { roles: string[] }): boolean => s.roles.includes('admin');
+  /** The PDP's answer: admin-system to an admin; config-manage to one with a fresh sign-in, never to an agent token. */
+  const permits = (s: { roles: string[]; viaToken?: unknown }, a: string): boolean =>
+    isAdmin(s) && (a === 'admin-system' || (a === 'config-manage' && fresh && !s.viaToken));
 
   const req = (body: Record<string, unknown> = {}, params: Record<string, string> = {}, query: Record<string, string> = {}) => ({
     method: 'POST',
@@ -73,6 +95,8 @@ describe('the Shared folders screen under /admin (#2126)', () => {
     audited = [];
     custom = {};
     subject = ann;
+    fresh = true;
+    inForce = [];
     setProperty = vi.fn(async (k: string, v: unknown) => { if (v === undefined) delete custom[k]; else custom[k] = v; });
     const managers: Record<string, unknown> = {
       ConsentManager: { documents: vi.fn(async () => [{ id: 'w', version: '1' }]), pendingFor: vi.fn(async () => []) },
@@ -83,12 +107,19 @@ describe('the Shared folders screen under /admin (#2126)', () => {
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.shared-folders.storagedir' ? dir : k === 'ngdpbase.page.provider.filesystem.storagedir' ? path.join(dir, 'pages') : d)
       },
       PolicyDecisionPoint: {
-        permits: async (s: { roles: string[] }, a: string) => a === 'admin-system' && isAdmin(s),
-        policies: () => []
+        permits: async (s: { roles: string[] }, a: string) => permits(s, a),
+        policies: () => inForce
+      },
+      // AuthManager.askForFreshSignIn's answer: a person goes to the prompt; a delegated credential is refused.
+      AuthManager: {
+        askForFreshSignIn: vi.fn(async (_r: unknown, u: { viaToken?: unknown }, permission: string) => (u?.viaToken
+          ? { permission, delegated: true, error: 'This needs a fresh sign-in by the person; a token cannot give one' }
+          : { permission, delegated: false, error: 'A fresh sign-in is needed', reauth: '/auth/reauth?next=%2Fadmin%2Fshared-folders' }))
       },
       AuditManager: { logAuditEvent: vi.fn(async (e: Record<string, unknown>) => { audited.push(e); return 'id'; }), flushAuditQueue: vi.fn(async () => {}) }
     };
     const engine = { getManager: (name: string) => managers[name] ?? null };
+    managers.PolicyEvaluator = new PolicyEvaluator(engine);
     folders = new SharedFolderManager(engine);
     await folders.initialize();
     managers.SharedFolderManager = folders;
@@ -99,8 +130,8 @@ describe('the Shared folders screen under /admin (#2126)', () => {
     routes = new WikiRoutes(engine);
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({
       userContext: subject,
-      hasPermission: async (p: string) => p === 'admin-system' && isAdmin(subject),
-      holdsPermission: async () => false
+      hasPermission: async (p: string) => permits(subject, p),
+      holdsPermission: async (p: string) => isAdmin(subject) && (p === 'admin-system' || p === 'config-manage')
     }) as never);
     vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({ csrfToken: 't' });
     renderError = vi.spyOn(routes, 'renderError').mockResolvedValue(undefined);
@@ -157,6 +188,39 @@ describe('the Shared folders screen under /admin (#2126)', () => {
     }));
   });
 
+  test('the view renders what the route gives it: ticks, roles, and the other policies, a policy for everyone named so', async () => {
+    await folders.setFolderAccess(ann, 'finance', { read: ['editor'], file: [] });
+    inForce = [
+      { id: 'shared-folder-admin', name: 'Admins', effect: 'allow', subjects: [{ type: 'role', value: 'admin' }], resources: [{ type: 'shared-folder', pattern: 'shared/*' }], actions: ['shared-folder-read', 'shared-folder-file'] },
+      { id: 'open-to-all', name: 'Open', effect: 'allow', resources: [{ type: 'shared-folder', pattern: 'shared/*' }], actions: ['shared-folder-read'] },
+      { id: 'lock-all', name: 'Lock', effect: 'deny', subjects: [{ type: 'role', value: 'reader' }], resources: [{ type: 'shared-folder', pattern: 'shared/*' }], actions: ['*'] }
+    ];
+    const res = newRes();
+    await routes.adminSharedFolders(req(), res);
+    expect(renderError).not.toHaveBeenCalled();
+    const [, data] = res.render.mock.calls[0] as [string, Record<string, unknown>];
+    const html = ejs.render(TEMPLATE, { ...data, lockedUnless: () => '' });
+    expect(html).toContain('action="/admin/shared-folders/finance/access"');
+    expect(html).toMatch(/name="read" value="editor" aria-label="editor may read \/shared\/finance" checked>/);
+    expect(html).toMatch(/name="read" value="reader" aria-label="reader may read \/shared\/finance">/);
+    expect(html).not.toContain('value="anonymous"');
+    expect(html).toContain('<code>shared-folder-admin</code> (Admins): gives shared-folder-read and shared-folder-file to role:admin');
+    expect(html).toContain('<code>open-to-all</code> (Open): gives shared-folder-read to everyone, including anonymous visitors');
+    expect(html).toContain('<code>lock-all</code> (Lock): denies shared-folder-read and shared-folder-file to role:reader');
+    expect(html).not.toContain('no role');
+    expect(html).toContain('name="_csrf" value="t"');
+  });
+
+  test('the view marks a policy under the screen\'s id that the screen did not write', async () => {
+    inForce = [{ id: 'shared-folder-access-finance-read', name: 'An add-on\'s', effect: 'deny', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'shared-folder', pattern: 'shared/finance' }], actions: ['shared-folder-read'] }];
+    const res = newRes();
+    await routes.adminSharedFolders(req(), res);
+    const [, data] = res.render.mock.calls[0] as [string, Record<string, unknown>];
+    const html = ejs.render(TEMPLATE, { ...data, lockedUnless: () => '' });
+    expect(html).toContain('<code>shared-folder-access-finance-read</code> (An add-on&#39;s): denies shared-folder-read to role:editor');
+    expect(html).toContain('saving access here is refused until it is renamed or removed');
+  });
+
   test('making a folder records it, and comes back to the screen', async () => {
     const res = newRes();
     await routes.adminSharedFoldersMake(req({ name: ' Payroll ' }), res);
@@ -192,6 +256,26 @@ describe('the Shared folders screen under /admin (#2126)', () => {
       resource: 'shared/finance',
       metadata: expect.objectContaining({ before: { read: [], file: [] }, after: { read: ['editor', 'reader'], file: ['editor'] } })
     });
+  });
+
+  test('an access change without a fresh sign-in goes to the prompt, and comes back; nothing written or recorded', async () => {
+    fresh = false;
+    const res = newRes();
+    await routes.adminSharedFolderAccess(req({ read: 'editor' }, { folder: 'finance' }), res);
+    expect(res.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fshared-folders');
+    expect(renderError).not.toHaveBeenCalled();
+    expect(setProperty).not.toHaveBeenCalled();
+    expect(audited).toEqual([]);
+  });
+
+  test('an agent token holding admin-system and config-manage is refused, with no prompt; nothing written or recorded', async () => {
+    subject = { ...ann, viaToken: { id: 'tok', name: 'agent', scopes: ['admin-system', 'config-manage'] } };
+    const res = newRes();
+    await routes.adminSharedFolderAccess(req({ read: 'editor' }, { folder: 'finance' }), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.redirect).not.toHaveBeenCalled();
+    expect(setProperty).not.toHaveBeenCalled();
+    expect(audited).toEqual([]);
   });
 
   test('no box ticked takes the folder\'s policies away, and is recorded', async () => {

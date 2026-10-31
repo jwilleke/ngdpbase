@@ -10096,14 +10096,17 @@ ${panes}
    * POST /admin/shared-folders/:folder/access — set who may read and who may
    * file in a folder (#2126): the roles ticked under `read` and `file`,
    * written as the folder's policies by SharedFolderManager.setFolderAccess,
-   * which asks `admin-system` again and records `shared-folder-access-change`
-   * before writing.
+   * which asks again and records `shared-folder-access-change`. `admin-system`
+   * and `config-manage`: it writes `ngdpbase.access.policies`, so it asks the
+   * fresh sign-in every configuration write asks (step-up; a stale session
+   * goes to /auth/reauth and comes back, an agent token is refused).
    */
   async adminSharedFolderAccess(req: Request, res: Response) {
     const back = (key: 'success' | 'error', message: string): void => res.redirect(`/admin/shared-folders?${key}=${encodeURIComponent(message)}`);
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'admin-system', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return;
       const folders = this.engine.getManager<SharedFolderManager>('SharedFolderManager');
       if (!folders || !wikiContext.userContext) return back('error', 'Shared folders are not available on this site');
       const name = req.params.folder ?? '';

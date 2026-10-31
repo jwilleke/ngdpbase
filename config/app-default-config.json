@@ -2206,7 +2206,7 @@
       }
     },
     "shared-folder-access-change": {
-      "description": "An administrator changed who may read and who may file in a shared folder on the Shared folders screen (#2126): which folder, who, and the roles before and after for each. Recorded before the folder's policies are written, which cannot proceed without it",
+      "description": "An administrator changed who may read and who may file in a shared folder on the Shared folders screen (#2126): which folder, who, and the roles before and after for each. Recorded once the folder's policies are written; a failed write is recorded as a failure, with the error, and a record that cannot be written puts the policies back",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"

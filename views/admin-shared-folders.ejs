@@ -80,13 +80,14 @@
                     </table>
                 </div>
                 <p class="small text-muted">Tick both for a role that should open the folder and add to it. <code>vault-owner</code> is every signed-in user.</p>
-                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %>><i class="fas fa-save"></i> Save access</button>
+                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('config-manage') %>><i class="fas fa-save"></i> Save access</button>
+                <span class="small text-muted ms-2">Asks for a fresh sign-in, as every configuration change does.</span>
             </form>
             <% if (f.others.length > 0) { %>
             <h6 class="mt-3">Also reached by</h6>
             <ul class="small mb-0">
                 <% f.others.forEach(function (p) { %>
-                <li><code><%= p.id %></code> (<%= p.name %>): <%= p.effect === 'deny' ? 'denies' : 'gives' %> <%= p.actions.join(' and ') %> to <%= p.roles.length ? p.roles.join(', ') : 'no role' %></li>
+                <li class="shared-folder-other<%= p.reserved ? ' text-danger' : '' %>" data-policy="<%= p.id %>"><code><%= p.id %></code> (<%= p.name %>): <%= p.effect === 'deny' ? 'denies' : 'gives' %> <%= p.actions.length ? p.actions.join(' and ') : 'nothing in this folder' %> to <%= p.subjects.length ? p.subjects.join(', ') : 'everyone, including anonymous visitors' %><% if (p.reserved) { %>. <strong>It has an id this screen keeps for this folder, and this screen did not write it: saving access here is refused until it is renamed or removed in Admin → Configuration.</strong><% } %></li>
                 <% }) %>
             </ul>
             <% } %>
