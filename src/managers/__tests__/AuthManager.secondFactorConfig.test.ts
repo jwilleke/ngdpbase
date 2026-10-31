@@ -134,6 +134,42 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       expect(am.needsSecondStep(FIRST)).toBe(false);
     });
 
+    test.each([
+      [['password', 'email-link']],
+      [['password', 'magic-link']]
+    ])('the retired required-factors %j: the old id is read as magic-link (Q3), so it is still two steps', async (legacy) => {
+      await enrolled();
+      custom['ngdpbase.auth.required-factors'] = legacy;
+      const am = await started();
+      expect(am.secondFactorsFor('molly').map(f => f.id)).toEqual(['email-link']);
+      expect(am.needsSecondStep(FIRST)).toBe(true);
+    });
+
+    test.each([
+      ['enabled: false', { 'ngdpbase.auth.factors': [{ authproviderid: 'magic-link', primary: true, enabled: false }] }],
+      ['not listed', { 'ngdpbase.auth.factors': null }],
+      ['not in the retired required-factors', { 'ngdpbase.auth.required-factors': ['password'] }]
+    ])('the magic-link entry %s while an email second factor is enrolled: one warning at boot', async (_why, config) => {
+      await enrolled();
+      logged = [];
+      Object.assign(custom, config);
+      await started();
+      const warnings = logged.filter(l => l.includes('enrolled email second factor'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('magic-link');
+      expect(warnings[0]).toContain('no longer asked for');
+    });
+
+    test('no warning when the entry is on, or when no account has an email second factor', async () => {
+      await enrolled();
+      expect(logged.filter(l => l.includes('enrolled email second factor'))).toEqual([]);
+      custom['ngdpbase.auth.factors'] = [{ authproviderid: 'magic-link', primary: true, enabled: false }];
+      fs.rmSync(file, { force: true });
+      logged = [];
+      await started();
+      expect(logged.filter(l => l.includes('enrolled email second factor'))).toEqual([]);
+    });
+
     test('the email link is not offered after a sign-in that used it', async () => {
       const am = await enrolled();
       expect(am.secondFactorOrder({ provider: 'magic-link', factors: [] }, 1)).not.toContain('magic-link');

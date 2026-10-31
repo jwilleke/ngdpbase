@@ -1083,6 +1083,7 @@ class AuthManager extends BaseManager {
     await this.openCredentialsStore(configManager);
     this.registerPasskeys(configManager);
     this.registerOidcProviders(configManager);
+    this.warnIfEmailSecondFactorsDropped();
 
     logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
   }
@@ -1102,11 +1103,10 @@ class AuthManager extends BaseManager {
           ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
           : 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)')
       );
-      if (custom === undefined) {
-        return legacy.filter((id): id is string => typeof id === 'string').map(id => ({ authproviderid: id }));
-      }
     }
-    const entries = configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
+    const entries: unknown = Array.isArray(legacy) && custom === undefined
+      ? legacy.filter((id): id is string => typeof id === 'string').map(id => ({ authproviderid: id }))
+      : configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
     if (!Array.isArray(entries)) {
       logger.error('[AuthManager] ngdpbase.auth.factors is not a list — offering password only. (#1523)');
       return [{ authproviderid: 'password' }];
@@ -1126,6 +1126,21 @@ class AuthManager extends BaseManager {
       logger.warn(`[AuthManager] ngdpbase.auth.factors: "amr": ["trust"] on ${trusting.join(', ')} does nothing — trust an outside provider's own second factor with "trust-mfa": true on its entry in ngdpbase.auth.oidc.providers. (#1633)`);
     }
     return read;
+  }
+
+  /**
+   * #1523: with the `magic-link` entry off or not listed, an enrolled email
+   * second factor is no longer asked for. The operator may mean that, but it
+   * must not happen silently.
+   */
+  private warnIfEmailSecondFactorsDropped(): void {
+    if (this.factorEntries.some(e => e.authproviderid === EMAIL_LINK_ENTRY && e.enabled !== false)) return;
+    const accounts = new Set((this.credentials?.listKind('email') ?? []).map(r => r.username)).size;
+    if (accounts === 0) return;
+    logger.warn(
+      `[AuthManager] ngdpbase.auth.factors: the ${EMAIL_LINK_ENTRY} entry is off or not listed, so the enrolled email second factor ` +
+      `of ${accounts} account(s) is no longer asked for — they sign in with one step, and magic-link sign-in is off too. (#1523)`
+    );
   }
 
   /**
