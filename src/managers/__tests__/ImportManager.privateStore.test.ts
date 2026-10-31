@@ -426,6 +426,28 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(uploads()).toBe(before);
   });
 
+  // Code review of #2185, finding 2: the store's index is read once a run, not once a file.
+  test('a re-import reads the store\'s files once a run, however many files it checks', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 scan') },
+      { path: `${VAULT}/attachments/loose.txt`, bytes: Buffer.from('a loose file') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: { 'old-id': { id: 'old-id', fileName: 'attachments/scan.pdf', name: 'scan.pdf' } } }))
+      }
+    ]);
+    await upload(VAULT, archive);
+    const reads = vi.spyOn(attachments, 'ownStoreFingerprints');
+
+    await upload(VAULT, archive);
+    expect(reads).toHaveBeenCalledTimes(1);
+    // The next run reads it afresh.
+    await upload(VAULT, archive);
+    expect(reads).toHaveBeenCalledTimes(2);
+    reads.mockRestore();
+  });
+
   test('a page edited since the takeout is a duplicate, and the live page wins', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);
