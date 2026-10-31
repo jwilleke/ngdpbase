@@ -491,10 +491,11 @@ class ImportManager extends BaseManager {
     await super.initialize(config);
 
     // ICE's core receivers (#1979, D4): pages and files, each through its own door.
-    this.registerReceiver('core', this.pagesReceiver());
-    this.registerReceiver('core', this.filesReceiver());
+    // Through the private door: only these may declare writesEncrypted (#2179).
+    this.#registerReceiver('core', this.pagesReceiver(), true);
+    this.#registerReceiver('core', this.filesReceiver(), true);
     // #2118: a takeout handed back into its owner's private store, read by core.takeout.
-    this.registerReceiver('core', this.privateStoreReceiver());
+    this.#registerReceiver('core', this.privateStoreReceiver(), true);
 
     // Register built-in converters
     this.registerConverter(new JSPWikiConverter());
@@ -572,13 +573,30 @@ class ImportManager extends BaseManager {
   /**
    * Register a receiver (D4): a door that already exists. Core's are
    * `core.pages` and `core.files`; an add-on registers its own manager's door
-   * through `host.registerReceiver`.
+   * through `host.registerReceiver`. Refuses `writesEncrypted` from every
+   * caller, whatever owner it names: core registers its own receivers
+   * through the private `#registerReceiver` (#2179).
    *
    * @returns The receiver's id, `<owner>.<name>`
    */
   registerReceiver(owner: string, receiver: IceReceiver): string {
-    const id = `${owner}.${receiver?.name}`;
-    if (!receiver || !ICE_NAME.test(receiver.name)) throw new Error(`ICE receiver '${id}': a name is lower-case letters, numbers and dashes`);
+    return this.#registerReceiver(owner, receiver, false);
+  }
+
+  /**
+   * The registration itself. Only core's own receivers, from `initialize`,
+   * come here with `mayWriteEncrypted`: the public `registerReceiver` is
+   * reachable by any add-on through the engine, whatever owner it names
+   * (#2179), so it never lets a receiver declare `writesEncrypted` (#2110).
+   * The receiver is copied once and the copy is checked and stored, so a
+   * getter cannot answer the check one way and the registry another.
+   */
+  #registerReceiver(owner: string, given: IceReceiver, mayWriteEncrypted: boolean): string {
+    const receiver: IceReceiver = { ...given };
+    const writesEncrypted = receiver.writesEncrypted === true;
+    const keepsEncrypted = receiver.keepsEncrypted === true;
+    const id = `${owner}.${receiver.name}`;
+    if (!given || !ICE_NAME.test(receiver.name)) throw new Error(`ICE receiver '${id}': a name is lower-case letters, numbers and dashes`);
     if (this.receiverRegistry.has(id)) throw new Error(`ICE receiver '${id}' is already registered`);
     if (typeof receiver.receive !== 'function' || typeof receiver.mayUse !== 'function' || !Array.isArray(receiver.accepts)) {
       throw new Error(`ICE receiver '${id}': declare accepts, mayUse() and receive()`);
@@ -587,7 +605,7 @@ class ImportManager extends BaseManager {
       throw new Error(`ICE receiver '${id}': names is 'title' or 'file'`);
     }
     // #2110: an add-on's receiver is confidential only by keeping originals sealed (`keepsEncrypted`).
-    if (receiver.writesEncrypted && owner !== 'core') {
+    if (writesEncrypted && !mayWriteEncrypted) {
       throw new Error(`ICE receiver '${id}': writesEncrypted is core's only; an add-on receiver uses keepsEncrypted`);
     }
     const types = receiver.originals?.types;
@@ -595,7 +613,7 @@ class ImportManager extends BaseManager {
       throw new Error(`ICE receiver '${id}': originals.types are media types, type/subtype exactly, with no wildcard`);
     }
     this.receiverRegistry.set(id, {
-      ...receiver, id, owner,
+      ...receiver, id, owner, writesEncrypted, keepsEncrypted,
       ...(receiver.originals && types ? { originals: { ...receiver.originals, types: types.map(t => t.trim().toLowerCase()) } } : {})
     });
     return id;

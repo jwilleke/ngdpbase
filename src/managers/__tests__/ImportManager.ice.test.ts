@@ -13,6 +13,7 @@ import { boundScope } from '../../ice/runImport';
 import { IdentityStoreUnavailableError } from '../../utils/identityStoreUnavailable';
 import { REFUSAL } from '../../http/ssrf';
 import { jobContextFromRequest } from '../../context/JobContext';
+import { buildAddonHost } from '../../utils/addonHost';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceShim } from '../../ice/types';
 
@@ -402,20 +403,43 @@ describe('ImportManager — the name a user gives what an upload becomes (#2130)
     expect(im.givenNameProblem('core.pages', 'Garden', 'a.md')).toBe('A name can be up to 5 characters.');
   });
 
-  // Code review finding 7 of #2160: no add-on receiver can make itself confidential this way (#2110).
-  test('only core may declare a receiver whose own door writes encrypted', async () => {
-    const { im } = await makeImportManager();
-    const sealed = { name: 'sealed', accepts: ['x'], writesEncrypted: true, mayUse: async () => true, receive: async () => ({ status: 'stored' as const }) };
-    expect(() => im.registerReceiver('acct', sealed)).toThrow(/writesEncrypted is core's only/);
-    expect(im.isConfidential('acct.sealed')).toBe(false);
-    expect(im.registerReceiver('core', sealed)).toBe('core.sealed');
-    expect(im.isConfidential('core.sealed')).toBe(true);
-  });
-
   test('a receiver declares names as title or file, nothing else', async () => {
     const { im } = await makeImportManager();
     expect(() => im.registerReceiver('acct', { name: 'odd', accepts: ['x'], names: 'path' as never, mayUse: async () => true, receive: async () => ({ status: 'stored' }) }))
       .toThrow(/names is 'title' or 'file'/);
+  });
+});
+
+describe('ImportManager — who may declare a receiver that writes encrypted (#2179)', () => {
+  // Code review finding 7 of #2160: no add-on receiver can make itself confidential this way (#2110).
+  const sealed = () => ({ name: 'sealed', accepts: ['x'], writesEncrypted: true, mayUse: async () => true, receive: async () => ({ status: 'stored' as const }) });
+
+  test('the public registerReceiver refuses writesEncrypted from every caller, core\'s own name included', async () => {
+    const { im } = await makeImportManager();
+    expect(() => im.registerReceiver('acct', sealed())).toThrow(/writesEncrypted is core's only/);
+    expect(im.isConfidential('acct.sealed')).toBe(false);
+    // An add-on holds the engine, so it can name itself core: the owner is no proof.
+    expect(() => im.registerReceiver('core', sealed())).toThrow(/writesEncrypted is core's only/);
+    expect(im.isConfidential('core.sealed')).toBe(false);
+    // Core's own, registered by initialize through the private path, still is.
+    expect(im.isConfidential('core.private-store')).toBe(true);
+  });
+
+  test('the flag is read once: a getter cannot pass the check and be stored as true', async () => {
+    const { im } = await makeImportManager();
+    let reads = 0;
+    const sneaky = { ...sealed(), name: 'sneaky', get writesEncrypted() { return reads++ > 0; } };
+    expect(im.registerReceiver('acct', sneaky)).toBe('acct.sneaky');
+    expect(reads).toBe(1);
+    expect(im.isConfidential('acct.sneaky')).toBe(false);
+  });
+
+  test('an add-on registering through its host is refused too', async () => {
+    const env = await makeImportManager();
+    env.managers['ImportManager'] = env.im;
+    const host = buildAddonHost('acct', {}, undefined, env.engine, { receivers: ['sealed'] });
+    expect(() => host.registerReceiver(sealed())).toThrow(/writesEncrypted is core's only/);
+    expect(env.im.isConfidential('acct.sealed')).toBe(false);
   });
 });
 
