@@ -2,23 +2,37 @@
 
 The repositories and sites that surround ngdpbase, and what each one actually takes from it.
 
-Dependency runs one way. Every repository below consumes something ngdpbase publishes; ngdpbase consumes nothing from any of them and does not know they exist. [RELEASES.md](../RELEASES.md) is the contract that makes that work — ngdpbase publishes on its own cadence, each consumer subscribes on theirs.
+Dependency runs one way. Every site and add-on repository below consumes something ngdpbase publishes; ngdpbase consumes nothing from any of them and does not know they exist. [RELEASES.md](../RELEASES.md) is the contract that makes that work — ngdpbase publishes on its own cadence, each consumer subscribes on theirs. The two exceptions run the other way and are listed under [Repositories ngdpbase uses](#repositories-ngdpbase-uses).
 
 This page is the __repository-level__ view: which repositories exist, what each one takes, and how it is packaged. For __how an instance is implemented and what it inherits__ — the three methods, the inheritance table, and the per-instance specifics — [installation/Implementation.md](installation/Implementation.md) is the lead document and the authority. Where the two disagree, that one is right.
 
-The useful distinction is not "which repo" but __what each one consumes, and how__. There are four different answers, and two repositories that look alike from the outside sit on opposite sides of it.
+The useful distinction is not "which repo" but __what each one consumes, and how__. Two repositories that look alike from the outside can sit on opposite sides of it.
 
 | Site or repository | What it takes from ngdpbase | How it takes it |
 |---|---|---|
-| [ngdpbase-demo.example.com](https://ngdpbase-demo.example.com) | the published image, unmodified | pulled by tag, deployed by Flux |
+| [ngdpbase-demo.nerdsbythehour.com](https://ngdpbase-demo.nerdsbythehour.com/view/Demo%20Welcome) | the published image, unmodified | pulled by tag, deployed by Flux |
 | [geohazardwatch](https://github.com/jwilleke/geohazardwatch) | the published image, unmodified, plus core's add-on installer | stock image deployed by Flux; the add-on installed from npm through the site's config |
 | [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | the source, cloned and run | a development copy on a host, loading add-ons from local checkouts |
-| [ngdpbase-addon-template](https://github.com/jwilleke/ngdpbase-addon-template) (retired) | nothing at runtime | replaced by `npm run create:addon -- --repo` |
+| [ngdp-accounting-addons](https://github.com/jwilleke/ngdp-accounting-addons) | the add-on API of the instance that loads it | three add-ons, published to npm; no site of its own |
+| [ngdpbase-addons](https://github.com/jwilleke/ngdpbase-addons) | the add-on API of the instance that loads it | add-ons in progress, not published; loaded from a local checkout |
+| [yourphr](https://github.com/jwilleke/yourphr) | the add-on API, on its `yourphr-addon` branch only | a standalone application moving to an add-on |
 | jimstest | this working tree | run in place from the checkout |
 
-## ngdpbase-demo.example.com — stock ngdpbase, nothing added
+## Public sites
 
-<https://ngdpbase-demo.example.com>
+| Site | What it is | Runs ngdpbase |
+|---|---|---|
+| [geohazardwatch.com](https://geohazardwatch.com) | production domain site | yes, the stock image plus an installed add-on |
+| [ngdpbase-demo.nerdsbythehour.com](https://ngdpbase-demo.nerdsbythehour.com/view/Demo%20Welcome) | public demo of ngdpbase itself | yes, the stock image |
+| [demo.yourphr.org](https://demo.yourphr.org) | public demo of yourPHR | no, the standalone yourPHR application |
+| [yourphr.org](https://yourphr.org) | yourPHR project site | no |
+| [www.fairwayscondos.org](https://www.fairwayscondos.org) | The Fairways' current public site | no, a Wix site, to be replaced by [The Fairways on ngdpbase](#fairways-gen2-website--a-development-copy) |
+
+Other hostnames of the operator's own infrastructure are written as `example.com` in this public repository; the real ones are in the [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) application READMEs.
+
+## ngdpbase-demo.nerdsbythehour.com — stock ngdpbase, nothing added
+
+<https://ngdpbase-demo.nerdsbythehour.com/view/Demo%20Welcome>
 
 A plain instance of ngdpbase with no addon enabled, running the published `ghcr.io/jwilleke/ngdpbase` image exactly as it ships. It exists to show what the platform is on its own, so it is also the honest answer to "what do you get before anyone extends it".
 
@@ -52,13 +66,26 @@ The practical consequence is that this copy has __no automatic upgrade path__. A
 
 The sharpest form of that difference is environment: a value baked into `docker/Dockerfile` reaches geohazardwatch on its next core bump and never reaches The Fairways at all, because a direct install inherits nothing from the image. That is the single row worth remembering from Implementation.md's inheritance table.
 
-## ngdpbase-addon-template — retired
+The Fairways is transitioning to ngdpbase: this copy is where that work happens, and the current public site, <www.fairwayscondos.org>, is not yet on it.
 
-<https://github.com/jwilleke/ngdpbase-addon-template>
+## ngdp-accounting-addons and ngdpbase-addons — add-on repositories
 
-A working reference addon (`addons/hello-ngdp`) in a repository, copied rather than depended on. It was a hand-kept second copy of what `npm run create:addon` generates, and the two drifted ([#1636](https://github.com/jwilleke/ngdpbase/issues/1636)). It is retired: `npm run create:addon -- --id <slug> --repo` now writes the whole repository — the addon at `addons/<slug>/`, CI, Renovate and the licence, with nothing deployment-specific — from the one generator in this repository. The [addons developer guide](guides/addons-developer-guide.md#a-whole-repository---repo) describes it.
+<https://github.com/jwilleke/ngdp-accounting-addons>, <https://github.com/jwilleke/ngdpbase-addons>
 
-The pattern it taught still holds: a generated addon declares no runtime dependencies at all — an addon receives what it needs from the host, and the generated route imports Express without claiming to own it. An addon that declares its own copy of something the host already provides is drifting from that pattern.
+Add-ons with no site and no copy of ngdpbase. Each holds several add-ons under `addons/`, and any instance can load them.
+
+- ngdp-accounting-addons (public) holds `accounting`, `accounting-receivables` and `accounting-donations`, published to npm as `@jwilleke/<slug>-addon`
+- ngdpbase-addons (private) holds `accommodation` and `association`, both in progress; their packages are marked private and are not on npm, so they load only from a local checkout through `addons-path`
+
+The Fairways is where both are tested against realistic data.
+
+## yourphr — a standalone application moving to an add-on
+
+<https://github.com/jwilleke/yourphr>
+
+A personal health record that is not built on ngdpbase today. The repository's default branch and the deployed yourPHR applications are the standalone stack. The [`yourphr-addon`](https://github.com/jwilleke/yourphr/tree/yourphr-addon) branch holds the replacement: the `phr` add-on, published to npm as `@yourphr/phr-addon`. The local `ngdpbase-yourphr` site loads it from a `yourphr` checkout through `addons-path`. No deployed site runs it yet; cutover is tracked in [yourphr#958](https://github.com/jwilleke/yourphr/issues/958).
+
+So on this repository the branch decides the answer: a question about ngdpbase applies only to `yourphr-addon`.
 
 ## jimstest — the development instance
 
@@ -67,3 +94,12 @@ Not a repository. `jimstest` is the local instance run from this working tree by
 It matters to everything above because it is the only one of these that runs ngdpbase from source. The published image is built from `docker/Dockerfile`, which prunes development dependencies and copies `dist/` — so a change can pass every test in the checkout and still be absent or broken in the image. Verifying on jimstest catches the first half of that; only a release exercises the second.
 
 Start and restart it with `./server.sh` — never `pm2`, `kill`, or `node` directly — and restart it explicitly after any build, because compiling `dist/` does not cycle the running process.
+
+## Repositories ngdpbase uses
+
+These run the other way: ngdpbase consumes them.
+
+- [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) is a runtime dependency, `@jwilleke/oidc-auth-server` on npm, used by `OidcManager`
+- [mjs-project-template](https://github.com/jwilleke/mjs-project-template) is the source of the agent kit: the managed section of [AGENTS.md](../AGENTS.md), the kit commands and the lint configuration. It is development tooling, nothing at runtime
+
+[mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) is neither a consumer of code nor a dependency: it holds the deployments of the Kubernetes sites above.
