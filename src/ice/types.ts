@@ -416,7 +416,9 @@ export interface IceReceiver {
    * unlocked key can write. The engine then runs an upload into it during
    * the upload request, with the request's own context, instead of as a
    * background job: no key is ever carried into a job (#2034's decision).
-   * An import into it is confidential (#2110).
+   * An import into it is confidential (#2110). Core's only: an add-on
+   * receiver that declares it is refused at registration, so an add-on is
+   * confidential only through `keepsEncrypted`.
    */
   writesEncrypted?: boolean;
   /**
