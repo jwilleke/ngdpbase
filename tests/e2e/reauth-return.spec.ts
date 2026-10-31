@@ -198,6 +198,44 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       expect(again?.status()).toBe(410);
     });
 
+    test('the same button in two tabs: confirming the first prompt carries out its own POST, then the second\'s (#2176)', async () => {
+      const { context, page } = me();
+      const second = await context.newPage();
+      try {
+        const rename = (p: Page) => p.locator('form[action$="/rename"]:has(input[name="label"][value^="e2e-reauth-"])').first();
+        const first = `e2e-reauth-tab1-${RUN}`;
+        const other = `e2e-reauth-tab2-${RUN}`;
+        await page.goto('/profile');
+        await second.goto('/profile');
+        await page.waitForTimeout(STALE_MS);
+        // Tab 1 presses, then tab 2 presses the same button: two prompts.
+        await rename(page).locator('input[name="label"]').fill(first);
+        await rename(page).locator('button[type="submit"]').click();
+        await page.waitForURL(/\/auth\/reauth\?/);
+        const firstNext = new URL(page.url()).searchParams.get('next') ?? '';
+        await rename(second).locator('input[name="label"]').fill(other);
+        await rename(second).locator('button[type="submit"]').click();
+        await second.waitForURL(/\/auth\/reauth\?/);
+        const secondNext = new URL(second.url()).searchParams.get('next') ?? '';
+        expect(secondNext).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
+        expect(secondNext).not.toBe(firstNext);
+        // Tab 1 confirms its (older) prompt: its own POST is carried out.
+        await confirmWithPasskey(page);
+        await page.waitForURL(/\/profile\?success=Renamed$/, { timeout: 10000 });
+        await expect(page.locator(`input[name="label"][value="${first}"]`)).toHaveCount(1);
+        // Tab 2's prompt, confirmed (the passkey is on tab 1's page, so it is confirmed there), carries out tab 2's POST.
+        await page.goto(second.url());
+        await confirmWithPasskey(page);
+        await page.waitForURL(/\/profile\?success=Renamed$/, { timeout: 10000 });
+        await expect(page.locator(`input[name="label"][value="${other}"]`)).toHaveCount(1);
+        // Each once.
+        expect((await page.goto(firstNext))?.status()).toBe(410);
+        expect((await page.goto(secondNext))?.status()).toBe(410);
+      } finally {
+        await second.close();
+      }
+    });
+
     test('a script\'s request comes back to its page, which says it can be done now', async () => {
       const page = me().page;
       await page.goto('/profile');
