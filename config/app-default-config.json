@@ -321,7 +321,7 @@
   "ngdpbase.auth.credentials.file": "${FAST_STORAGE}/users/credentials.json",
   "_comment_auth_passkey": "#448 — passkeys (WebAuthn): a passkey alone signs a person in, at AAL2, phishing-resistant. Registered only when ngdpbase.application.base-url is set explicitly and is https (or localhost): a passkey is tied to that host, so it works only on that hostname — a site answering on several hostnames should redirect the others to it. Stored in the credentials store. false turns passkeys off.",
   "ngdpbase.auth.passkey.enabled": true,
-  "_comment_auth_step_up": "#1525 — step-up: permissions marked step-up: true in ngdpbase.permissions.definitions ask (#1638; the permissions list here was folded into the entries, and a list still set in a custom config is honoured with a warning) for a fresh factor even inside a valid session, so a session left open on a shared machine cannot change what protects the account or the instance. Fresh means a factor satisfied within max-age-minutes that reaches the level the person's roles require (an admin re-authenticates with a passkey, others with a passkey or their password); a known device never counts, and a delegated credential (agent token, app token) never satisfies it. The prompt is /auth/reauth, which returns to the page. Every prompt and outcome is audited (reauth-prompt, reauth-success, reauth-failure). Rare by design: account-security, not profile-manage, so everyday self-service never prompts (decided 2026-10-04). max-age-minutes is one site-wide window for every step-up permission, shipped at 60 (operator, 2026-10-18; was 15, #1767; there is no per-action window); a site wanting \"prove it now\" sets 1. A max-age-minutes of 0 turns step-up off.",
+  "_comment_auth_step_up": "#1525 — step-up: permissions marked step-up: true in ngdpbase.permissions.definitions ask (#1638; the permissions list here was folded into the entries, and a list still set in a custom config is honoured with a warning) for a fresh factor even inside a valid session, so a session left open on a shared machine cannot change what protects the account or the instance. Fresh means a factor satisfied within max-age-minutes that reaches the level the person's roles require (an admin re-authenticates with a passkey, others with a passkey or their password); a known device never counts, and a delegated credential (agent token, app token) never satisfies it. The prompt is /auth/reauth, which returns to the page. Every prompt and outcome is audited (reauth-prompt, reauth-success, reauth-failure). Rare by design: account-security, not profile-manage, so everyday self-service never prompts (decided 2026-10-04). An add-on marks its own permission the same way in its config/default-config.json (#2190). max-age-minutes is one site-wide window for every step-up permission, shipped at 60 (operator, 2026-10-18; was 15, #1767; there is no per-action window); a site wanting \"prove it now\" sets 1. A max-age-minutes of 0 turns step-up off.",
   "ngdpbase.auth.step-up": {
     "max-age-minutes": 60
   },
@@ -1885,21 +1885,21 @@
       "color": "#6f42c1"
     },
     "account-security": {
-      "description": "Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "description": "Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in, because the entry carries \"step-up\": true (#1638)",
       "label": "Change your password, email and sign-in methods, and approve devices",
       "icon": "user-shield",
       "color": "#6f42c1",
       "step-up": true
     },
     "config-manage": {
-      "description": "Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "description": "Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in, because the entry carries \"step-up\": true (#1638)",
       "label": "Change site settings and download backups",
       "icon": "sliders-h",
       "color": "#dc3545",
       "step-up": true
     },
     "secret-reveal": {
-      "description": "Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed",
+      "description": "Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in, because the entry carries \"step-up\": true (#1638). Hashed credentials (agent tokens) and shown-once secrets can never be revealed",
       "label": "Show hidden configuration secrets",
       "icon": "eye-slash",
       "color": "#dc3545",
