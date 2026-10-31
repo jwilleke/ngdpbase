@@ -380,6 +380,74 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged']);
   });
 
+  // #2171: a file, as a page (#2118): the store's own check decides, not the fingerprint.
+  test('a file deleted since an import comes back when the same takeout is imported again', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\nNo links.\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 lab scan 4471') }
+    ]);
+    const first = await upload(VAULT, archive);
+    expect(byPath(first)[`${VAULT}/attachments/scan.pdf`]).toEqual(['imported', undefined]);
+    const id = String(first.files.find(f => f.name.endsWith('scan.pdf'))?.refs[0]);
+    expect(await attachments.deleteAttachment(id, MOLLY)).toBe(true);
+    expect(await attachments.getPrivateStoreAttachment(id, MOLLY)).toBeNull();
+
+    const again = await upload(VAULT, archive);
+
+    expect(byPath(again)).toMatchObject({
+      [`${VAULT}/Medical notes.md`]: ['unchanged', expect.anything()],
+      [`${VAULT}/attachments/scan.pdf`]: ['imported', undefined]
+    });
+    const back = String(again.files.find(f => f.name.endsWith('scan.pdf'))?.refs.find(ref => ref !== id));
+    expect((await attachments.getPrivateStoreAttachment(back, MOLLY))?.buffer.toString()).toBe('%PDF-1.4 lab scan 4471');
+    expect(await filesContaining('lab scan 4471')).toEqual([]);
+    // Once it is back, a third import leaves it as it is.
+    expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged', 'unchanged']);
+  });
+
+  // #2171: a re-import that finds everything still here writes no upload record for a file it did not store.
+  test('importing the same takeout again records no upload for a file the store still holds, linked or not', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 scan') },
+      { path: `${VAULT}/attachments/loose.txt`, bytes: Buffer.from('a loose file') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: { 'old-id': { id: 'old-id', fileName: 'attachments/scan.pdf', name: 'scan.pdf' } } }))
+      }
+    ]);
+    await upload(VAULT, archive);
+    const uploads = (): number => audit.logAuditEvent.mock.calls.filter(c => (c[0] as { eventType?: string }).eventType === 'asset-upload').length;
+    const before = uploads();
+
+    const again = await upload(VAULT, archive);
+
+    expect(again.files.filter(f => f.status !== 'noise').map(f => f.status)).toEqual(['unchanged', 'unchanged', 'unchanged']);
+    expect(uploads()).toBe(before);
+  });
+
+  // Code review of #2185, finding 2: the store's index is read once a run, not once a file.
+  test('a re-import reads the store\'s files once a run, however many files it checks', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 scan') },
+      { path: `${VAULT}/attachments/loose.txt`, bytes: Buffer.from('a loose file') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: { 'old-id': { id: 'old-id', fileName: 'attachments/scan.pdf', name: 'scan.pdf' } } }))
+      }
+    ]);
+    await upload(VAULT, archive);
+    const reads = vi.spyOn(attachments, 'ownStoreFingerprints');
+
+    await upload(VAULT, archive);
+    expect(reads).toHaveBeenCalledTimes(1);
+    // The next run reads it afresh.
+    await upload(VAULT, archive);
+    expect(reads).toHaveBeenCalledTimes(2);
+    reads.mockRestore();
+  });
+
   test('a page edited since the takeout is a duplicate, and the live page wins', async () => {
     await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
     const archive = await takeoutOf(VAULT);

@@ -46,6 +46,8 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
   let pagesDir: string;
   let manager: AttachmentManager;
   let audit: ReturnType<typeof vi.fn>;
+  /** A container resource the PIP denies, for one test. */
+  let denied: string | null;
 
   function makeEngine() {
     const configManager = {
@@ -68,7 +70,8 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
       AuditManager: { logAuditEvent: audit, flushAuditQueue: () => Promise.resolve() },
       // The container rule itself — owner or delegate, never a role.
       PolicyInformationPoint: {
-        canAccessPrivateContainer: (subject: ActorContext, owner: string) => mayActInPrivateContainer(subject, owner)
+        canAccessPrivateContainer: (subject: ActorContext, owner: string, resource: string) =>
+          resource !== denied && mayActInPrivateContainer(subject, owner)
       }
     };
     return { getManager: (name: string) => managers[name] ?? null } as never;
@@ -99,6 +102,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     await fs.ensureDir(storageDir);
     await fs.ensureDir(pagesDir);
     clearUnlockedPrivateStores();
+    denied = null;
     const engine = makeEngine();
     manager = withFilesDoor(new AttachmentManager(engine));
     const provider = new BasicAttachmentProvider(engine);
@@ -224,5 +228,38 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     expect(row?.metadata).toEqual(expect.objectContaining({ attachmentId: stored.identifier, owner: 'molly', store: STORE, sealed: true }));
     for (const key of ['filename', 'sizeBytes']) expect(row?.metadata).not.toHaveProperty(key);
     expect(JSON.stringify(audit.mock.calls)).not.toContain('labs.pdf');
+  });
+
+  /**
+   * #2171: a takeout re-import asks the store which bytes it still holds.
+   * Only the requester's own named store answers, and only when this context
+   * can open it and the container rule lets it see the store's files.
+   */
+  describe('ownStoreFingerprints', () => {
+    const fp = (bytes: Buffer) => crypto.createHash('sha256').update(bytes).digest('hex');
+
+    test('the requester\'s own store: its files by fingerprint', async () => {
+      const stored = await upload();
+      expect((await manager.ownStoreFingerprints(MOLLY, STORE))?.get(fp(PDF))).toBe(stored.identifier);
+    });
+
+    test('the same bytes in another user\'s store: not in the requester\'s answer', async () => {
+      await sealedStoreFor('bob', 'bob-sid');
+      await upload(PDF, BOB);
+      expect((await manager.ownStoreFingerprints(MOLLY, STORE))?.get(fp(PDF))).toBeUndefined();
+      expect(await manager.ownStoreFingerprints(MOLLY, '../bob/vault')).toBeNull();
+    });
+
+    test('a locked sealed store: null, never read in the clear', async () => {
+      await upload();
+      lockPrivateStores('molly-sid');
+      expect(await manager.ownStoreFingerprints(MOLLY, STORE)).toBeNull();
+    });
+
+    test('the PIP denies the store\'s files: null', async () => {
+      await upload();
+      denied = `store-files:${STORE}`;
+      expect(await manager.ownStoreFingerprints(MOLLY, STORE)).toBeNull();
+    });
   });
 });
