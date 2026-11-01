@@ -591,9 +591,8 @@ class NotificationManager extends BaseManager {
       this.logger.warn('[NotificationManager] escalation.enabled=true but no from address configured — escalation emails will not send');
       return;
     }
-    this.logger.info('[NotificationManager] Email escalation active — levels: %s, role: %s',
-      configManager.getProperty('ngdpbase.notifications.escalation.levels', ['error']),
-      configManager.getProperty('ngdpbase.notifications.escalation.recipient-role', 'admin')
+    this.logger.info('[NotificationManager] Email escalation active — levels: %s, to: holders of admin-system',
+      configManager.getProperty('ngdpbase.notifications.escalation.levels', ['error'])
     );
   }
 
@@ -623,17 +622,17 @@ class NotificationManager extends BaseManager {
       return;
     }
 
-    const recipientRole = configManager.getProperty('ngdpbase.notifications.escalation.recipient-role', 'admin') as string;
     const userManager = this.engine?.getManager<UserManager>('UserManager');
     if (!userManager) return;
 
-    // #1179: an escalation fan-out is the system's act, not a person's — and
-    // search-user is a disclosive lookup, so the record says why it ran.
-    const recipients = await userManager.searchUsers('', { role: recipientRole }, scheduleContext(this.engine, `notification escalation: recipients holding ${recipientRole}`));
-    const withEmail = recipients.filter(u => u.email && u.email.includes('@'));
+    // #2196: the people an admin notice reaches, holders of admin-system asked
+    // of the PDP as notifyAdmins does, never a role name.
+    const admins = new Set((await this.engine?.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')?.usersHolding('admin-system')) ?? []);
+    const withEmail = (await userManager.getUsers())
+      .filter(u => admins.has(u.username) && u.isActive !== false && u.email && u.email.includes('@'));
 
     if (withEmail.length === 0) {
-      this.logger.debug(`[NotificationManager] No ${recipientRole} users with email found for escalation`);
+      this.logger.debug('[NotificationManager] No holder of admin-system with an email address; nothing to escalate to');
       return;
     }
 
