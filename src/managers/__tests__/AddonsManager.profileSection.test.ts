@@ -132,6 +132,22 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       expect(byName['beta']).toMatchObject({ title: 'Beta Settings', html: '<input name="beta.y" />' });
     });
 
+    it('passes a section\'s header icon and hint through, and drops an icon that is not a plain fa- name (#1541)', async () => {
+      await writeAddon('iconic',
+        'profileSection: () => ({ title: \'Iconic\', icon: \'fa-book\', hint: \'just you\', html: \'<x/>\' })');
+      await writeAddon('sneaky',
+        'profileSection: () => ({ title: \'Sneaky\', icon: \'fa-book x" onclick="y\', html: \'<x/>\' })');
+
+      const mgr = new AddonsManager(makeEngine(makeConfigManager(['iconic', 'sneaky'])));
+      await mgr.initialize();
+
+      const sections = await mgr.getProfileSections(makeUser(), ALICE);
+      const byName = Object.fromEntries(sections.map((s: { addonName: string }) => [s.addonName, s]));
+      expect(byName['iconic']).toMatchObject({ icon: 'fa-book', hint: 'just you' });
+      expect(byName['sneaky']).toBeDefined();
+      expect(byName['sneaky']).not.toHaveProperty('icon');
+    });
+
     it('skips addons whose profileSection() returns null (opt-out per user)', async () => {
       await writeAddon('opt-out',
         'profileSection: () => null');
