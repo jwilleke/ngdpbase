@@ -97,7 +97,7 @@ describe('sign-in ends with the stored username (#1882)', () => {
     const am = new AuthManager({ getManager: (n: string) => managers[n] ?? null });
     await am.initialize();
     if (opts.typedProvider) {
-      expect(am.registerProvider({
+      expect((am as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider({
         id: 'password', displayName: 'typed', factor: { amr: ['pwd'], aal: 1, primary: true },
         verify: (c: { username?: string }) => Promise.resolve({ username: c.username })
       })).toBe(true);
