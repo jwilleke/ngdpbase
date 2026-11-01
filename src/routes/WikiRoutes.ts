@@ -7139,6 +7139,53 @@ ${panes}
     });
   }
 
+  /**
+   * GET /profile/totp — add an authenticator app (#421): a QR code and the
+   * same key to type by hand. The seed waits in the session, sealed, ten
+   * minutes at most, until a code from the app confirms it; reloading offers a new one.
+   */
+  async totpEnrolPage(req: Request, res: Response, error = ''): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    try {
+      const offer = await this.engine.getManager('AuthManager').totpEnrolmentStart(user, user.username);
+      req.session.totpEnrolment = { pending: offer.pending, expires: Date.now() + 10 * 60_000 };
+      const commonData = await this.getCommonTemplateData(req);
+      res.set('Cache-Control', 'no-store');
+      res.render('profile-totp', { ...commonData, title: 'Add an authenticator app', qrSvg: offer.qrSvg, seed: offer.seed, error });
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}`);
+    }
+  }
+
+  /** POST /profile/totp — confirm the offered seed with a code from the app, and keep it (#421). */
+  async totpEnrolConfirm(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const pending = req.session.totpEnrolment;
+    delete req.session.totpEnrolment;
+    if (!pending || Date.now() > pending.expires) {
+      await this.totpEnrolPage(req, res, 'That took too long; scan this new code instead');
+      return;
+    }
+    const body = req.body as { code?: unknown; label?: unknown };
+    const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+    const user = wikiContext.userContext;
+    try {
+      const id = await this.engine.getManager('AuthManager').totpEnrolmentConfirm(
+        user, user.username, pending.pending, code, typeof body.label === 'string' ? body.label : ''
+      );
+      if (!id) {
+        await this.totpEnrolPage(req, res, 'That code did not match. Scan this new code and enter the six digits it shows');
+        return;
+      }
+      res.redirect('/profile?success=Authenticator+app+added');
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}`);
+    }
+  }
+
   /** POST /profile/credentials/:id/remove — remove one of your own credentials (#1524). */
   async removeOwnCredential(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
@@ -9232,6 +9279,10 @@ ${panes}
       const passkeyHost = currentUser?.username && await authManagerForProfile?.userMayUseProvider?.(currentUser.username, 'passkey')
         ? authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null
         : null;
+      // #421: an authenticator app may be added while the account has none and may use one.
+      const totpEnrolable = Boolean(currentUser?.username && authManagerForProfile?.totpAvailable?.() &&
+        await authManagerForProfile?.userMayUseProvider?.(currentUser.username, 'totp')) &&
+        !credentialsUnavailable && !(credentials as Array<{ kind?: string }>).some(c => c.kind === 'totp');
       // #1601: the apps and devices approved through /oidc; null when the provider is off.
       const approvedApps = currentUser?.username ? await this.approvedAppsFor(currentUser.username) : null;
       // #1764: one "My tokens and devices" list over agent tokens and those apps,
@@ -9309,6 +9360,7 @@ ${panes}
         connectedIdentities, // #1743
         connectableProviders, // #1743
         passkeyHost, // #448
+        totpEnrolable, // #421
         approvedApps, // #1601
         delegations, // #1764: undefined hides the card; null means it could not be read
         proxyAccess, // #1762 slice 7
@@ -18336,6 +18388,8 @@ ${panes}
     app.post('/auth/passkey/reauth/verify', (req: Request, res: Response) => { void this.passkeyReauthVerify(req, res); });
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });
     app.post('/auth/passkey/authenticate/verify', (req: Request, res: Response) => { void this.passkeyAuthenticateVerify(req, res); });
+    app.get('/profile/totp', (req: Request, res: Response) => { void this.totpEnrolPage(req, res); }); // #421
+    app.post('/profile/totp', (req: Request, res: Response) => { void this.totpEnrolConfirm(req, res); });
     app.post('/profile/credentials/:id/remove', (req: Request, res: Response) => { void this.removeOwnCredential(req, res); });
     app.post('/profile/credentials/:id/rename', (req: Request, res: Response) => { void this.renameOwnCredential(req, res); });
     // #1601: approved apps and devices.

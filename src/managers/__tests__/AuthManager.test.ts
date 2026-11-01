@@ -107,6 +107,9 @@ describe('AuthManager', () => {
       return manager;
     };
     const fake = (id, factor) => ({ id, displayName: id, factor, verify: vi.fn() });
+    // totp is a core id (#421), which registerProvider() refuses (#2223): register it the way core does.
+    const registerCore = (manager: AuthManager, provider: unknown) =>
+      (manager as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider(provider);
 
     test('with no configuration, password is the one factor offered', async () => {
       const manager = await started();
@@ -187,10 +190,10 @@ describe('AuthManager', () => {
     });
 
     test('a provider an add-on registers late is offered once registered', async () => {
-      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'totp' }] });
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'addon-otp' }] });
       expect(manager.getFactors()).toHaveLength(1);
-      manager.registerProvider(fake('totp', { ...OTP, primary: false }), 'totp-addon');
-      expect(manager.getFactors().map(f => f.provider)).toEqual(['password', 'totp']);
+      manager.registerProvider(fake('addon-otp', { ...OTP, primary: false }), 'otp-addon');
+      expect(manager.getFactors().map(f => f.provider)).toEqual(['password', 'addon-otp']);
     });
 
     test('config may lower what a provider gives', async () => {
@@ -204,7 +207,7 @@ describe('AuthManager', () => {
         { authproviderid: 'password', aal: 3, acr: 'phrh', amr: ['hwk'] },
         { authproviderid: 'totp', primary: true }
       ] });
-      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      registerCore(manager, fake('totp', { ...OTP, primary: false }));
       expect(manager.getFactors()).toEqual([
         { provider: 'password', primary: true, amr: ['pwd'], aal: 1 },
         { provider: 'totp', primary: false, amr: ['otp'], aal: 1 }
@@ -219,7 +222,7 @@ describe('AuthManager', () => {
 
     test('the retired required-factors list in custom config is converted', async () => {
       const manager = await started({}, { 'ngdpbase.auth.required-factors': ['password', 'totp'] });
-      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      registerCore(manager, fake('totp', { ...OTP, primary: false }));
       expect(manager.getFactors().map(f => [f.provider, f.primary])).toEqual([['password', true], ['totp', false]]);
     });
 
@@ -227,7 +230,7 @@ describe('AuthManager', () => {
       const factors = [{ authproviderid: 'password' }];
       const manager = await started({ 'ngdpbase.auth.factors': factors },
         { 'ngdpbase.auth.factors': factors, 'ngdpbase.auth.required-factors': ['password', 'totp'] });
-      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      registerCore(manager, fake('totp', { ...OTP, primary: false }));
       expect(manager.getFactors().map(f => f.provider)).toEqual(['password']);
     });
 
@@ -374,7 +377,7 @@ describe('AuthManager', () => {
 
       test('AAL2 becomes reachable once a second factor of another type is available', async () => {
         const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'totp' }] });
-        manager.registerProvider(fake('totp', { amr: ['otp'], aal: 1, primary: false }), 'totp-addon');
+        registerCore(manager, fake('totp', { amr: ['otp'], aal: 1, primary: false }));
         expect(manager.unreachableRequiredAal()).toEqual([]);
       });
 

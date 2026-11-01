@@ -48,6 +48,8 @@ export interface AuthVerifyCredentials {
   password?: string;
   /** One-time token — used by MagicLinkAuthProvider */
   token?: string;
+  /** A six-digit authenticator-app code — used by TotpAuthProvider (#421). */
+  code?: string;
   /** The account chosen for a link to a shared address (#2073) — used by MagicLinkAuthProvider. */
   account?: string;
   /** OAuth `state` from the callback — used by OidcAuthProvider */

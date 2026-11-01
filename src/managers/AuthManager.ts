@@ -81,6 +81,8 @@ import type { PluginFormatters } from './PluginManager.js';
 import { createHash, createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
+import { TotpAuthProvider } from '../providers/TotpAuthProvider.js';
+import QRCode from 'qrcode';
 import {
   CREDENTIALS_KEY_ENV,
   type CredentialKind,
@@ -157,7 +159,7 @@ const EMAIL_LINK_ENTRY = 'magic-link';
  * `oidc:<name>` ids are known from `ngdpbase.auth.oidc.providers` instead.
  */
 const CORE_PROVIDER_IDS: readonly string[] = [
-  'password', 'magic-link', 'passkey', 'cloudflare-access', 'authentik-bearer', 'agent-token', 'oidc-bearer'
+  'password', 'magic-link', 'passkey', 'totp', 'cloudflare-access', 'authentik-bearer', 'agent-token', 'oidc-bearer'
 ];
 
 /** Ids only core may register (#2223): every core id, and any `oidc:<name>`. */
@@ -1043,6 +1045,12 @@ class AuthManager extends BaseManager {
   private factorCache: Factor[] | null;
   /** The credentials store (#1524); null when it could not be opened. */
   private credentials: BaseCredentialsProvider | null = null;
+  /**
+   * #421: TOTP, built for enrolment only. Not registered as a sign-in
+   * provider until the second-factor step can ask for it (slice 2b): offering
+   * it earlier would raise admins to AAL2 before they could use it.
+   */
+  private totp: TotpAuthProvider | null = null;
   /** `ngdpbase.auth.credentials.file`, resolved at start: what a backup copies (#1876). */
   private credentialsFile: string | null = null;
 
@@ -1159,6 +1167,7 @@ class AuthManager extends BaseManager {
 
     await this.openCredentialsStore(configManager);
     this.registerPasskeys(configManager);
+    this.openTotp(configManager);
     this.registerOidcProviders(configManager);
     this.warnIfEmailSecondFactorsDropped();
 
@@ -1775,6 +1784,68 @@ class AuthManager extends BaseManager {
     logger.info(`[AuthManager] passkeys tied to ${rp.rpID}`);
   }
 
+  /** TOTP enrolment (#421), available whenever the credentials store is open. */
+  private openTotp(configManager: ConfigurationManager | null | undefined): void {
+    this.totp = null;
+    const store = this.credentials;
+    if (!store) return;
+    const name = configManager?.getProperty('ngdpbase.application-name', 'ngdpbase');
+    const issuer = typeof name === 'string' && name ? name : 'ngdpbase';
+    this.totp = new TotpAuthProvider(process.env[CREDENTIALS_KEY_ENV] ?? '', issuer, {
+      rows: (username) => store.list(username).filter(r => r.kind === 'totp'),
+      used: (id, at, secret) => store.touch(id, at, secret)
+    });
+  }
+
+  /** Whether an authenticator app can be enrolled here (#421). */
+  totpAvailable(): boolean {
+    return this.totp !== null;
+  }
+
+  /**
+   * A new seed for `username` to add to an authenticator app (#421): the
+   * manual key, the `otpauth://` URI and that URI as an SVG QR code. Nothing
+   * is stored. `pending` is the seed sealed for this account: the caller keeps
+   * that, never the seed, (in the session) until a code confirms it. Refused
+   * while the account already has one.
+   */
+  async totpEnrolmentStart(ctx: PermissionSubject, username: string): Promise<{ seed: string; pending: string; uri: string; qrSvg: string }> {
+    const totp = await this.totpEnrolGate(ctx, username);
+    if (this.requireCredentialsStore().list(username).some(r => r.kind === 'totp')) {
+      throw new Error('This account already has an authenticator app; remove it before adding another');
+    }
+    const { seed, uri } = totp.newEnrolment(username);
+    const qrSvg = await QRCode.toString(uri, { type: 'svg', errorCorrectionLevel: 'M', margin: 2 });
+    return { seed, pending: totp.sealPending(username, seed), uri, qrSvg };
+  }
+
+  /**
+   * Confirm an enrolment with a code from the app and store the seed,
+   * encrypted (#421). Returns the credential id, or null when the code does
+   * not match, or when `pending` is not a seed `totpEnrolmentStart` sealed
+   * for this account. The confirming code is spent: it cannot also sign
+   * anyone in.
+   */
+  async totpEnrolmentConfirm(ctx: PermissionSubject, username: string, pending: string, code: string, label: string): Promise<string | null> {
+    const totp = await this.totpEnrolGate(ctx, username);
+    const name = credentialLabel(label || 'Authenticator app');
+    if (this.requireCredentialsStore().list(username).some(r => r.kind === 'totp')) {
+      throw new Error('This account already has an authenticator app; remove it before adding another');
+    }
+    const seed = totp.openPending(username, pending);
+    if (!seed) return null;
+    const sealed = totp.confirmEnrolment(username, seed, code);
+    if (!sealed) return null;
+    return this.storeCredential(ctx, username, { kind: 'totp', subject: randomUUID(), secret: sealed, label: name });
+  }
+
+  private async totpEnrolGate(ctx: PermissionSubject, username: string): Promise<TotpAuthProvider> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    if (!(await this.userMayUseProvider(username, 'totp'))) throw new Error('This account cannot sign in with an authenticator app');
+    if (!this.totp) throw new Error('Authenticator apps are not available on this site');
+    return this.totp;
+  }
+
   private passkeyProvider(): PasskeyAuthProvider | null {
     const p = this.providers.get('passkey');
     return p instanceof PasskeyAuthProvider ? p : null;
@@ -1927,6 +1998,7 @@ class AuthManager extends BaseManager {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
     if (input.kind === 'proxy') throw new Error('A proxy grant is made with grantProxy (#1762)');
     if (input.kind === 'invitation') throw new Error('An invitation is sent with inviteUser (#2049)');
+    if (input.kind === 'totp') throw new Error('An authenticator app is enrolled with totpEnrolmentConfirm, which encrypts its seed (#421)');
     return this.storeCredential(ctx, username, input);
   }
 

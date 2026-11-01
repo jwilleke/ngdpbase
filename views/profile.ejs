@@ -353,7 +353,7 @@
                     <% const ownCredentials = typeof credentials !== 'undefined' ? credentials.filter(function (c) { return c.kind !== 'identity'; }) : []; %>
                     <% const identities = typeof connectedIdentities !== 'undefined' ? connectedIdentities : []; %>
                     <% const connectable = typeof connectableProviders !== 'undefined' ? connectableProviders : []; %>
-                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || ownCredentials.length > 0 || identities.length > 0 || connectable.length > 0 || (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
+                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || (typeof totpEnrolable !== 'undefined' && totpEnrolable) || signInWithPassword || ownCredentials.length > 0 || identities.length > 0 || connectable.length > 0 || (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
                     <div class="row mb-4" id="sign-in-methods">
                         <div class="col-12">
                             <div class="card">
@@ -453,6 +453,12 @@
                                     </div>
                                     <div id="passkey-enrol-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
                                     <script src="/js/passkey.js" defer></script>
+                                    <% } %>
+                                    <% if (typeof totpEnrolable !== 'undefined' && totpEnrolable) { %>
+                                    <p class="small text-muted mb-2 mt-3">
+                                        An authenticator app (Google Authenticator, 1Password, Aegis and others) gives a six-digit code that changes every 30 seconds.
+                                    </p>
+                                    <a class="btn btn-sm btn-outline-primary" href="/profile/totp"><i class="fas fa-mobile-alt"></i> Add an authenticator app</a>
                                     <% } %>
                                         </div>
                                     </details>

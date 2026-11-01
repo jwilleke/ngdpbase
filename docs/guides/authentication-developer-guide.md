@@ -17,6 +17,7 @@ Every sign-in method is a provider registered with [AuthManager](../managers/Aut
 - Signing users in
   - [PasswordAuthProvider](../providers/PasswordAuthProvider.md) — username and password, checked against the hash on the user record
   - [PasskeyAuthProvider](../providers/PasskeyAuthProvider.md) — passkeys (WebAuthn); a passkey alone signs in at AAL2, phishing-resistant
+  - [TotpAuthProvider](../providers/TotpAuthProvider.md) — an authenticator app's code; a second factor only (`otp`, AAL1), its seed encrypted in the credentials store. Enrolled on the profile; not yet offered at sign-in ([#421](https://github.com/jwilleke/ngdpbase/issues/421))
   - [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md) — an emailed single-use sign-in link
   - [OidcAuthProvider](../providers/OidcAuthProvider.md) — sign-in through any outside OpenID Connect provider, by an identity connected to the account: what it may do, the flows and their checks
     - [Google](../providers/OidcAuthProvider-Google.md) — the `google` preset, and registering the site in the Google Cloud console
@@ -118,6 +119,7 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 ## Known gaps
 
 - [#2071](https://github.com/jwilleke/ngdpbase/issues/2071) — the withheld-cookie notice holds UserManager's one state. It clears only at the next restart, and is raised again by the first plain-http request after it.
+- [#421](https://github.com/jwilleke/ngdpbase/issues/421) — TOTP: an authenticator app can be added and removed on the profile (`/profile/totp`), but the second step and step-up do not ask for it yet (slices 2b and 2c), so it changes no sign-in and no role's level.
 - [#1878](https://github.com/jwilleke/ngdpbase/issues/1878) — passkey labels don't carry the site name yet, nothing warns that a base-URL hostname change orphans N enrolled passkeys, and nothing warns when two instances could share a hostname.
 - [#1767](https://github.com/jwilleke/ngdpbase/issues/1767) — copies of the server a process cannot see (several containers or pods behind one address, several hosts) get no throttling warning; only pm2's are detected. A session signed in before #1767 starts its 30-day cap at its first request after the upgrade, and keeps its old one-day cookie until the user signs in again. The page warns before an idle sign-out, not before the cap ends a session
 - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) — slice 1a built (second factors from `ngdpbase.auth.factors`, rule above). The email link is the only second factor the second step can run, so the order shows only once TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421)) is offered; a passkey is ranked but signs in alone rather than as a second step. Not yet: refusing to start on a factor id no provider could register (slice 1b), and known devices (slice 1c). The approval still records its factor as `email-link`, not `magic-link`, so sign-in records keep their name.
