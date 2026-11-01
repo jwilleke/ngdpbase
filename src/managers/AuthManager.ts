@@ -4317,7 +4317,15 @@ class AuthManager extends BaseManager {
     // through registerCoreProvider() in initialize(). An add-on claiming one
     // would bring its own verify() and AAL under a name the factors config
     // trusts, on a site where core left that id unregistered.
-    const id: unknown = provider?.id;
+    // The id must be a plain own property, read once, and only that value is
+    // checked and stored: a getter could pass the check as one id and register
+    // as another.
+    const idProperty = provider ? Object.getOwnPropertyDescriptor(provider, 'id') : undefined;
+    if (provider && idProperty && !('value' in idProperty)) {
+      logger.error(`[AuthManager] Rejected provider from ${source}: its id must be a plain property, not a getter`);
+      return false;
+    }
+    const id: unknown = idProperty?.value;
     if (typeof id === 'string' && isReservedProviderId(id)) {
       logger.error(
         `[AuthManager] Rejected provider '${id}' from ${source}: core provider ids ` +
@@ -4325,7 +4333,7 @@ class AuthManager extends BaseManager {
       );
       return false;
     }
-    return this.addProvider(provider, source);
+    return this.addProvider(provider, id, source);
   }
 
   /**
@@ -4334,37 +4342,37 @@ class AuthManager extends BaseManager {
    * through the engine and call registerProvider(), which refuses these ids.
    */
   private registerCoreProvider(provider: AuthProvider): boolean {
-    return this.addProvider(provider, 'built-in');
+    return this.addProvider(provider, provider?.id, 'built-in');
   }
 
-  private addProvider(provider: AuthProvider, source: string): boolean {
+  private addProvider(provider: AuthProvider, id: unknown, source: string): boolean {
     // An addon can pass anything. A provider with no id would be unreachable;
     // one with no verify() would throw inside authenticate() on a live request,
     // which is a worse place to find out than boot.
-    if (!provider || typeof provider.id !== 'string' || provider.id.trim() === '') {
+    if (!provider || typeof id !== 'string' || id.trim() === '') {
       logger.error(`[AuthManager] Rejected provider from ${source}: missing id`);
       return false;
     }
     if (typeof provider.verify !== 'function') {
-      logger.error(`[AuthManager] Rejected provider '${provider.id}' from ${source}: no verify()`);
+      logger.error(`[AuthManager] Rejected provider '${id}' from ${source}: no verify()`);
       return false;
     }
 
-    if (this.providers.has(provider.id)) {
+    if (this.providers.has(id)) {
       logger.warn(
-        `[AuthManager] Provider '${provider.id}' is already registered — ` +
+        `[AuthManager] Provider '${id}' is already registered — ` +
         `keeping the existing one, ignoring the registration from ${source}`
       );
       return false;
     }
 
-    this.providers.set(provider.id, provider);
+    this.providers.set(id, provider);
     this.factorCache = null;
     // info, not debug: which auth providers are live is a security-relevant
     // fact about a running instance, and the boot log is where an operator
     // checks it. Callers add a second line only when they carry config detail
     // worth seeing (transport, issuer, team) — never a bare repeat of the id.
-    logger.info(`[AuthManager] Registered provider: ${provider.id} (${source})`);
+    logger.info(`[AuthManager] Registered provider: ${id} (${source})`);
     return true;
   }
 

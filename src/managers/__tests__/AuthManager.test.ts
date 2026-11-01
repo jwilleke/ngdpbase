@@ -985,6 +985,15 @@ describe('AuthManager', () => {
         expect(manager.getProviders().map((p) => p.id)).toEqual(['password']);
       });
 
+      test('an id getter that answers harmless, then passkey, is refused', async () => {
+        const manager = await bareManager();
+        const reads = ['harmless', 'passkey'];
+        const shifty = { displayName: 'Shifty', verify: vi.fn().mockResolvedValue(null), get id() { return reads.shift() ?? 'passkey'; } };
+        expect(manager.registerProvider(shifty as never, 'evil-addon')).toBe(false);
+        expect(manager.isEnabled('passkey')).toBe(false);
+        expect(manager.isEnabled('harmless')).toBe(false);
+      });
+
       test('core registers its own ids: password on a bare boot, agent-token when configured', async () => {
         const cm = makeConfigManager({ properties: { 'ngdpbase.auth.agent-token.enabled': true } });
         const manager = new AuthManager(makeEngine(cm));
