@@ -387,6 +387,8 @@ interface IConfigManager {
   resetToDefaults(ctx: ActorContext): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
   getBaseURL?(): string;
+  /** #2195: a value's environment references resolved as `getProperty` would. */
+  resolveValueAs?(key: string, value: unknown): unknown;
 }
 
 /**
@@ -14263,6 +14265,26 @@ ${panes}
       // hidden; a placeholder sent back keeps what is stored there.
       parsedValue = keepHiddenValues(property, parsedValue, ((configManager.getAllProperties() ?? {}) as Record<string, unknown>)[property],
         valueLevels((k: string, d: unknown) => configManager.getProperty(k, d)));
+      // #2195: a media folder overlapping private storage is refused here, not
+      // only skipped at the next start.
+      // `$SLOW_STORAGE` and the like are resolved first, as startup reads them.
+      if (property === 'ngdpbase.media.folders') {
+        let resolved: unknown = parsedValue;
+        try {
+          if (configManager.resolveValueAs) resolved = configManager.resolveValueAs(property, parsedValue);
+        } catch {
+          // An unset variable: check the value as typed; startup still skips an overlap.
+        }
+        const folders = Array.isArray(resolved)
+          ? (resolved as unknown[]).filter((f): f is string => typeof f === 'string')
+          : typeof resolved === 'string' ? resolved.split(',').map(f => f.trim()).filter(Boolean) : [];
+        const refused = this.engine.getManager('MediaManager')?.checkFolders(folders) ?? [];
+        if (refused.length > 0) {
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error: refused.join(' ') });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(refused.join(' '))}`);
+        }
+      }
       await configManager.setProperty(property, parsedValue, currentUser);
 
       // Return JSON for AJAX requests, redirect for regular form submissions
