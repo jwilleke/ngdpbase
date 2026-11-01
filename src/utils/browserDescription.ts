@@ -25,3 +25,32 @@ export function describeBrowser(userAgent: string | undefined): string | null {
   if (browser && device) return `${browser} on ${device}`;
   return browser ?? device;
 }
+
+/**
+ * #1523 slice 1c — the browser and operating system a remembered browser's
+ * device key was issued to, from the User-Agent and the `Sec-CH-UA-Platform`
+ * client hint every Chromium browser sends. Families only ("Chrome",
+ * "Windows"), never versions, so an update keeps the browser remembered. No
+ * fingerprinting beyond what each request already carries (operator,
+ * 2026-10-04). Null when the browser or the system cannot be told: such a
+ * browser is never remembered.
+ */
+export interface BrowserIdentity {
+  browser: string;
+  os: string;
+  /** The `Sec-CH-UA-Platform` hint, unquoted; empty when the browser sent none. */
+  platform: string;
+}
+
+export function browserIdentity(userAgent: string | undefined, platformHint: string | undefined): BrowserIdentity | null {
+  const described = describeBrowser(userAgent);
+  const [browser, os] = described?.split(' on ') ?? [];
+  if (!browser || !os) return null;
+  const platform = (platformHint ?? '').trim().replace(/^"|"$/g, '').slice(0, 40);
+  return { browser, os, platform };
+}
+
+/** Whether two identities name the same browser on the same system, the hint included (both sent it, or neither). */
+export function sameBrowser(a: BrowserIdentity, b: BrowserIdentity): boolean {
+  return a.browser === b.browser && a.os === b.os && a.platform === b.platform;
+}

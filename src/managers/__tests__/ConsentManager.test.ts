@@ -70,7 +70,8 @@ describe('ConsentManager (#1603)', () => {
       'terms-of-service': { title: 'Terms of Service', version: 1, effective: new Date('2026-10-22T00:00:00Z') },
       'privacy-policy': { title: 'Privacy Policy', version: '1', effective: '2026-10-22' },
       'recovery-words': { title: 'Your Recovery Words', version: 1, effective: '2026-10-29' },
-      'shared-folders-recovery-words': { title: 'Shared Folders Recovery Words', version: 1, effective: '2026-10-29' }
+      'shared-folders-recovery-words': { title: 'Shared Folders Recovery Words', version: 1, effective: '2026-10-29' },
+      'remember-browser': { title: 'Remember This Browser', version: 1, effective: '2026-11-01' }
     };
     users = { ann: { username: 'ann', createdAt: '2026-01-01T00:00:00.000Z' }, bob: { username: 'bob' } };
     holdsProfileManage = new Set(['ann', 'bob']);
@@ -268,7 +269,7 @@ describe('ConsentManager (#1603)', () => {
       expect(cm.addonForPath('/phr/records')).toBe('phr');
       expect(cm.addonForPath('/api/phr/x')).toBe('phr');
       expect(cm.addonForPath('/phrase')).toBeNull();
-      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'shared-folders-recovery-words', 'phr-terms-of-service']);
+      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'shared-folders-recovery-words', 'remember-browser', 'phr-terms-of-service']);
     });
 
     test('an add-on may register only documents named <slug>-…, and only when it is per-person', () => {

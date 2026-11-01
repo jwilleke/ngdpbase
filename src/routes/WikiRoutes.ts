@@ -61,7 +61,7 @@ import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type ConsentManager from '../managers/ConsentManager.js';
 import { ConsentChangedError, ConsentRefusedError } from '../managers/ConsentManager.js';
-import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, SHARED_FOLDERS_WORDS_CONSENT_SCOPE, type ConsentDocument, type ConsentSeen } from '../types/Consent.js';
+import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, REMEMBER_BROWSER_CONSENT_SCOPE, SHARED_FOLDERS_WORDS_CONSENT_SCOPE, type ConsentDocument, type ConsentSeen } from '../types/Consent.js';
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
@@ -7269,10 +7269,19 @@ ${panes}
     const authManager = this.authManagerFor2Step();
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
+    // #1523 slice 1c: "Remember this browser" only where it could ever skip the
+    // prompt, with the version of its page; a remembered browser is asked to
+    // prove itself only where the person's roles allow the skip.
+    const consentDoc = !pending.lastSentAt && authManager.rememberOffered(pending)
+      ? (await this.engine.getManager<ConsentManager>('ConsentManager')?.documents(REMEMBER_BROWSER_CONSENT_SCOPE).catch(() => []))?.[0] ?? null
+      : null;
     res.render('login-second-factor', {
       ...commonData,
       title: 'Confirm your sign-in',
       factors: authManager.secondFactorsFor(pending.username, pending),
+      remember: consentDoc ? { version: String(consentDoc.version), page: consentDoc.id } : null,
+      deviceChallenge: pending.lastSentAt ? null : authManager.knownDeviceChallenge(pending.handle, pending.binding),
+      deviceUser: pending.username,
       sent: Boolean(pending.lastSentAt),
       notice: typeof req.query.notice === 'string' ? req.query.notice : ''
     });
@@ -7282,6 +7291,8 @@ ${panes}
   async secondFactorSendEmail(req: Request, res: Response): Promise<void> {
     const pending = this.pendingFor(req);
     if (!pending) { this.expiredSignIn(res); return; }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (body.remember === 'on' && typeof body.rememberVersion === 'string') this.authManagerFor2Step().noteRemember(pending.handle, pending.binding, body.rememberVersion);
     const outcome = await this.authManagerFor2Step().sendEmailApproval(pending.handle, pending.binding);
     const notice = {
       'too-soon': 'A link was sent less than a minute ago.',
@@ -7309,13 +7320,68 @@ ${panes}
     const redirect = safeRedirect(req.session.pendingRedirect);
     // #1758: the one completion step; the stores were unlocked at the password.
     // #1532: the first step was a password here or an outside provider at AAL1.
-    const completed = await authManager.completeSignIn(req, done.result, { method: `${done.result.provider ?? 'password'} and email link`, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
-    logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
+    // #1523 slice 1c: or the prompt was skipped on a remembered browser, which is not a factor.
+    const provider = done.result.provider ?? 'password';
+    const method = done.result.knownDevice ? `${provider} on a remembered browser` : `${provider} and email link`;
+    const completed = await authManager.completeSignIn(req, done.result, { method, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
+    logger.info(done.result.knownDevice ? `👤 User logged in on a remembered browser: ${done.result.username ?? ''}` : `👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
+    let next = completed.next ?? redirect; // #1743: a pending connection is confirmed first
+    if (done.remember) {
+      req.session.rememberBrowser = { version: done.remember.version, amr: req.session.signIn?.amr ?? [], next, until: Date.now() + 5 * 60_000 };
+      next = '/login/remember-browser';
+    }
     req.session.save((err) => {
       if (err) { res.redirect('/login?error=Session save failed'); return; }
-      res.redirect(completed.next ?? redirect); // #1743: a pending connection is confirmed first
+      res.redirect(next);
     });
+  }
+
+  /**
+   * POST /login/second-factor/device — a remembered browser's signature over
+   * the one-time challenge (#1523 slice 1c). JSON `{ ok }`; on ok the page
+   * submits the completion form. Never logs the key or the signature.
+   */
+  async secondFactorDevice(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    res.set('Cache-Control', 'no-store');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!pending || typeof body.deviceId !== 'string' || typeof body.signature !== 'string' || body.deviceId.length > 100 || body.signature.length > 200) { res.status(400).json({ ok: false }); return; }
+    const ok = await this.authManagerFor2Step().proveKnownDevice(pending.handle, pending.binding, body.deviceId, body.signature, {
+      ip: req.ip, userAgent: req.get('user-agent'), platformHint: req.get('sec-ch-ua-platform')
+    });
+    res.json({ ok });
+  }
+
+  /** GET /login/remember-browser — right after a sign-in that ticked "Remember this browser": the browser makes its key, then goes on. */
+  async rememberBrowserPage(req: Request, res: Response): Promise<void> {
+    const offer = req.session.rememberBrowser;
+    if (!offer || offer.until < Date.now()) { delete req.session.rememberBrowser; res.redirect('/'); return; }
+    // Consent is recorded under the person's own profile-manage (ConsentManager.accept).
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'page'))) return;
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('login-remember-browser', { ...commonData, title: 'Remembering this browser', next: safeRedirect(offer.next), deviceUser: req.session.username ?? '' });
+  }
+
+  /**
+   * POST /login/remember-browser — the new key's public half (SPKI, base64url).
+   * Single use: the offer is taken first. The consent record comes before the
+   * device row (#1523 Q5); either refused, nothing is remembered.
+   */
+  async rememberBrowserSave(req: Request, res: Response): Promise<void> {
+    const offer = req.session.rememberBrowser;
+    delete req.session.rememberBrowser;
+    res.set('Cache-Control', 'no-store');
+    const publicKey = (req.body as Record<string, unknown> | undefined)?.publicKey;
+    if (!offer || offer.until < Date.now() || typeof publicKey !== 'string' || publicKey.length > 400) {
+      res.status(400).json({ ok: false }); return;
+    }
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'json'))) return;
+    const saved = await this.authManagerFor2Step().rememberBrowser(req.userContext as never, {
+      publicKey, version: offer.version, amr: offer.amr, userAgent: req.get('user-agent'), platformHint: req.get('sec-ch-ua-platform')
+    }).catch((err: unknown) => { logger.warn('[known-device] remembering a browser failed:', err); return null; });
+    req.session.save(() => res.json(saved ? { ok: true, deviceId: saved.deviceId } : { ok: false }));
   }
 
   /** POST /login/second-factor/cancel — abandon the waiting sign-in. */
@@ -18323,6 +18389,9 @@ ${panes}
     app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
     app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
     app.post('/login/second-factor/cancel', (req: Request, res: Response) => { void this.secondFactorCancel(req, res); });
+    app.post('/login/second-factor/device', (req: Request, res: Response) => { void this.secondFactorDevice(req, res); });
+    app.get('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserPage(req, res); });
+    app.post('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserSave(req, res); });
     app.get('/login/approve', (req: Request, res: Response) => { void this.approvePage(req, res); });
     app.post('/login/approve', (req: Request, res: Response) => { void this.approveDecision(req, res); });
     app.post('/profile/second-factor/email', (req: Request, res: Response) => { void this.enrolEmailSecondFactor(req, res); });

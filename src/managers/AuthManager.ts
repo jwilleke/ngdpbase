@@ -32,7 +32,7 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/396}
  */
 
-import { CONSENT_PATH } from '../types/Consent.js';
+import { CONSENT_PATH, REMEMBER_BROWSER_CONSENT_SCOPE, type ConsentDocument } from '../types/Consent.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData, BackupFolder } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -75,10 +75,10 @@ import type AgentTokenManager from './AgentTokenManager.js';
 import type { OidcManager } from './OidcManager.js';
 import logger from '../utils/logger.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
-import { describeBrowser } from '../utils/browserDescription.js';
+import { browserIdentity, describeBrowser, sameBrowser, type BrowserIdentity } from '../utils/browserDescription.js';
 import { approximateLocation } from '../utils/ipLocation.js';
 import type { PluginFormatters } from './PluginManager.js';
-import { createHash, createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, randomBytes, randomUUID, verify as verifySignature, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
 import {
@@ -322,6 +322,43 @@ export interface PendingSignIn {
   denied?: boolean;
   /** When the last approval message went out, for the resend limit. */
   lastSentAt?: number;
+  /**
+   * #1523 slice 1c: the highest `required-aal` among the person's roles, not
+   * capped by what the account can reach: the bar a remembered browser's skip
+   * must clear.
+   */
+  rolesAal?: Aal;
+  /** #1523 slice 1c: "Remember this browser" was ticked, with the version of its page the person was shown. */
+  remember?: { version: string };
+  /** #1523 slice 1c: the one-time challenge a remembered browser signs; taken by its first use. */
+  deviceChallenge?: string;
+  /** #1523 slice 1c: the remembered device that proved itself, so the prompt is skipped. Not a factor. */
+  knownDevice?: string;
+}
+
+/** #1523 slice 1c: a remembered browser's `device` row secret: its public key and what it was issued to. */
+export interface DeviceSecret extends BrowserIdentity {
+  /** The ECDSA P-256 public key, SPKI DER, base64url. Never a private key. */
+  publicKey: string;
+  /** The `amr` of the sign-in that remembered it. */
+  amr: string[];
+  /** RFC 3339: after this it no longer skips the prompt. */
+  expiresAt: string;
+}
+
+const KNOWN_DEVICE_DEFAULT_DAYS = 30;
+/** What a remembered browser signs: this, then the challenge. Separates the signature from any other use of the key. */
+export const KNOWN_DEVICE_SIGNED_PREFIX = 'ngdpbase known device v1\n';
+
+function parseDeviceSecret(secret: string): DeviceSecret | null {
+  try {
+    const d = JSON.parse(secret) as Partial<DeviceSecret>;
+    return typeof d.publicKey === 'string' && typeof d.browser === 'string' && typeof d.os === 'string' && typeof d.platform === 'string' && typeof d.expiresAt === 'string'
+      ? { publicKey: d.publicKey, browser: d.browser, os: d.os, platform: d.platform, amr: Array.isArray(d.amr) ? d.amr.map(String) : [], expiresAt: d.expiresAt }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -817,6 +854,8 @@ function proxyGrantLive(grant: ProxyGrant, now: number): boolean {
 export interface SignInRecord extends Assurance {
   provider: string;
   factors: SatisfiedFactor[];
+  /** #1523 slice 1c: the second-factor prompt was skipped on a remembered browser. It raises nothing. */
+  knownDevice?: true;
   /** When the sign-in completed, RFC 3339. */
   at: string;
 }
@@ -1034,6 +1073,11 @@ export interface AuthenticateResult {
   aal?: Aal;
   /** #1633: what an outside provider reported about its own sign-in, for the audit record. */
   reported?: ReportedValues;
+  /**
+   * #1523 slice 1c: the second-factor prompt was skipped because this browser
+   * is remembered. Not a factor: `factors` holds only what was entered.
+   */
+  knownDevice?: boolean;
 }
 
 class AuthManager extends BaseManager {
@@ -2782,10 +2826,10 @@ class AuthManager extends BaseManager {
   }
 
   /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
-  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string, reported?: ReportedValues): Promise<void> {
+  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string, reported?: ReportedValues, knownDevice?: boolean): Promise<void> {
     try {
       const audit = this.engine.getManager<{ logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<string> }>('AuditManager');
-      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method, ...(reported ? { reported } : {}) }, result, reason);
+      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method, ...(reported ? { reported } : {}), ...(knownDevice ? { knownDevice: true } : {}) }, result, reason);
     } catch (err) {
       logger.warn('[AuthManager] audit record failed for an authentication check:', err);
     }
@@ -3222,7 +3266,7 @@ class AuthManager extends BaseManager {
     const handle = how.privateStoreHandle
       ?? (how.unlockWith && this.vaultUnlocker ? await this.vaultUnlocker(username, how.unlockWith.password) : undefined);
     if (handle) req.session.privateStoreHandle = handle;
-    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`, result.reported);
+    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`, result.reported, result.knownDevice);
     try {
       await this.engine.getManager<{ recordSignIn?(u: string): Promise<void> }>('UserManager')?.recordSignIn?.(username);
     } catch (err) {
@@ -3345,7 +3389,7 @@ class AuthManager extends BaseManager {
   signInRecord(result: AuthenticateResult): SignInRecord | null {
     if (!result.success || !result.provider || result.viaToken) return null;
     const factors = result.factors ?? [];
-    return { provider: result.provider, factors, ...this.assess(factors), at: new Date().toISOString() };
+    return { provider: result.provider, factors, ...this.assess(factors), ...(result.knownDevice ? { knownDevice: true as const } : {}), at: new Date().toISOString() };
   }
 
   /**
@@ -3804,7 +3848,13 @@ class AuthManager extends BaseManager {
     first = { ...first, username };
     // #1523 Q2: what this account's roles require, so the factors that reach it are offered first.
     const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
-    const requiredAal = this.requiredAalFor((await pip?.subjectFor(username))?.roles ?? [], await this.aalCapFor(username));
+    const roles = (await pip?.subjectFor(username))?.roles ?? [];
+    const requiredAal = this.requiredAalFor(roles, await this.aalCapFor(username));
+    // #1523 slice 1c: the roles' declared levels, not lowered to what the site
+    // or the account can reach (#1690), so an admin who cannot reach AAL2 yet
+    // is still never let past the prompt by a remembered browser.
+    const declared = new Map(this.requiredLevels().map(({ role, aal }) => [role, aal]));
+    const rolesAal = roles.reduce<Aal>((max, r) => Math.max(max, declared.get(r) ?? 0) as Aal, 0);
     this.sweepPending();
     const handle = randomBytes(24).toString('base64url');
     const now = Date.now();
@@ -3820,7 +3870,8 @@ class AuthManager extends BaseManager {
       requestUserAgent: ctx.userAgent,
       requestLocation: ctx.location ?? null,
       privateStoreHandle: ctx.privateStoreHandle,
-      requiredAal
+      requiredAal,
+      rolesAal
     });
     // #1532: an expiry is recorded when it happens, not when someone next looks.
     setTimeout(() => this.expirePending(handle), PENDING_SIGN_IN_TTL_MS + 1).unref?.();
@@ -4028,15 +4079,167 @@ class AuthManager extends BaseManager {
    * The finished sign-in, once its second factor is satisfied — both factors,
    * assessed together. Single use: the pending entry is gone after this.
    */
-  completeTwoStep(handle: string, binding: string): { result: AuthenticateResult; privateStoreHandle?: string } | null {
+  completeTwoStep(handle: string, binding: string): { result: AuthenticateResult; privateStoreHandle?: string; remember?: { version: string } } | null {
     const p = this.pendingSignIn(handle, binding);
-    if (!p?.approved || p.denied) return null;
+    if (!p || p.denied) return null;
+    // #1523 slice 1c: a remembered browser completes it with only the factors
+    // entered, and only while the person's roles still allow the skip.
+    const known = !p.approved && Boolean(p.knownDevice) && this.knownDeviceMaySkip(p);
+    if (!p.approved && !known) return null;
     this.pendingSignIns.delete(handle);
     for (const [token, entry] of this.approvalTokens) if (entry.handle === handle) this.approvalTokens.delete(token);
+    if (known) return { result: { ...p.first, knownDevice: true }, privateStoreHandle: p.privateStoreHandle };
     return {
-      result: { ...p.first, factors: [...(p.first.factors ?? []), p.approved] },
-      privateStoreHandle: p.privateStoreHandle
+      result: { ...p.first, factors: [...(p.first.factors ?? []), p.approved as SatisfiedFactor] },
+      privateStoreHandle: p.privateStoreHandle,
+      // Offered only where the skip could ever apply; see rememberOffered.
+      ...(p.remember && this.rememberOffered(p) ? { remember: p.remember } : {})
     };
+  }
+
+  // ── Known devices (#1523 slice 1c) ──────────────────────────────────────
+  //
+  // A remembered browser holds a non-extractable ECDSA P-256 key (WebCrypto)
+  // in IndexedDB; the site keeps the public half as a `device` row. At the
+  // second step it signs a one-time challenge. That skips the prompt, never
+  // raises the level (Q4: no carry-forward), and only for a person whose roles
+  // the factors entered already satisfy (operator, 2026-11-01).
+
+  /** How many days a remembered browser stays remembered: `ngdpbase.auth.known-device.remember-days`; 0 turns remembering off. */
+  rememberDays(): number {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const days = Number(cm?.getProperty('ngdpbase.auth.known-device.remember-days', KNOWN_DEVICE_DEFAULT_DAYS));
+    return Number.isFinite(days) && days > 0 ? Math.min(days, 400) : 0;
+  }
+
+  /**
+   * Whether a remembered browser may skip this sign-in's second step: the
+   * factors entered already reach the highest `required-aal` among the
+   * person's roles (operator, 2026-11-01). A person whose roles need AAL2 is
+   * always asked.
+   */
+  knownDeviceMaySkip(p: Pick<PendingSignIn, 'first' | 'rolesAal'>): boolean {
+    if (this.rememberDays() === 0 || p.rolesAal === undefined) return false;
+    const record = this.signInRecord(p.first);
+    return Boolean(record) && (record as SignInRecord).aal >= Math.max(p.rolesAal, 1);
+  }
+
+  /** Whether "Remember this browser" is offered at this second step: only where it could ever skip one. */
+  rememberOffered(p: Pick<PendingSignIn, 'first' | 'rolesAal'>): boolean {
+    return this.knownDeviceMaySkip(p);
+  }
+
+  /** "Remember this browser" was ticked at the second step, having been shown `version` of its page. */
+  noteRemember(handle: string, binding: string, version: string): void {
+    const p = this.pendingSignIn(handle, binding);
+    if (p && this.rememberOffered(p) && /^[\w.-]{1,40}$/.test(version)) p.remember = { version };
+  }
+
+  /** `username`'s remembered browsers that have not expired. */
+  rememberedDevices(username: string, now: number = Date.now()): Array<{ row: CredentialRecord; device: DeviceSecret }> {
+    const out: Array<{ row: CredentialRecord; device: DeviceSecret }> = [];
+    for (const row of this.credentials?.list(username) ?? []) {
+      if (row.kind !== 'device') continue;
+      const device = parseDeviceSecret(row.secret);
+      if (device && Date.parse(device.expiresAt) > now) out.push({ row, device });
+    }
+    return out;
+  }
+
+  /**
+   * A one-time challenge for a remembered browser to sign, or null when the
+   * skip cannot apply (the roles need more, or no browser is remembered).
+   * A new challenge replaces the last.
+   */
+  knownDeviceChallenge(handle: string, binding: string): string | null {
+    const p = this.pendingSignIn(handle, binding);
+    if (!p || p.approved || p.denied || !this.knownDeviceMaySkip(p)) return null;
+    if (this.rememberedDevices(p.username).length === 0) return null;
+    p.deviceChallenge = randomBytes(32).toString('base64url');
+    return p.deviceChallenge;
+  }
+
+  /**
+   * A remembered browser's answer to the challenge (#1523 slice 1c). It
+   * counts only when the device is this person's, has not expired, the
+   * signature over the challenge verifies with its public key, and the
+   * browser and system still match what it was issued to. Any failure is
+   * recorded and the prompt stays. The challenge is spent either way.
+   */
+  async proveKnownDevice(handle: string, binding: string, deviceId: string, signature: string, from: { ip?: string; userAgent?: string; platformHint?: string }): Promise<boolean> {
+    const p = this.pendingSignIn(handle, binding);
+    const challenge = p?.deviceChallenge;
+    if (p) delete p.deviceChallenge;
+    if (!p || !challenge || p.approved || p.denied || !this.knownDeviceMaySkip(p)) return false;
+    const fail = async (reason: string): Promise<false> => {
+      await this.auditCheck({ ipAddress: from.ip, userAgent: from.userAgent, purpose: 'sign-in' }, p.username, 'known device', 'failure', `remembered browser not accepted: ${reason}`);
+      return false;
+    };
+    const found = this.rememberedDevices(p.username).find((d) => d.row.subject === deviceId);
+    if (!found) return fail('no remembered browser of this account with that id, or it expired');
+    const now = browserIdentity(from.userAgent, from.platformHint);
+    if (!now || !sameBrowser(now, found.device)) return fail('a different browser or system from the one it was issued to');
+    let ok: boolean;
+    try {
+      const key = createPublicKey({ key: Buffer.from(found.device.publicKey, 'base64url'), format: 'der', type: 'spki' });
+      ok = verifySignature('sha256', Buffer.from(KNOWN_DEVICE_SIGNED_PREFIX + challenge, 'utf8'), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(signature, 'base64url'));
+    } catch {
+      ok = false;
+    }
+    if (!ok) return fail('the signature did not verify');
+    p.knownDevice = found.row.id;
+    await this.credentials?.touch(found.row.id, new Date().toISOString());
+    return true;
+  }
+
+  /**
+   * Remember this browser for `ctx`'s person (#1523 slice 1c, Q5): the
+   * consent record first, bound to the device id, then the `device` row with
+   * the public key, the browser and system, and when it expires. Refused
+   * when the key is not an ECDSA P-256 public key, the browser cannot be
+   * told, the page changed since it was shown, or consent cannot be recorded.
+   */
+  async rememberBrowser(
+    ctx: { username: string } & Record<string, unknown>,
+    input: { publicKey: string; version: string; userAgent?: string; platformHint?: string; amr: string[] }
+  ): Promise<{ deviceId: string } | null> {
+    const days = this.rememberDays();
+    if (!this.credentials || days === 0) return null;
+    const identity = browserIdentity(input.userAgent, input.platformHint);
+    if (!identity) return null;
+    let spki: Buffer;
+    try {
+      const key = createPublicKey({ key: Buffer.from(input.publicKey, 'base64url'), format: 'der', type: 'spki' });
+      if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') return null;
+      spki = key.export({ format: 'der', type: 'spki' });
+    } catch {
+      return null;
+    }
+    const deviceId = createHash('sha256').update(spki).digest('base64url');
+    // A key is made fresh for each remembering, so its id is new; one already
+    // stored under it (another account's included) is never replaced.
+    if (this.credentials.findBySubject('device', deviceId)) return null;
+    const consent = this.engine.getManager<{
+      documents(scope: string): Promise<ConsentDocument[]>;
+      accept(ctx: unknown, scope: string, seen: Array<{ id: string; version: string }>, how: string, subject?: string): Promise<unknown>;
+        }>('ConsentManager');
+    const doc = (await consent?.documents(REMEMBER_BROWSER_CONSENT_SCOPE))?.[0];
+    if (!consent || !doc || String(doc.version) !== input.version) return null;
+    try {
+      await consent.accept(ctx, REMEMBER_BROWSER_CONSENT_SCOPE, [{ id: doc.id, version: String(doc.version) }], 'sign-in', deviceId);
+    } catch (err) {
+      logger.warn(`[AuthManager] ${ctx.username} asked to remember a browser, but the consent could not be recorded; not remembered:`, err);
+      return null;
+    }
+    const now = new Date();
+    const secret: DeviceSecret = {
+      publicKey: spki.toString('base64url'),
+      ...identity,
+      amr: input.amr,
+      expiresAt: new Date(now.getTime() + days * 86_400_000).toISOString()
+    };
+    await this.storeCredential(ctx, ctx.username, { kind: 'device', subject: deviceId, secret: JSON.stringify(secret), label: `${identity.browser} on ${identity.os}` }, 'remember this browser');
+    return { deviceId };
   }
 
   /**

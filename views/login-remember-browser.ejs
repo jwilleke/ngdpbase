@@ -1,0 +1,22 @@
+<%- include('header', { pageName: '' }) %>
+<%# #1523 slice 1c — right after a sign-in that ticked "Remember this browser": the
+    browser makes a key that cannot be copied out of it, the site keeps the public
+    half, and the page goes on to where the person was going. %>
+<div class="container-fluid">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      <div class="card mt-5">
+        <div class="card-body">
+          <div data-remember-browser data-next="<%= next %>" data-user="<%= deviceUser %>" data-csrf="<%= csrfToken %>">
+            <div class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></div>
+            <span class="small text-muted ms-1" data-remember-status>Remembering this browser…</span>
+          </div>
+          <a href="<%= next %>" class="btn btn-sm btn-link p-0 mt-3">Continue</a>
+          <script src="/js/known-device.js" defer></script>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>
