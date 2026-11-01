@@ -466,6 +466,8 @@ function titleFromFileName(name: string): string {
  */
 /** What the private-store receiver says of a page it did not import (#2118); its `store-import` record counts them. */
 const TAKEOUT_PAGE_UNCHANGED = 'already here, unchanged';
+/** #2171: a file deleted since an earlier import of the same takeout, put back. */
+const TAKEOUT_FILE_RESTORED = 'restored: deleted since an earlier import';
 const TAKEOUT_PAGE_CHANGED = 'changed since the download; the page here was kept';
 const TAKEOUT_PAGE_ELSEWHERE = 'already on this site';
 /** A takeout's files are under `attachments/`; its pages are not. */
@@ -486,6 +488,8 @@ class ImportManager extends BaseManager {
   private readonly storeHoldings = new Map<string, Promise<Map<string, string> | null>>();
   /** ICE (#2188): what a run gives files back their ids with, by run and store; dropped when the run ends. */
   private readonly storeRestoring = new Map<string, Promise<StoreRestoring>>();
+  /** ICE (#2171): the fingerprints of the files a rechecking run put back into a store, by run and store; dropped when the run ends. */
+  private readonly storeRestored = new Map<string, Set<string>>();
   /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
   private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
@@ -1238,6 +1242,7 @@ class ImportManager extends BaseManager {
     } finally {
       for (const key of this.storeHoldings.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeHoldings.delete(key);
       for (const key of this.storeRestoring.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeRestoring.delete(key);
+      for (const key of this.storeRestored.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeRestored.delete(key);
     }
   }
 
@@ -1730,6 +1735,14 @@ class ImportManager extends BaseManager {
       return held;
     };
     const heldAgain = async (bytes: Buffer): Promise<string | null> => (await holdings())?.get(fingerprint(bytes)) ?? null;
+    // #2171: a file this run put back, deleted since an earlier import. A page linking it may put it back
+    // before the run reads the file itself, which then reports it restored, not unchanged.
+    const restoredKey = `${info.runId}\0${store}`;
+    const restored = (): Set<string> => {
+      let set = this.storeRestored.get(restoredKey);
+      if (!set) this.storeRestored.set(restoredKey, set = new Set<string>());
+      return set;
+    };
     // #2188: what a run needs to give a file back an id it had, read once a run and store: the ids the
     // site's files hold, and the ids this store gave files of a takeout that could not keep their own.
     const restoring = (): Promise<StoreRestoring> => {
@@ -1760,6 +1773,7 @@ class ImportManager extends BaseManager {
         { description: description ?? '', ...(state ? { restoreIds: tried, heldIds: state.held } : {}) }
       );
       if (stored.identifier) (await holdings())?.set(fingerprint(bytes), stored.identifier);
+      if (stored.identifier && info.rechecked) restored().add(fingerprint(bytes));
       if (state && oldId && stored.identifier && stored.identifier !== (lastId ?? oldId)) {
         state.renumbered.set(oldId, stored.identifier);
         if (info.rechecked) for (const id of tried) if (id !== stored.identifier) state.relink.set(id, stored.identifier);
@@ -1772,9 +1786,10 @@ class ImportManager extends BaseManager {
       if (data?.entry === 'file') {
         const bytes = item.bytes ?? Buffer.alloc(0);
         const held = await heldAgain(bytes);
+        if (held && restored().has(fingerprint(bytes))) return { status: 'stored', ref: held, message: TAKEOUT_FILE_RESTORED };
         if (held) return { status: 'duplicate', ref: held };
         const id = await put(bytes, data.name, data.encodingFormat || item.mediaType, data.description, data.oldId);
-        return { status: 'stored', ...(id ? { ref: id } : {}) };
+        return { status: 'stored', ...(id ? { ref: id } : {}), ...(info.rechecked ? { message: TAKEOUT_FILE_RESTORED } : {}) };
       }
       if (data?.entry !== 'page') return { status: 'refused', message: 'Neither a page nor a file of a takeout.' };
 
