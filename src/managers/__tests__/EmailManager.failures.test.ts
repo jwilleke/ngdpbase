@@ -182,8 +182,7 @@ describe('EmailManager + NotificationManager — the failure notice is never ema
       'ngdpbase.notifications.file': 'notifications.json',
       'ngdpbase.notifications.auto-save-interval': 60000,
       'ngdpbase.notifications.escalation.enabled': true,
-      'ngdpbase.notifications.escalation.levels': ['error'],
-      'ngdpbase.notifications.escalation.recipient-role': 'admin'
+      'ngdpbase.notifications.escalation.levels': ['error']
     };
     const configManager = {
       getProperty: vi.fn((key: string, def: unknown) => (key in props ? props[key] : def)),

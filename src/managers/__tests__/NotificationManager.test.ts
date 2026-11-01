@@ -769,10 +769,13 @@ describe('NotificationManager', () => {
 // engine mocks without touching the shared beforeEach/afterEach above.
 // ---------------------------------------------------------------------------
 
+const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = { admin: ['admin-system'] };
+
 function makeEscalationEngine({
   escalationEnabled = false,
   levels = ['error'],
-  recipientRole = 'admin',
+  // Which permissions each role grants; the PDP mock below answers from it.
+  rolePermissions = DEFAULT_ROLE_PERMISSIONS,
   mailEnabled = true,
   providerName = 'smtp',
   from = 'wiki@example.com',
@@ -787,7 +790,6 @@ function makeEscalationEngine({
       if (key === 'ngdpbase.notifications.auto-save-interval') return 60000;
       if (key === 'ngdpbase.notifications.escalation.enabled') return escalationEnabled;
       if (key === 'ngdpbase.notifications.escalation.levels') return levels;
-      if (key === 'ngdpbase.notifications.escalation.recipient-role') return recipientRole;
       return defaultValue;
     }),
     getResolvedDataPath: vi.fn((key, defaultValue) => {
@@ -804,7 +806,15 @@ function makeEscalationEngine({
   };
 
   const userManager = {
+    getUsers: vi.fn().mockResolvedValue(adminUsers),
     searchUsers: vi.fn().mockResolvedValue(adminUsers)
+  };
+
+  // Holders of a permission by what their roles grant, never by a role's name.
+  const pdp = {
+    usersHolding: vi.fn(async (action: string) => adminUsers
+      .filter(u => u.roles.some(r => (rolePermissions[r] ?? []).includes(action)))
+      .map(u => u.username))
   };
 
   return {
@@ -813,6 +823,7 @@ function makeEscalationEngine({
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'EmailManager') return emailManager;
         if (name === 'UserManager') return userManager;
+        if (name === 'PolicyDecisionPoint') return pdp;
         if (name === 'PluginManager') return { formatters: pluginFormatters };
         return undefined;
       })
@@ -873,7 +884,6 @@ describe('NotificationManager — email escalation', () => {
     const loggerInstance = (mgr as any).logger;
     expect(loggerInstance.info).toHaveBeenCalledWith(
       expect.stringContaining('Email escalation active'),
-      expect.anything(),
       expect.anything()
     );
     await mgr.shutdown();
@@ -928,6 +938,58 @@ describe('NotificationManager — email escalation', () => {
     expect(sendTo).toHaveBeenCalledTimes(2);
     expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'jim@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
     expect(sendTo).toHaveBeenCalledWith(expect.objectContaining({ origin: 'schedule' }), 'alice@example.com', expect.stringContaining('[ERROR]'), expect.any(String), expect.any(String));
+    await mgr.shutdown();
+  });
+
+  // #2196: the email goes to the people the notice goes to, holders of
+  // admin-system, whatever their roles are named.
+  test('an admin notice is emailed to holders of admin-system, not to the admin role', async () => {
+    const sendTo = vi.fn().mockResolvedValue(undefined);
+    const { engine, userManager } = makeEscalationEngine({
+      dataDir: tempDir,
+      escalationEnabled: true,
+      sendTo,
+      rolePermissions: { operator: ['admin-system'], admin: ['page-read'] },
+      adminUsers: [
+        { username: 'olga', email: 'olga@example.com', roles: ['operator'] },
+        { username: 'jim', email: 'jim@example.com', roles: ['admin'] }
+      ]
+    });
+    const mgr = new NotificationManager(engine as any);
+    await mgr.initialize({});
+
+    const id = await mgr.notifyAdmins({ level: 'error', title: 'Disk full', message: 'Storage at 100%' });
+    await vi.waitFor(() => expect(sendTo).toHaveBeenCalled());
+    await new Promise(r => setTimeout(r, 20));
+
+    expect(mgr.getAllNotifications().find(n => n.id === id)?.targetUsers).toEqual(['olga']);
+    expect(sendTo).toHaveBeenCalledTimes(1);
+    expect(sendTo).toHaveBeenCalledWith(expect.anything(), 'olga@example.com', expect.any(String), expect.any(String), expect.any(String));
+    expect(sendTo).not.toHaveBeenCalledWith(expect.anything(), 'jim@example.com', expect.anything(), expect.anything(), expect.anything());
+    expect(userManager.searchUsers).not.toHaveBeenCalled();
+    await mgr.shutdown();
+  });
+
+  test('an inactive holder of admin-system is not emailed', async () => {
+    const sendTo = vi.fn().mockResolvedValue(undefined);
+    const { engine } = makeEscalationEngine({
+      dataDir: tempDir,
+      escalationEnabled: true,
+      sendTo,
+      adminUsers: [
+        { username: 'jim', email: 'jim@example.com', roles: ['admin'] },
+        { username: 'gone', email: 'gone@example.com', roles: ['admin'], isActive: false } as { username: string; email: string; roles: string[] }
+      ]
+    });
+    const mgr = new NotificationManager(engine as any);
+    await mgr.initialize({});
+
+    await mgr.createNotification({ level: 'error', title: 'Disk full', message: 'Storage at 100%' });
+    await vi.waitFor(() => expect(sendTo).toHaveBeenCalled());
+    await new Promise(r => setTimeout(r, 20));
+
+    expect(sendTo).toHaveBeenCalledTimes(1);
+    expect(sendTo).toHaveBeenCalledWith(expect.anything(), 'jim@example.com', expect.any(String), expect.any(String), expect.any(String));
     await mgr.shutdown();
   });
 
