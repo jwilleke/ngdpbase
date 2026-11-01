@@ -161,6 +161,15 @@ request type, or per request).
 1. Routing / triage (TBD, see above).
 2. How `/contact` hands a submission to the add-on (a core change, for the ngdpbase session).
 
+## Operator answers, round 3 (2026-11-01)
+
+Four places where this document said two different things, settled by the operator in #clara-ops, one at a time. Where an earlier line here disagrees, these win.
+
+1. __Photos and receipts:__ they go in the organization's default store, the shared folder `/shared/default`, which every signed-in user can open and which is created once the site's recovery words are confirmed. This replaces both "core attachments or a private store" (round 2, item 3) and "receipts handled by ngdp-accounting-addons" (Proposed decisions). Every member can therefore open every request's attachments; a per-type private setting can come later if a request type needs it.
+2. __The 1,100+ Fairways requests:__ move them into the engine once its first version works, so the history is in one place. This replaces "not now, not here" (round 2, item 7).
+3. __Status words:__ the engine's own list (`new`, `assigned`, `in-progress`, `waiting-on-requester`, `resolved`, `closed`, plus `approved`, `rejected`, `withdrawn`), as in "Proposed shape" below. FHIR Task statuses are used only as a mapping if requests are ever exported. This replaces the FHIR Task lean in "Working shape".
+4. __Outsiders:__ they follow their request through the private link from their confirmation email (see open question 6 below), not by email only. The link is treated like a password: stored only as a hash, rate-limited, expired when the request closes, and re-sendable on request. This replaces "answered by email only, for now" (round 2, item 4).
+
 ## Proposed decisions (2026-11-01, awaiting operator confirmation)
 
 - __Storage: SQLite through core, not JSON files.__ The engine declares its own add-on database
