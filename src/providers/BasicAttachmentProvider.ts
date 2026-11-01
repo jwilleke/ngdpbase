@@ -28,6 +28,7 @@ import {
 } from './attachmentFilesBackup.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
+  isRestorableFileId,
   parsePrivatePageName,
   privateStoreFilePath,
   storeFileIndexPath,
@@ -1040,7 +1041,11 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       return existing;
     }
 
-    const id = crypto.randomUUID();
+    // #2188: a restored file keeps its id when AttachmentManager found it free; a store never lists one id twice.
+    if (file.id !== undefined && (!isRestorableFileId(file.id) || files[file.id])) {
+      throw new Error('[BasicAttachmentProvider] that id is not free in this store');
+    }
+    const id = file.id ?? crypto.randomUUID();
     const fileName = `${id}${safeStoredExtension(file.originalName, file.mimeType)}`;
     const target = this.storeFilePath(location, fileName);
     await fs.ensureDir(path.dirname(target));

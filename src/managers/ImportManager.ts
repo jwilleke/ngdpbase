@@ -469,6 +469,8 @@ class ImportManager extends BaseManager {
   private readonly iceRuns = new Map<string, IceRunReport>();
   /** ICE (#2171): a rechecking run's store, as fingerprint → id, read once per run and store; dropped when the run ends. */
   private readonly storeHoldings = new Map<string, Promise<Map<string, string> | null>>();
+  /** ICE (#2188): a run's files brought back under a new id, as old id → new id, by run and store; dropped when the run ends. */
+  private readonly storeRenumbered = new Map<string, Map<string, string>>();
   /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
   private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
@@ -1220,6 +1222,7 @@ class ImportManager extends BaseManager {
       return report;
     } finally {
       for (const key of this.storeHoldings.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeHoldings.delete(key);
+      for (const key of this.storeRenumbered.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeRenumbered.delete(key);
     }
   }
 
@@ -1609,12 +1612,18 @@ class ImportManager extends BaseManager {
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),
       runDone: async (ctx, report) => {
+        // #2188: a file brought back under a new id, its links in the store's pages pointed at it.
+        const renumbered = this.storeRenumbered.get(`${report.runId}\0${report.target ?? ''}`) ?? new Map<string, string>();
+        const relinked = renumbered.size === 0 ? 0 : await this.relinkStorePages(ctx, report.target ?? '', renumbered).catch((err: unknown) => {
+          logger.warn(`[ImportManager] the links of run ${report.runId} could not be pointed at its renumbered files (${errorClassOf(err)})`);
+          return 0;
+        });
         // A failure here costs the report page, never the import or its audit record.
         const unlinked = await this.keepRunReport(ctx, report).catch((err: unknown) => {
           logger.warn(`[ImportManager] the import report for run ${report.runId} could not be kept (${errorClassOf(err)})`);
           return 0;
         });
-        await this.recordStoreImport(ctx, report, unlinked);
+        await this.recordStoreImport(ctx, report, unlinked, { renumbered, relinked });
       },
       // #2110: a page the user may read, by PageManager's own read decision. A file's id is not linked.
       linkFor: async (ref: string, ctx: ActorContext): Promise<string | null> => {
@@ -1697,13 +1706,21 @@ class ImportManager extends BaseManager {
       return held;
     };
     const heldAgain = async (bytes: Buffer): Promise<string | null> => (await holdings())?.get(fingerprint(bytes)) ?? null;
-    const put = async (bytes: Buffer, name: string, mimeType: string | undefined, description: string | undefined): Promise<string | undefined> => {
+    // #2188: a file keeps the id it had in the takeout when no file holds it now, so a page linking it finds it.
+    // When it can't, the run remembers both ids, and its end points the store's pages at the new one.
+    const put = async (bytes: Buffer, name: string, mimeType: string | undefined, description: string | undefined, oldId: string | undefined): Promise<string | undefined> => {
       const stored = await files.put(
         ctx, place,
         { bytes, info: { originalName: name, mimeType: mimeType || mediaTypeByExtension(name), size: bytes.length } },
-        { description: description ?? '' }
+        { description: description ?? '', ...(oldId ? { restoreId: oldId } : {}) }
       );
       if (stored.identifier) (await holdings())?.set(fingerprint(bytes), stored.identifier);
+      if (info.rechecked && oldId && stored.identifier && stored.identifier !== oldId) {
+        const key = `${info.runId}\0${store}`;
+        const renumbered = this.storeRenumbered.get(key) ?? new Map<string, string>();
+        renumbered.set(oldId, stored.identifier);
+        this.storeRenumbered.set(key, renumbered);
+      }
       return stored.identifier;
     };
     const data = item.data as TakeoutData | undefined;
@@ -1713,7 +1730,7 @@ class ImportManager extends BaseManager {
         const bytes = item.bytes ?? Buffer.alloc(0);
         const held = await heldAgain(bytes);
         if (held) return { status: 'duplicate', ref: held };
-        const id = await put(bytes, data.name, data.encodingFormat || item.mediaType, data.description);
+        const id = await put(bytes, data.name, data.encodingFormat || item.mediaType, data.description, data.oldId);
         return { status: 'stored', ...(id ? { ref: id } : {}) };
       }
       if (data?.entry !== 'page') return { status: 'refused', message: 'Neither a page nor a file of a takeout.' };
@@ -1723,7 +1740,7 @@ class ImportManager extends BaseManager {
       for (const linked of data.files) {
         const bytes = item.archive?.read(linked.path);
         if (!bytes) continue;
-        const id = await heldAgain(bytes) ?? await put(bytes, linked.name, linked.encodingFormat, linked.description);
+        const id = await heldAgain(bytes) ?? await put(bytes, linked.name, linked.encodingFormat, linked.description, linked.oldId);
         if (id) ids.set(linked.oldId, id);
       }
       return await this.saveTakeoutPage(rewriteAttachmentLinks(item.text ?? '', ids), data, store, ctx);
@@ -1732,6 +1749,26 @@ class ImportManager extends BaseManager {
       if (/permission denied/i.test(message)) return { status: 'refused', message };
       throw err;
     }
+  }
+
+  /**
+   * Point every page of the user's store `store` that links a file by an id
+   * in `ids` at the file's new id (#2188), through the page door. For a file
+   * a re-import brought back under a new id because its old one is held by
+   * another file. Returns how many pages changed.
+   */
+  private async relinkStorePages(ctx: ActorContext, store: string, ids: ReadonlyMap<string, string>): Promise<number> {
+    const { pageManager } = this.privateStoreSetup();
+    let relinked = 0;
+    for (const { name } of await pageManager.listVaultPages(ctx, ctx.username, store)) {
+      const page = await pageManager.getPage(name, ctx);
+      if (!page) continue;
+      const body = rewriteAttachmentLinks(page.content ?? '', ids);
+      if (body === (page.content ?? '')) continue;
+      await pageManager.savePage(name, body, page.metadata ?? {}, ctx);
+      relinked++;
+    }
+    return relinked;
   }
 
   /** A takeout's page into the store, as #1472 decided: see {@link privateStoreReceiver}. */
@@ -1783,7 +1820,10 @@ class ImportManager extends BaseManager {
    * The counts use the old door's keys, so whatever reads the event reads
    * one shape.
    */
-  private async recordStoreImport(ctx: ActorContext, report: IceRunReport, filesUnlinked: number): Promise<void> {
+  private async recordStoreImport(
+    ctx: ActorContext, report: IceRunReport, filesUnlinked: number,
+    relink: { renumbered: ReadonlyMap<string, string>; relinked: number } = { renumbered: new Map(), relinked: 0 }
+  ): Promise<void> {
     const sink = this.engine.getManager<AuditEventSink>('AuditManager');
     const who = actorOf(ctx);
     const owner = ctx.username;
@@ -1819,6 +1859,10 @@ class ImportManager extends BaseManager {
         files: files.filter(f => f.status === 'imported' || f.status === 'duplicate').length,
         fileErrors: files.filter(isFailedEntry).length,
         filesUnlinked,
+        // #2188: a file brought back under a new id, both ids, and the pages pointed at the new one. Ids only, never a name.
+        ...(relink.renumbered.size > 0
+          ? { filesRenumbered: [...relink.renumbered].map(([from, to]) => ({ from, to })), pagesRelinked: relink.relinked }
+          : {}),
         leftOut: count('noise')
       }
     }, (err) => logger.warn('[ImportManager] the store-import audit record failed:', err));

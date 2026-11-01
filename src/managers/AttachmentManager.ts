@@ -35,7 +35,7 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 // #1926: the provider's uploader shape, not a copy of it — a copy keyed `name` is how uploads lost their username.
 import type { User } from '../providers/BaseAttachmentProvider.js';
-import { formatPrivatePageName, isSharedFolderOwner, isValidStoreId, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isRestorableFileId, isSharedFolderOwner, isValidStoreId, parsePrivatePageName, privateStoreAttachmentsDir, privateStoreLayoutFromConfig, privateStoreRoot, SHARED_FOLDER_OWNER, type PrivateStoreLayout } from '../utils/privateStorePath.js';
 import { readVaultSealState } from '../utils/privateStoreMeta.js';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
@@ -175,6 +175,14 @@ export interface PutOptions {
    * record names the file by id only, so it is not recorded there.
    */
   importedFrom?: string;
+  /**
+   * A takeout re-import's file, brought back (#2188): the id it had, so a page
+   * still linking `/attachments/{id}` finds it again. Honoured only in the
+   * user's own vault, and only when no file anywhere on the site holds that
+   * id ({@link restoreIdIsFree}); otherwise the file gets a new id, as any
+   * upload does. The stored id is in the returned metadata either way.
+   */
+  restoreId?: string;
 }
 
 /**
@@ -757,6 +765,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         owner,
         vaultAddon: storeKindFromConfig((key, fallback) => configManager.getProperty(key, fallback), store)?.owner ?? null
       }) ? options.keep : null;
+      // #2188: a restored file keeps its id when nothing else holds it.
+      const restoreId = options.restoreId && place.kind === 'vault'
+        && await this.restoreIdIsFree(options.restoreId, { owner, store, io }, pagesDirectory, layout)
+        ? options.restoreId
+        : null;
       const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
         { owner, store, io },
         fileBuffer,
@@ -766,7 +779,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
           description: options.description || '',
           author: authorRef,
           ...(pageName ? { pageName } : {}),
-          ...(keep ? { keptOriginal: { types: keep.types } } : {})
+          ...(keep ? { keptOriginal: { types: keep.types } } : {}),
+          ...(restoreId ? { id: restoreId } : {})
         }
       ));
       // #1461: a private file is logged by id — never by its filename.
@@ -818,6 +832,36 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         ...(heldAs !== null ? { stored: false, heldAs, offeredAs: fileInfo.originalName } : {})
       }
     };
+  }
+
+  /**
+   * Whether a file brought back by a takeout re-import may be stored under
+   * the id it had, `id` (#2188). Only an id of the shape a store gives
+   * (`isRestorableFileId`), and only when no file holds it: not the target
+   * store's index, not the shared pool, and no file on disk in any store of
+   * any owner or shared folder. A store names each file's bytes by its id
+   * (`{id}.ext`) in the clear, sealed or not, so another owner's sealed store
+   * is checked without its key. An id another file holds is never reused, so
+   * a takeout cannot claim another file's id, its own or anyone's.
+   */
+  private async restoreIdIsFree(id: string, target: StoreFileLocation, pagesDirectory: string, layout: PrivateStoreLayout): Promise<boolean> {
+    if (!this.attachmentProvider || !isRestorableFileId(id)) return false;
+    if ((await this.attachmentProvider.listFilesInStore(target)).some((f) => f.id === id)) return false;
+    if (await this.attachmentProvider.attachmentExists(id)) return false;
+    for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+      let stores: string[];
+      try {
+        stores = await privateStoreIdsOf(pagesDirectory, owner, layout);
+      } catch {
+        // A folder no account could be named: nothing of a store's in it.
+        continue;
+      }
+      for (const store of stores) {
+        const names = await fs.readdir(privateStoreAttachmentsDir(pagesDirectory, owner, store, layout)).catch(() => [] as string[]);
+        if (names.some((n) => n === id || n.startsWith(`${id}.`))) return false;
+      }
+    }
+    return true;
   }
 
   /**

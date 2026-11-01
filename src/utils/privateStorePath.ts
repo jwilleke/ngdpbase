@@ -291,6 +291,15 @@ export interface PrivatePageName {
  */
 export const SHARED_FOLDER_OWNER = 'shared-folders';
 
+/**
+ * Whether `id` has the shape a store gives a file (`crypto.randomUUID()`), so
+ * a takeout's file can be stored under it again (#2188). Anything else, a
+ * path or a pool's content hash among them, is never reused as a file name.
+ */
+export function isRestorableFileId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+}
+
 /** A shared folder page's name, and its URL without the leading slash: `shared/{folder}/{title}`. */
 export const SHARED_PAGE_NAME_PREFIX = 'shared/';
 
