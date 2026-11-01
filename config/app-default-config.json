@@ -1143,7 +1143,6 @@
   "ngdpbase.notifications.escalation.levels": [
     "error"
   ],
-  "ngdpbase.notifications.escalation.recipient-role": "admin",
   "_comment_forms": "Generic Forms addon",
   "ngdpbase.addons.forms.enabled": false,
   "ngdpbase.addons.forms.dataPath": "${FAST_STORAGE}/forms",

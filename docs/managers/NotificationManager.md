@@ -59,6 +59,8 @@ At start-up the manager converts the stored file once: each `targetUsers` and `d
 
 `createNotification({ ..., escalate: false })` never emails the notification, whatever the escalation settings. `updateNotificationMessage(id, message)` replaces an existing notification's message without escalating, so one notice can carry a running count instead of one notice per event. EmailManager uses both for its "Email could not be sent" notice ([#1916](https://github.com/jwilleke/ngdpbase/issues/1916)).
 
+When `ngdpbase.notifications.escalation.enabled` is on, a notification at one of `ngdpbase.notifications.escalation.levels` is emailed to every active holder of `admin-system` with an address, the people `notifyAdmins` targets, asked of `PolicyDecisionPoint.usersHolding('admin-system')`. It never looks at role names; the old `ngdpbase.notifications.escalation.recipient-role` setting is gone and ignored if set ([#2196](https://github.com/jwilleke/ngdpbase/issues/2196)).
+
 ## Notification Types
 
 | Type | Description |
