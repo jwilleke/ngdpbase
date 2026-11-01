@@ -45,4 +45,5 @@ jobs:
         if: steps.meta.outputs.update-type == 'version-update:semver-major'
         env:
           NAMES: ${{ steps.meta.outputs.dependency-names }}
-        run: echo "Major update ($NAMES): left for review." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Major update ($NAMES): left for review." >> "$GITHUB_STEP_SUMMARY"
