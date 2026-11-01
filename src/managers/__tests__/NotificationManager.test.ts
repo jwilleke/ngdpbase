@@ -1096,7 +1096,9 @@ describe('NotificationManager — email escalation', () => {
 
     expect(sendTo).toHaveBeenCalledTimes(2);
     const text = loggedText((mgr as any).logger);
-    expect(text).not.toContain('550');
+    // The SMTP error text, not the bare code: the temp dir name carries
+    // Date.now(), which can contain "550" and is logged with the storage path.
+    expect(text).not.toContain('Recipient address rejected');
     expect(text).not.toContain('jim@example.com');
     expect(text).not.toContain('alice@example.com');
     expect(text).toContain('Escalation email sent to alice (an address at example.com)');
