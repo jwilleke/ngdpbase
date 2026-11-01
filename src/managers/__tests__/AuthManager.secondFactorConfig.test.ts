@@ -274,7 +274,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
     test('google-oidc counts as oidc:google for the level the account can reach, as it does for signing in', async () => {
       allowedAuthMethods = ['google-oidc'];
       const am = await started();
-      am.registerProvider({ id: 'oidc:google', displayName: 'Google', factor: { amr: ['hwk'], aal: 2 as const, primary: true }, verify: () => Promise.resolve(null) });
+      (am as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider({ id: 'oidc:google', displayName: 'Google', factor: { amr: ['hwk'], aal: 2 as const, primary: true }, verify: () => Promise.resolve(null) });
       expect(await am.userMayUseProvider('molly', 'oidc:google')).toBe(true);
       // Sabotage check: comparing the raw string offers nothing, and the reach falls to 1.
       expect((await am.aalReachFor('molly')).now).toBe(2);

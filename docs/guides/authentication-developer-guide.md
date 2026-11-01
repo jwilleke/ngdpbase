@@ -94,7 +94,7 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 
 ## Checklist for a new sign-in provider or factor
 
-- 1 Write it as an `AuthProvider` and register it with `AuthManager.registerProvider` (an add-on registers it at load). No route calls it directly.
+- 1 Write it as an `AuthProvider` and register it with `AuthManager.registerProvider` (an add-on registers it at load). No route calls it directly. Core provider ids (`CORE_PROVIDER_IDS`) and the `oidc:` prefix are reserved for core: an add-on registering one is refused with a logged error, whether or not core registered it on this site ([#2223](https://github.com/jwilleke/ngdpbase/issues/2223)).
 - 2 Declare its `amr`, `aal` and `acr` honestly, by SP 800-63B. Configuration can lower them; nothing can raise them.
 - 3 Add it to `ngdpbase.auth.factors` (shipped, or in the add-on's `config/default-config.json`), with `primary` set only if it can start a sign-in on its own. A second factor also gets a `preference` (where it is offered, lower first) and its runner in `secondFactorsFor`, or it is never offered.
 - 4 If it must be enrolled before it counts (a key, an app), add it to `ENROLLED_FACTORS`, store its rows through the credentials store, and offer enrolment on the profile's sign-in methods.

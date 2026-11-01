@@ -182,7 +182,7 @@ describe('AuthManager', () => {
 
     test('a delegated credential is never a factor, even when listed', async () => {
       const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'agent-token' }] });
-      manager.registerProvider({ id: 'agent-token', displayName: 'Agent', verify: vi.fn() });
+      (manager as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider({ id: 'agent-token', displayName: 'Agent', verify: vi.fn() });
       expect(manager.getFactors()).toEqual([]);
     });
 
@@ -456,7 +456,7 @@ describe('AuthManager', () => {
             UserManager: { getUser: async () => ({ username: 'admin' }) }
           }));
           await manager.initialize();
-          manager.registerProvider(fake('passkey', { amr: ['hwk', 'user'], aal: 2, acr: 'phr', primary: true }));
+          (manager as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider(fake('passkey', { amr: ['hwk', 'user'], aal: 2, acr: 'phr', primary: true }));
           (manager as unknown as { credentials: unknown }).credentials = { list: () => (enrolled ? [{ kind: 'passkey' }] : []) };
           return manager;
         };
@@ -946,6 +946,57 @@ describe('AuthManager', () => {
         const manager = await bareManager();
         manager.registerProvider(stub('addon-sso'), 'addon-a');
         expect(() => manager.registerProvider(stub('addon-sso'), 'addon-b')).not.toThrow();
+      });
+    });
+
+    // #2223: an add-on brings its own verify() and AAL, so a core id it could
+    // take where core left it unregistered would be trusted by a factors entry.
+    describe('core ids and the oidc: prefix are reserved for core', () => {
+      const PHISHING_RESISTANT = { primary: true, amr: ['hwk', 'user'], aal: 2, acr: 'phr' };
+
+      test('an add-on registering passkey on an http site is refused, logged, and the factor stays off', async () => {
+        const logger = (await import('../../utils/logger')).default;
+        const error = vi.spyOn(logger, 'error');
+        const cm = makeConfigManager({ properties: { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'passkey' }] } });
+        cm.getBaseURL.mockReturnValue('http://wiki.example.com');
+        const manager = new AuthManager(makeEngine(cm));
+        await manager.initialize();
+        expect(manager.isEnabled('passkey')).toBe(false);
+
+        expect(manager.registerProvider(stub('passkey', { factor: PHISHING_RESISTANT }), 'evil-addon')).toBe(false);
+        expect(manager.isEnabled('passkey')).toBe(false);
+        expect(manager.getFactors().map((f) => f.provider)).toEqual(['password']);
+        expect(error).toHaveBeenCalledWith(expect.stringMatching(/Rejected provider 'passkey' from evil-addon: .*reserved for core/));
+        error.mockRestore();
+      });
+
+      test('an add-on registering oidc:google is refused, whether or not core registered it', async () => {
+        const manager = await bareManager();
+        expect(manager.registerProvider(stub('oidc:google'), 'evil-addon')).toBe(false);
+        expect(manager.registerProvider(stub('oidc:anything'), 'evil-addon')).toBe(false);
+        expect(manager.isEnabled('oidc:google')).toBe(false);
+      });
+
+      test('every core id is refused from an add-on, with no source named too', async () => {
+        const manager = await bareManager();
+        for (const id of ['password', 'magic-link', 'passkey', 'cloudflare-access', 'authentik-bearer', 'agent-token', 'oidc-bearer']) {
+          expect(manager.registerProvider(stub(id))).toBe(false);
+        }
+        expect(manager.getProviders().map((p) => p.id)).toEqual(['password']);
+      });
+
+      test('core registers its own ids: password on a bare boot, agent-token when configured', async () => {
+        const cm = makeConfigManager({ properties: { 'ngdpbase.auth.agent-token.enabled': true } });
+        const manager = new AuthManager(makeEngine(cm));
+        await manager.initialize();
+        expect(manager.isEnabled('password')).toBe(true);
+        expect(manager.isEnabled('agent-token')).toBe(true);
+      });
+
+      test('an id that only starts like a core one is the add-on\'s to register', async () => {
+        const manager = await bareManager();
+        expect(manager.registerProvider(stub('passkey-plus'), 'my-addon')).toBe(true);
+        expect(manager.registerProvider(stub('my-oidc:x'), 'my-addon')).toBe(true);
       });
     });
 
