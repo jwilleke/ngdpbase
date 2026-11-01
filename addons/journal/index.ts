@@ -233,7 +233,7 @@ const journalAddon = {
       adminVoiceEnabled: voiceToTextEnabled
     });
 
-    return { title: 'Journal', html };
+    return { title: 'Journal', icon: 'fa-book', html };
   },
 
   /**

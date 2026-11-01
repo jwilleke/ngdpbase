@@ -1,0 +1,12 @@
+<%# #1541: the header line of a collapsible card, the one /admin's Share Manager card uses.
+    Goes first inside the card's <details>; the card's content follows in a <div class="mt-3">.
+    The title is an h6, the heading /profile's cards had before, so the page keeps its outline.
+    Locals: icon (a Font Awesome name such as 'fa-key'), title, and optionally hint (muted text),
+    badge (text pushed right), badgeClass (default 'bg-secondary'), helpSlug and helpLabel (a help link). %>
+<summary class="card-summary">
+    <i class="fas <%= icon %>" aria-hidden="true"></i>
+    <h6 class="mb-0 fw-bold"><%= title %></h6>
+    <% if (typeof helpSlug !== 'undefined' && helpSlug) { %><%- include('_help-icon', { slug: helpSlug, label: typeof helpLabel !== 'undefined' && helpLabel ? helpLabel : title }) %><% } %>
+    <% if (typeof hint !== 'undefined' && hint) { %><span class="text-muted small"><%= hint %></span><% } %>
+    <% if (typeof badge !== 'undefined' && badge !== null && badge !== '') { %><span class="badge <%= typeof badgeClass !== 'undefined' && badgeClass ? badgeClass : 'bg-secondary' %> ms-auto"><%= badge %></span><% } %>
+</summary>

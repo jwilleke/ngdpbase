@@ -263,6 +263,14 @@ export interface AddonProfileSection {
   title: string;
   /** Raw HTML rendered inside the card body; should contain form input fields. */
   html: string;
+  /**
+   * Font Awesome icon shown before the title in the card's header, such as
+   * `'fa-book'` (#1541). Optional; the host shows `fa-puzzle-piece` when it is
+   * missing or not a plain `fa-` name.
+   */
+  icon?: string;
+  /** Optional muted text shown after the title in the card's header (#1541). */
+  hint?: string;
 }
 
 /**
@@ -2249,7 +2257,11 @@ class AddonsManager extends BaseManager {
         );
         continue;
       }
-      sections.push({ addonName: name, title: result.title, html: result.html });
+      const entryOut: AddonProfileSectionEntry = { addonName: name, title: result.title, html: result.html };
+      // #1541: the host draws the card header; an icon is a bare Font Awesome name or nothing.
+      if (typeof result.icon === 'string' && /^fa-[a-z0-9-]+$/.test(result.icon)) entryOut.icon = result.icon;
+      if (typeof result.hint === 'string' && result.hint !== '') entryOut.hint = result.hint;
+      sections.push(entryOut);
     }
     return sections;
   }
