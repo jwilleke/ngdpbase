@@ -80,7 +80,7 @@ export function realPathOf(p: string): string {
 /** Whether `child` is `parent` or under it; both already real paths. */
 export function isSameOrUnder(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
 }
 
 /** How `folder` overlaps `root`, or null for no overlap. */
