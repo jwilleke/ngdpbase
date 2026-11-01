@@ -16,11 +16,12 @@ import { PDFDocument } from 'pdf-lib';
 import ExportManager from '../../managers/ExportManager';
 import { resolveChromium } from '../pdfEngine';
 import { TEST_ACTOR } from '../../test-support/actors';
+import { hasChromium, noteSkip } from '../../test-support/tools';
 
 const engine = await resolveChromium(process.env.NGDPBASE_TEST_CHROMIUM ?? '');
-if (!engine.ok) {
-  console.warn(`[pdfEngine.integration] skipped: ${engine.reason}`);
-}
+// Found is not enough: a Chromium on disk can still fail to start (#2216).
+const starts = await hasChromium();
+noteSkip('pdfEngine.integration', starts);
 
 const sha256 = (b: Uint8Array): string => crypto.createHash('sha256').update(b).digest('hex');
 
@@ -51,7 +52,7 @@ function exportManager(): ExportManager {
   });
 }
 
-describe.skipIf(!engine.ok)('htmlToPdf with real Chromium (#1974)', () => {
+describe.skipIf(!engine.ok || !starts.ok)('htmlToPdf with real Chromium (#1974)', () => {
   test('a print-styled invoice renders to a one-page PDF, and the same HTML gives the same SHA-256', async () => {
     const manager = exportManager();
     const first = await manager.htmlToPdf(TEST_ACTOR, invoice());

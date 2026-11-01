@@ -2,6 +2,9 @@
 # they left the machine — types, the tests touched by this branch, and lint.
 # Extended to mirror more of ci.yml; code checks are skipped when the branch
 # changes only docs (*.md or docs/), matching the "no tests for docs-only" rule.
+# #2216: whole-repo lint and `vitest --changed` run out of memory at Node's
+# default heap on a small machine. Kept if the caller sets NODE_OPTIONS.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=6144}"
 CHANGED=$(git diff --name-only origin/master...HEAD)
 if echo "$CHANGED" | grep -qvE '(\.md$|^docs/)'; then
   npm run typecheck --silent

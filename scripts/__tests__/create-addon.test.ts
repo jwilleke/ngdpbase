@@ -34,6 +34,11 @@ import {
   type ScaffoldOptions
 } from '../create-addon';
 import { NONCE, scriptsWithoutNonce, inlineHandlers, javascriptUrls } from '../../src/__tests__/__fixtures__/viewCspContract';
+import { npmPackGivesArray, noteSkip } from '../../src/test-support/tools';
+
+// The pack steps run the real npm, and read its `npm pack --json` (#2216).
+const npmPack = npmPackGivesArray();
+noteSkip('create-addon pack steps', npmPack);
 
 let tmp: string;
 
@@ -570,7 +575,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect(wf.jobs.publish.outputs).toEqual({ name: '${{ steps.tag.outputs.name }}', version: '${{ steps.tag.outputs.version }}' });
     });
 
-    test('the pack step packs the add-on into RUNNER_TEMP/release with its sha512, and outputs its path', async () => {
+    test.skipIf(!npmPack.ok)('the pack step packs the add-on into RUNNER_TEMP/release with its sha512, and outputs its path', async () => {
       const { wf } = await load();
       const root = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'index.js': 'module.exports = {};\n' } } });
       const r = runStep(step(wf, 'Pack the tarball'), path.join(root, 'addons', 'volcano-watch'));
@@ -821,7 +826,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       });
     });
 
-    describe('the package ships no .ts sources or tests', () => {
+    describe.skipIf(!npmPack.ok)('the package ships no .ts sources or tests', () => {
       let packCheck: Step;
       beforeEach(async () => { packCheck = step((await load()).wf, 'The package ships no .ts sources or tests'); });
       const pack = (files: string[], present: Record<string, string>): { status: number | null; out: string } => {
