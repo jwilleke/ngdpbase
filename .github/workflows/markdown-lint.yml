@@ -19,4 +19,4 @@ jobs:
       # of the ignore list, kept in sync by comment rather than by anything
       # mechanical. What is linted is declared once, in .markdownlint-cli2.jsonc.
       - name: Lint markdown
-        uses: DavidAnson/markdownlint-cli2-action@v24
+        uses: DavidAnson/markdownlint-cli2-action@v25
