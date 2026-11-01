@@ -3,7 +3,7 @@
  * when its last activity is written.
  */
 
-import { effectiveIdleTimeoutMs, idleExpired, idleRemainingMs, idleTimeoutMs, shouldTouch, touchEveryMs, warnBeforeMs } from '../sessionIdle';
+import { countsAsActivity, effectiveIdleTimeoutMs, idleExpired, idleRemainingMs, idleTimeoutMs, shouldTouch, touchEveryMs, warnBeforeMs } from '../sessionIdle';
 
 const MIN = 60_000;
 
@@ -96,3 +96,12 @@ describe('warnBeforeMs and idleRemainingMs', () => {
   });
 });
 
+
+describe('countsAsActivity — the polls never keep a session alive', () => {
+  test('the idle warning\'s poll and a page\'s step-up poll (#2193) are not activity; anything else is', () => {
+    expect(countsAsActivity('/api/session/idle-status')).toBe(false);
+    expect(countsAsActivity('/auth/reauth/status')).toBe(false);
+    expect(countsAsActivity('/auth/reauth')).toBe(true);
+    expect(countsAsActivity('/view/Ledger')).toBe(true);
+  });
+});

@@ -297,7 +297,8 @@ describe('#1745 ApiContext#requirePermission() answers step-up with the way to r
     const err = await ctx.requirePermission('ledger-adjust').catch((e: unknown) => e) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(403);
-    expect(err.reauth).toBe('/auth/reauth?next=%2Fview%2FBooks');
+    // #2193: a script's refusal names its own prompt.
+    expect(err.reauth).toMatch(/^\/auth\/reauth\?next=%2Fview%2FBooks&prompt=[0-9a-f]{32}$/);
     expect(err.message).toBe('A fresh sign-in is needed');
     expect(engine.audit).toHaveLength(1);
     expect(engine.audit[0]).toMatchObject({ eventType: 'reauth-prompt', resource: 'ledger-adjust' });
@@ -384,7 +385,8 @@ describe('#1431 ApiContext#enforceDeny() turns a deny decision into the refusal'
     expect(engine.authManager.askForFreshSignIn).toHaveBeenCalledWith(req, req.userContext, 'ledger-adjust', 'json');
     expect(err.status).toBe(403);
     expect(err.message).toBe('A fresh sign-in is needed');
-    expect(err.reauth).toBe('/auth/reauth?next=%2Fview%2FBooks');
+    // #2193: a script's refusal names its own prompt.
+    expect(err.reauth).toMatch(/^\/auth\/reauth\?next=%2Fview%2FBooks&prompt=[0-9a-f]{32}$/);
     expect(engine.audit).toHaveLength(1);
     expect(engine.audit[0]).toMatchObject({ eventType: 'reauth-prompt', resource: 'ledger-adjust' });
   });

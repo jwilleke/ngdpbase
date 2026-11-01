@@ -270,6 +270,20 @@ describe('AuthManager', () => {
           expect(zero.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(false);
         });
 
+        test('#2193: whether a sign-in is fresh enough for any step-up permission, for a page waiting on its prompt', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          expect(m.signInFresh(signIn(factor(1, 2)), ['reader'], false, NOW)).toBe(true);
+          expect(m.signInFresh(signIn(factor(1, 6)), ['reader'], false, NOW)).toBe(false);
+          expect(m.signInFresh(undefined, ['reader'], false, NOW)).toBe(false);
+          // At the roles' level: a fresh password is not enough for an admin.
+          expect(m.signInFresh(signIn(factor(1, 1)), ['admin'], false, NOW)).toBe(false);
+          expect(m.signInFresh(signIn(factor(2, 1)), ['admin'], false, NOW)).toBe(true);
+          // A delegated credential never is; with step-up off, every sign-in is.
+          expect(m.signInFresh(signIn(factor(2, 0)), ['reader'], true, NOW)).toBe(false);
+          const off = await withRoles({ reader: 1 }, {});
+          expect(off.signInFresh(undefined, ['reader'], false, NOW)).toBe(true);
+        });
+
         test('#1638: a step-up permissions list in a custom config (the old shape) is still honoured', async () => {
           const legacy = await withRoles({ reader: 1 }, { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: ['account-security'] } });
           expect(legacy.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(true);

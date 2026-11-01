@@ -679,6 +679,19 @@ describe('WikiRoutes — coverage batch 11', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('success');
     });
+
+    // #2193: a POST with no value takes the key out of app-custom-config.json,
+    // so the shipped and add-on layers are in force again (the E2E for #2193
+    // restores a site this way).
+    test('no value takes the key out of the custom file', async () => {
+      mockConfigManager.setProperty.mockClear();
+      const res = await request(app)
+        .post('/admin/configuration')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ property: 'ngdpbase.permissions.definitions' });
+      expect(res.status).toBe(302);
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.permissions.definitions', undefined, expect.anything());
+    });
   });
 
   describe('POST /admin/configuration/reset (adminResetConfiguration)', () => {

@@ -831,6 +831,34 @@ export interface PendingStepUp {
   replay?: string;
 }
 
+/**
+ * Where a script's own prompt is (#2193): a page that sent a request by
+ * `fetch` and was refused waits on the prompt its refusal named, and sends
+ * again only when that prompt, not another tab's, is confirmed.
+ */
+export type StepUpPromptState = 'waiting' | 'confirmed' | 'cancelled';
+
+/** A script's prompt as the session keeps it (#2193): its id and where it is. */
+export interface StepUpPrompt {
+  id: string;
+  state: StepUpPromptState;
+}
+
+/** How many prompts one session keeps (#2193), the newest: a few tabs' worth. */
+const STEP_UP_PROMPTS_PER_SESSION = 5;
+
+/** A prompt id as minted (#2193), or null for anything else. */
+export function stepUpPromptId(value: unknown): string | null {
+  return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) ? value : null;
+}
+
+/** A waiting prompt of this session confirmed or cancelled (#2193); one already settled stays as it is. */
+function settleStepUpPrompt(req: Request, id: unknown, state: StepUpPromptState): void {
+  const prompt = stepUpPromptId(id);
+  const kept = req.session?.stepUpPrompts?.find((p) => p.id === prompt);
+  if (kept?.state === 'waiting') kept.state = state;
+}
+
 /** Where a fresh sign-in sends the browser to redo a form POST (#2154). */
 export const STEP_UP_CONTINUE_PATH = '/auth/reauth/continue';
 
@@ -2906,6 +2934,10 @@ class AuthManager extends BaseManager {
     // #2154: a form POST is kept, and the confirmation returns to redo it.
     const replay = req.session ? this.keepStepUpReplay(req, permission, mode, back) : null;
     const next = replay ? `${STEP_UP_CONTINUE_PATH}?replay=${replay}` : back;
+    // #2193: a script's request names its own prompt, so the page that sent it
+    // waits for that confirmation and no other.
+    const prompt = req.session && mode === 'json' ? randomBytes(16).toString('hex') : null;
+    if (prompt) req.session.stepUpPrompts = [...(req.session.stepUpPrompts ?? []), { id: prompt, state: 'waiting' as const }].slice(-STEP_UP_PROMPTS_PER_SESSION);
     // #2145: what the prompt was for, so its success is recorded against it and,
     // when returning does not redo the action, the page says it can be done now.
     if (req.session) {
@@ -2921,8 +2953,23 @@ class AuthManager extends BaseManager {
       permission,
       delegated,
       error: 'A fresh sign-in is needed',
-      reauth: `/auth/reauth?next=${encodeURIComponent(next)}`
+      reauth: `/auth/reauth?next=${encodeURIComponent(next)}${prompt ? `&prompt=${prompt}` : ''}`
     };
+  }
+
+  /**
+   * Where this session's prompt `id` is (#2193): waiting, confirmed or
+   * cancelled, or unknown (another session's, dropped, or not an id). Reads
+   * only, so asking it often changes nothing in the session.
+   */
+  stepUpPromptState(req: Request, id: unknown): StepUpPromptState | 'unknown' {
+    const prompt = stepUpPromptId(id);
+    return req.session?.stepUpPrompts?.find((p) => p.id === prompt)?.state ?? 'unknown';
+  }
+
+  /** The prompt's Cancel (#2193): a waiting prompt of this session is cancelled, so its page stops waiting. */
+  cancelStepUpPrompt(req: Request, id: unknown): void {
+    settleStepUpPrompt(req, id, 'cancelled');
   }
 
   /** Record a step-up event: a prompt, a success or a failure (#1525). */
@@ -2950,10 +2997,14 @@ class AuthManager extends BaseManager {
    * directly, against the method), and when going there does not redo the
    * action (a form POST, a script's request, a download) the page there says
    * it can be done now (`takeStepUpNotice`).
+   *
+   * #2193: `prompt`, the id a script's refusal named, is confirmed when it is
+   * this session's and still waiting; no other prompt is.
    */
-  async completeReauth(req: Request, result: AuthenticateResult, method: string, next: string): Promise<SignInRecord | null> {
+  async completeReauth(req: Request, result: AuthenticateResult, method: string, next: string, prompt?: unknown): Promise<SignInRecord | null> {
     const record = this.reauthenticated(req.session.signIn, result);
     if (record) req.session.signIn = record;
+    if (record) settleStepUpPrompt(req, prompt, 'confirmed');
     const pending = req.session.pendingStepUp;
     delete req.session.pendingStepUp;
     const answered = pending && pending.next === next ? pending : undefined;
@@ -3272,10 +3323,25 @@ class AuthManager extends BaseManager {
   stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
     const policy = this.stepUpPolicy();
     if (!policy.permissions.has(permission)) return false;
-    if (delegated) return true;
+    return !this.freshUnder(policy.maxAgeMs, signIn, roles, delegated, now, cap);
+  }
+
+  /**
+   * Whether `signIn` is fresh enough for every step-up permission (#2193): the
+   * window and the level are one for all of them, so a page waiting on its
+   * prompt asks this without naming the permission. With step-up off, every
+   * sign-in is.
+   */
+  signInFresh(signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
+    const policy = this.stepUpPolicy();
+    return policy.permissions.size === 0 || this.freshUnder(policy.maxAgeMs, signIn, roles, delegated, now, cap);
+  }
+
+  private freshUnder(maxAgeMs: number, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number, cap?: number): boolean {
+    if (delegated) return false;
     const need = Math.max(this.requiredAalFor(roles, cap), 1);
-    const since = now - policy.maxAgeMs;
-    return !(signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
+    const since = now - maxAgeMs;
+    return (signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
   }
 
   /**

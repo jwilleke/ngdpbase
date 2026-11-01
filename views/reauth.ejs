@@ -20,7 +20,7 @@
 
           <% if (hasPasskey) { %>
             <button type="button" class="btn btn-primary w-100 mb-3 d-none" data-passkey-reauth
-                    data-next="<%= next %>" data-error-target="reauth-passkey-error">
+                    data-next="<%= next %>"<% if (prompt) { %> data-prompt="<%= prompt %>"<% } %> data-error-target="reauth-passkey-error">
               <i class="fas fa-key"></i> Confirm with a passkey
             </button>
             <div id="reauth-passkey-error" class="alert alert-danger small d-none" role="alert"></div>
@@ -31,6 +31,7 @@
             <form method="POST" action="/auth/reauth" autocomplete="off">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
               <input type="hidden" name="next" value="<%= next %>">
+              <% if (prompt) { %><input type="hidden" name="prompt" value="<%= prompt %>"><% } %>
               <div class="mb-3">
                 <label class="form-label" for="reauthPassword">Password</label>
                 <input type="password" class="form-control" id="reauthPassword" name="password" autocomplete="current-password" required autofocus>
@@ -43,7 +44,18 @@
             <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add a passkey on your <a href="/profile">profile</a>, or ask an administrator.</p>
           <% } %>
 
-          <p class="small mt-3 mb-0"><a href="<%= next %>">Cancel</a></p>
+          <%# #2193: a script's prompt is cancelled on the server too, so the page
+              waiting on it stops, in a popup or a new tab alike. %>
+          <% if (prompt) { %>
+            <form method="POST" action="/auth/reauth/cancel" class="small mt-3 mb-0">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="next" value="<%= next %>">
+              <input type="hidden" name="prompt" value="<%= prompt %>">
+              <button type="submit" class="btn btn-link btn-sm p-0">Cancel</button>
+            </form>
+          <% } else { %>
+            <p class="small mt-3 mb-0"><a href="<%= next %>">Cancel</a></p>
+          <% } %>
         </div>
       </div>
     </div>
