@@ -10,7 +10,11 @@ export function damage(file: string): void {
   const db = new Database(file);
   db.exec('CREATE TABLE filler (id INTEGER PRIMARY KEY, v TEXT); CREATE INDEX filler_v ON filler(v);');
   const insert = db.prepare('INSERT INTO filler (v) VALUES (?)');
-  for (let i = 0; i < 2000; i++) insert.run(`value-${i}-${'-'.repeat(50)}`);
+  // One transaction, so one sync to disk rather than 2000: on a busy disk the
+  // per-row commits took minutes (#2216).
+  db.transaction(() => {
+    for (let i = 0; i < 2000; i++) insert.run(`value-${i}-${'-'.repeat(50)}`);
+  })();
   db.close();
   const bytes = fs.readFileSync(file);
   bytes.fill(0x5a, 4096 * 3 + 100, 4096 * 3 + 600);
