@@ -26,13 +26,14 @@ const shipped = {
 };
 
 function makeEngine(merged: Record<string, unknown>) {
-  const authSelf = {
+  // The real AuthManager methods (stepUpNeeded and every helper it calls),
+  // over a stand-in config and role-level rule.
+  const authSelf = Object.assign(Object.create(AuthManager.prototype) as AuthManager, {
     engine: { getManager: (n: string) => (n === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => merged[k] ?? d } : null) },
     warnedLegacyStepUp: false,
-    requiredAalFor: () => 0,
-    stepUpPolicy() { return AuthManager.prototype.stepUpPolicy.apply(this); }
-  };
-  const auth = { stepUpNeeded: (...a: Parameters<AuthManager['stepUpNeeded']>) => AuthManager.prototype.stepUpNeeded.apply(authSelf, a) };
+    requiredAalFor: () => 0
+  });
+  const auth = { stepUpNeeded: (...a: Parameters<AuthManager['stepUpNeeded']>) => authSelf.stepUpNeeded(...a) };
   const engine = {
     getManager: (name: string): unknown => {
       if (name === 'AuthManager') return auth;

@@ -130,7 +130,7 @@ test.describe('forms: clear submissions, then delete (#1973)', () => {
 
     page.once('dialog', d => void d.accept());
     await card(page).getByRole('button', { name: 'Delete' }).click();
-    await expect(page.locator('.alert-info')).toContainText('Form definition deleted.');
+    await expect(page.getByRole('alert').filter({ hasText: 'Form definition deleted.' })).toBeVisible();
     expect((await page.request.get(`/api/forms/schema/${FORM_ID}`)).status()).toBe(404);
   });
 });

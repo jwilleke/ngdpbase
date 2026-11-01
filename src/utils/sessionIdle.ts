@@ -68,3 +68,11 @@ export function idleRemainingMs(lastActivity: unknown, now: number, timeoutMs: n
 /** The status poll does not count as activity, or the warning would keep the session alive by itself. */
 export const IDLE_STATUS_PATH = '/api/session/idle-status';
 
+/** #2193: nor does a page's poll for its step-up prompt, or a page left waiting would keep its session alive. */
+export const STEP_UP_STATUS_PATH = '/auth/reauth/status';
+
+/** Whether a request to `path` counts as the person's activity: every one but the polls above. */
+export function countsAsActivity(path: string): boolean {
+  return path !== IDLE_STATUS_PATH && path !== STEP_UP_STATUS_PATH;
+}
+

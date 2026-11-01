@@ -7,22 +7,76 @@
   window.__ngdpFormsSubmitLoaded = true;
 
   // Messages are set as text, never as HTML: a handler's error may echo what was typed.
-  function showAlert(result, kind, icon, message, reauth) {
+  function showAlert(result, kind, icon, message, newTab) {
     result.replaceChildren();
     const box = document.createElement('div');
     box.className = 'alert alert-' + kind;
     const i = document.createElement('i');
     i.className = 'fas ' + icon + ' me-2';
     box.append(i, document.createTextNode(message));
-    // A step-up refusal (#1745): the way to re-authenticate, back to this page.
-    if (typeof reauth === 'string' && reauth.startsWith('/auth/reauth?')) {
+    // #2193: a link opens in a new tab, so this page and what was typed stay.
+    if (newTab) {
       const link = document.createElement('a');
-      link.href = reauth;
+      link.href = newTab.href;
+      link.target = '_blank';
+      link.rel = 'noopener';
       link.className = 'alert-link ms-2';
-      link.textContent = 'Sign in again';
+      link.textContent = newTab.text;
       box.append(link);
     }
     result.append(box);
+  }
+
+  // ── A fresh sign-in (step-up, #1745, #2193) ───────────────────────────
+  // A refusal for a fresh sign-in keeps the page: the prompt opens in another
+  // window, the page asks whether its own prompt (the refusal's `prompt` id)
+  // has been confirmed, then sends the same JSON once more. Another tab's
+  // confirmation sends nothing here (#2176's rule). Nothing typed leaves the
+  // page before that, and the server decides the request again when it comes.
+
+  const STEP_UP_PROMPT = '/auth/reauth';
+  const STEP_UP_STATUS = '/auth/reauth/status';
+  const STEP_UP_POLL_MS = 1500;
+  /** How long a page waits for a prompt it cannot see, opened in a new tab. */
+  const STEP_UP_WAIT_MS = 10 * 60 * 1000;
+
+  /** Only this site's prompt, as core sends it (sendApiError). */
+  function isPrompt(reauth) {
+    return typeof reauth === 'string' && reauth.startsWith(STEP_UP_PROMPT + '?');
+  }
+
+  /** The prompt id a refusal's `reauth` names, or '' when it names none. */
+  function promptId(reauth) {
+    return new URL(reauth, window.location.origin).searchParams.get('prompt') || '';
+  }
+
+  /**
+   * Where this page's prompt is: `{ fresh, prompt }`, `prompt` one of
+   * waiting, confirmed, cancelled or unknown. Null when it cannot tell.
+   */
+  async function promptStatus(prompt) {
+    try {
+      const res = await fetch(STEP_UP_STATUS + '?prompt=' + encodeURIComponent(prompt), { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Whether the popup has been on the prompt and gone on from it: confirmed
+   * or cancelled, both go to the page it came back to. Closed counts too.
+   */
+  function promptOver(wait) {
+    if (!wait.popup) return false;
+    if (wait.popup.closed) return true;
+    try {
+      const at = wait.popup.location.pathname;
+      if (at === STEP_UP_PROMPT) wait.seen = true;
+      return wait.seen && at !== STEP_UP_PROMPT;
+    } catch {
+      return false; // not readable while it loads
+    }
   }
 
   function clearFieldErrors(form) {
@@ -229,6 +283,120 @@
     if (form.dataset.ngdpBound) return;
     form.dataset.ngdpBound = '1';
     let inFlight = false;
+    // #2193: the wait for a fresh sign-in, while there is one. Whichever sends
+    // first, the wait or a press of Submit, ends it, so the form is sent once.
+    let waiting = null;
+
+    function stopWaiting() {
+      if (waiting?.popup && !waiting.popup.closed) waiting.popup.close();
+      waiting = null;
+    }
+
+    /** The form's values as the JSON it sends; nested onBehalfOf[name] keys become an object. */
+    function collect() {
+      const raw = new FormData(form);
+      const data = {};
+      // A checklist is always an array of the ticked values, even when empty.
+      for (const name of checklistNames) data[name] = [];
+      // Lines are an array of row objects, the sent rows only.
+      for (const group of lineGroups) data[group.dataset.lines] = keptRows(group).map(rowValues);
+      for (const [key, value] of raw.entries()) {
+        if (linePrefixes.some((prefix) => key.startsWith(prefix))) continue;
+        if (checklistNames.has(key)) {
+          data[key].push(value);
+          continue;
+        }
+        const nested = key.match(/^(\w+)\[(\w+)\]$/);
+        if (nested) {
+          if (!data[nested[1]]) data[nested[1]] = {};
+          data[nested[1]][nested[2]] = value;
+        } else {
+          data[key] = value;
+        }
+      }
+      return JSON.stringify(data);
+    }
+
+    /** POST the form's JSON. `retried`: this is the send after a fresh sign-in. */
+    async function send(body, retried) {
+      inFlight = true;
+      const btn = form.querySelector('[type=submit]');
+      if (btn) btn.disabled = true;
+      result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
+
+      try {
+        // #727: form submission is state-changing — needs the CSRF
+        // token (#663 app-wide middleware). csrfFetch injects
+        // X-CSRF-Token; without it the POST gets a text/plain 403.
+        const res = await (window.csrfFetch || fetch)('/api/forms/submit/' + encodeURIComponent(formId), {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+        const json = await res.json();
+
+        if (json.ok) {
+          form.reset();
+          form.classList.add('d-none');
+          showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
+        } else {
+          // What was typed stays in the form; each field's message goes next to it.
+          showFieldErrors(form, json.fields);
+          if (isPrompt(json.reauth) && !retried) {
+            waitForFreshSignIn(json.reauth, body);
+          } else if (isPrompt(json.reauth)) {
+            // Asked again right after one: never a loop of prompts.
+            showAlert(result, 'danger', 'fa-exclamation-circle', 'This still needs a fresh sign-in, so nothing was sent. Your form is as you typed it; press Submit to try again.');
+          } else {
+            showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.');
+          }
+          if (btn) btn.disabled = false;
+        }
+      } catch {
+        showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
+        if (btn) btn.disabled = false;
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    /**
+     * Open the prompt in a popup (or offer it in a new tab when the popup is
+     * blocked) and wait, keeping `body`, until that prompt is confirmed.
+     */
+    function waitForFreshSignIn(reauth, body) {
+      const popup = window.open(reauth, 'ngdp-step-up', 'popup,width=520,height=680');
+      const wait = { popup, body, prompt: promptId(reauth), seen: false, until: Date.now() + STEP_UP_WAIT_MS };
+      waiting = wait;
+      if (popup) {
+        showAlert(result, 'info', 'fa-user-shield', 'This needs a fresh sign-in. Confirm it is you in the window that opened; your form is kept here and sent once you have.');
+      } else {
+        showAlert(result, 'warning', 'fa-user-shield', 'This needs a fresh sign-in, and your browser blocked the window for it. Your form is kept here and sent once you have confirmed.',
+          { href: reauth, text: 'Confirm it is you in a new tab' });
+      }
+      setTimeout(() => { void poll(wait); }, STEP_UP_POLL_MS);
+    }
+
+    async function poll(wait) {
+      if (waiting !== wait) return;
+      // Looked at before asking: a prompt left after its confirmation is
+      // answered fresh, since the confirmation is saved before it moves on.
+      const over = promptOver(wait);
+      const status = await promptStatus(wait.prompt);
+      if (waiting !== wait) return;
+      if (status?.prompt === 'confirmed' && status.fresh === true) {
+        stopWaiting();
+        // Edits made while confirming are not overwritten by what was kept.
+        if (collect() === wait.body) void send(wait.body, true);
+        else showAlert(result, 'info', 'fa-info-circle', 'You changed the form while confirming, so nothing was sent. Your sign-in is confirmed; press Submit to send the form as it is now.');
+      } else if (over || (status && status.prompt !== 'waiting') || Date.now() > wait.until) {
+        // Cancelled (in a popup or a new tab), closed, or no longer known.
+        stopWaiting();
+        showAlert(result, 'warning', 'fa-exclamation-triangle', 'The fresh sign-in was not confirmed, so nothing was sent. Your form is as you typed it; press Submit to try again.');
+      } else {
+        setTimeout(() => { void poll(wait); }, STEP_UP_POLL_MS);
+      }
+    }
 
     const checklists = Array.from(form.querySelectorAll('[data-checklist]'));
     const checklistNames = new Set(checklists.map((group) => group.dataset.checklist));
@@ -295,61 +463,10 @@
       }
       form.classList.remove('was-validated');
 
-      // Collect form data — handle nested onBehalfOf[name] keys
-      const raw = new FormData(form);
-      const data = {};
-      // A checklist is always an array of the ticked values, even when empty.
-      for (const name of checklistNames) data[name] = [];
-      // Lines are an array of row objects, the sent rows only.
-      for (const group of lineGroups) data[group.dataset.lines] = keptRows(group).map(rowValues);
-      for (const [key, value] of raw.entries()) {
-        if (linePrefixes.some((prefix) => key.startsWith(prefix))) continue;
-        if (checklistNames.has(key)) {
-          data[key].push(value);
-          continue;
-        }
-        const nested = key.match(/^(\w+)\[(\w+)\]$/);
-        if (nested) {
-          if (!data[nested[1]]) data[nested[1]] = {};
-          data[nested[1]][nested[2]] = value;
-        } else {
-          data[key] = value;
-        }
-      }
-
       clearFieldErrors(form);
-      inFlight = true;
-      const btn = form.querySelector('[type=submit]');
-      if (btn) btn.disabled = true;
-      result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
-
-      try {
-        // #727: form submission is state-changing — needs the CSRF
-        // token (#663 app-wide middleware). csrfFetch injects
-        // X-CSRF-Token; without it the POST gets a text/plain 403.
-        const res = await (window.csrfFetch || fetch)('/api/forms/submit/' + encodeURIComponent(formId), {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(data),
-        });
-        const json = await res.json();
-
-        if (json.ok) {
-          form.reset();
-          form.classList.add('d-none');
-          showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
-        } else {
-          // What was typed stays in the form; each field's message goes next to it.
-          showFieldErrors(form, json.fields);
-          showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.', json.reauth);
-          if (btn) btn.disabled = false;
-        }
-      } catch {
-        showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
-        if (btn) btn.disabled = false;
-      } finally {
-        inFlight = false;
-      }
+      // A press while waiting for a fresh sign-in sends now; the wait sends nothing.
+      stopWaiting();
+      await send(collect(), false);
     });
   }
 

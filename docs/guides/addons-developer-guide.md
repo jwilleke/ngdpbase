@@ -39,7 +39,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
   - __Its own system-category__ goes under `ngdpbase.system-category.<slug>` in its `config/default-config.json`, with `owner` set to its slug. `defaultPrivate` and `encrypt` are booleans (`defaultPrivate` may also be `"choice"`); any other value, the string `"true"` included, refuses the entry, and the add-on is not loaded. Core reads the entry from every installed add-on, enabled or not (#1559): turning the addon off keeps its category's pages and vault reachable, and only stops the category being offered.
   - __A page whose content is private to each viewer__ turns off core's shared Comments and Footnotes: `comments: false` / `footnotes: false` in its frontmatter, or on its system-category entry for all its pages ([Turning off Comments and Footnotes](#turning-off-comments-and-footnotes)).
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
-- An addon's permission entries don't set `"step-up": true` for now (operator, 2026-10-18): the forms add-on submits JSON with `fetch`, which is not replayed after a fresh sign-in, and the "Sign in again" link leaves the page ([#2193](https://github.com/jwilleke/ngdpbase/issues/2193) fixes that and lifts this rule). Say so in your own docs; the rule is in the [authentication guide](authentication-developer-guide.md#standing-rules).
+- An addon's permission that needs a fresh sign-in sets `"step-up": true` on its own entry (operator, 2026-10-31, [#2193](https://github.com/jwilleke/ngdpbase/issues/2193)); see [Permissions](#permissions).
 - An addon that keeps rows declares its database under `ngdpbase.addons.<slug>.database` in its `config/default-config.json` before it calls `DatabaseManager.openAddonDatabase`; an undeclared one is refused, and an invalid declaration stops the addon loading ([storage guide](storage-developer-guide.md#declaring-a-database), #1860).
 - An addon that does not load, for any reason, is reported to admins at the most severe level. One the site cannot work without declares `ngdpbase.addons.<slug>.site-critical: true`, and then any failure to load puts the whole site in maintenance mode ([When an addon does not load](#when-an-addon-does-not-load-site-critical), #1883).
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
@@ -319,6 +319,18 @@ Declare the permission and grant it in the addon's own `config/default-config.js
 `label` is the permission in plain words for the user reading it: the __Can do__ column of "My tokens and devices", the app consent screen, the roles matrix and the shipped Permissions page all show it. `description` is the note for administrators and developers. Without a `label` those places show the `description`, so give one. A scope that is not a permission at all (an app's own scope) has no declaration and is shown by its name.
 
 A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
+
+__A permission that needs a fresh sign-in__ (step-up: a refund, an adjustment, an export of everyone's records) carries `"step-up": true` on its entry, in the same file ([#2193](https://github.com/jwilleke/ngdpbase/issues/2193)):
+
+```json
+"ledger-adjust": {
+  "description": "Adjust a posted ledger entry",
+  "label": "Adjust ledger entries",
+  "step-up": true
+}
+```
+
+Nothing else is needed in your code: the PDP refuses the stale sign-in, `ctx.enforceDeny` (or `requirePermission`) answers with the `reauth` link, and the sign-in window is the site's. A form the forms add-on shows keeps its page and what was typed across the fresh sign-in and is sent once after its own prompt is confirmed (not another tab's), unless it was changed meanwhile; a page's own form POST is redone by core. What each covers, and what it does not, is in the [authentication guide](authentication-developer-guide.md#standing-rules).
 
 __A permission over a user's own records__ ("your receipts", "your health record", "your residency") is always granted to every user, the same way in every add-on (operator, 2026-10-24): name the role every account is given, never site roles and never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
 
