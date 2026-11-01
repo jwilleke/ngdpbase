@@ -200,10 +200,10 @@ __First release__ (no prior baseline): the script prints "no prior baseline to c
 
 Run sequentially:
 
-- `git commit -m "chore: release v<next>"` (with the standard `Co-Authored-By` trailer).
-- `git tag -a v<next> -m "v<next>"` — keep the tag message short; the GitHub release will carry the detailed notes.
-- `git push origin master` — push the commit first.
-- `git push origin v<next>` — then the tag, so the release commit is reachable on the default branch.
+- `git commit -m "chore: release v<next>"` (with the standard `Co-Authored-By` trailer), on a `release/v<next>` branch in a worktree.
+- Push the branch and open a pull request. Stop until the operator merges it.
+- `git tag -a v<next> -m "v<next>" <merge commit>` — tag the merged commit on master; keep the tag message short, the GitHub release will carry the detailed notes.
+- `git push origin v<next>` — the release commit is already on the default branch, so it is reachable.
 
 ### Step 7: Create the GitHub release (conditional)
 

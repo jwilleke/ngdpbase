@@ -189,6 +189,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 
 - Setup: [SETUP.md](./SETUP.md)
 - Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow, PRs
+- Always use a pull request. Every change to this repo, docs and `TODO.md` included, goes on a branch in a worktree and through a PR the operator merges; nothing is committed or pushed directly to master. This overrides "Direct commits by default" in the kit section above.
 - Commit message format: conventional commits (`type(scope): description`) per [CODE_STANDARDS.md § Git Commit Messages](./CODE_STANDARDS.md#git-commit-messages).
 - Commit workflow: every non-trivial code commit triggers the full [.claude/commands/session-commit.md](.claude/commands/session-commit.md) flow (jimstest pre-flight, semver decision, project_log entry, GH issue comments, TODO.md refresh, log push) — even when `/session-commit` was not explicitly invoked. Docs-only commits skip the build/test pre-flight but still get a project_log entry.
 - GitHub interactions: prefer the `gh` CLI for issues, PRs, checks, and releases. For new issues, always use the templates in `.github/ISSUE_TEMPLATE/` (`bug_report.md`, `feature_request.md`, `epic.md`): `gh issue create --template <name>` when writing interactively, or, with a prepared body, the template's headings in the body plus its labels, assignee and title prefix by hand (`--template` cannot be combined with `--body-file`; e.g. `-l bug -l P1 -a jwilleke`). Every bug gets P1 or P0.
