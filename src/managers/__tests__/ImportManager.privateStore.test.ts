@@ -397,7 +397,7 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
 
     expect(byPath(again)).toMatchObject({
       [`${VAULT}/Medical notes.md`]: ['unchanged', expect.anything()],
-      [`${VAULT}/attachments/scan.pdf`]: ['imported', undefined]
+      [`${VAULT}/attachments/scan.pdf`]: ['imported', 'restored: deleted since an earlier import']
     });
     const back = String(again.files.find(f => f.name.endsWith('scan.pdf'))?.refs.find(ref => ref !== id));
     expect((await attachments.getPrivateStoreAttachment(back, MOLLY))?.buffer.toString()).toBe('%PDF-1.4 lab scan 4471');
@@ -436,6 +436,33 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     const imported = audit.logAuditEvent.mock.calls.map(c => c[0] as Record<string, unknown>).filter(e => e.eventType === 'store-import');
     expect(imported.at(-1)?.metadata).not.toHaveProperty('filesRenumbered');
     expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged', 'unchanged', 'noise']);
+  });
+
+  // #2171: the page is read first and puts its file back; the file's own row and the log still say it was imported.
+  test('a file a re-import puts back is reported imported, and counted in the log and the report', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    for (const l of LEVELS) (logger[l] as unknown as MockFn).mockClear();
+    const before = new Set((await reportsIn(VAULT)).map(r => r.name));
+    const uploads = (): number => audit.logAuditEvent.mock.calls.filter(c => (c[0] as { eventType?: string }).eventType === 'asset-upload').length;
+    const uploadsBefore = uploads();
+
+    const again = await upload(VAULT, archive);
+
+    expect(byPath(again)[`${VAULT}/attachments/scan.pdf`]).toEqual(['imported', 'restored: deleted since an earlier import']);
+    expect(logged()).toContain('0 page(s), 1 file(s)');
+    const added = (await reportsIn(VAULT)).filter(r => !before.has(r.name));
+    expect(added).toHaveLength(1);
+    expect((await pages.getPage(added[0].name, MOLLY))?.content).toContain('- Files stored: 1');
+    // No second upload record for it: the page put it back once.
+    expect(uploads() - uploadsBefore).toBe(1);
+
+    for (const l of LEVELS) (logger[l] as unknown as MockFn).mockClear();
+    const third = await upload(VAULT, archive);
+
+    expect(byPath(third)[`${VAULT}/attachments/scan.pdf`]).toEqual(['unchanged', expect.stringMatching(/^already imported /)]);
+    expect(logged()).toContain('0 page(s), 0 file(s)');
   });
 
   // #2188: an id another file holds now, in anyone's store, is never taken; the store's pages are pointed at the new id instead.
