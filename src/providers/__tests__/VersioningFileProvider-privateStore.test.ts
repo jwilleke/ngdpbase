@@ -222,6 +222,206 @@ describe('private store default/ (#1383)', () => {
     expect(lines.join('\n')).not.toContain('Secret Diary Title');
   });
 
+  // #2178: unredacted, each versioning line names the page by its uuid.
+  test('a private page\'s versioning log lines name it by its uuid, never its title', async () => {
+    const lines: string[] = [];
+    const capture = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+    const spies = (['info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(logger, level).mockImplementation(capture as never));
+    const name = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Secret Diary Title');
+    try {
+      const provider = await newProvider();
+      await provider.savePage('Secret Diary Title', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      await provider.savePage(name, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+      await provider.savePage(name, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+    const versioning = lines.filter((l) => /Saved .* with versioning|Created v\d+ for|unchanged since/.test(l));
+    expect(versioning.some((l) => l.includes('Created v1 for'))).toBe(true);
+    expect(versioning.some((l) => l.includes('Created v2 for'))).toBe(true);
+    expect(versioning.some((l) => l.includes('unchanged since'))).toBe(true);
+    for (const line of versioning) expect(line).toContain(`(uuid ${UUID})`);
+    expect(lines.join('\n')).not.toContain('Secret Diary Title');
+  });
+
+  describe('#2178: every other VersioningFileProvider line names a private page by its uuid', () => {
+    const TITLE = 'Secret Diary Title';
+    const NAME = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, TITLE);
+
+    /** The lines `run` logs, unredacted. */
+    const logsOf = async (run: () => Promise<unknown>): Promise<string[]> => {
+      const lines: string[] = [];
+      const capture = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+      const spies = (['info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(logger, level).mockImplementation(capture as never));
+      try {
+        await run();
+      } finally {
+        spies.forEach((spy) => spy.mockRestore());
+      }
+      return lines;
+    };
+
+    /** The one line containing `needle` names the page by its uuid; no line names its title. */
+    const namesOnlyByUuid = (lines: string[], needle: string): string => {
+      const matching = lines.filter((l) => l.includes(needle));
+      expect(matching).toHaveLength(1);
+      expect(matching[0]).toContain(`(uuid ${UUID})`);
+      expect(lines.join('\n')).not.toContain(TITLE);
+      return matching[0];
+    };
+
+    /**
+     * A private page saved under its bare title before #1520 put it in its
+     * vault: a file in the shared pages folder marked `private: true`.
+     */
+    const legacyBareTitlePage = async (): Promise<void> => {
+      await fs.ensureDir(pagesDir);
+      await fs.writeFile(
+        path.join(pagesDir, `${UUID}.md`),
+        `---\ntitle: ${TITLE}\nuuid: ${UUID}\nslug: secret-diary-title\nprivate: true\nauthor: molly\n---\nbody\n`
+      );
+    };
+
+    test('the checkpoint line', async () => {
+      const provider = await newProvider();
+      (provider as unknown as { checkpointInterval: number }).checkpointInterval = 5;
+      const lines = await logsOf(async () => {
+        await provider.savePage(TITLE, 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+        for (let v = 2; v <= 5; v++) await provider.savePage(NAME, `v${v}`, { uuid: UUID, author: 'molly' }, MOLLY);
+      });
+
+      expect(namesOnlyByUuid(lines, 'Created checkpoint at v5')).toContain("a page in molly's store 'default'");
+    });
+
+    test('a version that could not be written', async () => {
+      const provider = await newProvider();
+      vi.spyOn(provider as unknown as { createInitialVersion(): Promise<void> }, 'createInitialVersion').mockRejectedValueOnce(new Error('disk full'));
+      const lines = await logsOf(() => provider.savePage(TITLE, 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY));
+
+      namesOnlyByUuid(lines, 'Failed to create version');
+    });
+
+    test('a delete that fails', async () => {
+      const provider = await newProvider();
+      await provider.savePage(TITLE, 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      const move = vi.spyOn(fs, 'move').mockRejectedValueOnce(new Error('disk full'));
+      try {
+        const lines = await logsOf(() => provider.deletePage(NAME, MOLLY));
+        expect(namesOnlyByUuid(lines, 'Failed to delete page')).toContain("a page in molly's store 'default'");
+      } finally {
+        move.mockRestore();
+      }
+    });
+
+    test('a delete that cannot resolve the page', async () => {
+      const provider = await newProvider();
+      await provider.savePage(TITLE, 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      // Found, then gone before the delete resolves it.
+      vi.spyOn(provider, 'getPage').mockResolvedValueOnce(await provider.getPage(NAME, MOLLY));
+      vi.spyOn(provider as unknown as { resolvePageInfo(): unknown }, 'resolvePageInfo').mockReturnValueOnce(null);
+      const lines = await logsOf(() => provider.deletePage(NAME, MOLLY));
+
+      namesOnlyByUuid(lines, 'Cannot delete - unresolvable');
+    });
+
+    test('soft-deleting a private page saved under its bare title (#1520)', async () => {
+      await legacyBareTitlePage();
+      const provider = await newProvider();
+      const lines = await logsOf(() => provider.deletePage(TITLE, MOLLY));
+
+      expect(namesOnlyByUuid(lines, 'Soft-deleted page')).toContain('a private page');
+    });
+
+    test('restoring and purging a private page saved under its bare title (#1520)', async () => {
+      await legacyBareTitlePage();
+      const provider = await newProvider();
+      await provider.deletePage(TITLE, MOLLY);
+      expect(namesOnlyByUuid(await logsOf(() => provider.restoreDeletedPage(UUID)), 'Restored page')).toContain('a private page');
+
+      await provider.deletePage(TITLE, MOLLY);
+      expect(namesOnlyByUuid(await logsOf(() => provider.purgeDeletedPage(UUID)), 'Purged deleted page')).toContain('a private page');
+    });
+
+    test('a restore refused because a live page now has the private page\'s title (#1520)', async () => {
+      await legacyBareTitlePage();
+      const provider = await newProvider();
+      await provider.deletePage(TITLE, MOLLY);
+      // A public page that took the title meanwhile; its own lines may name it.
+      await provider.savePage(TITLE, 'public', { uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }, TEST_ACTOR);
+
+      expect(namesOnlyByUuid(await logsOf(() => provider.restoreDeletedPage(UUID)), 'Cannot restore')).toContain('a private page');
+    });
+
+    test('auto-migration renaming a private page\'s slug-named file', async () => {
+      await fs.ensureDir(pagesDir);
+      await fs.writeFile(
+        path.join(pagesDir, 'secret-diary-title.md'),
+        `---\ntitle: ${TITLE}\nuuid: ${UUID}\nprivate: true\nauthor: molly\n---\nbody\n`
+      );
+      const lines = await logsOf(newProvider);
+
+      namesOnlyByUuid(lines, 'renamed slug-named file');
+      expect(lines.join('\n')).not.toContain('secret-diary-title');
+    });
+
+    test('auto-migration and the index rebuild failing on a private page', async () => {
+      await legacyBareTitlePage();
+      const provider = new VersioningFileProvider(engine);
+      vi.spyOn(provider, 'getVersionDirectory').mockImplementation(() => { throw new Error('disk gone'); });
+      const lines = await logsOf(() => provider.initialize());
+
+      namesOnlyByUuid(lines, 'Failed to migrate');
+      namesOnlyByUuid(lines, 'Failed to rebuild index for');
+    });
+
+    test('a duplicate title in the page index', async () => {
+      const older = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      await legacyBareTitlePage();
+      await fs.writeFile(path.join(pagesDir, `${older}.md`), `---\ntitle: ${TITLE}\nuuid: ${older}\nprivate: true\n---\nold\n`);
+      const entry = (uuid: string, lastModified: string) =>
+        ({ title: TITLE, uuid, lastModified, location: 'pages', filename: `${uuid}.md`, isPrivate: true });
+      await fs.ensureDir(path.dirname(indexPath));
+      await fs.writeJSON(indexPath, {
+        version: '1.0.0',
+        lastUpdated: new Date().toISOString(),
+        pageCount: 2,
+        pages: { [older]: entry(older, '2024-01-01T00:00:00.000Z'), [UUID]: entry(UUID, '2024-06-01T00:00:00.000Z') }
+      });
+      const lines = await logsOf(newProvider);
+
+      expect(lines.filter((l) => l.includes('Duplicate title for a private page'))).toHaveLength(1);
+      expect(lines.join('\n')).not.toContain(TITLE);
+    });
+
+    test('an index entry replaced by one with the same title', async () => {
+      const other = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+      const provider = await newProvider();
+      const index = provider as unknown as {
+        pageIndex: { pages: Record<string, unknown>; pageCount: number };
+        updatePageInIndex(uuid: string, data: Record<string, unknown>): Promise<void>;
+      };
+      index.pageIndex.pages[other] = { title: TITLE, uuid: other, location: 'pages', isPrivate: true };
+      index.pageIndex.pageCount++;
+      const lines = await logsOf(() => index.updatePageInIndex(UUID, { title: TITLE, uuid: UUID, location: 'pages' }));
+
+      expect(lines.filter((l) => l.includes(`Removing index entry ${other}`))).toHaveLength(1);
+      expect(lines.join('\n')).not.toContain(TITLE);
+    });
+
+    test('a slug or title that fails to resolve', async () => {
+      await legacyBareTitlePage();
+      const provider = await newProvider();
+      const resolve = (identifier: string) =>
+        (provider as unknown as { resolveIdentifier(i: string, c: unknown): Promise<unknown> }).resolveIdentifier(identifier, MOLLY);
+
+      vi.spyOn(provider, 'getPage').mockRejectedValueOnce(new Error('unreadable'));
+      namesOnlyByUuid(await logsOf(() => resolve('secret-diary-title')), 'Failed to resolve slug');
+
+      vi.spyOn(provider, 'getPage').mockRejectedValueOnce(new Error('unreadable'));
+      namesOnlyByUuid(await logsOf(() => resolve(TITLE)), 'Failed to resolve');
+    });
+  });
+
   test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {
     const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);

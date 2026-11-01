@@ -37,6 +37,7 @@ import {
   canonicalPageName,
   formatPrivatePageName,
   isValidStoreId,
+  nameForLog,
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
   PRIVATE_PAGE_NAME_PREFIX,
@@ -1966,7 +1967,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!audiencePrincipals(metadata)) return;
     const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
     if (pip && await pip.audienceAdmits(ctx, metadata)) return;
-    logger.warn(`[PageManager] write to '${pageName}' refused: ${actorOf(ctx).user} is outside its audience (#1964)`);
+    logger.warn(`[PageManager] write to ${nameForLog(pageName, metadata)} refused: ${actorOf(ctx).user} is outside its audience (#1964)`);
     throw new PageAudienceRefusedError(pageName);
   }
 
@@ -2048,6 +2049,7 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   private async assertContentPasses(
     pageName: string,
+    metadata: Partial<PageFrontmatter>,
     content: string | undefined,
     ctx: ActorContext,
     options: PageSaveOptions
@@ -2073,7 +2075,7 @@ class PageManager extends BaseManager implements CatalogSource {
       // worse than the rule going unenforced for this one save — and the
       // author has no way to act on it either way.
       logger.warn(
-        `⚠️  Content validation errored for "${pageName}"; saving unvalidated: ` +
+        `⚠️  Content validation errored for ${nameForLog(pageName, metadata)}; saving unvalidated: ` +
         (err instanceof Error ? err.message : String(err))
       );
       return;
@@ -2089,7 +2091,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const rules = [...new Set(errors.map((e) => e.rule))].join(', ');
     const who = options.userName ?? 'unknown';
     logger.info(
-      `🛑 save("${pageName}") blocked for ${who}: ${errors.length} error(s) — ${rules}`
+      `🛑 save of ${nameForLog(pageName, metadata)} blocked for ${who}: ${errors.length} error(s) — ${rules}`
     );
 
     // Security rules also go to the audit trail. `no-raw-br` is a markup
@@ -2469,7 +2471,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // system write is still named rather than falling back to a literal.
     const actingUser = actorOf(ctx).user;
 
-    await this.assertContentPasses(pageName, content, ctx, {
+    await this.assertContentPasses(pageName, metadata, content, ctx, {
       userName: actingUser,
       ...options
     });
@@ -2514,7 +2516,9 @@ class PageManager extends BaseManager implements CatalogSource {
       } else if (pageName === givenTitle) {
         pageName = normalised;
       }
-      logger.info(`[PageManager] Title normalised for '${givenTitle}' → '${normalised}' (#1455)`);
+      // #2178: a private page's titles, before and after, stay out of the log.
+      const logged = privatePath || metadata.private === true ? nameForLog(pageName, metadata) : `'${givenTitle}' → '${normalised}'`;
+      logger.info(`[PageManager] Title normalised for ${logged} (#1455)`);
     }
 
     // #2125: only a filer of a shared folder writes in it, from or to.
@@ -2628,7 +2632,8 @@ class PageManager extends BaseManager implements CatalogSource {
           // #1762: forwarded like the token — the row names the proxy as `actor`.
           viaProxy: ctx.viaProxy
         }),
-        (err) => logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
+        // #2178: named where it landed, so a private page by its owner and store.
+        (err) => logger.warn(`Audit log failed for page.${op} of ${nameForLog(saved.name, { ...enrichedMetadata, uuid: saved.uuid })}:`, err)
       );
     }
 
@@ -2636,7 +2641,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // add-ons have loaded — before that every slug is unknown, and the startup
     // report covers the pages written while they load.
     if (this.engine.getManager<{ isInitialized?(): boolean }>('AddonsManager')?.isInitialized?.()) {
-      this.warnUnmatchableAddonAudience(saved.name, enrichedMetadata);
+      this.warnUnmatchableAddonAudience(saved.name, { ...enrichedMetadata, uuid: saved.uuid });
     }
 
     return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers, normalisedTitleFrom };
@@ -2704,11 +2709,11 @@ class PageManager extends BaseManager implements CatalogSource {
       const history = await provider.getVersionHistory?.(current.uuid || identifier, ctx, 1);
       newVersion = history?.[0]?.version ?? null;
     } catch (err) {
-      logger.warn(`[PageManager] Restored '${pageName}' but could not read its new version number: ${String(err)}`);
+      logger.warn(`[PageManager] Restored ${nameForLog(saved.name, { ...current.metadata, uuid: current.uuid })} but could not read its new version number: ${String(err)}`);
     }
 
     logger.info(
-      `[PageManager] Restored page '${pageName}' to v${version} as v${newVersion ?? '?'} by ${actorOf(ctx).user}`
+      `[PageManager] Restored page ${nameForLog(saved.name, { ...current.metadata, uuid: current.uuid })} to v${version} as v${newVersion ?? '?'} by ${actorOf(ctx).user}`
     );
     return { ...saved, version: newVersion };
   }
@@ -3086,11 +3091,12 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!ctx) {
       throw new Error('PageManager.deletePage requires an ActorContext');
     }
-    logger.info(`[PageManager] Deleting page: ${identifier} by user: ${actorOf(ctx).user}`);
     // #2125: only a filer of a shared folder deletes in it.
     await this.assertMayFileInSharedFolder(identifier, ctx);
 
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
+    // #2178: named once found, so a private page by its uuid.
+    logger.info(`[PageManager] Deleting page: ${nameForLog(identifier, before ? { ...before.metadata, uuid: before.uuid } : null)} by user: ${actorOf(ctx).user}`);
     // #1964: nobody outside a page's audience deletes it.
     if (before) await this.assertAudienceAdmits(identifier, before.metadata, ctx);
     // #2097: one write at a time per page, with the authorship conversion.
@@ -3732,7 +3738,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private warnUnmatchableAddonAudience(pageName: string, metadata: Partial<PageFrontmatter> | null | undefined): string[] {
     const slugs = this.unmatchableAddonAudience(metadata);
     for (const slug of slugs) {
-      logger.warn(`[PageManager] Page '${pageName}' names 'addon:${slug}' in its audience or access, which matches nobody: ` +
+      logger.warn(`[PageManager] Page ${nameForLog(pageName, metadata)} names 'addon:${slug}' in its audience or access, which matches nobody: ` +
         `no per-person add-on '${slug}' is loaded on this site (#1964)`);
     }
     return slugs;
