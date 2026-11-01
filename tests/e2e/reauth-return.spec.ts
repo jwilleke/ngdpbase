@@ -391,7 +391,8 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
           await popup.waitForEvent('close', { timeout: 15000 });
           await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 10000 });
           await expect.poll(() => submits.length).toBe(2);
-          expect(submits.map((s) => s.status)).toEqual([403, 200]);
+          // The forms API answers a stored submission with 201 (addons/forms/routes/api.ts).
+          expect(submits.map((s) => s.status)).toEqual([403, 201]);
           expect(JSON.parse(submits[0].body)).toEqual({ note: TYPED });
           expect(submits[1].body).toBe(submits[0].body);
           // Nothing more is sent afterwards.
@@ -448,7 +449,7 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
           await confirmWithPasskey(tab);
           await expect(result(page).locator('.alert-success')).toBeVisible({ timeout: 15000 });
           await expect.poll(() => submits.length).toBe(2);
-          expect(submits.map((s) => s.status)).toEqual([403, 200]);
+          expect(submits.map((s) => s.status)).toEqual([403, 201]);
           expect(submits[1].body).toBe(submits[0].body);
           expect(JSON.parse(submits[1].body)).toEqual({ note: TYPED });
           await tab.close();
