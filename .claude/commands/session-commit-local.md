@@ -144,9 +144,8 @@ If no GitHub issues are related to the current work, skip this step and note "no
 
 ### Step 8: Final commit and push
 
-- Stage the updated `docs/project_log.md`
-- Commit with message: `docs: update project log for session yyyy-MM-dd-##`
-- Push to remote (the satellite instances' next `/othersites` run will pull this)
+- Push the branch and open a pull request. Never push to master; the operator merges (see Process in `AGENTS.md`).
+- `private/project_log.md` is gitignored, so it is not committed.
 
 ### Step 9: `/check-todos`
 
