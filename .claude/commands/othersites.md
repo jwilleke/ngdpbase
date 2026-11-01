@@ -32,14 +32,11 @@ If you're unsure which mode you're in, default to __standalone__. Redundant work
 
 Process the in-scope instances __sequentially__ (not parallel — disk and CPU contention degrades results, and concurrent `./server.sh` calls fight pm2). For each instance:
 
-1. __Check git state__ — `git -C <path> status --short` (warn if there are uncommitted local changes that aren't expected operator work-in-progress)
-2. __`git pull --ff-only`__ (fail loudly on non-fast-forward — never force)
-3. __`./server.sh stop`__ (run from instance dir via `(cd <path> && ./server.sh stop)`)
-4. __`npm install`__ — __mandatory__ even when `package-lock.json` didn't change at first glance. New deps in `package.json` (or transitive bumps in `package-lock.json`) won't be in the satellite's `node_modules/` until install runs. Skip this step and `npm run build` may either fail loudly (`Cannot find module 'X'`) OR worse: succeed only for `dist/` it already had + leave the new code untyped/uncompiled, then `./server.sh start` happily serves stale dist (silent failure mode — server's "up" but missing the new behaviour). Observed on 2026-05-25 during v3.42.0 propagation when `jose` + `ffmpeg-static` were new deps. `npm install` is idempotent and fast on a no-change pull, so the cost of always running it is negligible vs the cost of a silent-stale-dist deploy.
-5. __`npm run build`__ — must exit 0
-6. __`./server.sh start`__ — wait for `✅ Server started` and the URL to print
-7. __`npm test`__ — unit tests must end GREEN. Re-run any single intermittent failure once before treating it as a real regression
-8. __E2E — conditional__ (matches `/session-commit` Step 3 policy). Run `npm run test:e2e` if and only if the commit range you're propagating touches any of:
+1. __Check git state__ — `git -C <path> status --short` (warn if there are uncommitted local changes that aren't expected operator work-in-progress; `update` refuses a dirty tree, so resolve them first)
+2. __`./server.sh update`__ (run from instance dir via `(cd <path> && ./server.sh update)`) — pulls master with `--ff-only` (never forces), runs `npm install` and `npm run build`, restarts, and waits for `/health/readiness` to answer 200. It must end with `✅ Updated: <old> → <new>`. If it prints `Rolled back`, the instance is running its old commit: treat that as a real regression (see Failure handling). See [docs/SERVER-MANAGEMENT.md § Updating an Instance](../../docs/SERVER-MANAGEMENT.md#updating-an-instance).
+   - Why `update` runs `npm install` every time, even when `package-lock.json` didn't change at first glance: new deps in `package.json` (or transitive bumps in `package-lock.json`) won't be in the satellite's `node_modules/` until install runs. Skip it and `npm run build` may either fail loudly (`Cannot find module 'X'`) OR worse: succeed only for `dist/` it already had + leave the new code untyped/uncompiled, then `./server.sh start` happily serves stale dist (silent failure mode — server's "up" but missing the new behaviour). Observed on 2026-05-25 during v3.42.0 propagation when `jose` + `ffmpeg-static` were new deps. `npm install` is idempotent and fast on a no-change pull, so the cost of always running it is negligible vs the cost of a silent-stale-dist deploy.
+3. __`npm test`__ — unit tests must end GREEN. Re-run any single intermittent failure once before treating it as a real regression
+4. __E2E — conditional__ (matches `/session-commit` Step 3 policy). Run `npm run test:e2e` if and only if the commit range you're propagating touches any of:
    - `views/**`
    - `public/**`
    - `src/plugins/**`

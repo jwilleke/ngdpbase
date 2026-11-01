@@ -313,6 +313,39 @@ restart_server() {
 }
 ```
 
+## Updating an Instance
+
+`./server.sh update [<ref>] [env]` brings a source-run instance to new code and restarts it, in one
+command ([#2208](https://github.com/jwilleke/ngdpbase/issues/2208)).
+
+```bash
+./server.sh update            # tip of master
+./server.sh update v5.41.0    # a tag or commit
+./server.sh update master dev # restart in development mode
+```
+
+In order, it:
+
+1. Refuses if `git status --porcelain` shows uncommitted changes, and lists them.
+2. Notes the current commit and the version in `package.json`.
+3. Runs `git fetch --tags origin`, then `git pull --ff-only origin master` (no ref) or
+   `git checkout <ref>`. A pull that is not a fast-forward is refused; nothing is ever forced.
+4. Runs `npm install`, every time (see `.claude/commands/othersites.md` step 2 for why).
+5. Runs `npm run build`.
+6. Restarts the same way `restart` does: `stop`, then `start` with the env argument, if given.
+7. Waits for `http://localhost:$PORT/health/readiness` to answer 200, up to
+   `UPDATE_READY_TIMEOUT` seconds (default 120). `PORT` comes from the `.env` files, as for
+   `start`.
+8. Prints `<old version> (<old sha>) → <new version> (<new sha>)`.
+
+Steps 1 and 3 refuse before anything changes. If install, build, start or the readiness check
+fails, it checks the old commit out again (back on the branch it was on), installs, builds,
+restarts and waits for readiness, says it rolled back, and exits 1. If the rollback fails too it
+exits 2 and says the instance may be down. It never prompts.
+
+The server keeps running the old code while install and build run, so the only downtime is the
+restart itself.
+
 ## Validation Steps (Pre-Start Checklist)
 
 Before starting server, `./server.sh start` should verify:
