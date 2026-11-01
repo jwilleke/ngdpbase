@@ -80,6 +80,12 @@ async function seedTestData() {
     await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
     console.log('✅ E2E step-up window set to 120 minutes');
 
+    // #2193: the forms add-on ships off, so the forms specs and the forms cases
+    // in reauth-return.spec.ts skipped in CI. The E2E instance turns it on.
+    customConfig['ngdpbase.addons.forms.enabled'] = true;
+    await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+    console.log('✅ E2E forms add-on enabled');
+
     // #1876: every site has a backup key (bootstrap-env, above, made this one),
     // and the dashboard asks an admin to save it off the server until one
     // confirms. Nobody keeps a throwaway E2E instance's key, so its
