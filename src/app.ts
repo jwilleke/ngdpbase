@@ -884,7 +884,8 @@ void (async (): Promise<void> => {
 
     if (debugSession) {
       console.log('[SESSION-DEBUG] Session ID:', req.sessionID);
-      console.log('[SESSION-DEBUG] Session data:', JSON.stringify(req.session));
+      // The pending authenticator-app seed is sealed, but it is still not printed (#421).
+      console.log('[SESSION-DEBUG] Session data:', JSON.stringify(req.session, (k, v: unknown) => (k === 'totpEnrolment' ? '[redacted]' : v)));
       console.log('[SESSION-DEBUG] Session username:', req.session?.username);
     }
 

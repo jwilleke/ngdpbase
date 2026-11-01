@@ -7141,8 +7141,8 @@ ${panes}
 
   /**
    * GET /profile/totp — add an authenticator app (#421): a QR code and the
-   * same key to type by hand. The seed waits in the session, ten minutes at
-   * most, until a code from the app confirms it; reloading offers a new one.
+   * same key to type by hand. The seed waits in the session, sealed, ten
+   * minutes at most, until a code from the app confirms it; reloading offers a new one.
    */
   async totpEnrolPage(req: Request, res: Response, error = ''): Promise<void> {
     const wikiContext = this.createWikiContext(req);
@@ -7150,7 +7150,7 @@ ${panes}
     const user = wikiContext.userContext;
     try {
       const offer = await this.engine.getManager('AuthManager').totpEnrolmentStart(user, user.username);
-      req.session.totpEnrolment = { seed: offer.seed, expires: Date.now() + 10 * 60_000 };
+      req.session.totpEnrolment = { pending: offer.pending, expires: Date.now() + 10 * 60_000 };
       const commonData = await this.getCommonTemplateData(req);
       res.set('Cache-Control', 'no-store');
       res.render('profile-totp', { ...commonData, title: 'Add an authenticator app', qrSvg: offer.qrSvg, seed: offer.seed, error });
@@ -7174,7 +7174,7 @@ ${panes}
     const user = wikiContext.userContext;
     try {
       const id = await this.engine.getManager('AuthManager').totpEnrolmentConfirm(
-        user, user.username, pending.seed, code, typeof body.label === 'string' ? body.label : ''
+        user, user.username, pending.pending, code, typeof body.label === 'string' ? body.label : ''
       );
       if (!id) {
         await this.totpEnrolPage(req, res, 'That code did not match. Scan this new code and enter the six digits it shows');

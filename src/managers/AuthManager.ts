@@ -1798,30 +1798,35 @@ class AuthManager extends BaseManager {
   /**
    * A new seed for `username` to add to an authenticator app (#421): the
    * manual key, the `otpauth://` URI and that URI as an SVG QR code. Nothing
-   * is stored; the caller keeps the seed (in the session) until a code
-   * confirms it. Refused while the account already has one.
+   * is stored. `pending` is the seed sealed for this account: the caller keeps
+   * that, never the seed, (in the session) until a code confirms it. Refused
+   * while the account already has one.
    */
-  async totpEnrolmentStart(ctx: PermissionSubject, username: string): Promise<{ seed: string; uri: string; qrSvg: string }> {
+  async totpEnrolmentStart(ctx: PermissionSubject, username: string): Promise<{ seed: string; pending: string; uri: string; qrSvg: string }> {
     const totp = await this.totpEnrolGate(ctx, username);
     if (this.requireCredentialsStore().list(username).some(r => r.kind === 'totp')) {
       throw new Error('This account already has an authenticator app; remove it before adding another');
     }
     const { seed, uri } = totp.newEnrolment(username);
     const qrSvg = await QRCode.toString(uri, { type: 'svg', errorCorrectionLevel: 'M', margin: 2 });
-    return { seed, uri, qrSvg };
+    return { seed, pending: totp.sealPending(username, seed), uri, qrSvg };
   }
 
   /**
    * Confirm an enrolment with a code from the app and store the seed,
    * encrypted (#421). Returns the credential id, or null when the code does
-   * not match. The confirming code is spent: it cannot also sign anyone in.
+   * not match, or when `pending` is not a seed `totpEnrolmentStart` sealed
+   * for this account. The confirming code is spent: it cannot also sign
+   * anyone in.
    */
-  async totpEnrolmentConfirm(ctx: PermissionSubject, username: string, seed: string, code: string, label: string): Promise<string | null> {
+  async totpEnrolmentConfirm(ctx: PermissionSubject, username: string, pending: string, code: string, label: string): Promise<string | null> {
     const totp = await this.totpEnrolGate(ctx, username);
     const name = credentialLabel(label || 'Authenticator app');
     if (this.requireCredentialsStore().list(username).some(r => r.kind === 'totp')) {
       throw new Error('This account already has an authenticator app; remove it before adding another');
     }
+    const seed = totp.openPending(username, pending);
+    if (!seed) return null;
     const sealed = totp.confirmEnrolment(username, seed, code);
     if (!sealed) return null;
     return this.storeCredential(ctx, username, { kind: 'totp', subject: randomUUID(), secret: sealed, label: name });

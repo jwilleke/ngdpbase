@@ -96,6 +96,28 @@ export class TotpAuthProvider implements AuthProvider {
   }
 
   /**
+   * Seal a seed that is offered but not yet confirmed, so it can wait in the
+   * session without being readable there or in a session log (#421). Its own
+   * shape, so it never opens as a stored secret.
+   */
+  sealPending(username: string, seed: string): string {
+    return sealTotpSecret(this.credentialsKey, username, JSON.stringify({ pendingSeed: seed }));
+  }
+
+  /** Open what `sealPending` made for `username`; null when it is not that. */
+  openPending(username: string, sealed: unknown): string | null {
+    if (typeof sealed !== 'string') return null;
+    const plain = openTotpSecret(this.credentialsKey, username, sealed);
+    if (!plain) return null;
+    try {
+      const p = JSON.parse(plain) as { pendingSeed?: unknown };
+      return typeof p.pendingSeed === 'string' ? p.pendingSeed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Check the code that confirms an enrolment and seal the seed for the store.
    * The confirming code's step is recorded, so it cannot then sign anyone in.
    * Null when the seed is malformed or the code does not match.

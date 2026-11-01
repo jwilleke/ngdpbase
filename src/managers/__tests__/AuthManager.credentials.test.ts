@@ -140,9 +140,9 @@ describe('AuthManager credentials (#1524)', () => {
   test('a TOTP seed is not a way in, so it never counts for the last-way-in rule', async () => {
     const am = await started({ sam: ['account-security'] });
     // #421: a TOTP row is stored only through the enrolment, which seals its seed.
-    const { seed } = await am.totpEnrolmentStart(subject('sam'), 'sam');
+    const { seed, pending } = await am.totpEnrolmentStart(subject('sam'), 'sam');
     const code = new TOTP({ secret: Secret.fromBase32(seed), digits: 6, period: 30, algorithm: 'SHA1' }).generate();
-    expect(await am.totpEnrolmentConfirm(subject('sam'), 'sam', seed, code, 'App')).toEqual(expect.any(String));
+    expect(await am.totpEnrolmentConfirm(subject('sam'), 'sam', pending, code, 'App')).toEqual(expect.any(String));
     const key = await am.addCredential(subject('sam'), 'sam', { ...PASSKEY, subject: 'sam-key' });
     await expect(am.removeCredential(subject('sam'), 'sam', key)).rejects.toThrow(/last way into the account/);
   });

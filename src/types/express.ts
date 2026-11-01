@@ -37,8 +37,11 @@ declare module 'express-session' {
     signIn?: SignInRecord;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */
     passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate' | 'reauth'; expires: number };
-    /** #421: an authenticator-app seed offered on /profile/totp, until a code confirms it (10 minutes). Never logged. */
-    totpEnrolment?: { seed: string; expires: number };
+    /**
+     * #421: an authenticator-app seed offered on /profile/totp, until a code confirms it (10 minutes).
+     * Sealed for the account by `totpEnrolmentStart`; the plain seed never enters the session.
+     */
+    totpEnrolment?: { pending: string; expires: number };
     /** The step-up asked for and not yet given (#2145): its permission, where it returns, whether returning redoes it. */
     pendingStepUp?: PendingStepUp;
     /** The path whose next page view says "Confirmed — you can do it now" after a step-up (#2145). */

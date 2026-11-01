@@ -80,13 +80,14 @@ describe('AuthManager TOTP enrolment (#421)', () => {
     expect(offer.seed).toMatch(/^[A-Z2-7]{32}$/);
     expect(offer.uri).toMatch(/^otpauth:\/\/totp\//);
     expect(offer.qrSvg).toMatch(/^<svg/);
+    expect(offer.pending).not.toContain(offer.seed); // what the session keeps is sealed
     expect(await am.listCredentials(subject('molly'), 'molly')).toEqual([]);
   });
 
   test('a confirmed enrolment is stored sealed and audited without its secret', async () => {
     const am = await started();
-    const { seed } = await am.totpEnrolmentStart(subject('molly'), 'molly');
-    const id = await am.totpEnrolmentConfirm(subject('molly'), 'molly', seed, codeFor(seed), 'Phone app');
+    const { seed, pending } = await am.totpEnrolmentStart(subject('molly'), 'molly');
+    const id = await am.totpEnrolmentConfirm(subject('molly'), 'molly', pending, codeFor(seed), 'Phone app');
     expect(id).toEqual(expect.any(String));
     expect(await am.listCredentials(subject('molly'), 'molly')).toEqual([expect.objectContaining({ id, kind: 'totp', label: 'Phone app' })]);
     expect(fs.readFileSync(file, 'utf8')).not.toContain(seed);
@@ -97,16 +98,16 @@ describe('AuthManager TOTP enrolment (#421)', () => {
 
   test('a wrong code enrols nothing', async () => {
     const am = await started();
-    const { seed } = await am.totpEnrolmentStart(subject('molly'), 'molly');
-    expect(await am.totpEnrolmentConfirm(subject('molly'), 'molly', seed, wrongCode(seed), 'App')).toBeNull();
+    const { seed, pending } = await am.totpEnrolmentStart(subject('molly'), 'molly');
+    expect(await am.totpEnrolmentConfirm(subject('molly'), 'molly', pending, wrongCode(seed), 'App')).toBeNull();
     expect(await am.listCredentials(subject('molly'), 'molly')).toEqual([]);
   });
 
   test('the confirming code is spent; a second app is refused until the first is removed', async () => {
     const am = await started();
-    const { seed } = await am.totpEnrolmentStart(subject('molly'), 'molly');
+    const { seed, pending } = await am.totpEnrolmentStart(subject('molly'), 'molly');
     const code = codeFor(seed);
-    const id = await am.totpEnrolmentConfirm(subject('molly'), 'molly', seed, code, 'App');
+    const id = await am.totpEnrolmentConfirm(subject('molly'), 'molly', pending, code, 'App');
     const totp = (am as unknown as { totp: { verify(c: object): Promise<unknown> } }).totp;
     expect(await totp.verify({ username: 'molly', code })).toBeNull();
     await expect(am.totpEnrolmentStart(subject('molly'), 'molly')).rejects.toThrow(/already has an authenticator app/);
@@ -119,6 +120,16 @@ describe('AuthManager TOTP enrolment (#421)', () => {
     const am = await started({ molly: ['account-security'], pat: ['account-security'] });
     await expect(am.totpEnrolmentStart(subject('molly'), 'sam')).rejects.toThrow(/Permission denied/);
     await expect(am.totpEnrolmentStart(subject('pat'), 'pat')).rejects.toThrow(/cannot sign in with an authenticator app/);
+  });
+
+  test('a pending seed opens only for the account it was offered to, and only sealed', async () => {
+    const am = await started({ molly: ['account-security'], sam: ['account-security'] });
+    users.sam = { password: 'scrypt$x' };
+    const { seed, pending } = await am.totpEnrolmentStart(subject('molly'), 'molly');
+    expect(await am.totpEnrolmentConfirm(subject('sam'), 'sam', pending, codeFor(seed), 'App')).toBeNull();
+    expect(await am.totpEnrolmentConfirm(subject('molly'), 'molly', seed, codeFor(seed), 'App')).toBeNull(); // the plain seed is not accepted
+    expect(await am.listCredentials(subject('sam'), 'sam')).toEqual([]);
+    expect(await am.listCredentials(subject('molly'), 'molly')).toEqual([]);
   });
 
   test('a totp row cannot be added unsealed through addCredential', async () => {
