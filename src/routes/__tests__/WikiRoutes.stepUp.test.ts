@@ -364,7 +364,7 @@ describe('a page waiting on its prompt asks whether that prompt is confirmed (#2
     return new URL(reauth, 'http://x').searchParams.get('prompt') ?? '';
   }
 
-  test('answers whether the sign-in is fresh and where this prompt is, never cached, and writes nothing to the session', async () => {
+  test('answers whether the sign-in is fresh and where this prompt is, never cached, and leaves the session object as it was', async () => {
     const env = routes(true);
     const s = session();
     const prompt = await refusedPrompt(env, s);

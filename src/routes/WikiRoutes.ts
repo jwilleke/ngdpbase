@@ -7019,9 +7019,11 @@ ${panes}
    * fresh enough for step-up now, and where the caller's own prompt is
    * (#2193): waiting, confirmed, cancelled or unknown. A page that opened the
    * prompt in another window asks it, and sends its request again only once
-   * that prompt is confirmed. About the caller's own session only; it writes
-   * nothing to it (nor counts as activity, `STEP_UP_STATUS_PATH`), and the
-   * request it sends is decided again on its own.
+   * that prompt is confirmed. About the caller's own session only. It changes
+   * nothing in the session object and is not activity (`STEP_UP_STATUS_PATH`),
+   * but express-session still calls the store's `touch` on it, which rewrites
+   * the session file (a known gap in the authentication guide). The request
+   * the page sends is decided again on its own.
    */
   async reauthStatus(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
