@@ -28,6 +28,8 @@ const FIRST = { success: true, username: 'molly', provider: 'password', factors:
 
 /** A TOTP-like provider: a second factor only, `otp` (have). Built in #421; a stand-in here. */
 const totp = { id: 'totp', displayName: 'Authenticator app', factor: { amr: ['otp'], aal: 1 as const, primary: false }, verify: () => Promise.resolve(null) };
+/** totp is a core id, which registerProvider() refuses (#2223): the stand-in registers the way core does. */
+const registerTotp = (am: AuthManager) => (am as unknown as { registerCoreProvider: (p: unknown) => boolean }).registerCoreProvider(totp);
 
 describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () => {
   let dir: string;
@@ -216,14 +218,14 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
     test('a person at AAL1: every factor reaches it, so preference alone decides', async () => {
       custom['ngdpbase.auth.factors'] = [{ authproviderid: 'totp', primary: false, preference: 3, enabled: true }];
       const am = await started();
-      am.registerProvider(totp);
+      registerTotp(am);
       expect(am.secondFactorOrder(FIRST, 1)).toEqual(['passkey', 'magic-link', 'totp']);
     });
 
     test('a person at AAL2: a factor that reaches it with the password (TOTP) comes before one that never can (the email link)', async () => {
       custom['ngdpbase.auth.factors'] = [{ authproviderid: 'totp', primary: false, preference: 3, enabled: true }];
       const am = await started();
-      am.registerProvider(totp);
+      registerTotp(am);
       // Sabotage check: sorting by preference alone puts magic-link (2) before totp (3) and turns this red.
       expect(am.secondFactorOrder(FIRST, 2)).toEqual(['passkey', 'totp', 'magic-link']);
     });
@@ -237,7 +239,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       ];
       expect((merged()['ngdpbase.auth.factors'] as Array<{ authproviderid: string }>).map(e => e.authproviderid).at(-1)).toBe('totp');
       const am = await started();
-      am.registerProvider(totp);
+      registerTotp(am);
       expect(am.secondFactorOrder(FIRST, 1)).toEqual(['totp', 'passkey', 'magic-link']);
     });
 
@@ -247,11 +249,11 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
         { authproviderid: 'totp', primary: false, preference: 3, enabled: true }
       ];
       const am = await started();
-      am.registerProvider(totp);
+      registerTotp(am);
       expect(am.secondFactorOrder(FIRST, 1)).toEqual(['passkey', 'totp', 'magic-link']);
       custom['ngdpbase.auth.factors'] = [{ authproviderid: 'totp', primary: false, preference: 3, enabled: false }];
       const off = await started();
-      off.registerProvider(totp);
+      registerTotp(off);
       expect(off.secondFactorOrder(FIRST, 1)).toEqual(['passkey', 'magic-link']);
     });
 
@@ -260,7 +262,7 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       custom['ngdpbase.auth.factors'] = [{ authproviderid: 'totp', primary: false, preference: 3, enabled: true }];
       const am = await enrolled();
       // With TOTP offered the account can reach AAL2, so admin's level is not capped to 1 (#1690).
-      am.registerProvider(totp);
+      registerTotp(am);
       const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
       const pending = am.pendingSignIn(handle, 'b')!;
       expect(pending.requiredAal).toBe(2);
