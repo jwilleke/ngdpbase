@@ -2910,19 +2910,39 @@ class AuthManager extends BaseManager {
    * problems that must refuse the boot.
    */
   checkFactorIds(): string[] {
+    const { refused, ignored } = this.unknownFactorIds(this.factorEntries);
+    for (const problem of ignored) logger.warn(`[AuthManager] ${problem}. The entry is off, so it is ignored. (#1523)`);
+    return refused;
+  }
+
+  /**
+   * The same check for a value the configuration screen is about to save as
+   * `ngdpbase.auth.factors` (#1523), so a typo is refused there rather than
+   * at the next restart, which would refuse to start. `refused` names each
+   * enabled unknown id; `ignored` each one whose entry is `enabled: false`.
+   */
+  checkFactorEntries(value: unknown): { refused: string[]; ignored: string[] } {
+    const entries = (Array.isArray(value) ? value : [])
+      .filter((e): e is FactorEntry => typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string')
+      .map(e => ({ ...e, authproviderid: FACTOR_ALIASES[e.authproviderid] ?? e.authproviderid }));
+    return this.unknownFactorIds(entries);
+  }
+
+  /** The entries whose id no provider could ever register, split by whether the entry is on. */
+  private unknownFactorIds(entries: readonly FactorEntry[]): { refused: string[]; ignored: string[] } {
     const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getUnresolvedProperty?.('ngdpbase.auth.oidc.providers', {});
     const oidcNames = raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.keys(raw) : [];
     // `oidc:google` is also what the old ngdpbase.auth.google-oidc.* keys register.
     const known = new Set([...CORE_PROVIDER_IDS, 'oidc:google', ...oidcNames.map(n => `oidc:${n}`), ...this.providers.keys()]);
     const knownIds = [...known].sort().join(', ');
     const refused: string[] = [];
-    for (const entry of this.factorEntries) {
+    const ignored: string[] = [];
+    for (const entry of entries) {
       if (known.has(entry.authproviderid)) continue;
       const problem = `ngdpbase.auth.factors entry '${entry.authproviderid}' names no provider. Known ids: ${knownIds}`;
-      if (entry.enabled === false) logger.warn(`[AuthManager] ${problem}. The entry is off, so it is ignored. (#1523)`);
-      else refused.push(problem);
+      (entry.enabled === false ? ignored : refused).push(problem);
     }
-    return refused;
+    return { refused, ignored };
   }
 
   /**

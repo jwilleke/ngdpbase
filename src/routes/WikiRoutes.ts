@@ -14285,15 +14285,31 @@ ${panes}
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(refused.join(' '))}`);
         }
       }
+      // #1523: an enabled factor id no provider could register refuses the
+      // next start, with /admin down until the file is edited by hand, so it
+      // is refused here. The rule is AuthManager's, the one start-up uses.
+      let warning = '';
+      if (property === 'ngdpbase.auth.factors') {
+        const check = (this.engine.getManager('AuthManager') as { checkFactorEntries?(v: unknown): { refused: string[]; ignored: string[] } } | null)
+          ?.checkFactorEntries?.(parsedValue);
+        if (check && check.refused.length > 0) {
+          const error = `${check.refused.join(' ')}. Correct the authproviderid, or set "enabled": false on the entry.`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+        if (check && check.ignored.length > 0) warning = ` ${check.ignored.join(' ')}. The entry is off, so it is ignored.`;
+      }
       await configManager.setProperty(property, parsedValue, currentUser);
 
       // Return JSON for AJAX requests, redirect for regular form submissions
+      const message = `Configuration updated successfully${warning ? '.' : ''}${warning}`;
       const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
       if (wantsJson) {
-        return res.json({ success: true, message: 'Configuration updated successfully' });
+        return res.json({ success: true, message, ...(warning ? { warning: warning.trim() } : {}) });
       }
       return res.redirect(
-        '/admin/configuration?success=Configuration updated successfully'
+        `/admin/configuration?success=${warning ? encodeURIComponent(message) : 'Configuration updated successfully'}`
       );
     } catch (err: unknown) {
       logger.error('Error updating configuration:', err);
