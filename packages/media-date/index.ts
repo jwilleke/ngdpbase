@@ -2,8 +2,7 @@
  * Filename → capture-date parser, the one implementation of it.
  *
  * ngdpbase uses it when a media file carries no usable EXIF/QuickTime date, and
- * mjs-media-handling uses it (through the published package) to place and stamp
- * files. Both must read a name the same way, which is why it is one package.
+ * mjs-media-handling uses a built copy of it to place and stamp files. Both must read a name the same way, which is why it is one package.
  *
  * It is a pure function of the name: no filesystem, no network, no server.
  *

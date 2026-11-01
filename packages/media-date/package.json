@@ -1,5 +1,5 @@
 {
-  "//": "Source template. `npm run build:media-date-package` writes dist/package.json from it, adding core's version and dropping private. Publish dist/, never this folder.",
+  "//": "Source template. `npm run build:media-date-package` writes dist/package.json from it, adding core's version and dropping private. Not published to npm: mjs-media-handling copies dist/.",
   "name": "@jwilleke/media-date",
   "version": "0.0.0",
   "private": true,

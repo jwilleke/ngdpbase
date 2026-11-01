@@ -1,6 +1,6 @@
 # @jwilleke/media-date
 
-Reads a capture date from a media filename. This is the one implementation: ngdpbase imports it, and mjs-media-handling installs the published package and calls its command line. It only looks at the name, so it needs no server, no files and no network.
+Reads a capture date from a media filename. This is the one implementation: ngdpbase imports it, and mjs-media-handling keeps a built copy of it and calls its command line. It is not published to npm. It only looks at the name, so it needs no server, no files and no network.
 
 ## Fake values
 
@@ -41,7 +41,7 @@ Years run from 1826 to next year. A date must exist on the calendar. A time that
 ## Use
 
 ```ts
-import { parseDateFromFilename, parseFilenameDate } from '@jwilleke/media-date';
+import { parseDateFromFilename, parseFilenameDate } from '../../packages/media-date/index.js';
 
 parseDateFromFilename('scan-1990.jpg'); // '1990-06-15 11:59:00'
 parseFilenameDate('scan-1990.jpg');     // { year: 1990, month: null, day: null, time: null, source: 'filename:YYYY' }
@@ -50,5 +50,9 @@ parseFilenameDate('scan-1990.jpg');     // { year: 1990, month: null, day: null,
 From another language, run the command. It prints one JSON object per name.
 
 ```sh
-media-date 'scan-1990.jpg'
+node cli.js 'scan-1990.jpg'
 ```
+
+## Updating mjs-media-handling
+
+`npm run build:media-date-package` writes `index.js` and `cli.js` to `packages/media-date/dist`. They have no dependencies and need only Node. Copy them into mjs-media-handling, with `package.json`, when you want its rules updated. ngdpbase does not need to be running, and the copy keeps working if ngdpbase is stopped or removed.

@@ -1,6 +1,6 @@
 /**
- * Builds packages/media-date/dist, the folder that is published. The package is
- * versioned with core, like @jwilleke/ngdpbase-types.
+ * Builds packages/media-date/dist, the folder mjs-media-handling copies. It
+ * carries core's version, so a copy says which release it came from.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
