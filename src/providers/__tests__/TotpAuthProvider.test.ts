@@ -17,11 +17,11 @@ function setup() {
   const rows: CredentialRecord[] = [];
   const provider = new TotpAuthProvider(KEY, 'Test wiki', {
     rows: (u) => rows.filter(r => r.username === u && r.kind === 'totp'),
-    used: (id, at, secret) => {
+    used: async (id, at, secret) => {
+      await new Promise(resolve => setImmediate(resolve)); // yield before writing, as a save to disk would
       const row = rows.find(r => r.id === id)!;
       row.lastUsedAt = at;
       row.secret = secret;
-      return Promise.resolve();
     }
   }, () => now);
   const enrol = (username: string): string => {
