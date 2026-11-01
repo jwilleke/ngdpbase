@@ -11,6 +11,7 @@ import fs from 'fs-extra';
 import {
   describeMediaFolderOverlap,
   findMediaFolderOverlap,
+  findMediaFolderOverlaps,
   overlapRelation,
   privateStorageRoots
 } from '../mediaFolderOverlap';
@@ -56,6 +57,20 @@ describe('overlapRelation', () => {
     expect(overlapRelation(path.join(link, 'jim'), path.join(tmp, 'data', 'vault'))).toBe('is inside');
   });
 
+  it('treats a name starting with two dots as inside the root, not above it', () => {
+    const vault = path.join(tmp, 'data', 'vault');
+    expect(overlapRelation(path.join(vault, '..notes'), vault)).toBe('is inside');
+    expect(overlapRelation(path.join(vault, '..'), vault)).toBe('contains');
+  });
+
+  it('resolves `..` after the symlink before it, as the kernel does', async () => {
+    const link = path.join(tmp, 'photos', 'vlink');
+    await fs.symlink(path.join(tmp, 'data', 'vault', 'jim', 'journal'), link);
+    // Not path.join: that would fold `vlink/..` into `photos` by text.
+    expect(overlapRelation(`${link}${path.sep}..`, path.join(tmp, 'data', 'vault'))).toBe('is inside');
+    expect(overlapRelation(`${link}${path.sep}..${path.sep}not-yet`, path.join(tmp, 'data', 'vault'))).toBe('is inside');
+  });
+
   it('compares a folder that does not exist yet by its nearest existing parent', async () => {
     const link = path.join(tmp, 'link-to-data');
     await fs.symlink(path.join(tmp, 'data'), link);
@@ -69,26 +84,50 @@ describe('privateStorageRoots and the message', () => {
     getResolvedDataPath: (k: string, d: string) => (typeof props[k] === 'string' ? props[k] : d)
   });
 
-  it('lists the vaults, the legacy private root and shared-folder storage', () => {
+  it('lists the vaults, the legacy private root, shared-folder storage and the private parts of attachment storage', () => {
     const roots = privateStorageRoots(config({
       'ngdpbase.page.provider.filesystem.storagedir': path.join(tmp, 'pages'),
-      'ngdpbase.shared-folders.storagedir': path.join(tmp, 'shared-folders')
+      'ngdpbase.shared-folders.storagedir': path.join(tmp, 'shared-folders'),
+      'ngdpbase.attachment.provider.basic.storagedir': path.join(tmp, 'attachments')
     }));
     expect(roots.map(r => r.path)).toEqual([
       path.join(tmp, 'pages', 'vaults'),
       path.join(tmp, 'pages', 'private'),
-      path.join(tmp, 'shared-folders')
+      path.join(tmp, 'shared-folders'),
+      path.join(tmp, 'attachments', 'private'),
+      path.join(tmp, 'attachments', '.thumbs')
     ]);
   });
 
-  it('names the folder and the storage, and nothing inside it', () => {
+  it('follows the configured legacy private attachment root', () => {
+    const roots = privateStorageRoots(config({
+      'ngdpbase.attachment.provider.basic.storagedir': path.join(tmp, 'attachments'),
+      'ngdpbase.attachment.provider.basic.legacyprivateroot': 'old-private'
+    }));
+    expect(roots.map(r => r.path)).toContain(path.join(tmp, 'attachments', 'old-private'));
+  });
+
+  it('refuses the attachments directory as a media folder: it holds private attachments and vault thumbnails', () => {
+    const roots = privateStorageRoots(config({
+      'ngdpbase.page.provider.filesystem.storagedir': path.join(tmp, 'data', 'pages'),
+      'ngdpbase.attachment.provider.basic.storagedir': path.join(tmp, 'data', 'attachments')
+    }));
+    const o = findMediaFolderOverlap(path.join(tmp, 'data', 'attachments'), roots);
+    expect(o?.relation).toBe('contains');
+    expect(o?.root.label).toBe('private attachment storage');
+    expect(findMediaFolderOverlap(path.join(tmp, 'data', 'attachments', '.thumbs', 'x'), roots)?.root.label)
+      .toBe('attachment thumbnail cache');
+  });
+
+  it('names the folder by position and the kind of storage, never the folder inside it', () => {
     const roots = privateStorageRoots(config({ 'ngdpbase.page.provider.filesystem.storagedir': path.join(tmp, 'data') }));
-    const o = findMediaFolderOverlap(tmp, roots);
-    if (!o) throw new Error('expected an overlap');
+    const [o, ...rest] = findMediaFolderOverlaps([path.join(tmp, 'photos'), path.join(tmp, 'data', 'vaults', 'jim', 'journal')], roots);
+    expect(rest).toEqual([]);
+    expect(o.position).toBe(2);
     const message = describeMediaFolderOverlap(o);
-    expect(message).toContain(tmp);
-    expect(message).toContain('contains the vault storage');
+    expect(message).toContain('Media folder 2 in ngdpbase.media.folders is inside the vault storage');
     expect(message).not.toContain('jim');
     expect(message).not.toContain('journal');
+    expect(message).not.toContain(tmp);
   });
 });

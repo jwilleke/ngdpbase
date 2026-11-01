@@ -30,7 +30,7 @@ import BaseMediaProvider, { MediaItem, ScanResult } from '../providers/BaseMedia
 import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/FileSystemMediaProvider.js';
 import { transformImage } from '../utils/imageTransform.js';
 import { enabledEntries } from '../utils/configFiles.js';
-import { describeMediaFolderOverlap, findMediaFolderOverlap, privateStorageRoots, type MediaFolderOverlap } from '../utils/mediaFolderOverlap.js';
+import { describeMediaFolderOverlap, findMediaFolderOverlaps, privateStorageRoots } from '../utils/mediaFolderOverlap.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
@@ -135,10 +135,8 @@ class MediaManager extends BaseManager implements CatalogSource {
     // #2195: a folder overlapping private storage is skipped, not fatal: the
     // site still boots and its other folders are scanned.
     const storageRoots = privateStorageRoots(configManager);
-    const overlaps = folders
-      .map(f => findMediaFolderOverlap(f, storageRoots))
-      .filter((o): o is MediaFolderOverlap => o !== null);
-    const allowed = folders.filter(f => !overlaps.some(o => o.folder === f));
+    const overlaps = findMediaFolderOverlaps(folders, storageRoots);
+    const allowed = folders.filter((_f, i) => !overlaps.some(o => o.position === i + 1));
     this.mediaFolders = folders;
     const fileSystemProvider = new FileSystemMediaProvider({
       folders: allowed,
@@ -336,11 +334,7 @@ class MediaManager extends BaseManager implements CatalogSource {
   checkFolders(folders: string[]): string[] {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) return [];
-    const roots = privateStorageRoots(configManager);
-    return folders
-      .map(f => findMediaFolderOverlap(f, roots))
-      .filter((o): o is MediaFolderOverlap => o !== null)
-      .map(describeMediaFolderOverlap);
+    return findMediaFolderOverlaps(folders, privateStorageRoots(configManager)).map(describeMediaFolderOverlap);
   }
 
   /** One path per line, then "and N more" when the provider capped the list (#2191). */

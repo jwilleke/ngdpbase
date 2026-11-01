@@ -22,7 +22,7 @@ What a developer, above all an add-on author, has to know about where things are
 
 Never put an add-on's own content in `general` or a user's `default` vault. There it can't be told apart from the user's own pages, the add-on's rules (such as `encrypt`) don't apply, and turning the add-on off, retiring it ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)) or a takeout can't find it.
 
-A media folder (`ngdpbase.media.folders`) is never private storage: one that equals, contains or sits inside the vaults (`pages/vaults/`, and the legacy `pages/private/`) or the shared-folder storage (`ngdpbase.shared-folders.storagedir`) is refused when saved, skipped at startup with an error and an admin notice, and never walked by the scanner ([#2195](https://github.com/jwilleke/ngdpbase/issues/2195); [security guide](security-developer-guide.md#a-media-folder-never-reaches-private-storage)).
+A media folder (`ngdpbase.media.folders`) is never private storage: one that equals, contains or sits inside the vaults (`pages/vaults/`, and the legacy `pages/private/`) the shared-folder storage (`ngdpbase.shared-folders.storagedir`), or the private parts of attachment storage (`attachments/private/` and the `attachments/.thumbs` cache) is refused when saved, skipped at startup with an error and an admin notice, and never walked by the scanner ([#2195](https://github.com/jwilleke/ngdpbase/issues/2195); [security guide](security-developer-guide.md#a-media-folder-never-reaches-private-storage)).
 
 ## Declaring a system-category with a vault
 
