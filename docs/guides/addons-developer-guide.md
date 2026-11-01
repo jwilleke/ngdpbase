@@ -621,14 +621,14 @@ async register(engine, config, host) {
 
 An addon that has per-user settings adds a card to `/profile` instead of building its own settings page. Two optional hooks on the module do it, declared on `AddonModule` in `src/managers/AddonsManager.ts`:
 
-- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this user. `user` is the user's record without the password hash (`AddonProfileUser`), with their resolved `roles`.
+- `profileSection(user)` returns `{ title, html }` (`AddonProfileSection`), or `null` to show nothing for this user. `user` is the user's record without the password hash (`AddonProfileUser`), with their resolved `roles`. Two optional fields go in the card's header: `icon`, a Font Awesome name such as `'fa-book'` (anything else, or none, shows `fa-puzzle-piece`), and `hint`, muted text after the title.
 - `saveProfileSection(ctx, body)` saves what the card's fields submitted. Since [#1234](https://github.com/jwilleke/ngdpbase/issues/1234) the first argument is the caller's context, not a username: pass `ctx` on to whatever you write, never build a new one from `ctx.username`. Merge your fields into the user's preferences with `updateUser`'s function form, so the merge reads the account as it is now ([Change a user](#change-a-user-the-function-form)). An addon still written as `(username, body)` gets a warning at load naming it, and each of its saves then fails and is logged.
 
 What it is not: it is only the signed-in user's own `/profile`. There is one route, `/profile`, and it always shows the user who is signed in; there is no profile page for someone else. Showing data about anyone else belongs on the addon's own pages, behind the addon's own permission ([Permissions](#permissions)).
 
 How core calls them:
 
-- `GET /profile` (checked against `profile-manage`) reads the user's fresh record and calls `AddonsManager.getProfileSections(user, ctx)`. It calls every loaded addon's `profileSection(user, ctx)` in parallel, where `ctx` is the signed-in user's own context: pass it to your manager's door and the PDP, and never rebuild a subject from `user` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded.
+- `GET /profile` (checked against `profile-manage`) reads the user's fresh record and calls `AddonsManager.getProfileSections(user, ctx)`. It calls every loaded addon's `profileSection(user, ctx)` in parallel, where `ctx` is the signed-in user's own context: pass it to your manager's door and the PDP, and never rebuild a subject from `user` ([#2018](https://github.com/jwilleke/ngdpbase/issues/2018)). An addon that throws, or returns anything other than `{ title: string, html: string }` or `null`, is logged and left out; the page still renders. `views/profile.ejs` shows each section as a card inside the preferences form, after the core preferences, in the order the addons loaded. Core draws the card and its header, the collapsible one every `/profile` card and `/admin` use ([#1541](https://github.com/jwilleke/ngdpbase/issues/1541)): `<details id="profile-addon-<name>" open>` with `<summary class="card-summary">` from `views/_card-summary.ejs`, then your `html` in a `div.mt-3`. Return the fields only: no card, header or title of your own, or the section shows two.
 - `POST /preferences` (also `profile-manage`) saves the core preferences first, then calls `AddonsManager.saveProfileSections(ctx, body)` with a copy of the request body. The addons are called one at a time, so each one's read-merge-write of the user's preferences sees the one before it. Dotted field names arrive flat: `<input name="journal.x">` is `body['journal.x']`. An addon that throws is logged; it does not stop the core save or another addon's save, and the user is not told their preferences failed.
 
 The rules, which core cannot enforce for you:
@@ -642,7 +642,7 @@ The rules, which core cannot enforce for you:
 
 The worked example is the journal addon: `profileSection` and `saveProfileSection` in `addons/journal/index.ts`, and the partial `addons/journal/views/_profile-section.ejs`.
 
-- 1 `profileSection` reads the user's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', html }`.
+- 1 `profileSection` reads the user's `journal.*` preferences and renders the partial with `ejs.renderFile`, returning `{ title: 'Journal', icon: 'fa-book', html }`.
 - 2 The partial starts with `journal._rendered`, shows the voice-to-text and default-private fields only when their settings allow, and loads its script from `/addons/journal/js/journal-reminder.js`.
 - 3 `saveProfileSection` returns unless `body['journal._rendered'] === '1'`, writes the gated fields only under the same checks, merges into the user's current preferences, and saves with `userManager.updateUser(ctx.username, { preferences }, ctx)`.
 
