@@ -4,6 +4,8 @@
 # told about), weekly, minor+patch grouped per directory, majors separate.
 # Security updates are unaffected by this file: they arrive regardless, one PR
 # per advisory, never grouped. GitHub Actions bumps are watched too.
+# Patch and minor updates merge on their own once required checks pass
+# (.github/workflows/dependabot-automerge.yml); majors wait for review.
 version: 2
 updates:
   - package-ecosystem: npm
