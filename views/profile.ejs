@@ -24,10 +24,10 @@
                     <div class="row mb-4">
                         <div class="col-md-6">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-info-circle"></i> Account Information</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-account-information" open>
+                                        <%- include('_card-summary', { icon: 'fa-info-circle', title: 'Account Information' }) %>
+                                        <div class="mt-3">
                                     <p><strong>Username:</strong> <%= user.username %></p>
                                     <p><strong>Email:</strong> <%= user.email %></p>
                                     <p><strong>Display Name:</strong> <%= user.displayName %></p>
@@ -50,16 +50,18 @@
                                     <% if (user.lastLogin) { %>
                                         <p><strong>Last Login:</strong> <%= new Date(user.lastLogin).toLocaleString() %></p>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
                         
                         <div class="col-md-6">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-shield-alt"></i> Permissions</h6>
-                                </div>
-                                <div class="card-body" style="max-height: 200px; overflow-y: auto;">
+                                <div class="card-body py-2">
+                                    <details id="profile-permissions" open>
+                                        <%- include('_card-summary', { icon: 'fa-shield-alt', title: 'Permissions' }) %>
+                                        <div class="mt-3" style="max-height: 200px; overflow-y: auto;">
                                     <% if (permissions && permissions.length > 0) { %>
                                         <%# #1539: a grant that applies only somewhere says where. %>
                                         <% permissions.forEach(grant => { %>
@@ -69,6 +71,8 @@
                                     <% } else { %>
                                         <p class="text-muted">No specific permissions assigned</p>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -83,10 +87,10 @@
                     <div class="row mb-4">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-star"></i> My Contributions</h6>
-                                </div>
-                                <div class="card-body p-0">
+                                <div class="card-body py-2">
+                                    <details id="profile-my-contributions" open>
+                                        <%- include('_card-summary', { icon: 'fa-star', title: 'My Contributions' }) %>
+                                        <div class="mt-3">
                                     <ul class="list-group list-group-flush">
                                         <li class="list-group-item d-flex align-items-center justify-content-between">
                                             <a href="/my/vaults" class="text-decoration-none">
@@ -160,6 +164,8 @@
                                             </span>
                                         </li>
                                     </ul>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -170,10 +176,10 @@
                     <div class="row mb-4">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-share-nodes"></i> Share Links <%- include('_help-icon', { slug: 'share-links', label: 'Share Links' }) %></h6>
-                                </div>
-                                <div class="card-body p-0">
+                                <div class="card-body py-2">
+                                    <details id="profile-share-links" open>
+                                        <%- include('_card-summary', { icon: 'fa-share-nodes', title: 'Share Links', helpSlug: 'share-links', helpLabel: 'Share Links' }) %>
+                                        <div class="mt-3">
                                     <ul class="list-group list-group-flush">
                                         <li class="list-group-item d-flex align-items-center justify-content-between">
                                             <a href="/shares" class="text-decoration-none">
@@ -185,6 +191,8 @@
                                             </span>
                                         </li>
                                     </ul>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -198,10 +206,10 @@
                     <div class="row mb-4" id="your-consents">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-file-signature"></i> Your consents <%- include('_help-icon', { slug: 'your-consents', label: 'Your consents' }) %></h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-your-consents" open>
+                                        <%- include('_card-summary', { icon: 'fa-file-signature', title: 'Your consents', helpSlug: 'your-consents', helpLabel: 'Your consents' }) %>
+                                        <div class="mt-3">
                                     <% if (yourConsents.length === 0) { %>
                                     <p class="text-muted small mb-2">This site asks you to accept no documents.</p>
                                     <% } %>
@@ -237,6 +245,8 @@
                                         <% } %>
                                     </ul>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -251,10 +261,10 @@
                     <div class="row mb-4" id="vault-repairs">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-lock-open"></i> Vault pages with data outside their vault</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-vault-repairs" open>
+                                        <%- include('_card-summary', { icon: 'fa-lock-open', title: 'Vault pages with data outside their vault' }) %>
+                                        <div class="mt-3">
                                     <% if (repairNotice) { %><div class="alert alert-success small"><%= repairNotice %></div><% } %>
                                     <% if (repairError) { %><div class="alert alert-danger small"><%= repairError %></div><% } %>
                                     <% if (ownRepairs.length > 0) { %>
@@ -291,6 +301,8 @@
                                     </form>
                                     <% } %>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -302,10 +314,10 @@
                     <div class="row mb-4">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-box-open"></i> Unused files in your vaults</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-unused-vault-files" open>
+                                        <%- include('_card-summary', { icon: 'fa-box-open', title: 'Unused files in your vaults' }) %>
+                                        <div class="mt-3">
                                     <p class="small text-muted">Files in your vaults that no page in that vault uses — for example a copy left behind when a page moved to another vault. Only you see this.</p>
                                     <% unusedVaultFiles.forEach(function(v) { %>
                                         <h6 class="mt-3"><i class="fas fa-lock"></i> <%= v.vault %></h6>
@@ -327,6 +339,8 @@
                                             </ul>
                                         <% } %>
                                     <% }); %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -343,10 +357,10 @@
                     <div class="row mb-4" id="sign-in-methods">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0"><i class="fas fa-key"></i> Sign-in methods</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-sign-in-methods" open>
+                                        <%- include('_card-summary', { icon: 'fa-key', title: 'Sign-in methods' }) %>
+                                        <div class="mt-3">
                                     <% if (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable) { %>
                                     <%# #1738: never show a list that could not be read as an empty one. %>
                                     <div class="alert alert-warning small" role="alert">Your passkeys and other sign-in methods could not be loaded just now. They have not been removed. Reload the page; if this keeps happening, sign out and back in.</div>
@@ -440,6 +454,8 @@
                                     <div id="passkey-enrol-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
                                     <script src="/js/passkey.js" defer></script>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -453,15 +469,15 @@
                     <div class="row mb-4" id="tokens-and-devices">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header d-flex align-items-center justify-content-between">
-                                    <h6 class="mb-0"><i class="fas fa-key"></i> My tokens and devices</h6>
+                                <div class="card-body py-2">
+                                    <details id="profile-tokens-and-devices" open>
+                                        <%- include('_card-summary', { icon: 'fa-key', title: 'My tokens and devices' }) %>
+                                        <div class="mt-3">
                                     <% if (mayMint) { %>
-                                    <button type="button" class="btn btn-sm btn-primary" id="agent-token-new-btn">
+                                    <button type="button" class="btn btn-sm btn-primary mb-2" id="agent-token-new-btn">
                                         <i class="fas fa-plus"></i> New token
                                     </button>
                                     <% } %>
-                                </div>
-                                <div class="card-body">
                                     <p class="text-muted small">
                                         Everything you have let act for you: tokens you made for programs, and apps and
                                         devices you approved. None can do anything you cannot already do, and each stops
@@ -524,6 +540,8 @@
                                     <% } else { %>
                                     <%- include('_delegations', { items: delegations, csrfToken: csrfToken, canExtend: typeof agentTokensCanExtend !== 'undefined' && agentTokensCanExtend === true }) %>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -536,10 +554,10 @@
                     <div class="row mb-4" id="proxy-access">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0"><i class="fas fa-user-friends" aria-hidden="true"></i> Proxy access</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-proxy-access" open>
+                                        <%- include('_card-summary', { icon: 'fa-user-friends', title: 'Proxy access' }) %>
+                                        <div class="mt-3">
                                     <% if (proxyAccess.given !== null) { %>
                                     <p class="text-muted small">
                                         Let someone you trust, such as a family member or a caregiver, act for you on this site.
@@ -564,6 +582,8 @@
                                         <a class="btn btn-sm btn-outline-primary" href="/account/acting-for">Choose whom to act for</a>
                                     </div>
                                     <% } %>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -576,10 +596,10 @@
                     <div class="row mb-4">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header">
-                                    <h6><i class="fas fa-cogs"></i> User Preferences</h6>
-                                </div>
-                                <div class="card-body">
+                                <div class="card-body py-2">
+                                    <details id="profile-user-preferences" open>
+                                        <%- include('_card-summary', { icon: 'fa-cogs', title: 'User Preferences' }) %>
+                                        <div class="mt-3">
                                     <form action="/preferences" method="POST">
                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                         <div class="row">
@@ -791,9 +811,12 @@
                                         <%# saveProfileSection() handler. Sections render in registration order. %>
                                         <% if (addonProfileSections && addonProfileSections.length > 0) { %>
                                             <% addonProfileSections.forEach(function(section) { %>
+                                                <%# #1541: core draws each section's card and header, so every add-on's section collapses like the rest. %>
                                                 <div class="card mt-4" data-addon="<%= section.addonName %>">
-                                                    <div class="card-header"><h6 class="mb-0"><%= section.title %></h6></div>
-                                                    <div class="card-body"><%- section.html %>
+                                                    <div class="card-body py-2">
+                                                    <details id="profile-addon-<%= section.addonName %>" open>
+                                                    <%- include('_card-summary', { icon: section.icon || 'fa-puzzle-piece', title: section.title, hint: section.hint }) %>
+                                                    <div class="mt-3"><%- section.html %>
                                                         <%# #1603: what this add-on asks you to accept before it turns on, recorded before its switch flips. %>
                                                         <% const asks = (typeof addonConsentPending !== 'undefined' && addonConsentPending[section.addonName]) || []; %>
                                                         <% if (asks.length > 0) { %>
@@ -812,6 +835,8 @@
                                                         </div>
                                                         <% } %>
                                                     </div>
+                                                    </details>
+                                                    </div>
                                                 </div>
                                             <% }); %>
                                         <% } %>
@@ -826,6 +851,8 @@
                                             </button>
                                         </div>
                                     </form>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>

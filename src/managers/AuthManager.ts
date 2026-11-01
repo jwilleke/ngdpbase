@@ -12,7 +12,8 @@
  * multi-factor flow, the per-role check and the boot refusal follow under #1523.
  *
  * Built-in providers, each gated on its own config key and all registered
- * through the public {@link AuthManager.registerProvider} (#1050):
+ * through registerCoreProvider(), which shares the checks of the public
+ * {@link AuthManager.registerProvider} (#1050):
  *   - PasswordAuthProvider          (unless ngdpbase.auth.password.enabled is false)
  *   - MagicLinkAuthProvider         (ngdpbase.auth.magic-link.enabled)
  *   - OidcAuthProvider, one per entry (ngdpbase.auth.oidc.providers; the old
@@ -21,8 +22,9 @@
  *   - AuthentikBearerAuthProvider   (ngdpbase.auth.authentik-bearer.enabled)
  *   - AgentTokenAuthProvider        (ngdpbase.auth.agent-token.enabled)
  *
- * Addons register through the same method, so the contributed path is the one
- * exercised on every boot rather than a second, less-travelled one.
+ * Addons register through registerProvider(), so the contributed path is the one
+ * exercised on every boot rather than a second, less-travelled one. Core's ids
+ * and the `oidc:` prefix are reserved for core there (#2223).
  *
  * Future providers (see #421):
  *   - TotpAuthProvider
@@ -157,6 +159,11 @@ const EMAIL_LINK_ENTRY = 'magic-link';
 const CORE_PROVIDER_IDS: readonly string[] = [
   'password', 'magic-link', 'passkey', 'cloudflare-access', 'authentik-bearer', 'agent-token', 'oidc-bearer'
 ];
+
+/** Ids only core may register (#2223): every core id, and any `oidc:<name>`. */
+function isReservedProviderId(id: string): boolean {
+  return CORE_PROVIDER_IDS.includes(id) || id.startsWith('oidc:');
+}
 
 /** A factor as offered: its entry lowered to what the provider's code gives. */
 /**
@@ -1053,7 +1060,7 @@ class AuthManager extends BaseManager {
 
     // Register password provider if enabled (default: true)
     if (configManager?.getProperty('ngdpbase.auth.password.enabled', true) !== false) {
-      this.registerProvider(new PasswordAuthProvider(this.engine));
+      this.registerCoreProvider(new PasswordAuthProvider(this.engine));
     }
 
     // Register magic-link provider if enabled
@@ -1076,7 +1083,7 @@ class AuthManager extends BaseManager {
           'ngdpbase.auth.magic-link.ttl-minutes', 15
         ) as number;
 
-        this.registerProvider(new MagicLinkAuthProvider(this.engine, {
+        this.registerCoreProvider(new MagicLinkAuthProvider(this.engine, {
           ttlMs: ttlMinutes * 60_000,
           mailProvider: emailManager
         }));
@@ -1100,7 +1107,7 @@ class AuthManager extends BaseManager {
           defaultRole: configManager.getProperty('ngdpbase.auth.cloudflare-access.default-role', 'reader') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.cloudflare-access.group-map', {}) as Record<string, string>
         };
-        this.registerProvider(new CloudflareAccessAuthProvider(this.engine, cfConfig));
+        this.registerCoreProvider(new CloudflareAccessAuthProvider(this.engine, cfConfig));
         logger.info(`[AuthManager] cloudflare-access team=${teamDomain}`);
       }
     }
@@ -1126,7 +1133,7 @@ class AuthManager extends BaseManager {
           defaultRole: configManager.getProperty('ngdpbase.auth.authentik-bearer.default-role', 'reader') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.authentik-bearer.group-map', {}) as Record<string, string>
         };
-        this.registerProvider(new AuthentikBearerAuthProvider(this.engine, authentikConfig));
+        this.registerCoreProvider(new AuthentikBearerAuthProvider(this.engine, authentikConfig));
         logger.info(`[AuthManager] authentik-bearer issuer=${issuer}`);
       }
     }
@@ -1136,7 +1143,7 @@ class AuthManager extends BaseManager {
     // so it registers whenever enabled, with no further required config. Both
     // bearer providers may be active at once; the middleware tries each.
     if (configManager?.getProperty('ngdpbase.auth.agent-token.enabled', false)) {
-      this.registerProvider(new AgentTokenAuthProvider(this.engine));
+      this.registerCoreProvider(new AgentTokenAuthProvider(this.engine));
     }
 
     // #1576: access tokens from this instance's own OpenID Connect provider,
@@ -1144,7 +1151,7 @@ class AuthManager extends BaseManager {
     // arrives, so registering ahead of it is safe; with the provider off,
     // every token simply fails to verify.
     if (configManager?.getProperty('oidc-auth-server.enabled', false) === true) {
-      this.registerProvider(new OidcBearerAuthProvider(this.engine));
+      this.registerCoreProvider(new OidcBearerAuthProvider(this.engine));
     }
 
     this.factorEntries = this.readFactorEntries(configManager);
@@ -1282,7 +1289,7 @@ class AuthManager extends BaseManager {
         : '');
       if (!redirectUri) { refuse('ngdpbase.application.base-url is not set explicitly, so there is no address for the provider to send people back to'); continue; }
       const store = this.credentials;
-      this.registerProvider(new OidcAuthProvider(
+      this.registerCoreProvider(new OidcAuthProvider(
         {
           name, displayName: entry['display-name'] || preset?.displayName || name,
           icon: resolveOutsideProviderIcon(name, entry.icon, preset ? entry.preset : undefined, m => logger.warn(m)), issuer, clientId, clientSecret, redirectUri, policy: egress.policy,
@@ -1761,7 +1768,7 @@ class AuthManager extends BaseManager {
       return;
     }
     const store = this.credentials;
-    this.registerProvider(new PasskeyAuthProvider(rp, {
+    this.registerCoreProvider(new PasskeyAuthProvider(rp, {
       find: (credentialId) => store.findBySubject('passkey', credentialId),
       used: (id, at, secret) => store.touch(id, at, secret)
     }));
@@ -4270,9 +4277,11 @@ class AuthManager extends BaseManager {
   /**
    * Register an authentication provider (#1050).
    *
-   * The built-ins call this during `initialize()`, so the path an addon uses is
-   * the path exercised on every boot rather than a second, less-travelled one.
-   * Config gating stays with the caller: this method decides nothing about
+   * The built-ins register during `initialize()` through registerCoreProvider(),
+   * which shares every check below except the reserved ids, so the path an addon
+   * uses is the path exercised on every boot rather than a second, less-travelled
+   * one. Core ids and the `oidc:` prefix are reserved: an addon registering one is
+   * refused, whether or not core registered it on this site (#2223). Config gating stays with the caller: this method decides nothing about
    * whether a provider *should* be active, only that it is.
    *
    * ## Duplicate ids: first registration wins
@@ -4300,37 +4309,70 @@ class AuthManager extends BaseManager {
    * otherwise here would be worse than the gap.
    *
    * @param provider the provider to register
-   * @param source   attribution for logs — an addon name, or 'built-in'
-   * @returns true if registered; false if rejected as malformed or duplicate
+   * @param source   attribution for logs: the add-on's name
+   * @returns true if registered; false if rejected as reserved, malformed or duplicate
    */
-  registerProvider(provider: AuthProvider, source = 'built-in'): boolean {
+  registerProvider(provider: AuthProvider, source = 'an add-on'): boolean {
+    // #2223: core's ids and the oidc: prefix are core's alone, registered
+    // through registerCoreProvider() in initialize(). An add-on claiming one
+    // would bring its own verify() and AAL under a name the factors config
+    // trusts, on a site where core left that id unregistered.
+    // The id must be a plain own property, read once, and only that value is
+    // checked and stored: a getter could pass the check as one id and register
+    // as another.
+    const idProperty = provider ? Object.getOwnPropertyDescriptor(provider, 'id') : undefined;
+    if (provider && idProperty && !('value' in idProperty)) {
+      logger.error(`[AuthManager] Rejected provider from ${source}: its id must be a plain property, not a getter`);
+      return false;
+    }
+    const id: unknown = idProperty?.value;
+    if (typeof id === 'string' && isReservedProviderId(id)) {
+      logger.error(
+        `[AuthManager] Rejected provider '${id}' from ${source}: core provider ids ` +
+        `(${CORE_PROVIDER_IDS.join(', ')}) and the 'oidc:' prefix are reserved for core`
+      );
+      return false;
+    }
+    return this.addProvider(provider, id, source);
+  }
+
+  /**
+   * Core's own registrations (#2223): the one way a reserved id gets in. Called
+   * only from initialize() and the helpers it runs; add-ons get the AuthManager
+   * through the engine and call registerProvider(), which refuses these ids.
+   */
+  private registerCoreProvider(provider: AuthProvider): boolean {
+    return this.addProvider(provider, provider?.id, 'built-in');
+  }
+
+  private addProvider(provider: AuthProvider, id: unknown, source: string): boolean {
     // An addon can pass anything. A provider with no id would be unreachable;
     // one with no verify() would throw inside authenticate() on a live request,
     // which is a worse place to find out than boot.
-    if (!provider || typeof provider.id !== 'string' || provider.id.trim() === '') {
+    if (!provider || typeof id !== 'string' || id.trim() === '') {
       logger.error(`[AuthManager] Rejected provider from ${source}: missing id`);
       return false;
     }
     if (typeof provider.verify !== 'function') {
-      logger.error(`[AuthManager] Rejected provider '${provider.id}' from ${source}: no verify()`);
+      logger.error(`[AuthManager] Rejected provider '${id}' from ${source}: no verify()`);
       return false;
     }
 
-    if (this.providers.has(provider.id)) {
+    if (this.providers.has(id)) {
       logger.warn(
-        `[AuthManager] Provider '${provider.id}' is already registered — ` +
+        `[AuthManager] Provider '${id}' is already registered — ` +
         `keeping the existing one, ignoring the registration from ${source}`
       );
       return false;
     }
 
-    this.providers.set(provider.id, provider);
+    this.providers.set(id, provider);
     this.factorCache = null;
     // info, not debug: which auth providers are live is a security-relevant
     // fact about a running instance, and the boot log is where an operator
     // checks it. Callers add a second line only when they carry config detail
     // worth seeing (transport, issuer, team) — never a bare repeat of the id.
-    logger.info(`[AuthManager] Registered provider: ${provider.id} (${source})`);
+    logger.info(`[AuthManager] Registered provider: ${id} (${source})`);
     return true;
   }
 

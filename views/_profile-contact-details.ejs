@@ -28,10 +28,10 @@
 <div class="row mb-4" id="contact-details">
     <div class="col-12">
         <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0"><i class="fas fa-address-book" aria-hidden="true"></i> Contact details <%- include('_help-icon', { slug: 'your-contact-details', label: 'Your Contact Details' }) %></h6>
-            </div>
-            <div class="card-body">
+            <div class="card-body py-2">
+                <details id="profile-contact-details" open>
+                    <%- include('_card-summary', { icon: 'fa-address-book', title: 'Contact details', helpSlug: 'your-contact-details', helpLabel: 'Your Contact Details' }) %>
+                    <div class="mt-3">
                 <% if (typeof contactDetailsError !== 'undefined' && contactDetailsError) { %>
                 <div class="alert alert-danger" role="alert" data-contact-details-error><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <%= contactDetailsError %></div>
                 <% } %>
@@ -142,6 +142,8 @@
                     <button type="submit" class="btn btn-primary"><i class="fas fa-save" aria-hidden="true"></i> Save contact details</button>
                 </form>
                 <% } %>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
