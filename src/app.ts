@@ -1275,6 +1275,18 @@ void (async (): Promise<void> => {
     logger.error('[startup] The instance is NOT serving content. Sign in at /admin for the notification that says how to fix it, then restart.');
   }
 
+  // #1523 Q1: an enabled ngdpbase.auth.factors entry naming an id no provider
+  // could ever register (a typo) refuses the boot. Checked only now, so an id
+  // an add-on registers is known.
+  const unknownFactors = (engine.getManager('AuthManager') as { checkFactorIds?(): string[] } | null)
+    ?.checkFactorIds?.() ?? [];
+  if (unknownFactors.length > 0) {
+    console.error('🔥🔥🔥 FATAL: Refusing to start — ngdpbase.auth.factors names a sign-in provider that does not exist (#1523):');
+    for (const problem of unknownFactors) console.error(`  - ${problem}`);
+    console.error('Correct the entry\'s authproviderid in app-custom-config.json, or set "enabled": false on it, then restart.');
+    process.exit(1);
+  }
+
   // #1523: every role's required-aal must be reachable by the sign-in factors
   // actually available — checked here, once add-ons have registered theirs. A
   // role nobody can sign in to is a lockout, so the server refuses to start,
@@ -1286,7 +1298,7 @@ void (async (): Promise<void> => {
   if (unreachable.length > 0) {
     console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
     for (const problem of unreachable) console.error(`  - ${problem}`);
-    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, or the email link as a second factor), then restart.');
+    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, with an https ngdpbase.application.base-url), then restart.');
     process.exit(1);
   }
 

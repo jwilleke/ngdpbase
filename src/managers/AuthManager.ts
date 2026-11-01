@@ -148,6 +148,16 @@ const allowsProvider = (allowed: readonly string[] | undefined, providerId: stri
  */
 const EMAIL_LINK_ENTRY = 'magic-link';
 
+/**
+ * Every provider id core registers on some site (#1523 Q1), whether or not
+ * this one has it on. An entry naming one is never a typo: a provider that is
+ * off here, such as passkeys without an https base-url, is treated as off.
+ * `oidc:<name>` ids are known from `ngdpbase.auth.oidc.providers` instead.
+ */
+const CORE_PROVIDER_IDS: readonly string[] = [
+  'password', 'magic-link', 'passkey', 'cloudflare-access', 'authentik-bearer', 'agent-token', 'oidc-bearer'
+];
+
 /** A factor as offered: its entry lowered to what the provider's code gives. */
 /**
  * Providers that count toward a sign-in level only once the account has
@@ -2890,6 +2900,49 @@ class AuthManager extends BaseManager {
       .filter(({ aal }) => aal > reachable)
       .map(({ role, aal, operatorSet }) =>
         `role '${role}' requires AAL${aal} (${operatorSet ? 'set in app-custom-config.json' : 'shipped default'}), but the available sign-in factors reach AAL${reachable} — ngdpbase.auth.factors offers: ${offered}`);
+  }
+
+  /**
+   * The start-up check of the `ngdpbase.auth.factors` ids, once add-ons have
+   * registered their providers (#1523 Q1, operator 2026-10-31). An id no
+   * provider could ever register, such as a typo, refuses the boot when its
+   * entry is on, and only warns when it is `enabled: false`. Returns the
+   * problems that must refuse the boot.
+   */
+  checkFactorIds(): string[] {
+    const { refused, ignored } = this.unknownFactorIds(this.factorEntries);
+    for (const problem of ignored) logger.warn(`[AuthManager] ${problem}. The entry is off, so it is ignored. (#1523)`);
+    return refused;
+  }
+
+  /**
+   * The same check for a value the configuration screen is about to save as
+   * `ngdpbase.auth.factors` (#1523), so a typo is refused there rather than
+   * at the next restart, which would refuse to start. `refused` names each
+   * enabled unknown id; `ignored` each one whose entry is `enabled: false`.
+   */
+  checkFactorEntries(value: unknown): { refused: string[]; ignored: string[] } {
+    const entries = (Array.isArray(value) ? value : [])
+      .filter((e): e is FactorEntry => typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string')
+      .map(e => ({ ...e, authproviderid: FACTOR_ALIASES[e.authproviderid] ?? e.authproviderid }));
+    return this.unknownFactorIds(entries);
+  }
+
+  /** The entries whose id no provider could ever register, split by whether the entry is on. */
+  private unknownFactorIds(entries: readonly FactorEntry[]): { refused: string[]; ignored: string[] } {
+    const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getUnresolvedProperty?.('ngdpbase.auth.oidc.providers', {});
+    const oidcNames = raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.keys(raw) : [];
+    // `oidc:google` is also what the old ngdpbase.auth.google-oidc.* keys register.
+    const known = new Set([...CORE_PROVIDER_IDS, 'oidc:google', ...oidcNames.map(n => `oidc:${n}`), ...this.providers.keys()]);
+    const knownIds = [...known].sort().join(', ');
+    const refused: string[] = [];
+    const ignored: string[] = [];
+    for (const entry of entries) {
+      if (known.has(entry.authproviderid)) continue;
+      const problem = `ngdpbase.auth.factors entry '${entry.authproviderid}' names no provider. Known ids: ${knownIds}`;
+      (entry.enabled === false ? ignored : refused).push(problem);
+    }
+    return { refused, ignored };
   }
 
   /**
