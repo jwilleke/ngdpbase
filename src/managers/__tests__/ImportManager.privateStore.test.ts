@@ -37,7 +37,7 @@ import logger from '../../utils/logger';
 import type { ActorContext } from '../../context/ActorContext';
 import type { IceRunReport } from '../../ice/types';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
-import { formatPrivatePageName, privateStoreRoot, storeMetaPath } from '../../utils/privateStorePath';
+import { formatPrivatePageName, privateStoreAttachmentsDir, privateStoreRoot, storeMetaPath } from '../../utils/privateStorePath';
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, isSealedBytes, unwrapDek } from '../../utils/privateStoreCrypto';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
 import { buildStoreTakeout } from '../../utils/privateStoreExport';
@@ -50,6 +50,7 @@ const RECEIVER = 'core.private-store';
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 /** A distinctive page title and file name: never in a log, a notice or the audit record. */
+const UUID_F = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const SECRET = 'Oncology-referral-Smith';
 
 const MOLLY: ActorContext = { ...actor('molly'), privateStoreHandle: 'sid' };
@@ -403,6 +404,182 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     expect(await filesContaining('lab scan 4471')).toEqual([]);
     // Once it is back, a third import leaves it as it is.
     expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged', 'unchanged']);
+  });
+
+  /** A takeout of a page that links its file by the file's id, `UUID_F`, as a download names it. */
+  const linkedTakeout = (): Promise<Buffer> => packZip([
+    { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/${UUID_F})\n`) },
+    { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 lab scan 4471') },
+    {
+      path: `${VAULT}/files-index.json`,
+      bytes: Buffer.from(JSON.stringify({
+        version: 1,
+        files: { [UUID_F]: { id: UUID_F, fileName: 'attachments/scan.pdf', name: 'scan.pdf', encodingFormat: 'application/pdf' } }
+      }))
+    }
+  ]);
+
+  // #2188: the page still in the store links the file's old id, and the file comes back under it.
+  test('a file deleted since an import comes back under its old id, so the page linking it works again', async () => {
+    const archive = await linkedTakeout();
+    const first = await upload(VAULT, archive);
+    expect(first.files.find(f => f.name.endsWith('scan.pdf'))?.refs[0]).toBe(UUID_F);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    expect(await attachments.getPrivateStoreAttachment(UUID_F, MOLLY)).toBeNull();
+
+    await upload(VAULT, archive);
+
+    // The page's link, untouched, opens the file again.
+    const page = await pages.getPage(name(VAULT, UUID_A), MOLLY);
+    expect(page?.content).toContain(`/attachments/${UUID_F})`);
+    expect((await attachments.getPrivateStoreAttachment(UUID_F, MOLLY))?.buffer.toString()).toBe('%PDF-1.4 lab scan 4471');
+    const imported = audit.logAuditEvent.mock.calls.map(c => c[0] as Record<string, unknown>).filter(e => e.eventType === 'store-import');
+    expect(imported.at(-1)?.metadata).not.toHaveProperty('filesRenumbered');
+    expect((await upload(VAULT, archive)).files.map(f => f.status)).toEqual(['unchanged', 'unchanged', 'noise']);
+  });
+
+  // #2188: an id another file holds now, in anyone's store, is never taken; the store's pages are pointed at the new id instead.
+  test('an old id another file now holds is not reused: the file gets a new id, and the store\'s pages link it', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    // Another owner's store holds a file under that id now (sealed or not, its name on disk is its id).
+    const zeds = await zedTakes();
+
+    await upload(VAULT, archive);
+
+    const newId = String([...(await attachments.ownStoreFingerprints(MOLLY, VAULT))?.values() ?? []][0]);
+    expect(newId).not.toBe(UUID_F);
+    const page = await pages.getPage(name(VAULT, UUID_A), MOLLY);
+    expect(page?.content).toContain(`![scan](/attachments/${newId})`);
+    expect(page?.content).not.toContain(UUID_F);
+    expect((await attachments.getPrivateStoreAttachment(newId, MOLLY))?.buffer.toString()).toBe('%PDF-1.4 lab scan 4471');
+    expect(await fs.readFile(path.join(zeds, `${UUID_F}.pdf`), 'utf8')).toBe('zed\'s own file');
+    // The run's record names both ids, and the page it pointed at the new one.
+    const imported = audit.logAuditEvent.mock.calls.map(c => c[0] as Record<string, unknown>).filter(e => e.eventType === 'store-import');
+    expect(imported.at(-1)?.metadata).toMatchObject({ filesRenumbered: [{ from: UUID_F, to: newId }], pagesRelinked: [UUID_A] });
+    expect(imported.at(-1)?.metadata).not.toHaveProperty('pagesNotRelinked');
+  });
+
+  test('an old id still held by a file in the shared pool is not reused', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    const provider = (attachments as unknown as { attachmentProvider: { attachmentExists(id: string): Promise<boolean> } }).attachmentProvider;
+    const exists = vi.spyOn(provider, 'attachmentExists').mockImplementation(async (id: string) => id === UUID_F);
+
+    await upload(VAULT, archive);
+
+    exists.mockRestore();
+    const newId = String([...(await attachments.ownStoreFingerprints(MOLLY, VAULT))?.values() ?? []][0]);
+    expect(newId).not.toBe(UUID_F);
+    expect((await pages.getPage(name(VAULT, UUID_A), MOLLY))?.content).toContain(`/attachments/${newId})`);
+  });
+
+  /** Zed's store holds a file under `UUID_F` now: the id is taken on the site. */
+  const zedTakes = async (): Promise<string> => {
+    const zeds = privateStoreAttachmentsDir(pagesDir, 'zed', 'default');
+    await fs.ensureDir(zeds);
+    await fs.writeFile(path.join(zeds, `${UUID_F}.pdf`), 'zed\'s own file');
+    return zeds;
+  };
+  const ownFileIds = async (): Promise<string[]> => [...(await attachments.ownStoreFingerprints(MOLLY, VAULT))?.values() ?? []];
+  const storeImports = (): Array<Record<string, unknown>> =>
+    audit.logAuditEvent.mock.calls.map(c => c[0] as Record<string, unknown>).filter(e => e.eventType === 'store-import');
+
+  // #2188 review: the store's pages link the id it gave the file last time, not the takeout's.
+  test('a file that had to take a new id, deleted again, comes back under that id, so the page still opens it', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    await zedTakes();
+    await upload(VAULT, archive);
+    const [given] = await ownFileIds();
+    expect(given).not.toBe(UUID_F);
+    expect((await pages.getPage(name(VAULT, UUID_A), MOLLY))?.content).toContain(`/attachments/${given})`);
+
+    expect(await attachments.deleteAttachment(String(given), MOLLY)).toBe(true);
+    await upload(VAULT, archive);
+
+    expect(await ownFileIds()).toEqual([given]);
+    expect((await pages.getPage(name(VAULT, UUID_A), MOLLY))?.content).toContain(`/attachments/${given})`);
+    expect((await attachments.getPrivateStoreAttachment(String(given), MOLLY))?.buffer.toString()).toBe('%PDF-1.4 lab scan 4471');
+    expect(storeImports().at(-1)?.metadata).not.toHaveProperty('filesRenumbered');
+  });
+
+  // #2188 review: a takeout into a second store, while the first still holds its files, renumbers every file.
+  test('a takeout into a second, sealed store keeps working through a delete and re-import there', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    await seal(OTHER);
+    await upload(OTHER, archive);
+    const theirs = [...(await attachments.ownStoreFingerprints(MOLLY, OTHER))?.values() ?? []];
+    expect(theirs).toHaveLength(1);
+    expect(theirs[0]).not.toBe(UUID_F);
+    expect(await attachments.deleteAttachment(String(theirs[0]), MOLLY)).toBe(true);
+    await upload(OTHER, archive);
+    expect([...(await attachments.ownStoreFingerprints(MOLLY, OTHER))?.values() ?? []]).toEqual(theirs);
+  });
+
+  test('the ids files hold on the site are read once a run, not once a file', async () => {
+    const archive = await linkedTakeout();
+    const held = vi.spyOn(attachments, 'heldFileIds');
+    await upload(VAULT, archive);
+    expect(held).toHaveBeenCalledTimes(1);
+    held.mockRestore();
+  });
+
+  // #2188 review: a link that opens a file, say one moved to another of the user's stores keeping its id, is left alone.
+  test('a page whose link to the old id still opens a file is not edited', async () => {
+    const archive = await linkedTakeout();
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    await zedTakes();
+    const resolves = vi.spyOn(attachments, 'isOwnPrivateStoreFile').mockImplementation(async (id: string) => id === UUID_F);
+    const saves = vi.spyOn(pages, 'savePage');
+
+    await upload(VAULT, archive);
+
+    resolves.mockRestore();
+    expect(saves.mock.calls.filter(c => (c[2] as { uuid?: string } | undefined)?.uuid === UUID_A)).toHaveLength(0);
+    saves.mockRestore();
+    expect((await pages.getPage(name(VAULT, UUID_A), MOLLY))?.content).toContain(`/attachments/${UUID_F})`);
+    expect(storeImports().at(-1)?.metadata).toMatchObject({ pagesRelinked: [] });
+  });
+
+  // #2188 review: one page that cannot be saved does not stop the rest, and the record says which.
+  test('a page that cannot be saved is passed over, the others are still pointed at the new id, and the record names both', async () => {
+    const archive = await packZip([
+      { path: `${VAULT}/Medical notes.md`, bytes: Buffer.from(`---\ntitle: Medical notes\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/${UUID_F})\n`) },
+      { path: `${VAULT}/Referral.md`, bytes: Buffer.from(`---\ntitle: Referral\nuuid: ${UUID_B}\n---\n\n[scan](/attachments/${UUID_F})\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF-1.4 lab scan 4471') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({
+          version: 1,
+          files: { [UUID_F]: { id: UUID_F, fileName: 'attachments/scan.pdf', name: 'scan.pdf', encodingFormat: 'application/pdf' } }
+        }))
+      }
+    ]);
+    await upload(VAULT, archive);
+    expect(await attachments.deleteAttachment(UUID_F, MOLLY)).toBe(true);
+    await zedTakes();
+    const save = pages.savePage.bind(pages);
+    const saves = vi.spyOn(pages, 'savePage').mockImplementation(async (...args: Parameters<PageManager['savePage']>) => {
+      if ((args[2] as { uuid?: string } | undefined)?.uuid === UUID_A) throw new Error(`disk full saving ${SECRET}`);
+      return save(...args);
+    });
+    const warn = vi.spyOn(logger, 'warn');
+
+    await upload(VAULT, archive);
+
+    saves.mockRestore();
+    const [given] = await ownFileIds();
+    expect((await pages.getPage(name(VAULT, UUID_B), MOLLY))?.content).toContain(`/attachments/${given})`);
+    expect(storeImports().at(-1)?.metadata).toMatchObject({ pagesRelinked: [UUID_B], pagesNotRelinked: [UUID_A] });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('Medical notes');
+    warn.mockRestore();
   });
 
   // #2171: a re-import that finds everything still here writes no upload record for a file it did not store.

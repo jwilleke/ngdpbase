@@ -28,9 +28,12 @@ import ImportManager, { IceExportBusy } from '../../managers/ImportManager';
 import ExportManager from '../../managers/ExportManager';
 import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import { resolveChromium, type PdfJob, type PdfJobResult } from '../../export/pdfEngine';
+import { hasChromium, noteSkip } from '../../test-support/tools';
 
 const chromium = await resolveChromium(process.env.NGDPBASE_TEST_CHROMIUM ?? '');
-if (!chromium.ok) console.warn(`[WikiRoutes.exportAction] real-Chromium test skipped: ${chromium.reason}`);
+// Found is not enough: a Chromium on disk can still fail to start (#2216).
+const chromiumStarts = await hasChromium();
+noteSkip('WikiRoutes.exportAction real-Chromium test', chromiumStarts);
 
 const GRANTS: Record<string, string[]> = {
   alice: ['profile-manage', 'page-export'],
@@ -303,7 +306,7 @@ describe('starting too many exports (#2120)', () => {
   });
 });
 
-describe.skipIf(!chromium.ok)('end to end with real Chromium (#2120, #1974)', () => {
+describe.skipIf(!chromium.ok || !chromiumStarts.ok)('end to end with real Chromium (#2120, #1974)', () => {
   test('a page exported as PDF is a real PDF of the page', async () => {
     const { app } = await makeApp(null);
     const { runId, run } = await exportAs(app, 'alice', 'core.pdf');

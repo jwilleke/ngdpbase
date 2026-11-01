@@ -715,6 +715,12 @@ export interface StoreFileInput {
    * the file is marked {@link StoreFileEntry.download}.
    */
   keptOriginal?: { types: readonly string[] };
+  /**
+   * The id to store the file under, set only by AttachmentManager for a file
+   * a takeout re-import brings back (#2188), after it checked that no other
+   * file anywhere holds it. A store that already lists the id refuses it.
+   */
+  id?: string;
 }
 
 /**

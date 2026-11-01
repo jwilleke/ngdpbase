@@ -13,11 +13,16 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { extractVideoFrame } from '../videoFrame';
+import { hasFfmpeg, noteSkip } from '../../test-support/tools';
+
+const ffmpeg = hasFfmpeg();
+noteSkip('videoFrame', ffmpeg);
 
 let tempDir: string;
 let testVideoPath: string;
 
 beforeAll(async () => {
+  if (!ffmpeg.ok) return;
   tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'videoframe-test-'));
   testVideoPath = path.join(tempDir, 'test-pattern.mp4');
   // 2-second 320x240 lavfi testsrc encoded with mpeg4 (works in every
@@ -48,10 +53,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await fs.rm(tempDir, { recursive: true, force: true });
+  if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
 });
 
-describe('extractVideoFrame (#722 Slice 1)', () => {
+describe.skipIf(!ffmpeg.ok)('extractVideoFrame (#722 Slice 1)', () => {
   test('extracts a JPEG buffer from a valid mp4 at default 1s timestamp', async () => {
     const buf = await extractVideoFrame(testVideoPath);
     expect(buf).not.toBeNull();
