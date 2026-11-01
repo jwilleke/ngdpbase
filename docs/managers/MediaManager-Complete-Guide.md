@@ -166,6 +166,8 @@ interface ScanResult {
 
 After a scan or rebuild, MediaManager tells admins (admin notice and email) about files with no usable capture date ("Media files without a capture date") and files with a partial, year-only one ("Media files with a partial capture date"). The notice names the files, one path per line, so the operator can backfill the dates without digging in `media-index.json`. The lists hold the first 50 paths (`CAPTURE_DATE_LIST_CAP` in `FileSystemMediaProvider.ts`); when there are more, the notice ends the list with "and N more". The counts are always exact.
 
+A file whose date comes from its name does not count as having no capture date, even when that date is partly invented. `scan-1990.jpg` indexes as `1990-06-15 11:59:00` and appears in neither notice. See [Capture Date From The Filename](../providers/FileSystemMediaProvider.md#capture-date-from-the-filename).
+
 ## Excluding Files and Directories
 
 Two complementary mechanisms allow files and folders to be excluded from the index.

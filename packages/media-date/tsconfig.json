@@ -1,0 +1,15 @@
+{
+  // The published package: the parser and its command line, nothing else.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "incremental": false,
+    "types": ["node"]
+  },
+  "files": ["index.ts", "cli.ts"],
+  "include": []
+}

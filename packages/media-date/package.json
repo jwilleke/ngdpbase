@@ -1,0 +1,36 @@
+{
+  "//": "Source template. `npm run build:media-date-package` writes dist/package.json from it, adding core's version and dropping private. Not published to npm: mjs-media-handling copies dist/.",
+  "name": "@jwilleke/media-date",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reads a capture date from a media filename. Shared by ngdpbase and mjs-media-handling, versioned with ngdpbase.",
+  "license": "Apache-2.0",
+  "author": "Jim Willeke",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jwilleke/ngdpbase.git",
+    "directory": "packages/media-date"
+  },
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "bin": {
+    "media-date": "./cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "cli.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

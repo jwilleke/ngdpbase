@@ -102,4 +102,10 @@ These run the other way: ngdpbase consumes them.
 - [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) is a runtime dependency, `@jwilleke/oidc-auth-server` on npm, used by `OidcManager`
 - [mjs-project-template](https://github.com/jwilleke/mjs-project-template) is the source of the agent kit: the managed section of [AGENTS.md](../AGENTS.md), the kit commands and the lint configuration. It is development tooling, nothing at runtime
 
+## mjs-media-handling — shares the filename date parser
+
+[mjs-media-handling](https://github.com/jwilleke/mjs-media-handling) organizes and dates the media library that a local ngdpbase indexes. Neither runs the other. It keeps a built copy of [`packages/media-date`](../packages/media-date/README.md), so both read a filename the same way, and it needs no running ngdpbase.
+
+## Infrastructure
+
 [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) is neither a consumer of code nor a dependency: it holds the deployments of the Kubernetes sites above.
