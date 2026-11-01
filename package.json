@@ -151,7 +151,7 @@
     "markdown-it-sup": "^2.0.0",
     "markdown-it-task-lists": "^2.1.1",
     "micromatch": "^4.0.8",
-    "minimatch": "^10.2.6",
+    "minimatch": "^11.0.1",
     "minisearch": "7.2.0",
     "mmdb-lib": "^3.0.3",
     "multer": "^2.4.0",
