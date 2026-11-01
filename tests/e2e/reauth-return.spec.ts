@@ -343,12 +343,15 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
         const page = me().page;
         await confirmNow(page);
         await page.goto('/admin/configuration');
-        // The screen shows the merged map, and a write of it lands whole in
-        // app-custom-config.json. A site with none of its own gets the key taken
-        // out again afterwards; one with its own is not touched.
+        // The Current tab shows the merged map as JSON in the key's row, and a
+        // write of it lands whole in app-custom-config.json. Only a key the site
+        // has set itself gets a form, in the Custom tab. A site with none of its
+        // own gets the key taken out again afterwards; one with its own is not touched.
+        const current = page.locator('#nav-current tbody tr').filter({ has: page.getByText(DEFINITIONS_KEY, { exact: true }) });
+        await expect(current, 'the Current tab lists the permission definitions').toHaveCount(1);
         ownDefinitions = (await page.locator(`#nav-custom form:has(input[name="property"][value="${DEFINITIONS_KEY}"])`).count()) > 0;
         if (ownDefinitions) return;
-        const definitions = await page.locator(`form:has(input[name="property"][value="${DEFINITIONS_KEY}"]) input[name="value"]`).first().inputValue();
+        const definitions = (await current.locator('td:nth-child(2) code').textContent()) ?? '';
         const entries = JSON.parse(definitions) as Record<string, Record<string, unknown>>;
         expect(entries['form-submit'], 'the forms add-on declares form-submit').toBeTruthy();
         marked = true;
