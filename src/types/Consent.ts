@@ -89,17 +89,21 @@ export interface ConsentSeen {
 }
 
 /**
- * One acceptance, one line of the person's file. Append-only: a later
- * version is a later line, nothing is rewritten.
+ * One acceptance, or its withdrawal, one line of the person's file.
+ * Append-only: a later version is a later line, and a withdrawal is a later
+ * `withdraw` line naming the same document, version and subject; nothing is
+ * rewritten.
  */
 export interface ConsentRecord {
-  kind: 'accept';
+  kind: 'accept' | 'withdraw';
   document: string;
   scope: ConsentScope;
   version: string;
   effective: string | null;
-  /** ISO 8601 time the person accepted. */
+  /** ISO 8601 time the person accepted (on a `withdraw` line, of the acceptance withdrawn). */
   acceptedAt: string;
+  /** ISO 8601 time it was withdrawn; on a `withdraw` line only. */
+  withdrawnAt?: string;
   /**
    * The account this was accepted on, by its creation time (#1937): a later
    * account that takes the same username never inherits it.

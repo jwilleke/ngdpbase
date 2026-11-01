@@ -344,6 +344,11 @@ export interface DeviceSecret extends BrowserIdentity {
   amr: string[];
   /** RFC 3339: after this it no longer skips the prompt. */
   expiresAt: string;
+  /**
+   * The account's password-change generation when it was remembered (#1482):
+   * a later password change retires it.
+   */
+  generation?: number;
 }
 
 const KNOWN_DEVICE_DEFAULT_DAYS = 30;
@@ -354,7 +359,7 @@ function parseDeviceSecret(secret: string): DeviceSecret | null {
   try {
     const d = JSON.parse(secret) as Partial<DeviceSecret>;
     return typeof d.publicKey === 'string' && typeof d.browser === 'string' && typeof d.os === 'string' && typeof d.platform === 'string' && typeof d.expiresAt === 'string'
-      ? { publicKey: d.publicKey, browser: d.browser, os: d.os, platform: d.platform, amr: Array.isArray(d.amr) ? d.amr.map(String) : [], expiresAt: d.expiresAt }
+      ? { publicKey: d.publicKey, browser: d.browser, os: d.os, platform: d.platform, amr: Array.isArray(d.amr) ? d.amr.map(String) : [], expiresAt: d.expiresAt, ...(typeof d.generation === 'number' ? { generation: d.generation } : {}) }
       : null;
   } catch {
     return null;
@@ -1962,6 +1967,7 @@ class AuthManager extends BaseManager {
    */
   async listCredentials(ctx: PermissionSubject, username: string): Promise<CredentialView[]> {
     if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
+    await this.pruneRememberedDevices(username);
     // #1762: a proxy grant is not a sign-in method; it is listed and ended through the proxy-grant methods only.
     return this.requireCredentialsStore().list(username).filter(r => !NOT_SIGN_IN_METHODS.has(r.kind)).map(({ secret: _secret, ...view }) => view);
   }
@@ -2008,6 +2014,8 @@ class AuthManager extends BaseManager {
     }
     const removed = await store.remove(id);
     if (removed) this.auditCredentialChange(ctx, username, 'credential-remove', row);
+    // Q5: removing a remembered browser withdraws the agreement to remember it.
+    if (removed && row.kind === 'device') await this.withdrawRememberConsent(ctx, username, row.subject, 'removed');
     return removed;
   }
 
@@ -4135,15 +4143,69 @@ class AuthManager extends BaseManager {
     if (p && this.rememberOffered(p) && /^[\w.-]{1,40}$/.test(version)) p.remember = { version };
   }
 
-  /** `username`'s remembered browsers that have not expired. */
-  rememberedDevices(username: string, now: number = Date.now()): Array<{ row: CredentialRecord; device: DeviceSecret }> {
+  /**
+   * When a remembered browser stops skipping the prompt: its stored expiry,
+   * or its creation plus the current `remember-days`, whichever is sooner,
+   * so lowering the setting shortens browsers already remembered.
+   */
+  private deviceExpiry(row: CredentialRecord, device: DeviceSecret): number {
+    const created = Date.parse(row.createdAt);
+    const now = Number.isFinite(created) ? created + this.rememberDays() * 86_400_000 : 0;
+    return Math.min(Date.parse(device.expiresAt), now);
+  }
+
+  /**
+   * `username`'s remembered browsers that have not expired. With the
+   * account's password-change `generation`, also only those remembered
+   * since the last password change (#1482).
+   */
+  rememberedDevices(username: string, now: number = Date.now(), generation?: number): Array<{ row: CredentialRecord; device: DeviceSecret }> {
     const out: Array<{ row: CredentialRecord; device: DeviceSecret }> = [];
     for (const row of this.credentials?.list(username) ?? []) {
       if (row.kind !== 'device') continue;
       const device = parseDeviceSecret(row.secret);
-      if (device && Date.parse(device.expiresAt) > now) out.push({ row, device });
+      if (!device || this.deviceExpiry(row, device) <= now) continue;
+      if (generation !== undefined && (device.generation ?? 0) !== generation) continue;
+      out.push({ row, device });
     }
     return out;
+  }
+
+  private async accountGeneration(username: string): Promise<number> {
+    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number } | null | undefined;
+    return sessionGenerationOf(account);
+  }
+
+  /**
+   * Drop `username`'s remembered browsers that no longer count: expired,
+   * unreadable, or remembered before the last password change. Each is
+   * recorded as `credential-remove` and its consent withdrawn. Returns the
+   * ones that still count.
+   */
+  async pruneRememberedDevices(username: string, now: number = Date.now()): Promise<Array<{ row: CredentialRecord; device: DeviceSecret }>> {
+    if (!this.credentials) return [];
+    const generation = await this.accountGeneration(username);
+    const live = this.rememberedDevices(username, now, generation);
+    const dead = this.credentials.list(username).filter((r) => r.kind === 'device' && !live.some((d) => d.row.id === r.id));
+    for (const row of dead) {
+      const device = parseDeviceSecret(row.secret);
+      const why = device && this.deviceExpiry(row, device) > now ? 'password-changed' : 'expired';
+      const ctx = systemContext(this.engine, `remembered browser ${row.id} of ${username}: ${why}`);
+      if (!(await this.credentials.remove(row.id))) continue;
+      this.auditCredentialChange(ctx, username, 'credential-remove', row, why);
+      await this.withdrawRememberConsent(ctx, username, row.subject, why);
+    }
+    return live;
+  }
+
+  /** Withdraw the "remember this browser" consent bound to `deviceId`; a failure is logged, the browser stays removed. */
+  private async withdrawRememberConsent(ctx: unknown, username: string, deviceId: string, why: string): Promise<void> {
+    const consent = this.engine.getManager<{ withdraw(u: string, scope: string, subject: string, c: unknown, why: string): Promise<unknown> }>('ConsentManager');
+    try {
+      await consent?.withdraw(username, REMEMBER_BROWSER_CONSENT_SCOPE, deviceId, ctx, why);
+    } catch (err) {
+      logger.error(`[AuthManager] remembered browser of ${username} removed (${why}), but its consent could not be withdrawn:`, err);
+    }
   }
 
   /**
@@ -4175,7 +4237,7 @@ class AuthManager extends BaseManager {
       await this.auditCheck({ ipAddress: from.ip, userAgent: from.userAgent, purpose: 'sign-in' }, p.username, 'known device', 'failure', `remembered browser not accepted: ${reason}`);
       return false;
     };
-    const found = this.rememberedDevices(p.username).find((d) => d.row.subject === deviceId);
+    const found = (await this.pruneRememberedDevices(p.username)).find((d) => d.row.subject === deviceId);
     if (!found) return fail('no remembered browser of this account with that id, or it expired');
     const now = browserIdentity(from.userAgent, from.platformHint);
     if (!now || !sameBrowser(now, found.device)) return fail('a different browser or system from the one it was issued to');
@@ -4236,7 +4298,8 @@ class AuthManager extends BaseManager {
       publicKey: spki.toString('base64url'),
       ...identity,
       amr: input.amr,
-      expiresAt: new Date(now.getTime() + days * 86_400_000).toISOString()
+      expiresAt: new Date(now.getTime() + days * 86_400_000).toISOString(),
+      generation: await this.accountGeneration(ctx.username)
     };
     await this.storeCredential(ctx, ctx.username, { kind: 'device', subject: deviceId, secret: JSON.stringify(secret), label: `${identity.browser} on ${identity.os}` }, 'remember this browser');
     return { deviceId };

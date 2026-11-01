@@ -32,6 +32,9 @@ describe('known devices (#1523 slice 1c)', () => {
   let consentDoc: { id: string; version: string } | null;
   let accepted: Array<{ username: string; scope: string; subject?: string }>;
   let consentRefuses: boolean;
+  let withdrawn: Array<{ username: string; scope: string; subject: string; why: string }>;
+  let generations: Record<string, number>;
+  let mayManage: boolean;
   let auth: Array<{ context: Record<string, unknown>; result: string; reason: string }>;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
 
@@ -45,11 +48,11 @@ describe('known devices (#1523 slice 1c)', () => {
         getBaseURL: () => 'https://wiki.example.com',
         getApplicationName: () => 'Willeke Family'
       },
-      PolicyDecisionPoint: { permits: () => Promise.resolve(false) },
+      PolicyDecisionPoint: { permits: (_s: unknown, a: string) => Promise.resolve(mayManage && a === 'account-security') },
       PolicyInformationPoint: { subjectFor: (u: string) => Promise.resolve(roles[u] ? { username: u, roles: roles[u], isAuthenticated: true } : null) },
       RoleManager: { roleRequiredAal: () => ({ admin: 2, reader: 1 }), operatorRequiredAal: () => ({}) },
       UserManager: {
-        getUser: (u: string) => Promise.resolve(roles[u] ? { username: u, email: `${u}@example.com` } : null),
+        getUser: (u: string) => Promise.resolve(roles[u] ? { username: u, email: `${u}@example.com`, sessionGeneration: generations[u] } : null),
         hasPassword: () => Promise.resolve(true)
       },
       PluginManager: TEST_PLUGIN_MANAGER,
@@ -62,6 +65,10 @@ describe('known devices (#1523 slice 1c)', () => {
         accept: (c: { username: string }, scope: string, _seen: unknown, _how: string, subject?: string) => {
           if (consentRefuses) return Promise.reject(new Error('refused'));
           accepted.push({ username: c.username, scope, subject });
+          return Promise.resolve([]);
+        },
+        withdraw: (username: string, scope: string, subject: string, _c: unknown, why: string) => {
+          withdrawn.push({ username, scope, subject, why });
           return Promise.resolve([]);
         }
       }
@@ -95,6 +102,9 @@ describe('known devices (#1523 slice 1c)', () => {
     consentDoc = { id: 'remember-browser-page', version: '1' };
     accepted = [];
     consentRefuses = false;
+    withdrawn = [];
+    generations = {};
+    mayManage = false;
     auth = [];
   });
 
@@ -217,6 +227,77 @@ describe('known devices (#1523 slice 1c)', () => {
       const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
       expect(am.knownDeviceChallenge(handle, 'b')).toBeNull();
       expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, 'x'), FROM)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lowering remember-days shortens browsers already remembered', async () => {
+    config['ngdpbase.auth.known-device.remember-days'] = 30;
+    const am = await started();
+    const device = await remembered(am, 'molly');
+    const later = Date.now() + 8 * 86_400_000;
+    expect(am.rememberedDevices('molly', later)).toHaveLength(1);
+    config['ngdpbase.auth.known-device.remember-days'] = 7;
+    expect(am.rememberedDevices('molly', later)).toHaveLength(0);
+    expect(am.rememberedDevices('molly', Date.now() + 6 * 86_400_000)).toHaveLength(1);
+    vi.useFakeTimers({ now: later, toFake: ['Date'] });
+    try {
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, 'x'), FROM)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removing a remembered browser withdraws its consent', async () => {
+    mayManage = true;
+    const am = await started();
+    const device = await remembered(am, 'molly');
+    const row = (await am.listCredentials(ctx('molly'), 'molly')).find((r) => r.kind === 'device');
+    expect(row?.subject).toBe(device.deviceId);
+    expect(await am.removeCredential(ctx('molly'), 'molly', row.id)).toBe(true);
+    expect(withdrawn).toEqual([{ username: 'molly', scope: REMEMBER_BROWSER_CONSENT_SCOPE, subject: device.deviceId, why: 'removed' }]);
+    expect(am.rememberedDevices('molly')).toHaveLength(0);
+  });
+
+  it("another person's remembered browser cannot be removed through your account", async () => {
+    mayManage = true;
+    const am = await started();
+    await remembered(am, 'admin');
+    const adminRow = am.rememberedDevices('admin')[0].row;
+    expect(await am.removeCredential(ctx('molly'), 'molly', adminRow.id)).toBe(false);
+    expect(am.rememberedDevices('admin')).toHaveLength(1);
+    expect(withdrawn).toEqual([]);
+  });
+
+  it('a password change retires remembered browsers: no skip, the row dropped and its consent withdrawn', async () => {
+    const am = await started();
+    const device = await remembered(am, 'molly');
+    generations.molly = 1;
+    const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+    const challenge = am.knownDeviceChallenge(handle, 'b');
+    expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, challenge), FROM)).toBe(false);
+    expect(am.rememberedDevices('molly')).toHaveLength(0);
+    expect(withdrawn).toEqual([{ username: 'molly', scope: REMEMBER_BROWSER_CONSENT_SCOPE, subject: device.deviceId, why: 'password-changed' }]);
+    // One remembered after the change counts.
+    const again = await remembered(am, 'molly');
+    const h2 = await am.beginTwoStep(first('molly'), { binding: 'b2' });
+    const c2 = am.knownDeviceChallenge(h2, 'b2');
+    expect(await am.proveKnownDevice(h2, 'b2', again.deviceId, signChallenge(again.privateKey, c2), FROM)).toBe(true);
+  });
+
+  it('expired browsers are dropped when the list is read, with their consent withdrawn', async () => {
+    mayManage = true;
+    config['ngdpbase.auth.known-device.remember-days'] = 1;
+    const am = await started();
+    const old = await remembered(am, 'molly');
+    vi.useFakeTimers({ now: Date.now() + 2 * 86_400_000, toFake: ['Date'] });
+    try {
+      const fresh = await remembered(am, 'molly');
+      const devices = (await am.listCredentials(ctx('molly'), 'molly')).filter((r) => r.kind === 'device');
+      expect(devices.map((r) => r.subject)).toEqual([fresh.deviceId]);
+      expect(withdrawn).toEqual([{ username: 'molly', scope: REMEMBER_BROWSER_CONSENT_SCOPE, subject: old.deviceId, why: 'expired' }]);
     } finally {
       vi.useRealTimers();
     }

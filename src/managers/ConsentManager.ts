@@ -281,6 +281,13 @@ class ConsentManager extends BaseManager {
     return created ? records.filter((r) => !r.account || r.account === created) : records;
   }
 
+  /** The acceptances still standing: each `accept` line with no later `withdraw` of the same document, version and subject. */
+  private async standingOf(username: string): Promise<ConsentRecord[]> {
+    const records = await this.recordsOf(username);
+    const same = (a: ConsentRecord, b: ConsentRecord): boolean => a.document === b.document && a.version === b.version && a.subject === b.subject;
+    return records.filter((r, i) => r.kind !== 'withdraw' && !records.slice(i + 1).some((w) => w.kind === 'withdraw' && same(w, r)));
+  }
+
   private async accountOf(username: string): Promise<{ username?: string; createdAt?: string; isActive?: boolean } | null> {
     return (await this.engine.getManager<AccountReader>('UserManager')?.getUser(username)) ?? null;
   }
@@ -300,7 +307,7 @@ class ConsentManager extends BaseManager {
     if (bound && !subject) return [];
     const docs = await this.documents(scope);
     if (docs.length === 0) return [];
-    const records = await this.recordsOf(username);
+    const records = await this.standingOf(username);
     return docs.filter((d) => !records.some((r) => r.document === d.id && r.version === d.version && (!bound || r.subject === subject)));
   }
 
@@ -310,7 +317,7 @@ class ConsentManager extends BaseManager {
    * (or none) and their latest of any version.
    */
   async statusFor(ctx: ActorContext): Promise<ConsentScopeStatus[]> {
-    const records = await this.recordsOf(ctx.username);
+    const records = await this.standingOf(ctx.username);
     const latestOf = (pred: (r: ConsentRecord) => boolean): ConsentRecord | null =>
       [...records].reverse().find(pred) ?? null;
     const out: ConsentScopeStatus[] = [];
@@ -407,6 +414,51 @@ class ConsentManager extends BaseManager {
       written.push(record);
     }
     if (written.length > 0) logger.info(`📜 [ConsentManager] ${ctx.username} accepted ${written.map((r) => `${r.document} v${r.version}`).join(', ')} (${how})`);
+    return written;
+  }
+
+  /**
+   * Withdraw `username`'s acceptances in `scope` about `subject` (#1523 slice
+   * 1c, Q5: a remembered browser is withdrawn by removing it). Recorded first
+   * as `consent-withdraw` (on-failure refuse: nothing is withdrawn), then a
+   * `withdraw` line is appended for each acceptance, so the history keeps
+   * both. Called by the code that removed the thing the acceptance was
+   * about, which has already decided the caller may; nothing to withdraw is
+   * not an error.
+   *
+   * @param why Why, for the record: `removed`, `expired`, `password-changed`
+   * @returns The `withdraw` lines written
+   */
+  async withdraw(username: string, scope: ConsentScope, subject: string, ctx: ActorContext, why: string): Promise<ConsentRecord[]> {
+    if (!this.provider || !subject) return [];
+    const standing = (await this.standingOf(username)).filter((r) => r.scope === scope && r.subject === subject);
+    if (standing.length === 0) return [];
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: AUDIT_EVENT.CONSENT_WITHDRAW,
+      ...who,
+      action: 'consent-withdraw',
+      result: 'success',
+      severity: 'low',
+      resource: username,
+      resourceType: 'account',
+      reason: why,
+      metadata: { ...who.metadata, account: username, scope, subject, accepted: standing.map((r) => ({ document: r.document, version: r.version, acceptedAt: r.acceptedAt })) }
+    });
+    const withdrawnAt = new Date().toISOString();
+    const written: ConsentRecord[] = [];
+    for (const r of standing) {
+      const line: ConsentRecord = {
+        ...r,
+        kind: 'withdraw',
+        withdrawnAt,
+        context: { by: ctx.username, how: why, origin: isJobContext(ctx) ? ctx.origin : 'request', ...(ctx.ipAddress ? { ipAddress: ctx.ipAddress } : {}) }
+      };
+      this.cache.delete(username);
+      await this.provider.append(username, line);
+      written.push(line);
+    }
+    logger.info(`📜 [ConsentManager] ${username} withdrew ${written.map((r) => `${r.document} v${r.version}`).join(', ')} in ${scope} (${why})`);
     return written;
   }
 

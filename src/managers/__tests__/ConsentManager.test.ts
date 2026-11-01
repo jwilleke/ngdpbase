@@ -366,6 +366,27 @@ describe('ConsentManager (#1603)', () => {
     });
   });
 
+  describe('remembered browsers (#1523 slice 1c)', () => {
+    const SCOPE = 'remember-browser';
+
+    test('withdrawing a browser\'s agreement is recorded first, then appended; that browser no longer counts and others are untouched', async () => {
+      await cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'sign-in', 'device-a');
+      await cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'sign-in', 'device-b');
+      audited.length = 0;
+      const [line, ...more] = await cm.withdraw('ann', SCOPE, 'device-a', person('ann'), 'removed');
+      expect(more).toEqual([]);
+      expect(line).toMatchObject({ kind: 'withdraw', document: SCOPE, scope: SCOPE, version: '1', subject: 'device-a', account: '2026-01-01T00:00:00.000Z', context: { by: 'ann', how: 'removed' } });
+      expect(Number.isNaN(Date.parse(line.withdrawnAt ?? ''))).toBe(false);
+      expect(audited).toEqual([expect.objectContaining({ eventType: 'consent-withdraw', reason: 'removed', metadata: expect.objectContaining({ scope: SCOPE, subject: 'device-a' }) })]);
+      const kinds = fs.readFileSync(path.join(dir, 'ann.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { kind: string; subject: string }));
+      expect(kinds.map((r) => [r.kind, r.subject])).toEqual([['accept', 'device-a'], ['accept', 'device-b'], ['withdraw', 'device-a']]);
+      expect(await cm.pendingFor('ann', SCOPE, 'device-a')).toHaveLength(1);
+      expect(await cm.pendingFor('ann', SCOPE, 'device-b')).toEqual([]);
+      // Nothing left to withdraw writes nothing.
+      expect(await cm.withdraw('ann', SCOPE, 'device-a', person('ann'), 'removed')).toEqual([]);
+    });
+  });
+
   test('its records folder is declared for backup', () => {
     expect(cm.backupFolders()).toEqual([{ part: 'consent', folder: dir, optional: true }]);
   });
