@@ -14263,6 +14263,19 @@ ${panes}
       // hidden; a placeholder sent back keeps what is stored there.
       parsedValue = keepHiddenValues(property, parsedValue, ((configManager.getAllProperties() ?? {}) as Record<string, unknown>)[property],
         valueLevels((k: string, d: unknown) => configManager.getProperty(k, d)));
+      // #2195: a media folder overlapping private storage is refused here, not
+      // only skipped at the next start.
+      if (property === 'ngdpbase.media.folders') {
+        const folders = Array.isArray(parsedValue)
+          ? (parsedValue as unknown[]).filter((f): f is string => typeof f === 'string')
+          : typeof parsedValue === 'string' ? parsedValue.split(',').map(f => f.trim()).filter(Boolean) : [];
+        const refused = this.engine.getManager('MediaManager')?.checkFolders(folders) ?? [];
+        if (refused.length > 0) {
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error: refused.join(' ') });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(refused.join(' '))}`);
+        }
+      }
       await configManager.setProperty(property, parsedValue, currentUser);
 
       // Return JSON for AJAX requests, redirect for regular form submissions

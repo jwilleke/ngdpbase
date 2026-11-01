@@ -22,6 +22,8 @@ What a developer, above all an add-on author, has to know about where things are
 
 Never put an add-on's own content in `general` or a user's `default` vault. There it can't be told apart from the user's own pages, the add-on's rules (such as `encrypt`) don't apply, and turning the add-on off, retiring it ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)) or a takeout can't find it.
 
+A media folder (`ngdpbase.media.folders`) is never private storage: one that equals, contains or sits inside the vaults (`pages/vaults/`, and the legacy `pages/private/`) or the shared-folder storage (`ngdpbase.shared-folders.storagedir`) is refused when saved, skipped at startup with an error and an admin notice, and never walked by the scanner ([#2195](https://github.com/jwilleke/ngdpbase/issues/2195); [security guide](security-developer-guide.md#a-media-folder-never-reaches-private-storage)).
+
 ## Declaring a system-category with a vault
 
 A system-category is an entry in `ngdpbase.system-category`. An add-on declares its own in its `config/default-config.json`. That file is merged into the site's configuration one entry at a time (#1220), and the site's own `app-custom-config.json` is applied last. For `ngdpbase.system-category` two things differ ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559), details in [system-category.md](../system-category.md#system-categories-that-add-ons-bring)):

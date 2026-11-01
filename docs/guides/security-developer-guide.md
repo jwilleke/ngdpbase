@@ -240,6 +240,14 @@ What a user accepted (the site's terms, an add-on's documents) is `ConsentManage
 
 __Adding a permission for a new action:__ declare it in the catalog with description, icon and colour; grant it in a policy; ask for it at the door. A catalog entry that only declares an audit event is `"grantable": false` and is never granted ([audit-developer-guide.md](audit-developer-guide.md)). The registry-drift test fails when a permission is declared and checked nowhere, or checked and declared nowhere.
 
+## A media folder never reaches private storage
+
+A media folder (`ngdpbase.media.folders`) must not equal, contain or sit inside the vaults, the legacy `private/` root or the shared-folder storage ([#2195](https://github.com/jwilleke/ngdpbase/issues/2195)). The scanner records every file's path, and a path under a vault names its owner, vault id and file name, which would then reach the media index, the skip report and admin notices. `utils/mediaFolderOverlap.ts` holds the one check: `privateStorageRoots` lists the roots as the code resolves them, and `findMediaFolderOverlap` compares real paths, so a symlink, a trailing slash or a case difference does not hide an overlap. Three places use it, and a new place that sets or scans media folders uses it too:
+
+- The configuration screen refuses saving an overlapping folder (`MediaManager.checkFolders`).
+- At startup MediaManager skips an overlapping folder rather than refusing to boot: it logs an error, notifies admins, and marks itself degraded with the reason. The message names the folder and the storage, never a file inside it.
+- The scanner (`FileSystemMediaProvider`, `excludedRoots`) never walks a directory under those roots, lists none of it in the skip report, and drops any index entry under them when it loads the index.
+
 ## Secrets in configuration
 
 A secret in configuration is a `$NAME` reference to an environment variable, at the top level of a key or anywhere inside a map or list, and it is declared `secret` in `ngdpbase.config.sensitive-values`, by key or by a path with `*` for a map key ([#1889](https://github.com/jwilleke/ngdpbase/issues/1889)). The rules, and every place a value is shown and so hidden, are in [configuration-developer-guide.md](configuration-developer-guide.md#standing-rules). Two that bind code:

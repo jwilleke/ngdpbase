@@ -35,6 +35,7 @@ import {
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
 import type { AssetMetadataPatch } from '../types/Asset.js';
 import { parseDateFromFilename } from '../../packages/media-date/index.js';
+import { isSameOrUnder, realPathOf } from '../utils/mediaFolderOverlap.js';
 
 /**
  * Configuration for FileSystemMediaProvider.
@@ -58,6 +59,12 @@ export interface FileSystemMediaProviderConfig {
   readonly: boolean;
   /** Set of file extensions (lowercase, no dot) to index */
   extensions: Set<string>;
+  /**
+   * Private storage the scanner never walks under or keeps in the index (#2195):
+   * the vaults and shared-folder storage. MediaManager already refuses a folder
+   * that overlaps them; this holds even if one gets past it.
+   */
+  excludedRoots?: string[];
 }
 
 /** Default supported media file extensions — used when no config override is provided */
@@ -189,12 +196,15 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   private readonly config: FileSystemMediaProviderConfig;
   /** In-memory index: id → MediaIndexEntry */
   private index: Record<string, MediaIndexEntry> = {};
+  /** `config.excludedRoots` as real paths, resolved once (#2195). */
+  private readonly excludedReal: string[];
   /** Single ExifTool worker process reused across all reads */
   private readonly exiftoolInstance: ExifTool;
 
   constructor(config: FileSystemMediaProviderConfig) {
     super();
     this.config = config;
+    this.excludedReal = (config.excludedRoots ?? []).map(realPathOf);
     this.exiftoolInstance = new ExifTool({ taskTimeoutMillis: 15000, maxProcs: 4 });
   }
 
@@ -208,9 +218,29 @@ class FileSystemMediaProvider extends BaseMediaProvider {
    */
   override async initialize(): Promise<void> {
     await this.loadIndex();
+    await this.dropExcludedEntries();
     logger.info(
       `[FileSystemMediaProvider] Initialized — ${Object.keys(this.index).length} items loaded from index`
     );
+  }
+
+  /** Whether `p` is under private storage the scanner must not touch (#2195). */
+  private isExcluded(p: string): boolean {
+    if (this.excludedReal.length === 0) return false;
+    const real = realPathOf(p);
+    return this.excludedReal.some(root => isSameOrUnder(real, root));
+  }
+
+  /**
+   * Drop index entries under private storage (#2195): a site that had a media
+   * folder overlapping it before the check existed has those files indexed.
+   */
+  private async dropExcludedEntries(): Promise<void> {
+    const dropped = Object.keys(this.index).filter(id => this.isExcluded(this.index[id].filePath));
+    if (dropped.length === 0) return;
+    for (const id of dropped) delete this.index[id];
+    logger.error(`[FileSystemMediaProvider] Removed ${dropped.length} index entries under private storage (#2195)`);
+    await this.saveIndex();
   }
 
   /**
@@ -803,6 +833,13 @@ class FileSystemMediaProvider extends BaseMediaProvider {
         skipped: [{ path: dirPath, reason: 'max-depth', isDirectory: true, matched: String(depth) }],
         dirErrors: 0
       };
+    }
+
+    // #2195: never walk private storage. Not recorded in the skip report: the
+    // report lists paths, and the point is that none under here is listed.
+    if (this.isExcluded(dirPath)) {
+      logger.error(`[FileSystemMediaProvider] Not scanning ${dirPath}: it is private storage (#2195)`);
+      return { files: [], skipped: [], dirErrors: 0 };
     }
 
     let entries: fs.Dirent[];

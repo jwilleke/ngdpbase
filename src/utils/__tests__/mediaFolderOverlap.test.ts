@@ -1,0 +1,94 @@
+/**
+ * #2195 — a media folder that equals, contains or sits inside private storage.
+ *
+ * A real temporary directory, so symlinks and real paths are the filesystem's
+ * own. Removed in `afterEach` by its absolute path.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import os from 'os';
+import path from 'path';
+import fs from 'fs-extra';
+import {
+  describeMediaFolderOverlap,
+  findMediaFolderOverlap,
+  overlapRelation,
+  privateStorageRoots
+} from '../mediaFolderOverlap';
+
+let tmp: string;
+
+beforeEach(async () => {
+  tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'media-overlap-')));
+  await fs.ensureDir(path.join(tmp, 'data', 'vault', 'jim', 'journal'));
+  await fs.ensureDir(path.join(tmp, 'data', 'vaults'));
+  await fs.ensureDir(path.join(tmp, 'photos'));
+});
+
+afterEach(async () => {
+  await fs.remove(tmp);
+});
+
+describe('overlapRelation', () => {
+  it('finds a folder equal to the root, trailing slash or not', () => {
+    const vault = path.join(tmp, 'data', 'vault');
+    expect(overlapRelation(vault, vault)).toBe('equals');
+    expect(overlapRelation(`${vault}/`, vault)).toBe('equals');
+    expect(overlapRelation(path.join(tmp, 'data', 'x', '..', 'vault'), vault)).toBe('equals');
+  });
+
+  it('finds a folder that contains the root', () => {
+    expect(overlapRelation(path.join(tmp, 'data'), path.join(tmp, 'data', 'vault'))).toBe('contains');
+  });
+
+  it('finds a folder inside the root', () => {
+    expect(overlapRelation(path.join(tmp, 'data', 'vault', 'jim', 'journal'), path.join(tmp, 'data', 'vault'))).toBe('is inside');
+  });
+
+  it('does not confuse a sibling that shares a prefix', () => {
+    expect(overlapRelation(path.join(tmp, 'data', 'vaults'), path.join(tmp, 'data', 'vault'))).toBeNull();
+    expect(overlapRelation(path.join(tmp, 'photos'), path.join(tmp, 'data', 'vault'))).toBeNull();
+  });
+
+  it('follows a symlink to the root', async () => {
+    const link = path.join(tmp, 'link-to-vault');
+    await fs.symlink(path.join(tmp, 'data', 'vault'), link);
+    expect(overlapRelation(link, path.join(tmp, 'data', 'vault'))).toBe('equals');
+    expect(overlapRelation(path.join(link, 'jim'), path.join(tmp, 'data', 'vault'))).toBe('is inside');
+  });
+
+  it('compares a folder that does not exist yet by its nearest existing parent', async () => {
+    const link = path.join(tmp, 'link-to-data');
+    await fs.symlink(path.join(tmp, 'data'), link);
+    expect(overlapRelation(path.join(link, 'vault', 'not-yet'), path.join(tmp, 'data', 'vault'))).toBe('is inside');
+  });
+});
+
+describe('privateStorageRoots and the message', () => {
+  const config = (props: Record<string, unknown>) => ({
+    getProperty: (k: string, d: unknown) => (k in props ? props[k] : d),
+    getResolvedDataPath: (k: string, d: string) => (typeof props[k] === 'string' ? props[k] : d)
+  });
+
+  it('lists the vaults, the legacy private root and shared-folder storage', () => {
+    const roots = privateStorageRoots(config({
+      'ngdpbase.page.provider.filesystem.storagedir': path.join(tmp, 'pages'),
+      'ngdpbase.shared-folders.storagedir': path.join(tmp, 'shared-folders')
+    }));
+    expect(roots.map(r => r.path)).toEqual([
+      path.join(tmp, 'pages', 'vaults'),
+      path.join(tmp, 'pages', 'private'),
+      path.join(tmp, 'shared-folders')
+    ]);
+  });
+
+  it('names the folder and the storage, and nothing inside it', () => {
+    const roots = privateStorageRoots(config({ 'ngdpbase.page.provider.filesystem.storagedir': path.join(tmp, 'data') }));
+    const o = findMediaFolderOverlap(tmp, roots);
+    if (!o) throw new Error('expected an overlap');
+    const message = describeMediaFolderOverlap(o);
+    expect(message).toContain(tmp);
+    expect(message).toContain('contains the vault storage');
+    expect(message).not.toContain('jim');
+    expect(message).not.toContain('journal');
+  });
+});

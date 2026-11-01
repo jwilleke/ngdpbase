@@ -30,6 +30,7 @@ import BaseMediaProvider, { MediaItem, ScanResult } from '../providers/BaseMedia
 import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/FileSystemMediaProvider.js';
 import { transformImage } from '../utils/imageTransform.js';
 import { enabledEntries } from '../utils/configFiles.js';
+import { describeMediaFolderOverlap, findMediaFolderOverlap, privateStorageRoots, type MediaFolderOverlap } from '../utils/mediaFolderOverlap.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
@@ -60,6 +61,8 @@ class MediaManager extends BaseManager implements CatalogSource {
   readonly currentSchemaVersion = MediaManager.CURRENT_SCHEMA_VERSION;
   /** Active media provider (null when not yet initialized) */
   private _provider: BaseMediaProvider | null = null;
+  /** Why configured folders were refused for overlapping private storage (#2195). */
+  private overlapReasons: string[] = [];
   /** The configured media folders, for the degraded-state reason (#1167). */
   private mediaFolders: string[] = [];
 
@@ -129,9 +132,17 @@ class MediaManager extends BaseManager implements CatalogSource {
     const extensionList = enabledEntries(configManager.getProperty('ngdpbase.media.extensions', DEFAULT_MEDIA_EXTENSIONS));
     const extensions = new Set(extensionList.map(e => e.toLowerCase().replace(/^\./, '')));
 
+    // #2195: a folder overlapping private storage is skipped, not fatal: the
+    // site still boots and its other folders are scanned.
+    const storageRoots = privateStorageRoots(configManager);
+    const overlaps = folders
+      .map(f => findMediaFolderOverlap(f, storageRoots))
+      .filter((o): o is MediaFolderOverlap => o !== null);
+    const allowed = folders.filter(f => !overlaps.some(o => o.folder === f));
     this.mediaFolders = folders;
     const fileSystemProvider = new FileSystemMediaProvider({
-      folders,
+      folders: allowed,
+      excludedRoots: storageRoots.map(r => r.path),
       ignoreDirs,
       maxDepth,
       indexFile,
@@ -149,7 +160,9 @@ class MediaManager extends BaseManager implements CatalogSource {
     // #1167: an unreadable configured folder is a degraded manager, visible on
     // the dashboard and in the manager status — not one boot-time warn line.
     // Checked now rather than at the first scan, which may be an hour away.
+    this.overlapReasons = overlaps.map(describeMediaFolderOverlap);
     this.recordFolderState(await fileSystemProvider.unreachableFolders());
+    this.surfaceOverlaps();
 
     // #1721: the folder rescan is a maintenance job on the scheduler — listed
     // on Admin → Scheduled Jobs, never overlapping itself. 0 turns it off.
@@ -295,15 +308,39 @@ class MediaManager extends BaseManager implements CatalogSource {
    * what degraded means (#1155) — configured, wanted, not working.
    */
   private recordFolderState(unreachable: string[]): void {
-    if (unreachable.length === 0) {
+    if (unreachable.length === 0 && this.overlapReasons.length === 0) {
       this.markReady();
       return;
     }
     const total = Math.max(this.mediaFolders.length, unreachable.length);
-    this.markDegraded(
-      `${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`,
-      'ngdpbase.media.folders'
-    );
+    const reasons = [...this.overlapReasons];
+    if (unreachable.length > 0) {
+      reasons.push(`${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`);
+    }
+    this.markDegraded(reasons.join(' '), 'ngdpbase.media.folders');
+  }
+
+  /** Log and notify admins of each folder refused for overlapping private storage (#2195). */
+  private surfaceOverlaps(): void {
+    const nm = this.engine.getManager<NotificationManager>('NotificationManager');
+    for (const message of this.overlapReasons) {
+      logger.error(`[MediaManager] ${message}`);
+      nm?.notifyAdmins({ level: 'error', title: 'Media folder overlaps private storage', message }).catch(() => { /* ignore */ });
+    }
+  }
+
+  /**
+   * Why each of `folders` may not be a media folder, empty when all may (#2195).
+   * The configuration screen asks before saving `ngdpbase.media.folders`.
+   */
+  checkFolders(folders: string[]): string[] {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) return [];
+    const roots = privateStorageRoots(configManager);
+    return folders
+      .map(f => findMediaFolderOverlap(f, roots))
+      .filter((o): o is MediaFolderOverlap => o !== null)
+      .map(describeMediaFolderOverlap);
   }
 
   /** One path per line, then "and N more" when the provider capped the list (#2191). */
