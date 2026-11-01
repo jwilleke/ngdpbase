@@ -34,7 +34,7 @@ import {
 } from '../utils/explainMediaPath.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
 import type { AssetMetadataPatch } from '../types/Asset.js';
-import { parseDateFromFilename } from './mediaFilenameDate.js';
+import { parseDateFromFilename } from '../../packages/media-date/index.js';
 
 /**
  * Configuration for FileSystemMediaProvider.

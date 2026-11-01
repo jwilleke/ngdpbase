@@ -13,6 +13,7 @@
     "build": "tsc && npm run build:addons",
     "build:addons": "cd addons/forms && npm install --silent && npx tsc -p tsconfig.json && cd ../calendar && npm install --silent && npx tsc -p tsconfig.json && cd ../elasticsearch && npm install --silent && npx tsc -p tsconfig.json && cd ../journal && npm install --silent && npx tsc -p tsconfig.json && cd ../feeds && npm install --silent && npx tsc -p tsconfig.json && cd ../demo && npx tsc -p tsconfig.json",
     "build:types-package": "tsx scripts/build-types-package.ts",
+    "build:media-date-package": "tsx scripts/build-media-date-package.ts",
     "create:addon": "tsx scripts/create-addon.ts",
     "audit:verify": "tsx scripts/verify-audit-chain.ts",
     "audit:restart-chain": "tsx scripts/restart-audit-chain.ts",
