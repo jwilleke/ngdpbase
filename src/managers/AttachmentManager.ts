@@ -102,6 +102,8 @@ interface BaseAttachmentProvider {
   filesInStoreForPage(location: StoreFileLocation, pageName: string): Promise<StoreFileEntry[]>;
   setFileMentionInStore(location: StoreFileLocation, id: string, pageName: string, mentioned: boolean): Promise<boolean>;
   deleteFileInStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null>;
+  readStoreRenumbered(location: StoreFileLocation): Promise<Map<string, string>>;
+  noteStoreRenumbered(location: StoreFileLocation, pairs: ReadonlyMap<string, string>): Promise<void>;
   searchFilesInStore(location: StoreFileLocation, query: AssetQuery): Promise<AssetRecord[]>;
   // #1460: the start-up move out of the shared index.
   privateRecordsInSharedIndex(): Array<{ id: string; owner: string | null; store: string | null; pages: string[] }>;
@@ -176,13 +178,22 @@ export interface PutOptions {
    */
   importedFrom?: string;
   /**
-   * A takeout re-import's file, brought back (#2188): the id it had, so a page
-   * still linking `/attachments/{id}` finds it again. Honoured only in the
-   * user's own vault, and only when no file anywhere on the site holds that
-   * id ({@link restoreIdIsFree}); otherwise the file gets a new id, as any
-   * upload does. The stored id is in the returned metadata either way.
+   * A takeout import's file (#2188): the ids it had, the one to try first
+   * first, so a page still linking `/attachments/{id}` finds it again. The
+   * file is stored under the first that is free ({@link restoreIdIsFree});
+   * when none is, it gets a new id, as any upload does. Honoured only in a
+   * vault, never a shared folder or the shared pool; the import passes it
+   * only for one of its user's own stores. The stored id is in the returned
+   * metadata either way.
    */
-  restoreId?: string;
+  restoreIds?: readonly string[];
+  /**
+   * The ids files on the site held when the caller's run began, from
+   * {@link heldFileIds}, read once per run (#2188). With it, a restore checks
+   * the set instead of every store's folder on disk, and adds the id it
+   * stores to it.
+   */
+  heldIds?: Set<string>;
 }
 
 /**
@@ -329,6 +340,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   /** What the last check for vault pages using shared-pool files found, and the degraded reason it set (#1842). */
   private poolFileFindings: VaultPagePoolFiles[] = [];
   private poolFileReason: string | null = null;
+  /** #2188: ids a restore has claimed and not yet written; one id is claimed by one put at a time. */
+  private readonly claimedRestoreIds = new Set<string>();
+  /** #2188: ids a restore has stored since start, which a run's held ids read earlier may not list. */
+  private readonly restoredIds = new Set<string>();
   private maxSize!: number;
   private allowedTypes!: string;
 
@@ -765,24 +780,45 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         owner,
         vaultAddon: storeKindFromConfig((key, fallback) => configManager.getProperty(key, fallback), store)?.owner ?? null
       }) ? options.keep : null;
-      // #2188: a restored file keeps its id when nothing else holds it.
-      const restoreId = options.restoreId && place.kind === 'vault'
-        && await this.restoreIdIsFree(options.restoreId, { owner, store, io }, pagesDirectory, layout)
-        ? options.restoreId
-        : null;
-      const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
-        { owner, store, io },
-        fileBuffer,
-        {
-          originalName: fileInfo.originalName,
-          mimeType: fileInfo.mimeType,
-          description: options.description || '',
-          author: authorRef,
-          ...(pageName ? { pageName } : {}),
-          ...(keep ? { keptOriginal: { types: keep.types } } : {}),
-          ...(restoreId ? { id: restoreId } : {})
+      // #2188: a restored file keeps an id it had when nothing else holds it.
+      // The id is claimed, in one synchronous step, before it is checked, and
+      // held until the file is written, so two imports at once never both take it.
+      let restoreId: string | null = null;
+      if (place.kind === 'vault') {
+        for (const id of new Set(options.restoreIds ?? [])) {
+          if (this.claimedRestoreIds.has(id)) continue;
+          this.claimedRestoreIds.add(id);
+          if (await this.restoreIdIsFree(id, { owner, store, io }, pagesDirectory, layout, options.heldIds).catch(() => false)) {
+            restoreId = id;
+            break;
+          }
+          this.claimedRestoreIds.delete(id);
         }
-      ));
+      }
+      let entry: StoreFileEntry;
+      try {
+        entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
+          { owner, store, io },
+          fileBuffer,
+          {
+            originalName: fileInfo.originalName,
+            mimeType: fileInfo.mimeType,
+            description: options.description || '',
+            author: authorRef,
+            ...(pageName ? { pageName } : {}),
+            ...(keep ? { keptOriginal: { types: keep.types } } : {}),
+            ...(restoreId ? { id: restoreId } : {})
+          }
+        ));
+      } finally {
+        // On disk from here, or not stored. A run whose held ids were read before
+        // this write learns of it through restoredIds, which sends it to the disk.
+        if (restoreId) {
+          this.restoredIds.add(restoreId);
+          this.claimedRestoreIds.delete(restoreId);
+        }
+      }
+      options.heldIds?.add(entry.id);
       // #1461: a private file is logged by id — never by its filename.
       logger.info(`📎 Uploaded a file into ${owner}'s private store '${store}' (${entry.id})`);
       // #2048: an encrypted store's file is recorded by id and store only.
@@ -843,11 +879,27 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * (`{id}.ext`) in the clear, sealed or not, so another owner's sealed store
    * is checked without its key. An id another file holds is never reused, so
    * a takeout cannot claim another file's id, its own or anyone's.
+   *
+   * With `held` ({@link heldFileIds}, read once by the caller's run), the
+   * stores on disk are not read again: the id is free when the set lacks it,
+   * unless a restore stored that id since, which only the disk can settle.
    */
-  private async restoreIdIsFree(id: string, target: StoreFileLocation, pagesDirectory: string, layout: PrivateStoreLayout): Promise<boolean> {
+  private async restoreIdIsFree(
+    id: string, target: StoreFileLocation, pagesDirectory: string, layout: PrivateStoreLayout, held?: ReadonlySet<string>
+  ): Promise<boolean> {
     if (!this.attachmentProvider || !isRestorableFileId(id)) return false;
     if ((await this.attachmentProvider.listFilesInStore(target)).some((f) => f.id === id)) return false;
     if (await this.attachmentProvider.attachmentExists(id)) return false;
+    if (held && !this.restoredIds.has(id)) return !held.has(id);
+    return !(await this.storeIdsOnDisk(pagesDirectory, layout, id)).has(id);
+  }
+
+  /**
+   * The ids of every file on disk in any store of any owner or shared folder,
+   * by the names of their bytes (#2188). With `only`, stops at that id.
+   */
+  private async storeIdsOnDisk(pagesDirectory: string, layout: PrivateStoreLayout, only?: string): Promise<Set<string>> {
+    const ids = new Set<string>();
     for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
       let stores: string[];
       try {
@@ -857,11 +909,55 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         continue;
       }
       for (const store of stores) {
-        const names = await fs.readdir(privateStoreAttachmentsDir(pagesDirectory, owner, store, layout)).catch(() => [] as string[]);
-        if (names.some((n) => n === id || n.startsWith(`${id}.`))) return false;
+        for (const name of await fs.readdir(privateStoreAttachmentsDir(pagesDirectory, owner, store, layout)).catch(() => [] as string[])) {
+          const id = name.split('.')[0] ?? name;
+          ids.add(id);
+          if (id === only) return ids;
+        }
       }
     }
-    return true;
+    return ids;
+  }
+
+  /**
+   * The ids files in the site's stores hold now, read once, for a takeout
+   * import to pass as `PutOptions.heldIds` to each file it puts (#2188).
+   * Ids only, from the names of the bytes on disk; no store is opened.
+   */
+  async heldFileIds(): Promise<Set<string>> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return new Set();
+    return this.storeIdsOnDisk(pagesDirectory, privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)));
+  }
+
+  /**
+   * The ids a takeout import gave the files of `ctx`'s own store `store` that
+   * could not keep their own, as takeout id → id here (#2188), or null when
+   * this context cannot open the store. Ids only.
+   */
+  async ownStoreRenumbered(ctx: ActorContext, store: string): Promise<Map<string, string> | null> {
+    const location = await this.ownStoreLocation(ctx, store);
+    return location && this.attachmentProvider ? this.attachmentProvider.readStoreRenumbered(location) : null;
+  }
+
+  /** Adds `pairs` to {@link ownStoreRenumbered}'s, for a run that stored files under new ids (#2188). */
+  async noteOwnStoreRenumbered(ctx: ActorContext, store: string, pairs: ReadonlyMap<string, string>): Promise<void> {
+    const location = await this.ownStoreLocation(ctx, store);
+    if (!location || !this.attachmentProvider) throw new Error('That store cannot be written in this session');
+    await this.attachmentProvider.noteStoreRenumbered(location, pairs);
+  }
+
+  /** `ctx`'s own store `store`, as {@link ownStoreFingerprints} reaches it, or null. */
+  private async ownStoreLocation(ctx: ActorContext, store: string): Promise<StoreFileLocation | null> {
+    if (!this.attachmentProvider || !isValidStoreId(store) || !ctx?.username || !mayActInPrivateContainer(ctx, ctx.username)) return null;
+    if (!this.mayReach(ctx, ctx.username, `store-files:${store}`, 'view')) return null;
+    try {
+      return await this.vaultLocation(ctx, ctx.username, store);
+    } catch {
+      // Locked, or a sealed store this context holds no DEK for: never read in the clear.
+      return null;
+    }
   }
 
   /**

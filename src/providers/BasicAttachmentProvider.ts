@@ -1015,6 +1015,35 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     await location.io.writeText(file, JSON.stringify({ version: 1, files }));
   }
 
+  // #2188: beside the index, through the store's own I/O, so a sealed store's is sealed too.
+  private storeRenumberedFile(location: StoreFileLocation): string {
+    return path.join(path.dirname(this.storeIndexFile(location)), 'files-renumbered.json');
+  }
+
+  /**
+   * The ids a takeout import last gave the store's files that could not keep
+   * their own (#2188), as takeout id → id here. Kept apart from the index, so
+   * it outlives a delete of the file. Ids only.
+   */
+  async readStoreRenumbered(location: StoreFileLocation): Promise<Map<string, string>> {
+    const file = this.storeRenumberedFile(location);
+    if (!await fs.pathExists(file)) return new Map();
+    const parsed = JSON.parse(await location.io.readText(file)) as { ids?: Record<string, unknown> };
+    const ids = parsed && typeof parsed.ids === 'object' && parsed.ids ? parsed.ids : {};
+    return new Map(Object.entries(ids).filter((e): e is [string, string] =>
+      isRestorableFileId(e[0]) && typeof e[1] === 'string' && isRestorableFileId(e[1])));
+  }
+
+  /** Adds `pairs` (takeout id → id here) to {@link readStoreRenumbered}'s; a later pair for an id replaces the earlier. */
+  async noteStoreRenumbered(location: StoreFileLocation, pairs: ReadonlyMap<string, string>): Promise<void> {
+    if (pairs.size === 0) return;
+    const ids = await this.readStoreRenumbered(location);
+    for (const [from, to] of pairs) if (isRestorableFileId(from) && isRestorableFileId(to)) ids.set(from, to);
+    const file = this.storeRenumberedFile(location);
+    await fs.ensureDir(path.dirname(file));
+    await location.io.writeText(file, JSON.stringify({ version: 1, ids: Object.fromEntries(ids) }));
+  }
+
   async storeFileInStore(
     location: StoreFileLocation,
     bytes: Buffer,

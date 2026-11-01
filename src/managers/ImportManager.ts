@@ -392,6 +392,21 @@ const DEFAULT_NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._
 const ORIGINAL_CHOICES: readonly OriginalChoice[] = ['none', 'cite', 'keep'];
 
 /** What an export run reads from configuration (#2120): the engine's limits, and how long a made file is kept. */
+/**
+ * A takeout run's state for giving files back their ids in one store (#2188),
+ * read once per run and store.
+ */
+interface StoreRestoring {
+  /** The ids the site's files held when the run began, and each id the run stored since. */
+  held: Set<string>;
+  /** The ids this store gave a takeout's files that could not keep their own, takeout id → id here. */
+  lastIds: Map<string, string>;
+  /** This run's files stored under another id than the one the store last gave them: takeout id → id now. */
+  renumbered: Map<string, string>;
+  /** A re-import's ids the store's pages may still link, each → the id its file has now. */
+  relink: Map<string, string>;
+}
+
 interface ExportRunSettings extends IceExportSettings {
   keepMinutes: number;
   maxHeldBytes: number;
@@ -469,8 +484,8 @@ class ImportManager extends BaseManager {
   private readonly iceRuns = new Map<string, IceRunReport>();
   /** ICE (#2171): a rechecking run's store, as fingerprint → id, read once per run and store; dropped when the run ends. */
   private readonly storeHoldings = new Map<string, Promise<Map<string, string> | null>>();
-  /** ICE (#2188): a run's files brought back under a new id, as old id → new id, by run and store; dropped when the run ends. */
-  private readonly storeRenumbered = new Map<string, Map<string, string>>();
+  /** ICE (#2188): what a run gives files back their ids with, by run and store; dropped when the run ends. */
+  private readonly storeRestoring = new Map<string, Promise<StoreRestoring>>();
   /** ICE: work waiting for the background job, each with its own context: an import run or an export (#2120). */
   private readonly iceQueue: Array<{ ctx: JobContext; run: () => Promise<unknown> }> = [];
   /** ICE: true while a background job is draining the queue. */
@@ -1222,7 +1237,7 @@ class ImportManager extends BaseManager {
       return report;
     } finally {
       for (const key of this.storeHoldings.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeHoldings.delete(key);
-      for (const key of this.storeRenumbered.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeRenumbered.delete(key);
+      for (const key of this.storeRestoring.keys()) if (key.startsWith(`${report.runId}\0`)) this.storeRestoring.delete(key);
     }
   }
 
@@ -1612,18 +1627,27 @@ class ImportManager extends BaseManager {
       targets: async (ctx) => (await this.ownStoresWritable(ctx)).map(id => ({ id, label: id })),
       receive: (item, ctx, info) => this.receiveTakeoutEntry(item, ctx, info),
       runDone: async (ctx, report) => {
-        // #2188: a file brought back under a new id, its links in the store's pages pointed at it.
-        const renumbered = this.storeRenumbered.get(`${report.runId}\0${report.target ?? ''}`) ?? new Map<string, string>();
-        const relinked = renumbered.size === 0 ? 0 : await this.relinkStorePages(ctx, report.target ?? '', renumbered).catch((err: unknown) => {
-          logger.warn(`[ImportManager] the links of run ${report.runId} could not be pointed at its renumbered files (${errorClassOf(err)})`);
-          return 0;
-        });
+        // #2188: a file stored under a new id: the store remembers it, and the store's pages that link
+        // an id it had and that now opens nothing are pointed at it.
+        const restoring = await this.storeRestoring.get(`${report.runId}\0${report.target ?? ''}`)?.catch(() => undefined);
+        const renumbered = restoring?.renumbered ?? new Map<string, string>();
+        if (renumbered.size > 0) {
+          await this.engine.getManager<AttachmentManager>('AttachmentManager')?.noteOwnStoreRenumbered(ctx, report.target ?? '', renumbered).catch((err: unknown) => {
+            logger.warn(`[ImportManager] the new ids of run ${report.runId} could not be kept for the next import (${errorClassOf(err)})`);
+          });
+        }
+        const relinked = restoring && restoring.relink.size > 0
+          ? await this.relinkStorePages(ctx, report.target ?? '', restoring.relink).catch((err: unknown) => {
+            logger.warn(`[ImportManager] the links of run ${report.runId} could not be pointed at its renumbered files (${errorClassOf(err)})`);
+            return { relinked: [], failed: [] };
+          })
+          : { relinked: [], failed: [] };
         // A failure here costs the report page, never the import or its audit record.
         const unlinked = await this.keepRunReport(ctx, report).catch((err: unknown) => {
           logger.warn(`[ImportManager] the import report for run ${report.runId} could not be kept (${errorClassOf(err)})`);
           return 0;
         });
-        await this.recordStoreImport(ctx, report, unlinked, { renumbered, relinked });
+        await this.recordStoreImport(ctx, report, unlinked, { renumbered, ...relinked });
       },
       // #2110: a page the user may read, by PageManager's own read decision. A file's id is not linked.
       linkFor: async (ref: string, ctx: ActorContext): Promise<string | null> => {
@@ -1706,20 +1730,39 @@ class ImportManager extends BaseManager {
       return held;
     };
     const heldAgain = async (bytes: Buffer): Promise<string | null> => (await holdings())?.get(fingerprint(bytes)) ?? null;
-    // #2188: a file keeps the id it had in the takeout when no file holds it now, so a page linking it finds it.
-    // When it can't, the run remembers both ids, and its end points the store's pages at the new one.
+    // #2188: what a run needs to give a file back an id it had, read once a run and store: the ids the
+    // site's files hold, and the ids this store gave files of a takeout that could not keep their own.
+    const restoring = (): Promise<StoreRestoring> => {
+      const key = `${info.runId}\0${store}`;
+      let state = this.storeRestoring.get(key);
+      if (!state) {
+        state = (async () => ({
+          held: await attachments.heldFileIds(),
+          lastIds: await attachments.ownStoreRenumbered(ctx, store) ?? new Map<string, string>(),
+          renumbered: new Map<string, string>(),
+          relink: new Map<string, string>()
+        }))();
+        this.storeRestoring.set(key, state);
+        state.catch(() => this.storeRestoring.delete(key));
+      }
+      return state;
+    };
+    // #2188: a file keeps the id this store last gave it, or else the id it had in the takeout, when no
+    // file holds it now, so a page linking either finds it. When neither is free it gets a new one: the
+    // store remembers it for the next import, and a re-import's end points the store's pages at it.
     const put = async (bytes: Buffer, name: string, mimeType: string | undefined, description: string | undefined, oldId: string | undefined): Promise<string | undefined> => {
+      const state = oldId ? await restoring() : null;
+      const lastId = oldId ? state?.lastIds.get(oldId) : undefined;
+      const tried = oldId ? [...new Set([lastId ?? oldId, oldId])] : [];
       const stored = await files.put(
         ctx, place,
         { bytes, info: { originalName: name, mimeType: mimeType || mediaTypeByExtension(name), size: bytes.length } },
-        { description: description ?? '', ...(oldId ? { restoreId: oldId } : {}) }
+        { description: description ?? '', ...(state ? { restoreIds: tried, heldIds: state.held } : {}) }
       );
       if (stored.identifier) (await holdings())?.set(fingerprint(bytes), stored.identifier);
-      if (info.rechecked && oldId && stored.identifier && stored.identifier !== oldId) {
-        const key = `${info.runId}\0${store}`;
-        const renumbered = this.storeRenumbered.get(key) ?? new Map<string, string>();
-        renumbered.set(oldId, stored.identifier);
-        this.storeRenumbered.set(key, renumbered);
+      if (state && oldId && stored.identifier && stored.identifier !== (lastId ?? oldId)) {
+        state.renumbered.set(oldId, stored.identifier);
+        if (info.rechecked) for (const id of tried) if (id !== stored.identifier) state.relink.set(id, stored.identifier);
       }
       return stored.identifier;
     };
@@ -1753,22 +1796,38 @@ class ImportManager extends BaseManager {
 
   /**
    * Point every page of the user's store `store` that links a file by an id
-   * in `ids` at the file's new id (#2188), through the page door. For a file
-   * a re-import brought back under a new id because its old one is held by
-   * another file. Returns how many pages changed.
+   * in `ids` at the file's id now (#2188), through the page door. Only an id
+   * no store of the user's holds is repointed: a link that opens their own
+   * file, say one that moved to another of their stores keeping its id, is
+   * left. An id held only by the shared pool or someone else's store is not
+   * the page's file, so it is repointed.
+   * A page that cannot be saved is passed over and named in `failed`; the
+   * rest are still done. Pages are named by uuid, never by title.
    */
-  private async relinkStorePages(ctx: ActorContext, store: string, ids: ReadonlyMap<string, string>): Promise<number> {
+  private async relinkStorePages(ctx: ActorContext, store: string, ids: ReadonlyMap<string, string>): Promise<{ relinked: string[]; failed: string[] }> {
     const { pageManager } = this.privateStoreSetup();
-    let relinked = 0;
+    const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    const broken = new Map<string, string>();
+    for (const [from, to] of ids) if (!await attachments?.isOwnPrivateStoreFile(from, ctx)) broken.set(from, to);
+    const relinked: string[] = [];
+    const failed: string[] = [];
+    if (broken.size === 0) return { relinked, failed };
     for (const { name } of await pageManager.listVaultPages(ctx, ctx.username, store)) {
-      const page = await pageManager.getPage(name, ctx);
-      if (!page) continue;
-      const body = rewriteAttachmentLinks(page.content ?? '', ids);
-      if (body === (page.content ?? '')) continue;
-      await pageManager.savePage(name, body, page.metadata ?? {}, ctx);
-      relinked++;
+      let uuid = '';
+      try {
+        const page = await pageManager.getPage(name, ctx);
+        if (!page) continue;
+        uuid = typeof page.metadata?.uuid === 'string' ? page.metadata.uuid : '';
+        const body = rewriteAttachmentLinks(page.content ?? '', broken);
+        if (body === (page.content ?? '')) continue;
+        await pageManager.savePage(name, body, page.metadata ?? {}, ctx);
+        relinked.push(uuid);
+      } catch (err) {
+        failed.push(uuid);
+        logger.warn(`[ImportManager] a page (${uuid || 'no uuid'}) could not be pointed at its renumbered files (${errorClassOf(err)})`);
+      }
     }
-    return relinked;
+    return { relinked, failed };
   }
 
   /** A takeout's page into the store, as #1472 decided: see {@link privateStoreReceiver}. */
@@ -1822,7 +1881,7 @@ class ImportManager extends BaseManager {
    */
   private async recordStoreImport(
     ctx: ActorContext, report: IceRunReport, filesUnlinked: number,
-    relink: { renumbered: ReadonlyMap<string, string>; relinked: number } = { renumbered: new Map(), relinked: 0 }
+    relink: { renumbered: ReadonlyMap<string, string>; relinked: string[]; failed: string[] } = { renumbered: new Map(), relinked: [], failed: [] }
   ): Promise<void> {
     const sink = this.engine.getManager<AuditEventSink>('AuditManager');
     const who = actorOf(ctx);
@@ -1859,9 +1918,13 @@ class ImportManager extends BaseManager {
         files: files.filter(f => f.status === 'imported' || f.status === 'duplicate').length,
         fileErrors: files.filter(isFailedEntry).length,
         filesUnlinked,
-        // #2188: a file brought back under a new id, both ids, and the pages pointed at the new one. Ids only, never a name.
+        // #2188: a file stored under a new id, both ids, and the pages pointed at it and those that could not be. Ids only, never a name.
         ...(relink.renumbered.size > 0
-          ? { filesRenumbered: [...relink.renumbered].map(([from, to]) => ({ from, to })), pagesRelinked: relink.relinked }
+          ? {
+            filesRenumbered: [...relink.renumbered].filter(([from, to]) => from !== to).map(([from, to]) => ({ from, to })),
+            pagesRelinked: relink.relinked,
+            ...(relink.failed.length > 0 ? { pagesNotRelinked: relink.failed } : {})
+          }
           : {}),
         leftOut: count('noise')
       }

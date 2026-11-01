@@ -218,6 +218,16 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
     return null;
   }
 
+  /** The ids a takeout import gave a store's files that could not keep their own, as takeout id → id here (#2188). */
+  async readStoreRenumbered(_location: StoreFileLocation): Promise<Map<string, string>> {
+    return new Map();
+  }
+
+  /** Adds takeout id → id pairs to {@link readStoreRenumbered}'s (#2188). */
+  async noteStoreRenumbered(_location: StoreFileLocation, _pairs: ReadonlyMap<string, string>): Promise<void> {
+    throw new Error('This attachment provider keeps no store files');
+  }
+
   /**
    * Refresh internal cache/index
    * Re-scans storage and rebuilds indexes
