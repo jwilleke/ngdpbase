@@ -26,6 +26,7 @@ import {
   privateUserDir,
   privateUserKeysPath,
   privateVersionDirectory,
+  nameForLog,
   storeMetaPath
 } from '../privateStorePath';
 
@@ -341,5 +342,28 @@ describe('vault folders come from the system-category entries (#1504)', () => {
     const layout = privateStoreLayoutFromConfig((_key, fallback) => fallback);
     expect(layout.privateRoot).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.privateRoot);
     expect(layout.defaultStoreId).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId);
+  });
+});
+
+describe('a page\'s name for a log line keeps a private title out (#1461, #2178)', () => {
+  const UUID = '3f2a1b4c-0d5e-4f60-8a71-92b3c4d5e6f7';
+
+  test('a private page goes by its owner, store and uuid', () => {
+    expect(nameForLog('vaults/jim/default/Secret Diary', { uuid: UUID })).toBe(`a page in jim's store 'default' (uuid ${UUID})`);
+  });
+
+  test('a private page saved under its bare title goes by its uuid', () => {
+    expect(nameForLog('Secret Diary', { private: true, uuid: UUID })).toBe(`a private page (uuid ${UUID})`);
+  });
+
+  test('a private page whose uuid is not known says so, and names no title', () => {
+    expect(nameForLog('vaults/jim/default/Secret Diary')).toBe("a page in jim's store 'default' (uuid unknown)");
+    expect(nameForLog('Secret Diary', { private: true })).toBe('a private page (uuid unknown)');
+  });
+
+  test('a public page goes by its name, and its uuid when known', () => {
+    expect(nameForLog('Garden Plan')).toBe("'Garden Plan'");
+    expect(nameForLog('Garden Plan', { private: false })).toBe("'Garden Plan'");
+    expect(nameForLog('Garden Plan', { uuid: UUID })).toBe(`'Garden Plan' (uuid ${UUID})`);
   });
 });

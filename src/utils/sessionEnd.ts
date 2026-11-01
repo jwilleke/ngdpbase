@@ -10,6 +10,7 @@
  * - the end is recorded as `authentication-logout`, with who, from where and
  *   why (#1670). Until this, only the idle timeout was recorded.
  * - a choice to act for someone (`actingFor`, #1762) ends with it.
+ * - so do the form POSTs it kept for a fresh sign-in (#2176), by its `id`.
  *
  * An account deleted or turned off ends its sessions here too (#1937), with
  * the reason `account-deleted` / `account-disabled`: on the session's next
@@ -25,13 +26,17 @@ import logger from './logger.js';
 
 export type SessionEndReason = 'logout' | 'idle-timeout' | 'max-age' | 'password-changed' | 'superseded' | 'account-deleted' | 'account-disabled';
 
+interface StepUpReplays {
+  dropStepUpReplays?(sessionId: string): void;
+}
+
 interface AuditSink {
   logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<unknown>;
 }
 
 export function endSession(
   engine: { getManager(name: string): unknown },
-  session: { username?: unknown; privateStoreHandle?: unknown; pendingConnection?: unknown; actingFor?: unknown } | null | undefined,
+  session: { id?: unknown; username?: unknown; privateStoreHandle?: unknown; pendingConnection?: unknown; actingFor?: unknown } | null | undefined,
   reason: SessionEndReason,
   from: { ipAddress?: string; userAgent?: string }
 ): void {
@@ -40,6 +45,8 @@ export function endSession(
   if (session) delete session.pendingConnection;
   // #1762 slice 4: nor does a choice to act for someone.
   if (session) delete session.actingFor;
+  // #2176: nor do the form POSTs it kept for a fresh sign-in.
+  if (typeof session?.id === 'string') (engine.getManager('AuthManager') as StepUpReplays | null)?.dropStepUpReplays?.(session.id);
   const username = typeof session?.username === 'string' && session.username ? session.username : null;
   if (!username) return; // nobody was signed in: nothing ended
   const audit = engine.getManager('AuditManager') as AuditSink | null;
