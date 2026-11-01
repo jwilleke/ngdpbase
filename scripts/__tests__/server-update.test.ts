@@ -23,20 +23,34 @@ let instance: string;
 let stubBin: string;
 let npmLog: string;
 
-function git(cwd: string, ...args: string[]): string {
-  const r = spawnSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], {
+// Under a git hook (husky's pre-push runs this suite) git exports GIT_DIR,
+// GIT_INDEX_FILE and friends, which would aim these commands at the real repo.
+const envWithoutGit = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+
+function runGit(cwd: string, args: string[]): ReturnType<typeof spawnSync> {
+  return spawnSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], {
     cwd,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...envWithoutGit,
       GIT_AUTHOR_NAME: 'test',
       GIT_AUTHOR_EMAIL: 'test@example.invalid',
       GIT_COMMITTER_NAME: 'test',
       GIT_COMMITTER_EMAIL: 'test@example.invalid'
     }
   });
-  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
-  return r.stdout.trim();
+}
+
+function git(cwd: string, ...args: string[]): string {
+  // A commit or push from here must never reach this repository. Every
+  // command runs only once git confirms its repository is inside tmp.
+  if (args[0] !== 'init' && args[0] !== 'clone') {
+    const dir = String(runGit(cwd, ['rev-parse', '--absolute-git-dir']).stdout).trim();
+    if (!tmp || !dir.startsWith(fs.realpathSync(tmp))) throw new Error(`refusing git ${args[0]} outside the test dir: ${dir}`);
+  }
+  const r = runGit(cwd, args);
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${String(r.stderr)}`);
+  return String(r.stdout).trim();
 }
 
 function stub(name: string, body: string): void {
