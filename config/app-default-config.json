@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.41.0",
+  "ngdpbase.version": "5.41.1",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -1143,7 +1143,6 @@
   "ngdpbase.notifications.escalation.levels": [
     "error"
   ],
-  "ngdpbase.notifications.escalation.recipient-role": "admin",
   "_comment_forms": "Generic Forms addon",
   "ngdpbase.addons.forms.enabled": false,
   "ngdpbase.addons.forms.dataPath": "${FAST_STORAGE}/forms",

@@ -1,5 +1,18 @@
 # #1513: the checks that would have caught most of the red CI runs before
 # they left the machine — types, the tests touched by this branch, and lint.
-npm run typecheck --silent
-npx vitest run --changed origin/master
-npm run lint:code --silent
+# Extended to mirror more of ci.yml; code checks are skipped when the branch
+# changes only docs (*.md or docs/), matching the "no tests for docs-only" rule.
+CHANGED=$(git diff --name-only origin/master...HEAD)
+if echo "$CHANGED" | grep -qvE '(\.md$|^docs/)'; then
+  npm run typecheck --silent
+  npx vitest run --changed origin/master
+  npm run lint:code --silent
+  npm run lint:sensitive --silent
+  npm run lint:backup --silent
+  # Add-on compile + load check (v4.13.0 shipped two dead add-ons); slow, so
+  # only when addons/ changed.
+  if echo "$CHANGED" | grep -q '^addons/'; then
+    npm run build --silent && npm run check:addon-load --silent
+  fi
+fi
+npm run lint:md --silent
