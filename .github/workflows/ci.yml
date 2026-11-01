@@ -6,9 +6,12 @@ on:
     # #1513: a TODO.md refresh or an agent/template edit tests nothing. Not all
     # *.md: docs/** feeds lint:docs.
     paths-ignore: ['TODO.md', '.claude/**', '.github/ISSUE_TEMPLATE/**']
+  # #2218: no paths-ignore here. The ruleset requires Test Suite, Lint & Code
+  # Quality, Smoke Tests and CI Summary, and a workflow that never starts
+  # never reports them, so a TODO.md-only PR could not merge. The `filter`
+  # job below makes those jobs skip their steps instead, and still pass.
   pull_request:
     branches: [master, develop]
-    paths-ignore: ['TODO.md', '.claude/**', '.github/ISSUE_TEMPLATE/**']
   # Manual trigger. This workflow sat `disabled_manually` from 2026-04-14 to
   # 2026-08-23 because two auxiliary jobs went permanently red (a renamed
   # config key in Smoke Tests, a pre-TypeScript-migration server path in E2E)
@@ -25,29 +28,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # #2218: true when a pull request changes only the paths the push trigger
+  # ignores. The required jobs then run, skip every step, and report success.
+  filter:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+
+    steps:
+      # A pull_request checkout is the merge commit: HEAD^1 is the base tip.
+      - name: Checkout code
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Only TODO.md, .claude/ or issue templates changed?
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          docs_only=false
+          if [ "$EVENT" = "pull_request" ]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            echo "$changed"
+            if [ -n "$changed" ] && \
+               ! echo "$changed" | grep -qvE '^(TODO\.md$|\.claude/|\.github/ISSUE_TEMPLATE/)'; then
+              docs_only=true
+            fi
+          fi
+          echo "docs_only=$docs_only"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    needs: filter
 
     steps:
+      - name: Report docs-only skip
+        if: needs.filter.outputs.docs_only == 'true'
+        run: |
+          echo "Skipped: only TODO.md, .claude/ or issue templates changed (#2218)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/checkout@v7
 
       - name: Setup Node.js
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'
 
       - name: Install dependencies
+        if: needs.filter.outputs.docs_only != 'true'
         run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run build
 
       # #1192: every bundled addon must load with NODE's resolver, not vitest's.
       # Two addons shipped dead in v4.13.0 while every other gate was green.
       - name: Addons load in Node
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run check:addon-load
 
       # --- #1093 diagnostics -------------------------------------------------
@@ -63,6 +110,7 @@ jobs:
       # These steps exist to tell that apart from the file actually being gone.
       # Remove them once #1093 is closed.
       - name: Record capacity before tests (#1093)
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "::group::Limits and capacity"
           echo "nproc:             $(nproc)"
@@ -105,6 +153,7 @@ jobs:
       # the next occurrence into the identification the hunt was missing,
       # while the run stays green because the tree is never mutated.
       - name: Shim npm — refuse `npm update` during tests (#1093)
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           mkdir -p /tmp/npm-shim
           real_npm="$(command -v npm)"
@@ -130,6 +179,7 @@ jobs:
           echo "npm shim installed in front of $real_npm"
 
       - name: Sample resource use during tests (#1093)
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           # Backgrounded sampler. Open descriptors across all processes and
           # memory, every 2s, so a spike that coincides with the failure is
@@ -159,6 +209,7 @@ jobs:
 
       # #1513: one run, with coverage — the suite used to run twice.
       - name: Run all tests, with coverage
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm test -- --coverage --maxWorkers=2
         env:
           NODE_ENV: test
@@ -168,7 +219,7 @@ jobs:
       # resolution failure under load. If they are genuinely gone, something in
       # the suite is removing them and the hunt moves into the tests.
       - name: Check whether Vitest files survived (#1093)
-        if: always()
+        if: always() && needs.filter.outputs.docs_only != 'true'
         run: |
           echo "::group::Did the mystery npm update strike (and get blocked)? (#1093)"
           if [ -s /tmp/npm-update-blocked.log ]; then
@@ -225,6 +276,7 @@ jobs:
       # --- end #1093 diagnostics ---------------------------------------------
 
       - name: Upload coverage to Codecov
+        if: needs.filter.outputs.docs_only != 'true'
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage/lcov.info
@@ -238,18 +290,27 @@ jobs:
   lint:
     name: Lint & Code Quality
     runs-on: ubuntu-latest
+    needs: filter
 
     steps:
+      - name: Report docs-only skip
+        if: needs.filter.outputs.docs_only == 'true'
+        run: |
+          echo "Skipped: only TODO.md, .claude/ or issue templates changed (#2218)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/checkout@v7
 
       - name: Setup Node.js
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'
 
       - name: Install dependencies
+        if: needs.filter.outputs.docs_only != 'true'
         run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       # #1278: the whole lint chain, not markdown alone. The guards (page door,
@@ -258,12 +319,15 @@ jobs:
       # Build first: it installs each addon's own dependencies, which eslint's
       # type-aware rules on addons/ need, exactly as the test job does.
       - name: Build (addon dependencies for type-aware lint)
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run build
 
       - name: Run the full lint chain
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run lint:ci
 
       - name: Check for debugging code
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "Checking for console.log and debugger statements..."
           if git grep -n "console\.log\|debugger" -- '*.js' '*.ts' ':!node_modules' ':!dist' ':!coverage' ':!*.test.js' ':!**/tests/**' ':!**/__tests__/**'; then
@@ -274,6 +338,7 @@ jobs:
           fi
 
       - name: Check for TODO comments
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "Checking for TODO comments..."
           if git grep -n "TODO:" -- 'src/**/*.js' ':!**/__tests__/**'; then
@@ -286,36 +351,48 @@ jobs:
   smoke-test:
     name: Smoke Tests
     runs-on: ubuntu-latest
-    needs: test
+    needs: [filter, test]
 
     steps:
+      - name: Report docs-only skip
+        if: needs.filter.outputs.docs_only == 'true'
+        run: |
+          echo "Skipped: only TODO.md, .claude/ or issue templates changed (#2218)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/checkout@v7
 
       # #1693: the server and its scripts refuse to start without PUID/PGID,
       # and a non-root process must already be that user — the runner's own ids.
       - name: Run-as user
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "PUID=$(id -u)" >> "$GITHUB_ENV"
           echo "PGID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'
 
       - name: Install dependencies
+        if: needs.filter.outputs.docs_only != 'true'
         run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run build
 
       - name: Create required directories
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           mkdir -p pages data logs sessions
 
       - name: Check required pages exist
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "Verifying required pages by frontmatter title..."
           # Required pages use UUID filenames with titles in YAML frontmatter
@@ -341,6 +418,7 @@ jobs:
           echo "All required pages verified"
 
       - name: Check configuration
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "Verifying critical configuration..."
           node -e "
@@ -357,6 +435,7 @@ jobs:
           "
 
       - name: Test WikiEngine initialization
+        if: needs.filter.outputs.docs_only != 'true'
         env:
           # #631/#1953: the engine refuses to initialise without a system
           # principal, before any manager writes. Same name as the E2E job.
@@ -381,38 +460,50 @@ jobs:
   e2e-test:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: test
+    needs: [filter, test]
     # #1513: E2E does not block (see CI Summary); a failure here no longer
     # turns the whole run red.
     continue-on-error: true
 
     steps:
+      - name: Report docs-only skip
+        if: needs.filter.outputs.docs_only == 'true'
+        run: |
+          echo "Skipped: only TODO.md, .claude/ or issue templates changed (#2218)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/checkout@v7
 
       # #1693: the server and its scripts refuse to start without PUID/PGID,
       # and a non-root process must already be that user — the runner's own ids.
       - name: Run-as user
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           echo "PUID=$(id -u)" >> "$GITHUB_ENV"
           echo "PGID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
+        if: needs.filter.outputs.docs_only != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'
 
       - name: Install dependencies
+        if: needs.filter.outputs.docs_only != 'true'
         run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run build
 
       - name: Install Playwright Browsers
+        if: needs.filter.outputs.docs_only != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Setup E2E test environment
+        if: needs.filter.outputs.docs_only != 'true'
         run: |
           # Use the seed script to create test data using the app's actual managers
           # This ensures compatibility with current user structure and password hashing
@@ -420,6 +511,7 @@ jobs:
           npx tsx scripts/seed-e2e-test-data.ts
 
       - name: Run E2E tests
+        if: needs.filter.outputs.docs_only != 'true'
         run: npm run test:e2e
         env:
           NODE_ENV: test
@@ -443,7 +535,7 @@ jobs:
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && needs.filter.outputs.docs_only != 'true'
         with:
           name: playwright-report
           path: tests/e2e/.output/
@@ -452,13 +544,14 @@ jobs:
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [test, lint, smoke-test, e2e-test]
+    needs: [filter, test, lint, smoke-test, e2e-test]
     if: always()
 
     steps:
       - name: Check results
         run: |
           echo "CI Pipeline Results:"
+          echo "- Only TODO.md, .claude/ or issue templates changed: ${{ needs.filter.outputs.docs_only }}"
           echo "- Tests: ${{ needs.test.result }}"
           echo "- Lint: ${{ needs.lint.result }}"
           echo "- Smoke Tests: ${{ needs.smoke-test.result }}"

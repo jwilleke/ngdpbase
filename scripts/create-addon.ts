@@ -762,7 +762,7 @@ jobs:
  * marker line, so `--update-publish` can tell an older generated file from the
  * current one and rewrite it.
  */
-export const PUBLISH_WORKFLOW_VERSION = 4;
+export const PUBLISH_WORKFLOW_VERSION = 5;
 
 const PUBLISH_MARKER = /^# ngdpbase-publish-workflow: (\d+)$/m;
 const PLAIN_TAGS_SETTING = /^ {2}NGDPBASE_PLAIN_TAGS: '(true|false)'$/m;
@@ -944,12 +944,15 @@ jobs:
         run: npm run test --if-present
 
       # The installer loads what was published; sources and tests are not it.
+      # npm pack --json prints an array of packages up to npm 11, and an
+      # object keyed by package name from npm 12; both are read.
       - name: The package ships no .ts sources or tests
         working-directory: @{{ steps.tag.outputs.dir }}
         run: |
           npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/pack.json"
           node -e '
-            const [pack] = require(process.env.RUNNER_TEMP + "/pack.json");
+            const out = require(process.env.RUNNER_TEMP + "/pack.json");
+            const [pack] = Array.isArray(out) ? out : Object.values(out);
             const bad = pack.files.map((f) => f.path).filter((p) => (/[.][cm]?ts$/.test(p) && !/[.]d[.][cm]?ts$/.test(p)) || p.split("/").includes("__tests__"));
             if (bad.length) {
               console.error("::error::the package would ship sources or tests: " + bad.join(", ") + ". Ship the compiled .js (and .d.ts): list them in files, and leave .ts sources and __tests__ out");
@@ -966,7 +969,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/release"
           npm pack --json --pack-destination "$RUNNER_TEMP/release" > "$RUNNER_TEMP/packed.json"
-          tarball=$(node -p 'const [p] = require(process.env.RUNNER_TEMP + "/packed.json"); (p && p.filename) || ""')
+          tarball=$(node -p 'const out = require(process.env.RUNNER_TEMP + "/packed.json"); const [p] = Array.isArray(out) ? out : Object.values(out); (p && p.filename) || ""')
           if [ -z "$tarball" ] || [ ! -f "$RUNNER_TEMP/release/$tarball" ]; then
             echo "::error::npm pack produced no tarball"; exit 1
           fi

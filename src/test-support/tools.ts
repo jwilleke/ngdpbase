@@ -8,7 +8,6 @@
  *
  * Each answer is worked out once per test file and cached.
  */
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import ffmpegPath from 'ffmpeg-static';
 import { resolveChromium } from '../export/pdfEngine.js';
@@ -50,24 +49,6 @@ export function hasChromium(): Promise<ToolCheck> {
     }
   })();
   return chromium;
-}
-
-let npmPack: ToolCheck | undefined;
-/**
- * `npm pack --json` prints an array, as the npm the generated publish.yml runs
- * on (Node 24's npm 11) does. npm 12 prints an object keyed by package name,
- * which that workflow does not read.
- */
-export function npmPackGivesArray(): ToolCheck {
-  if (inCi()) return OK;
-  if (!npmPack) {
-    const version = spawnSync('npm', ['--version'], { encoding: 'utf8' }).stdout?.trim() ?? '';
-    const major = Number(version.split('.')[0]);
-    npmPack = major > 0 && major < 12
-      ? OK
-      : { ok: false, reason: `npm ${version || '(not found)'} here; the publish workflow's pack steps read npm 11's \`npm pack --json\` array` };
-  }
-  return npmPack;
 }
 
 /**
