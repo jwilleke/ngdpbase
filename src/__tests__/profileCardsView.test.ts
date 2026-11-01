@@ -1,7 +1,7 @@
 /**
  * #1541 — every card on /profile, add-on sections included, collapses under
  * the header /admin's Share Manager card uses: `.card > .card-body.py-2 >
- * details#id[open] > summary.card-summary` with an icon and a <strong> title,
+ * details#id[open] > summary.card-summary` with an icon and an h6 title,
  * and the content in `div.mt-3`.
  *
  * Renders the real profile.ejs as Express does, with header and footer
@@ -66,7 +66,7 @@ function expectAdminHeader(card: Element): void {
   const summary = details?.firstElementChild;
   expect(summary?.matches('summary.card-summary')).toBe(true);
   expect(summary?.querySelector(':scope > i.fas')).not.toBeNull();
-  expect(text(summary?.querySelector(':scope > strong'))).not.toBe('');
+  expect(text(summary?.querySelector(':scope > h6'))).not.toBe('');
   expect(summary?.nextElementSibling?.matches('div.mt-3')).toBe(true);
 }
 
@@ -74,13 +74,15 @@ describe('#1541 /profile cards collapse under the /admin header', () => {
   test('every card starts open under a summary.card-summary with an icon and a title, each with its own id', async () => {
     const doc = await render();
     const cards = sectionCards(doc);
-    const titles = cards.map(c => text(c.querySelector('summary strong')));
+    const titles = cards.map(c => text(c.querySelector('summary h6')));
     expect(titles).toEqual(expect.arrayContaining([
       'Account Information', 'Permissions', 'My Contributions', 'Share Links', 'Your consents',
       'Vault pages with data outside their vault', 'Unused files in your vaults', 'Sign-in methods',
       'My tokens and devices', 'Proxy access', 'User Preferences'
     ]));
     for (const card of cards) expectAdminHeader(card);
+    // The title stays a heading, so the page outline and tests/e2e/profile-contact-details.spec.ts find it.
+    expect(text(doc.querySelector('#contact-details summary.card-summary > h6'))).toBe('Contact details');
     expect(doc.querySelectorAll('.card-header').length).toBe(1); // the page's own frame, "User Profile"
     const ids = [...doc.querySelectorAll('details')].map(d => d.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -114,6 +116,6 @@ describe('#1541 /profile cards collapse under the /admin header', () => {
     const plain = doc.querySelector('[data-addon="plain"]');
     expectAdminHeader(plain);
     expect(plain!.querySelector('summary i')?.classList.contains('fa-puzzle-piece')).toBe(true);
-    expect(text(plain!.querySelector('summary strong'))).toBe('Plain <b>add-on</b>');
+    expect(text(plain!.querySelector('summary h6'))).toBe('Plain <b>add-on</b>');
   });
 });
