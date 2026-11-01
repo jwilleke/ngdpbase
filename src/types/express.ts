@@ -51,6 +51,13 @@ declare module 'express-session' {
     /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
     pendingSignIn?: string;
     pendingRedirect?: string;
+    /**
+     * #1523 slice 1c: "Remember this browser" was ticked and a second factor
+     * completed the sign-in; the next page has the browser make its key. The
+     * version of the page the person was shown, the sign-in's amr, where to go
+     * after, and until when (epoch ms). Single use.
+     */
+    rememberBrowser?: { version: string; amr: string[]; next: string; until: number };
     /** A verified outside identity no account has connected, waiting for the person to sign in another way (#1743). */
     pendingConnection?: PendingConnection;
     /** #2073: an outside sign-in whose email several accounts share, waiting for the person to choose one. */

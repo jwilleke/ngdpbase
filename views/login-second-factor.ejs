@@ -11,11 +11,26 @@
           <% if (notice) { %><div class="alert alert-info small"><%= notice %></div><% } %>
 
           <% if (!sent) { %>
+            <% if (typeof deviceChallenge !== 'undefined' && deviceChallenge) { %>
+              <%# #1523 slice 1c: a remembered browser signs this one-time challenge; when the server accepts it the prompt is skipped. %>
+              <div data-known-device data-challenge="<%= deviceChallenge %>" data-user="<%= deviceUser %>" data-csrf="<%= csrfToken %>"></div>
+              <form method="POST" action="/login/second-factor/complete" class="d-none" data-known-device-complete>
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              </form>
+              <script src="/js/known-device.js" defer></script>
+            <% } %>
             <p>Your password was right. Confirm it is you with one of your sign-in methods:</p>
             <% factors.forEach(function (f) { %>
               <% if (f.id === 'email-link') { %>
               <form method="POST" action="/login/second-factor/email" class="mb-2">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <% if (typeof remember !== 'undefined' && remember) { %>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="remember" value="on" id="remember-browser">
+                  <input type="hidden" name="rememberVersion" value="<%= remember.version %>">
+                  <label class="form-check-label small" for="remember-browser">Remember this browser for next time. <a href="/view/<%= encodeURIComponent(remember.page) %>" target="_blank" rel="noopener">What this keeps</a></label>
+                </div>
+                <% } %>
                 <button type="submit" class="btn btn-primary w-100"><i class="fas fa-envelope"></i> Send a link to <%= f.target %></button>
               </form>
               <% } %>

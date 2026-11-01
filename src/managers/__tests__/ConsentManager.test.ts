@@ -70,7 +70,8 @@ describe('ConsentManager (#1603)', () => {
       'terms-of-service': { title: 'Terms of Service', version: 1, effective: new Date('2026-10-22T00:00:00Z') },
       'privacy-policy': { title: 'Privacy Policy', version: '1', effective: '2026-10-22' },
       'recovery-words': { title: 'Your Recovery Words', version: 1, effective: '2026-10-29' },
-      'shared-folders-recovery-words': { title: 'Shared Folders Recovery Words', version: 1, effective: '2026-10-29' }
+      'shared-folders-recovery-words': { title: 'Shared Folders Recovery Words', version: 1, effective: '2026-10-29' },
+      'remember-browser': { title: 'Remember This Browser', version: 1, effective: '2026-11-01' }
     };
     users = { ann: { username: 'ann', createdAt: '2026-01-01T00:00:00.000Z' }, bob: { username: 'bob' } };
     holdsProfileManage = new Set(['ann', 'bob']);
@@ -268,7 +269,7 @@ describe('ConsentManager (#1603)', () => {
       expect(cm.addonForPath('/phr/records')).toBe('phr');
       expect(cm.addonForPath('/api/phr/x')).toBe('phr');
       expect(cm.addonForPath('/phrase')).toBeNull();
-      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'shared-folders-recovery-words', 'phr-terms-of-service']);
+      expect(cm.allDocumentIds()).toEqual(['terms-of-service', 'privacy-policy', 'recovery-words', 'shared-folders-recovery-words', 'remember-browser', 'phr-terms-of-service']);
     });
 
     test('an add-on may register only documents named <slug>-…, and only when it is per-person', () => {
@@ -362,6 +363,27 @@ describe('ConsentManager (#1603)', () => {
       pages[SCOPE] = null;
       expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
       expect(cm.getManagerStatus().reason).toMatch(/No 'shared-folders-recovery-words' page/);
+    });
+  });
+
+  describe('remembered browsers (#1523 slice 1c)', () => {
+    const SCOPE = 'remember-browser';
+
+    test('withdrawing a browser\'s agreement is recorded first, then appended; that browser no longer counts and others are untouched', async () => {
+      await cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'sign-in', 'device-a');
+      await cm.accept(person('ann'), SCOPE, [{ id: SCOPE, version: '1' }], 'sign-in', 'device-b');
+      audited.length = 0;
+      const [line, ...more] = await cm.withdraw('ann', SCOPE, 'device-a', person('ann'), 'removed');
+      expect(more).toEqual([]);
+      expect(line).toMatchObject({ kind: 'withdraw', document: SCOPE, scope: SCOPE, version: '1', subject: 'device-a', account: '2026-01-01T00:00:00.000Z', context: { by: 'ann', how: 'removed' } });
+      expect(Number.isNaN(Date.parse(line.withdrawnAt ?? ''))).toBe(false);
+      expect(audited).toEqual([expect.objectContaining({ eventType: 'consent-withdraw', reason: 'removed', metadata: expect.objectContaining({ scope: SCOPE, subject: 'device-a' }) })]);
+      const kinds = fs.readFileSync(path.join(dir, 'ann.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { kind: string; subject: string }));
+      expect(kinds.map((r) => [r.kind, r.subject])).toEqual([['accept', 'device-a'], ['accept', 'device-b'], ['withdraw', 'device-a']]);
+      expect(await cm.pendingFor('ann', SCOPE, 'device-a')).toHaveLength(1);
+      expect(await cm.pendingFor('ann', SCOPE, 'device-b')).toEqual([]);
+      // Nothing left to withdraw writes nothing.
+      expect(await cm.withdraw('ann', SCOPE, 'device-a', person('ann'), 'removed')).toEqual([]);
     });
   });
 

@@ -127,6 +127,8 @@ interface AuthenticationContext {
   attemptedUsername?: string;
   /** #1633: an outside provider's reported `amr` / `acr`, and whether it is trusted; never a token. */
   reported?: ReportedValues;
+  /** #1523 slice 1c: the second-factor prompt was skipped on a remembered browser. Not a factor. */
+  knownDevice?: boolean;
 }
 
 /**
@@ -680,7 +682,8 @@ class AuditManager extends BaseManager {
       severity: result === 'failure' ? 'high' : 'low',
       context: {
         loginMethod: context.loginMethod,
-        attemptedUsername: context.attemptedUsername
+        attemptedUsername: context.attemptedUsername,
+        ...(context.knownDevice ? { knownDevice: true } : {})
       },
       ...(context.reported ? { metadata: { reported: context.reported } } : {})
     };

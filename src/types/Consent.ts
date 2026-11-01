@@ -41,10 +41,22 @@ export const SHARED_FOLDERS_WORDS_CONSENT_SCOPE = 'shared-folders-recovery-words
 /** The page whose `version:` is the version of the shared-folders recovery-words wording (#2124). */
 export const SHARED_FOLDERS_WORDS_DOCUMENT = 'shared-folders-recovery-words';
 
+/**
+ * The scope of "Remember this browser" (#1523 slice 1c, Q5): a person's
+ * opt-in, at the second-factor step, to a device key on this browser that
+ * skips the second-factor prompt next time. Bound to a subject: the remembered
+ * device's id, so each browser is its own consent, withdrawn by removing it.
+ */
+export const REMEMBER_BROWSER_CONSENT_SCOPE = 'remember-browser';
+
+/** The page whose `version:` is the version of the "Remember this browser" wording (#1523 slice 1c). */
+export const REMEMBER_BROWSER_DOCUMENT = 'remember-browser';
+
 /** Core's scopes bound to a subject, each with its one document (#1928, #2124). */
 export const SUBJECT_CONSENT_DOCUMENTS: Readonly<Record<ConsentScope, string>> = {
   [RECOVERY_WORDS_CONSENT_SCOPE]: RECOVERY_WORDS_DOCUMENT,
-  [SHARED_FOLDERS_WORDS_CONSENT_SCOPE]: SHARED_FOLDERS_WORDS_DOCUMENT
+  [SHARED_FOLDERS_WORDS_CONSENT_SCOPE]: SHARED_FOLDERS_WORDS_DOCUMENT,
+  [REMEMBER_BROWSER_CONSENT_SCOPE]: REMEMBER_BROWSER_DOCUMENT
 };
 
 /** Scopes whose acceptance is about one thing (a subject), not the account as a whole (#1928). */
@@ -77,17 +89,21 @@ export interface ConsentSeen {
 }
 
 /**
- * One acceptance, one line of the person's file. Append-only: a later
- * version is a later line, nothing is rewritten.
+ * One acceptance, or its withdrawal, one line of the person's file.
+ * Append-only: a later version is a later line, and a withdrawal is a later
+ * `withdraw` line naming the same document, version and subject; nothing is
+ * rewritten.
  */
 export interface ConsentRecord {
-  kind: 'accept';
+  kind: 'accept' | 'withdraw';
   document: string;
   scope: ConsentScope;
   version: string;
   effective: string | null;
-  /** ISO 8601 time the person accepted. */
+  /** ISO 8601 time the person accepted (on a `withdraw` line, of the acceptance withdrawn). */
   acceptedAt: string;
+  /** ISO 8601 time it was withdrawn; on a `withdraw` line only. */
+  withdrawnAt?: string;
   /**
    * The account this was accepted on, by its creation time (#1937): a later
    * account that takes the same username never inherits it.
