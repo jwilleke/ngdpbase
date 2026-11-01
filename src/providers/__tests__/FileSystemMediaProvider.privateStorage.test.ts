@@ -97,4 +97,38 @@ describe('FileSystemMediaProvider private storage (#2195)', () => {
     expect(saved).not.toContain('secret');
     await provider.shutdown();
   });
+
+  it('deletes the cached thumbnails of the entries it drops, and only those', async () => {
+    const secret = path.join(vaults(), 'jim', 'journal', 'attachments', 'secret.jpg');
+    const photo = path.join(root, 'data', 'photo.jpg');
+    const secretId = 'a'.repeat(32);
+    const photoId = 'b'.repeat(32);
+    await fs.outputJson(path.join(root, 'index', 'media-index.json'), {
+      version: 1,
+      items: {
+        [secretId]: { id: secretId, filePath: secret, filename: 'secret.jpg', mtime: 1 },
+        [photoId]: { id: photoId, filePath: photo, filename: 'photo.jpg', mtime: 1 }
+      }
+    });
+    const thumbs = path.join(root, 'thumbs');
+    await fs.outputFile(path.join(thumbs, `${secretId}-300x300-inside-o1-webp.webp`), 'x');
+    await fs.outputFile(path.join(thumbs, `${secretId}-150x150-inside-o1-webp.webp`), 'x');
+    await fs.outputFile(path.join(thumbs, `${photoId}-300x300-inside-o1-webp.webp`), 'x');
+    const provider = makeProvider(path.join(root, 'data'), [vaults()]);
+    await provider.initialize();
+    expect(await fs.readdir(thumbs)).toEqual([`${photoId}-300x300-inside-o1-webp.webp`]);
+    await provider.shutdown();
+  });
+
+  it('skips the private parts of attachment storage under a folder that contains them', async () => {
+    const attachments = path.join(root, 'data', 'attachments');
+    await fs.outputFile(path.join(attachments, 'public.jpg'), 'x');
+    await fs.outputFile(path.join(attachments, 'private', 'jim', 'old-secret.jpg'), 'x');
+    await fs.outputFile(path.join(attachments, '.thumbs', 'vault-thumb.jpg'), 'x');
+    const provider = makeProvider(attachments, [path.join(attachments, 'private'), path.join(attachments, '.thumbs')]);
+    const { files, skipped } = await (provider as unknown as ProviderInternals).collectFilePaths(attachments, 0);
+    expect(files).toEqual([path.join(attachments, 'public.jpg')]);
+    expect(JSON.stringify(skipped)).not.toMatch(/secret|vault-thumb/);
+    await provider.shutdown();
+  });
 });

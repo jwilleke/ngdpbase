@@ -61,7 +61,7 @@ export interface FileSystemMediaProviderConfig {
   extensions: Set<string>;
   /**
    * Private storage the scanner never walks under or keeps in the index (#2195):
-   * the vaults and shared-folder storage. MediaManager already refuses a folder
+   * the roots `privateStorageRoots` lists. MediaManager already refuses a folder
    * that overlaps them; this holds even if one gets past it.
    */
   excludedRoots?: string[];
@@ -224,11 +224,16 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     );
   }
 
+  /** The private storage root `p` is under, or undefined (#2195). */
+  private excludedRootOf(p: string): string | undefined {
+    if (this.excludedReal.length === 0) return undefined;
+    const real = realPathOf(p);
+    return this.excludedReal.find(root => isSameOrUnder(real, root));
+  }
+
   /** Whether `p` is under private storage the scanner must not touch (#2195). */
   private isExcluded(p: string): boolean {
-    if (this.excludedReal.length === 0) return false;
-    const real = realPathOf(p);
-    return this.excludedReal.some(root => isSameOrUnder(real, root));
+    return this.excludedRootOf(p) !== undefined;
   }
 
   /**
@@ -241,6 +246,25 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     for (const id of dropped) delete this.index[id];
     logger.error(`[FileSystemMediaProvider] Removed ${dropped.length} index entries under private storage (#2195)`);
     await this.saveIndex();
+    await this.removeThumbnails(new Set(dropped));
+  }
+
+  /** Delete every cached thumbnail (`{id}-*.webp`) of `ids`: they are copies of the files. */
+  private async removeThumbnails(ids: Set<string>): Promise<void> {
+    let names: string[];
+    try {
+      names = await fs.readdir(this.config.thumbnailDir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const dash = name.indexOf('-');
+      if (dash > 0 && ids.has(name.slice(0, dash))) {
+        await fs.remove(path.join(this.config.thumbnailDir, name)).catch((err: unknown) => {
+          logger.warn(`[FileSystemMediaProvider] Could not remove a thumbnail of a dropped entry: ${String(err)}`);
+        });
+      }
+    }
   }
 
   /**
@@ -837,8 +861,10 @@ class FileSystemMediaProvider extends BaseMediaProvider {
 
     // #2195: never walk private storage. Not recorded in the skip report: the
     // report lists paths, and the point is that none under here is listed.
-    if (this.isExcluded(dirPath)) {
-      logger.error(`[FileSystemMediaProvider] Not scanning ${dirPath}: it is private storage (#2195)`);
+    const excludedRoot = this.excludedRootOf(dirPath);
+    if (excludedRoot !== undefined) {
+      // The root, not dirPath: a directory inside a vault names its owner.
+      logger.error(`[FileSystemMediaProvider] Not scanning under ${excludedRoot}: it is private storage (#2195)`);
       return { files: [], skipped: [], dirErrors: 0 };
     }
 
