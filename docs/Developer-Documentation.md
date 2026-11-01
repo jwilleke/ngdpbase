@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 45 | 50 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 46 | 51 | Storage and service providers |
+| [Providers](#providers) | 47 | 52 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -209,6 +209,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
 | SqliteDatabaseProvider | ✅ [doc](providers/SqliteDatabaseProvider.md) | The application database as one SQLite file, SQLCipher-encrypted when NGDPBASE_DATABASE_KEY is set; WAL mode, fsynced, migrated at open (#1536) |
 | SqliteJobStateProvider | ✅ [doc](providers/SqliteJobStateProvider.md) | Scheduled-job state, run history, checkpoints and slot locks in the application database (job_state, job_runs, job_checkpoints, job_leases); lock by one conditional write (#1714) |
+| TotpAuthProvider | ✅ [doc](providers/TotpAuthProvider.md) | TOTP (authenticator app) on otpauth — a second factor only, amr otp at AAL1; the seed AES-GCM encrypted in the credentials store (#421) |
 | VersioningFileProvider | 📘 [doc](providers/VersioningFileProvider.md) + [guide](providers/VersioningFileProvider-Complete-Guide.md) | File-based page storage with delta-compressed version history; the default PageManager backend |
 <!-- AUTO:providers-table END -->
 
@@ -352,7 +353,7 @@ __Managers:__ 45/45 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 46/46 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 47/47 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

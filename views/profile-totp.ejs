@@ -1,0 +1,39 @@
+<%- include('header', { pageName: '' }) %>
+<%# #421 — add an authenticator app: scan the QR code (or type the key), then
+    confirm with one code before anything is kept. The key is shown only here. %>
+<div class="container-fluid">
+  <div class="row justify-content-center">
+    <div class="col-md-7 col-lg-5">
+      <div class="card mt-4">
+        <div class="card-header"><h4 class="mb-0">Add an authenticator app</h4></div>
+        <div class="card-body">
+          <% if (error) { %><div class="alert alert-danger small" role="alert"><%= error %></div><% } %>
+          <ol class="small">
+            <li>In your authenticator app, add an account and scan this code.</li>
+            <li>Enter the six-digit code the app shows.</li>
+          </ol>
+          <div class="text-center mb-3" style="max-width: 14rem; margin: 0 auto;" aria-label="QR code for your authenticator app" role="img"><%- qrSvg %></div>
+          <details class="small mb-3">
+            <summary>Can't scan it? Type this key instead</summary>
+            <code class="d-block mt-2 user-select-all" style="word-break: break-all;"><%= seed.replace(/(.{4})/g, '$1 ').trim() %></code>
+            <span class="text-muted">Time-based, six digits, every 30 seconds.</span>
+          </details>
+          <form method="POST" action="/profile/totp" autocomplete="off">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="mb-2">
+              <label for="totp-code" class="form-label">Code from the app</label>
+              <input type="text" class="form-control" id="totp-code" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required autofocus>
+            </div>
+            <div class="mb-3">
+              <label for="totp-label" class="form-label">Name it</label>
+              <input type="text" class="form-control" id="totp-label" name="label" maxlength="60" placeholder="e.g. Aegis on my phone">
+            </div>
+            <button type="submit" class="btn btn-primary">Confirm and add</button>
+            <a class="btn btn-link" href="/profile">Cancel</a>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('footer') %>

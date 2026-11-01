@@ -140,7 +140,7 @@ try {
   process.env[SESSION_SECRET_ENV] = result.secret;
   sessionSecretOrigin = result.origin;
 
-  // #1524: the key that signs every credential row (TOTP, when built under #421, will also use it).
+  // #1524: the key that signs every credential row; #421 derives the TOTP seed key from it.
   // Generated the same way, so a planted row cannot be signed without it.
   const credentials = ensureInstanceEnvSecret({
     name: CREDENTIALS_KEY_ENV,
