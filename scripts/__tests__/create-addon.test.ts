@@ -475,6 +475,42 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       return root;
     }
 
+    /**
+     * `npm pack --json` prints an array of packages up to npm 11 and an object
+     * keyed by package name from npm 12 (#2221). A stub npm, first on PATH,
+     * runs the real one and prints its pack output in the shape asked for, so
+     * the pack steps are tested against both whatever npm this machine has.
+     */
+    type PackShape = 'npm 11 array' | 'npm 12 object';
+    const PACK_SHAPES: PackShape[] = ['npm 11 array', 'npm 12 object'];
+    function npmGiving(shape: PackShape): Record<string, string> {
+      const realNpm = spawnSync('sh', ['-c', 'command -v npm'], { encoding: 'utf8' }).stdout.trim();
+      if (!realNpm) throw new Error('no npm on PATH');
+      const bin = fs.mkdtempSync(path.join(tmp, 'npm-'));
+      const reshape = shape === 'npm 11 array'
+        ? 'console.log(JSON.stringify(ps, null, 2))'
+        : 'console.log(JSON.stringify(Object.fromEntries(ps.map((p) => [p.name, p])), null, 2))';
+      fs.writeFileSync(path.join(bin, 'npm'), [
+        '#!/bin/sh',
+        `[ "$1" = pack ] || exec '${realNpm}' "$@"`,
+        `out=$('${realNpm}' "$@") || exit $?`,
+        `printf '%s' "$out" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); const ps = Array.isArray(j) ? j : Object.values(j); ${reshape}'`,
+        ''
+      ].join('\n'), { mode: 0o755 });
+      return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    test.each(PACK_SHAPES)('the stub npm prints pack --json as the %s', (shape) => {
+      const dir = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'index.js': '' } } });
+      const r = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+        cwd: path.join(dir, 'addons', 'volcano-watch'), encoding: 'utf8', env: { ...npmGiving(shape), HOME: tmp }
+      });
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout);
+      if (shape === 'npm 11 array') expect(out).toEqual([expect.objectContaining({ name: '@acme/volcano-watch-addon' })]);
+      else expect(Object.keys(out)).toEqual(['@acme/volcano-watch-addon']);
+    }, 30_000);
+
     /** Run one step's shell as the runner would: in `cwd`, with GITHUB_OUTPUT and RUNNER_TEMP, and the step's env given as values. */
     function runStep(s: Step, cwd: string, env: Record<string, string> = {}): { status: number | null; out: string; outputs: Record<string, string> } {
       const runnerTemp = fs.mkdtempSync(path.join(tmp, 'runner-'));
@@ -570,10 +606,10 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       expect(wf.jobs.publish.outputs).toEqual({ name: '${{ steps.tag.outputs.name }}', version: '${{ steps.tag.outputs.version }}' });
     });
 
-    test('the pack step packs the add-on into RUNNER_TEMP/release with its sha512, and outputs its path', async () => {
+    test.each(PACK_SHAPES)('the pack step reads the %s, packs the add-on into RUNNER_TEMP/release with its sha512, and outputs its path', async (shape) => {
       const { wf } = await load();
       const root = makeRepo({ 'volcano-watch': { pkg: goodPkg(), files: { 'index.js': 'module.exports = {};\n' } } });
-      const r = runStep(step(wf, 'Pack the tarball'), path.join(root, 'addons', 'volcano-watch'));
+      const r = runStep(step(wf, 'Pack the tarball'), path.join(root, 'addons', 'volcano-watch'), npmGiving(shape));
       expect(r.status).toBe(0);
       const tarball = r.outputs.tarball;
       expect(path.basename(tarball)).toBe('acme-volcano-watch-addon-0.1.0.tgz');
@@ -821,12 +857,12 @@ describe('--repo (#1636) — a whole standalone repository', () => {
       });
     });
 
-    describe('the package ships no .ts sources or tests', () => {
+    describe.each(PACK_SHAPES)('the package ships no .ts sources or tests, read from the %s', (shape) => {
       let packCheck: Step;
       beforeEach(async () => { packCheck = step((await load()).wf, 'The package ships no .ts sources or tests'); });
       const pack = (files: string[], present: Record<string, string>): { status: number | null; out: string } => {
         const root = makeRepo({ 'volcano-watch': { pkg: goodPkg('volcano-watch', { files }), files: present } });
-        return runStep(packCheck, path.join(root, 'addons', 'volcano-watch'));
+        return runStep(packCheck, path.join(root, 'addons', 'volcano-watch'), npmGiving(shape));
       };
 
       test('compiled .js and .d.ts pass', () => {
@@ -910,14 +946,25 @@ describe('--repo (#1636) — a whole standalone repository', () => {
         expect(now).not.toContain('npm pack "$SPEC"');
       });
 
-      test('rewrites a version-3 file, which waited only 300 s for npm, to version 4 (#1987)', async () => {
-        expect(PUBLISH_WORKFLOW_VERSION).toBe(4);
+      test('rewrites a version-3 file, which waited only 300 s for npm, to the current version (#1987)', async () => {
         const v3 = publishWorkflow({}).replace(/: \d+\n/, ': 3\n').replace("NPM_WAIT_SECONDS: '900'", "NPM_WAIT_SECONDS: '300'");
         await fs.outputFile(file(), v3);
-        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 3, to: 4, plainTags: false });
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 3, to: PUBLISH_WORKFLOW_VERSION, plainTags: false });
         const now = await fs.readFile(file(), 'utf8');
         expect(now).toBe(publishWorkflow({}));
         expect(now).toContain("NPM_WAIT_SECONDS: '900'");
+      });
+
+      test('rewrites a version-4 file, which read only npm 11\'s pack --json, to version 5 (#2221)', async () => {
+        expect(PUBLISH_WORKFLOW_VERSION).toBe(5);
+        // Version 4 destructured the output as an array, which npm 12's object is not.
+        const v4 = publishWorkflow({}).replace(/: \d+\n/, ': 4\n').replaceAll('Array.isArray(out) ? out : Object.values(out)', 'out');
+        expect(v4).not.toContain('Object.values(out)');
+        await fs.outputFile(file(), v4);
+        expect(await updatePublishWorkflow(repoRoot())).toMatchObject({ from: 4, to: 5, plainTags: false });
+        const now = await fs.readFile(file(), 'utf8');
+        expect(now).toBe(publishWorkflow({}));
+        expect(now.match(/Array\.isArray\(out\) \? out : Object\.values\(out\)/g)).toHaveLength(2);
       });
 
       test('keeps a default (slug-tag) file default, reads a pre-marker v* file as plain, and writes a missing one', async () => {

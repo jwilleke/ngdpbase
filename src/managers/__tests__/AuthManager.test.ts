@@ -21,6 +21,7 @@ describe('AuthManager', () => {
     // to exercise the refuse-to-register path.
     // #1523: the retired flat list is read only from custom config.
     getCustomProperty: vi.fn((key) => (overrides.custom ?? {})[key]),
+    getUnresolvedProperty: vi.fn((key, defaultValue) => (overrides.properties ?? {})[key] ?? defaultValue),
     isBaseUrlExplicit: vi.fn().mockReturnValue(overrides.baseUrlExplicit ?? true),
     getBaseURL: vi.fn().mockReturnValue('https://wiki.example.com')
   });
@@ -120,6 +121,63 @@ describe('AuthManager', () => {
     test('a disabled entry is never offered', async () => {
       const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password', enabled: false }] });
       expect(manager.getFactors()).toEqual([]);
+    });
+
+    describe('the boot check of factor ids (#1523 Q1)', () => {
+      test('an enabled entry naming an id no provider could register refuses the boot, naming it and the known ids', async () => {
+        const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'pasword' }] });
+        const problems = manager.checkFactorIds();
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatch(/^ngdpbase\.auth\.factors entry 'pasword' names no provider\. Known ids: .*\bpassword\b/);
+        expect(problems[0]).toContain('passkey');
+      });
+
+      test('a disabled entry naming an unknown id only warns', async () => {
+        const logger = (await import('../../utils/logger')).default;
+        const warn = vi.spyOn(logger, 'warn');
+        const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'pasword', enabled: false }] });
+        expect(manager.checkFactorIds()).toEqual([]);
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/ngdpbase\.auth\.factors entry 'pasword' names no provider.*The entry is off, so it is ignored/));
+        warn.mockRestore();
+      });
+
+      test('an id an add-on registers is known once it has registered', async () => {
+        const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'addon-key' }] });
+        expect(manager.checkFactorIds()).toHaveLength(1);
+        manager.registerProvider(fake('addon-key', { ...PASSKEY, primary: true }), 'addon');
+        expect(manager.checkFactorIds()).toEqual([]);
+      });
+
+      test('a core provider this site has off, and a configured outside provider, are not unknown', async () => {
+        const manager = await started({
+          'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'passkey' }, { authproviderid: 'cloudflare-access' }, { authproviderid: 'oidc:google' }, { authproviderid: 'oidc:work' }],
+          'ngdpbase.auth.oidc.providers': { work: { enabled: false } }
+        });
+        expect(manager.getFactors().map(f => f.provider)).toEqual(['password']);
+        expect(manager.checkFactorIds()).toEqual([]);
+      });
+
+      test('an outside provider id not in ngdpbase.auth.oidc.providers is unknown', async () => {
+        const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'oidc:wrok' }] });
+        expect(manager.checkFactorIds()).toEqual([expect.stringMatching(/entry 'oidc:wrok' names no provider/)]);
+      });
+
+      test('every provider core ships is known, registered or not', async () => {
+        const fs = await import('fs');
+        const path = await import('path');
+        const dir = path.join(__dirname, '../../providers');
+        const ids = fs.readdirSync(dir).filter(f => f.endsWith('AuthProvider.ts'))
+          .map(f => /readonly id = '([^']+)'/.exec(fs.readFileSync(path.join(dir, f), 'utf8'))?.[1])
+          .filter(Boolean);
+        expect(ids.length).toBeGreaterThan(5);
+        const manager = await started({ 'ngdpbase.auth.factors': ids.map(id => ({ authproviderid: id })) });
+        expect(manager.checkFactorIds()).toEqual([]);
+      });
+
+      test('an old id is read as the provider it was renamed to', async () => {
+        const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'email-link' }, { authproviderid: 'google-oidc' }] });
+        expect(manager.checkFactorIds()).toEqual([]);
+      });
     });
 
     test('a delegated credential is never a factor, even when listed', async () => {

@@ -209,7 +209,9 @@ describe('DatabaseManager backup and staged restore (#1723)', () => {
       db.prepare('INSERT INTO a (pad) VALUES (?)').run(pad);
       db.prepare('INSERT INTO b (pad) VALUES (?)').run(pad);
     });
-    for (let i = 0; i < 20000; i++) pair();
+    // The 20000 rows to copy go in as one transaction (each pair a savepoint
+    // inside it): one sync to disk, not 20000 (#2216).
+    db.transaction(() => { for (let i = 0; i < 20000; i++) pair(); })();
 
     let writesDuring = 0;
     let done = false;
