@@ -402,6 +402,118 @@ case "${1:-}" in
     fi
     ;;
 
+  update)
+    # Bring this checkout to the tip of master, or to <ref>, then install,
+    # build and restart it. Any failure after the checkout puts the previous
+    # commit back and starts that, so the instance is never left stopped.
+    UPDATE_REF="${2:-}"
+    UPDATE_ENV="${3:-}"
+    READY_URL="http://localhost:${PORT:-3000}/health/readiness"
+    READY_TIMEOUT="${UPDATE_READY_TIMEOUT:-120}"
+    cd "$SCRIPT_DIR" || exit 1
+
+    DIRTY=$(git status --porcelain)
+    if [ -n "$DIRTY" ]; then
+      echo "❌ Refusing to update: uncommitted changes in $SCRIPT_DIR"
+      echo "$DIRTY" | sed 's/^/     /'
+      exit 1
+    fi
+
+    _version() { node -p "require('./package.json').version" 2>/dev/null || echo "unknown"; }
+    OLD_SHA=$(git rev-parse HEAD)
+    OLD_BRANCH=$(git symbolic-ref -q --short HEAD || true)
+    OLD_VERSION=$(_version)
+    echo "🔄 Updating $APP_NAME from $OLD_VERSION (${OLD_SHA:0:7})..."
+
+    # Back to the commit we started from: the branch at that commit, or a
+    # detached HEAD if we were not on a branch. -f drops the lockfile edits
+    # npm install may have made; the tree was clean when we started.
+    _checkout_old() {
+      if [ -n "$OLD_BRANCH" ]; then
+        git checkout -q -f "$OLD_BRANCH" && git reset -q --hard "$OLD_SHA"
+      else
+        git checkout -q -f "$OLD_SHA"
+      fi
+    }
+
+    _restart() {
+      "$0" stop || return 1
+      sleep 2
+      if [ -n "$UPDATE_ENV" ]; then
+        "$0" start "$UPDATE_ENV"
+      else
+        "$0" start
+      fi
+    }
+
+    _wait_ready() {
+      echo "   Waiting for $READY_URL (up to ${READY_TIMEOUT}s)..."
+      local waited=0 code
+      while [ "$waited" -lt "$READY_TIMEOUT" ]; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$READY_URL" 2>/dev/null || true)
+        [ "$code" = "200" ] && return 0
+        sleep 2
+        waited=$((waited + 2))
+      done
+      echo "   Last readiness answer: ${code:-none}"
+      return 1
+    }
+
+    echo "📥 Fetching..."
+    if ! git fetch --tags origin; then
+      echo "❌ git fetch failed — nothing changed"
+      exit 1
+    fi
+    if [ -n "$UPDATE_REF" ]; then
+      if ! git checkout -q "$UPDATE_REF"; then
+        echo "❌ Cannot check out $UPDATE_REF — nothing changed"
+        exit 1
+      fi
+    else
+      if ! git checkout -q master || ! git pull -q --ff-only origin master; then
+        _checkout_old
+        echo "❌ master cannot be fast-forwarded (local commits, or not on master) — nothing changed"
+        echo "   Never forced. Resolve by hand, then run: ./server.sh update"
+        exit 1
+      fi
+    fi
+    NEW_SHA=$(git rev-parse HEAD)
+    NEW_VERSION=$(_version)
+
+    FAILED=""
+    echo "📦 Installing dependencies..."
+    if ! npm install; then
+      FAILED="npm install"
+    else
+      echo "🔨 Building..."
+      if ! npm run build; then
+        FAILED="npm run build"
+      else
+        echo "🚀 Restarting..."
+        if ! _restart; then
+          FAILED="server start"
+        elif ! _wait_ready; then
+          FAILED="readiness check"
+        fi
+      fi
+    fi
+
+    if [ -z "$FAILED" ]; then
+      echo "✅ Updated: $OLD_VERSION (${OLD_SHA:0:7}) → $NEW_VERSION (${NEW_SHA:0:7})"
+      exit 0
+    fi
+
+    echo ""
+    echo "❌ Update to $NEW_VERSION (${NEW_SHA:0:7}) failed at: $FAILED"
+    echo "⏪ Rolling back to $OLD_VERSION (${OLD_SHA:0:7})..."
+    if _checkout_old && npm install && npm run build && _restart && _wait_ready; then
+      echo "⏪ Rolled back: running $OLD_VERSION (${OLD_SHA:0:7}) again. The update did NOT happen."
+      exit 1
+    fi
+    echo "❌ Rollback failed too. The instance may be down. Check: ./server.sh status"
+    exit 2
+    ;;
+
   status)
     echo "📊 ngdpbase Server Status"
     echo "========================"
@@ -588,7 +700,7 @@ case "${1:-}" in
   *)
     echo "ngdpbase Server Management"
     echo ""
-    echo "Usage: $0 {setup|start|stop|restart|status|logs|env|upgrade-pm2|unlock} [environment]"
+    echo "Usage: $0 {setup|start|stop|restart|update|status|logs|env|upgrade-pm2|unlock} [environment]"
     echo ""
     echo "Commands:"
     echo "  setup        - Fresh-clone setup: install deps, build, and start"
@@ -598,6 +710,10 @@ case "${1:-}" in
     echo "                 env: dev, prod (default: production)"
     echo "  stop         - Stop server gracefully (with force-kill fallback)"
     echo "  restart [env]- Restart server (full stop → start cycle)"
+    echo "  update [ref] [env]"
+    echo "               - Pull master (or check out ref), npm install, build, restart,"
+    echo "                 wait for /health/readiness; rolls back to the old commit on failure"
+    echo "                 Refuses uncommitted changes and non-fast-forward pulls"
     echo "  status       - Show comprehensive server status"
     echo "                 • PID lock validity"
     echo "                 • PM2 process list"
