@@ -691,6 +691,15 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
+   * `value` with its environment references resolved as `getProperty` would
+   * resolve it under `key`, for checking a value before it is saved (#2195).
+   * Throws, as `getProperty` would, on a bare `$VAR` that is not set.
+   */
+  resolveValueAs(key: string, value: unknown): unknown {
+    return this.resolveEnvRef(value, key);
+  }
+
+  /**
    * Resolve environment-variable references in a string config value.
    *
    * Two forms supported (#775):

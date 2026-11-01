@@ -387,6 +387,8 @@ interface IConfigManager {
   resetToDefaults(ctx: ActorContext): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
   getBaseURL?(): string;
+  /** #2195: a value's environment references resolved as `getProperty` would. */
+  resolveValueAs?(key: string, value: unknown): unknown;
 }
 
 /**
@@ -14265,10 +14267,17 @@ ${panes}
         valueLevels((k: string, d: unknown) => configManager.getProperty(k, d)));
       // #2195: a media folder overlapping private storage is refused here, not
       // only skipped at the next start.
+      // `$SLOW_STORAGE` and the like are resolved first, as startup reads them.
       if (property === 'ngdpbase.media.folders') {
-        const folders = Array.isArray(parsedValue)
-          ? (parsedValue as unknown[]).filter((f): f is string => typeof f === 'string')
-          : typeof parsedValue === 'string' ? parsedValue.split(',').map(f => f.trim()).filter(Boolean) : [];
+        let resolved: unknown = parsedValue;
+        try {
+          if (configManager.resolveValueAs) resolved = configManager.resolveValueAs(property, parsedValue);
+        } catch {
+          // An unset variable: check the value as typed; startup still skips an overlap.
+        }
+        const folders = Array.isArray(resolved)
+          ? (resolved as unknown[]).filter((f): f is string => typeof f === 'string')
+          : typeof resolved === 'string' ? resolved.split(',').map(f => f.trim()).filter(Boolean) : [];
         const refused = this.engine.getManager('MediaManager')?.checkFolders(folders) ?? [];
         if (refused.length > 0) {
           const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
