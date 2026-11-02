@@ -1,6 +1,7 @@
 <%- include('header', { pageName: '' }) %>
 <%# #1523 — the second step of a sign-in: the password passed, no session yet. The
-    person picks one of their enrolled second factors; for an email link, this page
+    person picks one of their enrolled second factors: an authenticator app's code
+    is entered here (#421); for an email link, this page
     then waits and checks back until the link is approved on any device. %>
 <div class="container-fluid">
   <div class="row justify-content-center">
@@ -21,6 +22,22 @@
             <% } %>
             <p>Your password was right. Confirm it is you with one of your sign-in methods:</p>
             <% factors.forEach(function (f) { %>
+              <% if (f.id === 'totp') { %>
+              <%# #421 slice 2b: the six-digit code the person's authenticator app shows now. %>
+              <form method="POST" action="/login/second-factor/totp" class="mb-3" data-totp-form>
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <label class="form-label small" for="totp-code">Code from your authenticator app</label>
+                <input class="form-control mb-2" type="text" id="totp-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus>
+                <% if (typeof remember !== 'undefined' && remember) { %>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="remember" value="on" id="remember-browser-totp">
+                  <input type="hidden" name="rememberVersion" value="<%= remember.version %>">
+                  <label class="form-check-label small" for="remember-browser-totp">Remember this browser for next time. <a href="/view/<%= encodeURIComponent(remember.page) %>" target="_blank" rel="noopener">What this keeps</a></label>
+                </div>
+                <% } %>
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-mobile-alt"></i> Confirm with the code</button>
+              </form>
+              <% } %>
               <% if (f.id === 'email-link') { %>
               <form method="POST" action="/login/second-factor/email" class="mb-2">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">

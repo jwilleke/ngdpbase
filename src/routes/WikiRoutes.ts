@@ -7350,6 +7350,32 @@ ${panes}
     res.redirect('/login/second-factor' + (notice ? `?notice=${encodeURIComponent(notice)}` : ''));
   }
 
+  /**
+   * POST /login/second-factor/totp — the authenticator app's code (#421 slice
+   * 2b). Right, the sign-in completes with both factors; wrong, the page asks
+   * again. Wrong codes count against the same throttle as wrong passwords.
+   */
+  async secondFactorTotp(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    if (!pending) { this.expiredSignIn(res); return; }
+    const again = (notice: string): void => res.redirect('/login/second-factor?notice=' + encodeURIComponent(notice));
+    if (this.secretCheckBlocked(req, pending.username)) { again('Too many wrong attempts. Wait a few minutes, then try again.'); return; }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const code = typeof body.code === 'string' ? body.code.replace(/\s/g, '') : '';
+    const authManager = this.authManagerFor2Step();
+    if (body.remember === 'on' && typeof body.rememberVersion === 'string') authManager.noteRemember(pending.handle, pending.binding, body.rememberVersion);
+    const outcome = await authManager.approveByTotp(pending.handle, pending.binding, code, { ip: req.ip, userAgent: req.get('user-agent') });
+    if (outcome === 'unavailable') { again('An authenticator app is not available for this sign-in.'); return; }
+    if (outcome === 'wrong') {
+      this.countFailedSecret(req, pending.username); // AuthManager recorded it (#1758)
+      again('That code is not right. Enter the code your authenticator app shows now.');
+      return;
+    }
+    const throttle = this.getLoginThrottle();
+    if (throttle) this.throttleKeys(req, pending.username).forEach((k) => throttle.recordSuccess(k));
+    await this.secondFactorComplete(req, res);
+  }
+
   /** GET /login/second-factor/status — the waiting page asks whether the link was approved. */
   secondFactorStatus(req: Request, res: Response): void {
     const pending = this.pendingFor(req);
@@ -7369,7 +7395,8 @@ ${panes}
     // #1532: the first step was a password here or an outside provider at AAL1.
     // #1523 slice 1c: or the prompt was skipped on a remembered browser, which is not a factor.
     const provider = done.result.provider ?? 'password';
-    const method = done.result.knownDevice ? `${provider} on a remembered browser` : `${provider} and email link`;
+    const second = done.result.factors?.at(-1)?.provider === 'totp' ? 'authenticator app' : 'email link';
+    const method = done.result.knownDevice ? `${provider} on a remembered browser` : `${provider} and ${second}`;
     const completed = await authManager.completeSignIn(req, done.result, { method, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
     logger.info(done.result.knownDevice ? `👤 User logged in on a remembered browser: ${done.result.username ?? ''}` : `👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
@@ -18441,6 +18468,7 @@ ${panes}
     app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
     app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
     app.post('/login/second-factor/cancel', (req: Request, res: Response) => { void this.secondFactorCancel(req, res); });
+    app.post('/login/second-factor/totp', (req: Request, res: Response) => { void this.secondFactorTotp(req, res); });
     app.post('/login/second-factor/device', (req: Request, res: Response) => { void this.secondFactorDevice(req, res); });
     app.get('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserPage(req, res); });
     app.post('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserSave(req, res); });

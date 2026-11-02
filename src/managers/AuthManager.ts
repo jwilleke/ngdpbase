@@ -172,7 +172,7 @@ function isReservedProviderId(id: string): boolean {
  * Providers that count toward a sign-in level only once the account has
  * enrolled one (#1690): the provider id, and the credential kind it needs.
  */
-const ENROLLED_FACTORS: Readonly<Record<string, CredentialKind>> = { passkey: 'passkey' };
+const ENROLLED_FACTORS: Readonly<Record<string, CredentialKind>> = { passkey: 'passkey', totp: 'totp' };
 
 export interface Factor {
   provider: string;
@@ -1836,6 +1836,7 @@ class AuthManager extends BaseManager {
   /** TOTP enrolment (#421), available whenever the credentials store is open. */
   private openTotp(configManager: ConfigurationManager | null | undefined): void {
     this.totp = null;
+    this.providers.delete('totp');
     const store = this.credentials;
     if (!store) return;
     const name = configManager?.getProperty('ngdpbase.application-name', 'ngdpbase');
@@ -1844,6 +1845,8 @@ class AuthManager extends BaseManager {
       rows: (username) => store.list(username).filter(r => r.kind === 'totp'),
       used: (id, at, secret) => store.touch(id, at, secret)
     });
+    // #421 slice 2b: registered, so its factor entry counts and the second step can ask for its code.
+    this.registerCoreProvider(this.totp);
   }
 
   /** Whether an authenticator app can be enrolled here (#421). */
@@ -3867,9 +3870,9 @@ class AuthManager extends BaseManager {
   /**
    * The second factors `username` has enrolled and can use now (#1523), in
    * `secondFactorOrder` after the pending sign-in's first step; without one,
-   * by `preference`. Only what the second step can run is offered — today the
-   * email link — and one that is not truly available (no mail transport) is
-   * not. Empty means the sign-in is one step, as before.
+   * by `preference`. Only what the second step can run is offered — the
+   * email link and an authenticator app (#421) — and one that is not truly
+   * available (no mail transport) is not. Empty means the sign-in is one step, as before.
    */
   secondFactorsFor(username: string, signIn?: Pick<PendingSignIn, 'first' | 'requiredAal'>): AvailableSecondFactor[] {
     const rows = this.credentials?.list(username) ?? [];
@@ -3879,6 +3882,9 @@ class AuthManager extends BaseManager {
         for (const r of rows.filter((c) => c.kind === 'email')) {
           out.push({ id: 'email-link', label: 'Email link', target: maskEmail(r.subject) });
         }
+      }
+      if (id === 'totp' && this.totp && rows.some((c) => c.kind === 'totp')) {
+        out.push({ id: 'totp', label: 'Authenticator app', target: '' });
       }
     }
     return out;
@@ -4140,6 +4146,27 @@ class AuthManager extends BaseManager {
     p.approved = { provider: 'email-link', ...EMAIL_FACTOR, at: new Date().toISOString() };
     await this.recordApproval(AUDIT_EVENT.SIGNINAPPROVAL_APPROVE, p, 'success', presser);
     return p.username;
+  }
+
+  /**
+   * The authenticator app's code for the waiting sign-in (#421 slice 2b). Its
+   * check goes through `authenticate`, which records a wrong code as a failed
+   * sign-in; a right one approves the pending sign-in, which `completeTwoStep`
+   * then finishes with both factors. `unavailable` when the sign-in is gone,
+   * already decided, or the account has no authenticator app offered here.
+   * The caller throttles wrong codes as it does wrong passwords.
+   */
+  async approveByTotp(handle: string, binding: string, code: string, from: ApprovalVisitor = {}): Promise<'approved' | 'wrong' | 'unavailable'> {
+    const p = this.pendingSignIn(handle, binding);
+    if (!p || p.approved || p.denied) return 'unavailable';
+    if (!this.secondFactorsFor(p.username, p).some((f) => f.id === 'totp')) return 'unavailable';
+    const result = await this.authenticate('totp', { username: p.username, code }, { ipAddress: from.ip, userAgent: from.userAgent, purpose: 'sign-in' });
+    const factor = result.factors?.[0];
+    if (!result.success || result.username !== p.username || !factor) return 'wrong';
+    // The code may have taken a moment; the sign-in may have been cancelled or expired meanwhile.
+    if (!this.pendingSignIn(handle, binding) || p.approved || p.denied) return 'unavailable';
+    p.approved = factor;
+    return 'approved';
   }
 
   /** Refuse the waiting sign-in from its link (Deny). Returns the username, or null. */
