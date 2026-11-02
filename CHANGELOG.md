@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [5.42.0] - 2026-11-02
+
+### Added
+
+- __#421__ — TOTP second factor. A user enrols an authenticator app on `/profile` (#2234), and is asked for its code at sign-in and at step-up (#2236).
+- __#1523__ — remembered browsers. A remembered browser skips the second-factor prompt only where the user's role allows it (#2235), and the sign-in's audit record names the remembered browser it came from (#2239).
+- __#1523__ — boot refuses to start when an enabled second factor has no provider registered for it (#2222).
+- __#1541__ — every `/profile` card collapses under a header, as the `/admin` cards do (#2230).
+
+### Fixed
+
+- __#2223__ — an add-on can no longer register an auth provider under a core id or the `oidc:` prefix (#2229).
+- __#2188__, __#2171__ — ICE: a file restored by re-import keeps its id, so links to it work again (#2213), and is reported as imported (#2225).
+- `create-addon`: the generated publish workflow reads `npm pack --json` output from npm 11 and 12 (#2224).
+
+### Changed
+
+- CI: Dependabot patch and minor updates auto-merge once the required checks pass (#2231).
+- CI: the required checks report on docs-only pull requests (#2218, #2219).
+- The pre-push hook passes on any machine: a test whose tool is missing is skipped, with the reason (#2216, #2220).
+- Dependencies: the root minor-and-patch group (#2232) and `DavidAnson/markdownlint-cli2-action` (#2233).
+- Docs: request-response planning answers, round 3 (#2228).
+
 ## [5.41.1] - 2026-11-01
 
 ### Planned
