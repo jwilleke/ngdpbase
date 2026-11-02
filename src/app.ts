@@ -1299,7 +1299,7 @@ void (async (): Promise<void> => {
   if (unreachable.length > 0) {
     console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
     for (const problem of unreachable) console.error(`  - ${problem}`);
-    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, with an https ngdpbase.application.base-url), then restart.');
+    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, with an https ngdpbase.application.base-url, or an authenticator app (TOTP) as a second factor, with NGDPBASE_CREDENTIALS_KEY set), then restart.');
     process.exit(1);
   }
 

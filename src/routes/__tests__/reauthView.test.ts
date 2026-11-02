@@ -36,4 +36,15 @@ describe('reauth view (#2193)', () => {
     expect(html).not.toContain('/auth/reauth/cancel');
     expect(html).toContain('<a href="/view/Ledger">Cancel</a>');
   });
+
+  test('#421 slice 2c: an enrolled app is offered; at AAL2 with the password, below it alone', () => {
+    const at = (needsPasskey: boolean) => ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey, hasPasskey: false, hasPassword: true, hasTotp: true, csrfToken: 'tok' });
+    const aal2 = at(true);
+    expect(aal2).toMatch(/<form method="POST" action="\/auth\/reauth\/totp"[\s\S]*name="password"[\s\S]*name="code"/);
+    expect(aal2).not.toContain('has no way to confirm');
+    const aal1 = at(false);
+    expect(aal1).toContain('action="/auth/reauth/totp"');
+    expect(aal1).not.toContain('id="reauthTotpPassword"');
+    expect(render('')).not.toContain('/auth/reauth/totp');
+  });
 });

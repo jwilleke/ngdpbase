@@ -123,6 +123,42 @@ describe('two-step sign-in routes (#1523)', () => {
     expect(authLog).toHaveLength(0);
   });
 
+  test('#421: a right authenticator code completes the sign-in, named as the app', async () => {
+    const done = { result: { success: true, username: 'molly', provider: 'password', factors: [{ provider: 'password' }, { provider: 'totp' }] }, privateStoreHandle: 'psh' };
+    const approveByTotp = vi.fn().mockResolvedValue('approved');
+    const completeSignIn = vi.fn().mockResolvedValue({});
+    const { r } = routes({
+      pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1', username: 'molly' })),
+      approveByTotp,
+      completeTwoStep: vi.fn(() => done),
+      completeSignIn
+    });
+    const s = session();
+    s.pendingSignIn = 'h1';
+    const out = res();
+    const q = req(s, { cookies: { ngdp_two_step: 'b1' }, body: { code: '123 456' } });
+    await r.secondFactorTotp(q, out);
+    expect(approveByTotp).toHaveBeenCalledWith('h1', 'b1', '123456', { ip: '1.2.3.4', userAgent: 'Chrome' });
+    expect(completeSignIn).toHaveBeenCalledWith(q, done.result, expect.objectContaining({ method: 'password and authenticator app' }));
+  });
+
+  test('#421: a wrong code asks again, and wrong codes are throttled like wrong passwords', async () => {
+    const approveByTotp = vi.fn().mockResolvedValue('wrong');
+    const completeTwoStep = vi.fn();
+    const { r } = routes({ pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1', username: 'totp-throttle' })), approveByTotp, completeTwoStep });
+    const attempt = async () => {
+      const out = res();
+      await r.secondFactorTotp(req(session(), { ip: '198.51.100.7', cookies: { ngdp_two_step: 'b1' }, body: { code: '000000' } }), out);
+      return (out.redirect.mock.calls[0] as string[])[0];
+    };
+    expect(await attempt()).toMatch(/^\/login\/second-factor\?notice=That%20code%20is%20not%20right/);
+    for (let i = 1; i < 10; i++) await attempt();
+    expect(approveByTotp).toHaveBeenCalledTimes(10);
+    expect(await attempt()).toMatch(/Too%20many%20wrong%20attempts/);
+    expect(approveByTotp).toHaveBeenCalledTimes(10); // blocked before the code is checked
+    expect(completeTwoStep).not.toHaveBeenCalled();
+  });
+
   test('completion before approval goes back to the waiting page', async () => {
     const { r } = routes({ pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1' })), completeTwoStep: vi.fn(() => null) });
     const s = session();

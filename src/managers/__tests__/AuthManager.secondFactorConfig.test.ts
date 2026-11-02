@@ -231,13 +231,14 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
     });
 
     test('the order survives the configuration merge: preference decides, not where an entry lands in the list', async () => {
-      // The merge keeps the shipped entries' places and appends new ones, so
-      // totp lands last; its preference puts it first.
+      // The merge keeps the shipped entries' places, so totp stays after
+      // passkey and magic-link; its preference puts it first.
       custom['ngdpbase.auth.factors'] = [
         { authproviderid: 'magic-link', primary: true, preference: 9, enabled: true },
         { authproviderid: 'totp', primary: false, preference: 0, enabled: true }
       ];
-      expect((merged()['ngdpbase.auth.factors'] as Array<{ authproviderid: string }>).map(e => e.authproviderid).at(-1)).toBe('totp');
+      const ids = (merged()['ngdpbase.auth.factors'] as Array<{ authproviderid: string }>).map(e => e.authproviderid);
+      expect(ids.indexOf('totp')).toBeGreaterThan(ids.indexOf('passkey'));
       const am = await started();
       registerTotp(am);
       expect(am.secondFactorOrder(FIRST, 1)).toEqual(['totp', 'passkey', 'magic-link']);
@@ -261,13 +262,15 @@ describe('#1523 slice 1a: second factors governed by ngdpbase.auth.factors', () 
       roles = ['admin'];
       custom['ngdpbase.auth.factors'] = [{ authproviderid: 'totp', primary: false, preference: 3, enabled: true }];
       const am = await enrolled();
-      // With TOTP offered the account can reach AAL2, so admin's level is not capped to 1 (#1690).
       registerTotp(am);
       const handle = await am.beginTwoStep(FIRST, { binding: 'b' });
       const pending = am.pendingSignIn(handle, 'b')!;
-      expect(pending.requiredAal).toBe(2);
-      expect(am.secondFactorOrder(pending.first, pending.requiredAal)).toEqual(['passkey', 'totp', 'magic-link']);
-      // Only what the second step can run is offered: the email link (a passkey signs in alone; TOTP's step is #421).
+      // TOTP counts toward the reach only once enrolled (#421 slice 2b), so with
+      // none admin's level is capped to 1 (#1690); AuthManager.totpSignIn.test.ts
+      // has the enrolled case, at 2.
+      expect(pending.requiredAal).toBe(1);
+      expect(am.secondFactorOrder(pending.first, 2)).toEqual(['passkey', 'totp', 'magic-link']);
+      // Only what the second step can run and the account has: the email link (a passkey signs in alone; no app enrolled).
       expect(am.secondFactorsFor('molly', pending).map(f => f.id)).toEqual(['email-link']);
     });
   });

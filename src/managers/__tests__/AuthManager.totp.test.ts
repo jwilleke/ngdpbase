@@ -1,7 +1,7 @@
 /**
  * #421 — enrolling an authenticator app through AuthManager: the seed is kept
  * only sealed, a wrong code enrols nothing, the confirming code is spent, and
- * TOTP is not yet offered at sign-in. A real FileCredentialsProvider in a temp
+ * TOTP is registered so the sign-in can ask for it (slice 2b). A real FileCredentialsProvider in a temp
  * directory; the temp directory is all that is removed. No seed is printed.
  */
 vi.unmock('../../providers/FileCredentialsProvider');
@@ -137,9 +137,9 @@ describe('AuthManager TOTP enrolment (#421)', () => {
     await expect(am.addCredential(subject('molly'), 'molly', { kind: 'totp', subject: 's', secret: 'plain', label: 'x' })).rejects.toThrow(/totpEnrolmentConfirm/);
   });
 
-  test('not offered at sign-in yet (slice 2b): totp is not a registered provider', async () => {
+  test('registered as a provider, so its code can be asked for at sign-in (slice 2b)', async () => {
     const am = await started();
-    expect(am.isEnabled('totp')).toBe(false);
+    expect(am.isEnabled('totp')).toBe(true);
   });
 
   test('without the credentials key there is no enrolment', async () => {

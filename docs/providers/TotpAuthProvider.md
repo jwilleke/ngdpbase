@@ -1,7 +1,7 @@
 ---
 name: TotpAuthProvider
 description: TOTP (authenticator app) on otpauth — a second factor only, amr otp at AAL1; the seed AES-GCM encrypted in the credentials store (#421)
-dateModified: '2026-11-01'
+dateModified: '2026-11-02'
 category: providers
 code: src/providers/TotpAuthProvider.ts
 ---
@@ -23,6 +23,6 @@ A six-digit code from an authenticator app (RFC 6238: SHA-1, 30 seconds, six dig
 
 `AuthManager.totpEnrolmentStart(ctx, username)` returns a fresh 160-bit seed, its `otpauth://` URI (issuer `ngdpbase.application-name`, label the username) the URI as an SVG QR code, and `pending`, the seed sealed for the account the same way (`sealPending`, a shape of its own so it never opens as a stored secret). Nothing is stored. `GET /profile/totp` keeps `pending`, never the seed, in the session for ten minutes and shows the code and the key to type by hand; the session debug log leaves it out. `POST /profile/totp` takes `pending` from the session, once, and calls `totpEnrolmentConfirm(ctx, username, pending, code, label)`, which opens it for that account (`openPending`) and stores the sealed row only when the code matches. Both need `account-security` (step-up), and `allowedAuthMethods` must allow `totp`. `addCredential` refuses kind `totp`, so no row is ever stored unsealed. Adding and removing are recorded as `credential-add` and `credential-remove`, without the secret.
 
-## Not yet
+## At sign-in and at step-up
 
-Slice 2a of #421. The provider is built for enrolment only and is not registered: it is never offered at sign-in or step-up, and it raises no role's level. Slice 2b offers it at the second step of a sign-in; slice 2c at step-up. No backup codes (Q9): a person who loses the app uses another enrolled factor, an admin, or account recovery ([#1545](https://github.com/jwilleke/ngdpbase/issues/1545)).
+Slice 2b of #421 registers the provider (`registerCoreProvider`) and offers it at the second step of a sign-in, after a password (see the [authentication guide](../guides/authentication-developer-guide.md)); an enrolled app lets the account reach AAL2. Slice 2c offers it at step-up too, while its `ngdpbase.auth.factors` entry is enabled (`stepUpTotpOffered`): the code alone where the roles need AAL1, and with the password where they need AAL2, which the two fresh factors reach together (`POST /auth/reauth/totp`, `reauthenticateByTotp`). A wrong answer re-prompts and counts against the sign-in throttle. No backup codes (Q9): a person who loses the app uses another enrolled factor, an admin, or account recovery ([#1545](https://github.com/jwilleke/ngdpbase/issues/1545)).

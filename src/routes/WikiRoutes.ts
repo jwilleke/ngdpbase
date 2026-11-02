@@ -6940,7 +6940,9 @@ ${panes}
   /**
    * GET /auth/reauth — step-up's prompt (#1525). Offers what can reach the
    * level this person's roles require: a passkey when one is enrolled, the
-   * password when the roles accept a password.
+   * password when the roles accept a password, and the authenticator app's
+   * code when an app is enrolled (#421) — with the password when the roles
+   * need AAL2, which the two reach together.
    */
   async reauthPage(req: Request, res: Response): Promise<void> {
     await this.renderReauth(req, res, {});
@@ -6957,6 +6959,9 @@ ${panes}
     // #2193: a script's prompt, carried to the confirmation and to Cancel.
     const prompt = stepUpPromptId(req.query.prompt ?? (req.body as { prompt?: unknown } | undefined)?.prompt) ?? '';
     const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
+    const hasPassword = await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false;
+    // #421 slice 2c: the app's code alone is AAL1; at AAL2 it goes with the password.
+    const hasTotp = Boolean(authManager?.stepUpTotpOffered?.(user.username)) && (!needsPasskey || hasPassword);
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.status(view.error ? 401 : 200).render('reauth', {
@@ -6966,7 +6971,8 @@ ${panes}
       prompt,
       needsPasskey,
       hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
-      hasPassword: await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false,
+      hasPassword,
+      hasTotp,
       ...view
     });
   }
@@ -6994,6 +7000,43 @@ ${panes}
       return;
     }
     await this.completeReauth(req, res, result, 'password', next, 'page', (req.body as { prompt?: unknown }).prompt);
+  }
+
+  /**
+   * POST /auth/reauth/totp — re-authenticate with the authenticator app's
+   * code (#421 slice 2c), and the password too when the roles need AAL2.
+   * Wrong answers count against the same throttle as wrong passwords.
+   */
+  async reauthWithTotp(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    const username = user.username;
+    if (typeof username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const code = typeof body.code === 'string' ? body.code.replace(/\s/g, '') : '';
+    const needsBoth = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
+    const password = needsBoth ? (typeof body.password === 'string' ? body.password : '') : null;
+    const method = needsBoth ? 'password and authenticator app' : 'authenticator app';
+
+    if (this.secretCheckBlocked(req, username)) {
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'totp', 'throttled');
+      await this.renderReauth(req, res, { error: 'Too many attempts. Wait a few minutes and try again.' });
+      return;
+    }
+    const result = authManager ? await authManager.reauthenticateByTotp(username, code, password, this.attemptFrom(req, 're-check')) : 'unavailable';
+    if (result === 'unavailable') {
+      await this.renderReauth(req, res, { error: 'An authenticator app is not available to confirm it is you here.' });
+      return;
+    }
+    if (!result.success) {
+      this.countFailedSecret(req, username); // #1758: AuthManager audits the check
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'totp', needsBoth ? 'wrong password or code' : 'wrong code');
+      await this.renderReauth(req, res, { error: needsBoth ? 'That password or code is not correct.' : 'That code is not correct. Enter the code your authenticator app shows now.' });
+      return;
+    }
+    await this.completeReauth(req, res, result, method, safeRedirect(body.next), 'page', body.prompt);
   }
 
   /**
@@ -7350,6 +7393,32 @@ ${panes}
     res.redirect('/login/second-factor' + (notice ? `?notice=${encodeURIComponent(notice)}` : ''));
   }
 
+  /**
+   * POST /login/second-factor/totp — the authenticator app's code (#421 slice
+   * 2b). Right, the sign-in completes with both factors; wrong, the page asks
+   * again. Wrong codes count against the same throttle as wrong passwords.
+   */
+  async secondFactorTotp(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    if (!pending) { this.expiredSignIn(res); return; }
+    const again = (notice: string): void => res.redirect('/login/second-factor?notice=' + encodeURIComponent(notice));
+    if (this.secretCheckBlocked(req, pending.username)) { again('Too many wrong attempts. Wait a few minutes, then try again.'); return; }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const code = typeof body.code === 'string' ? body.code.replace(/\s/g, '') : '';
+    const authManager = this.authManagerFor2Step();
+    if (body.remember === 'on' && typeof body.rememberVersion === 'string') authManager.noteRemember(pending.handle, pending.binding, body.rememberVersion);
+    const outcome = await authManager.approveByTotp(pending.handle, pending.binding, code, { ip: req.ip, userAgent: req.get('user-agent') });
+    if (outcome === 'unavailable') { again('An authenticator app is not available for this sign-in.'); return; }
+    if (outcome === 'wrong') {
+      this.countFailedSecret(req, pending.username); // AuthManager recorded it (#1758)
+      again('That code is not right. Enter the code your authenticator app shows now.');
+      return;
+    }
+    const throttle = this.getLoginThrottle();
+    if (throttle) this.throttleKeys(req, pending.username).forEach((k) => throttle.recordSuccess(k));
+    await this.secondFactorComplete(req, res);
+  }
+
   /** GET /login/second-factor/status — the waiting page asks whether the link was approved. */
   secondFactorStatus(req: Request, res: Response): void {
     const pending = this.pendingFor(req);
@@ -7369,7 +7438,8 @@ ${panes}
     // #1532: the first step was a password here or an outside provider at AAL1.
     // #1523 slice 1c: or the prompt was skipped on a remembered browser, which is not a factor.
     const provider = done.result.provider ?? 'password';
-    const method = done.result.knownDevice ? `${provider} on a remembered browser` : `${provider} and email link`;
+    const second = done.result.factors?.at(-1)?.provider === 'totp' ? 'authenticator app' : 'email link';
+    const method = done.result.knownDevice ? `${provider} on a remembered browser` : `${provider} and ${second}`;
     const completed = await authManager.completeSignIn(req, done.result, { method, privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
     logger.info(done.result.knownDevice ? `👤 User logged in on a remembered browser: ${done.result.username ?? ''}` : `👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
@@ -18441,6 +18511,7 @@ ${panes}
     app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
     app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
     app.post('/login/second-factor/cancel', (req: Request, res: Response) => { void this.secondFactorCancel(req, res); });
+    app.post('/login/second-factor/totp', (req: Request, res: Response) => { void this.secondFactorTotp(req, res); });
     app.post('/login/second-factor/device', (req: Request, res: Response) => { void this.secondFactorDevice(req, res); });
     app.get('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserPage(req, res); });
     app.post('/login/remember-browser', (req: Request, res: Response) => { void this.rememberBrowserSave(req, res); });
@@ -18450,6 +18521,7 @@ ${panes}
     app.get('/profile/second-factor/email/confirm', (req: Request, res: Response) => { void this.confirmEmailSecondFactor(req, res); });
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
+    app.post('/auth/reauth/totp', (req: Request, res: Response) => { void this.reauthWithTotp(req, res); }); // #421 slice 2c
     app.get(STEP_UP_CONTINUE_PATH, (req: Request, res: Response) => { void this.reauthContinue(req, res); });
     app.get(STEP_UP_STATUS_PATH, (req: Request, res: Response) => { void this.reauthStatus(req, res); });
     app.post('/auth/reauth/cancel', (req: Request, res: Response) => { void this.reauthCancel(req, res); });

@@ -318,6 +318,16 @@ describe('AuthManager', () => {
           expect(m.stepUpNeeded('config-manage', signIn(factor(1, 1), factor(2, 3)), ['admin'], false, NOW)).toBe(false);
         });
 
+        test('#421 slice 2c: a fresh password and a fresh authenticator code together reach an admin\'s AAL2; one stale does not', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          const otp = (minutesAgo: number, aal = 1) => ({ provider: 'totp', amr: ['otp'], aal, at: new Date(NOW - minutesAgo * 60_000).toISOString() });
+          expect(m.stepUpNeeded('config-manage', signIn(factor(1, 1), otp(1)), ['admin'], false, NOW)).toBe(false);
+          expect(m.stepUpNeeded('config-manage', signIn(factor(1, 30), otp(1)), ['admin'], false, NOW)).toBe(true);
+          expect(m.stepUpNeeded('config-manage', signIn(otp(1)), ['admin'], false, NOW)).toBe(true);
+          // A known device (aal 0) never lifts one with another.
+          expect(m.stepUpNeeded('config-manage', signIn(factor(0, 0), otp(1)), ['admin'], false, NOW)).toBe(true);
+        });
+
         test('a known device (aal 0) never counts, and a delegated credential never satisfies it', async () => {
           const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
           expect(m.stepUpNeeded('account-security', signIn(factor(0, 0)), ['reader'], false, NOW)).toBe(true);
