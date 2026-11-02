@@ -6,7 +6,9 @@
  * stubs on PATH, so nothing here starts a server, touches a running pm2
  * daemon, or reads ./data. The stub build fails when the checked-out commit
  * has a BREAK_BUILD file, and the stub readiness check answers 503 when it has
- * BREAK_READY; that is how a test makes an update fail.
+ * BREAK_READY; that is how a test makes an update fail. The stub curl plays
+ * an http site by default, or a TLS site when STUB_SCHEME is https: that one
+ * answers plain http with a 301, as #1163's redirect server does (#2241).
  */
 
 import fs from 'fs';
@@ -22,6 +24,7 @@ let seed: string;
 let instance: string;
 let stubBin: string;
 let npmLog: string;
+let curlLog: string;
 
 // Under a git hook (husky's pre-push runs this suite) git exports GIT_DIR,
 // GIT_INDEX_FILE and friends, which would aim these commands at the real repo.
@@ -72,6 +75,10 @@ function publish(version: string, marker?: 'BREAK_BUILD' | 'BREAK_READY'): strin
 }
 
 function update(...args: string[]): { status: number | null; out: string } {
+  return updateServing('http', ...args);
+}
+
+function updateServing(scheme: 'http' | 'https', ...args: string[]): { status: number | null; out: string } {
   const r = spawnSync('bash', [path.join(instance, 'server.sh'), 'update', ...args], {
     cwd: instance,
     encoding: 'utf8',
@@ -82,7 +89,9 @@ function update(...args: string[]): { status: number | null; out: string } {
       UPDATE_READY_TIMEOUT: '2',
       STUB_INSTANCE: instance,
       STUB_PID: String(process.pid),
-      NPM_LOG: npmLog
+      NPM_LOG: npmLog,
+      CURL_LOG: curlLog,
+      STUB_SCHEME: scheme
     }
   });
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
@@ -99,6 +108,7 @@ beforeEach(() => {
   instance = path.join(tmp, 'instance');
   stubBin = path.join(tmp, 'bin');
   npmLog = path.join(tmp, 'npm.log');
+  curlLog = path.join(tmp, 'curl.log');
   fs.mkdirSync(stubBin);
 
   git(tmp, 'init', '-q', '--bare', '-b', 'master', origin);
@@ -128,7 +138,17 @@ beforeEach(() => {
     'esac',
     'exit 0'
   ].join('\n'));
-  stub('curl', '[ -f "$STUB_INSTANCE/dist/not-ready" ] && echo -n 503 || echo -n 200');
+  // The URL is the last argument. A TLS site answers plain http with a 301;
+  // an http site fails the TLS handshake, which curl reports as 000.
+  stub('curl', [
+    'echo "$*" >> "$CURL_LOG"',
+    'url="${@: -1}"',
+    'case "$STUB_SCHEME:$url" in',
+    '  https:http://*) echo -n 301; exit 0 ;;',
+    '  http:https://*) echo -n 000; exit 35 ;;',
+    'esac',
+    '[ -f "$STUB_INSTANCE/dist/not-ready" ] && echo -n 503 || echo -n 200'
+  ].join('\n'));
   stub('lsof', 'exit 1');
   stub('pgrep', 'exit 1');
   stub('pkill', 'exit 0');
@@ -219,5 +239,46 @@ describe('./server.sh update (#2208)', () => {
     expect(r.out).toContain('Rolled back');
     expect(git(instance, 'rev-parse', 'HEAD')).toBe(oldSha);
     expect(fs.existsSync(path.join(instance, 'dist', 'not-ready'))).toBe(false);
+  }, 60000);
+
+  it('sees an https-only (TLS) site as ready and does not roll back (#2241)', () => {
+    const newSha = publish('1.1.0');
+
+    const r = updateServing('https');
+
+    expect(r.status, r.out).toBe(0);
+    expect(git(instance, 'rev-parse', 'HEAD')).toBe(newSha);
+    expect(r.out).toContain('Ready: https://localhost:39999/health/readiness');
+    expect(r.out).not.toContain('Rolled back');
+    const calls = fs.readFileSync(curlLog, 'utf8').trim().split('\n');
+    expect(calls[0]).toContain('-sk');
+    // Never follows the 301 to the public hostname.
+    expect(calls.every((c) => !/(^| )-[a-zA-Z]*L/.test(c))).toBe(true);
+  }, 60000);
+
+  it('falls back to http on a site without TLS', () => {
+    publish('1.1.0');
+
+    const r = updateServing('http');
+
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain('Ready: http://localhost:39999/health/readiness');
+    const calls = fs.readFileSync(curlLog, 'utf8').trim().split('\n');
+    expect(calls).toEqual([
+      expect.stringContaining('https://localhost:39999/health/readiness'),
+      expect.stringContaining('http://localhost:39999/health/readiness')
+    ]);
+  }, 60000);
+
+  it('rolls back a TLS site whose readiness answers 503, and reports both answers', () => {
+    const oldSha = git(instance, 'rev-parse', 'HEAD');
+    publish('1.1.0', 'BREAK_READY');
+
+    const r = updateServing('https');
+
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('Last readiness answer: https 503, http 301');
+    expect(r.out).toContain('Rolled back');
+    expect(git(instance, 'rev-parse', 'HEAD')).toBe(oldSha);
   }, 60000);
 });
