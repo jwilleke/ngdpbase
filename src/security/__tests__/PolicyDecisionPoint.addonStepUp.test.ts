@@ -59,9 +59,9 @@ beforeEach(() => {
 });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-const subject = (signIn?: { factors: Array<{ aal: number; at: string }> }) =>
+const subject = (signIn?: { factors: Array<{ amr: string[]; aal: number; at: string }> }) =>
   ({ username: 'ann', roles: ['bookkeeper'], isAuthenticated: true, signIn }) as never;
-const factorAt = (msAgo: number) => ({ factors: [{ aal: 1, at: new Date(Date.now() - msAgo).toISOString() }] });
+const factorAt = (msAgo: number) => ({ factors: [{ amr: ['pwd'], aal: 1, at: new Date(Date.now() - msAgo).toISOString() }] });
 
 describe('#2190 an add-on permission marked "step-up": true', () => {
   test('asks for a fresh sign-in, and permits after one', async () => {
