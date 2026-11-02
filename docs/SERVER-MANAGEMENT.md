@@ -333,9 +333,16 @@ In order, it:
 4. Runs `npm install`, every time (see `.claude/commands/othersites.md` step 2 for why).
 5. Runs `npm run build`.
 6. Restarts the same way `restart` does: `stop`, then `start` with the env argument, if given.
-7. Waits for `http://localhost:$PORT/health/readiness` to answer 200, up to
+7. Waits for `/health/readiness` on `localhost:$PORT` to answer 200, up to
    `UPDATE_READY_TIMEOUT` seconds (default 120). `PORT` comes from the `.env` files, as for
-   `start`.
+   `start`. Every 2 seconds it asks `https://localhost:$PORT/health/readiness` without checking
+   the certificate (`curl -sk`), then `http://localhost:$PORT/health/readiness`, and stops at the
+   first 200. It prints both URLs while it waits and the one that answered. A site with TLS
+   configured answers plain http with a 301 to its public hostname
+   ([#1163](https://github.com/jwilleke/ngdpbase/issues/1163)); that redirect is never followed,
+   since the hostname may not resolve from the host itself
+   ([#2241](https://github.com/jwilleke/ngdpbase/issues/2241)). On a timeout it prints the last
+   answer from each.
 8. Prints `<old version> (<old sha>) → <new version> (<new sha>)`.
 
 Steps 1 and 3 refuse before anything changes. If install, build, start or the readiness check

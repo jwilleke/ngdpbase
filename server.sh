@@ -408,7 +408,13 @@ case "${1:-}" in
     # commit back and starts that, so the instance is never left stopped.
     UPDATE_REF="${2:-}"
     UPDATE_ENV="${3:-}"
-    READY_URL="http://localhost:${PORT:-3000}/health/readiness"
+    # A site with TLS configured serves https on PORT and answers plain http
+    # with a 301 to its public hostname (#1163), which may not resolve from
+    # here. So each poll asks over https first, without verifying the
+    # certificate (it is localhost, and only the status code is read), then
+    # over http. Redirects are never followed (#2241).
+    READY_HTTPS_URL="https://localhost:${PORT:-3000}/health/readiness"
+    READY_HTTP_URL="http://localhost:${PORT:-3000}/health/readiness"
     READY_TIMEOUT="${UPDATE_READY_TIMEOUT:-120}"
     cd "$SCRIPT_DIR" || exit 1
 
@@ -447,15 +453,23 @@ case "${1:-}" in
     }
 
     _wait_ready() {
-      echo "   Waiting for $READY_URL (up to ${READY_TIMEOUT}s)..."
-      local waited=0 code
+      echo "   Waiting for $READY_HTTPS_URL or $READY_HTTP_URL (up to ${READY_TIMEOUT}s)..."
+      local waited=0 https_code http_code
       while [ "$waited" -lt "$READY_TIMEOUT" ]; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$READY_URL" 2>/dev/null || true)
-        [ "$code" = "200" ] && return 0
+        https_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$READY_HTTPS_URL" 2>/dev/null || true)
+        if [ "$https_code" = "200" ]; then
+          echo "   Ready: $READY_HTTPS_URL"
+          return 0
+        fi
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$READY_HTTP_URL" 2>/dev/null || true)
+        if [ "$http_code" = "200" ]; then
+          echo "   Ready: $READY_HTTP_URL"
+          return 0
+        fi
         sleep 2
         waited=$((waited + 2))
       done
-      echo "   Last readiness answer: ${code:-none}"
+      echo "   Last readiness answer: https ${https_code:-none}, http ${http_code:-none}"
       return 1
     }
 
@@ -712,7 +726,7 @@ case "${1:-}" in
     echo "  restart [env]- Restart server (full stop → start cycle)"
     echo "  update [ref] [env]"
     echo "               - Pull master (or check out ref), npm install, build, restart,"
-    echo "                 wait for /health/readiness; rolls back to the old commit on failure"
+    echo "                 wait for /health/readiness (https, then http); rolls back to the old commit on failure"
     echo "                 Refuses uncommitted changes and non-fast-forward pulls"
     echo "  status       - Show comprehensive server status"
     echo "                 • PID lock validity"
