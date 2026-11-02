@@ -6940,7 +6940,9 @@ ${panes}
   /**
    * GET /auth/reauth — step-up's prompt (#1525). Offers what can reach the
    * level this person's roles require: a passkey when one is enrolled, the
-   * password when the roles accept a password.
+   * password when the roles accept a password, and the authenticator app's
+   * code when an app is enrolled (#421) — with the password when the roles
+   * need AAL2, which the two reach together.
    */
   async reauthPage(req: Request, res: Response): Promise<void> {
     await this.renderReauth(req, res, {});
@@ -6957,6 +6959,9 @@ ${panes}
     // #2193: a script's prompt, carried to the confirmation and to Cancel.
     const prompt = stepUpPromptId(req.query.prompt ?? (req.body as { prompt?: unknown } | undefined)?.prompt) ?? '';
     const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
+    const hasPassword = await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false;
+    // #421 slice 2c: the app's code alone is AAL1; at AAL2 it goes with the password.
+    const hasTotp = Boolean(authManager?.stepUpTotpOffered?.(user.username)) && (!needsPasskey || hasPassword);
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.status(view.error ? 401 : 200).render('reauth', {
@@ -6966,7 +6971,8 @@ ${panes}
       prompt,
       needsPasskey,
       hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
-      hasPassword: await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false,
+      hasPassword,
+      hasTotp,
       ...view
     });
   }
@@ -6994,6 +7000,43 @@ ${panes}
       return;
     }
     await this.completeReauth(req, res, result, 'password', next, 'page', (req.body as { prompt?: unknown }).prompt);
+  }
+
+  /**
+   * POST /auth/reauth/totp — re-authenticate with the authenticator app's
+   * code (#421 slice 2c), and the password too when the roles need AAL2.
+   * Wrong answers count against the same throttle as wrong passwords.
+   */
+  async reauthWithTotp(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    const username = user.username;
+    if (typeof username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const code = typeof body.code === 'string' ? body.code.replace(/\s/g, '') : '';
+    const needsBoth = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
+    const password = needsBoth ? (typeof body.password === 'string' ? body.password : '') : null;
+    const method = needsBoth ? 'password and authenticator app' : 'authenticator app';
+
+    if (this.secretCheckBlocked(req, username)) {
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'totp', 'throttled');
+      await this.renderReauth(req, res, { error: 'Too many attempts. Wait a few minutes and try again.' });
+      return;
+    }
+    const result = authManager ? await authManager.reauthenticateByTotp(username, code, password, this.attemptFrom(req, 're-check')) : 'unavailable';
+    if (result === 'unavailable') {
+      await this.renderReauth(req, res, { error: 'An authenticator app is not available to confirm it is you here.' });
+      return;
+    }
+    if (!result.success) {
+      this.countFailedSecret(req, username); // #1758: AuthManager audits the check
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'totp', needsBoth ? 'wrong password or code' : 'wrong code');
+      await this.renderReauth(req, res, { error: needsBoth ? 'That password or code is not correct.' : 'That code is not correct. Enter the code your authenticator app shows now.' });
+      return;
+    }
+    await this.completeReauth(req, res, result, method, safeRedirect(body.next), 'page', body.prompt);
   }
 
   /**
@@ -18478,6 +18521,7 @@ ${panes}
     app.get('/profile/second-factor/email/confirm', (req: Request, res: Response) => { void this.confirmEmailSecondFactor(req, res); });
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
+    app.post('/auth/reauth/totp', (req: Request, res: Response) => { void this.reauthWithTotp(req, res); }); // #421 slice 2c
     app.get(STEP_UP_CONTINUE_PATH, (req: Request, res: Response) => { void this.reauthContinue(req, res); });
     app.get(STEP_UP_STATUS_PATH, (req: Request, res: Response) => { void this.reauthStatus(req, res); });
     app.post('/auth/reauth/cancel', (req: Request, res: Response) => { void this.reauthCancel(req, res); });

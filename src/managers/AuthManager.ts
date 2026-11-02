@@ -3502,9 +3502,9 @@ class AuthManager extends BaseManager {
 
   /**
    * Whether `permission` needs a fresher factor than `signIn` holds (#1525).
-   * Fresh: a factor satisfied within the step-up window that reaches the
-   * level the person's roles require (at least 1 — a known device, aal 0,
-   * never counts). A delegated credential has no sign-in of its own, so it
+   * Fresh: the factors satisfied within the step-up window together reach
+   * the level the person's roles require (at least 1 — a known device, aal 0,
+   * never counts); a password and an authenticator code reach AAL2 (#421). A delegated credential has no sign-in of its own, so it
    * never satisfies step-up.
    */
   stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
@@ -3528,7 +3528,11 @@ class AuthManager extends BaseManager {
     if (delegated) return false;
     const need = Math.max(this.requiredAalFor(roles, cap), 1);
     const since = now - maxAgeMs;
-    return (signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
+    // #421 slice 2c: the factors satisfied within the window, together — a
+    // password and an authenticator code reach AAL2 as at sign-in. A known
+    // device (aal 0) never counts.
+    const fresh = (signIn?.factors ?? []).filter((f) => f.aal >= 1 && Date.parse(f.at) >= since);
+    return fresh.length > 0 && this.assess(fresh).aal >= need;
   }
 
   /**
@@ -4167,6 +4171,37 @@ class AuthManager extends BaseManager {
     if (!this.pendingSignIn(handle, binding) || p.approved || p.denied) return 'unavailable';
     p.approved = factor;
     return 'approved';
+  }
+
+  /**
+   * Whether step-up offers `username` the authenticator app's code (#421
+   * slice 2c): as at the second step, an app enrolled and its
+   * `ngdpbase.auth.factors` entry enabled.
+   */
+  stepUpTotpOffered(username: string): boolean {
+    return this.secondFactorsFor(username).some((f) => f.id === 'totp');
+  }
+
+  /**
+   * Step-up with the authenticator app (#421 slice 2c). The code is checked
+   * through `authenticate`, as at the second step of sign-in, so a wrong one
+   * is recorded as a failed re-check. With `password` (a role that needs
+   * AAL2), the password is checked first, and the result carries both
+   * factors, which together reach AAL2. `unavailable` when the app is not
+   * offered here. The caller throttles wrong answers as it does wrong passwords.
+   */
+  async reauthenticateByTotp(username: string, code: string, password: string | null, attempt: AuthAttempt = {}): Promise<AuthenticateResult | 'unavailable'> {
+    if (!this.stepUpTotpOffered(username)) return 'unavailable';
+    const recheck: AuthAttempt = { ...attempt, purpose: 're-check' };
+    const factors: SatisfiedFactor[] = [];
+    if (password !== null) {
+      const first = password ? await this.authenticate('password', { username, password }, recheck) : { success: false };
+      if (!first.success || first.username !== username) return { success: false };
+      factors.push(...(first.factors ?? []));
+    }
+    const otp = await this.authenticate('totp', { username, code }, recheck);
+    if (!otp.success || otp.username !== username) return { success: false };
+    return { ...otp, factors: [...factors, ...(otp.factors ?? [])] };
   }
 
   /** Refuse the waiting sign-in from its link (Deny). Returns the username, or null. */

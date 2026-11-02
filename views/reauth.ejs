@@ -1,7 +1,7 @@
 <%- include('header', { pageName: '' }) %>
-<%# #1525 — step-up: a sensitive action asked for a fresh sign-in. The passkey or
-    password proves the person at the keyboard is the account holder now, and the
-    browser returns to the page that asked. %>
+<%# #1525 — step-up: a sensitive action asked for a fresh sign-in. The passkey,
+    password or authenticator app's code (#421) proves the person at the keyboard
+    is the account holder now, and the browser returns to the page that asked. %>
 <div class="container">
   <div class="row justify-content-center">
     <div class="col-lg-6">
@@ -15,7 +15,7 @@
           <% } %>
           <p>This change protects your account, so it needs a fresh sign-in. You are then sent back to finish it.</p>
           <% if (needsPasskey) { %>
-            <p class="small text-muted">Your role needs a passkey for this; a password is not enough.</p>
+            <p class="small text-muted">Your role needs a passkey<%= (typeof hasTotp !== 'undefined' && hasTotp) ? ', or your password with your authenticator app\'s code,' : '' %> for this; a password alone is not enough.</p>
           <% } %>
 
           <% if (hasPasskey) { %>
@@ -40,7 +40,27 @@
             </form>
           <% } %>
 
-          <% if (!hasPasskey && (needsPasskey || !hasPassword)) { %>
+          <% if (typeof hasTotp !== 'undefined' && hasTotp) { %>
+            <%# #421 slice 2c: the code the app shows now; at AAL2, with the password, which the two reach together. %>
+            <form method="POST" action="/auth/reauth/totp" autocomplete="off" class="mb-3" data-totp-reauth>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="next" value="<%= next %>">
+              <% if (prompt) { %><input type="hidden" name="prompt" value="<%= prompt %>"><% } %>
+              <% if (needsPasskey) { %>
+              <div class="mb-3">
+                <label class="form-label" for="reauthTotpPassword">Password</label>
+                <input type="password" class="form-control" id="reauthTotpPassword" name="password" autocomplete="current-password" required>
+              </div>
+              <% } %>
+              <div class="mb-3">
+                <label class="form-label" for="reauthTotpCode">Code from your authenticator app</label>
+                <input type="text" class="form-control" id="reauthTotpCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>
+              </div>
+              <button type="submit" class="btn btn-outline-primary w-100"><i class="fas fa-mobile-alt"></i> Confirm with <%= needsPasskey ? 'your password and the code' : 'the code' %></button>
+            </form>
+          <% } %>
+
+          <% if (!hasPasskey && !(typeof hasTotp !== 'undefined' && hasTotp) && (needsPasskey || !hasPassword)) { %>
             <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add a passkey on your <a href="/profile">profile</a>, or ask an administrator.</p>
           <% } %>
 
