@@ -18,7 +18,7 @@ Every sign-in method is a provider registered with [AuthManager](../managers/Aut
   - [PasswordAuthProvider](../providers/PasswordAuthProvider.md) — username and password, checked against the hash on the user record
   - [PasskeyAuthProvider](../providers/PasskeyAuthProvider.md) — passkeys (WebAuthn); a passkey alone signs in at AAL2, phishing-resistant
   - [TotpAuthProvider](../providers/TotpAuthProvider.md) — an authenticator app's code; a second factor only (`otp`, AAL1), its seed encrypted in the credentials store. Enrolled on the profile and asked for at the second step of a sign-in and at step-up ([#421](https://github.com/jwilleke/ngdpbase/issues/421))
-  - [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md) — an emailed single-use sign-in link
+  - [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md) — an emailed single-use sign-in link (`email`, AAL1). `email` is ngdpbase's own `amr` value, not one in the [RFC 8176](https://www.rfc-editor.org/rfc/rfc8176) registry, kept apart from `otp` so an email link is never taken for an authenticator app's code
   - [OidcAuthProvider](../providers/OidcAuthProvider.md) — sign-in through any outside OpenID Connect provider, by an identity connected to the account: what it may do, the flows and their checks
     - [Google](../providers/OidcAuthProvider-Google.md) — the `google` preset, and registering the site in the Google Cloud console
     - [Microsoft](../providers/OidcAuthProvider-Microsoft.md) — the `microsoft` preset (personal accounts only), and registering the site in Microsoft Entra
