@@ -209,7 +209,7 @@ describe('AuthManager.completeSignIn (#1758)', () => {
 
       expect(successAudits(audit)).toHaveLength(1);
       expect(audit.logAuthentication).toHaveBeenCalledWith(
-        { username: 'molly', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'passkey' },
+        { username: 'molly', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'passkey', amr: ['pwd'] },
         'success',
         'signed in: passkey'
       );

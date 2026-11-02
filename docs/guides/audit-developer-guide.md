@@ -66,6 +66,8 @@ const page = await audit.searchEntriesAbout(person, { limit: 50, offset: 0 }, ct
 
 The manager asks the PDP with that subject: `profile-manage` when the subject's username is `person` (every account holds it), `admin-system` for anyone else's entries. A refusal throws `AuditQueryForbiddenError`; never catch it into an empty page. An add-on (yourPHR's patient view) calls it from its own route or manager with the subject core handed it, and renders the rows itself. The database provider answers from indexes; the file provider from the newest 10,000 records it holds in memory.
 
+One record is looked up by id for a check, not a query: `AuditManager.authenticationRecord(id)` returns the user, `loginMethod` and `amr` of an `authentication-success` record, or null, and asks no caller since nothing else of the record leaves it ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523): a remembered browser's row names its sign-in's record). It reads through the provider's `findRecordById`: the database provider by its unique `id` index, the file provider from its queue and memory and then the live log and archives, newest first. A provider without it (the base, the null and cloud providers) answers null.
+
 ## Addons
 
 An add-on audits its own actions without any core change (#1638):

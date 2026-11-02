@@ -456,7 +456,8 @@ __Key API:__
 | `logAuditEvent(event)` | Raw event |
 | `logAccessDecision(ctx, result, reason, policy)` | ACL/policy decision |
 | `logPolicyEvaluation(ctx, policies, result, ms)` | Policy eval trace |
-| `logAuthentication(ctx, result, reason)` | Login/logout |
+| `logAuthentication(ctx, result, reason)` | Login/logout; returns `{ outcome, id }` |
+| `authenticationRecord(id)` | One sign-in record's user, method and `amr` (#1523) |
 | `logSecurityEvent(ctx, type, severity, desc)` | Security incident |
 | `searchAuditLogs(filters, opts)` | Query log store |
 | `getAuditStats(filters)` | Aggregate counts |

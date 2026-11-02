@@ -36,6 +36,8 @@ describe('known devices (#1523 slice 1c)', () => {
   let generations: Record<string, number>;
   let mayManage: boolean;
   let auth: Array<{ context: Record<string, unknown>; result: string; reason: string }>;
+  let records: Map<string, { id: string; user: string; loginMethod?: string; amr?: string[] }>;
+  let events: Array<Record<string, unknown>>;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
 
   const started = async () => {
@@ -57,8 +59,14 @@ describe('known devices (#1523 slice 1c)', () => {
       },
       PluginManager: TEST_PLUGIN_MANAGER,
       AuditManager: {
-        logAuditEvent: () => Promise.resolve('evt'),
-        logAuthentication: (context: Record<string, unknown>, result: string, reason: string) => { auth.push({ context, result, reason }); return Promise.resolve('evt'); }
+        logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('evt'); },
+        logAuthentication: (context: Record<string, unknown>, result: string, reason: string) => {
+          auth.push({ context, result, reason });
+          const id = `auth-${auth.length}`;
+          if (result === 'success') records.set(id, { id, user: String(context.username), loginMethod: context.loginMethod as string, amr: context.amr as string[] });
+          return Promise.resolve({ outcome: 'recorded', id });
+        },
+        authenticationRecord: (id: string) => Promise.resolve(records.get(id) ?? null)
       },
       ConsentManager: {
         documents: (scope: string) => Promise.resolve(scope === REMEMBER_BROWSER_CONSENT_SCOPE && consentDoc ? [consentDoc] : []),
@@ -86,12 +94,24 @@ describe('known devices (#1523 slice 1c)', () => {
   const signChallenge = (privateKey: KeyObject, challenge: string) =>
     sign('sha256', Buffer.from(KNOWN_DEVICE_SIGNED_PREFIX + challenge, 'utf8'), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
 
+  /** The audit record of a completed two-step sign-in, as `completeSignIn` writes it; its id. */
+  const signInRecorded = (username: string, amr = ['pwd', 'email']) => {
+    const id = `signin-${records.size + 1}`;
+    records.set(id, { id, user: username, loginMethod: 'password and email link', amr });
+    return id;
+  };
+
   /** Remember a browser for `username` the way the routes do, after a two-step sign-in. */
   const remembered = async (am: AuthManager, username: string, userAgent = CHROME_WIN, platformHint = '"Windows"') => {
     const key = browserKey();
-    const saved = await am.rememberBrowser(ctx(username), { publicKey: key.spki, version: '1', userAgent, platformHint, amr: ['pwd', 'email'] });
+    const saved = await am.rememberBrowser(ctx(username), { publicKey: key.spki, version: '1', userAgent, platformHint, amr: ['pwd', 'email'], auditId: signInRecorded(username) });
     return { ...key, deviceId: saved?.deviceId ?? '' };
   };
+
+  /** The credentials store, to stand in for a row written by hand or by an older release. */
+  const store = (am: AuthManager) => (am as unknown as { credentials: { touch(id: string, at: string, secret?: string): Promise<void> } }).credentials;
+  const deviceRow = (am: AuthManager, username: string) => am.rememberedDevices(username)[0];
+  const securityEvents = () => events.filter((e) => e.eventType === 'security-event' && (e.metadata as { securityEventType?: string }).securityEventType === 'remembered-browser-record-mismatch');
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdpbase-1523c-'));
@@ -106,6 +126,8 @@ describe('known devices (#1523 slice 1c)', () => {
     generations = {};
     mayManage = false;
     auth = [];
+    records = new Map();
+    events = [];
   });
 
   afterEach(() => {
@@ -160,7 +182,7 @@ describe('known devices (#1523 slice 1c)', () => {
     // And a page that changed since it was shown is no consent to the new wording.
     consentRefuses = false;
     const key = browserKey();
-    expect(await am.rememberBrowser(ctx('molly'), { publicKey: key.spki, version: '0', userAgent: CHROME_WIN, platformHint: '"Windows"', amr: ['pwd'] })).toBeNull();
+    expect(await am.rememberBrowser(ctx('molly'), { publicKey: key.spki, version: '0', userAgent: CHROME_WIN, platformHint: '"Windows"', amr: ['pwd'], auditId: signInRecorded('molly', ['pwd']) })).toBeNull();
   });
 
   it('remembering records a consent bound to the device id, before the row', async () => {
@@ -312,7 +334,111 @@ describe('known devices (#1523 slice 1c)', () => {
   it('refuses a key that is not ECDSA P-256, and a browser it cannot tell', async () => {
     const am = await started();
     const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ format: 'der', type: 'spki' }).toString('base64url');
-    expect(await am.rememberBrowser(ctx('molly'), { publicKey: rsa, version: '1', userAgent: CHROME_WIN, platformHint: '"Windows"', amr: ['pwd'] })).toBeNull();
-    expect(await am.rememberBrowser(ctx('molly'), { publicKey: browserKey().spki, version: '1', userAgent: 'curl/8.0', amr: ['pwd'] })).toBeNull();
+    expect(await am.rememberBrowser(ctx('molly'), { publicKey: rsa, version: '1', userAgent: CHROME_WIN, platformHint: '"Windows"', amr: ['pwd'], auditId: signInRecorded('molly', ['pwd']) })).toBeNull();
+    expect(await am.rememberBrowser(ctx('molly'), { publicKey: browserKey().spki, version: '1', userAgent: 'curl/8.0', amr: ['pwd'], auditId: signInRecorded('molly', ['pwd']) })).toBeNull();
+  });
+
+  describe("the row names its sign-in's audit record (#1523, operator 2026-10-31)", () => {
+    it('completeSignIn returns the id of its audit record, which records the factors', async () => {
+      const am = await started();
+      const req = { session: { regenerate: (cb: (e?: unknown) => void) => cb(), save: (cb: (e?: unknown) => void) => cb() } as Record<string, unknown>, ip: FROM.ip, get: () => CHROME_WIN };
+      const done = await am.completeSignIn(req as never, { ...first('molly'), factors: [...first('molly').factors, { provider: 'email-link', amr: ['email'], aal: 1 as const, at: new Date().toISOString() }] }, { method: 'password and email link' });
+      expect(done.auditId).toBeTruthy();
+      expect(records.get(done.auditId)).toMatchObject({ user: 'molly', loginMethod: 'password and email link' });
+      expect(new Set(records.get(done.auditId)?.amr)).toEqual(new Set((req.session.signIn as { amr: string[] }).amr));
+    });
+
+    it('the row stores the id and how the sign-in was made', async () => {
+      const am = await started();
+      await remembered(am, 'molly');
+      expect(deviceRow(am, 'molly').device).toMatchObject({ auditId: 'signin-1', signInMethod: 'password and email link' });
+    });
+
+    it('a matching record skips the prompt, with no security event', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(true);
+      expect(securityEvents()).toEqual([]);
+    });
+
+    it('a missing record prompts and is recorded as a security event', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      records.delete('signin-1');
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(false);
+      expect(am.completeTwoStep(handle, 'b')).toBeNull();
+      expect(securityEvents()).toHaveLength(1);
+      expect(securityEvents()[0]).toMatchObject({ user: 'molly', result: 'deny', severity: 'high', ipAddress: FROM.ip, resource: deviceRow(am, 'molly').row.id });
+      expect(auth.some((a) => a.result === 'failure' && /signin-1 was not found/.test(a.reason))).toBe(true);
+    });
+
+    it('an edited row (a different audit id) prompts and is recorded as a security event', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      roles.sam = ['reader'];
+      const samSignIn = signInRecorded('sam');
+      const { row, device: secret } = deviceRow(am, 'molly');
+      await store(am).touch(row.id, new Date().toISOString(), JSON.stringify({ ...secret, auditId: samSignIn }));
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(false);
+      expect(am.completeTwoStep(handle, 'b')).toBeNull();
+      expect(securityEvents()).toHaveLength(1);
+      expect(String(securityEvents()[0].reason)).toMatch(/another account's/);
+    });
+
+    it('a row whose factors disagree with its record prompts and is recorded as a security event', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      records.set('signin-1', { ...records.get('signin-1'), amr: ['pwd'] });
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(false);
+      expect(String(securityEvents()[0]?.reason)).toMatch(/different factors/);
+    });
+
+    it('a signature that fails raises no security event: only the key holder reaches the record check', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      records.delete('signin-1');
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(browserKey().privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(false);
+      expect(securityEvents()).toEqual([]);
+    });
+
+    it('a row from before this change (no audit id) prompts once, is removed, and is remembered again with an id', async () => {
+      const am = await started();
+      const device = await remembered(am, 'molly');
+      const { row, device: secret } = deviceRow(am, 'molly');
+      const { auditId: _a, signInMethod: _m, ...legacy } = secret;
+      await store(am).touch(row.id, new Date().toISOString(), JSON.stringify(legacy));
+      const handle = await am.beginTwoStep(first('molly'), { binding: 'b' });
+      expect(await am.proveKnownDevice(handle, 'b', device.deviceId, signChallenge(device.privateKey, am.knownDeviceChallenge(handle, 'b')), FROM)).toBe(false);
+      expect(am.completeTwoStep(handle, 'b')).toBeNull();
+      expect(securityEvents()).toEqual([]);
+      expect(auth.some((a) => a.result === 'failure' && /remembered before rows named their sign-in record/.test(a.reason))).toBe(true);
+      // Asked once: the row is gone, so the next sign-in is not offered the skip.
+      expect(am.rememberedDevices('molly')).toHaveLength(0);
+      expect(withdrawn).toEqual([{ username: 'molly', scope: REMEMBER_BROWSER_CONSENT_SCOPE, subject: device.deviceId, why: 'no-sign-in-record' }]);
+      const h2 = await am.beginTwoStep(first('molly'), { binding: 'b2' });
+      expect(am.knownDeviceChallenge(h2, 'b2')).toBeNull();
+      // Remembered again after that sign-in, the new row names its record and skips.
+      const again = await remembered(am, 'molly');
+      expect(deviceRow(am, 'molly').device.auditId).toBe('signin-2');
+      const h3 = await am.beginTwoStep(first('molly'), { binding: 'b3' });
+      expect(await am.proveKnownDevice(h3, 'b3', again.deviceId, signChallenge(again.privateKey, am.knownDeviceChallenge(h3, 'b3')), FROM)).toBe(true);
+    });
+
+    it("nothing is remembered without a readable record of this person's sign-in with these factors", async () => {
+      const am = await started();
+      const remember = (auditId?: string, amr = ['pwd', 'email']) => am.rememberBrowser(ctx('molly'), { publicKey: browserKey().spki, version: '1', userAgent: CHROME_WIN, platformHint: '"Windows"', amr, auditId });
+      expect(await remember(undefined)).toBeNull();
+      expect(await remember('no-such-record')).toBeNull();
+      roles.sam = ['reader'];
+      expect(await remember(signInRecorded('sam'))).toBeNull();
+      expect(await remember(signInRecorded('molly'), ['pwd'])).toBeNull();
+      expect(am.rememberedDevices('molly')).toHaveLength(0);
+      expect(accepted).toEqual([]);
+    });
   });
 });

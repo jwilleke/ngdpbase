@@ -7445,7 +7445,7 @@ ${panes}
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     let next = completed.next ?? redirect; // #1743: a pending connection is confirmed first
     if (done.remember) {
-      req.session.rememberBrowser = { version: done.remember.version, amr: req.session.signIn?.amr ?? [], next, until: Date.now() + 5 * 60_000 };
+      req.session.rememberBrowser = { version: done.remember.version, amr: req.session.signIn?.amr ?? [], next, until: Date.now() + 5 * 60_000, ...(completed.auditId ? { auditId: completed.auditId } : {}) };
       next = '/login/remember-browser';
     }
     req.session.save((err) => {
@@ -7496,7 +7496,7 @@ ${panes}
     }
     if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'json'))) return;
     const saved = await this.authManagerFor2Step().rememberBrowser(req.userContext as never, {
-      publicKey, version: offer.version, amr: offer.amr, userAgent: req.get('user-agent'), platformHint: req.get('sec-ch-ua-platform')
+      publicKey, version: offer.version, amr: offer.amr, auditId: offer.auditId, userAgent: req.get('user-agent'), platformHint: req.get('sec-ch-ua-platform')
     }).catch((err: unknown) => { logger.warn('[known-device] remembering a browser failed:', err); return null; });
     req.session.save(() => res.json(saved ? { ok: true, deviceId: saved.deviceId } : { ok: false }));
   }
