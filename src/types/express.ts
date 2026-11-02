@@ -55,9 +55,10 @@ declare module 'express-session' {
      * #1523 slice 1c: "Remember this browser" was ticked and a second factor
      * completed the sign-in; the next page has the browser make its key. The
      * version of the page the person was shown, the sign-in's amr, where to go
-     * after, and until when (epoch ms). Single use.
+     * after, until when (epoch ms), and the id of the sign-in's audit record,
+     * which the remembered row names. Single use.
      */
-    rememberBrowser?: { version: string; amr: string[]; next: string; until: number };
+    rememberBrowser?: { version: string; amr: string[]; next: string; until: number; auditId?: string };
     /** A verified outside identity no account has connected, waiting for the person to sign in another way (#1743). */
     pendingConnection?: PendingConnection;
     /** #2073: an outside sign-in whose email several accounts share, waiting for the person to choose one. */

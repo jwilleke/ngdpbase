@@ -334,6 +334,18 @@ class DatabaseAuditProvider extends BaseAuditProvider {
     }
   }
 
+  /** The record with this id (#1523), through the unique index on `id`; a queued one first. */
+  override findRecordById(id: string): Promise<Record<string, unknown> | null> {
+    try {
+      const queued = this.queue.find((r) => r.id === id);
+      if (queued) return Promise.resolve(queued);
+      const row = this.requireDb().prepare('SELECT record FROM audit_events WHERE id = ?').get(id) as { record: string } | undefined;
+      return Promise.resolve(row ? JSON.parse(row.record) as Record<string, unknown> : null);
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
   /**
    * The entries about one person (#1537): the person is the row's `user`,
    * its `actor`, or the owner of the resource it names (`metadata.owner`:

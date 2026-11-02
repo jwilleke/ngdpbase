@@ -111,6 +111,7 @@ import { sameUsername } from '../utils/username.js';
 import { isEmail } from '../types/guards.js';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import type { AuthenticationRecordSummary } from './AuditManager.js';
 import type NotificationManager from './NotificationManager.js';
 import type IdentityManager from './IdentityManager.js';
 
@@ -351,17 +352,32 @@ export interface DeviceSecret extends BrowserIdentity {
    * a later password change retires it.
    */
   generation?: number;
+  /**
+   * The id of the audit record of the sign-in that remembered it (#1523,
+   * operator 2026-10-31), and how that sign-in was made, as the record says.
+   * A browser remembered before this has neither.
+   */
+  auditId?: string;
+  signInMethod?: string;
 }
 
 const KNOWN_DEVICE_DEFAULT_DAYS = 30;
 /** What a remembered browser signs: this, then the challenge. Separates the signature from any other use of the key. */
 export const KNOWN_DEVICE_SIGNED_PREFIX = 'ngdpbase known device v1\n';
 
+/** The same factors, in any order (#1523). */
+function sameAmr(a: string[] | undefined, b: string[]): boolean {
+  if (!a || a.length !== b.length) return false;
+  const want = new Set(b);
+  return a.every((v) => want.has(v));
+}
+
 function parseDeviceSecret(secret: string): DeviceSecret | null {
   try {
     const d = JSON.parse(secret) as Partial<DeviceSecret>;
     return typeof d.publicKey === 'string' && typeof d.browser === 'string' && typeof d.os === 'string' && typeof d.platform === 'string' && typeof d.expiresAt === 'string'
-      ? { publicKey: d.publicKey, browser: d.browser, os: d.os, platform: d.platform, amr: Array.isArray(d.amr) ? d.amr.map(String) : [], expiresAt: d.expiresAt, ...(typeof d.generation === 'number' ? { generation: d.generation } : {}) }
+      ? { publicKey: d.publicKey, browser: d.browser, os: d.os, platform: d.platform, amr: Array.isArray(d.amr) ? d.amr.map(String) : [], expiresAt: d.expiresAt, ...(typeof d.generation === 'number' ? { generation: d.generation } : {}),
+        ...(typeof d.auditId === 'string' ? { auditId: d.auditId } : {}), ...(typeof d.signInMethod === 'string' ? { signInMethod: d.signInMethod } : {}) }
       : null;
   } catch {
     return null;
@@ -618,6 +634,8 @@ export type OutsideSignIn =
 /** What the one completion step leaves for the route (#1743): where to go instead, when a pending identity waits to be confirmed. */
 export interface SignInCompleted {
   next?: string;
+  /** The id of the sign-in's audit record, when it was recorded (#1523: a remembered browser's row names it). */
+  auditId?: string;
 }
 
 /** Short: a shared browser should not keep someone else's identity waiting for long (#1743). */
@@ -2908,13 +2926,24 @@ class AuthManager extends BaseManager {
     return hardwareVerified ? { amr, aal, acr: 'phrh' } : { amr, aal };
   }
 
-  /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
-  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string, reported?: ReportedValues, knownDevice?: boolean): Promise<void> {
+  /**
+   * The audit record of one sign-in method's check (#1758): written here, never
+   * by a route. Returns the record's id when it was recorded (#1523).
+   */
+  private async auditCheck(
+    attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string,
+    more: { reported?: ReportedValues; knownDevice?: boolean; amr?: string[] } = {}
+  ): Promise<string | undefined> {
     try {
-      const audit = this.engine.getManager<{ logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<string> }>('AuditManager');
-      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method, ...(reported ? { reported } : {}), ...(knownDevice ? { knownDevice: true } : {}) }, result, reason);
+      const audit = this.engine.getManager<{ logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<{ id?: string } | undefined> }>('AuditManager');
+      const recorded = await audit?.logAuthentication?.({
+        username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method,
+        ...(more.reported ? { reported: more.reported } : {}), ...(more.knownDevice ? { knownDevice: true } : {}), ...(more.amr ? { amr: more.amr } : {})
+      }, result, reason);
+      return typeof recorded?.id === 'string' ? recorded.id : undefined;
     } catch (err) {
       logger.warn('[AuthManager] audit record failed for an authentication check:', err);
+      return undefined;
     }
   }
 
@@ -3349,7 +3378,8 @@ class AuthManager extends BaseManager {
     const handle = how.privateStoreHandle
       ?? (how.unlockWith && this.vaultUnlocker ? await this.vaultUnlocker(username, how.unlockWith.password) : undefined);
     if (handle) req.session.privateStoreHandle = handle;
-    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`, result.reported, result.knownDevice);
+    const auditId = await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`,
+      { reported: result.reported, knownDevice: result.knownDevice, ...(record ? { amr: record.amr } : {}) });
     try {
       await this.engine.getManager<{ recordSignIn?(u: string): Promise<void> }>('UserManager')?.recordSignIn?.(username);
     } catch (err) {
@@ -3370,9 +3400,9 @@ class AuthManager extends BaseManager {
     // (consentPending, the consent gate) until they accept or sign out.
     if (await this.termsPendingFor(username)) {
       req.session.consentPending = true;
-      return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}` };
+      return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}`, ...(auditId ? { auditId } : {}) };
     }
-    return next ? { next } : {};
+    return { ...(next ? { next } : {}), ...(auditId ? { auditId } : {}) };
   }
 
   /**
@@ -4359,8 +4389,12 @@ class AuthManager extends BaseManager {
    * A remembered browser's answer to the challenge (#1523 slice 1c). It
    * counts only when the device is this person's, has not expired, the
    * signature over the challenge verifies with its public key, and the
-   * browser and system still match what it was issued to. Any failure is
-   * recorded and the prompt stays. The challenge is spent either way.
+   * browser and system still match what it was issued to, and the audit
+   * record its row names says the same as the row (#1523, operator
+   * 2026-10-31). Any failure is recorded and the prompt stays. A row whose
+   * audit record is missing or disagrees is also a security event; a row
+   * remembered before rows named their record is removed, so the browser is
+   * asked once and may be remembered again. The challenge is spent either way.
    */
   async proveKnownDevice(handle: string, binding: string, deviceId: string, signature: string, from: { ip?: string; userAgent?: string; platformHint?: string }): Promise<boolean> {
     const p = this.pendingSignIn(handle, binding);
@@ -4383,9 +4417,51 @@ class AuthManager extends BaseManager {
       ok = false;
     }
     if (!ok) return fail('the signature did not verify');
+    // After the signature, so only the browser holding the key can raise this.
+    const disagreement = await this.deviceRecordDisagreement(p.username, found.device);
+    if (disagreement === 'no record named') {
+      const ctx = systemContext(this.engine, `remembered browser ${found.row.id} of ${p.username}: remembered before rows named their sign-in record`);
+      if (await this.credentials?.remove(found.row.id)) {
+        this.auditCredentialChange(ctx, p.username, 'credential-remove', found.row, 'no-sign-in-record');
+        await this.withdrawRememberConsent(ctx, p.username, found.row.subject, 'no-sign-in-record');
+      }
+      return fail('remembered before rows named their sign-in record; asked once, and it may be remembered again');
+    }
+    if (disagreement) {
+      void recordAuditEvent(this.engine.getManager('AuditManager'), {
+        eventType: AUDIT_EVENT.SECURITY_EVENT,
+        user: p.username,
+        ipAddress: from.ip,
+        action: 'remembered-browser-record-mismatch',
+        result: 'deny',
+        severity: 'high',
+        resource: found.row.id,
+        resourceType: 'credential',
+        reason: `remembered browser ${found.row.id} of ${p.username} treated as unknown: ${disagreement}`,
+        metadata: { securityEventType: 'remembered-browser-record-mismatch', credentialId: found.row.id, auditId: found.device.auditId, userAgent: from.userAgent }
+      });
+      return fail(disagreement);
+    }
     p.knownDevice = found.row.id;
     await this.credentials?.touch(found.row.id, new Date().toISOString());
     return true;
+  }
+
+  /**
+   * How a remembered browser's row disagrees with the audit record it names
+   * (#1523), or null when they agree: the record is the account's sign-in,
+   * made the way the row says, with the same factors. `'no record named'` for
+   * a row remembered before rows named one.
+   */
+  private async deviceRecordDisagreement(username: string, device: DeviceSecret): Promise<string | null> {
+    if (!device.auditId) return 'no record named';
+    const audit = this.engine.getManager<{ authenticationRecord?(id: string): Promise<AuthenticationRecordSummary | null> }>('AuditManager');
+    const record = await audit?.authenticationRecord?.(device.auditId);
+    if (!record) return `its sign-in record ${device.auditId} was not found`;
+    if (record.user !== username) return `its sign-in record ${device.auditId} is another account's`;
+    if (record.loginMethod !== device.signInMethod) return `its sign-in record ${device.auditId} names a different way of signing in`;
+    if (!sameAmr(record.amr, device.amr)) return `its sign-in record ${device.auditId} names different factors`;
+    return null;
   }
 
   /**
@@ -4394,15 +4470,24 @@ class AuthManager extends BaseManager {
    * the public key, the browser and system, and when it expires. Refused
    * when the key is not an ECDSA P-256 public key, the browser cannot be
    * told, the page changed since it was shown, or consent cannot be recorded.
+   * The row names the audit record of the sign-in (`auditId`, from
+   * `completeSignIn`), which must be readable and be this person's sign-in
+   * with these factors; otherwise nothing is remembered (#1523).
    */
   async rememberBrowser(
     ctx: { username: string } & Record<string, unknown>,
-    input: { publicKey: string; version: string; userAgent?: string; platformHint?: string; amr: string[] }
+    input: { publicKey: string; version: string; userAgent?: string; platformHint?: string; amr: string[]; auditId?: string }
   ): Promise<{ deviceId: string } | null> {
     const days = this.rememberDays();
     if (!this.credentials || days === 0) return null;
     const identity = browserIdentity(input.userAgent, input.platformHint);
     if (!identity) return null;
+    const audit = this.engine.getManager<{ authenticationRecord?(id: string): Promise<AuthenticationRecordSummary | null> }>('AuditManager');
+    const signIn = input.auditId ? await audit?.authenticationRecord?.(input.auditId) : null;
+    if (!signIn || signIn.user !== ctx.username || !sameAmr(signIn.amr, input.amr)) {
+      logger.warn(`[AuthManager] ${ctx.username} asked to remember a browser, but the audit record of the sign-in could not be read or does not match; not remembered (#1523)`);
+      return null;
+    }
     let spki: Buffer;
     try {
       const key = createPublicKey({ key: Buffer.from(input.publicKey, 'base64url'), format: 'der', type: 'spki' });
@@ -4433,7 +4518,9 @@ class AuthManager extends BaseManager {
       ...identity,
       amr: input.amr,
       expiresAt: new Date(now.getTime() + days * 86_400_000).toISOString(),
-      generation: await this.accountGeneration(ctx.username)
+      generation: await this.accountGeneration(ctx.username),
+      auditId: signIn.id,
+      ...(signIn.loginMethod !== undefined ? { signInMethod: signIn.loginMethod } : {})
     };
     await this.storeCredential(ctx, ctx.username, { kind: 'device', subject: deviceId, secret: JSON.stringify(secret), label: `${identity.browser} on ${identity.os}` }, 'remember this browser');
     return { deviceId };

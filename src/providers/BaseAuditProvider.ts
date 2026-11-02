@@ -675,6 +675,15 @@ abstract class BaseAuditProvider extends BaseProvider {
   }
 
   /**
+   * The stored record with this id, or null (#1523: a remembered browser's
+   * row names the audit record of its sign-in, and is checked against it).
+   * Null too from a provider that cannot look a record up by id.
+   */
+  findRecordById(_id: string): Promise<Record<string, unknown> | null> {
+    return Promise.resolve(null);
+  }
+
+  /**
    * Normalise an incoming event into the record that will be stored (#1119).
    *
    * Identity by default. A provider that assigns its own id, timestamp or

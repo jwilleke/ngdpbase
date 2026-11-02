@@ -290,8 +290,22 @@ describe('AuditManager', () => {
         loginMethod: 'local',
         timestamp: new Date().toISOString()
       };
-      const eventId = await am.logAuthentication(ctx, 'success', 'credentials valid');
-      expect(typeof eventId).toBe('string');
+      const recorded = await am.logAuthentication(ctx, 'success', 'credentials valid');
+      expect(recorded).toEqual({ outcome: 'recorded', id: 'test-event-id' });
+    });
+
+    test('a sign-in\'s factors are in its record, and it comes back by id with only what a remembered browser is checked against (#1523)', async () => {
+      const am = makeManagerWithMockProvider();
+      await am.logAuthentication({ username: 'molly', loginMethod: 'password and email link', amr: ['pwd', 'email'] }, 'success', 'signed in');
+      const provider = (am as unknown as { provider: Record<string, ReturnType<typeof vi.fn>> }).provider;
+      const written = provider.logAuditEvent.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(written.context).toMatchObject({ amr: ['pwd', 'email'] });
+      provider.findRecordById = vi.fn((id: string) => Promise.resolve(id === 'a1' ? { ...written, id: 'a1', ipAddress: '10.0.0.1' } : id === 'p1' ? { id: 'p1', eventType: 'page-edit', user: 'molly' } : null));
+      expect(await am.authenticationRecord('a1')).toEqual({ id: 'a1', user: 'molly', loginMethod: 'password and email link', amr: ['pwd', 'email'] });
+      expect(await am.authenticationRecord('p1')).toBeNull(); // not a sign-in
+      expect(await am.authenticationRecord('nope')).toBeNull();
+      delete provider.findRecordById;
+      expect(await am.authenticationRecord('a1')).toBeNull(); // a provider that cannot look up by id
     });
 
     test('an outside provider\'s reported amr / acr land in the record\'s metadata (#1633)', async () => {

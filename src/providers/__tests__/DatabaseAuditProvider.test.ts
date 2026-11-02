@@ -445,3 +445,20 @@ describe('recordIsAbout (#1537, #2041)', () => {
     expect(recordIsAbout({ user: 'x', metadata: { owner: 'urn:uuid:jim-1', ownerUser: 'jim' } }, 'jim')).toBe(true);
   });
 });
+
+describe('findRecordById (#1523)', () => {
+  test('finds a queued record, and a stored one after a restart; an unknown id is null', async () => {
+    const { provider } = makeProvider();
+    await provider.initialize();
+    const id = await provider.logAuditEvent(event('authentication-success', { context: { loginMethod: 'password and email link' } }));
+    await provider.logAuditEvent(event('page-edit'));
+    expect(await provider.findRecordById(id)).toMatchObject({ id, eventType: 'authentication-success' });
+    await provider.close();
+
+    const again = makeProvider().provider;
+    await again.initialize();
+    expect(await again.findRecordById(id)).toMatchObject({ id, context: { loginMethod: 'password and email link' } });
+    expect(await again.findRecordById('no-such-id')).toBeNull();
+    await again.close();
+  });
+});

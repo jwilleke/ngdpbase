@@ -7,6 +7,8 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import path from 'path';
 import fs from 'fs-extra';
 import fsp from 'fs/promises';
+import { createReadStream } from 'fs';
+import { createInterface } from 'readline';
 import logger from '../utils/logger.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { AuditEvent } from '../types/index.js';
@@ -507,6 +509,37 @@ class FileAuditProvider extends BaseAuditProvider {
   async exportAuditLogs(filters: AuditFilters = {}, format: 'json' | 'csv' = 'json'): Promise<string> {
     const logs = await this.searchAuditLogs(filters, { limit: 10000 });
     return this.formatExport(logs.results, format);
+  }
+
+  /**
+   * The record with this id (#1523): the queue and the records held in
+   * memory, then the live log and its archives, newest first, a line at a
+   * time. Only a line that holds the id is parsed. A remembered browser's
+   * sign-in is at most `remember-days` old, so the search usually ends in the
+   * live log; a record whose archive was removed is not found.
+   */
+  override async findRecordById(id: string): Promise<Record<string, unknown> | null> {
+    const held = this.auditQueue.find((e) => e.id === id) ?? this.auditLogs.find((e) => e.id === id);
+    if (held) return held as unknown as Record<string, unknown>;
+    if (!this.config) return null;
+    const needle = JSON.stringify(id);
+    for (const name of (await this.auditFileNames()).reverse()) {
+      const lines = createInterface({ input: createReadStream(path.join(this.config.logDirectory, name), 'utf8'), crlfDelay: Infinity });
+      try {
+        for await (const line of lines) {
+          if (!line.includes(needle)) continue;
+          try {
+            const record = JSON.parse(line) as Record<string, unknown>;
+            if (record.id === id) return record;
+          } catch { /* a torn line is not the record */ }
+        }
+      } catch (err) {
+        logger.warn(`[FileAuditProvider] could not read ${name} for record ${id}:`, err);
+      } finally {
+        lines.close();
+      }
+    }
+    return null;
   }
 
   /**

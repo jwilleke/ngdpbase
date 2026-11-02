@@ -752,6 +752,17 @@ const page = await auditManager.searchEntriesAbout('jim', { limit: 50, offset: 0
 
 __Returns:__ the same page shape as `searchAuditLogs`. The database provider answers from indexed columns; the file provider from the records it holds in memory (the newest 10,000); a provider that cannot answer (the null provider) rejects rather than returning an empty page.
 
+#### authenticationRecord(id)
+
+One `authentication-success` record by its id ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523)), for AuthManager's check of a remembered browser: its row names the record of the sign-in that remembered it.
+
+```javascript
+const record = await auditManager.authenticationRecord(device.auditId);
+// { id, user, loginMethod, amr } or null
+```
+
+__Returns:__ only those four fields, never the rest of the record, so it asks no caller. Null when there is no such record, it is not an `authentication-success`, or the provider cannot look one up. It reads through the provider's `findRecordById(id)`: the database provider by its unique `id` index (a queued record first); the file provider from its queue and memory, then the live log and its archives, newest first, parsing only a line that holds the id. The base provider, and so the null and cloud providers, answer null. `logAuthentication` returns `{ outcome, id }`, the id when the record was recorded, and writes a completed sign-in's `amr` into the record's `context`.
+
 #### getAuditStats(filters)
 
 Get aggregated statistics for audit logs.

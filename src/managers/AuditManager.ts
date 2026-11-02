@@ -129,6 +129,19 @@ interface AuthenticationContext {
   reported?: ReportedValues;
   /** #1523 slice 1c: the second-factor prompt was skipped on a remembered browser. Not a factor. */
   knownDevice?: boolean;
+  /** #1523: the RFC 8176 methods of a completed sign-in, so a remembered browser's row can be checked against it. */
+  amr?: string[];
+}
+
+/**
+ * What a remembered browser's row is checked against (#1523): the fields of
+ * one `authentication-success` record, never the rest of it.
+ */
+export interface AuthenticationRecordSummary {
+  id: string;
+  user: string;
+  loginMethod?: string;
+  amr?: string[];
 }
 
 /**
@@ -223,6 +236,7 @@ interface BaseAuditProvider {
   isHealthy(): Promise<boolean>;
   getProviderInfo(): ProviderInfo;
   searchEntriesAbout?(person: string, options: { limit?: number; offset?: number; ownerId?: string }): Promise<AuditSearchResults>;
+  findRecordById?(id: string): Promise<Record<string, unknown> | null>;
 }
 
 /**
@@ -582,11 +596,22 @@ class AuditManager extends BaseManager {
    * every other emitter. Calling `logAuditEvent` directly skipped all three.
    */
   private async record(auditEvent: AuditEvent): Promise<AuditRecordOutcome> {
-    return recordAuditEvent(
-      this as unknown as AuditEventSink,
+    return (await this.recordWithId(auditEvent)).outcome;
+  }
+
+  /** {@link record}, and the stored record's id when it was recorded (#1523). */
+  private async recordWithId(auditEvent: AuditEvent): Promise<{ outcome: AuditRecordOutcome; id?: string }> {
+    let id: string | undefined;
+    const sink: AuditEventSink = {
+      logAuditEvent: async (event) => (id = await this.logAuditEvent(event as unknown as AuditEvent)),
+      flushAuditQueue: () => this.flushAuditQueue()
+    };
+    const outcome = await recordAuditEvent(
+      sink,
       auditEvent as unknown as Parameters<typeof recordAuditEvent>[1],
       (err) => logger.warn(`[AuditManager] Audit record failed for ${auditEvent.eventType}:`, err)
     );
+    return outcome === 'recorded' && id ? { outcome, id } : { outcome };
   }
 
   /**
@@ -664,9 +689,10 @@ class AuditManager extends BaseManager {
    * @param {AuthenticationContext} context - Authentication context
    * @param {string} result - 'success', 'failure', 'logout'
    * @param {string} reason - Reason for result
-   * @returns What became of the record (#1205)
+   * @returns What became of the record (#1205), and its id when it was
+   *   recorded: a remembered browser's row names its sign-in's record (#1523)
    */
-  async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<AuditRecordOutcome> {
+  async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<{ outcome: AuditRecordOutcome; id?: string }> {
     const auditEvent: AuditEvent = {
       // #1115: three outcomes, three names. `authentication` with a result
       // field meant the docs said authentication-failed and the code said
@@ -683,12 +709,40 @@ class AuditManager extends BaseManager {
       context: {
         loginMethod: context.loginMethod,
         attemptedUsername: context.attemptedUsername,
-        ...(context.knownDevice ? { knownDevice: true } : {})
+        ...(context.knownDevice ? { knownDevice: true } : {}),
+        ...(context.amr ? { amr: context.amr } : {})
       },
       ...(context.reported ? { metadata: { reported: context.reported } } : {})
     };
 
-    return await this.record(auditEvent);
+    return await this.recordWithId(auditEvent);
+  }
+
+  /**
+   * The `authentication-success` record with this id, or null (#1523): a
+   * remembered browser counts only while the record of the sign-in that
+   * remembered it says the same as its row. Only the fields that check needs
+   * leave this method, so it is not an audit query and asks no caller; a
+   * record of any other kind is null. Null too when the provider cannot look
+   * a record up by id.
+   */
+  async authenticationRecord(id: string): Promise<AuthenticationRecordSummary | null> {
+    if (!id || !this.provider?.findRecordById) return null;
+    let found: Record<string, unknown> | null;
+    try {
+      found = await this.provider.findRecordById(id);
+    } catch (err) {
+      logger.warn(`[AuditManager] could not look up audit record ${id}:`, err);
+      return null;
+    }
+    if (!found || found.id !== id || found.eventType !== AUDIT_EVENT.AUTHENTICATION_SUCCESS || typeof found.user !== 'string') return null;
+    const context = (found.context ?? {}) as { loginMethod?: unknown; amr?: unknown };
+    return {
+      id,
+      user: found.user,
+      ...(typeof context.loginMethod === 'string' ? { loginMethod: context.loginMethod } : {}),
+      ...(Array.isArray(context.amr) ? { amr: context.amr.map(String) } : {})
+    };
   }
 
   /**
