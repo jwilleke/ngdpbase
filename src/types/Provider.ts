@@ -363,6 +363,16 @@ export interface PageProvider extends BaseProvider {
   restoreDeletedPage?(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: string; detail?: string }>;
 
   /**
+   * Where a trashed page would come back to, and its frontmatter, so the
+   * write door can decide the restore before it happens (#1815, security
+   * review L5): its title, or its vault name when it was deleted from a
+   * vault. Null when the uuid is not in the trash.
+   *
+   * @param uuid - Page UUID
+   */
+  deletedPageForRestore?(uuid: string): Promise<{ name: string; metadata: PageFrontmatter } | null>;
+
+  /**
    * Get all page titles
    * @returns Sorted array of page titles
    */

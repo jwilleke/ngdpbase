@@ -17,6 +17,7 @@ import path from 'path';
 import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
 import { UserCreateError } from '../../utils/userCreateError';
 import { readDoor } from './__fixtures__/pageReadDoor';
+import { PageWriteRefusedError } from '../../managers/PageManager';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -825,6 +826,34 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(newSave?.[3].username).not.toBe('adminuser');
       expect(newSave?.[4]).toEqual({ createdFor: 'adminuser' });
       expect(oldSave?.[3]).toBe(newSave?.[3]);
+    });
+
+    // Security review M2: the route's pageExists runs as the user, who may
+    // not see a page under the new name. The door refuses the system job's
+    // createdFor save of a page that exists (PageManager.writeDecision); here,
+    // that refusal ends the rename: an error, and the old page not demoted.
+    test('rename profile page: a new name taken by a page the user cannot see is refused, and nothing else is saved (#1815)', async () => {
+      const ownProfile = {
+        title: 'OldName',
+        uuid: 'old-profile-uuid',
+        content: '# Mine',
+        metadata: { title: 'OldName', uuid: 'old-profile-uuid', 'system-category': 'user-profile', author: 'adminuser' }
+      };
+      mockPageManager.getPage.mockImplementation((name: string) => Promise.resolve(name === 'OldName' ? ownProfile : null));
+      mockPageManager.pageExists.mockReturnValue(false);
+      const refusal: Error = new PageWriteRefusedError('Hidden Page', 'page-create');
+      mockPageManager.savePage.mockImplementation((name: string) =>
+        name === 'Hidden Page' ? Promise.reject(refusal) : Promise.resolve({ name }));
+
+      const res = await request(app)
+        .post('/profile')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ profilePage: 'Hidden Page', originalProfilePage: 'OldName', renameProfilePage: 'on' });
+
+      expect(res.status).toBe(302);
+      expect(decodeURIComponent(res.headers.location)).toContain('page rename failed');
+      expect(mockPageManager.savePage).toHaveBeenCalledTimes(1);
+      expect(mockPageManager.savePage.mock.calls[0][4]).toEqual({ createdFor: 'adminuser' });
     });
 
     test('rename profile page: a page that is not the user\'s own profile is not renamed (#1815)', async () => {

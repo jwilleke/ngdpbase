@@ -63,6 +63,8 @@ function makeSite({ systemRoles = ['admin'] }: { systemRoles?: string[] } = {}) 
   const deleted: string[] = [];
   const audit: Array<Record<string, unknown>> = [];
   const grants = new Map<string, Grant>();
+  const trash = new Map<string, { name: string; metadata: Record<string, unknown> }>();
+  const restored: string[] = [];
 
   const config: Record<string, unknown> = {
     ...shipped,
@@ -104,7 +106,15 @@ function makeSite({ systemRoles = ['admin'] }: { systemRoles?: string[] } = {}) 
       saved.push({ name, metadata });
       return { name, uuid: (metadata.uuid as string | undefined) ?? `u-${name}` };
     },
-    deletePage: async (name: string) => { deleted.push(name); return pages.delete(name); }
+    deletePage: async (name: string) => { deleted.push(name); return pages.delete(name); },
+    // The trash: a uuid → where it goes back to and its frontmatter.
+    deletedPageForRestore: async (uuid: string) => trash.get(uuid) ?? null,
+    restoreDeletedPage: async (uuid: string) => {
+      const t = trash.get(uuid);
+      if (!t) return { ok: false, reason: 'not-found' };
+      restored.push(uuid);
+      return { ok: true, title: String(t.metadata.title) };
+    }
   };
 
   const put = (name: string, metadata: Record<string, unknown> = {}) =>
@@ -116,6 +126,9 @@ function makeSite({ systemRoles = ['admin'] }: { systemRoles?: string[] } = {}) 
     deleted,
     audit,
     grants,
+    pages,
+    trash,
+    restored,
     put,
     ready: () => evaluator.initialize()
   };
@@ -134,6 +147,17 @@ describe('PageManager write door (#1815)', () => {
   });
 
   describe('the permission, through policy (decision 1)', () => {
+    // Security review L1: a refused create is recorded like a refused edit or
+    // delete. Sabotaged: with the recordCreateRefusal call removed from
+    // assertMaySave, the page-create row was missing and this went red.
+    test('a refused create is recorded as authorization-deny, with the actor', async () => {
+      await expect(site.pageManager.savePage('Brand New', 'new', {}, request('rita') as never, OPTS))
+        .rejects.toMatchObject({ action: 'page-create' });
+      expect(site.audit.filter((e) => e.eventType === 'authorization-deny')).toEqual([
+        expect.objectContaining({ user: 'rita', action: 'page-create', resource: 'Brand New', resourceType: 'page', result: 'deny', metadata: expect.objectContaining({ origin: 'request' }) })
+      ]);
+    });
+
     test('a reader may neither edit nor create a public page; nothing is written', async () => {
       await expect(site.pageManager.savePage('Main', 'new', {}, request('rita') as never, OPTS))
         .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-edit' });
@@ -288,17 +312,71 @@ describe('PageManager write door (#1815)', () => {
       expect(site.saved[0].metadata).toMatchObject({ author: 'rita', editor: 'rita' });
     });
 
-    test('createdFor from any other context is refused, before anything is written', async () => {
+    test('createdFor from any other context is refused, before anything is written, and recorded', async () => {
       await expect(site.pageManager.savePage('Profile: Rita', 'hello', {}, request('ed') as never, { ...OPTS, createdFor: 'rita' }))
-        .rejects.toThrow(/system job only/);
+        .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-create' });
       await expect(site.pageManager.savePage('Profile: Rita', 'hello', {}, jobContextForOwner('ed', 'not the system'), { ...OPTS, createdFor: 'rita' }))
-        .rejects.toThrow(/system job only/);
+        .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-create' });
       expect(site.saved).toEqual([]);
+      expect(site.audit.filter((e) => e.eventType === 'authorization-deny')).toEqual([
+        expect.objectContaining({ user: 'ed', action: 'page-create', resource: 'Profile: Rita', reason: 'createdFor is for a system job only' }),
+        expect.objectContaining({ action: 'page-create', resource: 'Profile: Rita', reason: 'createdFor is for a system job only' })
+      ]);
+    });
+
+    // Security review M2: a profile rename's new name is checked with
+    // pageExists as the user, who may not see a page that is there (an
+    // audience leaving them out, or the page list mid-rebuild). The system
+    // job's save must then be refused — never an edit of that page with the
+    // job's admin rights. Sabotaged: with `|| existingPage` taken out of the
+    // createdFor check, the save went through as an edit and this went red.
+    test('createdFor naming a page that exists — one the user cannot see — is refused; that page is unchanged', async () => {
+      site.put('Board Minutes', { author: 'ed', audience: ['editor'], 'author-lock': true });
+      const before = JSON.stringify(site.pages.get('Board Minutes'));
+      await expect(site.pageManager.savePage('Board Minutes', 'my profile', { title: 'Board Minutes', 'system-category': 'user-profile' }, SYSTEM, { ...OPTS, createdFor: 'rita' }))
+        .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-create' });
+      expect(site.saved).toEqual([]);
+      expect(JSON.stringify(site.pages.get('Board Minutes'))).toBe(before);
+      expect(site.audit.filter((e) => e.eventType === 'authorization-deny')).toEqual([
+        expect.objectContaining({ action: 'page-create', resource: 'Board Minutes', reason: 'createdFor names a page that already exists' })
+      ]);
     });
 
     test('the new user alone could not have made it: they hold no page-create', async () => {
       await expect(site.pageManager.savePage('Profile: Rita', 'hello', {}, request('rita') as never, OPTS))
         .rejects.toMatchObject({ action: 'page-create' });
+    });
+  });
+
+  // Security review L5: a page back from the trash is created again where it
+  // was, so the door decides page-create there, whoever called. Sabotaged:
+  // with the check in restoreDeletedPage removed, the reader's restore and
+  // the vault restore went through and this went red.
+  describe('a page restored from the trash', () => {
+    beforeEach(() => {
+      site.trash.set('u-old', { name: 'Old Page', metadata: { title: 'Old Page', uuid: 'u-old', 'system-category': 'general' } });
+      site.trash.set('u-diary', { name: formatPrivatePageName('alice', 'default', 'Old Diary'), metadata: { title: 'Old Diary', uuid: 'u-diary', private: true } });
+    });
+
+    test('someone who may not create the page there may not restore it; nothing is restored, the refusal recorded', async () => {
+      await expect(site.pageManager.restoreDeletedPage('u-old', request('rita') as never))
+        .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-create' });
+      expect(site.restored).toEqual([]);
+      expect(site.audit.filter((e) => e.eventType === 'authorization-deny')).toEqual([
+        expect.objectContaining({ user: 'rita', action: 'page-create', resource: 'Old Page' })
+      ]);
+    });
+
+    test('a vault page goes back only by its owner; an administrator is refused', async () => {
+      await expect(site.pageManager.restoreDeletedPage('u-diary', request('bob') as never)).rejects.toBeInstanceOf(PageWriteRefusedError);
+      expect(site.restored).toEqual([]);
+      expect(await site.pageManager.restoreDeletedPage('u-diary', request('alice'))).toMatchObject({ ok: true });
+      expect(site.restored).toEqual(['u-diary']);
+    });
+
+    test('an administrator restores a public page', async () => {
+      expect(await site.pageManager.restoreDeletedPage('u-old', request('bob'))).toMatchObject({ ok: true, title: 'Old Page' });
+      expect(site.restored).toEqual(['u-old']);
     });
   });
 });

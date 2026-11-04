@@ -20659,6 +20659,10 @@ ${panes}
       logger.info(`[WikiRoutes] User ${req.userContext.username} restored deleted page ${uuid} ('${result.title}')`);
       return res.json({ success: true, uuid, title: result.title });
     } catch (error: unknown) {
+      // #1815: the write door refused the restore — a create there.
+      if (error instanceof PageWriteRefusedError) {
+        return res.status(403).json({ success: false, error: 'forbidden', detail: error.message });
+      }
       logger.error(`Error restoring deleted page: ${getErrorMessage(error)}`);
       return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
     }

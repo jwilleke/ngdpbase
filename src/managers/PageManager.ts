@@ -161,7 +161,9 @@ export interface PageSaveOptions {
    * page at sign-up, the new profile page of a rename — so the job's
    * `page-create`, granted in policy, decides the write, and the page is
    * still the user's (author-lock leaves it to them). Refused from any context
-   * but the system principal's job, and ignored for a page that exists.
+   * but the system principal's job, and refused for a page that already
+   * exists (`PageWriteRefusedError`, `page-create`): the job never edits
+   * that page instead.
    */
   createdFor?: string;
   /**
@@ -2132,8 +2134,35 @@ class PageManager extends BaseManager implements CatalogSource {
     const moving = existing !== null && PageManager.containerOf(existing.name) !== PageManager.containerOf(destination);
     if ((!existing || moving) && !(await this.mayCreateAt(ctx, destination, metadata))) {
       logger.warn(`[PageManager] create of ${nameForLog(destination, metadata)} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
+      await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there');
       throw new PageWriteRefusedError(destination, 'page-create');
     }
+  }
+
+  /**
+   * Record a refused `page-create` as `authorization-deny` (#1815, security
+   * review L1). The edit and delete refusals are recorded by the page
+   * decision (`canUserAccessPage`); a create is decided by the PDP, which
+   * records nothing, so the door records it here: core records every refusal.
+   * Standard tier, `continue` on failure: the refusal stands either way.
+   */
+  private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string): Promise<void> {
+    const who = actorOf(ctx);
+    await recordAuditEvent(
+      this.engine.getManager('AuditManager'),
+      {
+        eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
+        ...who,
+        action: 'page-create',
+        resource: pageName,
+        resourceType: 'page',
+        result: 'deny',
+        reason,
+        severity: 'medium',
+        metadata: { ...who.metadata }
+      },
+      (err) => logger.warn(`[PageManager] audit of a refused create failed: ${err instanceof Error ? err.message : String(err)}`)
+    );
   }
 
   /** Is `ctx` a job of the system principal (#631) — the only context that may make a page for someone else (#1815)? */
@@ -2717,10 +2746,16 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     // #1815: a page made by the system for a user is theirs. Only the system
-    // principal's job may say so; for a page that exists it means nothing.
-    const createdFor = !existingPage && options.createdFor ? options.createdFor : null;
-    if (createdFor && !this.isSystemJob(ctx)) {
-      throw new Error('PageManager.savePage: createdFor is for a system job only');
+    // principal's job may say so, and only of a page that is not there yet:
+    // a page that exists is refused here, under the write lock, whatever the
+    // caller's own existence check answered (security review M2) — never
+    // edited by the system job instead.
+    const createdFor = options.createdFor || null;
+    if (createdFor && (!this.isSystemJob(ctx) || existingPage)) {
+      const why = existingPage ? 'createdFor names a page that already exists' : 'createdFor is for a system job only';
+      logger.warn(`[PageManager] create of ${nameForLog(pageName, existingPage?.metadata ?? metadata)} for ${createdFor} refused: ${why} (#1815)`);
+      await this.recordCreateRefusal(ctx, pageName, why);
+      throw new PageWriteRefusedError(pageName, 'page-create');
     }
     const creator = createdFor ?? actingUser;
 
@@ -2944,6 +2979,19 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     if (!this.provider.restoreDeletedPage) {
       throw new Error('PageManager: this page provider has no trash');
+    }
+
+    // #1815 (security review L5): a page back from the trash is a page
+    // created again where it was, so the write door decides `page-create`
+    // there first, whoever called. A provider that cannot say where restores nothing.
+    const trashed = this.provider.deletedPageForRestore ? await this.provider.deletedPageForRestore(uuid) : undefined;
+    if (trashed === undefined) {
+      throw new Error('PageManager: this page provider cannot say where a trashed page goes back, so it is not restored');
+    }
+    if (trashed && !(await this.mayCreateAt(ctx, trashed.name, trashed.metadata))) {
+      logger.warn(`[PageManager] restore of ${nameForLog(trashed.name, { ...trashed.metadata, uuid })} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
+      await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there');
+      throw new PageWriteRefusedError(trashed.name, 'page-create');
     }
 
     const result = await this.provider.restoreDeletedPage(uuid);

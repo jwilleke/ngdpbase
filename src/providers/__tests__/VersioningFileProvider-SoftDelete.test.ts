@@ -239,6 +239,17 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect((await provider.getPage(title)).content).toContain('a different page now');
   });
 
+  // #1815 (security review L5): PageManager decides a restore as a create
+  // where the page goes back, so the provider says where that is.
+  test('deletedPageForRestore names where a trashed page goes back, with its frontmatter', async () => {
+    const { uuid, title } = await seedPage();
+    await provider.deletePage(title, actor('jim'));
+
+    const trashed = await provider.deletedPageForRestore(uuid);
+    expect(trashed).toMatchObject({ name: title, metadata: { title, uuid, author: 'jim' } });
+    expect(await provider.deletedPageForRestore('no-such-uuid')).toBeNull();
+  });
+
   test('restore reports not-found for an unknown uuid', async () => {
     await provider.initialize();
     expect(await provider.restoreDeletedPage('no-such-uuid')).toEqual({ ok: false, reason: 'not-found' });
