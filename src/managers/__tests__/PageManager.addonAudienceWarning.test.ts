@@ -8,6 +8,7 @@ vi.unmock('../PageManager');
 
 import PageManager from '../PageManager';
 import logger from '../../utils/logger';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 function makeManager(addonsLoaded: boolean) {
   const provider = {
@@ -17,7 +18,8 @@ function makeManager(addonsLoaded: boolean) {
   };
   const addonsManager = { isInitialized: () => addonsLoaded, perPersonAddons: () => ['phr'] };
   const manager = new PageManager({
-    getManager: vi.fn((name: string) => (name === 'AddonsManager' ? addonsManager : null))
+    // #1815: the write door's deciders allow; the warning is the subject here.
+    getManager: vi.fn(withWriteDoorAllowing((name: string) => (name === 'AddonsManager' ? addonsManager : null)))
   }) as unknown as {
     provider: unknown;
     savePage: (name: string, content: string, meta?: unknown, ctx?: unknown) => Promise<unknown>;

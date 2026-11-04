@@ -22,6 +22,7 @@ import { TEST_ACTOR, actor } from '../../test-support/actors';
 import os from 'os';
 import fs from 'fs-extra';
 import PageManager from '../PageManager';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 // Test directories - unique per test run
 let TEST_DIR;
@@ -52,14 +53,14 @@ const createMockConfigManager = () => ({
   getInstanceDataFolder: vi.fn(() => TEST_DIR)
 });
 
-// Create mock engine
+// Create mock engine; #1815: the write door's deciders allow, storage is the subject here
 const createMockEngine = () => ({
-  getManager: vi.fn((name) => {
+  getManager: vi.fn(withWriteDoorAllowing((name) => {
     if (name === 'ConfigurationManager') {
       return createMockConfigManager();
     }
     return null;
-  })
+  }))
 });
 
 describe('PageManager Storage Integration', () => {

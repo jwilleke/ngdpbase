@@ -26,6 +26,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import WikiRoutes from '../WikiRoutes';
 import PageManager from '../../managers/PageManager';
+import { ALLOWING_PIP, ALLOWING_PDP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'b780e809-d45b-4c4b-84ec-ad30a74a3605';
 const OTHER_UUID = 'c0ffee00-1111-2222-3333-444444444444';
@@ -94,7 +95,9 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
   const engine = {
     getManager: vi.fn((name: string) => {
       // #1431 step 14: decisions are the PDP's.
-      if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(true) };
+      // #1815: plus the write door's deciders, allowing.
+      if (name === 'PolicyDecisionPoint') return { ...ALLOWING_PDP, permits: vi.fn().mockResolvedValue(true) };
+      if (name === 'PolicyInformationPoint') return ALLOWING_PIP;
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex };
@@ -277,7 +280,8 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     order.length = 0;
     await routes.adminSyncRequiredPages(createMockReq({ reconcile: [{ sourceUuid: UUID, liveUuid: OTHER_UUID }] }), createMockRes());
 
-    expect(deletePage).toHaveBeenCalledWith(OTHER_UUID, expect.objectContaining({ username: 'admin' }));
+    // #1815: the route recorded the delete, so the door does not record it again.
+    expect(deletePage).toHaveBeenCalledWith(OTHER_UUID, expect.objectContaining({ username: 'admin' }), { audit: { skip: true } });
     expect(order).toEqual([`delete ${OTHER_UUID}`, `save ${UUID}`]);
   });
 });

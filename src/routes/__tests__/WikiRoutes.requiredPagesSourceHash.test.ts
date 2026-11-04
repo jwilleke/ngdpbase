@@ -24,6 +24,7 @@ import ejs from 'ejs';
 import { JSDOM } from 'jsdom';
 import WikiRoutes from '../WikiRoutes';
 import PageManager from '../../managers/PageManager';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 import { SeededShippedPages } from '../../utils/seededShippedPages';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 
@@ -82,7 +83,8 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
   };
   const holder: { pageManager?: PageManager } = {};
   const engine = {
-    getManager: vi.fn((name: string) => {
+    // #1815: the write door's deciders allow; the sync status is the subject here.
+    getManager: vi.fn(withWriteDoorAllowing((name: string) => {
       if (name === 'UserManager') return { hasPermission: vi.fn().mockResolvedValue(true) };
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'ValidationManager') {
@@ -96,7 +98,7 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
       if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex: vi.fn().mockResolvedValue(undefined) };
       return null;
-    })
+    }))
   };
   const pageManager = new PageManager(engine);
   holder.pageManager = pageManager;

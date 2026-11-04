@@ -254,7 +254,9 @@ vi.mock('../../WikiEngine', () => {
           },
           TemplateManager: { getTemplates: vi.fn().mockResolvedValue([]) },
           VariableManager: { expandVariables: vi.fn().mockReturnValue('') },
-          SchemaManager: { getPerson: vi.fn().mockResolvedValue(null), getOrganization: vi.fn().mockResolvedValue(null) }
+          SchemaManager: { getPerson: vi.fn().mockResolvedValue(null), getOrganization: vi.fn().mockResolvedValue(null) },
+          // #1815: whose profile page it is — a stored author names the user by username here.
+          IdentityManager: { refersTo: vi.fn(async (_ctx: unknown, stored: unknown, username: string) => stored === username) }
         };
         return managers[name] ?? null;
       }),
@@ -817,6 +819,50 @@ describe('WikiRoutes — coverage batch 7', () => {
 
       // Old page is NOT deleted — the whole point of the demote.
       expect(mockPageManager.deletePage).not.toHaveBeenCalled();
+
+      // #1815 (decision 4): both saves are a system job through the door; the new page is the user's.
+      expect(newSave?.[3]).toMatchObject({ origin: 'boot' });
+      expect(newSave?.[3].username).not.toBe('adminuser');
+      expect(newSave?.[4]).toEqual({ createdFor: 'adminuser' });
+      expect(oldSave?.[3]).toBe(newSave?.[3]);
+    });
+
+    test('rename profile page: a page that is not the user\'s own profile is not renamed (#1815)', async () => {
+      const someoneElses = {
+        title: 'OldName',
+        uuid: 'other-uuid',
+        content: '# Not mine',
+        metadata: { title: 'OldName', uuid: 'other-uuid', 'system-category': 'user-profile', author: 'someoneelse' }
+      };
+      mockPageManager.getPage.mockImplementation((name: string) => Promise.resolve(name === 'OldName' ? someoneElses : null));
+      mockPageManager.pageExists.mockReturnValue(false);
+
+      const res = await request(app)
+        .post('/profile')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ profilePage: 'NewName', originalProfilePage: 'OldName', renameProfilePage: 'on' });
+
+      expect(res.status).toBe(302);
+      expect(decodeURIComponent(res.headers.location)).toContain('not your profile page');
+      expect(mockPageManager.savePage).not.toHaveBeenCalled();
+    });
+
+    test('rename profile page: a page of the user\'s that is not a profile is not renamed (#1815)', async () => {
+      const ordinary = {
+        title: 'OldName',
+        uuid: 'ordinary-uuid',
+        content: '# Mine, but not a profile',
+        metadata: { title: 'OldName', uuid: 'ordinary-uuid', 'system-category': 'general', author: 'adminuser' }
+      };
+      mockPageManager.getPage.mockImplementation((name: string) => Promise.resolve(name === 'OldName' ? ordinary : null));
+      mockPageManager.pageExists.mockReturnValue(false);
+
+      await request(app)
+        .post('/profile')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ profilePage: 'NewName', originalProfilePage: 'OldName', renameProfilePage: 'on' });
+
+      expect(mockPageManager.savePage).not.toHaveBeenCalled();
     });
   });
 

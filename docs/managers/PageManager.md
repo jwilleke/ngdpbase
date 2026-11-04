@@ -66,8 +66,9 @@ await pageManager.deletePage('My Page');
 | `readVersionDiff(identifier, v1, v2, ctx)` | `Promise<PageRead<VersionDiff>>` | The same door, for the difference between two versions |
 | `mayShowPage(identifier, ctx)` | `Promise<boolean>` | The same `page-read` decision as `readPage`, as an affordance ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)): would `ctx` be allowed to read the page, asked only to decide whether to show something (`<wiki:If test="exists:Page">`). Reads no content and writes no audit record; a page `ctx` may not read answers false, as a missing one does |
 | `getPageMetadata(identifier)` | `Promise<Object\|null>` | Get metadata only |
-| `savePage(name, content, metadata, ctx, options?)` | `Promise<PageSaveResult>` | Save page — the one write door ([#1462](https://github.com/jwilleke/ngdpbase/issues/1462)) |
-| `deletePage(identifier, ctx)` | `Promise<boolean>` | Delete page — the one delete door |
+| `savePage(name, content, metadata, ctx, options?)` | `Promise<PageSaveResult>` | Save page — the one write door ([#1462](https://github.com/jwilleke/ngdpbase/issues/1462)). Decides `page-edit` / `page-create` itself and throws `PageWriteRefusedError` ([#1815](https://github.com/jwilleke/ngdpbase/issues/1815)); `options.createdFor` names the user a system job makes a new page for |
+| `deletePage(identifier, ctx, options?)` | `Promise<boolean>` | Delete page — the one delete door. Decides `page-delete` itself and records `page-delete` before the delete unless `options.audit.skip` ([#1815](https://github.com/jwilleke/ngdpbase/issues/1815)) |
+| `mayEditPage(identifier, ctx)` | `Promise<boolean>` | Would the write door let `ctx` edit the page — an affordance, records nothing ([#1815](https://github.com/jwilleke/ngdpbase/issues/1815)) |
 | `deleteTestArtifacts(ctx, only?)` | `Promise<{ deleted, failed }>` | Delete every shared page carrying the `test-artifact` system keyword, never one without it; `only` narrows by `author` / `systemCategory`. Records `page-delete` before each, then `deletePage` (#2008) |
 | `restoreVersion(identifier, version, ctx)` | `Promise<PageSaveResult & { version }>` | Put an old version's body back, as a new version |
 | `restoreDeletedPage(uuid, ctx)` | `Promise<{ ok, title } \| { ok, reason }>` | Bring a page back from the trash, and back into the shared indexes |

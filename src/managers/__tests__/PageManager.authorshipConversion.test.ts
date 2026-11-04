@@ -35,6 +35,7 @@ import { vaultCategories } from '../../test-support/vaults';
 import { authorshipSite, type AuthorshipSite } from '../../test-support/authorshipSite';
 import { fakeIdentityManager } from '../../test-support/identities';
 import { systemContext } from '../../context/bootActions';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const JIM = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const ANN = 'urn:uuid:22222222-2222-4222-8222-222222222222';
@@ -47,6 +48,8 @@ async function legacySite(extraConfig: Record<string, unknown> = {}): Promise<{ 
     accounts: { jim: JIM, ann: ANN },
     config: { 'ngdpbase.system-category': vaultCategories(), ...extraConfig }
   });
+  // #1815: the write door's deciders, allowing; authorization is not the subject here.
+  for (const [name, decider] of Object.entries(allowingWriteDoor())) site.managers.set(name, decider);
   const identities = site.managers.get('IdentityManager');
   site.managers.delete('IdentityManager');
   const pm = site.pageManager;

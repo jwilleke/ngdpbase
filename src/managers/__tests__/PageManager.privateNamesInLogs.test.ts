@@ -8,10 +8,12 @@ vi.unmock('../PageManager');
 
 import PageManager from '../PageManager';
 import logger from '../../utils/logger';
+import { ALLOWING_PIP, withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const TITLE = 'Secret Diary';
 const NAME = `vaults/jim/default/${TITLE}`;
-const JIM = { username: 'jim' };
+/** The vault's owner, signed in: the vault container rule asks it (#1815). */
+const JIM = { username: 'jim', isAuthenticated: true };
 const UUID = '3f2a1b4c-0d5e-4f60-8a71-92b3c4d5e6f7';
 const BY_UUID = `(uuid ${UUID})`;
 
@@ -28,7 +30,8 @@ function makeManager(opts: { existing?: Stored[]; managers?: Record<string, unkn
     getVersionHistory: vi.fn(async () => { throw new Error('no history'); })
   };
   const manager = new PageManager({
-    getManager: vi.fn((name: string) => opts.managers?.[name] ?? null)
+    // The write door's deciders allow (#1815): this test is about log lines.
+    getManager: vi.fn(withWriteDoorAllowing((name: string) => opts.managers?.[name] ?? null))
   }) as unknown as {
     provider: unknown;
     savePage: (name: string, content: string, meta?: unknown, ctx?: unknown, o?: unknown) => Promise<unknown>;
@@ -105,7 +108,9 @@ describe('PageManager names a private page by its uuid in its log lines (#2178)'
 
   test('a write refused by the audience names a private page by its uuid', async () => {
     const existing = [{ title: NAME, uuid: UUID, content: 'old', metadata: { title: TITLE, uuid: UUID, private: true, audience: ['bob'] } }];
-    await expect(makeManager({ existing }).savePage(NAME, 'body', { title: TITLE }, JIM)).rejects.toThrow();
+    // The audience leaves jim out (#1815: the allowing PIP would admit him).
+    const pip = { ...ALLOWING_PIP, audienceAdmits: async () => false };
+    await expect(makeManager({ existing, managers: { PolicyInformationPoint: pip } }).savePage(NAME, 'body', { title: TITLE }, JIM)).rejects.toThrow();
 
     namesOnlyByUuid('#1964');
   });

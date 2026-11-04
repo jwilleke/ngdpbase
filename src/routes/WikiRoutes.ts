@@ -167,7 +167,7 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageAudienceRefusedError, PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
+import { PageAudienceRefusedError, PageContentValidationError, PageWriteRefusedError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -275,6 +275,13 @@ const LOG_LINES_PER_PAGE = 100;
  * to be exact.
  */
 const REWRITE_BUDGET_MS = 20_000;
+
+/**
+ * How many referring pages a rename names on the page it redirects to as
+ * left unchanged, because the renamer may not edit them (#1815). The rest
+ * are counted; the API answer lists them all.
+ */
+const MAX_LISTED_NOT_REWRITTEN = 20;
 
 /** Helper to extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
@@ -427,6 +434,9 @@ interface IPageManager {
   readChromePage: import('../managers/PageManager.js').default['readChromePage'];
   /** #1622: the page-read door — a person's read decides `page-read` here, never in a route. */
   readPage: PageManagerClass['readPage'];
+  mayShowPage: PageManagerClass['mayShowPage'];
+  /** #1815: would the write door let this context edit the page — an affordance, it records nothing. */
+  mayEditPage: PageManagerClass['mayEditPage'];
   readVersionHistory: PageManagerClass['readVersionHistory'];
   readVersion: PageManagerClass['readVersion'];
   readVersionDiff: PageManagerClass['readVersionDiff'];
@@ -460,7 +470,7 @@ interface IPageManager {
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
   /** #1462 slice 3: one delete door, with the context mandatory and positional. */
-  deletePage(name: string, ctx: ActorContext): Promise<boolean>;
+  deletePage: PageManagerClass['deletePage'];
   /** #2008: delete the pages carrying `test-artifact`, and nothing else. */
   deleteTestArtifacts: PageManagerClass['deleteTestArtifacts'];
   /** #1462 slice 3: a version restore is a save — validated, audited, indexed. */
@@ -3083,9 +3093,18 @@ ${panes}
         : typeof req.query['unknown-tags'] === 'string'
           ? req.query['unknown-tags']
           : '';
-      const warningMessage = _unknownTagsParam
-        ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
+      // #1815: the pages a rename left unchanged because the renamer may not edit them.
+      const _notRewritten = ([] as unknown[]).concat(req.query['links-not-rewritten'] ?? []).filter((v): v is string => typeof v === 'string');
+      const _notRewrittenMore = Number(req.query['links-not-rewritten-more']) || 0;
+      const notRewrittenMessage = _notRewritten.length > 0
+        ? `Links to the old title were not changed in ${_notRewritten.length + _notRewrittenMore} page(s) you may not edit: ${_notRewritten.join(', ')}${_notRewrittenMore > 0 ? ` and ${_notRewrittenMore} more` : ''}.`
         : null;
+      const warningMessage = [
+        _unknownTagsParam
+          ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
+          : null,
+        notRewrittenMessage
+      ].filter(Boolean).join(' ') || null;
       const sectionEditingEnabled =
         canEdit && !!userContext?.preferences?.['display.sectionEditing'];
 
@@ -4293,8 +4312,12 @@ ${panes}
       // #1082/#1094: a rename rewrites `[Old Title]` in the pages that referred
       // to it — the referrers the door read before the old name left the link
       // graph. Not awaited — see rewriteInboundLinksAfterRename.
+      let linksNotRewritten: string[] = [];
       if (saved.previousName !== null && saved.previousName !== saved.name && privateName === null) {
-        void this.rewriteInboundLinksAfterRename(req, saved.previousReferrers, saved.previousName, saved.name);
+        // #1815: only the referrers the renamer may edit are rewritten; the rest are named on the page.
+        const referrers = await this.referrersForRename(req, saved.previousReferrers);
+        linksNotRewritten = referrers.notRewritten;
+        void this.rewriteInboundLinksAfterRename(req, referrers.writable, saved.previousName, saved.name);
         logger.info(`[WikiRoutes] Page renamed: '${saved.previousName}' → '${saved.name}'`);
       }
 
@@ -4303,9 +4326,11 @@ ${panes}
       this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
       const warnParams = new URLSearchParams();
       if (unknownTagWarning) warnParams.set('unknown-tags', unknownTagWarning);
+      for (const name of linksNotRewritten.slice(0, MAX_LISTED_NOT_REWRITTEN)) warnParams.append('links-not-rewritten', name);
+      if (linksNotRewritten.length > MAX_LISTED_NOT_REWRITTEN) warnParams.set('links-not-rewritten-more', String(linksNotRewritten.length - MAX_LISTED_NOT_REWRITTEN));
       const warnParam = warnParams.size > 0 ? `?${warnParams.toString()}` : '';
       const target = `/view/${encodeURIComponent(redirectName)}${warnParam}`;
-      if (wantsJson) return res.json({ ok: true, redirect: target });
+      if (wantsJson) return res.json({ ok: true, redirect: target, linksNotRewritten });
       res.redirect(target);
     } catch (err: unknown) {
       this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
@@ -4320,6 +4345,11 @@ ${panes}
       // #1455: a title the rule refuses is the caller's mistake, not ours.
       if (errorMessage === TITLE_RULE_MESSAGE) {
         return await fail(400, 'Invalid Title', errorMessage);
+      }
+
+      // #1815: the write door refused it; nothing was written.
+      if (err instanceof PageAudienceRefusedError || err instanceof PageWriteRefusedError) {
+        return await fail(403, 'Access Denied', errorMessage);
       }
 
       // #1834: an encrypted vault that is not open (or not sealed) refuses the
@@ -4377,7 +4407,7 @@ ${panes}
         csrfToken: req.session?.csrfToken ?? ''
       });
     } catch (err) {
-      if (err instanceof PageAudienceRefusedError) {
+      if (err instanceof PageAudienceRefusedError || err instanceof PageWriteRefusedError) {
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
@@ -4450,7 +4480,7 @@ ${panes}
 
       res.redirect(`/view/${encodeURIComponent(pageName)}`);
     } catch (err) {
-      if (err instanceof PageAudienceRefusedError) {
+      if (err instanceof PageAudienceRefusedError || err instanceof PageWriteRefusedError) {
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
@@ -4677,7 +4707,8 @@ ${panes}
         return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
       }
 
-      const deleted = await this.engine.getManager('PageManager')?.deletePage(pageName, req.userContext);
+      // #1815: the delete was recorded above; the door does not record it twice.
+      const deleted = await this.engine.getManager('PageManager')?.deletePage(pageName, req.userContext, { audit: { skip: true } });
       if (!deleted) {
         return res.status(500).json({ error: 'Delete failed', pageName });
       }
@@ -4822,14 +4853,37 @@ ${panes}
 
       // #1082/#1094: same content rewrite the form-save rename performs, fed
       // the referrers the door read before the old title left the link graph.
-      void this.rewriteInboundLinksAfterRename(req, saved.previousReferrers, saved.previousName ?? pageName, saved.name);
+      // #1815: only the ones the renamer may edit; the rest are named here.
+      const referrers = await this.referrersForRename(req, saved.previousReferrers);
+      void this.rewriteInboundLinksAfterRename(req, referrers.writable, saved.previousName ?? pageName, saved.name);
 
       logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
-      return res.json({ success: true, from: pageName, to: newTitle });
+      return res.json({ success: true, from: pageName, to: newTitle, linksNotRewritten: referrers.notRewritten });
     } catch (error: unknown) {
       logger.error(`API rename failed: ${getErrorMessage(error)}`);
       return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
     }
+  }
+
+  /**
+   * The pages that linked to a renamed page, split by whether the renamer may
+   * edit them (#1815, operator 2026-11-04, decision 5). Each link fix is a
+   * write through the door as the renamer, so a page they may not edit is
+   * left unchanged and named in the rename's answer — when they may read it.
+   * One they may not read is left unchanged and not named, so the answer
+   * never tells them a page they cannot open exists. Both questions are
+   * affordances (they record nothing); the save still asks the door.
+   */
+  private async referrersForRename(req: Request, referrers: readonly string[]): Promise<{ writable: string[]; notRewritten: string[] }> {
+    const pageManager = this.engine.getManager('PageManager');
+    const writable: string[] = [];
+    const notRewritten: string[] = [];
+    if (!pageManager) return { writable, notRewritten };
+    for (const name of Array.from(new Set(referrers)).filter(Boolean).sort()) {
+      if (await pageManager.mayEditPage(name, req.userContext)) writable.push(name);
+      else if (await pageManager.mayShowPage(name, req.userContext)) notRewritten.push(name);
+    }
+    return { writable, notRewritten };
   }
 
   /**
@@ -4893,6 +4947,7 @@ ${panes}
       const rewrittenPages: string[] = [];
       const noMatch: string[] = [];
       const conflicted: string[] = [];
+      const refused: string[] = [];
       const failed: string[] = [];
       let outOfTime = 0;
 
@@ -4907,6 +4962,11 @@ ${panes}
           else if (outcome === 'conflict') conflicted.push(refPage);
           else if (outcome === 'no-match') noMatch.push(refPage);
         } catch (err: unknown) {
+          // #1815: the door refused this page to the renamer — left unchanged.
+          if (err instanceof PageWriteRefusedError) {
+            refused.push(refPage);
+            continue;
+          }
           // One bad page must not stop the pass; the others are still fixable.
           failed.push(refPage);
           logger.warn(
@@ -4919,7 +4979,7 @@ ${panes}
       logger.info(
         `[WikiRoutes] Link rewrite after rename '${oldTitle}' → '${newTitle}': ` +
         `${rewrittenPages.length} rewritten, ${noMatch.length} unchanged, ` +
-        `${conflicted.length} skipped on conflict, ${failed.length} failed` +
+        `${conflicted.length} skipped on conflict, ${refused.length} refused by the write door, ${failed.length} failed` +
         (overCap > 0 ? `, ${overCap} beyond the ${MAX_REWRITE_REFERRERS}-page cap` : '') +
         (outOfTime > 0 ? `, ${outOfTime} past the ${REWRITE_BUDGET_MS}ms budget` : '')
       );
@@ -5305,7 +5365,8 @@ ${panes}
 
       // #1462 slice 3: one delete door — the page name and the requester's
       // subject, not a WikiContext built to carry them.
-      const deleteResult = await pageManager.deletePage(pageName, req.userContext);
+      // #1815: the delete was recorded above; the door does not record it twice.
+      const deleteResult = await pageManager.deletePage(pageName, req.userContext, { audit: { skip: true } });
       logger.debug(`🗑️ Delete result: ${deleteResult}`);
 
       if (deleteResult) {
@@ -11578,9 +11639,23 @@ ${panes}
             }
             // page-door-ignore: the user's own profile page, renamed — a write.
             const page = await pageManager.getPage(oldPageName, req.userContext);
+            // #1815 (operator, 2026-11-04, decision 4): the old page's name
+            // comes from the form, so it is renamed only when it really is
+            // this user's own profile page — a profile, authored by them.
+            const pageMeta = (page?.metadata ?? {}) as Record<string, unknown>;
+            const ownProfile = Boolean(page)
+              && pageMeta['system-category'] === 'user-profile'
+              && await this.engine.getManager('IdentityManager')?.refersTo(currentUser, pageMeta.author, currentUser.username) === true;
+            if (page && !ownProfile) {
+              logger.warn(`[profile] Refused renaming '${oldPageName}' for ${currentUser.username}: not their own profile page (#1815)`);
+              return res.redirect('/profile?error=' + encodeURIComponent('Profile updated, but that page is not your profile page, so it was not renamed') + '&success=Profile updated successfully');
+            }
             if (page) {
+              // #1815: both saves are a system job through the write door; the
+              // new profile page is made for this user, its author.
+              const job = systemContext(this.engine, `rename the profile page of ${currentUser.username} (#661, #1815)`);
               const content = page.content;
-              const oldMeta = (page.metadata ?? {}) as Record<string, unknown>;
+              const oldMeta = pageMeta;
               const displayName = currentUser.displayName ?? currentUser.username ?? '';
               // #661: re-apply / back-fill profile-page metadata on rename so
               // the renamed page carries author-lock + description + badge
@@ -11597,7 +11672,7 @@ ${panes}
                 'author-lock': true,
                 description: `${displayName}'s profile page`,
                 badge: `Profile ${displayName}`
-              }, currentUser);
+              }, job, { createdFor: currentUser.username });
               // #662: demote the old profile page to system-category 'general'
               // instead of hard-deleting it. Preserves the user's prior
               // content as a regular page they can later edit or delete
@@ -11608,7 +11683,7 @@ ${panes}
               await pageManager.savePage(oldPageName, content, {
                 ...metaForOld,
                 'system-category': 'general'
-              }, currentUser);
+              }, job);
             }
           } catch (renameErr: unknown) {
             logger.error('Error renaming profile page:', renameErr);
@@ -15733,7 +15808,7 @@ ${panes}
           // page-door-ignore: admin required-pages sync: an existence probe before a delete.
           if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid, req.userContext)) {
             await this.auditPageDelete(req, wikiContext, liveUuid, liveUuid);
-            await syncPageManager.deletePage(liveUuid, req.userContext);
+            await syncPageManager.deletePage(liveUuid, req.userContext, { audit: { skip: true } });
           }
           synced.push(...await syncFrom(requiredSource, [sourceUuid], true));
         }

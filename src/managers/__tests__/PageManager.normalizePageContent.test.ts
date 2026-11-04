@@ -4,13 +4,15 @@
  */
 import PageManager from '../PageManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 function makeEngine(): WikiEngine {
   const cm = {
     getProperty: vi.fn((_key: string, dv: unknown) => dv),
     getResolvedDataPath: vi.fn((_key: string, dv: string) => dv)
   };
-  return { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? cm : null)) };
+  // #1815: the write door's deciders allow; the saved text is the subject here.
+  return { getManager: vi.fn(withWriteDoorAllowing((name: string) => (name === 'ConfigurationManager' ? cm : null))) };
 }
 
 describe('PageManager.normalizePageContent', () => {

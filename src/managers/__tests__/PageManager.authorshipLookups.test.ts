@@ -14,6 +14,7 @@ vi.unmock('../../utils/PageNameMatcher');
 
 import { actor } from '../../test-support/actors';
 import { authorshipSite, type AuthorshipSite } from '../../test-support/authorshipSite';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const JIM = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const BOB_OLD = 'urn:uuid:22222222-2222-4222-8222-222222222222';
@@ -21,7 +22,11 @@ const BOB_NEW = 'urn:uuid:33333333-3333-4333-8333-333333333333';
 
 describe('#2097 PageManager lookups by identity @id', () => {
   let site: AuthorshipSite;
-  beforeEach(async () => { site = await authorshipSite({ accounts: { jim: JIM, bob: BOB_OLD } }); });
+  beforeEach(async () => {
+    site = await authorshipSite({ accounts: { jim: JIM, bob: BOB_OLD } });
+    // #1815: the write door's deciders, allowing; lookups are the subject here.
+    for (const [name, decider] of Object.entries(allowingWriteDoor())) site.managers.set(name, decider);
+  });
   afterEach(async () => { await site.remove(); });
 
   test('my pages and my edits list pages stored by @id', async () => {

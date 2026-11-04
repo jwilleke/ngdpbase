@@ -24,6 +24,7 @@ import matter from 'gray-matter';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 import { TEST_ACTOR } from '../../test-support/actors';
 import { SEEDED_SHIPPED_PAGES_FILE, SeededShippedPages } from '../../utils/seededShippedPages';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 vi.mock('../../utils/logger', () => ({
   default: {
@@ -78,11 +79,12 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       getInstanceDataFolder: vi.fn(() => instanceDir)
     };
     return {
-      getManager: vi.fn((name: string) => {
+      // #1815: the write door's deciders allow; seeding is the subject here.
+      getManager: vi.fn(withWriteDoorAllowing((name: string) => {
         if (name === 'ConfigurationManager') return cm;
         if (name === 'NotificationManager') return { notifyAdmins: notify };
         return null;
-      })
+      }))
     };
   };
 

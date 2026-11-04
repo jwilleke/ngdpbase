@@ -20,17 +20,34 @@ import path from 'path';
 import PageManager from '../PageManager';
 import { actor } from '../../test-support/actors';
 import type { ActorContext } from '../../context/ActorContext';
-import { jobContextFromSystem } from '../../context/JobContext';
+import { jobContextForOwner, jobContextFromSystem } from '../../context/JobContext';
 import {
   formatPrivatePageName,
+  parsePrivatePageName,
   storeMigrationsPath
 } from '../../utils/privateStorePath';
+import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
+import { ALLOWING_PDP, ALLOWING_PIP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type Stored = { content: string; metadata: Record<string, unknown> };
 type SaveCall = { name: string; content: string; metadata: Record<string, unknown>; options?: Record<string, unknown> };
 
-/** The boot pass: the system principal, which holds no store key. */
-const BOOT: ActorContext = jobContextFromSystem('system', 'private-link migration at boot');
+/** The boot pass: a job on behalf of the vaults' owner, which holds no store key (#1815, decision 2). */
+const BOOT: ActorContext = jobContextForOwner('molly', 'private-link migration at boot');
+/** The system principal, which no vault admits (#1815). */
+const SYSTEM: ActorContext = jobContextFromSystem('system', 'private-link migration at boot');
+
+/**
+ * The write door's page decision, with the vault container rule it applies
+ * (#1815): a vault page only for a context the rule lets in. Policy allows.
+ */
+const PIP = {
+  ...ALLOWING_PIP,
+  canUserAccessPage: vi.fn(async (ctx: ActorContext, name: string) => {
+    const vault = parsePrivatePageName(name);
+    return !vault || mayActInPrivateContainer(ctx, vault.owner, { vault: vault.store });
+  })
+};
 /** The owner, for the unlock pass. */
 const MOLLY = actor('molly');
 
@@ -87,11 +104,13 @@ describe('PageManager.migratePrivateLinks (#1457)', () => {
         (_key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : fallback))
     };
     manager = new PageManager({
-      getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null))
+      getManager: vi.fn((name: string) => (name === 'ConfigurationManager'
+        ? configManager
+        : name === 'PolicyInformationPoint' ? PIP : name === 'PolicyDecisionPoint' ? ALLOWING_PDP : null))
     });
     (manager as unknown as { provider: unknown }).provider = harness.provider;
     // The store directory exists on disk, as it does in a live instance.
-    await fs.ensureDir(path.join(pagesDir, 'private', 'molly', 'default'));
+    await fs.ensureDir(path.join(pagesDir, 'vaults', 'molly', 'default'));
   };
 
   const markerFor = (store: string) => storeMigrationsPath(pagesDir, 'molly', store);
@@ -177,6 +196,35 @@ describe('PageManager.migratePrivateLinks (#1457)', () => {
 
     expect(await manager.migratePrivateLinks(MOLLY, 'molly')).toBe(1);
     expect(harness.provider.listPrivateStorePages).toHaveBeenCalledWith(MOLLY, 'molly');
+  });
+
+  test('the system principal is let into no vault: nothing is written and the store stays unmarked (#1815)', async () => {
+    await build([
+      { store: 'default', title: 'Diary', content: 'See [Notes].' },
+      { store: 'default', title: 'Notes', content: 'x' }
+    ]);
+
+    expect(await manager.migratePrivateLinks(SYSTEM)).toBe(0);
+    expect(harness.saves).toHaveLength(0);
+    // The other migration had nothing to write here, so it may be marked; this one is not.
+    const marker = await fs.pathExists(markerFor('default')) ? JSON.parse(await fs.readFile(markerFor('default'), 'utf8')) : {};
+    expect(marker.migrations?.['private-links']).toBeUndefined();
+  });
+
+  test('at boot each owner\'s vaults are upgraded by a job on that owner\'s behalf, through the door (#1815, decision 2)', async () => {
+    await build([
+      { store: 'default', title: 'Diary', content: 'See [Notes].' },
+      { store: 'default', title: 'Notes', content: 'x' }
+    ]);
+
+    await manager.migratePrivateLinksAtBoot();
+
+    expect(harness.saves.map((save) => save.name)).toContain(MOLLY_PAGE('default', 'Diary'));
+    const asked = harness.provider.listPrivateStorePages.mock.calls.map(([ctx, owner]) => [(ctx as { username: string }).username, owner]);
+    expect(asked).toContainEqual(['molly', 'molly']);
+    const decided = PIP.canUserAccessPage.mock.calls.find(([, name]) => name === MOLLY_PAGE('default', 'Diary'));
+    expect(decided?.[0]).toMatchObject({ username: 'molly', origin: 'boot' });
+    expect(await fs.pathExists(markerFor('default'))).toBe(true);
   });
 
   test('a store the context cannot read is neither visited nor marked', async () => {

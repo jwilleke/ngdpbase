@@ -11,6 +11,7 @@ vi.unmock('../PageManager');
 
 import PageManager from '../PageManager';
 import { fakeIdentityManager } from '../../test-support/identities';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type Info = { title: string; uuid: string; metadata: Record<string, unknown> };
 
@@ -36,7 +37,8 @@ function makeManager(pages: Info[], { auditFails = false } = {}) {
   };
   const identities = fakeIdentityManager({ 'e2e-ann': 'urn:uuid:ann-1' });
   const manager = new PageManager({
-    getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : name === 'IdentityManager' ? identities : null))
+    // #1815: who may delete is not what these tests are about.
+    getManager: vi.fn(withWriteDoorAllowing((name: string) => (name === 'AuditManager' ? auditManager : name === 'IdentityManager' ? identities : null)))
   }) as unknown as {
     provider: unknown;
     deleteTestArtifacts: (ctx: unknown, only?: { author?: string; systemCategory?: string }) => Promise<{

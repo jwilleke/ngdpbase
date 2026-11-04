@@ -1,5 +1,6 @@
 import path from 'path';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import { jobContextForOwner } from '../context/JobContext.js';
 import type IdentityManager from './IdentityManager.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
@@ -32,7 +33,7 @@ import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '
 import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
-import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import {
   canonicalPageName,
   formatPrivatePageName,
@@ -153,6 +154,16 @@ export interface PageSaveOptions {
    * doc says so.
    */
   preserveEditor?: boolean;
+  /**
+   * The user a NEW page is made for, by a system job (#1815): they become its
+   * author and editor, where a create otherwise takes both from the acting
+   * context. For the pages the system makes on a user's behalf — the profile
+   * page at sign-up, the new profile page of a rename — so the job's
+   * `page-create`, granted in policy, decides the write, and the page is
+   * still the user's (author-lock leaves it to them). Refused from any context
+   * but the system principal's job, and ignored for a page that exists.
+   */
+  createdFor?: string;
   /**
    * Request-level detail the manager cannot see, for the audit record (#1121).
    *
@@ -285,6 +296,28 @@ export class PageAudienceRefusedError extends Error {
     super(`'${pageName}' is limited to its audience, and you are not in it`);
     this.name = 'PageAudienceRefusedError';
     this.pageName = pageName;
+  }
+}
+
+/** The permission a page write is decided on (#1815). */
+export type PageWriteAction = 'page-create' | 'page-edit' | 'page-delete';
+
+/**
+ * A write refused by the write door (#1815): the context may not create,
+ * edit or delete this page, decided by policy, the page's own rules and the
+ * vault container rule. Nothing was written. Routes answer it with 403. The
+ * message names no page, so a private title never reaches a log (#2178).
+ */
+export class PageWriteRefusedError extends Error {
+  readonly pageName: string;
+  readonly action: PageWriteAction;
+
+  constructor(pageName: string, action: PageWriteAction) {
+    const verb = action === 'page-create' ? 'create' : action === 'page-edit' ? 'edit' : 'delete';
+    super(`You may not ${verb} this page`);
+    this.name = 'PageWriteRefusedError';
+    this.pageName = pageName;
+    this.action = action;
   }
 }
 
@@ -1991,6 +2024,148 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * May `ctx` edit or delete this existing page (#1815)? The page decision
+   * every route asks (`canUserAccessPage`), with the page's metadata, so the
+   * delegation ceilings, the vault container rule, author-lock, the page's own
+   * rules and policy all count, in that one evaluator. `record` false asks it
+   * as an affordance, which records nothing (#1668). Without a PIP nothing is
+   * writable.
+   */
+  private async mayChangeExisting(
+    ctx: ActorContext,
+    identifier: string,
+    metadata: PageFrontmatter | null | undefined,
+    verb: 'edit' | 'delete',
+    record = true
+  ): Promise<boolean> {
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    if (!pip || !metadata) return false;
+    const decided = metadataForDecision(metadata);
+    const name = canonicalPageName(identifier, decided);
+    // The PIP's subject type has an index signature a PermissionSubject lacks;
+    // the context is passed as it came, not rebuilt (as in decideRead).
+    const subject = ctx as unknown as Parameters<PolicyInformationPoint['canUserAccessPage']>[0];
+    return record
+      ? pip.canUserAccessPage(subject, name, verb, decided)
+      : pip.pageAffordanceFor(subject, name, verb, decided);
+  }
+
+  /**
+   * May `ctx` create a page at `destination` (#1815)? In a vault, the
+   * container rule and then `page-create` with the vault (`permitsInVault`;
+   * a shared folder by its own permission). A public page, `page-create`
+   * asked of the PDP about the page, with its system-category for the
+   * policies on it (#1504). The same rule as `hasPermissionOn`.
+   */
+  private async mayCreateAt(ctx: ActorContext, destination: string, metadata: Partial<PageFrontmatter>): Promise<boolean> {
+    const pdp = this.engine.getManager<VaultDecider>('PolicyDecisionPoint');
+    if (!pdp) return false;
+    const vault = parsePrivatePageName(destination);
+    if (vault) return permitsInVault(pdp, ctx, 'page-create', { owner: vault.owner, vault: vault.store, resource: destination });
+    const { permit } = await pdp.decide(ctx, {
+      action: 'page-create',
+      resource: { type: 'page', id: destination },
+      attributes: { 'system-category': (metadata as Record<string, unknown>)['system-category'] }
+    });
+    return permit;
+  }
+
+  /**
+   * Where a save puts the page (#1815, decision 7): the private name the
+   * provider will store it under, or its public title. Read from the page's
+   * own `private` / `store` frontmatter, the rule the provider's placement
+   * follows: a private name stays private unless the save says
+   * `private: false`; a public title goes into a vault when it says
+   * `private: true`, the owner's and the store it names, else the vault the
+   * page is in now, else the default vault.
+   *
+   * @param owner - The username whose vault a public title would go into: the
+   *   page's author (for a new page, whoever it is made by or for)
+   */
+  private writeDestination(
+    pageName: string,
+    metadata: Partial<PageFrontmatter>,
+    current: string | null,
+    owner: string | null
+  ): string {
+    const md = metadata as Record<string, unknown>;
+    const named = parsePrivatePageName(pageName);
+    const isPrivate = md.private === true || (named !== null && md.private !== false);
+    const title = (typeof md.title === 'string' && md.title) || named?.title || pageName;
+    if (!isPrivate) return title;
+    if (named) return formatPrivatePageName(named.owner, named.store, title);
+    const into = owner ?? '';
+    const now = current ? parsePrivatePageName(current) : null;
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const store = (typeof md.store === 'string' && md.store)
+      || (now && now.owner === into ? now.store : null)
+      || privateStoreLayoutFromConfig((key, fallback) => configManager?.getProperty(key, fallback) ?? fallback).defaultStoreId;
+    return formatPrivatePageName(into, store, title);
+  }
+
+  /** The container a page name is in: its vault, or the public space. */
+  private static containerOf(name: string): string {
+    const named = parsePrivatePageName(name);
+    return named ? `${named.owner}/${named.store}` : '';
+  }
+
+  /**
+   * The write door's decision for a save (#1815, operator 2026-11-04). An
+   * existing page is edited only by a context the page decision lets edit it
+   * ({@link mayChangeExisting}); a page arriving in a container it is not in
+   * now — a new page, or a move into or out of a vault — is also created
+   * there ({@link mayCreateAt}). Whatever route the write came by: the route's
+   * own check is an early refusal, this is the one that counts.
+   *
+   * @throws PageWriteRefusedError when either is refused; nothing is written
+   */
+  private async assertMaySave(
+    ctx: ActorContext,
+    existing: { name: string; metadata: PageFrontmatter | undefined } | null,
+    destination: string,
+    metadata: Partial<PageFrontmatter>
+  ): Promise<void> {
+    if (existing && !(await this.mayChangeExisting(ctx, existing.name, existing.metadata, 'edit'))) {
+      logger.warn(`[PageManager] edit of ${nameForLog(existing.name, existing.metadata)} refused: ${actorOf(ctx).user} may not edit it (#1815)`);
+      throw new PageWriteRefusedError(existing.name, 'page-edit');
+    }
+    const moving = existing !== null && PageManager.containerOf(existing.name) !== PageManager.containerOf(destination);
+    if ((!existing || moving) && !(await this.mayCreateAt(ctx, destination, metadata))) {
+      logger.warn(`[PageManager] create of ${nameForLog(destination, metadata)} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
+      throw new PageWriteRefusedError(destination, 'page-create');
+    }
+  }
+
+  /** Is `ctx` a job of the system principal (#631) — the only context that may make a page for someone else (#1815)? */
+  private isSystemJob(ctx: ActorContext): boolean {
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    return isJobContext(ctx) && !ctx.viaToken && !ctx.viaShare && !ctx.viaProxy && pip?.isSystemPrincipal(ctx.username) === true;
+  }
+
+  /** The username a page's stored author names (#2097), or null. */
+  private async authorUsername(author: unknown): Promise<string | null> {
+    if (typeof author !== 'string' || !author) return null;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.usernameOf !== 'function') return author;
+    return identities.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#1815, #2097)'), author);
+  }
+
+  /**
+   * Would `ctx` be allowed to edit this page — asked only to decide what to
+   * offer or report, never before writing it (#1815). The same decision as
+   * the write door, as an affordance: it records nothing (#1668). Saving still
+   * asks the door.
+   *
+   * @param identifier - Page UUID, title, slug or vault name
+   * @param ctx - Whose question this is — never defaulted
+   */
+  async mayEditPage(identifier: string, ctx: ActorContext): Promise<boolean> {
+    if (!this.provider || !ctx) return false;
+    const metadata = await this.provider.getPageMetadata(identifier, ctx).catch(() => null);
+    return this.mayChangeExisting(ctx, identifier, metadata, 'edit', false);
+  }
+
+  /**
    * Admin-override save (#689): the admin "Edit raw" textarea, split into
    * frontmatter and body and written through the door (#1462).
    *
@@ -2433,7 +2608,9 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * `ctx` is mandatory and positional: the save acts as the caller's subject
    * (#1179), a private-store write reaches that session's keys through it
-   * (#1382), and the audit record names it. A caller forwards the context it
+   * (#1382), and the audit record names it. The write is decided here, for
+   * that context, before anything is written (#1815): `page-edit` on the page
+   * as it is, `page-create` where it is going when that is somewhere new. A caller forwards the context it
    * was given — a request's subject, or the job's for boot and scheduled
    * work — and never invents one.
    *
@@ -2444,6 +2621,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param options - Validation and conflict-check opt-outs, `rawFrontmatter` (#689),
    *   `preserveLastModified`, `preserveEditor` (#1457), audit enrichment
    * @returns Where the page landed, and what it was called before
+   * @throws PageWriteRefusedError when `ctx` may not make this write
    *
    * @example
    * await pageManager.savePage('New Page', '# Hello World', { 'user-keywords': ['tutorial'] }, req.userContext);
@@ -2538,6 +2716,14 @@ class PageManager extends BaseManager implements CatalogSource {
       await this.assertAudienceAdmits(options.moveFrom ?? pageName, existingPage.metadata, ctx);
     }
 
+    // #1815: a page made by the system for a user is theirs. Only the system
+    // principal's job may say so; for a page that exists it means nothing.
+    const createdFor = !existingPage && options.createdFor ? options.createdFor : null;
+    if (createdFor && !this.isSystemJob(ctx)) {
+      throw new Error('PageManager.savePage: createdFor is for a system job only');
+    }
+    const creator = createdFor ?? actingUser;
+
     // #946: the agent this write came through, if any — stamped on the page by
     // the normalisation below and named in the audit record at the end.
     const viaToken = (ctx as { viaToken?: { name: string } }).viaToken;
@@ -2546,7 +2732,21 @@ class PageManager extends BaseManager implements CatalogSource {
     // exactly as typed, with none of the stamping or normalisation below.
     const enrichedMetadata = options.rawFrontmatter
       ? metadata
-      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, actingUser, viaToken, options.preserveEditor);
+      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, creator, viaToken, options.preserveEditor);
+
+    // #1815: the write door. Decided on the page as it is now and on where
+    // this save puts it — read from the metadata the provider will place it
+    // by (decision 7) — before anything is written.
+    const currentName = existingPage ? options.moveFrom ?? pageName : null;
+    // Whose vault a public title goes into: its author's. Looked up only when it does.
+    const intoVault = !parsePrivatePageName(pageName) && (enrichedMetadata as Record<string, unknown>).private === true;
+    const owner = !intoVault ? null : existingPage ? await this.authorUsername(existingPage.metadata?.author) : creator;
+    await this.assertMaySave(
+      ctx,
+      existingPage && currentName ? { name: currentName, metadata: existingPage.metadata } : null,
+      this.writeDestination(pageName, enrichedMetadata, currentName, owner),
+      enrichedMetadata
+    );
 
     // Enforce uniqueness before delegating to provider — PageManager is the single
     // authority on uuid/title/slug uniqueness across the system (#510 architecture).
@@ -3118,14 +3318,24 @@ class PageManager extends BaseManager implements CatalogSource {
    * and the context names who put it there. Afterwards the page is taken out
    * of every shared index, here and nowhere else (#1462).
    *
+   * The write door decides `page-delete` on the page first (#1815), and the
+   * delete is recorded as `page-delete` before it happens.
+   *
    * @param identifier - Page UUID, title, or slug
    * @param ctx - Who is acting (#1179)
+   * @param options - `audit.skip` when the caller already recorded this
+   *   delete; `audit.ipAddress`, the request's address, for the record
    * @returns True if deleted, false if not found
+   * @throws PageWriteRefusedError when `ctx` may not delete the page
    *
    * @example
    * const deleted = await pageManager.deletePage('Old Page', req.userContext);
    */
-  async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
+  async deletePage(
+    identifier: string,
+    ctx: ActorContext,
+    options: { audit?: { skip?: boolean; ipAddress?: string } } = {}
+  ): Promise<boolean> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
@@ -3138,17 +3348,51 @@ class PageManager extends BaseManager implements CatalogSource {
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
     // #2178: named once found, so a private page by its uuid.
     logger.info(`[PageManager] Deleting page: ${nameForLog(identifier, before ? { ...before.metadata, uuid: before.uuid } : null)} by user: ${actorOf(ctx).user}`);
+    // #1815: a page that cannot be read here cannot be decided about, so it
+    // is not deleted — the answer for a page that is not there.
+    if (!before) return false;
     // #1964: nobody outside a page's audience deletes it.
-    if (before) await this.assertAudienceAdmits(identifier, before.metadata, ctx);
+    await this.assertAudienceAdmits(identifier, before.metadata, ctx);
+    // #1815: the write door decides `page-delete` on the page itself.
+    if (!(await this.mayChangeExisting(ctx, identifier, before.metadata, 'delete'))) {
+      logger.warn(`[PageManager] delete of ${nameForLog(identifier, { ...before.metadata, uuid: before.uuid })} refused: ${actorOf(ctx).user} may not delete it (#1815)`);
+      throw new PageWriteRefusedError(identifier, 'page-delete');
+    }
+    const previousName = this.nameOf(identifier, before);
+    // #1815: recorded at the door, so a delete no route recorded (an add-on's,
+    // a job's) is not missing. `page-delete` is on-failure refuse: written
+    // before the delete, and a record that cannot be written refuses it. A
+    // caller that already recorded this delete says so (`audit.skip`).
+    if (!options.audit?.skip) {
+      const who = actorOf(ctx);
+      await recordAuditEvent(this.engine.getManager('AuditManager'), {
+        eventType: AUDIT_EVENT.PAGE_DELETE,
+        ...who,
+        ...(options.audit?.ipAddress ? { ipAddress: options.audit.ipAddress } : {}),
+        action: 'page-delete',
+        result: 'success',
+        severity: ctx.viaToken ? 'high' : 'medium',
+        resource: before.uuid,
+        resourceType: 'page',
+        metadata: {
+          ...who.metadata,
+          pageName: previousName,
+          uuid: before.uuid ?? null,
+          outcome: 'attempted',
+          viaTokenId: ctx.viaToken?.id ?? null,
+          viaTokenName: ctx.viaToken?.name ?? null
+        }
+      });
+    }
     // #2097: one write at a time per page, with the authorship conversion.
     const provider = this.provider;
-    const deleted = await this.pageWrite(before?.uuid ?? identifier, () => provider.deletePage(identifier, ctx));
-    if (deleted && before) {
+    const deleted = await this.pageWrite(before.uuid ?? identifier, () => provider.deletePage(identifier, ctx));
+    if (deleted) {
       await this.reconcileSharedIndexes({
         ctx,
         name: null,
         uuid: before.uuid,
-        previousName: this.nameOf(identifier, before)
+        previousName
       });
     }
     return deleted;
@@ -3166,7 +3410,8 @@ class PageManager extends BaseManager implements CatalogSource {
    * follow. One page's failure never stops the rest; it is reported.
    *
    * The caller decides who may ask: the sweep route asks `admin-system`, and
-   * an account delete has already been decided as `user-delete`. Private
+   * an account delete has already been decided as `user-delete` and sends a
+   * system job (#1815). Each delete is still decided by `deletePage`. Private
    * vault pages are not in the shared index, so they are not reached here.
    *
    * @param ctx - Who is acting; named in every record
@@ -3225,7 +3470,7 @@ class PageManager extends BaseManager implements CatalogSource {
             reason: 'test-artifact'
           }
         });
-        if (await this.deletePage(info.title, ctx)) {
+        if (await this.deletePage(info.title, ctx, { audit: { skip: true } })) {
           deleted.push({ title: info.title, uuid: info.uuid });
         } else {
           failed.push({ title: info.title, uuid: info.uuid, error: 'not deleted' });
@@ -4094,36 +4339,48 @@ class PageManager extends BaseManager implements CatalogSource {
    * Best-effort: a failure is logged and never blocks start-up. An encrypted
    * store is not readable here and is not touched — it migrates at its
    * owner's unlock, through {@link migratePrivateLinks}.
+   *
+   * #1815 (operator, 2026-11-04, decision 2): the public pages are the system
+   * principal's work; each user's vaults are a job on behalf of that user
+   * ({@link jobContextForOwner}), through the write door like any write. The
+   * vault container rule admits a job carrying its owner, and the owner's
+   * rights in their own vaults come from policy, resolved when each write is
+   * decided. The system principal is let into no vault. A shared folder is
+   * not a user's and opens to no boot job (its key never reaches one), so it
+   * is not visited.
    */
   async migratePrivateLinksAtBoot(): Promise<void> {
     const ctx = systemContext(
       this.engine,
-      'link migrations at boot (#1457, #1506) — [Title] to [store/Title], and private/… to vaults/…, in the unencrypted private stores and the public pages'
+      'link migrations at boot (#1506) — private/… to vaults/… in the public pages'
     );
-    try {
-      await this.migratePrivateLinks(ctx);
-    } catch (err) {
-      logger.warn(`[PageManager] Private-link migration at boot did not complete: ${err instanceof Error ? err.message : String(err)}`);
-    }
     try {
       await this.migrateVaultUrlsInPublicPages(ctx);
     } catch (err) {
       logger.warn(`[PageManager] Vault-URL migration of public pages did not complete: ${err instanceof Error ? err.message : String(err)}`);
     }
-    try {
-      await this.moveCapturesToCaptureVault(ctx);
-    } catch (err) {
-      logger.warn(`[PageManager] Capture move did not complete: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    try {
-      await this.movePagesToCategoryVaults(ctx);
-    } catch (err) {
-      logger.warn(`[PageManager] Category vault move did not complete: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    try {
-      await this.migratePrivateSlugs(ctx);
-    } catch (err) {
-      logger.warn(`[PageManager] Private slug migration did not complete: ${err instanceof Error ? err.message : String(err)}`);
+
+    const owners = [...new Set([...await this.listVaults()].map((vault) => vault.slice(0, vault.indexOf('/'))))]
+      .filter((owner) => owner && !isSharedFolderOwner(owner))
+      .sort();
+    for (const owner of owners) {
+      const own = jobContextForOwner(
+        owner,
+        'vault upgrades at boot (#1457, #1505, #1506, #1507) — links, captures, category vaults and slugs, in this user\'s unencrypted vaults, on their behalf (#1815)'
+      );
+      const steps: Array<[string, () => Promise<number>]> = [
+        ['Private-link migration at boot', () => this.migratePrivateLinks(own, owner)],
+        ['Capture move', () => this.moveCapturesToCaptureVault(own, owner)],
+        ['Category vault move', () => this.movePagesToCategoryVaults(own, owner)],
+        ['Private slug migration', () => this.migratePrivateSlugs(own, owner)]
+      ];
+      for (const [what, step] of steps) {
+        try {
+          await step();
+        } catch (err) {
+          logger.warn(`[PageManager] ${what} did not complete for a user's vaults: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     }
   }
 
@@ -4145,9 +4402,17 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const vaults = await this.listVaults();
     let rewritten = 0;
+    let refused = false;
     for (const pageName of await this.getAllPages()) {
-      rewritten += await this.rewritePage(ctx, pageName, (content) => rewriteLegacyVaultUrls(content, vaults));
+      try {
+        rewritten += await this.rewritePage(ctx, pageName, (content) => rewriteLegacyVaultUrls(content, vaults));
+      } catch (err) {
+        // #1815: refused by the write door — the site stays unmarked, and the next start tries again.
+        if (!(err instanceof PageWriteRefusedError)) throw err;
+        refused = true;
+      }
     }
+    if (refused) return rewritten;
     record.migrations = { ...record.migrations, [VAULT_URL_MIGRATION]: new Date().toISOString() };
     await fse.writeJson(recordFile, record, { spaces: 2 });
     logger.info(`[PageManager] Vault URLs: rewrote private/… to vaults/… in ${rewritten} public page(s) (#1506)`);
@@ -4523,9 +4788,17 @@ class PageManager extends BaseManager implements CatalogSource {
         try {
           if (await storeMigrationDone(ctx, where, migration.id)) continue;
           let pages = 0;
+          let refused = false;
           for (const title of titles) {
-            pages += await this.rewritePage(ctx, formatPrivatePageName(storeOwner, store, title), (content) => migration.rewrite(content, store, titles));
+            try {
+              pages += await this.rewritePage(ctx, formatPrivatePageName(storeOwner, store, title), (content) => migration.rewrite(content, store, titles));
+            } catch (err) {
+              // #1815: refused by the write door — logged by rewritePage; the store stays unmarked.
+              if (!(err instanceof PageWriteRefusedError)) throw err;
+              refused = true;
+            }
           }
+          if (refused) continue;
           await recordStoreMigration(ctx, where, migration.id);
           rewritten += pages;
           // #1461: the store is named, the pages in it are only counted.
@@ -4568,6 +4841,9 @@ class PageManager extends BaseManager implements CatalogSource {
       // today refuses it at every boot.
       // #1461: the page is not named here — a private title never reaches a log.
       logger.warn(`[PageManager] Link rewrite failed for a page: ${err instanceof Error ? err.message : String(err)}`);
+      // #1815: except when the write door refused it. That is not the page's
+      // content but who asked, so the caller leaves the migration unmarked.
+      if (err instanceof PageWriteRefusedError) throw err;
       return 0;
     }
   }
@@ -4578,8 +4854,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * keeps its `lastModified` and `editor`, since nobody edited it. The audit
    * record is a rename, from the old path to the new.
    *
-   * Access is not decided here, as for every save: the caller has already
-   * been let into the page. A page is never moved out of an encrypted vault
+   * Access is decided by the save it makes, as for every write (#1815): an
+   * edit of the page where it is and a create in the vault it goes to. A
+   * page is never moved out of an encrypted vault
    * into one that is not, since that would write it in the clear.
    *
    * @param pageName - The page's private name, `vaults/{owner}/{vault}/{title}`
@@ -4637,7 +4914,7 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @returns How many pages moved
    */
-  async moveCapturesToCaptureVault(ctx: ActorContext): Promise<number> {
+  async moveCapturesToCaptureVault(ctx: ActorContext, owner?: string): Promise<number> {
     if (!ctx) throw new Error('PageManager.moveCapturesToCaptureVault requires an ActorContext');
     const captureVault = this.engine.getManager<ValidationManager>('ValidationManager')?.getVaultId('capture');
     if (!captureVault) return 0;
@@ -4646,7 +4923,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const category = md['system-category'] ?? 'general';
       if (!keywords.some((kw) => String(kw).toLowerCase() === 'capture') || category !== 'general') return null;
       return { toVault: captureVault, changes: { 'system-category': 'capture' } };
-    });
+    }, owner);
   }
 
   /**
@@ -4663,7 +4940,7 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @returns How many pages moved
    */
-  async movePagesToCategoryVaults(ctx: ActorContext): Promise<number> {
+  async movePagesToCategoryVaults(ctx: ActorContext, owner?: string): Promise<number> {
     if (!ctx) throw new Error('PageManager.movePagesToCategoryVaults requires an ActorContext');
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -4674,7 +4951,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const category = typeof md['system-category'] === 'string' ? md['system-category'] : 'general';
       const toVault = validationManager.getVaultId(category);
       return toVault && toVault !== store ? { toVault } : null;
-    });
+    }, owner);
   }
 
   /**
@@ -4686,7 +4963,7 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @returns How many pages were re-saved
    */
-  async migratePrivateSlugs(ctx: ActorContext): Promise<number> {
+  async migratePrivateSlugs(ctx: ActorContext, owner?: string): Promise<number> {
     if (!ctx) throw new Error('PageManager.migratePrivateSlugs requires an ActorContext');
     return this.visitVaultPages(ctx, VAULT_SLUG_MIGRATION, '#1507', 'slug', async (pageName, page) => {
       const slug = (page.metadata as Record<string, unknown> | undefined)?.slug;
@@ -4696,7 +4973,7 @@ class PageManager extends BaseManager implements CatalogSource {
         preserveEditor: true
       });
       return parsePrivatePageName(pageName)?.store ?? null;
-    });
+    }, owner);
   }
 
   /**
@@ -4708,14 +4985,15 @@ class PageManager extends BaseManager implements CatalogSource {
     ctx: ActorContext,
     migrationId: string,
     issue: string,
-    pick: (metadata: Record<string, unknown>, store: string) => { toVault: string; changes?: Partial<PageFrontmatter> } | null
+    pick: (metadata: Record<string, unknown>, store: string) => { toVault: string; changes?: Partial<PageFrontmatter> } | null,
+    owner?: string
   ): Promise<number> {
     return this.visitVaultPages(ctx, migrationId, issue, 'move', async (pageName, page, store) => {
       const target = pick((page.metadata ?? {}), store);
       if (!target || target.toVault === store) return null;
       await this.movePageToVault(pageName, target.toVault, ctx, target.changes ?? {});
       return target.toVault;
-    });
+    }, owner);
   }
 
   /**
@@ -4732,7 +5010,8 @@ class PageManager extends BaseManager implements CatalogSource {
     migrationId: string,
     issue: string,
     verb: string,
-    visit: (pageName: string, page: WikiPage, store: string) => Promise<string | null>
+    visit: (pageName: string, page: WikiPage, store: string) => Promise<string | null>,
+    onlyOwner?: string
   ): Promise<number> {
     if (!this.provider?.listPrivateStorePages) return 0;
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -4741,7 +5020,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
 
     const byVault = new Map<string, { owner: string; store: string; titles: string[] }>();
-    for (const page of await this.provider.listPrivateStorePages(ctx)) {
+    for (const page of await this.provider.listPrivateStorePages(ctx, onlyOwner)) {
       const key = `${page.owner}/${page.store}`;
       const group = byVault.get(key) ?? { owner: page.owner, store: page.store, titles: [] };
       group.titles.push(page.title);
@@ -4754,6 +5033,7 @@ class PageManager extends BaseManager implements CatalogSource {
       try {
         if (await storeMigrationDone(ctx, where, migrationId)) continue;
         const counts = new Map<string, number>();
+        let refused = false;
         for (const title of titles) {
           const pageName = formatPrivatePageName(owner, store, title);
           try {
@@ -4761,11 +5041,13 @@ class PageManager extends BaseManager implements CatalogSource {
             const to = page ? await visit(pageName, page, store) : null;
             if (to) counts.set(to, (counts.get(to) ?? 0) + 1);
           } catch (err) {
+            // #1815: a write the door refused is not done, so the vault is not marked done either.
+            if (err instanceof PageWriteRefusedError) refused = true;
             // #1461: the page is not named — a private title never reaches a log.
             logger.warn(`[PageManager] A page in ${layout.privateRoot}/${owner}/${store} was not written (${migrationId}): ${err instanceof Error ? err.message : String(err)}`);
           }
         }
-        await recordStoreMigration(ctx, where, migrationId);
+        if (!refused) await recordStoreMigration(ctx, where, migrationId);
         for (const [to, pages] of counts) {
           written += pages;
           const target = to === store ? '' : ` to ${layout.privateRoot}/${owner}/${to}`;

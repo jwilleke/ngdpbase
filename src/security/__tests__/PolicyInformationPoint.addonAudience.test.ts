@@ -352,12 +352,14 @@ describe('page audience addon:<slug> (#1964)', () => {
       });
 
       test('a member of the audience gets through the door', async () => {
-        await pageManager.savePage('Health Notes', 'new body', { ...corpus['Health Notes'] }, pat, { skipValidation: true, skipConflictCheck: true });
+        // An editor, as ed is: the door also asks may they edit at all (#1815), and a reader may not.
+        await pageManager.savePage('Health Notes', 'new body', { ...corpus['Health Notes'] }, { ...pat, roles: ['editor'] }, { skipValidation: true, skipConflictCheck: true });
         expect(written).toEqual(['Health Notes']);
       });
 
-      test('a page with no audience is not the door\'s to refuse', async () => {
-        await pageManager.savePage('Open Page', 'new body', { ...corpus['Open Page'] }, olly, { skipValidation: true, skipConflictCheck: true });
+      test('a page with no audience is not refused for an audience', async () => {
+        // An editor, as ed is: the door also asks may they edit at all (#1815), and a reader may not.
+        await pageManager.savePage('Open Page', 'new body', { ...corpus['Open Page'] }, { ...olly, roles: ['editor'] }, { skipValidation: true, skipConflictCheck: true });
         expect(written).toEqual(['Open Page']);
       });
     });

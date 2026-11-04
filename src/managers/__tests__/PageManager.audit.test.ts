@@ -16,6 +16,7 @@
 vi.unmock('../PageManager');
 
 import PageManager from '../PageManager';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type StoredPage = { title: string; content: string; metadata: Record<string, unknown> };
 
@@ -37,7 +38,8 @@ function makeManager(existing: StoredPage[] = []) {
   };
 
   const manager = new PageManager({
-    getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : null))
+    // #1815: the write door's deciders allow; the audit record is the subject here.
+    getManager: vi.fn(withWriteDoorAllowing((name: string) => (name === 'AuditManager' ? auditManager : null)))
   }) as unknown as {
     provider: unknown;
     savePage: (name: string, content: string, meta?: unknown, ctx?: unknown, opts?: unknown) => Promise<unknown>;
@@ -78,7 +80,8 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
   test('a private page names no imported file: its record names it by its vault name only (#2130)', async () => {
     const { manager, provider, events } = makeManager();
     provider.savePage.mockImplementationOnce(async () => ({ name: 'vaults/jim/default/Plan', uuid: 'uuid-1' }));
-    await manager.savePage('Plan', 'body', { title: 'Plan', private: true }, JIM, { audit: { importedFrom: 'referral.md' } });
+    // #1815: a create in jim's vault is jim's own, signed in.
+    await manager.savePage('Plan', 'body', { title: 'Plan', private: true }, { ...JIM, isAuthenticated: true }, { audit: { importedFrom: 'referral.md' } });
     await settle();
 
     expect(JSON.stringify(events[0])).not.toContain('referral.md');
@@ -111,7 +114,8 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
   test('a private page saved under its bare title is recorded by its vault name', async () => {
     const { manager, provider, events } = makeManager();
     provider.savePage.mockImplementationOnce(async () => ({ name: 'vaults/jim/default/Secret Diary', uuid: 'uuid-1' }));
-    await manager.savePage('Secret Diary', 'body', { title: 'Secret Diary', private: true }, JIM);
+    // #1815: a create in jim's vault is jim's own, signed in.
+    await manager.savePage('Secret Diary', 'body', { title: 'Secret Diary', private: true }, { ...JIM, isAuthenticated: true });
     await settle();
 
     expect(events[0]).toMatchObject({ eventType: 'page-create' });
@@ -216,11 +220,12 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     // is deletes and token mint/revoke.
     const { provider } = makeManager();
     const broken = new PageManager({
-      getManager: vi.fn((name: string) =>
+      // #1815: the write door's deciders allow.
+      getManager: vi.fn(withWriteDoorAllowing((name: string) =>
         name === 'AuditManager'
           ? { logAuditEvent: vi.fn(async () => { throw new Error('audit down'); }) }
           : null
-      )
+      ))
     }) as unknown as { provider: unknown; savePage: (n: string, c: string, m?: unknown, ctx?: unknown) => Promise<unknown> };
     broken.provider = provider;
 

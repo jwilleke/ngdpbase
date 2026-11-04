@@ -197,6 +197,18 @@ export function jobContextFromSystem(systemPrincipal: string, reason: string, no
   };
 }
 
+/**
+ * Boot work done in one user's own vaults, on that user's behalf (#1815) —
+ * the start-up vault upgrades. The job carries the owner's username, so the
+ * vault container rule admits it as it admits any job carrying who asked, and
+ * what it may do there is the owner's own rights, resolved by policy when
+ * each write is decided. Never the system principal, which no vault admits.
+ * Like every job it carries no key, so an encrypted vault stays closed to it.
+ */
+export function jobContextForOwner(owner: string, reason: string, now: Date = new Date()): JobContext {
+  return { username: owner, origin: 'boot', requestedAt: now.toISOString(), reason };
+}
+
 /** As {@link jobContextFromSystem}, for work started by a timer rather than at boot. */
 export function jobContextFromSchedule(systemPrincipal: string, reason: string, now: Date = new Date()): JobContext {
   return { ...jobContextFromSystem(systemPrincipal, reason, now), origin: 'schedule' };

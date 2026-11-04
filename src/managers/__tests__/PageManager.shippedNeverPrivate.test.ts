@@ -14,12 +14,15 @@ import path from 'path';
 import { actor } from '../../test-support/actors';
 import { vaultCategories } from '../../test-support/vaults';
 import { authorshipSite, type AuthorshipSite } from '../../test-support/authorshipSite';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 describe('a shipped page is never private (#1503)', () => {
   let site: AuthorshipSite;
 
   beforeEach(async () => {
     site = await authorshipSite({ config: { 'ngdpbase.system-category': vaultCategories() } });
+    // #1815: the write door's deciders, allowing; placement is the subject here.
+    for (const [name, decider] of Object.entries(allowingWriteDoor())) site.managers.set(name, decider);
   });
 
   afterEach(async () => {

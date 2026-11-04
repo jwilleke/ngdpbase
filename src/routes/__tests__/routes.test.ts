@@ -768,7 +768,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
             .send({ content: '# Updated Content', 'system-category': 'general', _csrf: 'test-csrf-token' });
 
           expect(response.status).toBe(200);
-          expect(response.body).toEqual({ ok: true, redirect: '/view/TestPage' });
+          // #1815: a save that renamed nothing left no referrer unchanged.
+          expect(response.body).toEqual({ ok: true, redirect: '/view/TestPage', linksNotRewritten: [] });
         });
 
         test('a failed save answers { ok: false, error } with its status, not an error page', async () => {

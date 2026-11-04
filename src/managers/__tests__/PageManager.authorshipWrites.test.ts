@@ -26,9 +26,16 @@ import matter from 'gray-matter';
 import { actor } from '../../test-support/actors';
 import { vaultCategories } from '../../test-support/vaults';
 import { authorshipSite, type AuthorshipSite } from '../../test-support/authorshipSite';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const JIM = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const ANN = 'urn:uuid:22222222-2222-4222-8222-222222222222';
+
+/** #1815: the write door's deciders, allowing; who may write is not the subject here. */
+function allowWrites(site: AuthorshipSite): AuthorshipSite {
+  for (const [name, decider] of Object.entries(allowingWriteDoor())) site.managers.set(name, decider);
+  return site;
+}
 
 async function frontmatter(site: AuthorshipSite, uuid: string): Promise<Record<string, unknown>> {
   return matter(await fs.readFile(path.join(site.pagesDir, `${uuid}.md`), 'utf8')).data;
@@ -42,10 +49,10 @@ async function manifestEditors(site: AuthorshipSite, uuid: string): Promise<stri
 describe('#2097 page writes store identity @ids', () => {
   let site: AuthorshipSite;
   beforeEach(async () => {
-    site = await authorshipSite({
+    site = allowWrites(await authorshipSite({
       accounts: { jim: JIM, ann: ANN },
       config: { 'ngdpbase.system-category': vaultCategories() }
-    });
+    }));
   });
   afterEach(async () => { await site.remove(); });
 
@@ -81,7 +88,7 @@ describe('#2097 page writes store identity @ids', () => {
   });
 
   test('with the identity store down a save still works and stores the username', async () => {
-    const down = await authorshipSite({ accounts: { jim: JIM }, identity: { failLookups: true } });
+    const down = allowWrites(await authorshipSite({ accounts: { jim: JIM }, identity: { failLookups: true } }));
     try {
       const { uuid } = await down.pageManager.savePage('Down', 'one', {}, actor('jim'));
       expect(await frontmatter(down, uuid)).toMatchObject({ author: 'jim', editor: 'jim' });
@@ -108,14 +115,14 @@ describe('#2097 page writes store identity @ids', () => {
   });
 
   test('the Private box on the plain FileSystemProvider too', async () => {
-    const plain = await authorshipSite({
+    const plain = allowWrites(await authorshipSite({
       accounts: { jim: JIM },
       config: {
         'ngdpbase.system-category': vaultCategories(),
         'ngdpbase.page.provider': 'filesystemprovider',
         'ngdpbase.page.provider.default': 'filesystemprovider'
       }
-    });
+    }));
     try {
       const { uuid } = await plain.pageManager.savePage('Plain Private', 'one', {}, actor('jim'));
       const moved = await plain.pageManager.savePage('Plain Private', 'one', { uuid, private: true }, actor('jim'));
