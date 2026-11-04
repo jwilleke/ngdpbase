@@ -214,6 +214,17 @@ See [docker/DOCKER.md](./docker/DOCKER.md) for complete Docker headless deployme
 
 See [docs/architecture/](./docs/architecture/) for configuration system details.
 
+### Removed configuration keys
+
+An upgraded site's `app-custom-config.json` can still carry keys that nothing reads any more. The server starts, ignores them, and logs a warning (and shows ConfigurationManager as needing attention on the admin dashboard) for those listed here with one. Remove them from the file.
+
+| Key | Replaced by | Notes |
+|---|---|---|
+| `ngdpbase.stores.<kind>.encrypt` | `ngdpbase.system-category.<entry>.encrypt` | `<entry>` is the system-category that declares the vault; `general` for the `default` vault. Setting it to `true` closes existing plaintext vaults of that kind, so change it on purpose. |
+| `ngdpbase.stores.<kind>.owner` | `owner` of `ngdpbase.system-category.<entry>` | `admin` when the entry has none. |
+
+Details: [docs/system-category.md](./docs/system-category.md#related-settings-that-are-not-per-system-category).
+
 ### Common operator topics
 
 - [docs/admin/Self-Registration.md](./docs/admin/Self-Registration.md) — disable the public `/register` form and route visitors to a "Request access" page (any deploy mode)

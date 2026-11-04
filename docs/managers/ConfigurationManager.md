@@ -233,6 +233,10 @@ For complete property reference, admin interface details, and troubleshooting:
 
 - [ConfigurationManager-Complete-Guide.md](ConfigurationManager-Complete-Guide.md)
 
+## Removed vault keys in the custom config (#2246)
+
+At start, after the merge, every `ngdpbase.stores.<kind>.owner` and `ngdpbase.stores.<kind>.encrypt` key in the custom config gets one warning in the log. It says the key is no longer read and names what decides the vault now: `ngdpbase.system-category.<entry>.encrypt` (with its current value), or the entry's `owner`, where `<entry>` is the system-category that declares the kind's vault (`general` for the `default` vault). A kind no system-category declares is said so. ConfigurationManager also marks itself needs-attention (`markNeedsAttention`, shown on the admin dashboard) with one reason naming every key. Nothing is changed, carried over or removed. The detection is `legacyStoreKeys` in `src/utils/legacyStoreKeys.ts`; the keys and why are in [system-category.md](../system-category.md#related-settings-that-are-not-per-system-category).
+
 ## Configured add-ons must exist (#672)
 
 At start, an `ngdpbase.addons.<id>.enabled = true` key with no matching add-on refuses the start. An add-on is known when it is a directory under an `addons-path` entry, or a slug named in `ngdpbase.addons.install`. A retired `node_modules:` entry is ignored here ([#2102](https://github.com/jwilleke/ngdpbase/issues/2102)); AddonsManager logs the warning.
