@@ -7,7 +7,7 @@
         <div class="card-header d-flex align-items-center justify-content-between">
           <h4 class="mb-0">
             <i class="fas <%= icon %>"></i> <%= title %>
-            <span class="badge bg-secondary ms-2"><%= items.length %></span>
+            <span class="badge bg-secondary ms-2"><%= typeof itemCount === 'number' ? itemCount : items.length %></span>
           </h4>
           <div class="d-flex gap-2">
             <% if (typeof listAction !== 'undefined' && listAction && typeof shareEnabled !== 'undefined' && shareEnabled) { %>
@@ -40,6 +40,45 @@
           <% } %>
           <% if (!items || items.length === 0) { %>
             <p class="text-muted"><%= emptyMessage %></p>
+          <% } else if (listKind === 'vaults') { %>
+            <%# #2245: each of the owner's vaults, its pages under it, and
+                whether it is encrypted. `state` is the vault's seal state
+                (#1834): sealed, plain, or a kind that must be encrypted whose
+                copy is not (unopened or mismatch). %>
+            <% items.forEach(function(vault) { %>
+              <section class="mb-4" data-vault="<%= vault.id %>">
+                <h5 class="d-flex align-items-center gap-2">
+                  <i class="fas fa-box-archive"></i> <%= vault.id %>
+                  <% if (vault.state === 'sealed') { %>
+                    <span class="badge bg-success" data-vault-badge="encrypted"><i class="fas fa-lock"></i> Encrypted</span>
+                  <% } else { %>
+                    <span class="badge <%= vault.state === 'plain' ? 'bg-secondary' : 'bg-warning text-dark' %>" data-vault-badge="not-encrypted"><i class="fas fa-lock-open"></i> Not encrypted</span>
+                  <% } %>
+                </h5>
+                <% if (vault.state === 'unopened' || vault.state === 'mismatch') { %>
+                  <div class="alert alert-warning py-2 small" data-vault-warning>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    This site says <strong><%= vault.id %></strong> should be encrypted, but it is not.
+                    <% if (vault.state === 'unopened') { %>
+                      It has not been opened yet, so there is no key to encrypt it with.
+                    <% } else { %>
+                      Its stored copy is not encrypted, so an administrator needs to resolve it.
+                    <% } %>
+                  </div>
+                <% } %>
+                <% if (!vault.readable) { %>
+                  <p class="text-muted small mb-0">Locked. Unlock it to see its pages.</p>
+                <% } else if (vault.pages.length === 0) { %>
+                  <p class="text-muted small mb-0">No pages in this vault yet.</p>
+                <% } else { %>
+                  <ul class="list-group">
+                    <% vault.pages.forEach(function(p) { %>
+                      <li class="list-group-item"><a class="wikipage" href="<%= pageUrl(p.name) %>"><%= p.title %></a></li>
+                    <% }); %>
+                  </ul>
+                <% } %>
+              </section>
+            <% }); %>
           <% } else if (listKind === 'links') { %>
             <ul class="list-group">
               <% items.forEach(function(item) { %>
