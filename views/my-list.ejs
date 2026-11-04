@@ -66,8 +66,10 @@
                     <% } %>
                   </div>
                 <% } %>
-                <% if (!vault.readable) { %>
+                <% if (!vault.readable && vault.state === 'sealed') { %>
                   <p class="text-muted small mb-0">Locked. Unlock it to see its pages.</p>
+                <% } else if (!vault.readable) { %>
+                  <p class="text-muted small mb-0">Its pages can&#39;t be shown until this is resolved.</p>
                 <% } else if (vault.pages.length === 0) { %>
                   <p class="text-muted small mb-0">No pages in this vault yet.</p>
                 <% } else { %>

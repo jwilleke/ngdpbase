@@ -28,7 +28,8 @@ const VAULTS = [
   { id: 'default', state: 'unopened', readable: true, pages: [page('default', 'MollySecretDiary', 'u2'), page('default', 'Secret-Test-File', 'u1')] },
   { id: 'journal', state: 'mismatch', readable: true, pages: [page('journal', '2026-09-22-1-journal-molly', 'u4')] },
   { id: 'notes', state: 'plain', readable: true, pages: [page('notes', '<img src=x onerror=alert(1)>', 'u5')] },
-  { id: 'phr', state: 'sealed', readable: false, pages: [] }
+  { id: 'phr', state: 'sealed', readable: false, pages: [] },
+  { id: 'medical', state: 'unopened', readable: false, pages: [] }
 ];
 
 const createReq = (userContext: unknown) => ({
@@ -87,7 +88,7 @@ describe('my-list.ejs, listKind vaults (#2245)', () => {
   test('each vault lists its own pages, by name, linked to /vaults/<user>/<vault>/<page>', async () => {
     const doc = await renderMyList(locals);
     const sections = [...doc.querySelectorAll('section[data-vault]')];
-    expect(sections.map((s) => s.getAttribute('data-vault'))).toEqual(['capture', 'default', 'journal', 'notes', 'phr']);
+    expect(sections.map((s) => s.getAttribute('data-vault'))).toEqual(['capture', 'default', 'journal', 'notes', 'phr', 'medical']);
     const links = (id: string) => [...doc.querySelectorAll(`section[data-vault="${id}"] a.wikipage`)]
       .map((a) => [a.textContent, a.getAttribute('href')]);
     expect(links('default')).toEqual([
@@ -100,6 +101,9 @@ describe('my-list.ejs, listKind vaults (#2245)', () => {
     expect(links('journal')).toEqual([['2026-09-22-1-journal-molly', '/vaults/molly/journal/2026-09-22-1-journal-molly']]);
     // A locked vault says so rather than claiming to be empty.
     expect(doc.querySelector('section[data-vault="phr"]')?.textContent).toContain('Locked. Unlock it to see its pages.');
+    // One its kind refuses to open is not "locked": unlocking would not help.
+    expect(doc.querySelector('section[data-vault="medical"]')?.textContent).toContain('Its pages can\'t be shown until this is resolved.');
+    expect(doc.querySelector('section[data-vault="medical"]')?.textContent).not.toContain('Locked');
     // The count is pages, not vaults.
     expect(doc.querySelector('.card-header .badge')?.textContent?.trim()).toBe('5');
   });
