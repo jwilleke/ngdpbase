@@ -12,6 +12,7 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
+import { legacyStoreKeys, legacyStoreKeysReason } from '../utils/legacyStoreKeys.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -138,6 +139,7 @@ class ConfigurationManager extends BaseManager {
       this.assertContactPageNotLoop();
       this.assertContactRecipientWellFormed();
       this.assertConfiguredAddonsExist();
+      this.reportLegacyStoreKeys();
       logger.info(`ConfigurationManager initialized for environment: ${this.environment}`);
       logger.info(`Loaded configs: default + ${this.customConfig && Object.keys(this.customConfig).length > 0 ? 'custom' : 'no custom'}`);
     } catch (error) {
@@ -484,6 +486,18 @@ class ConfigurationManager extends BaseManager {
     if (this.environment === 'development' && !this.customConfig?.['ngdpbase.logging.level']) {
       this.mergedConfig['ngdpbase.logging.level'] = 'debug';
     }
+  }
+
+  /**
+   * #2246: `ngdpbase.stores.<kind>.owner|encrypt` in the custom config have
+   * been ignored since #1505. One warning per key, and one needs-attention
+   * entry naming them all. Nothing is changed, carried over or removed.
+   */
+  private reportLegacyStoreKeys(): void {
+    const found = legacyStoreKeys(this.customConfig, this.mergedConfig?.['ngdpbase.system-category']);
+    if (found.length === 0) return;
+    for (const f of found) logger.warn(`[config] ${f.message}`);
+    this.markNeedsAttention(legacyStoreKeysReason(found), found[0]?.key);
   }
 
   /**

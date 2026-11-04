@@ -67,7 +67,7 @@ Every path is joined by a helper in the same module — `privateStoreRoot`, `pri
 
 ## Store kinds and the door
 
-A __store kind__ (a vault kind) is instance-wide; a user's directory under it is that user's container. Since [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) a kind is a __system-category entry that declares a vault__, `storageLocation.privatestore` (see [system-category.md](system-category.md)); `ngdpbase.stores.{kind}` no longer defines kinds and nothing reads it. `storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` returns, for a vault id:
+A __store kind__ (a vault kind) is instance-wide; a user's directory under it is that user's container. Since [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) a kind is a __system-category entry that declares a vault__, `storageLocation.privatestore` (see [system-category.md](system-category.md)); `ngdpbase.stores.{kind}` no longer defines kinds and nothing reads it (a leftover `.owner` or `.encrypt` in the custom config is warned about at start and listed as needs-attention, [system-category.md](system-category.md#related-settings-that-are-not-per-system-category), #2246). `storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` returns, for a vault id:
 
 - `id` — the vault id, the last folder of the entry's `privatestore` (`general` → `default`, `journal` → `journal`, `capture` → `capture`);
 - `encrypt` — the entry's `encrypt`, read strictly as a boolean (the string `"true"` is not a switch);
