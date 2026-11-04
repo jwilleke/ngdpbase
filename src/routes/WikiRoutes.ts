@@ -493,6 +493,8 @@ interface IPageManager {
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
   /** #1387: the requester's own store ids, and a decrypted takeout of one. */
   listOwnStoreIds(ctx: ActorContext): Promise<string[]>;
+  /** #2245: the requester's vaults, each with its pages and seal state, for /my/vaults. */
+  listOwnVaults: PageManagerClass['listOwnVaults'];
   /** #1388: one vault's current pages, as `ctx` may enter it. */
   listVaultPages(ctx: ActorContext, owner: string, vault: string): Promise<Array<{ name: string; title: string; uuid: string }>>;
   buildOwnStoreTakeout(
@@ -9632,17 +9634,34 @@ ${panes}
   }
 
   /**
-   * GET /my/vaults — list of private pages owned by the current user (#640, #1506).
+   * GET /my/vaults — the current user's vaults, each with its pages and
+   * whether it is encrypted (#640, #1506, #2245).
    */
   async myPrivatePagesPage(req: Request, res: Response) {
-    return this.renderMyContributionsList(req, res, {
-      title: 'My Private Pages',
-      icon: 'fa-eye-slash',
-      onlyPrivate: true,
-      emptyMessage: 'You don\'t have any private pages yet.',
-      // #1388: the owner's links to their vaults.
-      action: { href: '/my/vaults/links', label: 'Vault links', icon: 'fa-link' }
-    });
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+      // The requester's own context: their vaults, never a user named in the request.
+      const vaults = await this.engine.getManager('PageManager').listOwnVaults(currentUser);
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('my-list', {
+        ...commonData,
+        title: 'My Private Pages',
+        icon: 'fa-eye-slash',
+        items: vaults,
+        itemCount: vaults.reduce((n, v) => n + v.pages.length, 0),
+        listKind: 'vaults',
+        emptyMessage: 'You don\'t have any private pages yet.',
+        // #1388: the links the owner has made to their vaults.
+        listAction: { href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' }
+      });
+    } catch (err) {
+      logger.error('Error rendering My Private Pages:', err);
+      return res.status(500).send('Error loading list');
+    }
   }
 
   // ==========================================================================
@@ -9711,7 +9730,7 @@ ${panes}
       const commonData = await this.getCommonTemplateData(req);
       return res.render('my-vault-links', {
         ...commonData,
-        title: 'Vault links',
+        title: 'Links you\'ve shared',
         vaults: await Promise.all(vaults.map(async (v) => ({
           id: v,
           maxDays: shareManager.maxShareDays(v),
@@ -10690,7 +10709,7 @@ ${panes}
   private async renderMyContributionsList(
     req: Request,
     res: Response,
-    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string; systemKeywords?: string[]; action?: { href: string; label: string; icon: string } }
+    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string; systemKeywords?: string[] }
   ) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -10721,8 +10740,7 @@ ${panes}
         totalItems: pagedList.totalItems,
         paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
-        emptyMessage: spec.emptyMessage,
-        listAction: spec.action ?? null
+        emptyMessage: spec.emptyMessage
       });
     } catch (err) {
       logger.error('Error rendering My Contributions list:', err);

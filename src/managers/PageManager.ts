@@ -314,7 +314,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
-import { readVaultSealState } from '../utils/privateStoreMeta.js';
+import { readVaultSealState, type VaultSealState } from '../utils/privateStoreMeta.js';
 import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { permitsInSharedFolder, SHARED_FOLDER_FILE } from '../utils/sharedFolderAccess.js';
 import { unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
@@ -2864,6 +2864,47 @@ class PageManager extends BaseManager implements CatalogSource {
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
 
     return listStoreIds(pagesDirectory, owner, layout);
+  }
+
+  /**
+   * The requester's own vaults, each with its pages and whether it is
+   * encrypted (#2245), for `/my/vaults`.
+   *
+   * `state` is the vault's {@link VaultSealState} (#1834): `sealed` is
+   * encrypted, `plain` is not, and `unopened` or `mismatch` is a vault whose
+   * kind says it must be encrypted while its copy is not. `readable` is false
+   * for a vault this context cannot open, such as a sealed vault still
+   * locked: its pages are then unknown, not none.
+   */
+  async listOwnVaults(ctx: ActorContext): Promise<Array<{
+    id: string;
+    state: VaultSealState;
+    readable: boolean;
+    pages: Array<{ name: string; title: string; uuid: string }>;
+  }>> {
+    if (!ctx) throw new Error('PageManager.listOwnVaults requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner) return [];
+    const ids = await this.listOwnStoreIds(ctx);
+    if (ids.length === 0) return [];
+    const readable = this.provider?.readablePrivateStores
+      ? await this.provider.readablePrivateStores(owner, ctx)
+      : new Map<string, Array<{ title: string; uuid: string }>>();
+    const { pagesDirectory, layout } = this.vaultPaths();
+    return Promise.all([...ids].sort().map(async (id) => {
+      // The same rule as repairAuthority: a vault whose state cannot be read is
+      // never shown as encrypted or as plain.
+      const state = (await readVaultSealState(pagesDirectory, owner, id, layout).catch(() => null))?.state ?? 'mismatch';
+      const pages = readable.get(id);
+      return {
+        id,
+        state,
+        readable: pages !== undefined,
+        pages: (pages ?? [])
+          .map((p) => ({ name: formatPrivatePageName(owner, id, p.title), title: p.title, uuid: p.uuid }))
+          .sort((a, b) => a.title.localeCompare(b.title))
+      };
+    }));
   }
 
   async listOwnDeletedPrivatePages(ctx: ActorContext): Promise<StoreDeletedEntry[]> {

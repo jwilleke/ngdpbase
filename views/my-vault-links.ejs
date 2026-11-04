@@ -1,13 +1,23 @@
-<%- include('header', { pageName: 'Vault links' }) %>
+<%- include('header', { pageName: 'Links you\'ve shared' }) %>
 
 <%# #1388: the owner's read-only links to their own vaults — a whole vault, or chosen pages of one. %>
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1><i class="fas fa-share-nodes"></i> Vault links</h1>
+        <h1><i class="fas fa-share-nodes"></i> Links you&#39;ve shared</h1>
         <a href="/my/vaults" class="btn btn-sm btn-secondary"><i class="fas fa-arrow-left"></i> My vaults</a>
     </div>
 
-    <p class="text-muted">A vault link lets anyone who has it read, download and print what you chose, without an account, until it expires or you revoke it. They see only the current pages, never earlier versions. Every visit is recorded.</p>
+    <p class="text-muted mb-2">The links you have made to pages in your vaults, or to a whole vault, and the forms to make more.</p>
+    <%# #2245: what a link does, as ShareManager.issueVaultShare, extend and
+        revoke enforce it, before any form that makes one. %>
+    <ul class="small text-muted mb-4" data-share-explanation>
+        <li><strong>Who can see it:</strong> anyone you give the link to, without an account.</li>
+        <li><strong>What they see:</strong> the current pages the link covers and the files those pages use. Never earlier versions, and no search.</li>
+        <li><strong>Read-only:</strong> they can read, download and print. They cannot change anything.</li>
+        <li><strong>How long:</strong> you choose, up to the vault's limit in days. You can extend a working link by 1 to 24 hours at a time.</li>
+        <li><strong>Stopping it:</strong> revoke it in the list below at any time, and it stops working at once. Every visit is recorded, and the list shows them.</li>
+        <li><strong>Encrypted vaults:</strong> the link is made in your browser and its full address is shown only once. The person opening it needs JavaScript.</li>
+    </ul>
 
     <%# #1388: a link to an encrypted vault is made in this browser and shown once, here. %>
     <div id="lockedLinkResult" class="alert alert-success d-none">
@@ -81,8 +91,10 @@
 
         <div class="card mb-4">
             <div class="card-body">
-                <h2 class="h6 card-title">Share a whole vault</h2>
-                <p class="text-muted small mb-2">Includes every current page and the files they use, and pages you add while the link is live.</p>
+                <h2 class="h6 card-title">Sharing a whole vault</h2>
+                <p class="text-muted small mb-2">A whole-vault link covers every current page in the vault and the files they use, and pages you add while the link works.</p>
+                <details>
+                <summary class="mb-2">Share a whole vault</summary>
                 <form method="post" action="/my/vaults/links" class="row g-2 align-items-end" data-vault-link data-base-url="<%= baseUrl %>">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="scope" value="whole">
@@ -106,13 +118,14 @@
                         <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-link"></i> Make link</button>
                     </div>
                 </form>
+                </details>
                 <p class="text-muted small mt-2 mb-0">To share only some pages, open a private page and choose <em>Share this page</em> from its menu.</p>
             </div>
         </div>
     <% } %>
 
     <% if (links.length === 0) { %>
-        <div class="alert alert-info"><i class="fas fa-info-circle"></i> No vault links yet.</div>
+        <div class="alert alert-info"><i class="fas fa-info-circle"></i> You haven&#39;t shared any links yet.</div>
     <% } else { %>
         <div class="table-responsive">
             <table class="table table-sm align-middle">
