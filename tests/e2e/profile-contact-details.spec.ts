@@ -43,6 +43,7 @@ test.describe('Contact details on /profile (#2073)', () => {
       await signInWithPassword(user, username, password);
       await user.goto('/profile');
       const card = user.locator('#contact-details');
+      await card.locator('summary').first().click(); // #2248: the card starts collapsed
       await expect(card.getByRole('heading', { name: /Contact details/ })).toBeVisible();
       await expect(card.getByLabel('Country for home phone')).toHaveValue('US');
 
@@ -63,6 +64,7 @@ test.describe('Contact details on /profile (#2073)', () => {
 
       await user.reload();
       const again = user.locator('#contact-details');
+      await again.locator('summary').first().click();
       await expect(again.getByLabel('Name', { exact: true })).toHaveValue(`Pat ${RUN}`);
       await expect(again.getByLabel('Email', { exact: true })).toHaveValue(`${username}@example.test`);
       await expect(again.getByLabel('Home phone', { exact: true })).toHaveValue('(415) 555-2671');
