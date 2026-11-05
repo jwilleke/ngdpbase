@@ -19,6 +19,9 @@
   --bs-link-color:                #c0392b;
   --bs-link-hover-color:          #922b21;
   --bs-border-color:              #d4a898;
+  --card-outline-width:  2px;
+  --card-outline:        #8f7364;
+  --card-outline-hover:  #6f5446;
 
   /* Custom semantic vars inherit from Bootstrap vars with volcanic fallbacks */
   --bg-primary:      var(--bs-body-bg, #fdf6f0);
@@ -81,6 +84,9 @@
   --bs-link-color:     #e85a40;
   --bs-link-hover-color: #ff7a60;
   --bs-border-color:   #5a3020;
+  --card-outline-width:  2px;
+  --card-outline:        #9a6a58;
+  --card-outline-hover:  #b8826c;
 
   /* Volcano-specific vars not covered by Bootstrap's dark mode */
   --border-color-strong: #8a4a30;
@@ -120,6 +126,9 @@
     --bs-secondary-color: #c4907a;
     --bs-tertiary-color: #8a6a5a;
     --bs-border-color:   #5a3020;
+    --card-outline-width:  2px;
+    --card-outline:        #9a6a58;
+    --card-outline-hover:  #b8826c;
     --bs-link-color:     #e85a40;
     --bs-link-hover-color: #ff7a60;
 
