@@ -463,6 +463,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(function(response) { return response.json(); })
             .then(function(data) {
+                if (window.followReauth(data)) return;
                 if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
                 } else {
@@ -525,6 +526,7 @@ document.addEventListener('DOMContentLoaded', function() {
             fetch('/api/admin/config/secret/' + encodeURIComponent(key))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
+                    if (window.followReauth(data)) return;
                     if (!data.success) {
                         showAlert(data.error || 'Could not reveal value', 'danger');
                         return;

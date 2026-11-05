@@ -41,6 +41,24 @@
     return fetch(input, Object.assign({}, opts, { headers: headers }));
   }
 
+  /**
+   * Step-up (#1525): a route that needs a fresh sign-in answers JSON with
+   * `reauth`, the way to the prompt (which returns to the page after). Call
+   * this on every parsed JSON answer from a step-up-gated route; when it
+   * returns true the page is already on its way to the prompt, so stop.
+   * Only a same-site path is followed.
+   *
+   * @param {{reauth?: unknown}|null|undefined} data - the parsed JSON answer
+   * @returns {boolean} true when the page is being sent to the prompt
+   */
+  function followReauth(data) {
+    const to = data && data.reauth;
+    if (typeof to !== 'string' || !/^\/(?!\/)/.test(to)) return false;
+    window.location.href = to;
+    return true;
+  }
+
+  window.followReauth = followReauth;
   window.getCsrfToken = getCsrfToken;
   window.csrfFetch = csrfFetch;
 })();

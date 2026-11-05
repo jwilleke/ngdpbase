@@ -1191,6 +1191,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
             const data = await res.json().catch(() => ({}));
+            // Step-up: a stale sign-in is sent to the prompt, and comes back here.
+            if (window.followReauth(data)) return;
             if (!res.ok || !data.success) {
                 showError(data.error || ('Could not create token (HTTP ' + res.status + ')'));
                 return;
@@ -1229,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: '{}'
                 });
                 const data = await res.json().catch(() => ({}));
-                if (data.reauth) { window.location.href = data.reauth; return; }
+                if (window.followReauth(data)) return;
                 if (!res.ok || !data.success) {
                     window.alert(data.error || ('Could not extend the token (HTTP ' + res.status + ')'));
                     btn.disabled = false;
