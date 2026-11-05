@@ -13,15 +13,17 @@ const pdp = new PolicyDecisionPoint({
 });
 
 describe('PolicyDecisionPoint.grantsForRoles (#1539)', () => {
-  test('a reader with vault-owner: page-delete only in their vaults, page-read everywhere', () => {
+  test('a reader with vault-owner: page-delete only in their vaults and shared-folder pages, page-read everywhere', () => {
     const grants = new Map(pdp.grantsForRoles(['reader', 'vault-owner']).map((g) => [g.action, g]));
-    expect(grants.get('page-delete')).toEqual({ action: 'page-delete', limited: true, where: ['vault'] });
+    expect(grants.get('page-delete')).toEqual({ action: 'page-delete', limited: true, where: ['system-category', 'vault'] });
+    expect(grants.get('page-create')).toEqual({ action: 'page-create', limited: true, where: ['vault'] });
     expect(grants.get('page-read')).toEqual({ action: 'page-read', limited: false, where: [] });
   });
 
-  test('an editor with vault-owner: page-delete is not limited — editor grants it site-wide', () => {
+  test('an editor with vault-owner: page-delete is limited to system-categories — no role holds a page write on every page (#2255)', () => {
     const grants = new Map(pdp.grantsForRoles(['editor', 'vault-owner']).map((g) => [g.action, g]));
-    expect(grants.get('page-delete')?.limited).toBe(false);
+    expect(grants.get('page-delete')).toEqual({ action: 'page-delete', limited: true, where: ['system-category', 'vault'] });
+    expect(new Map(pdp.grantsForRoles(['admin']).map((g) => [g.action, g])).get('page-edit')?.limited).toBe(true);
   });
 
   test('rolePermissions agrees with roleGrants — one reading of what a role grants', () => {

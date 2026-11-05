@@ -12,6 +12,7 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
+import { migrateStoredPageWritePolicies } from '../utils/pageWritePolicies.js';
 import { legacyStoreKeys, legacyStoreKeysReason } from '../utils/legacyStoreKeys.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
@@ -458,6 +459,10 @@ class ConfigurationManager extends BaseManager {
     // ngdpbase.filters.* namespace, same shape and for the same reason.
     this.migrateLegacyFilterNamespace();
 
+    // #2255: a stored copy of a shipped role policy loses the page writes it
+    // held on every page; they now come from the category policies.
+    this.migrateStoredPageWritePolicies();
+
     // #1220: shipped ⊕ enabled addons' default-config.json ⊕ custom. The addon
     // layer sits beneath the operator's file, so an addon can add a permission
     // definition or a policy to the catalogs additively and the operator can
@@ -486,6 +491,25 @@ class ConfigurationManager extends BaseManager {
     if (this.environment === 'development' && !this.customConfig?.['ngdpbase.logging.level']) {
       this.mergedConfig['ngdpbase.logging.level'] = 'debug';
     }
+  }
+
+  /** What the #2255 page-write migration rewrote in memory, one sentence each; PolicyDecisionPoint reports it. */
+  pageWritePolicyMigration: string[] = [];
+
+  /**
+   * #2255: before the merge, rewrite the custom layer's stored copies of the
+   * shipped role policies whose page writes moved to the category policies
+   * (`migrateStoredPageWritePolicies`). In memory only, like the other
+   * migrations here; one warning per policy changed.
+   */
+  private migrateStoredPageWritePolicies(): void {
+    const key = 'ngdpbase.access.policies';
+    if (!this.customConfig || !(key in this.customConfig)) return;
+    const { policies, report } = migrateStoredPageWritePolicies(this.customConfig[key]);
+    if (report.rewritten.length === 0) return;
+    this.customConfig[key] = policies;
+    this.pageWritePolicyMigration = report.rewritten;
+    for (const line of report.rewritten) logger.warn(`[config] ${line}. Save the policy list in Admin → Configuration to store the change`);
   }
 
   /**

@@ -1,9 +1,11 @@
 /**
  * frontmatterAccess — the single implementation of ACL Tier 1 (#1054).
  *
- * A page's frontmatter can restrict who may act on it, via `access[<action>]`
- * or `audience`, which covers every action (#1964). Two subsystems needed
- * that answer and each had its own version of it, which is how they came to disagree:
+ * A page's frontmatter can restrict who may act on it with `audience`, which
+ * covers every action (#1964). The `access[<action>]` lists it once honoured
+ * were removed in #2255: what a user may do on a page is decided by its
+ * system-category and policy. Two subsystems needed the audience answer and
+ * each had its own version of it, which is how they came to disagree:
  *
  *   - `PolicyInformationPoint.checkFrontmatterAccess` decided a request, correctly.
  *   - `VersioningFileProvider.getRecentChanges` decided a listing, and only
@@ -23,8 +25,6 @@ import { permissionForPageAction } from '../security/pageActions.js';
 
 /** The frontmatter fields Tier 1 reads. */
 export interface AccessMetadataLike {
-  /** `{ view: ['role'], edit: [...] }` — per-action principal lists. */
-  access?: unknown;
   /** Who may act on the page at all; administrators excepted (#1964). */
   audience?: unknown;
 }
@@ -52,15 +52,6 @@ export function audiencePrincipals(metadata: AccessMetadataLike | null | undefin
   return metadata ? listOrNull(metadata.audience) : null;
 }
 
-/**
- * The page's `access[action]` list, or null when it states none. It applies
- * to that action only, and to everyone — administrators included.
- */
-export function accessPrincipals(metadata: AccessMetadataLike | null | undefined, action: string): string[] | null {
-  if (!metadata?.access || typeof metadata.access !== 'object') return null;
-  return listOrNull((metadata.access as Record<string, unknown>)[action]);
-}
-
 /** Whether `action` is reading the page — the one action an audience match grants outright. */
 function isViewAction(action: string): boolean {
   return permissionForPageAction(action) === 'page-read';
@@ -84,27 +75,19 @@ function addonSlugOf(principal: unknown): string | null {
  * Whether deciding `action` on this page needs the viewer's enabled add-ons —
  * so a caller asks for them only when the page names one (#1964).
  */
-export function namesAddonPrincipal(metadata: AccessMetadataLike | null | undefined, action: string): boolean {
-  return [audiencePrincipals(metadata), accessPrincipals(metadata, action)]
-    .some((list) => list?.some((p) => addonSlugOf(p) !== null) ?? false);
+export function namesAddonPrincipal(metadata: AccessMetadataLike | null | undefined, _action: string): boolean {
+  return audiencePrincipals(metadata)?.some((p) => addonSlugOf(p) !== null) ?? false;
 }
 
 /**
- * Every add-on slug the page names in `audience` or in any `access` list, once
- * each, in the order first named — for the warning about a slug that can match
- * nobody (#1964).
+ * Every add-on slug the page names in `audience`, once each, in the order
+ * first named — for the warning about a slug that can match nobody (#1964).
  */
 export function addonAudienceSlugs(metadata: AccessMetadataLike | null | undefined): string[] {
-  if (!metadata) return [];
-  const lists: unknown[] = [metadata.audience];
-  if (metadata.access && typeof metadata.access === 'object') lists.push(...Object.values(metadata.access as Record<string, unknown>));
   const slugs = new Set<string>();
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const p of list) {
-      const slug = addonSlugOf(p);
-      if (slug !== null) slugs.add(slug);
-    }
+  for (const p of audiencePrincipals(metadata) ?? []) {
+    const slug = addonSlugOf(p);
+    if (slug !== null) slugs.add(slug);
   }
   return [...slugs];
 }
@@ -140,16 +123,13 @@ export const AUDIENCE_ADMIN_MATCH = 'admin-system';
  * plus their username. Callers holding a `UserContext` should pass
  * `[...roles, username]`; the provider layer already works in these terms.
  *
- * Two rules, in order (#1964, operator 2026-10-23):
- *
- * - __`audience`__ applies to every action. Someone it leaves out may neither
- *   read nor edit the page: every action is refused. The one exception is an
- *   administrator — a viewer holding `admin-system`, which the caller decides
- *   and passes as `isAdmin` (this module never reads a role for it). For
- *   `view`, a viewer the audience admits is allowed; for any other action it
- *   only lets them through to `access` and then policy.
- * - __`access[action]`__ applies to that action, to everyone, administrators
- *   included. When the page states it, it decides.
+ * `audience` applies to every action (#1964, operator 2026-10-23). Someone it
+ * leaves out may neither read nor edit the page: every action is refused. The
+ * one exception is an administrator — a viewer holding `admin-system`, which
+ * the caller decides and passes as `isAdmin` (this module never reads a role
+ * for it). For `view`, a viewer the audience admits is allowed; for any other
+ * action it only lets them through to policy. A page's `access` field is not
+ * read (#2255).
  *
  * An `addon:<slug>` entry matches only when `<slug>` is in `enabledAddons`,
  * the viewer's enabled per-person add-ons (#1964); a caller that does not
@@ -171,12 +151,6 @@ export function decideFrontmatterAccess(
   if (audience) {
     audienceMatched = firstMatch(audience, viewerPrincipals, enabledAddons) ?? (isAdmin ? AUDIENCE_ADMIN_MATCH : undefined);
     if (audienceMatched === undefined) return { decided: true, allowed: false };
-  }
-
-  const access = accessPrincipals(metadata, action);
-  if (access) {
-    const matched = firstMatch(access, viewerPrincipals, enabledAddons);
-    return matched === undefined ? { decided: true, allowed: false } : { decided: true, allowed: true, matched };
   }
 
   if (audienceMatched !== undefined && isViewAction(action)) {

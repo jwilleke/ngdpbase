@@ -55,6 +55,27 @@ export function withRetiredExpanded(names: readonly string[]): string[] {
 }
 
 /**
+ * The pushed-pages permission for each page write (#2255). A page in a
+ * pushed category (shipped by the system or an add-on: `system`,
+ * `documentation`, `addon` as shipped) is changed by holders of
+ * `pushed-pages-<verb>`; any other page by holders of `page-<verb>`. Which
+ * categories are which is the policies' to say — each grants one or the
+ * other on `system-category` resources — so a page write is asked as either
+ * name, and the policies on the page's category decide.
+ */
+const PUSHED_PAGE_WRITES: Readonly<Record<string, string>> = {
+  'page-edit': 'pushed-pages-edit',
+  'page-delete': 'pushed-pages-delete',
+  'page-rename': 'pushed-pages-rename'
+};
+
+/** The names a policy may grant `action` under (#2255): a page write and its pushed-pages twin, else the action alone. */
+export function pageWriteAlternatives(action: string): string[] {
+  const pushed = PUSHED_PAGE_WRITES[action];
+  return pushed ? [action, pushed] : [action];
+}
+
+/**
  * What the standard OpenID Connect sign-in scopes let an app see, in plain
  * words (#1572). They are not permissions, so they are not in the catalog;
  * this is their one declaration — the consent page and the "My tokens and

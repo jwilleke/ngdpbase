@@ -255,17 +255,9 @@ audience: ['Trusted']        # only members of the Trusted role can view
 audience: ['Admin', 'jim']   # admins OR the jim user can view
 ```
 
-### `access` — per-action principal map
+### No `access` field
 
-A `{ action: principals[] }` map that gates one or more actions. Action keys: `view`, `edit`, `delete`, `rename`, `upload`.
-
-```yaml
-access:
-  edit: ['jim', 'Admin']              # jim OR admins can edit
-  delete: ['jim', 'Admin']            # jim OR admins can delete
-```
-
-When both `audience` and `access.view` are set, `access.view` wins for the `view` action.
+Pages have no per-action `access` field ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)). Who may edit, delete or rename a page is decided by its `system-category` and the access policies ([docs/access-policies.md](access-policies.md)). An `access` field left on an older page is not read.
 
 ### Tier ordering reminder
 
@@ -273,7 +265,7 @@ These frontmatter fields are evaluated at __Tier 1__ of the ACL ladder — see [
 
 ### Do not use `[{ALLOW <action> <principals>}]` in page body
 
-New saves reject these patterns. Put the equivalent rules in `audience` / `access` frontmatter.
+New saves reject these patterns. Put the equivalent rule in `audience` frontmatter, or in the policies.
 
 ```text
 [{ALLOW edit Admin}]      DO NOT use in new pages.

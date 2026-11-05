@@ -84,19 +84,19 @@ describe('PDP proxy ceiling (#1762 slice 2)', () => {
   test('grant ∩ represented ∩ actor: allowed only when all three allow', async () => {
     const { pdp } = makeEngine();
     // In the grant, mom holds it, jim holds it.
-    expect(await pdp.decide(actingForMom(), { action: 'page-read' })).toEqual({ permit: true, applicable: true, reason: 'table_allow' });
+    expect(await pdp.decide(actingForMom(), { action: 'page-read' })).toEqual({ permit: true, applicable: true, reason: 'table_allow', policyIds: [] });
     // In the grant, jim holds it, mom does not: policy for the represented person refuses.
     expect((await pdp.decide(actingForMom(), { action: 'page-delete' })).permit).toBe(false);
   });
 
   test('proxy_scope_deny: the grant does not carry the action, whoever holds it', async () => {
     const { pdp } = makeEngine();
-    expect(await pdp.decide(actingForMom(), { action: 'asset-read' })).toEqual({ permit: false, applicable: true, reason: 'proxy_scope_deny' });
+    expect(await pdp.decide(actingForMom(), { action: 'asset-read' })).toEqual({ permit: false, applicable: true, reason: 'proxy_scope_deny', policyIds: [] });
   });
 
   test('proxy_actor_deny: the actor does not hold the action, though the grant and mom do', async () => {
     const { pdp } = makeEngine();
-    expect(await pdp.decide(actingForMom(), { action: 'page-edit' })).toEqual({ permit: false, applicable: true, reason: 'proxy_actor_deny' });
+    expect(await pdp.decide(actingForMom(), { action: 'page-edit' })).toEqual({ permit: false, applicable: true, reason: 'proxy_actor_deny', policyIds: [] });
   });
 
   test('proxy_revoked: the grant revoked mid-session is refused on the next decision', async () => {
@@ -104,7 +104,7 @@ describe('PDP proxy ceiling (#1762 slice 2)', () => {
     const subject = actingForMom();
     expect(await pdp.permits(subject, 'page-read')).toBe(true);
     grants.delete('g1');
-    expect(await pdp.decide(subject, { action: 'page-read' })).toEqual({ permit: false, applicable: true, reason: 'proxy_revoked' });
+    expect(await pdp.decide(subject, { action: 'page-read' })).toEqual({ permit: false, applicable: true, reason: 'proxy_revoked', policyIds: [] });
   });
 
   test('proxy_revoked: a grant for another person or actor, or narrower than the claim, does not stand in', async () => {
@@ -147,7 +147,7 @@ describe('PDP proxy ceiling (#1762 slice 2)', () => {
     expect(stepUpNeeded).toHaveBeenLastCalledWith('account-security', { at: 'fresh' }, ['role-of-mom'], false, undefined, 1);
     // The actor's sign-in is stale: refused as step-up, not as a delegation.
     expect(await pdp.decide(actingForMom({}, { signIn: { at: 'stale' } }), { action: 'account-security' }))
-      .toEqual({ permit: false, applicable: true, reason: 'step-up' });
+      .toEqual({ permit: false, applicable: true, reason: 'step-up', policyIds: [] });
   });
 
   test('a job started under a proxy keeps the claim, and the ceiling', async () => {

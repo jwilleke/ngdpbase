@@ -25,7 +25,7 @@ type Meta = Record<string, unknown>;
 const PAGES: Record<string, Meta> = {
   Public:        { title: 'Public', uuid: 'p1' },
   EditorsOnly:   { title: 'EditorsOnly', uuid: 'p2', audience: ['editor'] },
-  AccessList:    { title: 'AccessList', uuid: 'p3', access: { view: ['bob'] } },
+  AccessList:    { title: 'AccessList', uuid: 'p3', audience: ['bob'] },
   Diary:         { title: 'Diary', uuid: 'p4', private: true, author: 'alice' },
   AdminPolicy:   { title: 'AdminPolicy', uuid: 'p5' },
   Locked:        { title: 'Locked', uuid: 'p6', 'author-lock': true, author: 'alice' },

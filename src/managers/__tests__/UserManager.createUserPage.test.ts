@@ -36,10 +36,11 @@ const TEST_USER = {
 // Mock factories
 // ---------------------------------------------------------------------------
 
-function makePageManager({ pageAlreadyExists = false } = {}) {
+function makePageManager({ pageAlreadyExists = false, profilePage = null }: { pageAlreadyExists?: boolean; profilePage?: Record<string, unknown> | null } = {}) {
   return {
-    pageExists: vi.fn().mockReturnValue(pageAlreadyExists),
-    savePage:   vi.fn().mockResolvedValue(undefined)
+    pageExists:      vi.fn().mockReturnValue(pageAlreadyExists),
+    getPageMetadata: vi.fn().mockResolvedValue(profilePage),
+    savePage:        vi.fn().mockResolvedValue(undefined)
   };
 }
 
@@ -276,6 +277,29 @@ describe('UserManager.createUserPage()', () => {
     // #1815: neither the admin nor the new account writes it — the new account holds no page-create.
     expect(ctx).not.toEqual(ADMIN_CTX);
     expect(ctx).not.toEqual(OWNER_SUBJECT);
+  });
+
+  test('a profile page left by a former account with the same username is kept, not written again (#2255)', async () => {
+    // e2e closed-account-sessions: delete an account, make it again. The old
+    // page is there; the system job would be refused an existing page (M2).
+    const pm  = makePageManager({ profilePage: { title: 'Profile: Jane Smith', author: 'jsmith' } });
+    const mgr = new UserManager(makeEngine({ pageManager: pm }));
+    await mgr.initialize();
+
+    await expect(mgr.createUserPage(TEST_USER, ADMIN_CTX)).resolves.toBe(true);
+    expect(pm.getPageMetadata).toHaveBeenCalledWith('Profile: Jane Smith', expect.objectContaining({ username: 'system' }));
+    expect(pm.savePage).not.toHaveBeenCalled();
+    await mgr.shutdown();
+  });
+
+  test('a profile page by somebody else is left alone, and the new account gets none (#2255)', async () => {
+    const pm  = makePageManager({ profilePage: { title: 'Profile: Jane Smith', author: 'mallory' } });
+    const mgr = new UserManager(makeEngine({ pageManager: pm }));
+    await mgr.initialize();
+
+    await expect(mgr.createUserPage(TEST_USER, ADMIN_CTX)).resolves.toBe(false);
+    expect(pm.savePage).not.toHaveBeenCalled();
+    await mgr.shutdown();
   });
 
   test('no active subject for the account: nothing is written', async () => {

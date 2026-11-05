@@ -1029,8 +1029,7 @@ class FileSystemProvider extends BasePageProvider {
     const now = {
       ...(outcome.author ? { author: outcome.author } : {}),
       ...(outcome.editor ? { editor: outcome.editor } : {}),
-      ...(outcome.audience ? { audience: outcome.audience } : {}),
-      ...(outcome.access ? { access: outcome.access } : {})
+      ...(outcome.audience ? { audience: outcome.audience } : {})
     };
 
     if (info.fromStore && this.pagesDirectory) {
@@ -1049,7 +1048,7 @@ class FileSystemProvider extends BasePageProvider {
       }
     } else {
       const cached = this.pageCache.get(info.title);
-      if (cached) cached.metadata = { ...cached.metadata, ...now } as PageFrontmatter;
+      if (cached) cached.metadata = { ...cached.metadata, ...now };
     }
     return {
       file: 'changed', uuid: info.uuid,
@@ -1063,7 +1062,7 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * One page file's frontmatter `author` and `editor` through `convert`, and
-   * the entries of its `audience` and `access[action]` lists through
+   * the entries of its `audience` list through
    * `convertPrincipal` (#2097), rewritten line by line
    * ({@link rewriteFrontmatterFields}) and nothing else; the values it holds
    * afterwards. A file that is not there is `missing`; one whose lines cannot
@@ -1077,7 +1076,7 @@ class FileSystemProvider extends BasePageProvider {
   ): Promise<{
     file: 'changed' | 'unchanged' | 'refused' | 'missing';
     author?: string; editor?: string; category?: string; addon?: string;
-    audience?: string[]; access?: Record<string, unknown>;
+    audience?: string[];
   }> {
     let raw: string;
     try {
@@ -1100,18 +1099,13 @@ class FileSystemProvider extends BasePageProvider {
       now[field] = to;
       if (to !== stored) changes[field] = { from: stored, to };
     }
-    // The user entries of the access lists (#2097): a role or other kind is kept by `convertPrincipal`.
+    // The user entries of `audience` (#2097): a role or other kind is kept by `convertPrincipal`.
     const entries = new Map<string, string>();
-    if (convertPrincipal) {
-      const lists: unknown[] = [data.audience];
-      if (data.access && typeof data.access === 'object' && !Array.isArray(data.access)) lists.push(...Object.values(data.access as Record<string, unknown>));
-      for (const list of lists) {
-        if (!Array.isArray(list)) continue;
-        for (const entry of list) {
-          if (typeof entry !== 'string' || entries.has(entry)) continue;
-          const to = await convertPrincipal(entry);
-          if (to !== entry) entries.set(entry, to);
-        }
+    if (convertPrincipal && Array.isArray(data.audience)) {
+      for (const entry of data.audience) {
+        if (typeof entry !== 'string' || entries.has(entry)) continue;
+        const to = await convertPrincipal(entry);
+        if (to !== entry) entries.set(entry, to);
       }
     }
     if (Object.keys(changes).length === 0 && entries.size === 0) return { file: 'unchanged', ...now, ...origin };
@@ -1128,8 +1122,7 @@ class FileSystemProvider extends BasePageProvider {
     const written = parsePageFrontmatter(rewritten).data;
     return {
       file: 'changed', ...now, ...origin,
-      ...(Array.isArray(written.audience) ? { audience: written.audience as string[] } : {}),
-      ...(written.access && typeof written.access === 'object' ? { access: written.access as Record<string, unknown> } : {})
+      ...(Array.isArray(written.audience) ? { audience: written.audience as string[] } : {})
     };
   }
 

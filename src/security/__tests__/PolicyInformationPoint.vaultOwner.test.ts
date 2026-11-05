@@ -79,6 +79,9 @@ describe('vault pages answer to policy, not to ownership alone (#1539)', () => {
   });
 
   test('a capability check with no resource never matches the vault policy', async () => {
+    expect(await pdp.permits(alice(['reader', 'vault-owner']) as never, 'page-create')).toBe(false);
+    // #2255: a page write asked with no page holds on some category; vault-owner's
+    // is `shared`, a shared folder's, which does not count (#2268).
     expect(await pdp.permits(alice(['reader', 'vault-owner']) as never, 'page-edit')).toBe(false);
     expect(await pdp.permits(alice(['reader', 'vault-owner']) as never, 'asset-delete')).toBe(false);
   });

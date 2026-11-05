@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { declaredResourceTypes, SUBJECT_MATCHERS } from './PolicyEvaluator.js';
+import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -310,6 +310,16 @@ class PolicyValidator extends BaseManager {
               enum: ['view', 'edit', 'delete', 'upload', 'download', 'admin', 'create', 'update']
             }
           },
+          // #2255: one condition, `equals` only; conditionProblems checks the attributes.
+          condition: {
+            type: 'object',
+            required: ['attribute', 'equals'],
+            additionalProperties: false,
+            properties: {
+              attribute: { type: 'string' },
+              equals: { type: ['string', 'number', 'boolean'] }
+            }
+          },
           conditions: {
             type: 'array',
             items: {
@@ -488,6 +498,12 @@ class PolicyValidator extends BaseManager {
    */
   validateSemantics(policy: Policy): ValidationError[] {
     const errors: ValidationError[] = [];
+
+    // #2255: a condition may read only declared attributes, of matching types.
+    const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
+    for (const message of conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {})) {
+      errors.push({ type: 'semantic', field: 'condition', message });
+    }
 
     // Check for potentially conflicting conditions
     policy.conditions.forEach((condition, index) => {

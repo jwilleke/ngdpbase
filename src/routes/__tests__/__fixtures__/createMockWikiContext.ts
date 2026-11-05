@@ -166,6 +166,10 @@ export function createMockWikiContext(
     holdsPermission: vi.fn(async function (this: { hasPermission: (a: string) => Promise<boolean> }, action: string) {
       return this.hasPermission(action);
     }),
+    // #2255: the step-up fallback of a page-scoped check, asked about the same page.
+    holdsPermissionOn: vi.fn(async function (this: { hasPermission: (a: string) => Promise<boolean> }, action: string) {
+      return this.hasPermission(action);
+    }),
     canAccess: vi.fn().mockResolvedValue(true),
     getPrincipals: vi.fn(() => {
       const username = userContext?.username;

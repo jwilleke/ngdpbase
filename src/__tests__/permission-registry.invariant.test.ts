@@ -60,7 +60,9 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   /\bmayInFolder\(\s*\w+,\s*'([^']+)'/g,
   // #1979, #2120: ImportManager's receivers and export sources ask the PDP
   // through their own `permits` (page-create, asset-upload, page-export).
-  /\bthis\.permits\(\s*\w+,\s*'([^']+)'/g
+  /\bthis\.permits\(\s*\w+,\s*'([^']+)'/g,
+  // #2255: a page-scoped check names the permission first (page-public, the page writes).
+  /\bhasPermissionOn\(\s*'([^']+)'/g
 ];
 
 /**
@@ -76,6 +78,9 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
  * ignore it.
  */
 const ACTION_MAP_BLOCK = /const actionMap[^=]*=\s*\{([\s\S]*?)\};/;
+
+/** #2255: the pushed-pages twin of each page write (`src/utils/permissionCatalog.ts`). */
+const PUSHED_PAGE_WRITES_BLOCK = /const PUSHED_PAGE_WRITES[^=]*=\s*\{([\s\S]*?)\};/;
 
 /**
  * #1431: the page-action map moved to `src/security/pageActions.ts` and became
@@ -144,7 +149,10 @@ function enforcedNames(): Set<string> {
       while ((m = pattern.exec(text)) !== null) found.add(m[1]);
     }
 
-    for (const block of [ACTION_MAP_BLOCK.exec(text), PAGE_ACTION_ALIASES_BLOCK.exec(text)]) {
+    // #2255: a page write is asked as page-<verb> and granted as page-<verb>
+    // or pushed-pages-<verb>, so the twins are enforced wherever the page
+    // writes are.
+    for (const block of [ACTION_MAP_BLOCK.exec(text), PAGE_ACTION_ALIASES_BLOCK.exec(text), PUSHED_PAGE_WRITES_BLOCK.exec(text)]) {
       if (!block) continue;
       for (const v of block[1].matchAll(/:\s*'([^']+)'/g)) found.add(v[1]);
     }

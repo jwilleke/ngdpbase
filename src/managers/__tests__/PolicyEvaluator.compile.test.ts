@@ -2,8 +2,8 @@
  * #1219 — `compile` is `evaluateAccess` with the subject and action fixed:
  * policies that cannot match this subject or action are dropped once, and
  * the returned predicate matches resources only, with no log line per call.
- * It must agree with `evaluateAccess` on every page, including the first-
- * match-wins ordering.
+ * It must agree with `evaluateAccess` on every page, including how a deny
+ * and an allow combine (deny overrides allow since #2255).
  */
 vi.unmock('../PolicyEvaluator');
 import PolicyEvaluator from '../PolicyEvaluator';
@@ -55,23 +55,23 @@ describe('PolicyEvaluator.compile (#1219)', () => {
       const decide = pe.compile(userContext, action);
       for (const pageName of pages) {
         const one = await pe.evaluateAccess({ pageName, action, userContext });
-        const many = decide(pageName);
-        expect({ hasDecision: many.hasDecision, allowed: many.allowed, policyName: many.policyName })
-          .toEqual({ hasDecision: one.hasDecision, allowed: one.allowed, policyName: one.policyName });
+        const many = await decide(pageName);
+        expect({ hasDecision: many.hasDecision, allowed: many.allowed, policyIds: many.policyIds })
+          .toEqual({ hasDecision: one.hasDecision, allowed: one.allowed, policyIds: one.policyIds });
       }
     }
   });
 
-  test('first match wins in both shapes: the deny ahead of the allow decides Admin*', () => {
+  test('a deny overrides an allow in both shapes: the deny decides Admin* (#2255)', async () => {
     const pe = makeEvaluator();
     const decide = pe.compile({ username: 'e', roles: ['editor', 'All'] }, 'page-read');
-    expect(decide('AdminDashboard')).toMatchObject({ hasDecision: true, allowed: false, policyName: 'deny-admin-pages' });
-    expect(decide('Notes')).toMatchObject({ hasDecision: true, allowed: true, policyName: 'everyone-reads' });
+    expect(await decide('AdminDashboard')).toMatchObject({ hasDecision: true, allowed: false, policyIds: ['deny-admin-pages'] });
+    expect(await decide('Notes')).toMatchObject({ hasDecision: true, allowed: true, policyIds: ['everyone-reads'] });
   });
 
-  test('no ConfigurationManager: no decision, like evaluateAccess', () => {
+  test('no ConfigurationManager: no decision, like evaluateAccess', async () => {
     const pe = new PolicyEvaluator({ getManager: () => null });
-    expect(pe.compile({ roles: ['All'] }, 'page-read')('X')).toMatchObject({ hasDecision: false, allowed: false });
+    expect(await pe.compile({ roles: ['All'] }, 'page-read')('X')).toMatchObject({ hasDecision: false, allowed: false });
   });
 });
 

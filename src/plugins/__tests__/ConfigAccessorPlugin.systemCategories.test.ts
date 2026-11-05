@@ -31,12 +31,14 @@ describe('systemCategories table: stored= (#1503)', () => {
     expect(html).toMatch(/By Stored: .*public: 4/);
     expect(html).toMatch(/By Stored: .*vault: 2/);
     expect(html).toMatch(/By Stored: .*none: 1/);
+    expect(html).toMatch(/By Stored: .*shared-folder: 1/);
   });
 
   test.each([
     ['none', ['developer']],
     ['public', ['addon', 'documentation', 'system', 'user-profile']],
     ['vault', ['capture', 'general']],
+    ['shared-folder', ['shared']],
     ['VAULT', ['capture', 'general']]
   ])('stored=%s lists %j', async (stored, expected) => {
     const html = await ConfigAccessorPlugin.execute(context(categories), { type: 'systemCategories', stored });

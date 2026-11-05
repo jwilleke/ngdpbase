@@ -147,6 +147,88 @@
       "actions": [
         "page-public"
       ]
+    },
+    {
+      "id": "journal-self-managed-author-write",
+      "name": "Authors change their own journal pages",
+      "description": "Edit, delete and rename a journal page you are the author of (#2255)",
+      "priority": 80,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "editor"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ],
+      "condition": {
+        "attribute": "resource:owner",
+        "equals": "subject:id"
+      }
+    },
+    {
+      "id": "journal-self-managed-author-edit",
+      "name": "Authors edit their own journal pages",
+      "description": "Edit a journal page you are the author of (#2255)",
+      "priority": 70,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        }
+      ],
+      "actions": [
+        "page-edit"
+      ],
+      "condition": {
+        "attribute": "resource:owner",
+        "equals": "subject:id"
+      }
+    },
+    {
+      "id": "journal-self-managed-admin",
+      "name": "Administrators change journal pages",
+      "description": "The administrator exception for journal pages: edit, delete and rename whoever the author is (#2255)",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ]
     }
   ]
 }

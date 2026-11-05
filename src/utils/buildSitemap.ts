@@ -91,7 +91,7 @@ export interface SitemapIndexEntry {
   lastModified?: string;
   /** `'private'` marks a private page; other values are ordinary storage. */
   location?: string;
-  /** Denormalised at write time from frontmatter `audience` / `access.view`. */
+  /** Denormalised at write time from frontmatter `audience`. */
   audienceRoles?: string[];
   isPrivate?: boolean;
 }
@@ -100,7 +100,7 @@ export interface SitemapIndexEntry {
 export interface RestrictableMetadata {
   private?: unknown;
   audience?: unknown;
-  access?: unknown;
+  'system-category'?: unknown;
 }
 
 /**
@@ -114,8 +114,8 @@ export interface RestrictableMetadata {
  * The field's own docs say it plainly: "the page-frontmatter is the source of
  * truth". So the index is used to enumerate, and this decides.
  *
- * Deliberately blunt: ANY audience or access rule excludes the page, whatever
- * it says. An anonymous visitor is in no audience and holds no role, so a rule
+ * Deliberately blunt: ANY audience excludes the page, whatever it says.
+ * A page's `access` field is not read since #2255. An anonymous visitor is in no audience and holds no role, so a rule
  * that happens to be permissive is not worth parsing for — omitting a public
  * page costs a missed crawl, listing a restricted one leaks its existence.
  */
@@ -129,7 +129,24 @@ export function isRestrictedByMetadata(meta: RestrictableMetadata | null | undef
         : typeof v === 'object' && v !== null ? Object.keys(v).length > 0
           : false;
 
-  return nonEmpty(meta.audience) || nonEmpty(meta.access);
+  return nonEmpty(meta.audience);
+}
+
+/**
+ * Whether a page is a pushed page (#2255): one in a system-category that
+ * policy reserves to `pushed-pages-edit` (system, documentation and addon as
+ * shipped), the pages ngdpbase and its add-ons push to a site. They are left
+ * out of the sitemap, as they were while every one of them carried the
+ * `access:` stamp that excluded it. Which of them should be indexed is #2260.
+ *
+ * @param meta - The page's frontmatter
+ * @param pushedCategories - The categories policy reserves (`PolicyDecisionPoint.categoriesGranting`)
+ */
+export function isPushedPage(meta: RestrictableMetadata | null | undefined, pushedCategories: readonly string[]): boolean {
+  const category = meta?.['system-category'];
+  if (typeof category !== 'string' || !category.trim()) return false;
+  const c = category.trim().toLowerCase();
+  return pushedCategories.some((p) => p.toLowerCase() === c);
 }
 
 /**

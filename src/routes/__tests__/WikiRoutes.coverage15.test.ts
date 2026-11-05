@@ -988,20 +988,18 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(mockPageManager.savePage).not.toHaveBeenCalled();
     });
 
-    test('#1504: moving a page out of its vault asks page-public for its system-category, and goes ahead when policy allows', async () => {
+    test('#1504: moving a page out of its vault asks page-public about the page, and goes ahead when policy allows', async () => {
       const res = await request(app)
         .post('/vaults/adminuser/default/TestPage/save')
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'false' });
       expect(res.status).toBe(302);
-      expect(mockPolicyDecisionPoint.decide).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ action: 'page-public', attributes: { 'system-category': 'general' } })
-      );
+      // #2255: asked about the page (hasPermissionOn); the PDP reads its system-category from the PIP.
+      expect(mockPolicyDecisionPoint.permits).toHaveBeenCalledWith(expect.anything(), 'page-public');
     });
 
     test('#1504: moving a page out of its vault is refused when policy does not allow page-public for its system-category', async () => {
-      mockPolicyDecisionPoint.decide.mockResolvedValue({ permit: false, applicable: true, reason: 'test' });
+      mockPolicyDecisionPoint.permits.mockImplementation(async (_s: unknown, action: string) => action !== 'page-public');
       const res = await request(app)
         .post('/vaults/adminuser/default/TestPage/save')
         .set('x-csrf-token', 'test-csrf-token')

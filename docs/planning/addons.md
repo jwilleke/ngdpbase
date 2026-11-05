@@ -97,6 +97,12 @@ Embedding markup in the body would also have broken the #920 reseed comparison: 
 
 ### Use frontmatter `access` — no evaluator change needed
 
+> __Superseded by [#2255](https://github.com/jwilleke/ngdpbase/issues/2255) (2026-11-05).__ The
+> `access` stamp and every reader of it are removed. An add-on's pages are authored by
+> `addon:<slug>`, and who may change them is their system-category's policy
+> (`pushed-pages-edit` on `system`, `documentation` and `addon`). The text below is kept as the
+> record of the earlier decision.
+
 `src/types/Page.ts:100` already defines per-action principal lists:
 
 ```ts

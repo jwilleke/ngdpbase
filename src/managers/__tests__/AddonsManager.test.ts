@@ -1097,7 +1097,7 @@ describe('AddonsManager', () => {
       // #1037: seeded content is shipped by the addon, not user input, so it
       // must bypass save-time validation — startup cannot depend on a content
       // rule aimed at page authors.
-      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:seed-addon' });
     });
 
     test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
@@ -1114,9 +1114,7 @@ describe('AddonsManager', () => {
       const pageManager = makePageManager(
         [],                                            // no slug match
         {},
-        // `access` present so the #971 backfill is a no-op — this case is about
-        // UUID collision detection, not access stamping.
-        { [uuid]: { title: 'About', uuid, metadata: { slug: 'about', access: { edit: ['admin'] } } } } // UUID already in use
+        { [uuid]: { title: 'About', uuid, metadata: { slug: 'about' } } } // UUID already in use
       );
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
@@ -1134,12 +1132,7 @@ describe('AddonsManager', () => {
       await makeAddonWithSeedPages('reseed-addon', [
         { filename: 'about.md', uuid: RESEED_UUID, slug: 'about', title: 'About', body: sourceBody }
       ]);
-      // `access` present so the #971 backfill is a no-op here: these cases are
-      // about RESEED behaviour (does addon content overwrite the page?), and a
-      // metadata-only backfill save would muddy the "savePage never called"
-      // assertions without testing anything they exist to test. Backfill has
-      // its own coverage in AddonsManager-AccessStamp.test.ts.
-      const metadata = { slug: 'about', uuid: RESEED_UUID, access: { edit: ['admin'] } };
+      const metadata = { slug: 'about', uuid: RESEED_UUID };
       if (storedHashBody !== null) metadata['addon-source-hash'] = bodyHash(storedHashBody);
       const existingPage = { title: 'About', uuid: RESEED_UUID, content: pageBody, metadata };
       const configManager = makeConfigManager({ enabledAddons: ['reseed-addon'], pageReseed });
@@ -1156,7 +1149,7 @@ describe('AddonsManager', () => {
         expect.stringContaining('New content v2'),
         expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') }),
         expect.objectContaining({ origin: 'boot' }),
-        { skipValidation: true }
+        { skipValidation: true, shippedAuthor: 'addon:reseed-addon' }
       );
     });
 
@@ -1180,7 +1173,7 @@ describe('AddonsManager', () => {
         expect.stringContaining('New content v2'),
         expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') }),
         expect.objectContaining({ origin: 'boot' }),
-        { skipValidation: true }
+        { skipValidation: true, shippedAuthor: 'addon:reseed-addon' }
       );
     });
 
@@ -1217,8 +1210,8 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(2);
-      expect(pageManager.savePage).toHaveBeenCalledWith('Page 1', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
-      expect(pageManager.savePage).toHaveBeenCalledWith('Page 2', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 1', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:multi-seed-addon' });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 2', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:multi-seed-addon' });
     });
 
     test('sets addon field on seeded pages', async () => {
@@ -1274,9 +1267,7 @@ describe('AddonsManager', () => {
 
       const configManager = makeConfigManager({ enabledAddons: ['idem-addon'] });
       // The site already holds this page (same uuid), edited by a user.
-      // `access` present so the #971 backfill is a no-op — this asserts that
-      // CONTENT is never overwritten, which the backfill does not do.
-      const edited = { content: 'existing content', metadata: { title: 'User Edited', slug: 'idem-home', 'system-category': 'addon', access: { edit: ['admin'] } } };
+      const edited = { content: 'existing content', metadata: { title: 'User Edited', slug: 'idem-home', 'system-category': 'addon' } };
       const pageManager = makePageManager(['idem-home'], { 'idem-home': edited }, { [uuid]: edited });
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
@@ -1317,9 +1308,7 @@ describe('AddonsManager', () => {
       ]);
 
       const configManager = makeConfigManager({ enabledAddons: ['reindex-addon'] });
-      // `access` present so the #971 backfill is a no-op — this is about search
-      // re-indexing, not access stamping.
-      const existingPage = { content: 'existing content', metadata: { title: 'Test', 'system-category': 'addon', access: { edit: ['admin'] } } };
+      const existingPage = { content: 'existing content', metadata: { title: 'Test', 'system-category': 'addon' } };
       const pageManager = makePageManager(['reindex-page'], { 'reindex-page': existingPage }, { [uuid]: existingPage });
       const searchManager = makeSearchManager();
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager, searchManager));

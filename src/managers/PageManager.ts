@@ -6,7 +6,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
-import { defaultShippedPageAccess, evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -63,10 +63,10 @@ import { findPlaintextInSealedVaults, findUnsealedVaults } from '../utils/privat
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
-import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { mayActInPrivateContainer, mayEnterVaultAtDoor } from '../utils/privateStoreAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
-import { IDENTITY_ID_PREFIX } from '../utils/username.js';
+import { IDENTITY_ID_PREFIX, addonAuthor, isAddonAuthor, sameUsername } from '../utils/username.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -166,6 +166,14 @@ export interface PageSaveOptions {
    * that page instead.
    */
   createdFor?: string;
+  /**
+   * The author of a page an add-on pushes (#2255): `addon:<slug>`. A new copy
+   * is authored by the add-on, and a copy seeded before #2255, authored by
+   * the system principal, is re-stamped with it. Taken only from the system
+   * principal's job and only in the `addon:<slug>` form; ignored otherwise.
+   * Any other author is kept, as on every edit.
+   */
+  shippedAuthor?: string;
   /**
    * Request-level detail the manager cannot see, for the audit record (#1121).
    *
@@ -302,7 +310,7 @@ export class PageAudienceRefusedError extends Error {
 }
 
 /** The permission a page write is decided on (#1815). */
-export type PageWriteAction = 'page-create' | 'page-edit' | 'page-delete';
+export type PageWriteAction = 'page-create' | 'page-edit' | 'page-delete' | 'page-rename';
 
 /**
  * A write refused by the write door (#1815): the context may not create,
@@ -315,7 +323,7 @@ export class PageWriteRefusedError extends Error {
   readonly action: PageWriteAction;
 
   constructor(pageName: string, action: PageWriteAction) {
-    const verb = action === 'page-create' ? 'create' : action === 'page-edit' ? 'edit' : 'delete';
+    const verb = action.slice('page-'.length);
     super(`You may not ${verb} this page`);
     this.name = 'PageWriteRefusedError';
     this.pageName = pageName;
@@ -410,6 +418,10 @@ const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
 /** The refusal when someone without `admin-system` names a system-category (#1503, operator 2026-10-29). */
 export const SYSTEM_CATEGORY_ADMIN_ONLY = "Only administrators can set a page's system category";
+
+/** The system-category of a page in a shared folder (#2255): given when it is created there, by nothing else. */
+export const SHARED_CATEGORY = 'shared';
+export const SHARED_CATEGORY_REFUSAL = 'A page is in the shared system category only when it is created in a shared folder';
 
 /** What a write may give a page as its system-category ({@link PageManager.systemCategoryForWrite}). */
 export type SystemCategoryForWrite =
@@ -521,6 +533,11 @@ export interface ShippedPageSource {
   exclude?: (data: Record<string, unknown>) => string | undefined;
   /** Metadata the source adds to every page it writes (e.g. `addon`, a default category) */
   extraMetadata?: (data: Record<string, unknown>) => Record<string, unknown>;
+  /**
+   * The author of the pages it writes, for an add-on's (#2255): `addon:<slug>`
+   * (`SavePageOptions.shippedAuthor`). Absent, they are the system principal's.
+   */
+  author?: string;
   /**
    * Called by the boot seed for a source page this site already holds, with the
    * live page and the parsed source — the addon seed's metadata tidy-ups and
@@ -1093,9 +1110,7 @@ class PageManager extends BaseManager implements CatalogSource {
           }
         }
         const liveTitle = typeof live?.metadata?.title === 'string' ? live.metadata.title : '';
-        // #1411: an operator's access on the live page survives a Sync.
-        const liveAccess = (live?.metadata as Record<string, unknown> | undefined)?.access;
-        await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx, liveAccess !== undefined ? { access: liveAccess } : undefined);
+        await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx);
         // #1412: asking for the page plainly overrides an earlier "not here".
         record.allow(source.id, uuid);
         record.add(source.id, uuid);
@@ -1204,14 +1219,7 @@ class PageManager extends BaseManager implements CatalogSource {
         return typeof category === 'string' && neverStored.has(category)
           ? `system-category '${category}' is never stored on the site`
           : undefined;
-      },
-      // #1411: administrator-edit only, the rule addon pages follow (#971). A
-      // source that declares its own `access` keeps it.
-      extraMetadata: (data) => {
-        const access = data['access'] ?? defaultShippedPageAccess(data['system-category']);
-        return access ? { access } : {};
-      },
-      onPresent: (live, parsed, ctx) => this.backfillShippedPageAccess(live, parsed, ctx)
+      }
     };
   }
 
@@ -1267,8 +1275,10 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * Which system-category a write by `ctx` gives a page (#1503, operator
-   * 2026-10-29): only an administrator (`admin-system`, asked of the PDP) sets
-   * or changes one. Anyone else's new page takes `fallback` (else the default
+   * 2026-10-29): only a holder of `page-categorize` (#2255; shipped to admin)
+   * sets or changes one. `shared` is set by nobody: a page created in a shared
+   * folder gets it at the write door (`savePage`), and a request naming it for
+   * any other page is refused, `page-categorize` or not. Anyone else's new page takes `fallback` (else the default
    * system-category) and an existing page keeps its own (`current`); a request
    * naming any other is refused, never rewritten. An administrator's request
    * comes back as given (`undefined` when it names none), for the caller's own
@@ -1283,7 +1293,11 @@ class PageManager extends BaseManager implements CatalogSource {
   async systemCategoryForWrite(ctx: ActorContext, requested: unknown, current?: string | null, fallback?: string): Promise<SystemCategoryForWrite> {
     if (!ctx) throw new Error('PageManager.systemCategoryForWrite requires an ActorContext');
     const asked = typeof requested === 'string' && requested.trim() ? requested.trim() : undefined;
-    if (await this.adminSystem(ctx, 'permits')) return { ok: true, category: asked, admin: true };
+    if (asked?.toLowerCase() === SHARED_CATEGORY && String(current ?? fallback ?? '').toLowerCase() !== SHARED_CATEGORY) {
+      return { ok: false, reason: SHARED_CATEGORY_REFUSAL };
+    }
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (pdp && await pdp.permits(ctx, 'page-categorize')) return { ok: true, category: asked, admin: true };
     const fixed = (typeof current === 'string' && current.trim())
       || fallback
       || this.engine.getManager<ValidationManager>('ValidationManager')?.getDefaultSystemCategory?.()
@@ -1304,31 +1318,9 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * One-time access backfill for a live required page (#1411): a page with no
-   * `access` gets the default for its category, as a metadata-only save that
-   * keeps `lastModified`. A page that has any `access` — an operator's choice —
-   * is left alone.
-   */
-  private async backfillShippedPageAccess(
-    live: WikiPage,
-    parsed: { data: Record<string, unknown>; content: string },
-    ctx: ActorContext
-  ): Promise<void> {
-    const meta = (live.metadata ?? {}) as Record<string, unknown>;
-    if (meta.access !== undefined) return;
-    const access = parsed.data['access'] ?? defaultShippedPageAccess(meta['system-category'] ?? parsed.data['system-category']);
-    if (!access) return;
-    const title = typeof meta.title === 'string' && meta.title ? meta.title : String(parsed.data.title);
-    try {
-      await this.savePage(title, live.content ?? '', { ...meta, access } as Partial<PageFrontmatter>, ctx, { skipValidation: true, preserveLastModified: true });
-    } catch (err) {
-      logger.warn(`[PageManager] Could not set access on required page '${title}':`, err);
-    }
-  }
-
-  /**
    * The source for the pages an addon ships (#1406). Pages it writes carry
-   * `addon` and, when the source names none, the `addon` category (#931).
+   * `addon`, the add-on as author (`addon:<slug>`, #2255) and, when the source
+   * names none, the `addon` category (#931).
    *
    * @param addonName - The addon's name
    * @param pagesDir - The addon's `pages/` folder
@@ -1342,7 +1334,8 @@ class PageManager extends BaseManager implements CatalogSource {
       extraMetadata: (data) => ({
         addon: addonName,
         'system-category': data['system-category'] ?? 'addon'
-      })
+      }),
+      author: addonAuthor(addonName)
     };
   }
 
@@ -1428,7 +1421,7 @@ class PageManager extends BaseManager implements CatalogSource {
     delete metadata['user-modified'];
 
     // #1462: the save indexes the page, as every save does.
-    await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true });
+    await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true, ...(source.author ? { shippedAuthor: source.author } : {}) });
   }
 
   /**
@@ -1693,25 +1686,15 @@ class PageManager extends BaseManager implements CatalogSource {
     metadata: unknown
   ): void {
     const meta = metadata as {
-      audience?: unknown; access?: unknown; private?: unknown;
+      audience?: unknown; private?: unknown;
     } | null | undefined;
     if (!meta) return;
 
-    // Only what the removed gate ever honoured counts (#1275). The gate
-    // evaluated `view`, and the frontmatter resolver reads `access[action]`, so
-    // `audience` (view shorthand), a non-empty `access.view`, and `private`
-    // are the restrictions that used to blank the chrome. An `access` object
-    // carrying only `edit` never affected rendering and is still enforced on
-    // edits of the page itself — and every addon system page carries exactly
-    // that stamp (#971), so warning on it fired on every render of every
-    // deployment whose chrome comes from an addon, for a restriction that did
-    // not exist.
+    // Only what the removed gate ever honoured and the evaluator still reads
+    // counts (#1275): `audience` and `private`. A page's `access` field is not
+    // read at all (#2255), so it is not reported here either.
     const restrictions: string[] = [];
     if (Array.isArray(meta.audience) && meta.audience.length > 0) restrictions.push('audience');
-    const view = meta.access && typeof meta.access === 'object'
-      ? (meta.access as Record<string, unknown>)['view']
-      : undefined;
-    if (Array.isArray(view) && view.length > 0) restrictions.push('access.view');
     if (meta.private === true) restrictions.push('private:true');
     if (restrictions.length === 0) return;
 
@@ -2037,7 +2020,7 @@ class PageManager extends BaseManager implements CatalogSource {
     ctx: ActorContext,
     identifier: string,
     metadata: PageFrontmatter | null | undefined,
-    verb: 'edit' | 'delete',
+    verb: 'edit' | 'delete' | 'rename',
     record = true
   ): Promise<boolean> {
     const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
@@ -2056,19 +2039,17 @@ class PageManager extends BaseManager implements CatalogSource {
    * May `ctx` create a page at `destination` (#1815)? In a vault, the
    * container rule and then `page-create` with the vault (`permitsInVault`;
    * a shared folder by its own permission). A public page, `page-create`
-   * asked of the PDP about the page, with its system-category for the
-   * policies on it (#1504). The same rule as `hasPermissionOn`.
+   * asked of the PDP about the page (#2255: the PDP reads its attributes from
+   * the PIP). The same rule as `hasPermissionOn`.
    */
-  private async mayCreateAt(ctx: ActorContext, destination: string, metadata: Partial<PageFrontmatter>): Promise<boolean> {
+  private async mayCreateAt(ctx: ActorContext, destination: string): Promise<boolean> {
     const pdp = this.engine.getManager<VaultDecider>('PolicyDecisionPoint');
     if (!pdp) return false;
     const vault = parsePrivatePageName(destination);
     if (vault) return permitsInVault(pdp, ctx, 'page-create', { owner: vault.owner, vault: vault.store, resource: destination });
-    const { permit } = await pdp.decide(ctx, {
-      action: 'page-create',
-      resource: { type: 'page', id: destination },
-      attributes: { 'system-category': (metadata as Record<string, unknown>)['system-category'] }
-    });
+    // #2255: the PDP reads what it needs about the page from the PIP; a page
+    // not made yet has no attributes, and `page-create` is granted on `page: *`.
+    const { permit } = await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: destination }, attributes: {} });
     return permit;
   }
 
@@ -2131,8 +2112,17 @@ class PageManager extends BaseManager implements CatalogSource {
       logger.warn(`[PageManager] edit of ${nameForLog(existing.name, existing.metadata)} refused: ${actorOf(ctx).user} may not edit it (#1815)`);
       throw new PageWriteRefusedError(existing.name, 'page-edit');
     }
+    // #2255 (decision 6): a save that changes the title is a rename too, and
+    // asks page-rename on the page, whichever route it came by.
+    const before = typeof existing?.metadata?.title === 'string' ? existing.metadata.title : null;
+    const after = typeof (metadata as Record<string, unknown>).title === 'string' ? (metadata as Record<string, unknown>).title as string : null;
+    if (existing && before !== null && after !== null && before !== after
+      && !(await this.mayChangeExisting(ctx, existing.name, existing.metadata, 'rename'))) {
+      logger.warn(`[PageManager] rename of ${nameForLog(existing.name, existing.metadata)} refused: ${actorOf(ctx).user} may not rename it (#2255)`);
+      throw new PageWriteRefusedError(existing.name, 'page-rename');
+    }
     const moving = existing !== null && PageManager.containerOf(existing.name) !== PageManager.containerOf(destination);
-    if ((!existing || moving) && !(await this.mayCreateAt(ctx, destination, metadata))) {
+    if ((!existing || moving) && !(await this.mayCreateAt(ctx, destination))) {
       logger.warn(`[PageManager] create of ${nameForLog(destination, metadata)} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
       await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there');
       throw new PageWriteRefusedError(destination, 'page-create');
@@ -2163,6 +2153,14 @@ class PageManager extends BaseManager implements CatalogSource {
       },
       (err) => logger.warn(`[PageManager] audit of a refused create failed: ${err instanceof Error ? err.message : String(err)}`)
     );
+  }
+
+  /** `shippedAuthor` when the system principal's job gives it in the `addon:<slug>` form (#2255); otherwise nothing. */
+  private shippedAuthorFor(ctx: ActorContext, shippedAuthor: string | undefined): string | undefined {
+    if (shippedAuthor === undefined) return undefined;
+    if (isAddonAuthor(shippedAuthor) && this.isSystemJob(ctx)) return shippedAuthor;
+    logger.warn(`[PageManager] shippedAuthor '${shippedAuthor}' ignored: only the system principal's job gives an add-on page its author (#2255)`);
+    return undefined;
   }
 
   /** Is `ctx` a job of the system principal (#631) — the only context that may make a page for someone else (#1815)? */
@@ -2342,19 +2340,12 @@ class PageManager extends BaseManager implements CatalogSource {
     return identities.storedReferenceOf(systemContext(this.engine, 'store a page author or editor as identity @id (#2097)'), name);
   }
 
-  /** `audience` and each `access[action]` of a save, user entries as {@link referenceTo} stores them (#2097). */
+  /** The `audience` of a save, user entries as {@link referenceTo} stores them (#2097). */
   private async convertAccessListsForSave(metadata: Partial<PageFrontmatter>): Promise<void> {
     const md = metadata as Record<string, unknown>;
-    const hasAudience = Array.isArray(md.audience) && md.audience.length > 0;
-    const access = md.access && typeof md.access === 'object' && !Array.isArray(md.access) ? md.access as Record<string, unknown> : null;
-    if (!hasAudience && !access) return;
+    if (!Array.isArray(md.audience) || md.audience.length === 0) return;
     const convertEntry = await this.accessListConverter((name) => this.referenceTo(name));
-    const convertList = async (list: unknown): Promise<unknown> =>
-      Array.isArray(list) ? Promise.all((list as unknown[]).map((entry): unknown => (typeof entry === 'string' ? convertEntry(entry) : entry))) : list;
-    if (hasAudience) md.audience = await convertList(md.audience);
-    if (access) {
-      md.access = Object.fromEntries(await Promise.all(Object.entries(access).map(async ([action, list]) => [action, await convertList(list)] as const)));
-    }
+    md.audience = await Promise.all((md.audience as unknown[]).map((entry): unknown => (typeof entry === 'string' ? convertEntry(entry) : entry)));
   }
 
   /**
@@ -2374,6 +2365,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param actingUser - Who is writing this revision, from the context (#1164)
    * @param viaToken - The agent token this write came through (#946), if any
    * @param keepEditor - Leave the stored `editor` alone (`preserveEditor`, #1457)
+   * @param shippedAuthor - An add-on page's author (`shippedAuthor`, #2255), already checked
    * @returns The frontmatter to hand the provider
    */
   private async normalizeSaveMetadata(
@@ -2382,7 +2374,8 @@ class PageManager extends BaseManager implements CatalogSource {
     existingPage: WikiPage | null,
     actingUser: string,
     viaToken: { name: string } | undefined,
-    keepEditor = false
+    keepEditor = false,
+    shippedAuthor?: string
   ): Promise<Partial<PageFrontmatter>> {
     // author — immutable original creator, set on ALL pages, never changes.
     // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
@@ -2413,11 +2406,15 @@ class PageManager extends BaseManager implements CatalogSource {
     // #1354: the author is the page's creator. An edit keeps it, and never
     // fills it in — the person editing a page that has no author did not create
     // it. Only a new page takes its author from the save.
+    // #2255: an add-on's page is the add-on's. Its new copy takes the add-on
+    // as author, and a copy the system principal authored before is re-stamped.
+    const restamp = shippedAuthor !== undefined && typeof originalAuthor === 'string'
+      && sameUsername(originalAuthor, systemPrincipalOf(this.engine));
     const rawMetadata: Partial<PageFrontmatter> = {
       ...metadata,
       author: existingPage
-        ? originalAuthor
-        : (actingUser || metadata.author || defaultAuthor)
+        ? (restamp ? shippedAuthor : originalAuthor)
+        : (shippedAuthor || actingUser || metadata.author || defaultAuthor)
     };
     if (!rawMetadata.author) delete rawMetadata.author;
 
@@ -2449,9 +2446,9 @@ class PageManager extends BaseManager implements CatalogSource {
     // start-up conversion orphans an unknown name.
     if (rawMetadata.author) rawMetadata.author = await this.referenceTo(rawMetadata.author);
     if (rawMetadata.editor) rawMetadata.editor = await this.referenceTo(rawMetadata.editor);
-    // The user entries of `audience` and `access[action]` are stored the same
-    // way: an access-control list that names a user names their @id, so a
-    // later account with the same username is never let in (#2097).
+    // The user entries of `audience` are stored the same way: an audience
+    // that names a user names their @id, so a later account with the same
+    // username is never let in (#2097).
     await this.convertAccessListsForSave(rawMetadata);
 
     // Strip caller-supplied provenance before stamping our own.
@@ -2767,7 +2764,19 @@ class PageManager extends BaseManager implements CatalogSource {
     // exactly as typed, with none of the stamping or normalisation below.
     const enrichedMetadata = options.rawFrontmatter
       ? metadata
-      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, creator, viaToken, options.preserveEditor);
+      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, creator, viaToken, options.preserveEditor, this.shippedAuthorFor(ctx, options.shippedAuthor));
+
+    // #2255: a page created in a shared folder is `shared`, and nothing else
+    // gives a page that category: it is where the page is, not a choice.
+    const savedCategory = (enrichedMetadata as Record<string, unknown>)['system-category'];
+    const named = parsePrivatePageName(pageName);
+    if (!existingPage && named && isSharedFolderOwner(named.owner)) {
+      (enrichedMetadata as Record<string, unknown>)['system-category'] = SHARED_CATEGORY;
+    } else if (typeof savedCategory === 'string' && savedCategory.toLowerCase() === SHARED_CATEGORY
+      && String(existingPage?.metadata?.['system-category'] ?? '').toLowerCase() !== SHARED_CATEGORY) {
+      logger.warn(`[PageManager] save of ${nameForLog(pageName, enrichedMetadata)} refused: only a page created in a shared folder is '${SHARED_CATEGORY}' (#2255)`);
+      throw new Error(SHARED_CATEGORY_REFUSAL);
+    }
 
     // #1815: the write door. Decided on the page as it is now and on where
     // this save puts it — read from the metadata the provider will place it
@@ -2988,7 +2997,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (trashed === undefined) {
       throw new Error('PageManager: this page provider cannot say where a trashed page goes back, so it is not restored');
     }
-    if (trashed && !(await this.mayCreateAt(ctx, trashed.name, trashed.metadata))) {
+    if (trashed && !(await this.mayCreateAt(ctx, trashed.name))) {
       logger.warn(`[PageManager] restore of ${nameForLog(trashed.name, { ...trashed.metadata, uuid })} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
       await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there');
       throw new PageWriteRefusedError(trashed.name, 'page-create');
@@ -4072,7 +4081,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private warnUnmatchableAddonAudience(pageName: string, metadata: Partial<PageFrontmatter> | null | undefined): string[] {
     const slugs = this.unmatchableAddonAudience(metadata);
     for (const slug of slugs) {
-      logger.warn(`[PageManager] Page ${nameForLog(pageName, metadata)} names 'addon:${slug}' in its audience or access, which matches nobody: ` +
+      logger.warn(`[PageManager] Page ${nameForLog(pageName, metadata)} names 'addon:${slug}' in its audience, which matches nobody: ` +
         `no per-person add-on '${slug}' is loaded on this site (#1964)`);
     }
     return slugs;
@@ -4080,7 +4089,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * At startup, once add-ons have loaded (#1964): warn about every page whose
-   * `audience` or `access` names an add-on that can match nobody — unknown,
+   * `audience` names an add-on that can match nobody — unknown,
    * not per-person, or not loaded.
    *
    * @returns Each page and slug warned about
@@ -4263,8 +4272,10 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * `pages/vaults/{user}/` and every store below it is owned by that user.
    * Nobody else acts in it unless the owner delegated (a share the owner
-   * issued, once the store's Share switch exists — #1388). No role reaches in,
-   * admin included (security-posture P2: no `hasRole` as an allow).
+   * issued, once the store's Share switch exists — #1388). No role reaches in
+   * (security-posture P2: no `hasRole` as an allow); at a door, a holder of
+   * `admin-system` may enter an unencrypted vault when
+   * `ngdpbase.vaults.admin-access` is on (#2255), recorded each time.
    *
    * The owner is the one in the page's name (#1456), not frontmatter
    * `author`, so reassigning `author` cannot move ownership (#711).
@@ -4275,7 +4286,7 @@ class PageManager extends BaseManager implements CatalogSource {
    *   - `false` — a private name, and the caller is neither — whether or not
    *               the page exists
    */
-  async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
+  async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string, adminEntry: 'record' | 'quiet' | 'none' = 'none'): Promise<boolean | null> {
     // #1456: a private page is named by its path, and the path names its
     // owner — decided from the name alone, so a refusal never depends on
     // whether the page exists. A plain name is a public page.
@@ -4287,7 +4298,12 @@ class PageManager extends BaseManager implements CatalogSource {
     if (isSharedFolderOwner(name.owner)) {
       return permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject, 'page-read', name.store);
     }
-    return mayActInPrivateContainer(subject, name.owner, { vault: name.store });
+    // #2255: at a door (`adminEntry`), an administrator may enter a vault
+    // that is not encrypted when ngdpbase.vaults.admin-access is on; a list
+    // passes 'none' and keeps the owner's rule alone.
+    if (adminEntry === 'none') return mayActInPrivateContainer(subject, name.owner, { vault: name.store });
+    return mayEnterVaultAtDoor(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject,
+      { owner: name.owner, vault: name.store, resource: pageNameOrUuid }, adminEntry === 'record');
   }
 
   /**

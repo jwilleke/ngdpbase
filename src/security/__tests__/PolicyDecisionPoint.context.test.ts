@@ -82,7 +82,7 @@ describe('the PDP takes a JobContext and converts it itself (#2022)', () => {
     const job = jobContextFromRequest({ username: 'jim' });
     const allow = await bothWays(pdp, job, { action: 'page-read' });
     expect(allow.given).toEqual(allow.converted);
-    expect(allow.given.decide).toEqual({ permit: true, applicable: true, reason: 'table_allow' });
+    expect(allow.given.decide).toEqual({ permit: true, applicable: true, reason: 'table_allow', policyIds: [] });
     expect(resolveSubjectNow).toHaveBeenCalledWith('jim');
     const deny = await bothWays(pdp, job, { action: 'admin-system' });
     expect(deny.given).toEqual(deny.converted);
@@ -113,7 +113,7 @@ describe('the PDP takes a JobContext and converts it itself (#2022)', () => {
     expect(inScope.given.permits).toBe(true);
     const outOfScope = await bothWays(pdp, job, { action: 'page-edit' });
     expect(outOfScope.given).toEqual(outOfScope.converted);
-    expect(outOfScope.given.decide).toEqual({ permit: false, applicable: true, reason: 'token_scope_deny' });
+    expect(outOfScope.given.decide).toEqual({ permit: false, applicable: true, reason: 'token_scope_deny', policyIds: [] });
   });
 
   test('a job under a share keeps the share ceiling', async () => {
@@ -121,7 +121,7 @@ describe('the PDP takes a JobContext and converts it itself (#2022)', () => {
     const job = jobContextFromRequest({ username: 'Anonymous', viaShare: share(['page-read']) });
     const delegated = await bothWays(pdp, job, { action: 'page-read' });
     expect(delegated.given).toEqual(delegated.converted);
-    expect(delegated.given.decide).toEqual({ permit: true, applicable: true, reason: 'share' });
+    expect(delegated.given.decide).toEqual({ permit: true, applicable: true, reason: 'share', policyIds: [] });
     const notDelegated = await bothWays(pdp, job, { action: 'page-edit' });
     expect(notDelegated.given).toEqual(notDelegated.converted);
     expect(notDelegated.given.decide.reason).toBe('share_action_deny');
@@ -144,7 +144,7 @@ describe('the PDP takes a JobContext and converts it itself (#2022)', () => {
 describe('a request\'s subject still passes through unchanged (#2022)', () => {
   test('its carried roles decide, nothing is resolved, and step-up reads its sign-in', async () => {
     const { pdp, resolveSubjectNow, stepUpNeeded } = makeEngine();
-    expect(await pdp.decide(requestSubject(), { action: 'page-read' })).toEqual({ permit: true, applicable: true, reason: 'table_allow' });
+    expect(await pdp.decide(requestSubject(), { action: 'page-read' })).toEqual({ permit: true, applicable: true, reason: 'table_allow', policyIds: [] });
     expect(await pdp.permits(requestSubject({ signIn: { at: 'stale' } } as Partial<PermissionSubject>), 'account-security')).toBe(false);
     expect(await pdp.holds(requestSubject({ signIn: { at: 'stale' } } as Partial<PermissionSubject>), 'account-security')).toBe(true);
     expect(resolveSubjectNow).not.toHaveBeenCalled();

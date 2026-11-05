@@ -99,7 +99,7 @@ interface PageIndexEntry {
   /** Username that originally created the page (from metadata.author) */
   author?: string;
   hasVersions: boolean;
-  /** Roles/usernames from front matter audience or access.view — for index-level access checks */
+  /** Roles/usernames from front matter audience — for index-level access checks */
   audienceRoles?: string[];
   /** True when the page's frontmatter has `private: true` (canonical since #639 Slice E / v3.7.0) */
   isPrivate?: boolean;
@@ -1444,7 +1444,7 @@ class VersioningFileProvider extends FileSystemProvider {
             : typeof v === 'number' ? String(v)
               : undefined;
       const currentVersion = await this.getCurrentVersion(uuid, location);
-      const audience = (md.access as Record<string, unknown> | undefined)?.['view'] ?? md.audience;
+      const audience = md.audience;
       const entry: PageIndexEntry = {
         ...prev,
         title: info.title,
@@ -2334,7 +2334,7 @@ class VersioningFileProvider extends FileSystemProvider {
       }
     } else {
       // Update page index — always store filename so fast init uses the correct path
-      const ar = (metadata.access as Record<string, unknown> | undefined)?.['view'] ?? metadata.audience;
+      const ar = metadata.audience;
       await this.updatePageInIndex(uuid, {
         title: (metadata.title as string) || privateName?.title || pageName,
         uuid: uuid,
@@ -2350,7 +2350,7 @@ class VersioningFileProvider extends FileSystemProvider {
         editor: metadata.editor || metadata.author || 'unknown',
         author: metadata.author ? String(metadata.author) : undefined,
         hasVersions: true,
-        audienceRoles: Array.isArray(ar) && ar.length ? (ar as string[]) : undefined,
+        audienceRoles: Array.isArray(ar) && ar.length ? ar : undefined,
         isPrivate: false,
         addon: typeof md.addon === 'string' ? md.addon : undefined
       });

@@ -1,12 +1,15 @@
 import BaseManager from './BaseManager.js';
 // #1431: the one declaration of a policy. A local copy with `effect` required
 // sat here and drifted from it.
-import type { Policy, PolicySubject, PolicyResource } from '../types/Policy.js';
+import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
+import { isAttributeName } from '../types/Policy.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import { pageWritePoliciesToReview } from '../utils/pageWritePolicies.js';
+import { categoryStored } from './ValidationManager.js';
 
 /**
  * User context for policy evaluation
@@ -27,13 +30,78 @@ interface UserContext {
 export type ResourceAttributes = Record<string, unknown>;
 
 /**
+ * Reads one attribute a condition names, `subject:id` or `resource:owner`
+ * (#2255). Supplied by the PDP from the PIP; `undefined` or `null` is a
+ * missing attribute. Asked only when a matching policy has a condition.
+ */
+export type AttributeReader = (name: string) => unknown;
+
+/**
  * Access evaluation context
  */
 interface AccessContext {
   pageName: string;
+  /**
+   * The action asked. `actions` widens it: a policy granting any of them
+   * matches (#2255: a page write is `page-edit` or `pushed-pages-edit`).
+   */
   action: string;
+  actions?: readonly string[];
   userContext?: UserContext;
   attributes?: ResourceAttributes;
+  /** For a policy's `condition`; without one every condition is unknown. */
+  readAttribute?: AttributeReader;
+}
+
+/** The subject attributes a condition may read before subject attributes are declared in config (#2261). */
+const BUILT_IN_SUBJECT_ATTRIBUTES: Readonly<Record<string, string>> = { id: 'identity' };
+
+/**
+ * What is wrong with a policy's condition, one sentence each (#2255); empty
+ * when it is fine. `equals` is the only operator. Each side that names an
+ * attribute must be one that exists: `subject:id`, or a `resource:<name>`
+ * declared on the `page` resource type. Two attributes must have the same
+ * type. A condition with a problem never holds: an allow with it does not
+ * apply and a deny with it does, as for a missing attribute.
+ */
+export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>): string[] {
+  if (condition === undefined) return [];
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) return ['condition must be an object: { "attribute": …, "equals": … }'];
+  const keys = Object.keys(condition);
+  const unknown = keys.filter((k) => k !== 'attribute' && k !== 'equals');
+  if (unknown.length > 0) return [`condition uses ${unknown.map((k) => `'${k}'`).join(', ')}; only "attribute" and "equals" are supported (more operators are #2261)`];
+  const c = condition as { attribute?: unknown; equals?: unknown };
+  if (!isAttributeName(c.attribute)) return [`condition "attribute" must name an attribute (subject:, resource: or environment:), not ${JSON.stringify(c.attribute)}`];
+  if (!('equals' in c)) return ['condition has no "equals"'];
+  const typeOf = (name: string): string | null => {
+    const [category, ...rest] = name.split(':');
+    const attr = rest.join(':');
+    if (category === 'subject') return Object.hasOwn(BUILT_IN_SUBJECT_ATTRIBUTES, attr) ? BUILT_IN_SUBJECT_ATTRIBUTES[attr] : null;
+    if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
+    return null;
+  };
+  const problems: string[] = [];
+  const sides = [c.attribute, ...(isAttributeName(c.equals) ? [c.equals] : [])];
+  for (const side of sides) {
+    if (typeOf(side) === null) problems.push(`condition reads '${side}', which is not declared (resource attributes are declared on the page resource type in ngdpbase.access.resource-types; subject:id is the only subject attribute so far)`);
+  }
+  if (problems.length === 0 && sides.length === 2 && typeOf(sides[0]) !== typeOf(sides[1])) {
+    problems.push(`condition compares '${sides[0]}' (${typeOf(sides[0])}) with '${sides[1]}' (${typeOf(sides[1])}); both sides must have the same type`);
+  }
+  return problems;
+}
+
+/**
+ * Does the condition hold (#2255)? `true` or `false`, or `undefined` when an
+ * attribute it reads is missing: unknown, which the caller fails closed on.
+ */
+export async function conditionHolds(condition: PolicyCondition | undefined, read: AttributeReader | undefined): Promise<boolean | undefined> {
+  if (!condition) return true;
+  const value = async (side: unknown): Promise<unknown> => (isAttributeName(side) ? (read ? await read(side) : undefined) : side);
+  const left = await value(condition.attribute);
+  const right = await value(condition.equals);
+  if (left === undefined || left === null || right === undefined || right === null) return undefined;
+  return left === right;
 }
 
 /**
@@ -109,15 +177,20 @@ interface EvaluationResult {
   allowed: boolean;
   reason: string;
   policyName: string | null;
+  /** The deciding policies' ids (#2255): the denies that matched, else the allows. Empty when none matched. */
+  policyIds: string[];
 }
+
+const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null, policyIds: [] };
 
 /**
  * PolicyEvaluator - Evaluates access policies against a given context.
  *
  * PolicyEvaluator mimics how JSPWiki uses Java's built-in security framework
  * (java.security) to load and evaluate security policies from a policy file.
- * It evaluates policies in priority order and returns the first matching policy's
- * decision.
+ * Among the policies that match, a deny overrides any allow whatever its
+ * priority, and no match is a deny (#2255). Each decision names the policies
+ * that decided it.
  *
  * @class PolicyEvaluator
  * @extends BaseManager
@@ -188,26 +261,53 @@ class PolicyEvaluator extends BaseManager {
         if (!(type in declared)) logger.warn(`[POLICY] resource type '${type}' is not declared in ${RESOURCE_TYPES_KEY}; a policy naming it never matches`);
       }
     }
+    this.reportPageWritePolicies();
     logger.info('📋 PolicyEvaluator initialized');
   }
 
   /**
-   * Evaluates all relevant policies to make an access decision.
+   * Say at boot what an administrator should look at in the policies after
+   * #2255, one warning each, and one needs-attention entry for them all:
+   * stored policies the upgrade rewrote, policies it left that now decide
+   * differently (a deny) or reach pushed pages, conditions that never hold,
+   * and stored categories no policy lets anyone change (their pages are
+   * changed by nobody, admin included).
+   */
+  private reportPageWritePolicies(): void {
+    const config = this.configManager;
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!config || !pdp) return;
+    const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
+    lines.push(...pageWritePoliciesToReview(this.policies()));
+    for (const { id, problems } of this.conditionProblemsInForce()) {
+      lines.push(...problems.map((p) => `'${id}': ${p}; the policy never applies as an allow`));
+    }
+    const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
+    const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
+    // An installed add-on's category is declared even while the add-on is off
+    // (#1559), and its policies are not; that is the add-on being off, not a gap.
+    const addonOff = (owner: unknown): boolean => typeof owner === 'string' && owner !== 'admin'
+      && config.getProperty(`ngdpbase.addons.${owner}.enabled`, false) !== true;
+    const unwritable = Object.entries(catalogue ?? {})
+      .filter(([, entry]) => categoryStored(entry) !== 'none' && !addonOff(entry?.owner))
+      .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
+      .filter((category) => !writable.has(category));
+    if (unwritable.length > 0) {
+      lines.push(`no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`);
+    }
+    if (lines.length === 0) return;
+    for (const line of lines) logger.warn(`[POLICY] ${line}`);
+    this.markNeedsAttention(`Access policies need review after the #2255 upgrade (${lines.length}): ${lines.join('; ')}. See the start-up log and docs/access-policies.md.`, 'ngdpbase.access.policies');
+  }
+
+  /**
+   * Evaluates all relevant policies to make an access decision (#2255).
    *
-   * Policies are evaluated in priority order (highest first). The first matching
-   * policy determines the access decision. If no policies match, access is denied.
-   *
-   * @async
-   * @param {AccessContext} context - The context of the access request
-   * @returns {Promise<EvaluationResult>} Evaluation result with decision and reason
-   *
-   * @example
-   * const result = await evaluator.evaluateAccess({
-   *   pageName: 'AdminPanel',
-   *   action: 'page:edit',
-   *   userContext: { username: 'user', roles: ['editor'] }
-   * });
-   * console.log('Allowed:', result.allowed, 'Reason:', result.reason);
+   * Deny overrides allow: if any matching deny applies, the answer is deny,
+   * whatever the priorities; otherwise any matching allow permits; otherwise
+   * no policy decided. A policy with a `condition` applies only when it holds;
+   * an unknown condition (a missing attribute) keeps an allow from applying
+   * and lets a deny apply, so a missing attribute fails closed.
    */
   async evaluateAccess(context: AccessContext): Promise<EvaluationResult> {
     const { pageName, action, userContext } = context || {};
@@ -215,19 +315,37 @@ class PolicyEvaluator extends BaseManager {
     logger.info(`[POLICY] Evaluate page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
 
     if (!this.configManager) {
-      return { hasDecision: false, allowed: false, reason: 'PolicyEvaluator not initialized', policyName: null };
+      return { ...NO_POLICY, reason: 'PolicyEvaluator not initialized' };
     }
 
-    const policies = this.policies();
-    for (const policy of policies) {
-      const match = this.matches(policy, context);
-      logger.info(`[POLICY] Check policy=${policy.id} effect=${policy.effect} match=${match}`);
-      if (match) {
-        return { hasDecision: true, allowed: policy.effect === 'allow', reason: `Policy match: ${policy.id}`, policyName: policy.id };
+    const matching = this.policies().filter((policy) => this.matches(policy, context));
+    const result = await this.combine(matching, context.readAttribute);
+    logger.info(`[POLICY] ${result.hasDecision ? `${result.allowed ? 'allow' : 'deny'} by ${result.policyIds.join(',')}` : 'No matching policy'}`);
+    return result;
+  }
+
+  /**
+   * Deny overrides allow, over policies that already match subject, resource
+   * and action (#2255). Every matching deny whose condition is true or
+   * unknown decides; failing that, every allow whose condition is true.
+   */
+  private async combine(matching: readonly Policy[], read: AttributeReader | undefined): Promise<EvaluationResult> {
+    const denies: string[] = [];
+    const allows: string[] = [];
+    const pageAttributes = matching.some((p) => p.condition !== undefined) ? this.declaredPageAttributes() : {};
+    for (const policy of matching) {
+      const holds = conditionProblems(policy.condition, pageAttributes).length > 0
+        ? undefined
+        : await conditionHolds(policy.condition, read);
+      if (policy.effect === 'deny') {
+        if (holds !== false) denies.push(policy.id);
+      } else if (holds === true) {
+        allows.push(policy.id);
       }
     }
-    logger.info('[POLICY] No matching policy');
-    return { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null };
+    if (denies.length > 0) return { hasDecision: true, allowed: false, reason: `Policy deny: ${denies.join(',')}`, policyName: denies[0], policyIds: denies };
+    if (allows.length > 0) return { hasDecision: true, allowed: true, reason: `Policy allow: ${allows.join(',')}`, policyName: allows[0], policyIds: allows };
+    return NO_POLICY;
   }
 
   /**
@@ -249,7 +367,7 @@ class PolicyEvaluator extends BaseManager {
   matches(policy: Policy, context: AccessContext): boolean {
     const subjectMatch = this.matchesSubject(policy.subjects, context.userContext);
     const resourceMatch = this.matchesResource(policy.resources, context.pageName, context.attributes);
-    const actionMatch = this.matchesAction(policy.actions, context.action);
+    const actionMatch = (context.actions ?? [context.action]).some((a) => this.matchesAction(policy.actions, a));
 
     return subjectMatch && resourceMatch && actionMatch;
   }
@@ -322,26 +440,40 @@ class PolicyEvaluator extends BaseManager {
    * `filter` shape, compiled once and applied to many resources.
    *
    * Policies that cannot match this subject or this action are dropped here,
-   * once; the predicate matches resources only, in the same order as
-   * `evaluateAccess` so first-match-wins gives the same answer. No log line
-   * per call: a listing asks this ~18k times, and the per-policy INFO line
-   * `evaluateAccess` writes is right for one decision and wrong for a filter.
+   * once; the predicate matches resources only and combines them exactly as
+   * `evaluateAccess` does (deny overrides allow, #2255), so a list and a
+   * single decision agree. No log line per call: a listing asks this ~18k
+   * times, and the INFO line `evaluateAccess` writes is right for one
+   * decision and wrong for a filter.
    */
-  compile(userContext: UserContext | undefined, action: string): (pageName: string, attributes?: ResourceAttributes) => EvaluationResult {
+  compile(
+    userContext: UserContext | undefined,
+    action: string,
+    actions: readonly string[] = [action]
+  ): (pageName: string, attributes?: ResourceAttributes, readAttribute?: AttributeReader) => Promise<EvaluationResult> {
     if (!this.configManager) {
-      return () => ({ hasDecision: false, allowed: false, reason: 'PolicyEvaluator not initialized', policyName: null });
+      return () => Promise.resolve({ ...NO_POLICY, reason: 'PolicyEvaluator not initialized' });
     }
     const applicable = this.policies()
-      .filter((policy) => this.matchesSubject(policy.subjects, userContext) && this.matchesAction(policy.actions, action));
+      .filter((policy) => this.matchesSubject(policy.subjects, userContext) && actions.some((a) => this.matchesAction(policy.actions, a)));
     logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
-    return (pageName: string, attributes?: ResourceAttributes): EvaluationResult => {
-      for (const policy of applicable) {
-        if (this.matchesResource(policy.resources, pageName, attributes)) {
-          return { hasDecision: true, allowed: policy.effect === 'allow', reason: `Policy match: ${policy.id}`, policyName: policy.id };
-        }
-      }
-      return { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null };
-    };
+    return (pageName, attributes, readAttribute) =>
+      this.combine(applicable.filter((policy) => this.matchesResource(policy.resources, pageName, attributes)), readAttribute);
+  }
+
+  /** The attributes declared on the `page` resource type (#2255), for checking a condition. */
+  declaredPageAttributes(): Record<string, { type?: string }> {
+    const types = this.configManager?.getProperty(RESOURCE_TYPES_KEY, null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
+    const attributes = types?.page?.attributes;
+    return attributes && typeof attributes === 'object' ? attributes : {};
+  }
+
+  /** Each policy in force whose condition has a problem, with the problems (#2255): for the boot warning. */
+  conditionProblemsInForce(): Array<{ id: string; problems: string[] }> {
+    const declared = this.declaredPageAttributes();
+    return this.policies()
+      .map((p) => ({ id: p.id, problems: conditionProblems(p.condition, declared) }))
+      .filter((r) => r.problems.length > 0);
   }
 
   matchesResource(resources: PolicyResource[] | undefined, pageName: string, attributes?: ResourceAttributes): boolean {

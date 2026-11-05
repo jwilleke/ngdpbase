@@ -119,14 +119,6 @@ export interface PageFrontmatter {
    */
   private?: boolean;
 
-  /** Per-action principal lists — overrides audience for the named action */
-  access?: {
-    view?: string[];
-    edit?: string[];
-    delete?: string[];
-    [key: string]: string[] | undefined;
-  };
-
   /** Additional custom metadata */
   [key: string]: unknown;
 }

@@ -27,12 +27,12 @@ vi.unmock('../PageManager');
 
 import fs from 'fs';
 import path from 'path';
-import PageManager, { PageWriteRefusedError } from '../PageManager';
+import PageManager, { PageWriteRefusedError, SHARED_CATEGORY_REFUSAL, SYSTEM_CATEGORY_ADMIN_ONLY } from '../PageManager';
 import PolicyEvaluator from '../PolicyEvaluator';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { jobContextForOwner, jobContextFromSystem } from '../../context/JobContext';
-import { formatPrivatePageName } from '../../utils/privateStorePath';
+import { formatPrivatePageName, SHARED_FOLDER_OWNER } from '../../utils/privateStorePath';
 import type { ProxyClaim } from '../UserManager';
 
 const shipped = JSON.parse(
@@ -130,6 +130,7 @@ function makeSite({ systemRoles = ['admin'] }: { systemRoles?: string[] } = {}) 
     trash,
     restored,
     put,
+    config,
     ready: () => evaluator.initialize()
   };
 }
@@ -378,5 +379,62 @@ describe('PageManager write door (#1815)', () => {
       expect(await site.pageManager.restoreDeletedPage('u-old', request('bob'))).toMatchObject({ ok: true, title: 'Old Page' });
       expect(site.restored).toEqual(['u-old']);
     });
+  });
+});
+
+describe('PageManager write door by system-category (#2255)', () => {
+  let site: ReturnType<typeof makeSite>;
+  const SHARED_NOTES = formatPrivatePageName(SHARED_FOLDER_OWNER, 'default', 'Notes');
+
+  beforeEach(async () => {
+    site = makeSite();
+    await site.ready();
+    site.put('Main', { author: 'ed' });
+    site.put('Install Guide', { author: 'system', 'system-category': 'documentation' });
+  });
+
+  test('an editor edits a general page but not a documentation page; an admin edits both', async () => {
+    await site.pageManager.savePage('Main', 'new', {}, request('ed'), OPTS);
+    await expect(site.pageManager.savePage('Install Guide', 'new', {}, request('ed') as never, OPTS))
+      .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-edit' });
+    await site.pageManager.savePage('Install Guide', 'new', {}, request('bob'), OPTS);
+    expect(site.saved.map((s) => s.name)).toEqual(['Main', 'Install Guide']);
+  });
+
+  test('a refused edit is recorded with the policies that decided it', async () => {
+    site.config['ngdpbase.access.policies'] = [
+      ...(site.config['ngdpbase.access.policies'] as unknown[]),
+      { id: 'freeze-main', effect: 'deny', priority: 1, subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'page', pattern: 'Main' }], actions: ['page-edit'] }
+    ];
+    await expect(site.pageManager.savePage('Main', 'new', {}, request('ed') as never, OPTS)).rejects.toBeInstanceOf(PageWriteRefusedError);
+    expect(site.audit.filter((e) => e.eventType === 'authorization-deny')).toEqual([
+      expect.objectContaining({ user: 'ed', action: 'edit', resource: 'Main', metadata: expect.objectContaining({ policyIds: ['freeze-main'] }) })
+    ]);
+  });
+
+  test('a save that changes the title is a rename too: a contributor may edit but not rename', async () => {
+    await site.pageManager.savePage('Main', 'new', { title: 'Main' }, request('cora'), OPTS);
+    await expect(site.pageManager.savePage('Main', 'new', { title: 'Main Two' }, request('cora') as never, OPTS))
+      .rejects.toMatchObject({ action: 'page-rename' });
+    await site.pageManager.savePage('Main', 'new', { title: 'Main Two' }, request('ed'), OPTS);
+  });
+
+  test('a page created in a shared folder gets the shared category, whatever the save asks', async () => {
+    await site.pageManager.savePage(SHARED_NOTES, 'new', { 'system-category': 'general' }, request('rita'), OPTS);
+    expect(site.saved.at(-1)?.metadata['system-category']).toBe('shared');
+  });
+
+  test('no other save may give a page the shared category, an admin\'s included', async () => {
+    await expect(site.pageManager.savePage('Main', 'new', { 'system-category': 'shared' }, request('bob') as never, OPTS))
+      .rejects.toThrow(SHARED_CATEGORY_REFUSAL);
+    await expect(site.pageManager.savePage('Fresh', 'new', { 'system-category': 'shared' }, request('bob') as never, OPTS))
+      .rejects.toThrow(SHARED_CATEGORY_REFUSAL);
+  });
+
+  test('setting a system-category needs page-categorize (admin); nobody may ask for shared', async () => {
+    expect(await site.pageManager.systemCategoryForWrite(request('ed') as never, 'documentation', 'general')).toEqual({ ok: false, reason: SYSTEM_CATEGORY_ADMIN_ONLY });
+    expect(await site.pageManager.systemCategoryForWrite(request('ed') as never, 'general', 'general')).toMatchObject({ ok: true, category: 'general' });
+    expect(await site.pageManager.systemCategoryForWrite(request('bob') as never, 'documentation', 'general')).toMatchObject({ ok: true, category: 'documentation', admin: true });
+    expect(await site.pageManager.systemCategoryForWrite(request('bob') as never, 'shared', 'general')).toEqual({ ok: false, reason: SHARED_CATEGORY_REFUSAL });
   });
 });

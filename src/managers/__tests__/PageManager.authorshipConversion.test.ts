@@ -373,7 +373,7 @@ describe('#2097 page authorship conversion', () => {
   });
 
   // Review fix 5. Sabotage: not passing convertPrincipal to the provider turned this red.
-  test('access lists: user entries convert, roles and add-on entries are kept, a deleted user is orphaned', async () => {
+  test('audience: user entries convert, roles and add-on entries are kept, a deleted user is orphaned; access is not read (#2255)', async () => {
     const file = pageFile(site, uuids.a);
     const parsed = matter(await fs.readFile(file, 'utf8'));
     await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, audience: ['jim', 'editor', 'bob', 'addon:phr'], access: { edit: ['bob', 'admin'] } }));
@@ -381,7 +381,16 @@ describe('#2097 page authorship conversion', () => {
     await restarted.convertAuthorship(SYS);
     const data = matter(await fs.readFile(file, 'utf8')).data;
     expect(data.audience).toEqual([JIM, 'editor', 'orphan:bob', 'addon:phr']);
-    expect(data.access).toEqual({ edit: ['orphan:bob', 'admin'] });
+    expect(data.access).toEqual({ edit: ['bob', 'admin'] });
+  });
+
+  test('an add-on author, addon:<slug>, is kept as it is, never orphaned (#2255)', async () => {
+    const file = pageFile(site, uuids.a);
+    const parsed = matter(await fs.readFile(file, 'utf8'));
+    await fs.writeFile(file, matter.stringify(parsed.content, { ...parsed.data, author: 'addon:calendar' }));
+    const restarted = await site.restart();
+    await restarted.convertAuthorship(SYS);
+    expect(matter(await fs.readFile(file, 'utf8')).data.author).toBe('addon:calendar');
   });
 
   // Sabotage: removing the catalogue guard in accessListConverter turned this red (every role orphaned).

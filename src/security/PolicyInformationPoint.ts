@@ -21,7 +21,8 @@ import { ANONYMOUS_SUBJECT, SYSTEM_PRINCIPAL_KEY, SYSTEM_ROLES_KEY } from '../ma
 import type UserManager from '../managers/UserManager.js';
 import type RoleManager from '../managers/RoleManager.js';
 import type IdentityManager from '../managers/IdentityManager.js';
-import { isReservedUsername } from '../utils/username.js';
+import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { pageWriteAlternatives } from '../utils/permissionCatalog.js';
 import type { Request } from 'express';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -68,7 +69,7 @@ function systemPrincipalRefusal(why: string): string {
 
 /** The one thing the page tiers need from PageManager (#1431 7c). */
 interface PrivateAccessCheck {
-  checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
+  checkPrivatePageAccess?: (ctx: WikiContext, name: string, adminEntry?: 'record' | 'quiet' | 'none') => Promise<boolean | null>;
 }
 
 /**
@@ -132,7 +133,36 @@ interface AccessDecisionLog {
   action?: string;
   allowed?: boolean;
   reason?: string;
+  /** The policies that decided (#2255), recorded on a denial. */
+  policyIds?: string[];
   context?: Record<string, unknown>;
+}
+
+/**
+ * What the policies may read about a page (#2255), resolved by the PIP from
+ * the page itself. `attributes` holds what a resource type matches on
+ * (`system-category`), read eagerly; `read` answers a condition's
+ * `resource:<name>` for an attribute declared on the `page` resource type,
+ * lazily, so a lookup (the owner's account) is made only when a policy needs
+ * it. `undefined` is a missing attribute.
+ */
+export interface PageAttributes {
+  attributes: Record<string, unknown>;
+  read(name: string): unknown;
+}
+
+/** One attribute declared on a resource type (#2255): its type and the PIP source it is read from. */
+interface DeclaredAttribute {
+  type?: string;
+  from?: string;
+}
+
+/** The legacy `access:` stamp install wrote on shipped pages (#971, #1411); left on disk silently (#2255). */
+function isLegacyAccessStamp(access: unknown): boolean {
+  if (!access || typeof access !== 'object' || Array.isArray(access)) return false;
+  const entries = Object.entries(access as Record<string, unknown>);
+  return entries.length === 1 && entries[0][0] === 'edit'
+    && Array.isArray(entries[0][1]) && entries[0][1].length === 1 && entries[0][1][0] === 'admin';
 }
 
 /**
@@ -582,7 +612,7 @@ class PolicyInformationPoint extends BaseManager {
    * walk, with no audit record and its trace at debug, because it only decides
    * whether to show a control.
    */
-  private async _runEvaluator(wikiContext: WikiContext, action: string, record = true): Promise<{ allowed: boolean; reason: string }> {
+  private async _runEvaluator(wikiContext: WikiContext, action: string, record = true): Promise<{ allowed: boolean; reason: string; policyIds?: string[] }> {
     if (!wikiContext) {
       throw new Error('PolicyInformationPoint.checkPagePermissionWithContext requires a WikiContext');
     }
@@ -609,9 +639,8 @@ class PolicyInformationPoint extends BaseManager {
     // a share only what its issuer delegated and still holds, and a proxy
     // only what its grant carries and its actor holds (#1762) — hard
     // ceilings, checked BEFORE every other tier. They must precede tier 1,
-    // because frontmatter `access` overrides global policies and returns
-    // directly; a ceiling living at tier 2 would never run on a page whose
-    // frontmatter grants the action.
+    // because a frontmatter audience decides a view and returns directly; a
+    // ceiling living at tier 2 would never run on a page it admits.
     //
     // These were implemented here AND in UserManager.hasPermission, the same
     // protection twice with nothing keeping the two in step. Now there is one
@@ -684,6 +713,7 @@ class PolicyInformationPoint extends BaseManager {
       viaShare,
       privateCtx: wikiContext,
       pageManager: this.engine.getManager<PrivateAccessCheck>('PageManager'),
+      adminEntry: record ? 'record' : 'quiet',
       // Asked only when a rule has an administrator exception and the subject
       // needs it: an author-lock they did not write, an audience that leaves
       // them out (#1964).
@@ -694,14 +724,17 @@ class PolicyInformationPoint extends BaseManager {
         // An evaluator fault denies; it never opens the page. There is no tier
         // below this one to fall through to (Tier 3 was removed in #1431 7a).
         try {
+          // #2255: the PDP asks this PIP for the page's own attributes
+          // (system-category, owner); the metadata already loaded is handed
+          // along so the page is not read twice.
           const d = await this.policyDecisionPoint().decide(userContext, {
             action: policyAction,
             resource: { type: 'page', id: pageName },
-            // #1504: for policies on the page's system-category.
-            attributes: { 'system-category': wikiContext.pageMetadata?.['system-category'], ...extra }
+            attributes: { ...extra },
+            pageMetadata: wikiContext.pageMetadata
           });
-          trace(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
-          return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy' };
+          trace(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason} policies=${d.policyIds.join(',')}`);
+          return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy', policyIds: d.policyIds };
         } catch (e) {
           logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
           return null;
@@ -718,6 +751,7 @@ class PolicyInformationPoint extends BaseManager {
       action,
       allowed: decision.allowed,
       reason: decision.reason,
+      policyIds: decision.policyIds,
       context: decision.reason === 'share_grant' && viaShare
         ? { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
         : { wikiContext: wikiContext.context }
@@ -750,10 +784,12 @@ class PolicyInformationPoint extends BaseManager {
    *   Tier 1 is skipped for a vault page: `audience` grants nothing there.
    * - __Tier 0.5, author-lock__, `edit` only. It only denies: an author, or a
    *   subject holding `admin-system` (#1431 7b), falls through to Tier 1+.
-   * - __Tier 1, frontmatter__ `access[action]` / `audience`. Page-level, and
-   *   overrides global policy when it states a rule (#1054). An `audience`
-   *   covers every action, and a subject holding `admin-system` is its one
-   *   exception; `access` has none (#1964).
+   * - __Tier 1, frontmatter__ `audience`. Page-level, and decides a view
+   *   when it states a rule (#1054). An `audience` covers every action, and a
+   *   subject holding `admin-system` is its one exception (#1964). `access`
+   *   is no longer read (#2255).
+   * - A page in a shared folder is decided by the folder's permission, and a
+   *   change also by the `shared` category's policy and author-lock (#2255).
    * - __Tier 2.__ For a share visitor the share IS the policy (#1222); for
    *   anyone else, global policy.
    * - __Default deny.__ Nothing below Tier 2 grants — JSPWiki's page-body ACL
@@ -769,6 +805,11 @@ class PolicyInformationPoint extends BaseManager {
     privateCtx: WikiContext;
     pageManager: PrivateAccessCheck | null | undefined;
     /**
+     * Whether an administrator may enter an unencrypted vault here (#2255):
+     * a door ('record'), an affordance ('quiet'), or a list ('none').
+     */
+    adminEntry?: 'record' | 'quiet' | 'none';
+    /**
      * Does the subject hold `admin-system`? The exception to an author-lock
      * (#1431 7b) and to an audience (#1964); asked only when one applies.
      */
@@ -777,8 +818,8 @@ class PolicyInformationPoint extends BaseManager {
     enabledAddons: () => Promise<readonly string[]>;
     /** The subject as Tier 1 matches it ({@link matchableNow}); asked only for a page with frontmatter rules. */
     matchable: () => Promise<UserContext | null | undefined>;
-    policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
-  }): Promise<{ allowed: boolean; reason: string }> {
+    policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string; policyIds?: string[] } | null>;
+  }): Promise<{ allowed: boolean; reason: string; policyIds?: string[] }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
 
     // #1677: a page whose feature is off is not there to view — for anyone, so
@@ -791,12 +832,22 @@ class PolicyInformationPoint extends BaseManager {
     // A shared folder's page (#2125) is decided by permission alone:
     // `shared-folder-read` to read it, `shared-folder-file` to change it, on
     // the folder. No vault policy, no audience, no site-wide page grant.
+    // #2255: a change also needs the `shared` category's own permission,
+    // and an author-lock narrows it to the author.
     const named = parsePrivatePageName(pageName);
     if (named && isSharedFolderOwner(named.owner)) {
       const subject = (args.privateCtx?.userContext ?? userContext) as ActorContext | null | undefined;
-      const allowed = Boolean(subject)
+      const inFolder = Boolean(subject)
         && await permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject as ActorContext, action, named.store);
-      return { allowed, reason: allowed ? 'shared_folder_allow' : 'shared_folder_deny' };
+      if (!inFolder) return { allowed: false, reason: 'shared_folder_deny' };
+      if (pageWriteAlternatives(permissionForPageAction(action)).length === 1) return { allowed: true, reason: 'shared_folder_allow' };
+      if (action.toLowerCase() === 'edit' && metadata?.['author-lock'] === true
+        && !(await this.isPageAuthor(metadata.author, userContext?.username)) && !(await args.holdsAdminSystem())) {
+        return { allowed: false, reason: 'author_lock_deny' };
+      }
+      const policy = await args.policy({});
+      if (policy?.applicable) return { allowed: policy.permit, reason: policy.permit ? 'shared_folder_allow' : policy.reason, policyIds: policy.policyIds };
+      return { allowed: false, reason: 'default_deny' };
     }
 
     // Tier 0: private. Refuses only (#1539); an admitted subject goes on to
@@ -804,7 +855,7 @@ class PolicyInformationPoint extends BaseManager {
     // names no vault, so its page is taken to be in the default one.
     let vault: string | undefined;
     if (args.pageManager?.checkPrivatePageAccess) {
-      const decision = await args.pageManager.checkPrivatePageAccess(args.privateCtx, pageName);
+      const decision = await args.pageManager.checkPrivatePageAccess(args.privateCtx, pageName, args.adminEntry ?? 'none');
       if (decision === false) return { allowed: false, reason: 'private_deny' };
       if (decision === true) vault = parsePrivatePageName(pageName)?.store;
     } else if (metadata?.private === true) {
@@ -823,7 +874,7 @@ class PolicyInformationPoint extends BaseManager {
       }
     }
 
-    // Tier 1: frontmatter audience / access, when it states a rule. Not on a
+    // Tier 1: frontmatter audience, when it states a rule. Not on a
     // vault page — its container already decided who may be here.
     if (metadata && vault === undefined) {
       // #1964: an `addon:<slug>` entry needs the subject's enabled add-ons —
@@ -837,7 +888,7 @@ class PolicyInformationPoint extends BaseManager {
     // Tier 2: the share is the policy for a share visitor; global policy otherwise.
     if (viaShare) return { allowed: true, reason: 'share_grant' };
     const policy = await args.policy(vault === undefined ? {} : { vault });
-    if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason };
+    if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason, policyIds: policy.policyIds };
 
     return { allowed: false, reason: 'default_deny' };
   }
@@ -1061,6 +1112,8 @@ class PolicyInformationPoint extends BaseManager {
       if (ceiling && !ceiling.permit) return [];
     }
 
+    const proxiedWrite = Boolean(userContext?.viaProxy) && pageWriteAlternatives(policyAction).length > 1;
+
     const pageManager = this.engine.getManager<PrivateAccessCheck>('PageManager');
     // Tier 0 reads only the subject: owner or delegate, never a role.
     const privateCtx = { userContext: userContext ?? null } as unknown as WikiContext;
@@ -1070,7 +1123,8 @@ class PolicyInformationPoint extends BaseManager {
     const subjectNow = (userContext as { resolveRolesNow?: boolean } | null | undefined)?.resolveRolesNow
       ? await this.resolveSubjectNow(userContext?.username, jobOf(userContext))
       : userContext;
-    const decidePolicy = this.policyEvaluator?.compile(subjectNow ?? undefined, policyAction);
+    const decidePolicy = this.policyEvaluator?.compile(subjectNow ?? undefined, policyAction, pageWriteAlternatives(policyAction));
+    const subjectForConditions = { username: subjectNow?.username ?? '', isAuthenticated: subjectNow?.isAuthenticated === true };
     const matchable = await this.matchableNow(userContext);
     // #1964: the subject's add-ons, resolved once for the whole batch and only
     // if some page names one.
@@ -1085,6 +1139,12 @@ class PolicyInformationPoint extends BaseManager {
       // The share's cover is per PAGE, so it is checked here rather than in
       // the subject's ceiling above.
       if (viaShare && !shareCoversPage(viaShare.resources, title, metadata)) continue;
+      // #2255: a proxy's actor must hold a page write on THIS page's category,
+      // which the subject-wide ceiling above could only ask of some category.
+      if (proxiedWrite) {
+        const onPage = await this.policyDecisionPoint().ceiling(userContext, { action: policyAction, resource: { type: 'page', id: title }, pageMetadata: metadata });
+        if (onPage && !onPage.permit) continue;
+      }
 
       // The same tiers the decider walks, in the same order (#1431 7c).
       const decision = await this.walkPageTiers({
@@ -1099,8 +1159,11 @@ class PolicyInformationPoint extends BaseManager {
         enabledAddons: enabledAddonsOnce,
         matchable: () => Promise.resolve(matchable),
         policy: async (extra) => {
-          const p = decidePolicy?.(title, { 'system-category': metadata['system-category'], ...extra });
-          return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
+          // #2255: the same page attributes the PDP asks this PIP for.
+          const page = this.pageAttributesFrom(title, metadata);
+          const p = await decidePolicy?.(title, { ...extra, ...page.attributes }, (name) =>
+            name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : this.subjectAttribute(subjectForConditions, name));
+          return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds } : null;
         }
       });
       if (decision.allowed) out.push(title);
@@ -1159,12 +1222,12 @@ class PolicyInformationPoint extends BaseManager {
   }
 
   /**
-   * Check front matter audience / access fields (Tier 1).
+   * Check the front matter audience (Tier 1).
    * Returns a decision object; decided=false means no front matter restriction — fall through.
    *
    * An audience that leaves the subject out refuses every action, unless the
    * subject holds `admin-system` (#1964, operator 2026-10-23): asked only
-   * then. `access[action]` has no such exception.
+   * then. `access` is no longer read (#2255).
    */
   private async checkFrontmatterAccess(
     metadata: PageFrontmatter,
@@ -1184,6 +1247,114 @@ class PolicyInformationPoint extends BaseManager {
     return decision.allowed
       ? { decided: true, allowed: true, reason: `frontmatter_principal_${decision.matched}` }
       : { decided: true, allowed: false, reason: 'frontmatter_deny' };
+  }
+
+  /**
+   * A page's attributes for the policies (#2255, XACML's PIP): the PDP asks
+   * this from the page id, so no route passes them. `knownMetadata` is the
+   * frontmatter when this PIP already holds it (the page door); otherwise the
+   * page is read with the caller's own context, so a sealed page stays closed
+   * to anyone without its key (#1422). A page that cannot be read has no
+   * attributes: no category policy matches it and every condition on it is
+   * unknown.
+   */
+  async pageAttributes(caller: PageQuestionCaller, pageName: string, knownMetadata?: Record<string, unknown> | null): Promise<PageAttributes> {
+    let metadata = knownMetadata as PageFrontmatter | null | undefined;
+    if (metadata === undefined) {
+      const pm = this.engine.getManager<{ getPageMetadata?: (id: string, ctx: ActorContext) => Promise<PageFrontmatter | null> }>('PageManager');
+      metadata = pm?.getPageMetadata
+        ? await pm.getPageMetadata(pageName, (asSubject(caller) as unknown as ActorContext) ?? ANONYMOUS_SUBJECT).catch(() => null)
+        : null;
+    }
+    return this.pageAttributesFrom(pageName, metadata);
+  }
+
+  /**
+   * {@link pageAttributes} from frontmatter already in hand (the list
+   * filter). Attributes are those declared on the `page` resource type in
+   * `ngdpbase.access.resource-types`, each read from its `from` source; the
+   * sources are code (`frontmatter:<field>` today).
+   *
+   * - `system-category` is lowercased; a page with none is in the default
+   *   category (the entry with `default: true`); a page in a shared folder is
+   *   `shared`, whatever its frontmatter says (#2255).
+   * - An `identity` attribute (`owner`, from `author`) is compared by the
+   *   account it names: an @id or a username not yet converted both read as
+   *   that account's username, an orphan as missing (#2097).
+   */
+  pageAttributesFrom(pageName: string, metadata: PageFrontmatter | null | undefined): PageAttributes {
+    if (!metadata) return { attributes: {}, read: () => undefined };
+    this.warnLegacyAccess(pageName, metadata);
+    const category = this.pageCategory(pageName, metadata);
+    const declared = this.declaredPageAttributes();
+    const memo = new Map<string, unknown>();
+    const read = (name: string): unknown => {
+      if (memo.has(name)) return memo.get(name);
+      const decl = Object.hasOwn(declared, name) ? declared[name] : undefined;
+      const field = typeof decl?.from === 'string' && decl.from.startsWith('frontmatter:') ? decl.from.slice('frontmatter:'.length) : null;
+      let value: unknown;
+      if (field === 'system-category') value = category;
+      else if (field) {
+        const raw = (metadata as Record<string, unknown>)[field];
+        value = decl?.type === 'identity' ? this.identityValue(raw) : raw;
+      }
+      memo.set(name, value);
+      return value;
+    };
+    return { attributes: { 'system-category': category }, read };
+  }
+
+  /**
+   * A subject attribute a condition reads (#2255). Only `subject:id` so far:
+   * the signed-in account, compared by username like a page's `owner`.
+   * Missing for anyone not signed in. Declaring subject attributes is #2261.
+   */
+  subjectAttribute(subject: { username?: string; isAuthenticated?: boolean } | null | undefined, name: string): unknown {
+    if (name !== 'subject:id') return undefined;
+    if (!subject?.isAuthenticated || !subject.username) return undefined;
+    return normalizeUsername(subject.username);
+  }
+
+  /** The page's category for the policies (#2255): lowercased; the default when it has none; `shared` in a shared folder. */
+  private pageCategory(pageName: string, metadata: PageFrontmatter): string | undefined {
+    const named = parsePrivatePageName(pageName);
+    if (named && isSharedFolderOwner(named.owner)) return 'shared';
+    const raw = metadata['system-category'];
+    if (typeof raw === 'string' && raw.trim()) return raw.trim().toLowerCase();
+    const validation = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager');
+    return validation?.getDefaultSystemCategory?.()?.toLowerCase() ?? 'general';
+  }
+
+  /** The attributes declared on the `page` resource type (#2255). */
+  private declaredPageAttributes(): Record<string, DeclaredAttribute> {
+    const types = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, DeclaredAttribute> }> | null;
+    const attributes = types?.page?.attributes;
+    return attributes && typeof attributes === 'object' ? attributes : {};
+  }
+
+  /** An identity reference as the policies compare it: the username of the account it names, or missing (#2097). */
+  private async identityValue(stored: unknown): Promise<string | undefined> {
+    if (typeof stored !== 'string' || !stored) return undefined;
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const username = identities
+      ? await identities.usernameOf(systemContext(this.engine, 'policy condition: the account a page owner names (#2255)'), stored)
+      : stored;
+    return username ? normalizeUsername(username) : undefined;
+  }
+
+  /** Pages already warned about for an `access:` that is not the legacy stamp (#2255): once per page per process. */
+  private readonly warnedAccess = new Set<string>();
+
+  /**
+   * `access:` frontmatter no longer has any effect (#2255). The stamp install
+   * wrote (`{ edit: [admin] }`) is left alone silently; any other value is
+   * someone's rule that is now ignored, so it is said once per page.
+   */
+  private warnLegacyAccess(pageName: string, metadata: PageFrontmatter): void {
+    const access = (metadata as Record<string, unknown>).access;
+    if (access === undefined || isLegacyAccessStamp(access) || this.warnedAccess.has(pageName)) return;
+    this.warnedAccess.add(pageName);
+    logger.warn(`[ACL] page '${pageName}' has an 'access' frontmatter field; it is no longer read and has no effect. Who may change a page is decided by its system-category and the policies (#2255). Use 'audience' or 'author-lock' to narrow it`);
   }
 
   /**
@@ -1237,6 +1408,7 @@ class PolicyInformationPoint extends BaseManager {
    */
   logAccessDecision(userOrObj: UserContext | AccessDecisionLog, pageName?: string, action?: string, allowed?: boolean, reason?: string, _context: Record<string, unknown> = {}): void {
     let user: UserContext | undefined = userOrObj as UserContext;
+    let policyIds: string[] | undefined;
     if (arguments.length === 1 && userOrObj && typeof userOrObj === 'object') {
       const obj = userOrObj as AccessDecisionLog;
       user = obj.user;
@@ -1244,6 +1416,7 @@ class PolicyInformationPoint extends BaseManager {
       action = obj.action;
       allowed = obj.allowed;
       reason = obj.reason;
+      policyIds = obj.policyIds;
       // context preserved for potential future use or logging
       void (obj.context || {});
     }
@@ -1267,7 +1440,7 @@ class PolicyInformationPoint extends BaseManager {
     // that auditRegistry exempts `page-read` for and that #334 was filed about.
     // A denial is rare and is the half worth keeping.
     if (!allowed) {
-      void this.auditDenial(user, pageName, action, reason);
+      void this.auditDenial(user, pageName, action, reason, 'page', policyIds);
     }
   }
 
@@ -1295,7 +1468,8 @@ class PolicyInformationPoint extends BaseManager {
     pageName: string | undefined,
     action: string | undefined,
     reason: string | undefined,
-    resourceType: 'page' | 'media' = 'page'
+    resourceType: 'page' | 'media' = 'page',
+    policyIds: readonly string[] = []
   ): Promise<void> {
     const username = PolicyInformationPoint.recordedUser(subject);
     const ipAddress = typeof subject?.ipAddress === 'string' && subject.ipAddress ? subject.ipAddress : undefined;
@@ -1322,7 +1496,11 @@ class PolicyInformationPoint extends BaseManager {
         severity: 'medium',
         // #1222: a share visit is attributed to the share and its issuer —
         // "anonymous via share, issued by" — on every record it produces.
-        metadata: viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : proxyMeta
+        // #2255: the policies that decided, so "why was I refused" has an answer.
+        metadata: {
+          ...(viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : proxyMeta),
+          ...(policyIds.length > 0 ? { policyIds: [...policyIds] } : {})
+        }
       },
       (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)
     );

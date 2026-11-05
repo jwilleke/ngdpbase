@@ -37,6 +37,8 @@ export type CorePermission =
   | 'identity-read'
   /** Browse and view the media library (not delegated to anonymous visitors) */
   | 'media-read'
+  /** Set or change a page's system-category (#2255). A page created in a shared folder gets the shared category without it */
+  | 'page-categorize'
   /** Create new pages */
   | 'page-create'
   /** Delete pages */
@@ -57,6 +59,12 @@ export type CorePermission =
   | 'profile-manage'
   /** Let another person act for you, within permissions you hold, and revoke it (#1762). Every signed-in role except demo-admin; an administrator making or revoking a grant for someone else also needs user-edit, and that grant never carries a copy of the person's vault key. A grant that includes proxy-grant lets the proxy give others access too. Asks for a fresh sign-in */
   | 'proxy-grant'
+  /** Delete pushed pages (#2255) */
+  | 'pushed-pages-delete'
+  /** Edit pushed pages: pages shipped by the system or an add-on (the categories a policy grants it on; system, documentation and addon as shipped) (#2255) */
+  | 'pushed-pages-edit'
+  /** Rename pushed pages (#2255) */
+  | 'pushed-pages-rename'
   /** Search pages */
   | 'search-page'
   /** Search users */
@@ -109,6 +117,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'identity-manage',
   'identity-read',
   'media-read',
+  'page-categorize',
   'page-create',
   'page-delete',
   'page-edit',
@@ -119,6 +128,9 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'page-rename',
   'profile-manage',
   'proxy-grant',
+  'pushed-pages-delete',
+  'pushed-pages-edit',
+  'pushed-pages-rename',
   'search-page',
   'search-user',
   'secret-reveal',

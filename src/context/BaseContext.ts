@@ -30,7 +30,7 @@
 import type { PermissionSubject } from '../managers/UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
-import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
+import { holdsInVault, permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 
 /** The engine surface this door needs — `getManager`, nothing more. */
 export interface EngineLike {
@@ -101,24 +101,18 @@ export abstract class BaseContext {
    * asked of the PDP (#1431 step 14): the token and share ceilings, then the
    * policies, with deny policies and role expansion.
    *
-   * For a check against a PAGE, ask `canAccess` on a context that has one —
-   * resource attributes beat global policy.
-   *
-   * #1504: with `attributes` — today `{ 'system-category': … }` — the same
-   * door asks about pages OF that kind, so a policy on the `system-category`
-   * resource type can decide (e.g. `page-public`: may this person make pages
-   * of this system-category public?). It is the policy question alone: unlike
-   * `canAccess` it walks none of one page's own tiers (private owner,
-   * frontmatter), so a page's owner gets no pass on it.
+   * For a check against a PAGE, ask {@link hasPermissionOn}: the PDP then
+   * reads the page's own attributes (its system-category, its owner) from the
+   * PIP (#2255). Asked here, a page write (`page-edit`, `-delete`, `-rename`)
+   * means "on some category", which is right for an affordance or a token's
+   * scope and wrong for a door.
    */
-  async hasPermission(action: string, attributes?: { 'system-category'?: unknown }): Promise<boolean> {
+  async hasPermission(action: string): Promise<boolean> {
     const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
     // #637: hand over the already-resolved subject so the PDP need not
     // resolve the account and its roles again.
-    return this.cached(attributes ? `${action}\u0000${JSON.stringify(attributes)}` : action, () => (attributes
-      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: '*' }, attributes }).then((d) => d.permit)
-      : pdp.permits(this.getActor(), action)));
+    return this.cached(action, () => pdp.permits(this.getActor(), action));
   }
 
   /**
@@ -145,22 +139,44 @@ export abstract class BaseContext {
   }
 
   /**
-   * A capability asked about the page it is for (#1539). For a page in a
-   * vault: the container rule first — the owner, never a role, the same rule
-   * as Tier 0 of the page tiers — then the capability with the page's
-   * `vault`, asked about the page itself as the page tiers do — a `page: *`
-   * grant does not match a vault page's name, so only a policy on the `vault`
-   * resource type (`vault-owner`) decides there. For any other page, `hasPermission(action)`. A route that acts on
-   * a named page asks this instead of the bare capability, so a vault page is
-   * not judged by the caller's site-wide role.
+   * A capability asked about the page it is for (#1539, #2255). For a page in
+   * a vault: the container rule first — the owner, never a role, the same
+   * rule as Tier 0 of the page tiers — then the capability with the page's
+   * `vault`, so a policy on the `vault` resource type (`vault-owner`)
+   * decides. For any other page, the PDP is asked about the page by name and
+   * reads its system-category and owner from the PIP, so the policies on its
+   * category decide. A route that acts on a named page asks this instead of
+   * the bare capability.
    */
   async hasPermissionOn(action: string, pageName: string): Promise<boolean> {
     const name = parsePrivatePageName(pageName);
-    if (!name) return this.hasPermission(action);
+    if (!name) {
+      const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      if (!pdp) return false;
+      // A stand-in decider with no `decide` (test doubles) answers the capability, as `holdsPermission` does.
+      if (typeof pdp.decide !== 'function') return this.hasPermission(action);
+      return this.cached(`${action}\u0000${pageName}`, () =>
+        pdp.decide(this.getActor(), { action, resource: { type: 'page', id: pageName } }).then((d) => d.permit));
+    }
     if (!this.hasSubject()) return false;
     const pdp = this.engineRef.getManager<VaultDecider>('PolicyDecisionPoint');
     return this.cached(`${action}\u0000${pageName}`, () =>
       permitsInVault(pdp, this.getActor(), action, { owner: name.owner, vault: name.store, resource: pageName }));
+  }
+
+  /**
+   * {@link hasPermissionOn} as an affordance (#2255): does the subject HOLD
+   * `action` on this page, policy alone, without the step-up rule? So the
+   * step-up fallback of a page-scoped check asks about the same page.
+   */
+  async holdsPermissionOn(action: string, pageName: string): Promise<boolean> {
+    const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp || typeof pdp.holds !== 'function') return this.hasPermissionOn(action, pageName);
+    const name = parsePrivatePageName(pageName);
+    if (!name) return this.cached(`holds\u0000${action}\u0000${pageName}`, () => pdp.holds(this.getActor(), action, { resource: { type: 'page', id: pageName } }));
+    if (!this.hasSubject()) return false;
+    return this.cached(`holds\u0000${action}\u0000${pageName}`, () =>
+      holdsInVault(pdp, this.getActor(), action, { owner: name.owner, vault: name.store, resource: pageName }));
   }
 
   /**

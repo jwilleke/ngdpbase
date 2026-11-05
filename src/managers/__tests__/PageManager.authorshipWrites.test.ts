@@ -150,10 +150,10 @@ describe('#2097 page writes store identity @ids', () => {
   });
 
   // Review fix 5. Sabotage: removing convertAccessListsForSave from the save door turned this red.
-  test('a save stores the user entries of audience and access by @id, roles as written', async () => {
+  test('a save stores the user entries of audience by @id, roles as written; access is stored as written (#2255)', async () => {
     const pm = site.pageManager;
     const { uuid } = await pm.savePage('Listed', 'one', { audience: ['jim', 'editor'], access: { edit: ['ann', 'admin'] } }, actor('jim'));
-    expect(await frontmatter(site, uuid)).toMatchObject({ audience: [JIM, 'editor'], access: { edit: [ANN, 'admin'] } });
+    expect(await frontmatter(site, uuid)).toMatchObject({ audience: [JIM, 'editor'], access: { edit: ['ann', 'admin'] } });
   });
 
   test('a tombstone names who deleted the page by @id', async () => {

@@ -453,13 +453,12 @@ describe('VersioningFileProvider.getPagesSharedWith (#640 Phase 2)', () => {
     expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
   });
 
-  test('honours access.view, not just the audience shorthand', async () => {
+  test('an access.view rule is not a share: access is not read (#2255)', async () => {
     const p = withAudienceMetadata(makeProviderWith({
       u1: baseEntry({ uuid: 'u1', title: 'SharedViaAccess', author: 'alice' })
     }), { u1: { access: { view: ['bob'] } } });
 
-    const result = await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<{ title: string }[]> }).getPagesSharedWith(['bob']);
-    expect(result.map(e => e.title)).toEqual(['SharedViaAccess']);
+    expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
   });
 
   test('an edit-only access rule is not a share', async () => {

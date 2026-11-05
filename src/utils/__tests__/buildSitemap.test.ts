@@ -14,6 +14,7 @@ import {
   paginate,
   selectPublicSitemapEntries,
   isRestrictedByMetadata,
+  isPushedPage,
   SITEMAP_MAX_URLS
 } from '../buildSitemap.js';
 
@@ -197,14 +198,34 @@ describe('isRestrictedByMetadata', () => {
     expect(isRestrictedByMetadata({ audience: ['anonymous'] })).toBe(true);
   });
 
-  test('a non-empty access rule restricts', () => {
-    expect(isRestrictedByMetadata({ access: { view: ['admin'] } })).toBe(true);
-    expect(isRestrictedByMetadata({ access: 'view:admin' })).toBe(true);
+  test('an access field does not restrict: it is not read (#2255)', () => {
+    expect(isRestrictedByMetadata({ access: { view: ['admin'] } } as Record<string, unknown>)).toBe(false);
+    expect(isRestrictedByMetadata({ access: { edit: ['admin'] } } as Record<string, unknown>)).toBe(false);
   });
 
   test('empty containers do not restrict', () => {
-    expect(isRestrictedByMetadata({ audience: [], access: {} })).toBe(false);
+    expect(isRestrictedByMetadata({ audience: [] })).toBe(false);
     expect(isRestrictedByMetadata({ audience: '  ' })).toBe(false);
+  });
+});
+
+describe('isPushedPage (#2255)', () => {
+  const pushed = ['system', 'documentation', 'addon'];
+
+  test('a page in a category policy reserves to pushed-pages-edit is a pushed page', () => {
+    expect(isPushedPage({ 'system-category': 'documentation' }, pushed)).toBe(true);
+    expect(isPushedPage({ 'system-category': 'System' }, pushed)).toBe(true);
+    expect(isPushedPage({ 'system-category': ' addon ' }, pushed)).toBe(true);
+  });
+
+  test('any other category, or none, is not', () => {
+    expect(isPushedPage({ 'system-category': 'general' }, pushed)).toBe(false);
+    expect(isPushedPage({}, pushed)).toBe(false);
+    expect(isPushedPage(null, pushed)).toBe(false);
+  });
+
+  test('the categories come from the caller: with none known, nothing is a pushed page', () => {
+    expect(isPushedPage({ 'system-category': 'documentation' }, [])).toBe(false);
   });
 });
 

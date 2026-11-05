@@ -1,7 +1,7 @@
 /**
  * Search shows a page only to someone who may open it — #1962.
  *
- * The search index knows nothing of a page's `audience`, its `access` rules or
+ * The search index knows nothing of a page's `audience`, its (unread, #2255) `access` rules or
  * the policies, so SearchManager puts every hit through the page-list door
  * (`PageManager.filterPagesFor` → `PolicyInformationPoint.filterAccessiblePages`)
  * before its limit. Run against the SHIPPED policies plus one system-category
@@ -135,16 +135,15 @@ describe('search hits are the pages the searcher may open (#1962)', () => {
     }
   });
 
-  test('audience, access.view and the system-category deny each hide their page from a reader and from anonymous', async () => {
+  test('audience and the system-category deny each hide their page from a reader and from anonymous; access.view hides nothing (#2255)', async () => {
     for (const subject of [reader, anonymous]) {
-      expect(names(await searchManager.searchWithContext({ userContext: subject }, 'apricot'))).toEqual(['Open Page']);
+      expect(names(await searchManager.searchWithContext({ userContext: subject }, 'apricot'))).toEqual(['Editors View', 'Open Page']);
     }
   });
 
-  test('an admin finds the audience and treasury pages, but not one whose access rule names only editors', async () => {
-    // `access.view` overrides global policy (#1054), so /view refuses the admin too.
+  test('an admin finds the audience and treasury pages, and the page with an access rule, which is not read', async () => {
     expect(names(await searchManager.searchWithContext({ userContext: admin }, 'apricot')))
-      .toEqual(['Admins Only', 'Open Page', 'Treasury Ledger']);
+      .toEqual(['Admins Only', 'Editors View', 'Open Page', 'Treasury Ledger']);
     expect(names(await searchManager.searchWithContext({ userContext: editor }, 'apricot')))
       .toEqual(['Editors View', 'Open Page', 'Treasury Ledger']);
   });

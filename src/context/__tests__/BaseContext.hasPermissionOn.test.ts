@@ -2,8 +2,8 @@
  * hasPermissionOn(action, pageName) — a capability asked about the page it is
  * for (#1539). For a vault page: the container rule (the owner, never a role)
  * and then the capability with the page's vault, so the `vault-owner` policy
- * decides. For any other page: plain hasPermission. Run against the SHIPPED
- * policies.
+ * decides. For any other page: the PDP asked about the page, which reads its
+ * system-category from the PIP (#2255). Run against the SHIPPED policies.
  */
 vi.unmock('../../managers/PolicyEvaluator');
 import fs from 'fs';
@@ -11,6 +11,7 @@ import path from 'path';
 import BaseContext, { type EngineLike } from '../BaseContext';
 import PolicyEvaluator from '../../managers/PolicyEvaluator';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
+import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { formatPrivatePageName } from '../../utils/privateStorePath';
 import type { PermissionSubject } from '../../managers/UserManager.js';
 
@@ -30,6 +31,9 @@ function engine(): EngineLike {
   const pe = new PolicyEvaluator(e as never);
   (pe as unknown as { configManager: unknown }).configManager = configManager;
   managers.PolicyEvaluator = pe;
+  // #2255: the PIP reads a page's category from its frontmatter.
+  managers.PageManager = { getPageMetadata: async (name: string) => (name === 'Main' ? { title: 'Main', uuid: 'm', 'system-category': 'general' } : null) };
+  managers.PolicyInformationPoint = new PolicyInformationPoint(e as never);
   return e;
 }
 

@@ -3,8 +3,10 @@
  * every vault below it (docs/private-stores.md, Access).
  *
  * The owner, a share link the owner issued, or someone acting for the owner
- * under a proxy grant that carries `vault-proxy` (#1762). No role reaches in,
- * admin included.
+ * under a proxy grant that carries `vault-proxy` (#1762). No role reaches in
+ * through this rule. At a door, an administrator may also enter a vault that
+ * is not encrypted when `ngdpbase.vaults.admin-access` is true (#2255,
+ * {@link mayEnterVaultAtDoor}), and each such access is recorded.
  *
  * A share link gets in only for a vault it names (#1388), and only when the
  * caller names that vault: a question about the owner's container as a whole
@@ -30,8 +32,13 @@ import { mixesProxyWithDelegation, proxyCarries } from './proxyClaim.js';
 import { isSharedFolderOwner } from './privateStorePath.js';
 import { permitsInSharedFolder } from './sharedFolderAccess.js';
 
+/** The administrator's way into a vault (#2255): `PolicyDecisionPoint.adminMayEnterVault`. */
+interface AdminVaultEntry {
+  adminMayEnterVault?(ctx: unknown, owner: string, vault: string, resource: string, record?: boolean): Promise<boolean>;
+}
+
 /** The PDP surface a vault decision needs. */
-export interface VaultDecider {
+export interface VaultDecider extends AdminVaultEntry {
   decide(
     subject: unknown,
     request: { action: string; resource: { type: string; id: string }; attributes: Record<string, unknown> }
@@ -39,8 +46,25 @@ export interface VaultDecider {
 }
 
 /** The PDP surface {@link holdsInVault} needs. */
-export interface VaultHolder {
+export interface VaultHolder extends AdminVaultEntry {
   holds(subject: unknown, action: string, on: { resource: { type: string; id: string }; attributes: Record<string, unknown> }): Promise<boolean>;
+}
+
+/**
+ * The container rule at a door (#2255): the owner or their delegate
+ * ({@link mayActInPrivateContainer}), or else an administrator let in by
+ * `ngdpbase.vaults.admin-access` to a vault that is not encrypted, recorded
+ * when `record`. Lists never ask this; they keep the owner's rule alone.
+ */
+export async function mayEnterVaultAtDoor(
+  pdp: AdminVaultEntry | null | undefined,
+  ctx: ActorContext,
+  where: { owner: string; vault: string; resource: string },
+  record = true
+): Promise<boolean> {
+  if (mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return true;
+  if (isSharedFolderOwner(where.owner) || typeof pdp?.adminMayEnterVault !== 'function') return false;
+  return pdp.adminMayEnterVault(ctx, where.owner, where.vault, where.resource, record);
 }
 
 export function mayActInPrivateContainer(
@@ -87,7 +111,7 @@ export async function permitsInVault(
   where: { owner: string; vault: string; resource: string }
 ): Promise<boolean> {
   if (isSharedFolderOwner(where.owner)) return permitsInSharedFolder(pdp, ctx, action, where.vault);
-  if (!pdp || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
+  if (!pdp || !(await mayEnterVaultAtDoor(pdp, ctx, where))) return false;
   return (await pdp.decide(ctx, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
 }
 
@@ -103,6 +127,6 @@ export async function holdsInVault(
   action: string,
   where: { owner: string; vault: string; resource: string }
 ): Promise<boolean> {
-  if (isSharedFolderOwner(where.owner) || typeof pdp?.holds !== 'function' || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
+  if (isSharedFolderOwner(where.owner) || typeof pdp?.holds !== 'function' || !(await mayEnterVaultAtDoor(pdp, ctx, where, false))) return false;
   return pdp.holds(ctx, action, { resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } });
 }
