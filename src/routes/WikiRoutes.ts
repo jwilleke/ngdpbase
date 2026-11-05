@@ -3684,10 +3684,12 @@ ${panes}
           );
         }
       } else {
-        // For new pages, check page creation, asked about this page (#1539)
+        // For new pages, check page creation, asked as the door asked it
+        // (#1539, #2255): about a vault page, else the capability — a new
+        // title with '/' matches no `page: *` resource.
         if (
           !currentUser ||
-          !(await wikiContext.hasPermissionOn('page-create', pageName))
+          !(await (about === undefined ? wikiContext.hasPermission('page-create') : wikiContext.hasPermissionOn('page-create', about)))
         ) {
           return await this.renderError(
             req,

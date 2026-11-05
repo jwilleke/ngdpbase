@@ -20,14 +20,18 @@ function editorFor(pageName: string, pageData: unknown) {
   const pageManager = { getPage: vi.fn().mockResolvedValue(pageData) };
   const engine = { getManager: vi.fn((name: string) => (name === 'PageManager' ? pageManager : null)) };
   const routes = new WikiRoutes(engine);
-  const spied = routes as unknown as Record<'createWikiContext' | 'isRequiredPage' | 'permitted', (...args: unknown[]) => unknown>;
-  vi.spyOn(spied, 'createWikiContext').mockReturnValue(createMockWikiContext({ userContext: USER }));
+  const spied = routes as unknown as Record<'createWikiContext' | 'isRequiredPage' | 'permitted' | 'renderError' | 'getCommonTemplateData', (...args: unknown[]) => unknown>;
+  const wikiContext = createMockWikiContext({ userContext: USER });
+  vi.spyOn(spied, 'createWikiContext').mockReturnValue(wikiContext);
+  const renderError = vi.spyOn(spied, 'renderError').mockResolvedValue(undefined);
+  // Past the create checks the editor renders; stop there.
+  const rendering = vi.spyOn(spied, 'getCommonTemplateData').mockRejectedValue(new Error('past the checks'));
   vi.spyOn(spied, 'isRequiredPage').mockResolvedValue(false);
   // Stop at the door: what it was asked is the point.
   const permitted = vi.spyOn(spied, 'permitted').mockResolvedValue(false);
   const req = { params: { page: pageName }, session: {}, path: `/edit/${pageName}`, originalUrl: `/edit/${pageName}`, userContext: USER, headers: { accept: 'text/html' }, query: {} };
   const res = { status: vi.fn().mockReturnThis(), render: vi.fn().mockReturnThis(), send: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), redirect: vi.fn().mockReturnThis() };
-  return { open: () => routes.editPage(req, res), permitted };
+  return { open: () => routes.editPage(req, res), permitted, wikiContext, renderError, rendering };
 }
 
 describe('WikiRoutes.editPage — the door it asks (#2255)', () => {
@@ -50,5 +54,15 @@ describe('WikiRoutes.editPage — the door it asks (#2255)', () => {
     const { open, permitted } = editorFor(name, null);
     await open();
     expect(permitted).toHaveBeenCalledWith(expect.anything(), 'page-create', expect.anything(), expect.anything(), 'page', name);
+  });
+
+  test('a new page whose title has /: the create check after the door asks the same, and the editor opens', async () => {
+    const { open, permitted, wikiContext, renderError, rendering } = editorFor('NGDPBASE-test-Slash/1', null);
+    permitted.mockResolvedValue(true);
+    await open();
+    expect(wikiContext.hasPermissionOn).not.toHaveBeenCalledWith('page-create', 'NGDPBASE-test-Slash/1');
+    expect(wikiContext.hasPermission).toHaveBeenCalledWith('page-create');
+    expect(renderError).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), 403, expect.anything(), expect.anything());
+    expect(rendering).toHaveBeenCalled();
   });
 });
