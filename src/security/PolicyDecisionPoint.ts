@@ -43,7 +43,7 @@ interface StepUpDecider {
   liveProxyGrant?(grantId: string): { owner: string; proxy: string; permissions: string[] } | null;
 }
 import { permitsInVault } from '../utils/privateStoreAccess.js';
-import { formatPrivatePageName } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
 import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
 import { actorOf, decisionSubject, isJobContext, type ActorContext } from '../context/ActorContext.js';
@@ -530,12 +530,23 @@ export class PolicyDecisionPoint extends BaseManager {
    * proxy subject's question, not theirs. Asked about the same page when the
    * request names one (#2255), so an actor who may edit only some categories
    * is asked about this page's.
+   *
+   * Inside a vault or a shared folder the actor is asked the bare capability,
+   * as before #2255 (#2267): the `vault` and `shared-folder` matchers assume
+   * the container rule proved the subject may be there, and for the actor it
+   * did not — the person represented passed it. Asked with the container, a
+   * reader actor would hold everything `vault-owner` holds in someone else's
+   * vault. The door (`permitsInVault`), the page door and the list filter all
+   * come through here, so they agree.
    */
   private async actorHolds(actor: string, request: DecisionRequest): Promise<boolean> {
     if (!actor || normalizeUsername(actor) === 'anonymous') return false;
     const subject = await this.informationPoint()?.subjectFor(actor);
+    if (!subject) return false;
     const { action, resource, attributes, pageMetadata } = request;
-    return subject ? this.holds(subject, action, { resource, attributes, pageMetadata }) : false;
+    const inContainer = attributes?.vault !== undefined || attributes?.['shared-folder'] !== undefined ||
+      (resource?.type === 'page' && parsePrivatePageName(resource.id) !== null);
+    return inContainer ? this.holds(subject, action) : this.holds(subject, action, { resource, attributes, pageMetadata });
   }
 
   /**
@@ -657,7 +668,10 @@ export class PolicyDecisionPoint extends BaseManager {
    * The first declared system category on which the policies permit a page
    * write (#2255, decision 10), or null. Asked once per category, so a deny
    * on one still wins there. Owner conditions are unknown here (no page), so
-   * a grant that needs the author does not count.
+   * a grant that needs the author does not count. Only enabled categories
+   * that are not bound to a location count (#2268): `shared` is a shared
+   * folder's, decided with the folder, and every account holds `vault-owner`,
+   * so counting it would give a reader every page write as a capability.
    */
   private async onSomeCategory(
     evaluator: PolicyEvaluatorLike,
@@ -666,7 +680,7 @@ export class PolicyDecisionPoint extends BaseManager {
     actions: readonly string[],
     readSubject: (name: string) => unknown
   ): Promise<EvaluationLike | null> {
-    for (const category of this.declaredCategories()) {
+    for (const category of this.declaredCategories(true)) {
       const r = await evaluator.evaluateAccess({
         pageName: '*', action, actions, userContext,
         attributes: { 'system-category': category },
@@ -677,11 +691,16 @@ export class PolicyDecisionPoint extends BaseManager {
     return null;
   }
 
-  /** Every system category the catalogue declares, core and add-ons, enabled or not, lowercased. */
-  private declaredCategories(): string[] {
+  /**
+   * Every system category the catalogue declares, core and add-ons, enabled
+   * or not, lowercased; with `inUse`, only those enabled and not bound to a
+   * shared folder (`storageLocation.sharedfolder`).
+   */
+  private declaredCategories(inUse = false): string[] {
     const catalogue = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.system-category', {});
     if (!catalogue || typeof catalogue !== 'object') return [];
-    return Object.entries(catalogue as Record<string, { label?: unknown }>)
+    return Object.entries(catalogue as Record<string, { label?: unknown; enabled?: unknown; storageLocation?: { sharedfolder?: unknown } }>)
+      .filter(([, entry]) => !inUse || (entry?.enabled !== false && entry?.storageLocation?.sharedfolder !== true))
       .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase());
   }
 

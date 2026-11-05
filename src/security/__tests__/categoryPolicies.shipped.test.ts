@@ -161,8 +161,9 @@ describe('page writes by system-category (#2255, shipped policies)', () => {
     ];
     await evaluator.initialize();
     expect(await pdp.permits(reader as never, 'page-edit')).toBe(false);
-    // The page door still lets the reader change a page in a shared folder.
-    expect(await may(reader, 'edit', meta('general'), formatPrivatePageName(SHARED_FOLDER_OWNER, 'team', 'Notes'))).toBe(true);
+    // Asked about a page in a shared folder, the shared category's grant still applies.
+    const folderPage = { type: 'page', id: formatPrivatePageName(SHARED_FOLDER_OWNER, 'team', 'Notes') };
+    expect((await pdp.decide(reader as never, { action: 'page-edit', resource: folderPage, pageMetadata: meta('general') })).permit).toBe(true);
   });
 
   describe('a proxy actor inside the grantor\'s vault (#2267)', () => {
