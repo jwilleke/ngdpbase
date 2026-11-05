@@ -19,6 +19,9 @@
   --bs-link-color:                #0d6efd;
   --bs-link-hover-color:          #0a58ca;
   --bs-border-color:              #dee2e6;
+  --card-outline-width:  2px;
+  --card-outline:        #868e96;
+  --card-outline-hover:  #6c757d;
 
   /* Our semantic vars inherit from Bootstrap vars */
   --bg-primary:        var(--bs-body-bg, #ffffff);
@@ -82,6 +85,9 @@
   --bs-link-color:     #58a6ff;
   --bs-link-hover-color: #79c0ff;
   --bs-border-color:   #30363d;
+  --card-outline-width:  2px;
+  --card-outline:        #6e7681;
+  --card-outline-hover:  #8b949e;
 
   /* Our semantic vars — set explicitly to avoid any cascade ambiguity */
   --bg-primary:        #0d1117;
@@ -139,6 +145,9 @@
     --bs-secondary-color: #7d8590;
     --bs-tertiary-color: #656d76;
     --bs-border-color:   #30363d;
+    --card-outline-width:  2px;
+    --card-outline:        #868e96;
+    --card-outline-hover:  #adb5bd;
     --bs-link-color:     #58a6ff;
     --bs-link-hover-color: #79c0ff;
 

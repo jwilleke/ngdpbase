@@ -37,6 +37,9 @@
   --bs-link-color:                #3d4d69;
   --bs-link-hover-color:          #1f2634;
   --bs-border-color:              #c2c2b0;
+  --card-outline-width:  2px;
+  --card-outline:        #7f7e68;
+  --card-outline-hover:  #5f5e4c;
 
   /* Semantic vars */
   --bg-primary:        var(--bs-body-bg, #f3f2dc);
@@ -100,6 +103,9 @@
   --bs-link-color:     #96a4be;
   --bs-link-hover-color: #c0cbde;
   --bs-border-color:   #3a4258;
+  --card-outline-width:  2px;
+  --card-outline:        #7a869c;
+  --card-outline-hover:  #98a3b8;
 
   --bg-primary:        #1f2634;
   --bg-secondary:      #282e3e;
@@ -154,6 +160,9 @@
     --bs-secondary-color: #a0a898;
     --bs-tertiary-color: #707868;
     --bs-border-color:   #3a4258;
+    --card-outline-width:  2px;
+    --card-outline:        #7a869c;
+    --card-outline-hover:  #98a3b8;
     --bs-link-color:     #96a4be;
     --bs-link-hover-color: #c0cbde;
 

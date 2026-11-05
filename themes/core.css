@@ -401,9 +401,10 @@ main[role="main"] {
     padding-bottom: 0.3rem;
 }
 
-/* Page metadata cards - GitHub-inspired */
+/* Cards (#2250): outline width/colour come from each theme's variables.css
+   (--card-outline-*), kept >= 3:1 against page and card background (WCAG 1.4.11). */
 .card {
-    border: 1px solid var(--border-color);
+    border: var(--card-outline-width, 2px) solid var(--card-outline, #868e96);
     border-radius: 6px;
     background-color: var(--card-bg);
     box-shadow: none;
@@ -411,7 +412,7 @@ main[role="main"] {
 }
 
 .card:hover {
-    border-color: var(--border-color-strong);
+    border-color: var(--card-outline-hover, var(--border-color-strong));
 }
 
 .card-header {
