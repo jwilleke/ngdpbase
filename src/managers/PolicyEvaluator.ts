@@ -282,10 +282,14 @@ class PolicyEvaluator extends BaseManager {
     for (const { id, problems } of this.conditionProblemsInForce()) {
       lines.push(...problems.map((p) => `'${id}': ${p}; the policy never applies as an allow`));
     }
-    const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown }> | null;
+    const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
+    // An installed add-on's category is declared even while the add-on is off
+    // (#1559), and its policies are not; that is the add-on being off, not a gap.
+    const addonOff = (owner: unknown): boolean => typeof owner === 'string' && owner !== 'admin'
+      && config.getProperty(`ngdpbase.addons.${owner}.enabled`, false) !== true;
     const unwritable = Object.entries(catalogue ?? {})
-      .filter(([, entry]) => categoryStored(entry) !== 'none')
+      .filter(([, entry]) => categoryStored(entry) !== 'none' && !addonOff(entry?.owner))
       .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
       .filter((category) => !writable.has(category));
     if (unwritable.length > 0) {

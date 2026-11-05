@@ -13,7 +13,7 @@ import PolicyInformationPoint from '../PolicyInformationPoint';
 import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import PolicyEvaluator from '../../managers/PolicyEvaluator';
 import { formatPrivatePageName, parsePrivatePageName, SHARED_FOLDER_OWNER } from '../../utils/privateStorePath';
-import { mayEnterVaultAtDoor } from '../../utils/privateStoreAccess';
+import { mayEnterVaultAtDoor, permitsInVault } from '../../utils/privateStoreAccess';
 import type { ActorContext } from '../../context/ActorContext';
 import type { Policy } from '../../types/Policy';
 import { pageWritePoliciesToReview } from '../../utils/pageWritePolicies';
@@ -41,12 +41,13 @@ describe('page writes by system-category (#2255, shipped policies)', () => {
   let config: Record<string, unknown>;
   let audit: Array<Record<string, unknown>>;
   let encrypted: boolean;
+  let managers: Record<string, unknown>;
 
   beforeEach(async () => {
     config = { ...shipped };
     audit = [];
     encrypted = false;
-    const managers: Record<string, unknown> = {
+    managers = {
       ConfigurationManager: { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) },
       ValidationManager: { getDefaultSystemCategory: () => 'general' },
       AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve(); } },
@@ -144,9 +145,61 @@ describe('page writes by system-category (#2255, shipped policies)', () => {
     expect(await pdp.permits(editor as never, 'page-edit')).toBe(true);
     expect(await pdp.permits(user('carl', ['contributor']) as never, 'page-edit')).toBe(true);
     expect(await pdp.permits(user('carl', ['contributor']) as never, 'page-delete')).toBe(false);
-    // Every account holds vault-owner, which changes pages in shared folders.
-    expect(await pdp.permits(user('rita', ['reader', 'vault-owner']) as never, 'page-edit')).toBe(true);
-    expect(await pdp.permits(user('rita', ['reader']) as never, 'page-edit')).toBe(false);
+    for (const action of ['page-edit', 'page-delete', 'page-rename']) expect(await pdp.permits(editor as never, action)).toBe(true);
+  });
+
+  test('#2268: the shared category and disabled categories do not count, so a reader holds no page write as a capability', async () => {
+    // Every account holds vault-owner, which changes pages in shared folders;
+    // that is a write in a folder, asked with the folder, never "on some
+    // category". The user-keyword routes door on exactly this question.
+    const reader = user('rita', ['reader', 'vault-owner']);
+    for (const action of ['page-edit', 'page-delete', 'page-rename']) expect(await pdp.permits(reader as never, action)).toBe(false);
+    // A grant on a disabled category does not count either.
+    config['ngdpbase.access.policies'] = [
+      ...(shipped['ngdpbase.access.policies'] as Policy[]),
+      { id: 'reader-capture', effect: 'allow', subjects: [{ type: 'role', value: 'reader' }], resources: [{ type: 'system-category', pattern: 'capture' }], actions: ['page-edit'] } as Policy
+    ];
+    await evaluator.initialize();
+    expect(await pdp.permits(reader as never, 'page-edit')).toBe(false);
+    // The page door still lets the reader change a page in a shared folder.
+    expect(await may(reader, 'edit', meta('general'), formatPrivatePageName(SHARED_FOLDER_OWNER, 'team', 'Notes'))).toBe(true);
+  });
+
+  describe('a proxy actor inside the grantor\'s vault (#2267)', () => {
+    const PLANS = formatPrivatePageName('alice', 'default', 'Plans');
+    const WRITES = ['page-create', 'page-edit', 'page-delete', 'share-create', 'asset-upload', 'asset-delete'];
+    const ROLES: Record<string, string[]> = { alice: ['editor', 'vault-owner'], rita: ['reader', 'vault-owner'], erin: ['editor', 'vault-owner'] };
+    const acting = (actor: string) => ({
+      username: 'alice', roles: ROLES.alice, isAuthenticated: true,
+      viaProxy: { kind: 'proxy', grantId: `g-${actor}`, actor, scopes: [...WRITES, 'page-read', 'vault-proxy'] }
+    }) as unknown as ActorContext;
+
+    beforeEach(() => {
+      Object.assign(managers, {
+        UserManager: { getUser: (u: string) => Promise.resolve(ROLES[u] ? { username: u, isActive: true } : null) },
+        RoleManager: { resolveUserRoles: (_ctx: unknown, u: string) => Promise.resolve(ROLES[u] ?? []) },
+        AuthManager: { liveProxyGrant: (id: string) => ({ owner: 'alice', proxy: id.slice(2), permissions: [...WRITES, 'page-read', 'vault-proxy'] }) }
+      });
+    });
+
+    test('a reader actor is refused every write the grant carries; an editor actor is allowed', async () => {
+      const where = { owner: 'alice', vault: 'default', resource: PLANS };
+      for (const action of WRITES) {
+        expect(await permitsInVault(pdp, acting('rita'), action, where)).toBe(false);
+        expect(await permitsInVault(pdp, acting('erin'), action, where)).toBe(true);
+      }
+    });
+
+    test('the list filter and the page door agree on a vault page', async () => {
+      for (const actor of ['rita', 'erin']) {
+        for (const page of [meta('general', 'alice'), meta('capture', 'alice')]) {
+          const door = await may(acting(actor), 'edit', page, PLANS);
+          const listed = await pip.filterAccessiblePages(acting(actor) as never, 'edit', [{ title: PLANS, metadata: page }] as never);
+          expect({ actor, category: page['system-category'], listed: listed.length === 1 }).toEqual({ actor, category: page['system-category'], listed: door });
+          expect(door).toBe(actor === 'erin');
+        }
+      }
+    });
   });
 
   test('a clean install has nothing to review at boot: no page write on pages by name, no deny, no bad condition, every stored category writable', () => {

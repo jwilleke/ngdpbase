@@ -3619,13 +3619,15 @@ ${panes}
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
 
-      // #1198: policy is the door. The page's own rules (private, audience,
-      // author-lock) are evaluated below as before; this asks the capability.
-      if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page', pageName))) return;
-
       // Get page data to check ACL (if page exists)
       // page-door-ignore: the editor's own read — the page-edit door decides below, not page-read.
       let pageData = await pageManager.getPage(pageName, req.userContext);
+
+      // #1198: policy is the door. The page's own rules (private, audience,
+      // author-lock) are evaluated below as before; this asks the permission
+      // about the page. #2255: a page not made yet has no category to edit
+      // under, so opening the editor on one is a create, as its save is.
+      if (!(await this.permitted(wikiContext, pageData ? 'page-edit' : 'page-create', req, res, 'page', pageName))) return;
 
       // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
       // call that previously sat here. Tier 0 inside the
