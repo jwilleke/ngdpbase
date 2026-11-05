@@ -26,6 +26,7 @@ function makeManager(accounts: Array<Record<string, unknown>>) {
   };
   const pageManager = {
     pageExists: vi.fn(() => false),
+    getPageMetadata: vi.fn(() => Promise.resolve(null)),
     savePage: vi.fn(() => Promise.resolve(undefined)),
     deleteTestArtifacts: vi.fn(() => Promise.resolve({ deleted: [{ title: 'Profile: x', uuid: 'u' }], failed: [] }))
   };

@@ -962,6 +962,21 @@ class UserManager extends BaseManager {
       }
 
       const profileTitle = `Profile: ${user.displayName}`;
+      const job = systemContext(this.engine, `create the profile page of new account ${user.username} (#1815)`);
+
+      // #2255: an ordinary account's profile page outlives the account (#2008),
+      // so a new account with the same username finds it here. Theirs by
+      // author, it is kept as it is; one by anybody else is left alone. The
+      // system job only ever creates (security review M2), never edits.
+      const kept = await pageManager.getPageMetadata(profileTitle, job);
+      if (kept) {
+        if (kept.author === user.username) {
+          logger.info(`User page '${profileTitle}' already exists for ${user.username}; kept`);
+          return true;
+        }
+        logger.warn(`Cannot create the user page for ${user.username}: '${profileTitle}' already exists and is not theirs`);
+        return false;
+      }
 
       // Apply user page template with user data
       const populatedContent = templateManager.applyTemplate('user-page', {
@@ -1006,7 +1021,6 @@ class UserManager extends BaseManager {
       // through the write door, whose `page-create` comes from policy — a new
       // account is given no `page-create` of its own. The new user is its
       // author (`createdFor`), so author-lock still leaves it to them.
-      const job = systemContext(this.engine, `create the profile page of new account ${user.username} (#1815)`);
       await pageManager.savePage(profileTitle, populatedContent, metadata, job, { skipValidation: true, createdFor: user.username });
       logger.info(`✅ Created user page for ${user.displayName} by ${actorOf(ctx).user}`);
       return true;
