@@ -15,15 +15,17 @@ import os from 'os';
 import path from 'path';
 import PageManager, { CAPTURE_VAULT_MIGRATION, CATEGORY_VAULT_MIGRATION, VAULT_SLUG_MIGRATION } from '../PageManager';
 import type { ActorContext } from '../../context/ActorContext';
-import { jobContextFromSystem } from '../../context/JobContext';
+import { jobContextForOwner } from '../../context/JobContext';
 import { formatPrivatePageName, storeMetaPath, storeMigrationsPath } from '../../utils/privateStorePath';
 import { actor } from '../../test-support/actors';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type Stored = { content: string; metadata: Record<string, unknown> };
 type SaveCall = { name: string; metadata: Record<string, unknown>; options?: Record<string, unknown> };
 
-const BOOT: ActorContext = jobContextFromSystem('system', 'capture move at boot');
+// The boot pass runs a user's vault steps as a job on that user's behalf (#1815).
+const BOOT: ActorContext = jobContextForOwner('jim', 'capture move at boot');
 const JIM = (store: string, title: string) => formatPrivatePageName('jim', store, title);
 
 interface Seed { store: string; title: string; category?: string; keywords?: string[] }
@@ -82,9 +84,10 @@ describe('PageManager capture vault move (#1505)', () => {
       sanitizeMetadata: vi.fn((metadata: unknown) => metadata),
       checkConflicts: vi.fn(async () => ({ hasConflict: false }))
     };
+    // The write door's deciders allow (#1815); the vault container rule is real.
     manager = new PageManager({
-      getManager: vi.fn((name: string) =>
-        name === 'ConfigurationManager' ? configManager : name === 'ValidationManager' ? validationManager : null)
+      getManager: vi.fn(withWriteDoorAllowing((name: string) =>
+        name === 'ConfigurationManager' ? configManager : name === 'ValidationManager' ? validationManager : null))
     });
     (manager as unknown as { provider: unknown }).provider = harness.provider;
     await fs.ensureDir(path.join(pagesDir, 'vaults', 'jim', 'default'));

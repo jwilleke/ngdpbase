@@ -15,6 +15,7 @@
 
 import PageManager from '../PageManager';
 import { TEST_ACTOR } from '../../test-support/actors';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 /** The vocabulary as CatalogManager really serves it: enabled terms only. */
 const TERMS = [
@@ -43,10 +44,11 @@ function makeManager(options: { catalog?: unknown } = {}) {
       };
 
   const manager = new PageManager({
-    getManager: (n: string) =>
+    // #1815: the write door's deciders allow; keywords are the subject here.
+    getManager: withWriteDoorAllowing((n: string) =>
       n === 'ValidationManager' ? validationManager
         : n === 'CatalogManager' ? catalogManager
-          : null
+          : null)
   });
   (manager as unknown as { provider: unknown }).provider = provider;
   return { manager, provider };

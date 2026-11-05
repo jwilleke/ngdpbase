@@ -71,6 +71,9 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
       savePage: vi.fn(async (pageName: string, content: string, metadata?: Record<string, unknown>) =>
         doorSaveResult(pageName, content, metadata, { name: 'Old Title', referrers: ['Alpha', 'Beta'] })),
       deletePage: vi.fn(async () => true),
+      // #1815: a referrer the renamer may not edit (Beta) is left unchanged and named.
+      mayEditPage: vi.fn(async (name: string) => name !== 'Beta'),
+      mayShowPage: vi.fn(async () => true),
       // #1462 slice 3: the restores are the door's too.
       restoreVersion: vi.fn(async () => ({ name: 'Old Title', uuid: 'uuid-old', version: 7 })),
       restoreDeletedPage: vi.fn(async () => ({ ok: true, title: 'Old Title' })),
@@ -109,11 +112,21 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     const r = res();
     await routes.apiRenamePage(req({ identifier: 'Old Title' }, { newTitle: 'New Title' }), r);
 
-    expect(r.json).toHaveBeenCalledWith({ success: true, from: 'Old Title', to: 'New Title' });
+    // #1815: Beta, which the renamer may not edit, is left unchanged and listed in the answer.
+    expect(r.json).toHaveBeenCalledWith({ success: true, from: 'Old Title', to: 'New Title', linksNotRewritten: ['Beta'] });
     expect(pageManager.savePage).toHaveBeenCalledWith('Old Title', expect.any(String), expect.objectContaining({ title: 'New Title' }), expect.anything(), expect.anything());
-    // The door's referrers — not a link-graph read the route made itself.
-    expect(rewrite).toHaveBeenCalledWith(expect.anything(), ['Alpha', 'Beta'], 'Old Title', 'New Title');
+    // The door's referrers — not a link-graph read the route made itself — that the renamer may edit.
+    expect(rewrite).toHaveBeenCalledWith(expect.anything(), ['Alpha'], 'Old Title', 'New Title');
     expectNoRouteIndexWork();
+  });
+
+  it('a referrer the renamer may not even read is left unchanged and not named (#1815)', async () => {
+    pageManager.mayShowPage.mockImplementation(async (name: string) => name !== 'Beta');
+    vi.spyOn(routes, 'rewriteInboundLinksAfterRename').mockResolvedValue(undefined);
+    const r = res();
+    await routes.apiRenamePage(req({ identifier: 'Old Title' }, { newTitle: 'New Title' }), r);
+
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ linksNotRewritten: [] }));
   });
 
   it('a delete goes through the door and the route reindexes nothing', async () => {
@@ -123,7 +136,8 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, pageName: 'Old Title' }));
     // #1462 slice 3: one delete door — the page name and the requester's subject.
     expect(pageManager.deletePage).toHaveBeenCalledTimes(1);
-    expect(pageManager.deletePage).toHaveBeenCalledWith('Old Title', expect.objectContaining({ username: expect.any(String) }));
+    // #1815: the route recorded the delete, so the door does not record it again.
+    expect(pageManager.deletePage).toHaveBeenCalledWith('Old Title', expect.objectContaining({ username: expect.any(String) }), { audit: { skip: true } });
     expectNoRouteIndexWork();
   });
 
@@ -135,7 +149,7 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
 
     // The door and the delete name the vault page; a bare 'Old Title' would be
     // the public page of the same title.
-    expect(pageManager.deletePage).toHaveBeenCalledWith(vaultName, expect.anything());
+    expect(pageManager.deletePage).toHaveBeenCalledWith(vaultName, expect.anything(), expect.anything());
   });
 
   it('a version restore goes through the door and the route reindexes nothing', async () => {

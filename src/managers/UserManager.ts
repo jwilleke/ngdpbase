@@ -931,11 +931,11 @@ class UserManager extends BaseManager {
   /**
    * Create a user page for a new user.
    *
-   * The page is written AS the new user (#1462): it is their page, and the
-   * door takes a new page's author from who is acting. Written as the admin
-   * who created the account — or as whoever ran self-registration — the
-   * profile would be authored by them, and `author-lock` would leave the
-   * account's own owner unable to edit it.
+   * The page is the new user's (#1462): they are its author. Authored by the
+   * admin who created the account — or by whoever ran self-registration —
+   * `author-lock` would leave the account's own owner unable to edit it.
+   * It is written by a system job through the write door (#1815), with the
+   * new user named as the one it is made for.
    *
    * @param {User} user - User object
    * @param ctx - Who created the account, for the log line only
@@ -995,15 +995,19 @@ class UserManager extends BaseManager {
         metadata['system-keywords'] = [...current, 'test-artifact'];
       }
 
-      // The new account's own subject — never a rebuilt or ambient one (#1399).
+      // The page is the new account's: refused for one that is not active.
       const owner = await this.policyInformationPoint().subjectFor(user.username);
       if (!owner) {
         logger.warn(`Cannot create a user page for ${user.username}: the account is not active`);
         return false;
       }
 
-      // Save the user page, as its owner
-      await pageManager.savePage(profileTitle, populatedContent, metadata, owner, { skipValidation: true });
+      // #1815 (operator, 2026-11-04, decision 3): made by a system job,
+      // through the write door, whose `page-create` comes from policy — a new
+      // account is given no `page-create` of its own. The new user is its
+      // author (`createdFor`), so author-lock still leaves it to them.
+      const job = systemContext(this.engine, `create the profile page of new account ${user.username} (#1815)`);
+      await pageManager.savePage(profileTitle, populatedContent, metadata, job, { skipValidation: true, createdFor: user.username });
       logger.info(`✅ Created user page for ${user.displayName} by ${actorOf(ctx).user}`);
       return true;
     } catch (error) {
@@ -1500,9 +1504,13 @@ class UserManager extends BaseManager {
     // #2008: a test account's profile page goes with it; an ordinary
     // account's is kept (operator, 2026-10-23). Only pages stamped
     // test-artifact are reached. A failure is logged: the account is gone.
+    // #1815 (operator, 2026-11-04, decision 6): deleted by a system job,
+    // through the write door, now that `user-delete` has passed; a user admin
+    // is given no `page-delete` of their own. The reason names who asked.
     if (user.isTest === true) {
+      const job = systemContext(this.engine, `delete the profile page of test account ${username}, after user-delete by ${actorOf(ctx).user} (#2008, #1815)`);
       await this.engine.getManager<PageManager>('PageManager')
-        ?.deleteTestArtifacts(ctx, { author: username, systemCategory: 'user-profile' })
+        ?.deleteTestArtifacts(job, { author: username, systemCategory: 'user-profile' })
         .catch((err: unknown) => logger.error(`[UserManager] The profile page of test account ${username} was not deleted:`, err));
     }
 

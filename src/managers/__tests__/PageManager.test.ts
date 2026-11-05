@@ -10,6 +10,7 @@ import PageManager from '../PageManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import { ANONYMOUS_SUBJECT } from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -25,12 +26,12 @@ const mockConfigurationManager = {
   })
 };
 
-// Mock engine
+// Mock engine; #1815: the write door's deciders allow, these tests are not about who may write
 const mockEngine = {
-  getManager: vi.fn((name) => {
+  getManager: vi.fn(withWriteDoorAllowing((name) => {
     if (name === 'ConfigurationManager') return mockConfigurationManager;
     return null;
-  }),
+  })),
   getConfig: vi.fn(() => ({ get: vi.fn() }))
 };
 
@@ -153,6 +154,8 @@ describe('PageManager', () => {
 
     test('deletePage() should delegate to provider', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(undefined);
+      // #1815: delete decides on the page it finds, so the page is there.
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({ uuid: 'uuid-1', content: 'x', metadata: { title: 'Test' } });
 
       await pageManager.deletePage('Test', TEST_ACTOR);
 
@@ -277,7 +280,8 @@ describe('PageManager', () => {
         return dv;
       });
 
-      await pageManager.savePage('Secret', 'body', { private: true }, { username: 'alice' });
+      // #1815: a save into alice's vault is alice's own, signed in.
+      await pageManager.savePage('Secret', 'body', { private: true }, { username: 'alice', isAuthenticated: true });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
@@ -314,7 +318,8 @@ describe('PageManager', () => {
       await pageManager.savePage('P', 'body', {
         private: true,
         'user-keywords': ['private', 'notes']
-      }, { username: 'alice' });
+        // #1815: a save into alice's vault is alice's own, signed in.
+      }, { username: 'alice', isAuthenticated: true });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
@@ -470,6 +475,8 @@ describe('PageManager', () => {
 
     test('deletePage() deletes as the subject it was given', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(undefined);
+      // #1815: delete decides on the page it finds, so the page is there.
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({ uuid: 'uuid-1', content: 'x', metadata: { title: 'Test Page' } });
 
       await pageManager.deletePage('Test Page', { username: 'testuser' });
 
@@ -599,11 +606,11 @@ describe('PageManager', () => {
         conflictType: 'title-duplicate',
         message: 'A page with title \'Speed\' already exists under UUID other-uuid'
       });
-      mockEngine.getManager.mockImplementation((name) => {
+      mockEngine.getManager.mockImplementation(withWriteDoorAllowing((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts, sanitizeMetadata: (m: unknown) => m };
         return null;
-      });
+      }));
 
       await expect(
         pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR)
@@ -615,11 +622,11 @@ describe('PageManager', () => {
     test('should proceed normally when no conflict', async () => {
       const mockCheckConflicts = vi.fn().mockResolvedValue({ hasConflict: false, conflictType: null });
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      mockEngine.getManager.mockImplementation((name) => {
+      mockEngine.getManager.mockImplementation(withWriteDoorAllowing((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts, sanitizeMetadata: (m: unknown) => m };
         return null;
-      });
+      }));
 
       await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
 
@@ -682,11 +689,15 @@ describe('PageManager', () => {
   describe('deletePage() acting user', () => {
     test('a subject with no username still deletes', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(true);
+      // #1815: delete decides on the page it finds, so the page is there.
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({ uuid: 'uuid-1', content: 'x', metadata: { title: 'TestPage' } });
       await expect(pageManager.deletePage('TestPage', { roles: [] })).resolves.toBe(true);
     });
 
     test('the subject given is the one handed to the provider', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(true);
+      // #1815: delete decides on the page it finds, so the page is there.
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({ uuid: 'uuid-1', content: 'x', metadata: { title: 'TestPage' } });
       await expect(pageManager.deletePage('TestPage', { username: 'alice' })).resolves.toBe(true);
       expect(pageManager.provider.deletePage).toHaveBeenCalledWith(
         'TestPage',

@@ -13,6 +13,7 @@
 
 import PageManager, { PageContentValidationError } from '../PageManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const ERROR = {
   filterId: 'security',
@@ -35,10 +36,11 @@ function makeManager(errors: unknown[] = []) {
   };
   const auditManager = { logSecurityEvent: vi.fn().mockResolvedValue('evt-1') };
   const manager = new PageManager({
-    getManager: (n: string) =>
+    // #1815: the write door's deciders allow; validation is the subject here.
+    getManager: withWriteDoorAllowing((n: string) =>
       n === 'ValidationManager' ? validationManager
         : n === 'AuditManager' ? auditManager
-          : null
+          : null)
   });
   (manager as unknown as { provider: unknown }).provider = provider;
   return { manager, provider, validationManager, auditManager };
@@ -112,14 +114,15 @@ describe('validation failures never become save failures (#1037)', () => {
     // the rule going unenforced for one save.
     const { manager, provider } = makeManager([]);
     (manager as unknown as { engine: { getManager: (n: string) => unknown } }).engine = {
-      getManager: (n: string) =>
+      // #1815: the write door's deciders allow.
+      getManager: withWriteDoorAllowing((n: string) =>
         n === 'ValidationManager'
           ? {
             collectContentErrors: vi.fn().mockRejectedValue(new Error('boom')),
             checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }),
             sanitizeMetadata: vi.fn((m: unknown) => m)
           }
-          : null
+          : null)
     };
 
     await manager.savePage('Page', '# Hi', {}, TEST_ACTOR);
@@ -133,7 +136,8 @@ describe('validation failures never become save failures (#1037)', () => {
       getPage: vi.fn(async () => null),
       savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }))
     };
-    const manager = new PageManager({ getManager: () => null });
+    // #1815: only the write door's deciders, allowing.
+    const manager = new PageManager({ getManager: withWriteDoorAllowing(() => null) });
     (manager as unknown as { provider: unknown }).provider = provider;
 
     await manager.savePage('Page', '# Hi', {}, TEST_ACTOR);

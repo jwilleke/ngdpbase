@@ -37,6 +37,7 @@ import {
 } from '../../utils/privateStoreCrypto';
 import { SealedVaultRefusedError } from '../../utils/privateStoreMeta';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MOLLY: ActorContext = { ...actor('molly'), privateStoreHandle: 'sid' };
@@ -76,14 +77,15 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
     const notificationManager = { notifyAdmins: vi.fn(async (n: Record<string, unknown>) => { notifications.push(n); return 'id'; }) };
     const searchManager = { updatePageInIndex: vi.fn(), removePageFromIndex: vi.fn() };
     let validation: unknown = null;
+    // The write door's deciders allow (#1815): this test is about sealing.
     const engine = {
-      getManager: vi.fn((name: string) => {
+      getManager: vi.fn(withWriteDoorAllowing((name: string) => {
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'ValidationManager') return validation;
         if (name === 'SearchManager') return searchManager;
         if (name === 'NotificationManager') return notificationManager;
         return null;
-      })
+      }))
     };
     validation = new ValidationManager(engine);
     return engine;

@@ -42,6 +42,7 @@ import { isSealedBytes } from '../../utils/privateStoreCrypto';
 import { permitsInSharedFolder, setSharedFolderKeySource } from '../../utils/sharedFolderAccess';
 import type { VaultDecider } from '../../utils/privateStoreAccess';
 import { pdpOver } from '../../test-support/policyDecisionPoint';
+import { ALLOWING_PIP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const shipped = fs.readJsonSync(path.join(__dirname, '../../../config/app-default-config.json')) as Record<string, unknown>;
 
@@ -61,9 +62,14 @@ describe('shared folders hold pages through the page door (#2125)', () => {
   /** `user:shared/<folder>` pairs the policies grant. */
   let grants: Set<string>;
   const keys: Record<string, Buffer> = {};
+  // Also permits creating a public page (#1815's door asks it), so a folder
+  // page made public meets the folder's own refusal.
   const standIn = {
-    decide: (s: { username: string }, r: { attributes: Record<string, unknown> }) =>
-      Promise.resolve({ permit: grants.has(`${s.username}:${String(r.attributes['shared-folder'])}`) })
+    decide: (s: { username: string }, r: { action?: string; resource?: { id?: string }; attributes: Record<string, unknown> }) =>
+      Promise.resolve({
+        permit: grants.has(`${s.username}:${String(r.attributes['shared-folder'])}`)
+          || (r.action === 'page-create' && !String(r.resource?.id).startsWith('vaults/'))
+      })
   };
   /** The PDP the doors ask: the stand-in, or the real shipped one (the admin test). */
   let pdp: VaultDecider = standIn as never;
@@ -107,6 +113,9 @@ describe('shared folders hold pages through the page door (#2125)', () => {
         if (name === 'ValidationManager') return validation;
         if (name === 'SearchManager') return searchManager;
         if (name === 'PolicyDecisionPoint') return pdp;
+        // The page decision on an existing page allows (#1815); who files in a
+        // folder is still the shared-folder check's.
+        if (name === 'PolicyInformationPoint') return ALLOWING_PIP;
         return null;
       })
     };

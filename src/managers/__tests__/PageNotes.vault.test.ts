@@ -35,6 +35,7 @@ import {
 } from '../../utils/privateStoreCrypto';
 import { SealedVaultRefusedError } from '../../utils/privateStoreMeta';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const MOLLY: ActorContext = { ...actor('molly'), privateStoreHandle: 'sid' };
@@ -97,7 +98,9 @@ describe('a vault page\'s footnotes and comments live in its vault (#1839)', () 
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
       SearchManager: searchManager,
-      NotificationManager: notificationManager
+      NotificationManager: notificationManager,
+      // The write door's deciders allow (#1815): this test is about where notes live.
+      ...allowingWriteDoor()
     };
     const engine = { getManager: vi.fn((name: string) => managers[name] ?? null) };
     managers.ValidationManager = new ValidationManager(engine);

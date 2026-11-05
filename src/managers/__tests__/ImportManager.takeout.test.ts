@@ -32,6 +32,7 @@ import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
 import { buildStoreTakeout } from '../../utils/privateStoreExport';
 import { packZip } from '../../utils/zipArchive';
+import { ALLOWING_PDP, ALLOWING_PIP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const VAULT = 'vault';
 const OTHER = 'other';
@@ -86,8 +87,16 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
         return { identifier: id };
       })
     };
+    // The write door's deciders allow writes (#1815); visibility stays the test's own.
     const pip = {
-      canUserAccessPage: vi.fn(async (_subject: unknown, name: string) => visibleToMolly.has(name))
+      ...ALLOWING_PIP,
+      canUserAccessPage: vi.fn(async (_subject: unknown, name: string, action?: string) =>
+        action === 'edit' || action === 'delete' || visibleToMolly.has(name))
+    };
+    // Allows page-create (#1815); admin-system stays an admin's, as before.
+    const pdp = {
+      ...ALLOWING_PDP,
+      permits: vi.fn(async (ctx: ActorContext, action: string) => action === 'admin-system' ? (ctx.roles ?? []).includes('admin') : true)
     };
     let validation: unknown = null;
     const engine = {
@@ -97,6 +106,7 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
         if (name === 'PageManager') return pages;
         if (name === 'AttachmentManager') return attachmentManager;
         if (name === 'PolicyInformationPoint') return pip;
+        if (name === 'PolicyDecisionPoint') return pdp;
         return null;
       })
     };

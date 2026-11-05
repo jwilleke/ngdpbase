@@ -8,9 +8,10 @@
  * - Has description: "{displayName}'s profile page" (#661)
  * - Has badge: "Profile {displayName}" (#661)
  * - Has the page author set to the user's username
- * - Is saved via PageManager.savePage(), acting AS the new user (#1462): the
- *   door takes a new page's author from who is acting, so saving as the
- *   creating admin would author the profile to them and lock editing to them
+ * - Is saved via PageManager.savePage() by a system job, made for the new
+ *   user (#1815, decision 3): the job's `page-create` comes from policy, and
+ *   `createdFor` makes the new user its author, so author-lock leaves it to
+ *   them rather than to the admin who created the account (#1462)
  * - Is skipped when the account has no active subject
  * - Returns false (gracefully) when required managers are unavailable
  * - Skips creation when the page already exists
@@ -142,11 +143,12 @@ describe('UserManager.createUserPage()', () => {
       'Profile: Jane Smith',
       expect.any(String),
       expect.any(Object),
-      // #1462: the save acts as the new user — it is their page.
-      OWNER_SUBJECT,
+      // #1815: a system job writes it, through the door.
+      expect.objectContaining({ username: 'system', origin: 'boot' }),
       // #1037: the profile page is generated from a template by the system,
       // not typed by a user, so it bypasses save-time content validation.
-      { skipValidation: true }
+      // #1815: made for the new user, who is its author.
+      { skipValidation: true, createdFor: 'jsmith' }
     );
   });
 
@@ -268,10 +270,12 @@ describe('UserManager.createUserPage()', () => {
   test('the page is authored by its owner, not by the admin who created the account (#1462)', async () => {
     await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
-    const [, , metadata, ctx] = pageManager.savePage.mock.calls[0];
+    const [, , metadata, ctx, options] = pageManager.savePage.mock.calls[0];
     expect(metadata.author).toBe('jsmith');
-    expect(ctx).toEqual(OWNER_SUBJECT);
+    expect(options.createdFor).toBe('jsmith');
+    // #1815: neither the admin nor the new account writes it — the new account holds no page-create.
     expect(ctx).not.toEqual(ADMIN_CTX);
+    expect(ctx).not.toEqual(OWNER_SUBJECT);
   });
 
   test('no active subject for the account: nothing is written', async () => {

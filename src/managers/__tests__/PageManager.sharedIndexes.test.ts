@@ -8,6 +8,7 @@
  * this is the one place that work is proven.
  */
 import PageManager from '../PageManager';
+import { allowingWriteDoor } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 interface StoredPage { content: string; metadata: Record<string, unknown> }
 
@@ -49,7 +50,9 @@ function makeDoor(existing: Record<string, StoredPage> = {}, links: Record<strin
     AttachmentManager: attachments,
     AssetManager: assets,
     CacheManager: cache,
-    ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: (_k: string, d: string) => d }
+    ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: (_k: string, d: string) => d },
+    // The write door's deciders allow (#1815): this test is about the indexes.
+    ...allowingWriteDoor()
   };
   const pm = new PageManager({ getManager: vi.fn((name: string) => managers[name] ?? null) });
   (pm as unknown as { provider: unknown }).provider = provider;

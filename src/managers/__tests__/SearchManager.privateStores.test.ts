@@ -38,6 +38,7 @@ import {
   unwrapDek
 } from '../../utils/privateStoreCrypto';
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
+import { ALLOWING_PDP, ALLOWING_PIP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const VAULT_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -78,7 +79,9 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
     // #1962: every shared-index hit goes through the page-list door. This file
     // is about the private merge, so the door keeps every page that exists;
     // the access decision itself is SearchManager.accessFilter.test.ts's.
+    // The write door's deciders allow the setup's saves (#1815).
     const pip = {
+      ...ALLOWING_PIP,
       filterAccessiblePages: vi.fn(async (_s: unknown, _a: string, candidates: Array<{ title: string; metadata: unknown }>) =>
         candidates.filter((c) => c.metadata).map((c) => c.title))
     };
@@ -88,6 +91,7 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
         if (name === 'ValidationManager') return validation;
         if (name === 'PageManager') return pages;
         if (name === 'PolicyInformationPoint') return pip;
+        if (name === 'PolicyDecisionPoint') return ALLOWING_PDP;
         return null;
       })
     };

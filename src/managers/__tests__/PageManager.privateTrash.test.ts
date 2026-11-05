@@ -48,6 +48,7 @@ import {
 import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../../utils/privateStoreUnlock';
 import type { StoreDeletedEntry, StorePageEntry } from '../../types/Provider';
 import type { StoreSearchDocument } from '../../utils/storeSearchIndex';
+import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -94,12 +95,13 @@ describe('a private store\'s own trash (#1459)', () => {
       getInstanceDataFolder: vi.fn(() => testDir)
     };
     let validation: unknown = null;
+    // The write door's deciders allow (#1815): this test is about the trash.
     engine = {
-      getManager: vi.fn((name: string) => {
+      getManager: vi.fn(withWriteDoorAllowing((name: string) => {
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'ValidationManager') return validation;
         return null;
-      })
+      }))
     };
     validation = new ValidationManager(engine);
     provider = new VersioningFileProvider(engine);

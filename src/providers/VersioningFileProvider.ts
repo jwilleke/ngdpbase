@@ -2693,6 +2693,29 @@ class VersioningFileProvider extends FileSystemProvider {
     return Boolean(this.pageIndex?.deletedPages?.[uuid]);
   }
 
+  /**
+   * Where a trashed page would come back to, and its frontmatter (#1815,
+   * security review L5): the place {@link restoreDeletedPageNow} puts it,
+   * read the same way, so PageManager decides the restore as a create there.
+   *
+   * @param uuid - UUID of the deleted page
+   * @returns Its name (the vault name when it goes back into a vault) and metadata, or null
+   */
+  async deletedPageForRestore(uuid: string): Promise<{ name: string; metadata: PageFrontmatter } | null> {
+    const entry = this.pageIndex?.deletedPages?.[uuid];
+    if (!entry) return null;
+    const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+    const metadata = await fs.readFile(trashPath, this.encoding)
+      .then((raw) => parsePageFrontmatter(raw).data as PageFrontmatter)
+      .catch(() => ({ title: entry.title, uuid } as PageFrontmatter));
+    const restorePath = this.pagesDirectory
+      ? relocateLegacyVaultPath(this.pagesDirectory, entry.deletedFrom, this.privateStoreLayout)
+      : entry.deletedFrom;
+    const vault = this.pagesDirectory ? vaultOfFile(this.pagesDirectory, restorePath, this.privateStoreLayout) : null;
+    const name = vault ? formatPrivatePageName(vault.owner, vault.store, entry.title) : entry.title;
+    return { name, metadata };
+  }
+
   /** {@link restoreDeletedPageNow} as the only write on the page (#2097, {@link withPageWrite}). */
   async restoreDeletedPage(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
     return this.withPageWrite(uuid, () => this.restoreDeletedPageNow(uuid));
