@@ -318,6 +318,7 @@
                     try {
                       var res = await (window.csrfFetch || fetch)('/my/takeout/import', { method: 'POST', body: new FormData(form) });
                       var data = await res.json();
+                      if (window.followReauth(data)) return;
                       if (!data.success) {
                         out.replaceChildren(line(data.error || 'The import failed.', 'alert alert-danger'));
                         return;

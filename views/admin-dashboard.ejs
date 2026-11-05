@@ -1430,8 +1430,10 @@ async function dashboardMediaRebuild() {
     async function refresh() {
         try {
             const res = await fetch('/api/tokens?all=true');
+            const body = await res.json().catch(() => ({}));
+            if (window.followReauth(body)) return;
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            const tokens = (await res.json()).tokens || [];
+            const tokens = body.tokens || [];
             if (tokens.length === 0) {
                 listEl.innerHTML = '<p class="text-muted small mb-0">No live tokens.</p>';
                 return;
@@ -1473,6 +1475,8 @@ async function dashboardMediaRebuild() {
                 method: 'DELETE',
                 headers: { 'X-CSRF-Token': CSRF }
             });
+            const body = await res.json().catch(() => ({}));
+            if (window.followReauth(body)) return;
             if (!res.ok) throw new Error('HTTP ' + res.status);
             await refresh();
         } catch (err) {
