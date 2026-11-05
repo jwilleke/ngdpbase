@@ -26,6 +26,8 @@ Decided and not built:
 - `ngdpbase.vaults.admin-access`, shipped `true`: an admin may enter a vault that is not encrypted, and every such access is audited ([#2255 amendment](https://github.com/jwilleke/ngdpbase/issues/2255#issuecomment-6653171635)).
 - The [OPA/Cedar comparison](https://github.com/jwilleke/ngdpbase/issues/2255#issuecomment-6653866027) concluded: keep our own evaluator. Cedar in WASM measured 124 µs per decision against 0.04 µs in plain JS, about 0.6 s for one 5,000-candidate search. It recommended two ideas from Cedar: return the deciding policy ids, and let a deny override an allow.
 
+Built in [#2255](https://github.com/jwilleke/ngdpbase/issues/2255), the seed of this model: page attributes declared on the `page` resource type with `type` and `from` (`owner` from `frontmatter:author`, `system-category`), a `condition` with `equals` only, `subject:id` as the one subject attribute, a missing attribute failing closed, deny overriding allow, and decisions returning the deciding policy ids. The category groups are plain policies on the `system-category` resource type ([access-policies.md](../access-policies.md)); there is no `ngdpbase.system-category-groups`. The rest of this page is #2261.
+
 No other design covers conditions on attributes. The older [policy-schema-documentation.md](../admin/policy-schema-documentation.md) lists types the evaluator never matched, and [access-policies.md](../access-policies.md#consolidation) already marks it for retirement.
 
 ## Data flow

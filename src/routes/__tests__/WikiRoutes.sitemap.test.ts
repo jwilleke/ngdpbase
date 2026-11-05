@@ -27,6 +27,8 @@ function makeRoutes(opts: {
   baseUrl?: string;
   pages?: Record<string, unknown>;
   meta?: Record<string, unknown>;
+  /** What the PDP says policy reserves to pushed-pages-edit; undefined means no PDP. */
+  pushed?: string[];
 } = {}) {
   const configManager = {
     getProperty: vi.fn((key: string, def: unknown) => {
@@ -45,9 +47,10 @@ function makeRoutes(opts: {
       (opts.meta ?? { alpha: {}, secret: {}, 'team-only': { audience: ['editor'] } })[slug] ?? null)
   };
   const routes = Object.create(WikiRoutes.prototype);
+  const pdp = opts.pushed === undefined ? null : { categoriesGranting: vi.fn(() => opts.pushed) };
   routes.engine = {
     getManager: vi.fn((n: string) =>
-      n === 'ConfigurationManager' ? configManager : n === 'PageManager' ? pageManager : null)
+      n === 'ConfigurationManager' ? configManager : n === 'PageManager' ? pageManager : n === 'PolicyDecisionPoint' ? pdp : null)
   };
   return routes as WikiRoutes;
 }
@@ -87,6 +90,34 @@ describe('GET /sitemap.xml', () => {
     expect(res.body).toContain('<loc>https://x.test/view/alpha</loc>');
     expect(res.body).not.toContain('secret');
     expect(res.body).not.toContain('team-only');
+  });
+
+  describe('#2255 pushed pages stay out, now that no access stamp keeps them out', () => {
+    const PAGES = {
+      a: { slug: 'alpha', title: 'Alpha', location: 'pages' },
+      d: { slug: 'help', title: 'Help', location: 'pages' },
+      s: { slug: 'left-menu', title: 'LeftMenu', location: 'pages' }
+    };
+    const META = {
+      alpha: { 'system-category': 'general' },
+      help: { 'system-category': 'documentation', access: { edit: ['admin'] } },
+      'left-menu': { 'system-category': 'system' }
+    };
+
+    test('a page in a category policy reserves to pushed-pages-edit is not listed', async () => {
+      const res = makeRes();
+      await makeRoutes({ pages: PAGES, meta: META, pushed: ['system', 'documentation', 'addon'] }).sitemap(req(), res);
+      expect(res.body).toContain('<loc>https://x.test/view/alpha</loc>');
+      expect(res.body).not.toContain('help');
+      expect(res.body).not.toContain('left-menu');
+    });
+
+    test('the categories are the PDP\'s: a category it does not name is listed', async () => {
+      const res = makeRes();
+      await makeRoutes({ pages: PAGES, meta: META, pushed: ['system'] }).sitemap(req(), res);
+      expect(res.body).toContain('/view/help');
+      expect(res.body).not.toContain('left-menu');
+    });
   });
 
   describe('Tier-2 guards — each returns an empty sitemap rather than guessing', () => {

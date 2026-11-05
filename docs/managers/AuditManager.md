@@ -517,6 +517,7 @@ audited.
 | `authentication-logout` | User signed out | continue | yes |
 | `authorization-deny` | Access denied | continue | yes |
 | `authorization-allow` | Access granted; emitter exists, nothing in production calls it | continue | yes |
+| `vault-admin-access` | An administrator read or changed a page inside another person's vault that is not encrypted (ngdpbase.vaults.admin-access, #2255): the administrator is the actor, and the vault's owner, the vault and the page are named | continue | yes |
 | `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | continue | yes |
 | `security-event` | Security violation detected; the kind is in metadata.securityEventType | continue | yes |
 | `share-access` | Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388) | continue | yes |

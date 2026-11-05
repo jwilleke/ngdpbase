@@ -321,7 +321,7 @@ export class ApiContext extends BaseContext {
     // one is asked as #1745 always has: holds the permission, may not act now —
     // exactly the condition under which the PDP writes STEP_UP_REASON.
     const stepUp = Boolean(this.request) && await this.holdsPermission(permission);
-    await this.enforceDeny(permission, { permit: false, applicable: true, reason: stepUp ? STEP_UP_REASON : 'policy_deny' });
+    await this.enforceDeny(permission, { permit: false, applicable: true, reason: stepUp ? STEP_UP_REASON : 'policy_deny', policyIds: [] });
   }
 
   /**

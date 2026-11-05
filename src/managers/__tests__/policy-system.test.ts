@@ -239,9 +239,9 @@ describe('Policy System Integration', () => {
 
       const result = await policyEvaluator.evaluateAccess(systemPageContext);
 
-      // Should be denied because deny policy (priority 200) takes precedence over allow (priority 100)
+      // Denied: a matching deny overrides any allow (#2255), and names itself.
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('Policy match');  // Changed from 'denied' to match actual response
+      expect(result.reason).toContain('Policy deny');
     });
   });
 

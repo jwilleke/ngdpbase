@@ -143,12 +143,16 @@ describe('shipped system-categories carry no source (#1503)', () => {
     }
   });
 
-  test('matches docs/system-category.md: developer is never stored, general and capture have vaults, the rest are public', () => {
+  test('matches docs/system-category.md: developer is never stored, general and capture have vaults, shared is in shared folders, the rest are public', () => {
     const stored = Object.fromEntries(Object.entries({ ...core, ...journal }).map(([k, c]) => [k, categoryStored(c)]));
     expect(stored).toEqual({
       general: 'vault', system: 'public', documentation: 'public', developer: 'none',
-      addon: 'public', 'user-profile': 'public', capture: 'vault', journal: 'vault'
+      addon: 'public', 'user-profile': 'public', capture: 'vault', shared: 'shared-folder', journal: 'vault'
     });
+  });
+
+  test('sharedfolder: true is the shared-folder kind (#2255)', () => {
+    expect(categoryStored({ storageLocation: { sharedfolder: true } })).toBe('shared-folder');
   });
 });
 

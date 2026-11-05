@@ -79,6 +79,13 @@ describe('#1436 username normalization', () => {
       expect(isReservedUsername('orphan:bob')).toBe(true);
     });
 
+    test('a name that looks like an add-on author is reserved (#2255)', () => {
+      // No account may become an add-on page's author.
+      expect(isReservedUsername('addon:calendar')).toBe(true);
+      expect(isReservedUsername('Addon:Calendar')).toBe(true);
+      expect(isReservedUsername('addons')).toBe(false);
+    });
+
     test('an ordinary name is not reserved', () => {
       expect(isReservedUsername('jim')).toBe(false);
       expect(isReservedUsername('anonymous-coward')).toBe(false);

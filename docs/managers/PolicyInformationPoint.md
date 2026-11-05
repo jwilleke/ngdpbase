@@ -31,7 +31,7 @@ A door asks for a __permission__, never a role. The policies are the only grant,
 | --- | --- | --- |
 | 0 | __private__ | owner or delegate, never a role; a proxy only under a grant carrying `vault-proxy`. For an encrypted store there is no key an administrator (or a proxy, until #1762 slice 5) could hold |
 | 0.5 | __author-lock__, `edit` only | only denies. The author, or a subject holding `admin-system`, goes on to tier 1 |
-| 1 | frontmatter __`access[action]`__ / __`audience`__ | a page's own restriction, when it states one |
+| 1 | frontmatter __`audience`__ | a page's own restriction, when it states one. A page's `access` field is not read ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) |
 | 2 | a __share__ is the policy for a share visitor; otherwise __global policy__ via the PDP | |
 | — | default deny | |
 

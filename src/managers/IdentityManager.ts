@@ -12,7 +12,7 @@ import { knownCountry, toE164 } from '../utils/phoneNumbers.js';
 import { languageTag } from '../utils/languages.js';
 import type { User } from '../types/User.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isNoRecordedUser, isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
+import { ACCOUNTLESS_PERSON_PREFIX, IDENTITY_ID_PREFIX, ORPHAN_PREFIX, isAddonAuthor, isNoRecordedUser, isReservedUsername, normalizeUsername, sameUsername } from '../utils/username.js';
 import { ContactRefusedError, recordContactChange, requireContactPermission, requireRecordAccess } from '../utils/contactAccess.js';
 import { KeyedSerial } from '../utils/keyedSerial.js';
 import { IdentityStoreUnavailableError } from '../utils/identityStoreUnavailable.js';
@@ -802,6 +802,8 @@ class IdentityManager extends BaseManager {
   async convertReference(ctx: ActorContext, stored: string): Promise<{ value: string; outcome: 'kept' | 'orphan' | 'converted' | 'orphaned' }> {
     if (typeof stored !== 'string' || !stored || stored.startsWith(IDENTITY_ID_PREFIX)) return { value: stored, outcome: 'kept' };
     if (stored.startsWith(ORPHAN_PREFIX)) return { value: stored, outcome: 'orphan' };
+    // #2255: an add-on's pages are authored by the add-on, never an account.
+    if (isAddonAuthor(stored)) return { value: stored, outcome: 'kept' };
     if (sameUsername(stored, 'anonymous') || sameUsername(stored, systemPrincipalOf(this.engine))) return { value: stored, outcome: 'kept' };
     const identity = await this.getByUserIdentifier(ctx, stored);
     return identity ? { value: identity['@id'], outcome: 'converted' } : { value: `${ORPHAN_PREFIX}${stored}`, outcome: 'orphaned' };

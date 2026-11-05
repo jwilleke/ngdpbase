@@ -991,8 +991,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         expect(response.body.redirect).toBe('/');
       });
 
-      test('should prevent deletion of required pages', async () => {
-        // #1503: a shipped page (its uuid in the seeded-pages record) is admin-only to delete
+      test('should prevent deletion of a shipped page the page door refuses', async () => {
+        // #2255: a shipped page is decided by its system-category's policies, through the page door
         mockPageManager.getPageMetadata.mockResolvedValue({
           title: 'TestPage',
           uuid: 'shipped-uuid',
@@ -1003,11 +1003,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage', 'system-category': 'system' }
         });
-        // User does NOT have admin-system permission - permits(subject, action)
-        mockPolicyDecisionPoint.permits.mockImplementation((_subject, perm) => {
-          if (perm === 'admin-system') return false;
-          return true;
-        });
+        // The page door refuses: no policy grants pushed-pages-delete to this user.
+        mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
 
         const response = await request(app)
           .post('/delete/TestPage')

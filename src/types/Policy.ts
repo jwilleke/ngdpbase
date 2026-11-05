@@ -33,6 +33,28 @@ export interface PolicyResource {
   pattern: string;
 }
 
+/**
+ * A policy's condition (#2255, the seed of #2261): two attributes, or an
+ * attribute and a literal, that must be equal. A string starting with
+ * `subject:`, `resource:` or `environment:` names an attribute; anything else
+ * is a literal. `equals` is the only operator so far.
+ *
+ * A condition reading an attribute that is missing is UNKNOWN, and fails
+ * closed: an allow with it does not apply, a deny with it does.
+ */
+export interface PolicyCondition {
+  attribute: string;
+  equals: unknown;
+}
+
+/** The prefixes that mark a condition value as an attribute rather than a literal (#2255). */
+export const ATTRIBUTE_CATEGORIES = ['subject', 'resource', 'environment'] as const;
+
+/** True when `value` names an attribute (`subject:id`, `resource:owner`), not a literal. */
+export function isAttributeName(value: unknown): value is string {
+  return typeof value === 'string' && ATTRIBUTE_CATEGORIES.some((c) => value.startsWith(`${c}:`));
+}
+
 /** One entry of `ngdpbase.access.policies`. */
 export interface Policy {
   id: string;
@@ -49,6 +71,8 @@ export interface Policy {
   subjects?: PolicySubject[];
   resources?: PolicyResource[];
   actions?: string[];
+  /** Applies only when this holds (#2255); see {@link PolicyCondition}. */
+  condition?: PolicyCondition;
   [key: string]: unknown;
 }
 
@@ -95,11 +119,18 @@ export interface DecisionRequest {
   action: string;
   resource?: DecisionResource;
   /**
-   * What the PIP knows about the resource beyond its reference, for the
-   * policy resource types that match on it (#1504): a page's
-   * `system-category`. The PDP passes it through; it never loads it.
+   * Where a page or file sits, for the resource types that match on it: the
+   * `vault` (#1539) or the `shared-folder` (#2125). A page's own attributes —
+   * its `system-category`, its `owner` — are never passed: the PDP asks the
+   * PIP for them from the page id (#2255).
    */
   attributes?: Record<string, unknown>;
+  /**
+   * The page's frontmatter when the PIP itself already holds it (the page
+   * door, the list filter), so the PDP's lookup reads no page twice. Only the
+   * PIP sets it; a route never does (#2255).
+   */
+  pageMetadata?: Record<string, unknown> | null;
   /**
    * Whether a share's `resources` cover the thing being asked about.
    *
@@ -136,6 +167,12 @@ export interface Decision {
    */
   applicable: boolean;
   reason: string;
+  /**
+   * The ids of the policies that decided (#2255): the denies that matched,
+   * or, when none did, the allows that matched. Empty when no policy matched
+   * or something other than policy decided (a ceiling, step-up).
+   */
+  policyIds: string[];
 }
 
 /**

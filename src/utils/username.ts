@@ -80,6 +80,24 @@ export const ACCOUNTLESS_PERSON_PREFIX = 'person:';
 export const IDENTITY_ID_PREFIX = 'urn:';
 
 /**
+ * The prefix of an add-on's pages' author (#2255): `addon:<slug>`. The pages
+ * an add-on pushes to a site are authored by the add-on, as required pages
+ * are by `system`. No username may start with it, so no account is ever an
+ * add-on page's author, and a start-up conversion keeps it as it is.
+ */
+export const ADDON_AUTHOR_PREFIX = 'addon:';
+
+/** The author of the pages add-on `slug` pushes (#2255). */
+export function addonAuthor(slug: string): string {
+  return `${ADDON_AUTHOR_PREFIX}${slug}`;
+}
+
+/** True when `value` names an add-on as a page's author (#2255). */
+export function isAddonAuthor(value: unknown): boolean {
+  return typeof value === 'string' && value.length > ADDON_AUTHOR_PREFIX.length && value.startsWith(ADDON_AUTHOR_PREFIX);
+}
+
+/**
  * The prefix a start-up conversion gives a stored username that has no
  * account (#2041): `orphan:<name>`. The record is then nobody's: a later
  * account with the same name never takes it over, no "is it mine" check
@@ -107,10 +125,10 @@ export function isNoRecordedUser(value: unknown): boolean {
 /**
  * True when the name belongs to a principal rather than a user, is a "no user
  * recorded" value ({@link NO_RECORDED_USER}, #2097: an account by that name
- * would take over the records that hold it), or has the contact, `@id` or
- * orphan prefix.
+ * would take over the records that hold it), or has the contact, `@id`, orphan or
+ * add-on author (#2255) prefix.
  */
 export function isReservedUsername(username: unknown): boolean {
   const name = normalizeUsername(username);
-  return RESERVED_USERNAMES.includes(name) || NO_RECORDED_USER.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX) || name.startsWith(ORPHAN_PREFIX);
+  return RESERVED_USERNAMES.includes(name) || NO_RECORDED_USER.includes(name) || name.startsWith(ACCOUNTLESS_PERSON_PREFIX) || name.startsWith(IDENTITY_ID_PREFIX) || name.startsWith(ORPHAN_PREFIX) || name.startsWith(ADDON_AUTHOR_PREFIX);
 }

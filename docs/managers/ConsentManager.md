@@ -22,7 +22,7 @@ A document is a page whose front matter carries:
 - `version:` what users accept. Changing it asks everyone again. An ordinary edit (same version) asks no one.
 - `effective:` the date it takes effect (`YYYY-MM-DD`), shown with it.
 
-Core's documents are `ngdpbase.consent.documents`, by page slug. It ships `terms-of-service` and `privacy-policy`, version 1, as required pages in the `system` category, so only administrators edit them (`access: { edit: [admin] }`). They are generic templates; each operator reviews them for their own site. The version is changed with Admin → Edit raw (`/admin/edit-raw/<page>`); the normal editor keeps front matter it does not show, so an ordinary edit leaves the version alone.
+Core's documents are `ngdpbase.consent.documents`, by page slug. It ships `terms-of-service` and `privacy-policy`, version 1, as required pages in the `system` category, so only holders of `pushed-pages-edit` (administrators, as shipped) edit them ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)). They are generic templates; each operator reviews them for their own site. The version is changed with Admin → Edit raw (`/admin/edit-raw/<page>`); the normal editor keeps front matter it does not show, so an ordinary edit leaves the version alone.
 
 The version and date are read from the page each time (`documents(scope)`), never copied. Whether a user has accepted the current version is derived from their records and the page, so a version change clears everyone's acceptance without touching a record.
 

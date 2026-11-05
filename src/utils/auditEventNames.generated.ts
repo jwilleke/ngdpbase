@@ -233,6 +233,8 @@ export const AUDIT_EVENT = {
   USER_EDIT: 'user-edit',
   /** User profile read; not recorded, read volume */
   USER_READ: 'user-read',
+  /** An administrator read or changed a page inside another person's vault that is not encrypted (ngdpbase.vaults.admin-access, #2255): the administrator is the actor, and the vault's owner, the vault and the page are named */
+  VAULT_ADMIN_ACCESS: 'vault-admin-access',
   /** Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant */
   VAULT_PROXY: 'vault-proxy',
   /** A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system */

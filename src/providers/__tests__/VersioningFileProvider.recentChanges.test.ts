@@ -310,16 +310,15 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       expect(out).toHaveLength(1);
     });
 
-    test('respects access.view the same way as audience', async () => {
+    test('an access.view rule hides nothing: access is not read (#2255)', async () => {
       const p = withMetadata({ access: { view: ['editor'] } });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toEqual([]);
-      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['editor'] })).toHaveLength(1);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toHaveLength(1);
     });
 
     test('an edit-only rule does not hide a publicly readable page', async () => {
-      // `access: {edit: [admin]}` restricts editing, not viewing.
+      // The old shipped stamp, `access: {edit: [admin]}`.
       const p = withMetadata({ access: { edit: ['admin'] } });
       p.pageIndex = indexWith({ isPrivate: undefined });
 

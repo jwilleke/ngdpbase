@@ -63,8 +63,10 @@ export const DEFAULT_SHARE_MAX_DAYS = 15;
  * - `public`: a `storageLocation` without a vault; its pages can never be
  *   private.
  * - `vault`: a `storageLocation.privatestore`; its pages may be private.
+ * - `shared-folder`: `storageLocation.sharedfolder: true` (#2255); its pages
+ *   live in shared folders (the `shared` category).
  */
-export type CategoryStored = 'none' | 'public' | 'vault';
+export type CategoryStored = 'none' | 'public' | 'vault' | 'shared-folder';
 
 /**
  * Where an entry's pages are stored. The one rule every reader of "is this
@@ -77,6 +79,7 @@ export function categoryStored(cfg: { storageLocation?: unknown } | null | undef
   // (a malformed value, or a word left from before #1504) still stores, so a
   // stale site config never starts refusing saves.
   if (location === undefined || location === null) return 'none';
+  if (typeof location === 'object' && (location as { sharedfolder?: unknown }).sharedfolder === true) return 'shared-folder';
   return typeof location === 'object' && parsePrivatestore((location as { privatestore?: unknown }).privatestore) ? 'vault' : 'public';
 }
 

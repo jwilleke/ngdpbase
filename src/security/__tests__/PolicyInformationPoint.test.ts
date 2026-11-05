@@ -108,6 +108,15 @@ describe('PolicyInformationPoint', () => {
 
   // #1539: Tier 0 only refuses. An owner it admits faces policy, asked with the
   // page's vault; this stands in for the shipped vault-owner policy.
+  /** Policy grants `page-edit` on any page (#2255: no `access:` grants it any more). */
+  function grantEditByPolicy() {
+    mockPolicyEvaluator = {
+      evaluateAccess: vi.fn(({ action }: { action: string }) => (action === 'page-edit'
+        ? { hasDecision: true, allowed: true, reason: 'Policy allow: edit', policyName: 'edit', policyIds: ['edit'] }
+        : { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null, policyIds: [] }))
+    };
+  }
+
   function grantInVault() {
     mockPolicyEvaluator = {
       evaluateAccess: vi.fn(({ attributes }: { attributes?: { vault?: string } }) => (attributes?.vault
@@ -237,27 +246,23 @@ describe('PolicyInformationPoint', () => {
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': true, author: 'alice',
-          // Tier 1 would allow bob to edit via the per-action access map —
-          // proves Tier 0.5 denies first, before Tier 1 ever runs.
-          access: { edit: ['bob'] }
+          'author-lock': true, author: 'alice'
         },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
-    test('edit + author-lock + page-author → falls through (Tier 1 access.edit decides allow)', async () => {
+    test('edit + author-lock + page-author → falls through (policy decides allow)', async () => {
+      grantEditByPolicy();
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': true, author: 'alice',
-          access: { edit: ['alice'] }
+          'author-lock': true, author: 'alice'
         },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
-      // alice IS the author — Tier 0.5 doesn't deny her; Tier 1 access.edit
-      // matches; allowed.
+      // alice IS the author — Tier 0.5 doesn't deny her; policy allows.
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
@@ -266,9 +271,10 @@ describe('PolicyInformationPoint', () => {
     // The reuse test pins that neither an orphan nor a deleted account's @id
     // ever matches the new account (IdentityManager.refersTo's own tests break it).
     test('#2097 an author stored as an identity @id: its account passes, another does not', async () => {
+      grantEditByPolicy();
       const { fakeIdentityManager } = await import('../../test-support/identities');
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1', bob: 'urn:uuid:bob-1' });
-      const page = { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true, author: 'urn:uuid:alice-1', access: { edit: ['alice', 'bob'] } };
+      const page = { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true, author: 'urn:uuid:alice-1' };
       const alice = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
       const bob = makeWikiContext({ pageMetadata: page, userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true } });
       expect(await policyInformationPoint.checkPagePermissionWithContext(alice, 'edit')).toBe(true);
@@ -276,10 +282,11 @@ describe('PolicyInformationPoint', () => {
     });
 
     test('#2097 an author not yet converted still matches its username', async () => {
+      grantEditByPolicy();
       const { fakeIdentityManager } = await import('../../test-support/identities');
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1' });
       const ctx = makeWikiContext({
-        pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true, author: 'alice', access: { edit: ['alice'] } },
+        pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true, author: 'alice' },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
@@ -289,19 +296,20 @@ describe('PolicyInformationPoint', () => {
       const { fakeIdentityManager } = await import('../../test-support/identities');
       // The old alice was deleted; a new account took the name.
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-new' });
-      const page = { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true, access: { edit: ['alice'] } };
+      const page = { title: 'Test', uuid: 'x', lastModified: '', 'author-lock': true };
       for (const author of ['orphan:alice', 'urn:uuid:alice-old']) {
         const ctx = makeWikiContext({ pageMetadata: { ...page, author }, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
         expect(await policyInformationPoint.evaluatePagePermission(ctx, 'edit')).toMatchObject({ allowed: false, reason: 'author_lock_deny' });
       }
     });
 
-    // #2097 review fix 5: audience and access entries stored as @ids. Sabotage:
+    // #2097 review fix 5: audience entries stored as @ids. Sabotage:
     // leaving the @id out of principalsOf turned the first red.
-    test('#2097 an audience or edit-access entry stored as an @id admits its own account only', async () => {
+    test('#2097 an audience entry stored as an @id admits its own account only', async () => {
+      grantEditByPolicy();
       const { fakeIdentityManager } = await import('../../test-support/identities');
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1', bob: 'urn:uuid:bob-1' });
-      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['urn:uuid:alice-1'], access: { edit: ['urn:uuid:alice-1'] } };
+      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['urn:uuid:alice-1'] };
       const alice = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
       const bob = makeWikiContext({ pageMetadata: page, userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true } });
       expect(await policyInformationPoint.checkPagePermissionWithContext(alice, 'edit')).toBe(true);
@@ -309,11 +317,11 @@ describe('PolicyInformationPoint', () => {
       expect(await policyInformationPoint.checkPagePermissionWithContext(bob, 'edit')).toBe(false);
     });
 
-    test('#2097 a reused username gets no audience or edit access: an orphan or an old @id matches nobody', async () => {
+    test('#2097 a reused username gets no audience: an orphan or an old @id matches nobody', async () => {
       const { fakeIdentityManager } = await import('../../test-support/identities');
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-new' });
       for (const entry of ['orphan:alice', 'urn:uuid:alice-old']) {
-        const page = { title: 'Test', uuid: 'x', lastModified: '', audience: [entry], access: { edit: [entry] } };
+        const page = { title: 'Test', uuid: 'x', lastModified: '', audience: [entry] };
         const ctx = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
         expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
         expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
@@ -321,9 +329,10 @@ describe('PolicyInformationPoint', () => {
     });
 
     test('#2097 an entry not yet converted still matches the username', async () => {
+      grantEditByPolicy();
       const { fakeIdentityManager } = await import('../../test-support/identities');
       mockIdentities = fakeIdentityManager({ alice: 'urn:uuid:alice-1' });
-      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['alice'], access: { edit: ['alice'] } };
+      const page = { title: 'Test', uuid: 'x', lastModified: '', audience: ['alice'] };
       const ctx = makeWikiContext({ pageMetadata: page, userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true } });
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
@@ -331,15 +340,15 @@ describe('PolicyInformationPoint', () => {
     // The author-lock override tests spy on the PDP's permits; put it back even when one fails.
     afterEach(() => { vi.restoreAllMocks(); });
 
-    test('edit + author-lock + admin-system → falls through (Tier 1 access.edit decides allow)', async () => {
+    test('edit + author-lock + admin-system → falls through (policy decides allow)', async () => {
+      grantEditByPolicy();
       // #1431 step 7b: the override is the admin-system PERMISSION, asked of
       // PolicyDecisionPoint.permits — the policy decides, as for any door.
       const permits = vi.spyOn(policyDecisionPoint, 'permits').mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': true, author: 'alice',
-          access: { edit: ['admin'] }
+          'author-lock': true, author: 'alice'
         },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
@@ -354,8 +363,7 @@ describe('PolicyInformationPoint', () => {
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': true, author: 'alice',
-          access: { edit: ['admin'] }
+          'author-lock': true, author: 'alice'
         },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
@@ -363,14 +371,14 @@ describe('PolicyInformationPoint', () => {
     });
 
     test('a role not named admin but granted admin-system can override (#1431 7b)', async () => {
+      grantEditByPolicy();
       // The other half: the config decides, so an operator role granted the
       // permission works without being called 'admin'.
       const permits = vi.spyOn(policyDecisionPoint, 'permits').mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': true, author: 'alice',
-          access: { edit: ['operator'] }
+          'author-lock': true, author: 'alice'
         },
         userContext: { username: 'carol', roles: ['operator'], isAuthenticated: true }
       });
@@ -423,24 +431,24 @@ describe('PolicyInformationPoint', () => {
     });
 
     test('edit + author-lock absent → Tier 0.5 does NOT fire (falls through)', async () => {
+      grantEditByPolicy();
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          author: 'alice',
-          access: { edit: ['editor'] }
+          author: 'alice'
         },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      // No author-lock field → Tier 0.5 is a no-op; Tier 1 access.edit matches → allow.
+      // No author-lock field → Tier 0.5 is a no-op; policy allows.
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
     test('edit + author-lock:false (explicit) → Tier 0.5 does NOT fire', async () => {
+      grantEditByPolicy();
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
-          'author-lock': false, author: 'alice',
-          access: { edit: ['editor'] }
+          'author-lock': false, author: 'alice'
         },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
@@ -615,16 +623,15 @@ describe('PolicyInformationPoint', () => {
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
-    test('access.view: [admin] overrides audience for view', async () => {
+    test('access.view is no longer read (#2255): the audience decides the view', async () => {
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'], access: { view: ['admin'] } },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      // editor is in audience but access.view restricts to admin only
-      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
-    test('access.edit: [admin] blocks edit for editor; view via audience still works', async () => {
+    test('access.edit grants nothing (#2255): with no policy granting edit it is refused; view via audience still works', async () => {
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'], access: { edit: ['admin'] } },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }

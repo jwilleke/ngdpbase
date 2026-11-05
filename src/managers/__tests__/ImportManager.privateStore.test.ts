@@ -102,9 +102,9 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     audit = { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() };
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      // Everything, but `admin-system` only to an admin: Molly is not one (#1503).
+      // Everything, but `admin-system` and `page-categorize` only to an admin: Molly is not one (#1503, #2255).
       PolicyDecisionPoint: {
-        permits: (ctx: ActorContext, permission: string) => Promise.resolve(permission !== 'admin-system' || !!ctx.roles?.includes('admin')),
+        permits: (ctx: ActorContext, permission: string) => Promise.resolve((permission !== 'admin-system' && permission !== 'page-categorize') || !!ctx.roles?.includes('admin')),
         decide: () => Promise.resolve({ permit: true })
       },
       PolicyInformationPoint: {

@@ -103,7 +103,7 @@ describe('savePage asks the editor’s doors (#1542)', () => {
   // #1503: decided per page, by the seeded-pages record, not by the system-category.
   test('a shipped copy is marked user-modified when saved; a page made on the site is not', async () => {
     for (const shipped of [true, false]) {
-      // A shipped page is admin-only to edit, so the admin edits it here.
+      // #2255: whether it may be edited is the page door's (its category's policies); here it allows.
       const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit', 'admin-system'], pageAllows: true });
       const isShippedPageCopy = vi.fn().mockResolvedValue(shipped);
       Object.assign(pageManager, { isShippedPageCopy });
@@ -115,9 +115,11 @@ describe('savePage asks the editor’s doors (#1542)', () => {
   });
 
   // #1503 (operator, 2026-10-29): a seeded add-on page is a shipped page like a required page.
+  // #2255: who may change it is its system-category's policies, through the page door; the
+  // route no longer special-cases a shipped page for administrators.
   describe('a seeded add-on page is shipped; a site-made page in the same category is not', () => {
-    const addonEngine = (shipped: boolean, granted: string[]) => {
-      const built = makeEngine({ existing: true, granted, pageAllows: true });
+    const addonEngine = (shipped: boolean, granted: string[], pageAllows = true) => {
+      const built = makeEngine({ existing: true, granted, pageAllows });
       // The author is the saving user, so the owner's-move check passes and the shipped check is what answers.
       const metadata = { title: 'TestPage', uuid: 'u1', author: 'jim', 'system-category': 'addon', ...(shipped ? { addon: 'demo' } : {}) };
       built.pageManager.getPage.mockResolvedValue({ content: 'old', metadata });
@@ -134,15 +136,15 @@ describe('savePage asks the editor’s doors (#1542)', () => {
     };
     const EDITOR = ['page-read', 'page-create', 'page-edit', 'page-delete'];
 
-    test('a non-admin cannot edit the seeded add-on page', async () => {
-      const { engine, pageManager } = addonEngine(true, EDITOR);
+    test('someone the page door refuses (addon is a pushed category) cannot edit the seeded add-on page', async () => {
+      const { engine, pageManager } = addonEngine(true, EDITOR, false);
       const r = res();
       await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR), r);
       expect(pageManager.savePage).not.toHaveBeenCalled();
       expect(r.status).toHaveBeenCalledWith(403);
     });
 
-    test('an admin can, and the page is marked user-modified', async () => {
+    test('someone the page door allows can, and the page is marked user-modified', async () => {
       const { engine, pageManager } = addonEngine(true, [...EDITOR, 'admin-system']);
       await new WikiRoutes(engine).savePage(addonReq(CONTRIBUTOR), res());
       expect((pageManager.savePage.mock.calls[0][2] as Record<string, unknown>)['user-modified']).toBe(true);
@@ -157,13 +159,13 @@ describe('savePage asks the editor’s doors (#1542)', () => {
       expect(r.send).toHaveBeenCalledWith('Required pages cannot be marked as private');
     });
 
-    test('a non-admin cannot delete the seeded add-on page', async () => {
-      const { engine, pageManager } = addonEngine(true, EDITOR);
+    test('someone the page door refuses cannot delete the seeded add-on page', async () => {
+      const { engine, pageManager } = addonEngine(true, EDITOR, false);
       const routes = new WikiRoutes(engine) as unknown as { deletePage(q: unknown, r: unknown): Promise<unknown>; renderError: unknown };
       const renderError = vi.fn().mockResolvedValue(undefined);
       routes.renderError = renderError;
       await routes.deletePage({ ...addonReq(CONTRIBUTOR), method: 'POST' }, res());
-      expect(renderError).toHaveBeenCalledWith(expect.anything(), expect.anything(), 403, 'Access Denied', 'Only administrators can delete this page');
+      expect(renderError).toHaveBeenCalledWith(expect.anything(), expect.anything(), 403, 'Access Denied', 'You do not have permission to delete this page');
       expect(pageManager.deletePageWithContext).not.toHaveBeenCalled();
     });
 

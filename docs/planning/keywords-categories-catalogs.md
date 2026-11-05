@@ -19,7 +19,7 @@ Three config-defined controlled vocabularies plus one open (uncontrolled) vocabu
 
 | Vocabulary | Config key | Nature | Applied to | Notes |
 |---|---|---|---|---|
-| System categories | `ngdpbase.system-category` | Closed, operator-curated | Pages (exactly one per page) | Each entry carries label, description, `storageLocation` (regular/required), enabled flag. Default: `general` (`ngdpbase.default.system-category`) |
+| System categories | `ngdpbase.system-category` | Closed, operator-curated | Pages (exactly one per page) | Each entry carries label, description, `storageLocation` (regular/required), enabled flag. Default: the entry with `default: true` (`general`) |
 | System keywords | `ngdpbase.system-keywords` | Closed, operator-curated | Pages (multi) | 13 defaults. Each entry has its own `category` facet: `content-type`, `workflow-status`, `subject` |
 | User keywords | `ngdpbase.user-keywords` | Closed but user-facing | Pages (multi, max `ngdpbase.maximum.user-keywords` = 5) | Entries: label, description, `category` facet (general/status/subject), `enabled`, `restrictEditing`. `capture` added by commit 5c43a23e (for the #881 bookmarklet) |
 | Media/attachment keywords | *(none — no catalog)* | __Open__ | Media + attachment files | Stored __in the file__ (EXIF/IPTC/XMP `Keywords` / `dc:subject`); digiKam-compatible; anything a camera/tool/user wrote |

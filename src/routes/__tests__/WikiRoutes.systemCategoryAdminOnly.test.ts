@@ -3,7 +3,8 @@
  * page's system-category. For anyone else a new page is the default
  * (`general`) and an existing page keeps its own; a request naming any other
  * is refused with a 403, never rewritten. Asked through the PDP
- * (`admin-system`) with the requester's context, never a role name.
+ * (`page-categorize`, #2255) with the requester's context, never a role
+ * name. `shared` is set by nobody: a page created in a shared folder gets it.
  *
  * The rule is PageManager.systemCategoryForWrite; these drive it through the
  * save, create and ingest routes.
@@ -11,15 +12,15 @@
 import fs from 'fs';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
-import PageManager, { SYSTEM_CATEGORY_ADMIN_ONLY } from '../../managers/PageManager';
+import PageManager, { SHARED_CATEGORY_REFUSAL, SYSTEM_CATEGORY_ADMIN_ONLY } from '../../managers/PageManager';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
 const CATEGORIES = shipped['ngdpbase.system-category'] as Record<string, { enabled?: boolean; label: string }>;
 const ENABLED = Object.values(CATEGORIES).filter((c) => c.enabled !== false).map((c) => c.label);
-const ALL_BUT_GENERAL = [...Object.values(CATEGORIES).map((c) => c.label), 'journal'].filter((c) => c !== 'general');
+const ALL_BUT_GENERAL = [...Object.values(CATEGORIES).map((c) => c.label), 'journal'].filter((c) => c !== 'general' && c !== 'shared');
 
 const EDITOR = ['page-read', 'page-create', 'page-edit'];
-const ADMIN = [...EDITOR, 'admin-system'];
+const ADMIN = [...EDITOR, 'admin-system', 'page-categorize'];
 const JIM = { username: 'jim', roles: ['contributor'], isAuthenticated: true };
 
 function makeEngine({ existing, granted, category = 'general' }: { existing: boolean; granted: string[]; category?: string }) {
@@ -110,7 +111,18 @@ describe('only an administrator sets a page system-category (#1503)', () => {
         expect(pageManager.savePage).not.toHaveBeenCalled();
         expect(r.status).toHaveBeenCalledWith(403);
         expect(r.send).toHaveBeenCalledWith(SYSTEM_CATEGORY_ADMIN_ONLY);
-        expect(permits).toHaveBeenCalledWith(JIM, 'admin-system');
+        expect(permits).toHaveBeenCalledWith(JIM, 'page-categorize');
+      }
+    });
+
+    test('nobody names shared, an admin included: it is given only by creating a page in a shared folder (#2255)', async () => {
+      for (const granted of [EDITOR, ADMIN]) {
+        const { engine, pageManager } = makeEngine({ existing: true, granted });
+        const r = res();
+        await new WikiRoutes(engine).savePage(saveReq('shared'), r);
+        expect(pageManager.savePage).not.toHaveBeenCalled();
+        expect(r.status).toHaveBeenCalledWith(403);
+        expect(r.send).toHaveBeenCalledWith(SHARED_CATEGORY_REFUSAL);
       }
     });
 

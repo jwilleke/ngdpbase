@@ -111,6 +111,7 @@ import {
   buildSitemapIndexXml,
   selectPublicSitemapEntries,
   isRestrictedByMetadata,
+  isPushedPage,
   paginate,
   type SitemapIndexEntry,
   type RestrictableMetadata
@@ -2400,7 +2401,8 @@ class WikiRoutes {
     // already fresh enough. A refusal for someone who HOLDS the permission is
     // the step-up one: answered with the way to the prompt, not a plain refusal.
     if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) return true;
-    if (await wikiContext.holdsPermission(permission)) {
+    // #2255: the step-up fallback asks about the same page, so the two agree.
+    if (await (pageName === undefined ? wikiContext.holdsPermission(permission) : wikiContext.holdsPermissionOn(permission, pageName))) {
       await this.askForFreshSignIn(wikiContext, permission, req, res, mode);
       return false;
     }
@@ -2525,6 +2527,20 @@ class WikiRoutes {
    * missed crawl; over-listing leaks the slug and existence of a page nobody
    * was meant to find.
    */
+  /**
+   * The system-categories of pushed pages (#2255): those policy reserves to
+   * `pushed-pages-edit`, asked of the PDP. With no PDP none is known, and the
+   * sitemap says so in the log rather than guess.
+   */
+  private pushedPageCategories(): string[] {
+    const pdp = this.engine.getManager<{ categoriesGranting?(action: string): string[] }>('PolicyDecisionPoint');
+    if (typeof pdp?.categoriesGranting !== 'function') {
+      logger.warn('[sitemap] PolicyDecisionPoint is not available; pushed pages are not excluded by category (#2255)');
+      return [];
+    }
+    return pdp.categoriesGranting('pushed-pages-edit');
+  }
+
   async sitemap(req: Request, res: Response): Promise<void | Response> {
     try {
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -2542,6 +2558,8 @@ class WikiRoutes {
       let entries: ReturnType<typeof selectPublicSitemapEntries> = [];
       if (indexPages && this._anonymousReadIsGloballyAllowed(configManager)) {
         const candidates = selectPublicSitemapEntries(Object.values(indexPages), baseUrl);
+        // #2255: pushed pages stay out, as they did while they carried `access:`.
+        const pushedCategories = this.pushedPageCategories();
 
         // Second pass against each page's REAL frontmatter. The index carries a
         // denormalised `audienceRoles`, but it is written on save, so a page not
@@ -2569,7 +2587,7 @@ class WikiRoutes {
           // theoretical: the verification pass only protects pages whose
           // lookup succeeds, so treating a miss as public would leave a hole
           // exactly where the index pre-filter is already blind.
-          if (!meta || isRestrictedByMetadata(meta)) continue;
+          if (!meta || isRestrictedByMetadata(meta) || isPushedPage(meta, pushedCategories)) continue;
           verified.push(entry);
         }
         entries = verified;
@@ -2859,9 +2877,10 @@ ${panes}
   /**
    * Whether a page is a shipped page (#1503, operator 2026-10-29): a copy of
    * an original from required-pages/ or an add-on's pages, decided per page by
-   * its uuid in the seeded-pages record. Shipped pages are admin-only to edit,
-   * delete or rename, and never private. A page made on this site is not one,
-   * whatever its system-category.
+   * its uuid in the seeded-pages record. Shipped pages are never private.
+   * Who may edit, delete or rename one is its system-category's policies'
+   * to say (#2255), not this. A page made on this site is not one, whatever
+   * its system-category.
    */
   async isRequiredPage(pageName: string, ctx: ActorContext): Promise<boolean> {
     try {
@@ -3615,81 +3634,64 @@ ${panes}
       // `PageManager.checkPrivatePageAccess` per #711) — duplicating it
       // here was a leftover from before #711 unified Tier 0.
 
-      // Check if this is a required page that needs admin access
-      if (await this.isRequiredPage(pageName, req.userContext)) {
+      // #2255: a shipped page is not special-cased; its system-category's policies decide.
+      // For existing pages, check ACL edit permission
+      if (pageData) {
+        // #1431 step 7: the page loaded, so missing metadata is damage — the
+        // same loud failure as the view route, not a permission refusal.
+        if (!pageData.metadata) {
+          await reportMissingPageMetadata(this.engine, pageName, 'edit', req.userContext?.username);
+          return await this.renderError(
+            req, res, 500, 'Page Cannot Be Opened',
+            `The page '${pageName}' is damaged and cannot be edited. The administrators have been notified.`
+          );
+        }
+        // Load metadata before ACL check so Tier 0 / Tier 1.5 have full context
+        (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata;
+        // Update WikiContext with page content for ACL checking
+        (wikiContext as { content: string | null }).content = pageData.content;
+
+        // #714 Slice F: use the rich-return `evaluatePagePermission`
+        // when available so we can specialise the 403 message on
+        // `reason === 'author_lock_deny'`. Restores the specific
+        // "This page is author-locked..." message that Slice A
+        // temporarily lost when Tier 0.5 moved the check into PolicyInformationPoint.
+        //
+        // Defensive fallback: many existing test fixtures mock only
+        // `checkPagePermissionWithContext` (the legacy boolean form).
+        // Fall back to it when the rich form isn't on the mocked
+        // PolicyInformationPoint — same allow/deny outcome, generic message.
+        //
+        // #714 Slice E: the previous route-layer author-lock branch
+        // that sat below this block is now deleted — the same check
+        // lives at ACL Tier 0.5 (added in Slice A) and the rich-return
+        // reason restores its specific 403 message at the route layer.
+        const refusal = await this.editRefusal(wikiContext);
+        if (refusal) {
+          return await this.renderError(
+            req,
+            res,
+            403,
+            'Access Denied',
+            refusal
+          );
+        }
+      } else {
+        // For new pages, check page creation, asked about this page (#1539)
         if (
           !currentUser ||
-          !(await this.engine.getManager('PolicyDecisionPoint').permits(
-            currentUser,
-            'admin-system'
-          ))
+          !(await wikiContext.hasPermissionOn('page-create', pageName))
         ) {
           return await this.renderError(
             req,
             res,
             403,
             'Access Denied',
-            'Only administrators can edit this page'
+            'You do not have permission to create pages'
           );
         }
-      } else {
-        // For existing pages, check ACL edit permission
-        if (pageData) {
-          // #1431 step 7: the page loaded, so missing metadata is damage — the
-          // same loud failure as the view route, not a permission refusal.
-          if (!pageData.metadata) {
-            await reportMissingPageMetadata(this.engine, pageName, 'edit', req.userContext?.username);
-            return await this.renderError(
-              req, res, 500, 'Page Cannot Be Opened',
-              `The page '${pageName}' is damaged and cannot be edited. The administrators have been notified.`
-            );
-          }
-          // Load metadata before ACL check so Tier 0 / Tier 1.5 have full context
-          (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata;
-          // Update WikiContext with page content for ACL checking
-          (wikiContext as { content: string | null }).content = pageData.content;
-
-          // #714 Slice F: use the rich-return `evaluatePagePermission`
-          // when available so we can specialise the 403 message on
-          // `reason === 'author_lock_deny'`. Restores the specific
-          // "This page is author-locked..." message that Slice A
-          // temporarily lost when Tier 0.5 moved the check into PolicyInformationPoint.
-          //
-          // Defensive fallback: many existing test fixtures mock only
-          // `checkPagePermissionWithContext` (the legacy boolean form).
-          // Fall back to it when the rich form isn't on the mocked
-          // PolicyInformationPoint — same allow/deny outcome, generic message.
-          //
-          // #714 Slice E: the previous route-layer author-lock branch
-          // that sat below this block is now deleted — the same check
-          // lives at ACL Tier 0.5 (added in Slice A) and the rich-return
-          // reason restores its specific 403 message at the route layer.
-          const refusal = await this.editRefusal(wikiContext);
-          if (refusal) {
-            return await this.renderError(
-              req,
-              res,
-              403,
-              'Access Denied',
-              refusal
-            );
-          }
-        } else {
-          // For new pages, check page creation, asked about this page (#1539)
-          if (
-            !currentUser ||
-            !(await wikiContext.hasPermissionOn('page-create', pageName))
-          ) {
-            return await this.renderError(
-              req,
-              res,
-              403,
-              'Access Denied',
-              'You do not have permission to create pages'
-            );
-          }
-        }
       }
+    
 
       // Get common template data (includes theme paths, user, pages, etc.)
       const commonData = await this.getCommonTemplateData(req);
@@ -4062,7 +4064,7 @@ ${panes}
       }
       // #1504: making a page public is `page-public`, decided by policy on the
       // page's system-category — the owner's move, and only where policy allows.
-      if (movesStore && existingPage && privateName && !(await wikiContext.hasPermission('page-public', { 'system-category': matchedCategory }))) {
+      if (movesStore && existingPage && privateName && !(await wikiContext.hasPermissionOn('page-public', pageName))) {
         return await fail(403, 'Access Denied', `Pages in the ${matchedCategory} system-category cannot be made public`);
       }
       // #1505: a page made private goes to its system-category's vault.
@@ -4183,30 +4185,15 @@ ${panes}
         return res.status(400).send('Required pages cannot be marked as private');
       }
 
-      // Moving a page into a system-category that ships pages is admin-only
-      // (#1503): a move, not a page already in it — whether that page is
-      // shipped is decided per page above.
-      const _newCategory = ((metadata['system-category'] as string) || '').toLowerCase();
-      const _oldCategory = String(existingPage?.metadata?.['system-category'] ?? '').toLowerCase();
-      const willBeRequired = _newCategory !== _oldCategory &&
-        (await this.getRequiredPageCategories()).includes(_newCategory);
-      if (isCurrentlyRequired || willBeRequired) {
-        if (
-          !currentUser ||
-          !(await this.engine.getManager('PolicyDecisionPoint').permits(
-            currentUser,
-            'admin-system'
-          ))
-        ) {
-          return await fail(403, 'Access Denied', 'Only administrators can edit this page or assign a system category');
-        }
-      } else {
-        // #1542: the editor's doors. A new page had no check at all — anyone,
-        // signed out included, could create one — and an existing page asked
-        // only the page-create capability.
-        const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
-        if (refusal) return await fail(403, 'Access Denied', refusal);
-      }
+      // #2255: a shipped page is not special-cased here. Its system-category's
+      // policies decide the write (the editor's doors below, then savePage's),
+      // and moving a page into another category is page-categorize, asked by
+      // systemCategoryForWrite above.
+      // #1542: the editor's doors. A new page had no check at all — anyone,
+      // signed out included, could create one — and an existing page asked
+      // only the page-create capability.
+      const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
+      if (refusal) return await fail(403, 'Access Denied', refusal);
 
       // Save-time validation (#596). Delegates to ValidationManager which
       // delegates to MarkupParser's FilterChain. Only severity:'error' rule
@@ -4656,16 +4643,8 @@ ${panes}
     (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata ?? null;
     (wikiContext as { content: string | null }).content = pageData.content;
 
-    // Required pages stay admin-only, matching the form route.
-    if (await this.isRequiredPage(pageName, req.userContext)) {
-      const isAdmin = await wikiContext.hasPermission('admin-system');
-      if (!isAdmin) {
-        res.status(403).json({ error: 'Access denied', message: 'Only administrators can modify this page' });
-        return null;
-      }
-      return { pageData, wikiContext, pageName };
-    }
-
+    // #2255: a shipped page is not special-cased here; its system-category's
+    // policies decide (pushed-pages-<verb>, shipped only to admin).
     const allowed = await this.engine
       .getManager('PolicyInformationPoint')
       ?.checkPagePermissionWithContext(wikiContext, action);
@@ -5288,8 +5267,6 @@ ${panes}
         response: res
       });
 
-      // Extract user from WikiContext (single source of truth)
-      const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
@@ -5307,45 +5284,28 @@ ${panes}
       // covers private-page access via Tier 0 (delegates to
       // `PageManager.checkPrivatePageAccess` per #711).
 
-      // Check if this is a required page that needs admin access
-      if (await this.isRequiredPage(pageName, req.userContext)) {
-        if (
-          !currentUser ||
-          !(await this.engine.getManager('PolicyDecisionPoint').permits(
-            currentUser,
-            'admin-system'
-          ))
-        ) {
-          return await this.renderError(
-            req,
-            res,
-            403,
-            'Access Denied',
-            'Only administrators can delete this page'
-          );
-        }
-      } else {
-        // Check ACL delete permission using WikiContext
-        // Load metadata before ACL check so Tier 0 / Tier 1.5 have full context
-        (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata ?? null;
-        // Update WikiContext with page content for ACL checking
-        (wikiContext as { content: string | null }).content = pageData.content;
+      // #2255: a shipped page is not special-cased; its system-category's policies decide.
+      // Check ACL delete permission using WikiContext
+      // Load metadata before ACL check so Tier 0 / Tier 1.5 have full context
+      (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata ?? null;
+      // Update WikiContext with page content for ACL checking
+      (wikiContext as { content: string | null }).content = pageData.content;
 
-        const hasDeletePermission = await policyInformationPoint.checkPagePermissionWithContext(
-          wikiContext,
-          'delete'
+      const hasDeletePermission = await policyInformationPoint.checkPagePermissionWithContext(
+        wikiContext,
+        'delete'
+      );
+
+      if (!hasDeletePermission) {
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          'You do not have permission to delete this page'
         );
-
-        if (!hasDeletePermission) {
-          return await this.renderError(
-            req,
-            res,
-            403,
-            'Access Denied',
-            'You do not have permission to delete this page'
-          );
-        }
       }
+    
 
       logger.debug(`✅ Page found, proceeding to delete: ${pageName}`);
 

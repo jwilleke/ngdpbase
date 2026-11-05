@@ -1038,9 +1038,11 @@ function displaySystemCategories(
       const stored = categoryStored(cat);
       const storageBadge = stored === 'vault'
         ? '<span class="badge bg-success">vault</span>'
-        : stored === 'public'
-          ? '<span class="badge bg-info">public</span>'
-          : '<span class="badge bg-secondary">none</span>';
+        : stored === 'shared-folder'
+          ? '<span class="badge bg-warning">shared-folder</span>'
+          : stored === 'public'
+            ? '<span class="badge bg-info">public</span>'
+            : '<span class="badge bg-secondary">none</span>';
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(cat.label)}</code></td>\n`;

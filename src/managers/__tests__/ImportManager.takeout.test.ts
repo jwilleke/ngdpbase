@@ -93,10 +93,10 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
       canUserAccessPage: vi.fn(async (_subject: unknown, name: string, action?: string) =>
         action === 'edit' || action === 'delete' || visibleToMolly.has(name))
     };
-    // Allows page-create (#1815); admin-system stays an admin's, as before.
+    // Allows page-create (#1815); admin-system and page-categorize (#2255) stay an admin's, as before.
     const pdp = {
       ...ALLOWING_PDP,
-      permits: vi.fn(async (ctx: ActorContext, action: string) => action === 'admin-system' ? (ctx.roles ?? []).includes('admin') : true)
+      permits: vi.fn(async (ctx: ActorContext, action: string) => action === 'admin-system' || action === 'page-categorize' ? (ctx.roles ?? []).includes('admin') : true)
     };
     let validation: unknown = null;
     const engine = {

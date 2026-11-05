@@ -491,7 +491,7 @@ describe('ShareManager', () => {
       expect(r.media).toHaveLength(0);
     });
 
-    test('excludes private, audience-restricted, access-restricted, and owner-only pages (decisions 1+3)', async () => {
+    test('excludes private, audience-restricted and owner-only pages (decisions 1+3); access is not read (#2255)', async () => {
       searchResults = [
         { name: 'P-private' },
         { name: 'P-audience' },
@@ -509,7 +509,7 @@ describe('ShareManager', () => {
       pageMetas['P-ok'] = { title: 'OK', uuid: '5' };
 
       const r = await sm.resolveScope(scope);
-      expect(r.pages.map(p => p.name)).toEqual(['P-ok']);
+      expect(r.pages.map(p => p.name)).toEqual(['P-access', 'P-ok']);
     });
 
     test('excludes pages whose metadata is unresolvable', async () => {

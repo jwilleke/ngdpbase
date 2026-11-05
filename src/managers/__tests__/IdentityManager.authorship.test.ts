@@ -89,6 +89,13 @@ describe('#2097 IdentityManager reference methods', () => {
     expect(await im.convertRecordedUser(SYSTEM, 'bob')).toEqual({ value: 'orphan:bob', outcome: 'orphaned' });
   });
 
+  test('an add-on author is kept as it is, without a lookup (#2255)', async () => {
+    const im = fakeIdentityManager({ 'addon:calendar': 'urn:uuid:never' });
+    expect(await im.convertRecordedUser(SYSTEM, 'addon:calendar')).toEqual({ value: 'addon:calendar', outcome: 'kept' });
+    expect(await im.storedReferenceOf(SYSTEM, 'addon:calendar')).toBe('addon:calendar');
+    expect(im.lookups).toEqual([]);
+  });
+
   test('referencesOf: the @id and the username, never a placeholder', async () => {
     const im = fakeIdentityManager({ jim: 'urn:uuid:jim-1', unknown: 'urn:uuid:u' });
     expect(await im.referencesOf(SYSTEM, 'jim')).toEqual(['urn:uuid:jim-1', 'jim']);

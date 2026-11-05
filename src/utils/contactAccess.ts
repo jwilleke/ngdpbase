@@ -117,7 +117,7 @@ export async function requireLookupPermission(engine: EngineLike, ctx: ActorCont
 async function requireEach(engine: EngineLike, ctx: ActorContext, actions: readonly string[]): Promise<void> {
   const pdp = engine.getManager<DeciderLike>('PolicyDecisionPoint');
   for (const action of actions) {
-    if (!ctx || !pdp) throw new ContactRefusedError(action, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context' });
+    if (!ctx || !pdp) throw new ContactRefusedError(action, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context', policyIds: [] });
     const decision = await pdp.decide(ctx, { action });
     if (!decision.permit) throw new ContactRefusedError(action, decision);
   }

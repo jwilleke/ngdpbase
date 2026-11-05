@@ -9,7 +9,7 @@
  * Only the page store, the search index and the account store are fakes.
  *
  * An audience covers every action, and an administrator (`admin-system`) is
- * its one exception; `access:` has none (operator, 2026-10-23).
+ * its one exception (operator, 2026-10-23). `access:` is not read (#2255).
  *
  * Sabotage: drop the enabled add-ons from Tier 1 and the "phr on" rows go red;
  * match `addon:<slug>` against roles and the spoof row goes red; resolve the
@@ -242,7 +242,8 @@ describe('page audience addon:<slug> (#1964)', () => {
 
     test('a page naming only loaded per-person add-ons is not warned about', () => {
       expect(pageManager.unmatchableAddonAudience({ audience: ['addon:phr', 'admin'] })).toEqual([]);
-      expect(pageManager.unmatchableAddonAudience({ access: { view: ['addon:phr'], edit: ['addon:ledger'] } })).toEqual(['ledger']);
+      // #2255: `access:` is no longer read, so an add-on named there is not warned about.
+      expect(pageManager.unmatchableAddonAudience({ access: { view: ['addon:phr'], edit: ['addon:ledger'] } })).toEqual([]);
     });
   });
 
@@ -254,7 +255,7 @@ describe('page audience addon:<slug> (#1964)', () => {
     expect(await bare.canUserAccessPage(pat as never, 'Health Notes', 'view')).toBe(false);
     expect(await bare.canUserAccessPage(root as never, 'Health Or Admin', 'view')).toBe(true);
   });
-  describe('an audience covers every action; admins are the exception, access: has none (operator, 2026-10-23)', () => {
+  describe('an audience covers every action; admins are the exception (operator, 2026-10-23); access: is not read (#2255)', () => {
     // An editor holds page-edit, page-delete and page-rename by policy, so
     // only the audience can refuse them.
     const ed = { username: 'ed', roles: ['editor'], isAuthenticated: true };
@@ -290,10 +291,10 @@ describe('page audience addon:<slug> (#1964)', () => {
       expect(await decide(pat, 'Health Notes', 'edit')).toBe(false);
     });
 
-    test('access: view binds an administrator as it always has', async () => {
-      expect(await decide(root, 'Editors Only', 'view')).toBe(false);
+    test('access: view is no longer read (#2255): it binds nobody', async () => {
+      expect(await decide(root, 'Editors Only', 'view')).toBe(true);
       expect(await decide(ed, 'Editors Only', 'view')).toBe(true);
-      expect(await pageManager.listPagesFor(root as never, 'view')).not.toContain('Editors Only');
+      expect(await pageManager.listPagesFor(root as never, 'view')).toContain('Editors Only');
     });
 
     test('lists and search include audience pages for an administrator, and not for others', async () => {

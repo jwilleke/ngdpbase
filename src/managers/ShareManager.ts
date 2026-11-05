@@ -656,14 +656,14 @@ export default class ShareManager extends BaseManager {
    * True when a page must never appear in any share:
    *   - `private: true` (decision 1)
    *   - `owner-only` in user-keywords (decision 1)
-   *   - `audience` or per-action `access` frontmatter (decision 3 — a share
-   *     must not silently widen an author's chosen audience)
+   *   - `audience` frontmatter (decision 3 — a share must not silently widen
+   *     an author's chosen audience). A page's `access` field is not read
+   *     since #2255.
    */
   private isPageExcluded(meta: PageFrontmatter): boolean {
     if (meta.private === true) return true;
     if ((meta['user-keywords'] ?? []).some(k => keywordsCollide(k, OWNER_ONLY_KEYWORD))) return true;
     if (Array.isArray(meta.audience) && meta.audience.length > 0) return true;
-    if (meta.access && typeof meta.access === 'object' && Object.keys(meta.access).length > 0) return true;
     return false;
   }
 

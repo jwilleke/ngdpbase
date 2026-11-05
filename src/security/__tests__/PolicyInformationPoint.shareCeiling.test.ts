@@ -156,8 +156,8 @@ describe('PolicyInformationPoint share ceiling — the page\'s own rules still a
     expect(await acl.checkPagePermissionWithContext(ctx({ pageMetadata }), 'view')).toBe(false);
   });
 
-  test('an access list that excludes anonymous refuses the share visitor', async () => {
-    const pageMetadata = { 'user-keywords': ['trip'], access: { view: ['editor'] } };
+  test('an audience that excludes anonymous refuses the share visitor', async () => {
+    const pageMetadata = { 'user-keywords': ['trip'], audience: ['editor'] };
     expect(await acl.checkPagePermissionWithContext(ctx({ pageMetadata }), 'view')).toBe(false);
   });
 

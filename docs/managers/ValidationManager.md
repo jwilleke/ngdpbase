@@ -84,8 +84,7 @@ Configuration is loaded from ConfigurationManager via `config/app-default-config
 
 ```json
 {
-  "ngdpbase.maximum.user-keywords": 5,
-  "ngdpbase.default.system-category": "general"
+  "ngdpbase.maximum.user-keywords": 5
 }
 ```
 

@@ -61,7 +61,8 @@
     "ngdpbase.auth.cloudflare-access.application-aud": "sensitive",
     "ngdpbase.addons.install": "sensitive",
     "ngdpbase.managers.addons-manager.install.registry": "sensitive",
-    "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "sensitive"
+    "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "sensitive",
+    "ngdpbase.vaults.admin-access": "sensitive"
   },
   "_comment_config_env_keys": "Config keys OWNED BY THE ENVIRONMENT, and the variable that supplies each (#1089). These are ALWAYS read-only on the Admin Configuration screen — not 'read-only while the variable happens to be set'. A conditional would make the UI the source of truth whenever the variable is unset, which is exactly the ambiguity this removes: a key is owned by one layer, never two. The value shipped for such a key in this file is a BOOT FALLBACK so a fresh install comes up; it is not a setting. To change one, set the variable in .env (root or <FAST_STORAGE>/.env) and restart — nothing in ngdpbase writes .env, by design, with these exceptions, each generated once and appended to <FAST_STORAGE>/.env when absent: NGDPBASE_SESSION_SECRET (#1194, src/bootstrap-env.ts), because the alternative was signing every session with the public literal shipped below; NGDPBASE_CREDENTIALS_KEY (#1524, src/bootstrap-env.ts), which signs every credentials-store row and encrypts TOTP seeds and has no config key at all; NGDPBASE_SHARED_FOLDERS_KEY (#2124, src/bootstrap-env.ts), the organization's key every shared folder's own key is wrapped under, with no config key either; and, only when oidc-auth-server.enabled is true, OIDC_AUTH_SERVER_JWKS and OIDC_AUTH_SERVER_COOKIE_KEYS (#1574, OidcManager), the embedded OpenID Connect provider's signing and cookie keys, read by that package from the environment only. A config screen that restarts the server is a different feature. Deliberately SHORT: a key earns a place only if the environment must be able to supply it in a deployment where NO config file exists — a fresh headless container boot onto an empty volume is the case that decides it. NOTE application.base-url may equally be set in app-custom-config.json (the install wizard writes it there); it is listed because docker-compose-traefik.yml composes it at deploy time and InstallService names the env var as the alternative for headless installs, so the environment must remain a valid source. Replaces a hardcoded map that used to live in ConfigurationManager.getProperty() where nothing could see it.",
   "ngdpbase.config.env-keys": {
@@ -783,6 +784,10 @@
     "ngdpbase.mail.rate-limit.window-minutes": {
       "group": "Rate limiting",
       "restart": false
+    },
+    "ngdpbase.vaults.admin-access": {
+      "group": "Access control",
+      "restart": false
     }
   },
   "ngdpbase.security.egress.allowed-ranges": [],
@@ -1176,7 +1181,6 @@
   "ngdpbase.access-control.custom-schedules.schedules": "./config/schedules.json",
   "_comment_audit_legacy": "Legacy audit settings (moved to provider-specific config above)",
   "_comment_defaults": "Default values for page creation",
-  "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
   "_comment_system_category": "System category definitions (docs/system-category.md). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). comments, footnotes: false turns off the Comments or Footnotes tab for its pages and refuses new ones; a page's own comments: or footnotes: frontmatter wins, and unset is on (#1951). Exactly one entry has default: true; its vault is where a private page goes when nothing names another. Add-ons declare their own entries in their own config/default-config.json (the journal's is there, #1507); core reads them live from the installed add-ons, whether on or off, and never persists them here (#1559).",
@@ -1268,8 +1272,19 @@
       "defaultPrivate": "choice",
       "encrypt": false,
       "shareMaxDays": 15
+    },
+    "shared": {
+      "label": "shared",
+      "description": "Pages in a shared folder (#1775). A page created in a shared folder gets this category, and nothing else may set it",
+      "default": false,
+      "enabled": false,
+      "storageLocation": {
+        "sharedfolder": true
+      }
     }
   },
+  "_comment_vaults_admin_access": "#2255 — whether a holder of admin-system may read and write inside another person's vault. true (shipped): yes, when the vault is not encrypted; an encrypted vault always needs its key, whatever this says. Every such access is recorded in the audit log with the administrator as the actor (vault-admin-access). Read on every request. false: no role reaches into a vault (the container rule, docs/guides/security-developer-guide.md).",
+  "ngdpbase.vaults.admin-access": true,
   "_comment_knowledge_role": "#706 — knowledge-role: opt-in per-page position in the knowledge graph (source / citation / concept). Distinct from system-category (page-type). Absence is valid and means 'not in the graph' (the common case). Present with a value outside this catalog is HARD-REJECTED by ValidationManager. Each entry's page-badge block renders alongside the system-category badge via the v3.14.0 mechanism.",
   "ngdpbase.knowledge-role": {
     "source": {
@@ -1772,6 +1787,30 @@
         "description": "Page edited"
       }
     },
+    "pushed-pages-edit": {
+      "description": "Edit pushed pages: pages shipped by the system or an add-on (the categories a policy grants it on; system, documentation and addon as shipped) (#2255)",
+      "label": "Edit pushed pages",
+      "icon": "edit",
+      "color": "#dc3545"
+    },
+    "pushed-pages-delete": {
+      "description": "Delete pushed pages (#2255)",
+      "label": "Delete pushed pages",
+      "icon": "trash",
+      "color": "#dc3545"
+    },
+    "pushed-pages-rename": {
+      "description": "Rename pushed pages (#2255)",
+      "label": "Rename pushed pages",
+      "icon": "i-cursor",
+      "color": "#dc3545"
+    },
+    "page-categorize": {
+      "description": "Set or change a page's system-category (#2255). A page created in a shared folder gets the shared category without it",
+      "label": "Change a page's system category",
+      "icon": "tags",
+      "color": "#dc3545"
+    },
     "page-public": {
       "description": "Make a page public: move it out of its vault (checked by the page's system-category, #1504)",
       "label": "Make a page public by moving it out of its vault",
@@ -2261,6 +2300,13 @@
     },
     "authorization-allow": {
       "description": "Access granted; emitter exists, nothing in production calls it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "vault-admin-access": {
+      "description": "An administrator read or changed a page inside another person's vault that is not encrypted (ngdpbase.vaults.admin-access, #2255): the administrator is the actor, and the vault's owner, the vault and the page are named",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
@@ -2799,7 +2845,17 @@
   "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager; the policy evaluator holds one matcher per type, and a type with no matcher, or not declared, never matches.",
   "ngdpbase.access.resource-types": {
     "page": {
-      "description": "A page, matched by its name (glob pattern)"
+      "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name>, each read by the PIP from its source (#2255): owner is the page's author",
+      "attributes": {
+        "system-category": {
+          "type": "string",
+          "from": "frontmatter:system-category"
+        },
+        "owner": {
+          "type": "identity",
+          "from": "frontmatter:author"
+        }
+      }
     },
     "system-category": {
       "description": "Every page of a system-category, matched by the page's system-category (glob pattern)"
@@ -2832,10 +2888,7 @@
       ],
       "actions": [
         "page-read",
-        "page-edit",
         "page-create",
-        "page-delete",
-        "page-rename",
         "page-export",
         "asset-read",
         "media-read",
@@ -2889,7 +2942,6 @@
       ],
       "actions": [
         "page-read",
-        "page-edit",
         "page-create",
         "page-export",
         "asset-read",
@@ -3006,10 +3058,7 @@
       ],
       "actions": [
         "page-read",
-        "page-edit",
         "page-create",
-        "page-delete",
-        "page-rename",
         "page-export",
         "asset-read",
         "media-read",
@@ -3049,7 +3098,6 @@
       ],
       "actions": [
         "page-read",
-        "page-edit",
         "page-create",
         "page-export",
         "asset-read",
@@ -3347,6 +3395,236 @@
       ],
       "actions": [
         "page-public"
+      ]
+    },
+    {
+      "id": "general-page-write",
+      "name": "Change general pages",
+      "description": "Edit, delete and rename pages in the general category (#2255). Admin and editor hold all three, as they did on every page before",
+      "priority": 80,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "general"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ]
+    },
+    {
+      "id": "general-page-edit",
+      "name": "Edit general pages",
+      "description": "Edit pages in the general category (#2255). Contributor and demo-admin hold edit only, as they did on every page before",
+      "priority": 70,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "general"
+        }
+      ],
+      "actions": [
+        "page-edit"
+      ]
+    },
+    {
+      "id": "self-managed-author-write",
+      "name": "Authors change their own self-managed pages",
+      "description": "Edit, delete and rename a capture or user-profile page you are the author of (#2255). The journal add-on adds journal. Changing a user-profile page also needs profile-manage, which editor holds",
+      "priority": 80,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "editor"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "capture"
+        },
+        {
+          "type": "system-category",
+          "pattern": "user-profile"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ],
+      "condition": {
+        "attribute": "resource:owner",
+        "equals": "subject:id"
+      }
+    },
+    {
+      "id": "self-managed-author-edit",
+      "name": "Authors edit their own self-managed pages",
+      "description": "Edit a capture or user-profile page you are the author of (#2255). Changing a user-profile page also needs profile-manage, which contributor and demo-admin hold",
+      "priority": 70,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "capture"
+        },
+        {
+          "type": "system-category",
+          "pattern": "user-profile"
+        }
+      ],
+      "actions": [
+        "page-edit"
+      ],
+      "condition": {
+        "attribute": "resource:owner",
+        "equals": "subject:id"
+      }
+    },
+    {
+      "id": "self-managed-admin",
+      "name": "Administrators change self-managed pages",
+      "description": "The administrator exception for capture and user-profile pages: edit, delete and rename whoever the author is (#2255)",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "capture"
+        },
+        {
+          "type": "system-category",
+          "pattern": "user-profile"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ]
+    },
+    {
+      "id": "pushed-pages-admin",
+      "name": "Administrators change pushed pages",
+      "description": "Pages shipped by the system or an add-on (system, documentation, addon) are changed by holders of pushed-pages-edit, -delete and -rename; shipped only to admin (#2255)",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "system"
+        },
+        {
+          "type": "system-category",
+          "pattern": "documentation"
+        },
+        {
+          "type": "system-category",
+          "pattern": "addon"
+        }
+      ],
+      "actions": [
+        "pushed-pages-edit",
+        "pushed-pages-delete",
+        "pushed-pages-rename"
+      ]
+    },
+    {
+      "id": "shared-page-write",
+      "name": "Change pages in shared folders",
+      "description": "The shared category's own permission (#2255): edit, delete and rename a page in a shared folder. Which folders is shared-folder-file's to say (shared-folder-default and the policies beside it); an author-lock narrows it to the author. Admin is named for the system principal, which holds no vault-owner",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "vault-owner"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "shared"
+        }
+      ],
+      "actions": [
+        "page-edit",
+        "page-delete",
+        "page-rename"
+      ]
+    },
+    {
+      "id": "page-categorize-admin",
+      "name": "Administrators set a page's system-category",
+      "description": "Set or change any page's system-category (#2255). A page created in a shared folder gets shared without it",
+      "priority": 100,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "page-categorize"
       ]
     }
   ],

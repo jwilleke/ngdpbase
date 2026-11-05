@@ -23,6 +23,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 import { TEST_ACTOR } from '../../test-support/actors';
+import { systemContext } from '../../context/bootActions';
 import { SEEDED_SHIPPED_PAGES_FILE, SeededShippedPages } from '../../utils/seededShippedPages';
 import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
@@ -44,6 +45,9 @@ const SYSTEM_CATEGORIES = {
   documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' } },
   developer:     { label: 'developer' }
 };
+
+/** The system principal's job, as the boot seed and Sync run. */
+const TEST_SYSTEM_JOB = systemContext({ getManager: () => null }, 'test: seed shipped pages');
 
 const uuid = (n: number) => `aaaaaaaa-0000-0000-0000-${String(n).padStart(12, '0')}`;
 
@@ -190,7 +194,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
     await boot();
 
-    // Only the #1411 access backfill touches it: the body is the site's own.
+    // Nothing rewrites it: the body is the site's own.
     const live = matter(await fs.readFile(livePath, 'utf8'));
     expect(live.content).toContain('Locally edited body.');
     expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBeUndefined();
@@ -295,52 +299,81 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     });
   });
 
-  describe('#1411 required pages are administrator-edit only', () => {
-    const ADMIN_ONLY = { edit: ['admin'] };
+  describe('#2255 shipped pages carry no access stamp; add-on pages are the add-on\'s', () => {
     const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
 
-    test('a new required page is seeded admin-edit only', async () => {
+    test('a new required page is not stamped, and is authored by the system principal', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       await writeSource(2, 'Beta', 'system');
 
       await boot();
 
-      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual(ADMIN_ONLY);
-      expect(matter(await fs.readFile(livePath(2), 'utf8')).data.access).toEqual(ADMIN_ONLY);
+      for (const n of [1, 2]) {
+        const live = matter(await fs.readFile(livePath(n), 'utf8')).data;
+        expect(live.access).toBeUndefined();
+        expect(live.author).toBe('system');
+      }
     });
 
-    test('a source that declares its own access keeps it', async () => {
-      await writeSource(1, 'Alpha', 'documentation', { access: { edit: ['editor'] } });
+    test('a live required page with no access is left as it is', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const body = 'Body of Alpha.\n';
+      await fse.writeFile(livePath(1), matter.stringify(body, {
+        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation',
+        lastModified: '2026-01-01T00:00:00.000Z', [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body)
+      }));
+      const before = await fs.readFile(livePath(1), 'utf8');
 
       await boot();
 
-      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor'] });
+      expect(await fs.readFile(livePath(1), 'utf8')).toBe(before);
     });
 
-    test('a live required page with no access gets it once, keeping lastModified', async () => {
-      await writeSource(1, 'Alpha', 'documentation');
-      await fse.writeFile(livePath(1), matter.stringify('Body of Alpha.\n', {
-        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', lastModified: '2026-01-01T00:00:00.000Z'
-      }));
+    describe('an add-on\'s pages', () => {
+      let addonDir: string;
+      const writeAddonSource = async (n: number, title: string) => {
+        await fse.writeFile(path.join(addonDir, `${uuid(n)}.md`), matter.stringify(`Body of ${title}.\n`, {
+          title, uuid: uuid(n), slug: title.toLowerCase(), 'system-category': 'documentation'
+        }));
+      };
 
-      await boot();
+      beforeEach(async () => {
+        addonDir = path.join(tmpDir, 'addon-pages');
+        await fse.ensureDir(addonDir);
+      });
 
-      const live = matter(await fs.readFile(livePath(1), 'utf8'));
-      expect(live.data.access).toEqual(ADMIN_ONLY);
-      expect(new Date(live.data.lastModified as string).toISOString()).toBe('2026-01-01T00:00:00.000Z');
-    });
+      test('a new copy is authored by the add-on, addon:<slug>', async () => {
+        await writeAddonSource(3, 'Calendar');
+        const pm = await boot();
 
-    test('an access an operator set on the live page is left alone, by the boot seed and by Sync', async () => {
-      await writeSource(1, 'Alpha', 'documentation');
-      await fse.writeFile(livePath(1), matter.stringify('Body of Alpha.\n', {
-        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', access: { edit: ['editor', 'admin'] }
-      }));
-      const pm = await boot();
-      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor', 'admin'] });
+        await pm.seedShippedPages(pm.addonPagesSource('calendar', addonDir), TEST_SYSTEM_JOB);
 
-      await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], { force: true }, { origin: 'test', user: 'admin' });
+        const live = matter(await fs.readFile(livePath(3), 'utf8')).data;
+        expect(live.author).toBe('addon:calendar');
+        expect(live.addon).toBe('calendar');
+        expect(live.access).toBeUndefined();
+      });
 
-      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor', 'admin'] });
+      test('Sync re-stamps a copy the system principal authored, and keeps any other author', async () => {
+        await writeAddonSource(3, 'Calendar');
+        await writeAddonSource(4, 'Reserve');
+        await fse.writeFile(livePath(3), matter.stringify('Old body.\n', { title: 'Calendar', uuid: uuid(3), slug: 'calendar', author: 'system', 'system-category': 'documentation' }));
+        await fse.writeFile(livePath(4), matter.stringify('Old body.\n', { title: 'Reserve', uuid: uuid(4), slug: 'reserve', author: 'urn:uuid:11111111-1111-4111-8111-111111111111', 'system-category': 'documentation' }));
+        const pm = await boot();
+
+        await pm.syncShippedPages(pm.addonPagesSource('calendar', addonDir), [uuid(3), uuid(4)], { force: true }, TEST_SYSTEM_JOB);
+
+        expect(matter(await fs.readFile(livePath(3), 'utf8')).data.author).toBe('addon:calendar');
+        expect(matter(await fs.readFile(livePath(4), 'utf8')).data.author).toBe('urn:uuid:11111111-1111-4111-8111-111111111111');
+      });
+
+      test('shippedAuthor from anyone but the system principal\'s job is ignored', async () => {
+        const pm = await boot();
+
+        await pm.savePage('Mine', 'Body.\n', { title: 'Mine', uuid: uuid(5), slug: 'mine', 'system-category': 'general' }, TEST_ACTOR, { skipValidation: true, shippedAuthor: 'addon:calendar' });
+
+        expect(matter(await fs.readFile(livePath(5), 'utf8')).data.author).not.toBe('addon:calendar');
+      });
     });
   });
 

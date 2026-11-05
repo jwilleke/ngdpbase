@@ -32,7 +32,7 @@ describe('#1635 the PDP decides step-up', () => {
   test('a step-up permission is refused, with reason step-up, when the sign-in is not fresh', async () => {
     const { pdp, stepUpNeeded } = makePdp();
     const d = await pdp.decide(person({ at: 'stale' }), { action: 'account-security' });
-    expect(d).toEqual({ permit: false, applicable: true, reason: 'step-up' });
+    expect(d).toEqual({ permit: false, applicable: true, reason: 'step-up', policyIds: [] });
     expect(await pdp.permits(person({ at: 'stale' }), 'account-security')).toBe(false);
     expect(stepUpNeeded).toHaveBeenCalledWith('account-security', { at: 'stale' }, ['reader'], false, undefined, undefined);
   });

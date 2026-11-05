@@ -408,7 +408,7 @@ class ReviewManager extends BaseManager {
   /** Throws {@link ReviewRefusedError} unless `ctx` may decide a request with this permission. No context or no PDP refuses. */
   private async requireDecider(ctx: ActorContext, permission: string): Promise<void> {
     const pdp = this.decider();
-    if (!ctx || !pdp) throw new ReviewRefusedError(permission, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context' });
+    if (!ctx || !pdp) throw new ReviewRefusedError(permission, { permit: false, applicable: false, reason: ctx ? 'no_decision_point' : 'no_context', policyIds: [] });
     const decision = await pdp.decide(ctx, { action: permission });
     if (!decision.permit) throw new ReviewRefusedError(permission, decision);
   }

@@ -1,12 +1,12 @@
 /**
  * @file AddonsManager-CategoryDrift.test.ts
  * @description #1003 — `system-category` changes in an addon source must reach
- * already-seeded pages, and the #971 access backfill must resolve the category
- * source-first.
+ * already-seeded pages, resolved source-first. (The #971 `access` stamp these
+ * tests once also covered was removed in #2255.)
  *
  * Two defects, one compounding the other:
  *
- *  1. The access backfill read `existingMeta['system-category']` BEFORE
+ *  1. The (since removed) access backfill read `existingMeta['system-category']` BEFORE
  *     `parsed.data['system-category']`, so a corrected source category was
  *     ignored in favour of the stale live one — while the reseed path forty
  *     lines below resolved the same field source-first.
@@ -92,7 +92,7 @@ describe('#1003 system-category drift', () => {
     test('corrects a stale category on an already-seeded page', async () => {
       // The exact geohazardwatch shape: live still on the flattened default,
       // source corrected to `general` per §9.
-      withExisting({ uuid: UUID(1), slug: 'earthquakes', 'system-category': 'addon', access: { edit: ['admin'] } });
+      withExisting({ uuid: UUID(1), slug: 'earthquakes', 'system-category': 'addon' });
       await write('a.md', { uuid: UUID(1), slug: 'earthquakes', 'system-category': 'general' });
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -103,7 +103,7 @@ describe('#1003 system-category drift', () => {
     test('the correction is metadata-only — the body is passed through untouched', async () => {
       // If it rewrote the body, pageSourceHash would shift and every corrected
       // page would read as locally-modified, stopping reseed permanently.
-      withExisting({ uuid: UUID(2), slug: 'volcanoes', 'system-category': 'addon', access: { edit: ['admin'] } }, 'LIVE BODY');
+      withExisting({ uuid: UUID(2), slug: 'volcanoes', 'system-category': 'addon' }, 'LIVE BODY');
       await write('a.md', { uuid: UUID(2), slug: 'volcanoes', 'system-category': 'general' }, 'SOURCE BODY');
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -112,7 +112,7 @@ describe('#1003 system-category drift', () => {
     });
 
     test('stamps addon-source-category so the correction is one-time', async () => {
-      withExisting({ uuid: UUID(3), slug: 'tsunamis', 'system-category': 'addon', access: { edit: ['admin'] } });
+      withExisting({ uuid: UUID(3), slug: 'tsunamis', 'system-category': 'addon' });
       await write('a.md', { uuid: UUID(3), slug: 'tsunamis', 'system-category': 'general' });
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -121,7 +121,7 @@ describe('#1003 system-category drift', () => {
     });
 
     test('does nothing when the category already matches', async () => {
-      withExisting({ uuid: UUID(4), slug: 'settled', 'system-category': 'general', access: { edit: ['admin'] } });
+      withExisting({ uuid: UUID(4), slug: 'settled', 'system-category': 'general' });
       await write('a.md', { uuid: UUID(4), slug: 'settled', 'system-category': 'general' });
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -135,8 +135,7 @@ describe('#1003 system-category drift', () => {
       // does not get to argue again until ITS value changes.
       withExisting({
         uuid: UUID(5), slug: 'operator-choice',
-        'system-category': 'system', 'addon-source-category': 'general',
-        access: { edit: ['admin'] }
+        'system-category': 'system', 'addon-source-category': 'general'
       });
       await write('a.md', { uuid: UUID(5), slug: 'operator-choice', 'system-category': 'general' });
 
@@ -148,8 +147,7 @@ describe('#1003 system-category drift', () => {
     test('speaks again when the SOURCE category changes after an operator edit', async () => {
       withExisting({
         uuid: UUID(6), slug: 'moved-again',
-        'system-category': 'system', 'addon-source-category': 'general',
-        access: { edit: ['admin'] }
+        'system-category': 'system', 'addon-source-category': 'general'
       });
       await write('a.md', { uuid: UUID(6), slug: 'moved-again', 'system-category': 'documentation' });
 
@@ -159,7 +157,7 @@ describe('#1003 system-category drift', () => {
     });
 
     test('a source with no declared category never overwrites the live one', async () => {
-      withExisting({ uuid: UUID(7), slug: 'silent', 'system-category': 'general', access: { edit: ['admin'] } });
+      withExisting({ uuid: UUID(7), slug: 'silent', 'system-category': 'general' });
       await write('a.md', { uuid: UUID(7), slug: 'silent' });
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -193,114 +191,8 @@ describe('#1003 system-category drift', () => {
     });
   });
 
-  describe('remediation — clearing an access stamp Bug 1 produced (#1003)', () => {
-    // Correcting the category alone does not release the 12 geohazardwatch
-    // pages: #971's backfill fires only on `access === undefined`, so it never
-    // revisits a page it already stamped. This is a permission-LOOSENING pass,
-    // so every guard below matters.
-
-    test('clears a stamp that exactly matches the stale category default', async () => {
-      withExisting({
-        uuid: UUID(5), slug: 'wildfires',
-        'system-category': 'addon', access: { edit: ['admin'] }
-      });
-      await write('a.md', { uuid: UUID(5), slug: 'wildfires', 'system-category': 'general' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      const meta = metaFor('wildfires');
-      expect(meta?.['system-category']).toBe('general');
-      // Absent, not present-and-undefined — the key must not reach the YAML.
-      expect(meta).not.toHaveProperty('access');
-    });
-
-    test('does NOT clear when the corrected category still warrants a stamp', async () => {
-      withExisting({
-        uuid: UUID(6), slug: 'attribution',
-        'system-category': 'addon', access: { edit: ['admin'] }
-      });
-      await write('a.md', { uuid: UUID(6), slug: 'attribution', 'system-category': 'documentation' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(metaFor('attribution')?.access).toEqual({ edit: ['admin'] });
-    });
-
-    test('does NOT clear an operator-widened access — it is not the machine stamp', async () => {
-      withExisting({
-        uuid: UUID(7), slug: 'community',
-        'system-category': 'addon', access: { edit: ['contributor'] }
-      });
-      await write('a.md', { uuid: UUID(7), slug: 'community', 'system-category': 'general' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(metaFor('community')?.access).toEqual({ edit: ['contributor'] });
-    });
-
-    test("does NOT clear when the source declares its own access — the addon's value is authoritative", async () => {
-      withExisting({
-        uuid: UUID(8), slug: 'declared',
-        'system-category': 'addon', access: { edit: ['admin'] }
-      });
-      await write('a.md', {
-        uuid: UUID(8), slug: 'declared',
-        'system-category': 'general', access: { edit: ['admin'] }
-      });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(metaFor('declared')?.access).toEqual({ edit: ['admin'] });
-    });
-
-    test('does NOT clear when the category did not drift — out of scope', async () => {
-      // Already `general` with an admin stamp: whatever put it there, it was
-      // not the Bug 1 path, so this pass has no business touching it.
-      withExisting({
-        uuid: UUID(9), slug: 'untouched',
-        'system-category': 'general', 'addon-source-category': 'general',
-        access: { edit: ['admin'] }
-      });
-      await write('a.md', { uuid: UUID(9), slug: 'untouched', 'system-category': 'general' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(savePage).not.toHaveBeenCalled();
-    });
-
-    test('the #971 backfill does not re-stamp it in the same pass', async () => {
-      withExisting({
-        uuid: UUID(1), slug: 'onepass',
-        'system-category': 'addon', access: { edit: ['admin'] }
-      });
-      await write('a.md', { uuid: UUID(1), slug: 'onepass', 'system-category': 'general' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(savePage.mock.calls.filter(c => c[0] === 'onepass')).toHaveLength(1);
-      expect(metaFor('onepass')).not.toHaveProperty('access');
-    });
-
-    test('stays cleared on the next boot rather than oscillating', async () => {
-      // Post-remediation state: category corrected, marker stamped, no access.
-      // `general` maps to no default, so #971 has nothing to re-add.
-      withExisting({
-        uuid: UUID(2), slug: 'settled',
-        'system-category': 'general', 'addon-source-category': 'general'
-      });
-      await write('a.md', { uuid: UUID(2), slug: 'settled', 'system-category': 'general' });
-
-      await manager.seedAddonPages('demo', tmpDir);
-
-      expect(savePage).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Bug 1 — access backfill resolves the category source-first', () => {
+  describe('the category resolves source-first', () => {
     test('uses the CORRECTED source category, not the stale live one', async () => {
-      // The compounding failure: live `addon` (→ admin-only) but source says
-      // `general` (→ instance-owned, no stamp). Existing-first stamped all 12
-      // geohazardwatch domain pages admin-only.
       withExisting({ uuid: UUID(9), slug: 'landslides', 'system-category': 'addon' });
       await write('a.md', { uuid: UUID(9), slug: 'landslides', 'system-category': 'general' });
 
@@ -311,7 +203,7 @@ describe('#1003 system-category drift', () => {
       expect(meta?.access).toBeUndefined();
     });
 
-    test('still stamps when the corrected category is an addon-owned one', async () => {
+    test('corrects to an addon-owned category with no access stamp (#2255)', async () => {
       withExisting({ uuid: UUID(1), slug: 'attribution', 'system-category': 'addon' });
       await write('a.md', { uuid: UUID(1), slug: 'attribution', 'system-category': 'documentation' });
 
@@ -319,20 +211,20 @@ describe('#1003 system-category drift', () => {
 
       const meta = metaFor('attribution');
       expect(meta?.['system-category']).toBe('documentation');
-      expect(meta?.access).toEqual({ edit: ['admin'] });
+      expect(meta?.access).toBeUndefined();
     });
 
-    test('falls back to the live category when the source declares none', async () => {
+    test('a source that declares no category leaves the page unsaved', async () => {
       withExisting({ uuid: UUID(2), slug: 'inherited', 'system-category': 'documentation' });
       await write('a.md', { uuid: UUID(2), slug: 'inherited' });
 
       await manager.seedAddonPages('demo', tmpDir);
 
-      expect(metaFor('inherited')?.access).toEqual({ edit: ['admin'] });
+      expect(savePage).not.toHaveBeenCalled();
     });
 
-    test('both corrections land in ONE savePage, not two versions', async () => {
-      withExisting({ uuid: UUID(3), slug: 'combined', 'system-category': 'addon' });
+    test('the drift and the author re-stamp land in ONE savePage, not two versions', async () => {
+      withExisting({ uuid: UUID(3), slug: 'combined', 'system-category': 'addon', author: 'system' });
       await write('a.md', { uuid: UUID(3), slug: 'combined', 'system-category': 'documentation' });
 
       await manager.seedAddonPages('demo', tmpDir);
@@ -340,7 +232,7 @@ describe('#1003 system-category drift', () => {
       expect(savePage.mock.calls.filter(c => c[0] === 'combined')).toHaveLength(1);
       const meta = metaFor('combined');
       expect(meta?.['system-category']).toBe('documentation');
-      expect(meta?.access).toEqual({ edit: ['admin'] });
+      expect(savePage.mock.calls[0][4]).toMatchObject({ shippedAuthor: 'addon:demo' });
     });
 
     test('preserves unrelated existing metadata', async () => {

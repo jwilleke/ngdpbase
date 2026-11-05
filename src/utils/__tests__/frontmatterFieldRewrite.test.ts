@@ -61,21 +61,22 @@ describe('#2097 rewriteFrontmatterFields', () => {
       .toBe('\uFEFF---\nauthor: urn:uuid:1\n---\nbody\n');
   });
 
-  // Review fix 5: the user entries of `audience` and `access[action]`. Sabotage:
-  // skipping block items turned the first red; skipping flow lists the second.
-  test('access-list entries convert in block lists, roles and other entries untouched', () => {
+  // Review fix 5: the user entries of `audience`. Sabotage: skipping block
+  // items turned the first red; skipping flow lists the second.
+  test('audience entries convert in block lists, roles and other entries untouched; access is left as written (#2255)', () => {
     const page = '---\ntitle: T\naudience:\n  - bob\n  - editor\naccess:\n  edit:\n    - bob\n    - addon:phr\n---\nbody\n';
     const out = rewriteFrontmatterFields(page, {}, new Map([['bob', 'urn:uuid:bob-1']]));
-    expect(out).toBe('---\ntitle: T\naudience:\n  - urn:uuid:bob-1\n  - editor\naccess:\n  edit:\n    - urn:uuid:bob-1\n    - addon:phr\n---\nbody\n');
+    expect(out).toBe('---\ntitle: T\naudience:\n  - urn:uuid:bob-1\n  - editor\naccess:\n  edit:\n    - bob\n    - addon:phr\n---\nbody\n');
   });
 
-  test('access-list entries convert in one-line flow lists', () => {
+  test('audience entries convert in one-line flow lists; an access flow list is left as written', () => {
     const page = '---\naudience: [bob, editor]\naccess:\n  view: [bob]\n---\nbody\n';
     expect(rewriteFrontmatterFields(page, {}, new Map([['bob', 'orphan:bob']])))
-      .toBe('---\naudience: [orphan:bob, editor]\naccess:\n  view: [orphan:bob]\n---\nbody\n');
+      .toBe('---\naudience: [orphan:bob, editor]\naccess:\n  view: [bob]\n---\nbody\n');
   });
 
-  test('a flow mapping for access is refused', () => {
-    expect(rewriteFrontmatterFields('---\naccess: { view: [bob] }\n---\nb\n', {}, new Map([['bob', 'x']]))).toBeNull();
+  test('an access flow mapping no longer blocks the rewrite', () => {
+    expect(rewriteFrontmatterFields('---\naudience: [bob]\naccess: { view: [bob] }\n---\nb\n', {}, new Map([['bob', 'x']])))
+      .toBe('---\naudience: [x]\naccess: { view: [bob] }\n---\nb\n');
   });
 });
