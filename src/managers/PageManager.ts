@@ -421,7 +421,7 @@ export const SYSTEM_CATEGORY_ADMIN_ONLY = "Only administrators can set a page's 
 
 /** The system-category of a page in a shared folder (#2255): given when it is created there, by nothing else. */
 export const SHARED_CATEGORY = 'shared';
-export const SHARED_CATEGORY_REFUSAL = "A page is in the shared system category only when it is created in a shared folder";
+export const SHARED_CATEGORY_REFUSAL = 'A page is in the shared system category only when it is created in a shared folder';
 
 /** What a write may give a page as its system-category ({@link PageManager.systemCategoryForWrite}). */
 export type SystemCategoryForWrite =
