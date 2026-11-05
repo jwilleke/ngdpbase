@@ -3626,8 +3626,13 @@ ${panes}
       // #1198: policy is the door. The page's own rules (private, audience,
       // author-lock) are evaluated below as before; this asks the permission
       // about the page. #2255: a page not made yet has no category to edit
-      // under, so opening the editor on one is a create, as its save is.
-      if (!(await this.permitted(wikiContext, pageData ? 'page-edit' : 'page-create', req, res, 'page', pageName))) return;
+      // under, so opening the editor on one is a create, as its save is: in a
+      // vault about the page (#1539), else the capability, since the title may
+      // not be a valid page name yet (the editor says so) and the save's door
+      // decides the create.
+      const asked = pageData ? 'page-edit' : 'page-create';
+      const about = pageData || parsePrivatePageName(pageName) ? pageName : undefined;
+      if (!(await this.permitted(wikiContext, asked, req, res, 'page', about))) return;
 
       // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
       // call that previously sat here. Tier 0 inside the
