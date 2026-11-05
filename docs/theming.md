@@ -94,6 +94,27 @@ Define your theme's CSS custom properties. The file must set values on `:root`:
 
 __Bootstrap variable mapping__ — set `--bs-*` vars as `var(--your-var)` references so Bootstrap's modals, tooltips, badges, and dropdowns all respect your theme automatically. See `themes/default/css/variables.css` for the complete reference mapping.
 
+### Card outlines
+
+`themes/core.css` has a single `.card` rule. It draws the outline from three variables, which each theme sets in `css/variables.css` for light, dark and system-dark (`prefers-color-scheme`):
+
+| Variable | Meaning |
+| --- | --- |
+| `--card-outline-width` | Outline width (`2px` in every bundled theme) |
+| `--card-outline` | Outline colour |
+| `--card-outline-hover` | Outline colour on hover |
+
+Bundled values for `--card-outline`; each is at least 3:1 against both the page background and `--card-bg` (WCAG 1.4.11 non-text contrast):
+
+| Theme | Light | Dark | System dark |
+| --- | --- | --- | --- |
+| default | `#868e96` | `#6e7681` | `#868e96` |
+| flatly | `#868e96` | `#6e7681` | `#868e96` |
+| volcano | `#8f7364` | `#9a6a58` | `#9a6a58` |
+| fairways | `#7f7e68` | `#7a869c` | `#7a869c` |
+
+A custom theme that omits the variables gets `2px` and `#868e96`. Check the contrast of your own colours against your page and card backgrounds. Bootstrap border utilities such as `border-info` still override the colour.
+
 ## Activating a Theme
 
 Set the active theme in your instance config (`$FAST_STORAGE/config/app-custom-config.json`):
