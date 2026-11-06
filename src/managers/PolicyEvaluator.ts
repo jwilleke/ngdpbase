@@ -3,7 +3,8 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, NOT_OPERATOR, compareLeaf, literalFits, literalType } from '../utils/policyAttributes.js';
+import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, literalFits, literalType } from '../utils/policyAttributes.js';
+import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -33,9 +34,12 @@ export type ResourceAttributes = Record<string, unknown>;
 /**
  * Reads one attribute a condition names, `subject:id` or `resource:owner`
  * (#2255). Supplied by the PDP from the PIP; `undefined` or `null` is a
- * missing attribute. Asked only when a matching policy has a condition.
+ * missing attribute. Asked only when a matching policy has a condition. A
+ * reader may be async (an identity is resolved through IdentityManager), and
+ * the evaluator awaits every read.
  */
-export type AttributeReader = (name: string) => unknown;
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- `unknown | Promise<unknown>` is `unknown`; written out so a reader author sees a Promise is allowed
+export type AttributeReader = (name: string) => unknown | Promise<unknown>;
 
 /**
  * Access evaluation context
@@ -62,12 +66,23 @@ function operatorKeys(node: object): string[] {
   return Object.keys(node).filter((k) => k !== 'attribute');
 }
 
+/** The declared type of an attribute a condition names, or `null` when it is not declared. */
+function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>): string | null {
+  const [category, ...rest] = name.split(':');
+  const attr = rest.join(':');
+  if (category === 'subject') return Object.hasOwn(BUILT_IN_SUBJECT_ATTRIBUTES, attr) ? BUILT_IN_SUBJECT_ATTRIBUTES[attr] : null;
+  if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
+  return null;
+}
+
 /**
  * What is wrong with a policy's condition, one sentence each (#2255, #2261);
  * empty when it is fine. Each sentence says what is wrong, then what to
  * change. A node is a comparison (`attribute` and one operator) or `any-of`,
  * `all-of` or `not` over other conditions, nested at most
- * {@link MAX_CONDITION_DEPTH} deep. Each attribute a comparison names must be
+ * {@link MAX_CONDITION_DEPTH} deep, at most {@link MAX_CONDITION_NODES} nodes
+ * in all, an `in` list of at most {@link MAX_IN_ITEMS} and an `any-of` or
+ * `all-of` of at most {@link MAX_GROUP_CHILDREN}. Each attribute a comparison names must be
  * declared: `subject:id`, or a `resource:<name>` declared on the `page`
  * resource type. The types of the two sides must agree. A condition with a
  * problem never holds: an allow with it does not apply and a deny with it
@@ -75,13 +90,7 @@ function operatorKeys(node: object): string[] {
  */
 export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>): string[] {
   if (condition === undefined) return [];
-  const typeOf = (name: string): string | null => {
-    const [category, ...rest] = name.split(':');
-    const attr = rest.join(':');
-    if (category === 'subject') return Object.hasOwn(BUILT_IN_SUBJECT_ATTRIBUTES, attr) ? BUILT_IN_SUBJECT_ATTRIBUTES[attr] : null;
-    if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
-    return null;
-  };
+  const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes);
   const undeclared = (name: string): string => {
     const where = name.startsWith('resource:')
       ? 'declare it on the page resource type in ngdpbase.access.resource-types'
@@ -92,7 +101,10 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
   };
   const list = (values: readonly string[]): string => values.join(', ');
 
+  let nodes = 0;
   const walk = (node: unknown, depth: number): string[] => {
+    // Past the cap every node answers at once, so a huge tree is not walked.
+    if (++nodes > MAX_CONDITION_NODES) return nodes === MAX_CONDITION_NODES + 1 ? [`condition has more than ${MAX_CONDITION_NODES} nodes; split it into several policies`] : [];
     if (!node || typeof node !== 'object' || Array.isArray(node)) return ['condition must be an object; write { "attribute": …, "equals": … } or { "any-of": […] }'];
     if (depth > MAX_CONDITION_DEPTH) return [`conditions are nested ${depth} deep; the limit is ${MAX_CONDITION_DEPTH}; flatten with all-of or any-of`];
     const c = node as Record<string, unknown>;
@@ -111,6 +123,7 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
       const children = c[op];
       if (!Array.isArray(children)) return [`'${op}' must be a list of conditions; write { "${op}": [ … ] }`];
       if (children.length === 0) return [`'${op}' is empty; list at least one condition, or remove the condition`];
+      if (children.length > MAX_GROUP_CHILDREN) return [`'${op}' lists ${children.length} conditions; the limit is ${MAX_GROUP_CHILDREN}; split it into several policies`];
       return children.flatMap((child) => walk(child, depth + 1));
     }
 
@@ -144,6 +157,7 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
       }
       if (!Array.isArray(operand)) return ['\'in\' must be a list of values or a list attribute; write { "in": [ … ] }'];
       if (operand.length === 0) return ['\'in\' is empty; list at least one value, or remove the condition'];
+      if (operand.length > MAX_IN_ITEMS) return [`'in' lists ${operand.length} values; the limit is ${MAX_IN_ITEMS}; use a list attribute or split it into several policies`];
       const items = operand as unknown[];
       const attributeLike = items.find((v) => isAttributeName(v));
       if (attributeLike !== undefined) return [`'in' lists '${String(attributeLike)}', which names an attribute; list literal values only, or use an attribute that is a list`];
@@ -155,6 +169,40 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
   };
 
   return walk(condition, 1);
+}
+
+/** Attribute names whose read has thrown, warned about once per process. */
+const warnedReads = new Set<string>();
+
+/**
+ * The condition as the evaluator runs it, built once per policy (#2261): an
+ * `in` list becomes a Set, and a literal compared with an `identity`
+ * attribute is normalised as `subject:id` is (trimmed, lower-cased), so
+ * "Alice" meets alice. Only for a condition `conditionProblems` passed.
+ */
+function compileCondition(node: PolicyCondition, typeOf: (name: string) => string | null): PolicyCondition {
+  const c = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(c)) {
+    const v = c[key];
+    if (key === 'attribute') out[key] = v;
+    else if (key === 'any-of' || key === 'all-of') out[key] = (v as PolicyCondition[]).map((child) => compileCondition(child, typeOf));
+    else if (key === NOT_OPERATOR) out[key] = compileCondition(v as PolicyCondition, typeOf);
+    else {
+      const identity = typeOf(String(c.attribute)) === 'identity';
+      const literal = (x: unknown): unknown => (identity && typeof x === 'string' && !isAttributeName(x) ? normalizeUsername(x) : x);
+      out[key] = key === 'in' && Array.isArray(v) ? new Set(v.map(literal)) : literal(v);
+    }
+  }
+  return out as PolicyCondition;
+}
+
+/** A policy ready to decide: its condition checked and compiled once, not per page. */
+interface PreparedPolicy {
+  policy: Policy;
+  /** The condition has a problem, so it never holds. */
+  invalid: boolean;
+  condition?: PolicyCondition;
 }
 
 /**
@@ -190,7 +238,20 @@ export async function conditionHolds(condition: PolicyCondition | undefined, rea
 
   const operator = Object.keys(node).find((k) => Object.hasOwn(LEAF_OPERATORS, k));
   if (!operator) return undefined;
-  const value = async (side: unknown): Promise<unknown> => (isAttributeName(side) ? (read ? await read(side) : undefined) : side);
+  const value = async (side: unknown): Promise<unknown> => {
+    if (!isAttributeName(side)) return side;
+    if (!read) return undefined;
+    try {
+      return await read(side);
+    } catch (err) {
+      // A read that throws leaves this comparison unknown, not the decision aborted.
+      if (!warnedReads.has(side)) {
+        warnedReads.add(side);
+        logger.warn(`[POLICY] reading '${side}' for a condition failed, so the comparison is unknown: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return undefined;
+    }
+  };
   return compareLeaf(operator, await value(node.attribute), await value(node[operator]));
 }
 
@@ -409,9 +470,22 @@ class PolicyEvaluator extends BaseManager {
     }
 
     const matching = this.policies().filter((policy) => this.matches(policy, context));
-    const result = await this.combine(matching, context.readAttribute);
+    const result = await this.combine(this.prepare(matching), context.readAttribute);
     logger.info(`[POLICY] ${result.hasDecision ? `${result.allowed ? 'allow' : 'deny'} by ${result.policyIds.join(',')}` : 'No matching policy'}`);
     return result;
+  }
+
+  /**
+   * Checks and compiles each policy's condition (#2261). `compile()` does it
+   * once for a whole listing; a single decision does it for its few matches.
+   */
+  private prepare(policies: readonly Policy[]): PreparedPolicy[] {
+    const declared = policies.some((p) => p.condition !== undefined) ? this.declaredPageAttributes() : {};
+    return policies.map((policy) => {
+      if (policy.condition === undefined) return { policy, invalid: false };
+      if (conditionProblems(policy.condition, declared).length > 0) return { policy, invalid: true };
+      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared)) };
+    });
   }
 
   /**
@@ -419,14 +493,11 @@ class PolicyEvaluator extends BaseManager {
    * and action (#2255). Every matching deny whose condition is true or
    * unknown decides; failing that, every allow whose condition is true.
    */
-  private async combine(matching: readonly Policy[], read: AttributeReader | undefined): Promise<EvaluationResult> {
+  private async combine(matching: readonly PreparedPolicy[], read: AttributeReader | undefined): Promise<EvaluationResult> {
     const denies: string[] = [];
     const allows: string[] = [];
-    const pageAttributes = matching.some((p) => p.condition !== undefined) ? this.declaredPageAttributes() : {};
-    for (const policy of matching) {
-      const holds = conditionProblems(policy.condition, pageAttributes).length > 0
-        ? undefined
-        : await conditionHolds(policy.condition, read);
+    for (const { policy, invalid, condition } of matching) {
+      const holds = invalid ? undefined : await conditionHolds(condition, read);
       if (policy.effect === 'deny') {
         if (holds !== false) denies.push(policy.id);
       } else if (holds === true) {
@@ -544,11 +615,11 @@ class PolicyEvaluator extends BaseManager {
     if (!this.configManager) {
       return () => Promise.resolve({ ...NO_POLICY, reason: 'PolicyEvaluator not initialized' });
     }
-    const applicable = this.policies()
-      .filter((policy) => this.matchesSubject(policy.subjects, userContext) && actions.some((a) => this.matchesAction(policy.actions, a)));
+    const applicable = this.prepare(this.policies()
+      .filter((policy) => this.matchesSubject(policy.subjects, userContext) && actions.some((a) => this.matchesAction(policy.actions, a))));
     logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
     return (pageName, attributes, readAttribute) =>
-      this.combine(applicable.filter((policy) => this.matchesResource(policy.resources, pageName, attributes)), readAttribute);
+      this.combine(applicable.filter(({ policy }) => this.matchesResource(policy.resources, pageName, attributes)), readAttribute);
   }
 
   /** The attributes declared on the `page` resource type (#2255), for checking a condition. */
