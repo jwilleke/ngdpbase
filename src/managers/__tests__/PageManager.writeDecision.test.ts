@@ -173,6 +173,18 @@ describe('PageManager write door (#1815)', () => {
       expect(denials[0]).toMatchObject({ action: 'page-create', metadata: { policyIds: ['verify-deny-page-writes'] } });
     });
 
+    // #2272 (security review): a refusal no policy decided must not name one.
+    // cora is allowed page-create (contributor-allow); createdFor is refused
+    // for a non-system job, so the record must carry no policyIds.
+    test('a createdFor refusal, which no policy decided, is recorded without policyIds', async () => {
+      await expect(site.pageManager.savePage('Profile: Rita', 'hello', {}, request('cora') as never, { ...OPTS, createdFor: 'rita' }))
+        .rejects.toMatchObject({ action: 'page-create' });
+      const denials = site.audit.filter((e) => e.eventType === 'authorization-deny');
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({ reason: 'createdFor is for a system job only' });
+      expect(denials[0].metadata).not.toHaveProperty('policyIds');
+    });
+
     test('a reader may neither edit nor create a public page; nothing is written', async () => {
       await expect(site.pageManager.savePage('Main', 'new', {}, request('rita') as never, OPTS))
         .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-edit' });
