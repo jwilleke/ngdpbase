@@ -430,8 +430,8 @@ class PolicyEvaluator extends BaseManager {
     if (!config || !pdp) return;
     const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
     lines.push(...pageWritePoliciesToReview(this.policies()));
-    for (const { id, problems } of this.conditionProblemsInForce()) {
-      lines.push(...problems.map((p) => `'${id}': ${p}; the policy never applies as an allow`));
+    for (const { id, effect, problems } of this.conditionProblemsInForce()) {
+      lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
     }
     const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
@@ -630,10 +630,10 @@ class PolicyEvaluator extends BaseManager {
   }
 
   /** Each policy in force whose condition has a problem, with the problems (#2255): for the boot warning. */
-  conditionProblemsInForce(): Array<{ id: string; problems: string[] }> {
+  conditionProblemsInForce(): Array<{ id: string; effect: Policy['effect']; problems: string[] }> {
     const declared = this.declaredPageAttributes();
     return this.policies()
-      .map((p) => ({ id: p.id, problems: conditionProblems(p.condition, declared) }))
+      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared) }))
       .filter((r) => r.problems.length > 0);
   }
 
