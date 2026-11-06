@@ -2041,16 +2041,20 @@ class PageManager extends BaseManager implements CatalogSource {
    * a shared folder by its own permission). A public page, `page-create`
    * asked of the PDP about the page (#2255: the PDP reads its attributes from
    * the PIP). The same rule as `hasPermissionOn`.
+   *
+   * @returns `permit`, and the `policyIds` of the `page-create` decision when
+   *   one was made (#2272); a vault page is decided by the container rule and
+   *   `permitsInVault`, which name none.
    */
-  private async mayCreateAt(ctx: ActorContext, destination: string): Promise<boolean> {
+  private async decideCreateAt(ctx: ActorContext, destination: string): Promise<{ permit: boolean; policyIds: string[] }> {
     const pdp = this.engine.getManager<VaultDecider>('PolicyDecisionPoint');
-    if (!pdp) return false;
+    if (!pdp) return { permit: false, policyIds: [] };
     const vault = parsePrivatePageName(destination);
-    if (vault) return permitsInVault(pdp, ctx, 'page-create', { owner: vault.owner, vault: vault.store, resource: destination });
+    if (vault) return { permit: await permitsInVault(pdp, ctx, 'page-create', { owner: vault.owner, vault: vault.store, resource: destination }), policyIds: [] };
     // #2255: the PDP reads what it needs about the page from the PIP; a page
     // not made yet has no attributes, and `page-create` is granted on `page: *`.
-    const { permit } = await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: destination }, attributes: {} });
-    return permit;
+    const { permit, policyIds } = await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: destination }, attributes: {} });
+    return { permit, policyIds: policyIds ?? [] };
   }
 
   /**
@@ -2097,7 +2101,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * existing page is edited only by a context the page decision lets edit it
    * ({@link mayChangeExisting}); a page arriving in a container it is not in
    * now — a new page, or a move into or out of a vault — is also created
-   * there ({@link mayCreateAt}). Whatever route the write came by: the route's
+   * there ({@link decideCreateAt}). Whatever route the write came by: the route's
    * own check is an early refusal, this is the one that counts.
    *
    * @throws PageWriteRefusedError when either is refused; nothing is written
@@ -2122,9 +2126,10 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new PageWriteRefusedError(existing.name, 'page-rename');
     }
     const moving = existing !== null && PageManager.containerOf(existing.name) !== PageManager.containerOf(destination);
-    if ((!existing || moving) && !(await this.mayCreateAt(ctx, destination))) {
+    const createDecision = (!existing || moving) ? await this.decideCreateAt(ctx, destination) : null;
+    if (createDecision && !createDecision.permit) {
       logger.warn(`[PageManager] create of ${nameForLog(destination, metadata)} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
-      await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there');
+      await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there', createDecision.policyIds);
       throw new PageWriteRefusedError(destination, 'page-create');
     }
   }
@@ -2135,8 +2140,12 @@ class PageManager extends BaseManager implements CatalogSource {
    * decision (`canUserAccessPage`); a create is decided by the PDP, which
    * records nothing, so the door records it here: core records every refusal.
    * Standard tier, `continue` on failure: the refusal stands either way.
+   *
+   * @param policyIds - The policies of the `page-create` decision that refused
+   *   (#2272). Only a refusal that decision made passes any; one no policy
+   *   decided (`createdFor` misuse) leaves the field off the record.
    */
-  private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string): Promise<void> {
+  private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string, policyIds: string[] = []): Promise<void> {
     const who = actorOf(ctx);
     await recordAuditEvent(
       this.engine.getManager('AuditManager'),
@@ -2149,7 +2158,7 @@ class PageManager extends BaseManager implements CatalogSource {
         result: 'deny',
         reason,
         severity: 'medium',
-        metadata: { ...who.metadata }
+        metadata: { ...who.metadata, ...(policyIds.length > 0 ? { policyIds } : {}) }
       },
       (err) => logger.warn(`[PageManager] audit of a refused create failed: ${err instanceof Error ? err.message : String(err)}`)
     );
@@ -2997,9 +3006,10 @@ class PageManager extends BaseManager implements CatalogSource {
     if (trashed === undefined) {
       throw new Error('PageManager: this page provider cannot say where a trashed page goes back, so it is not restored');
     }
-    if (trashed && !(await this.mayCreateAt(ctx, trashed.name))) {
+    const restoreDecision = trashed ? await this.decideCreateAt(ctx, trashed.name) : null;
+    if (trashed && restoreDecision && !restoreDecision.permit) {
       logger.warn(`[PageManager] restore of ${nameForLog(trashed.name, { ...trashed.metadata, uuid })} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
-      await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there');
+      await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there', restoreDecision.policyIds);
       throw new PageWriteRefusedError(trashed.name, 'page-create');
     }
 
