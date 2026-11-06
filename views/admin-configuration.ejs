@@ -193,6 +193,9 @@
                                             <tr>
                                                 <td>
                                                     <code><%= key %></code>
+                                                    <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
+                                                        <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
+                                                    <% }); %>
                                                 </td>
                                                 <td>
                                                     <%# Secrets are stripped server-side, so there is no value here to hide —
@@ -297,6 +300,9 @@
                                                 <tr>
                                                     <td>
                                                         <code><%= key %></code>
+                                                        <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
+                                                            <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
+                                                        <% }); %>
                                                         <% if (envInfo) { %>
                                                             <span class="badge bg-secondary ms-1" title="Owned by the environment">
                                                                 <i class="fas fa-lock"></i> env
@@ -490,13 +496,15 @@ document.addEventListener('DOMContentLoaded', function() {
         var alertDiv = document.createElement('div');
         alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show config-alert';
         alertDiv.setAttribute('role', 'alert');
-        alertDiv.innerHTML = '<i class="fas ' + icon + '"></i> ' + message +
+        alertDiv.innerHTML = '<i class="fas ' + icon + '"></i> <span class="config-alert-text"></span>' +
             '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
 
+        alertDiv.querySelector('.config-alert-text').textContent = message; // #2278: messages carry admin-typed text
         var container = document.querySelector('.container.mt-4');
         container.insertBefore(alertDiv, container.firstChild);
 
-        // Auto-dismiss after 3 seconds
+        // Auto-dismiss after 3 seconds; an error stays until dismissed (#2278)
+        if (type !== 'success') return;
         setTimeout(function() {
             if (alertDiv.parentNode) {
                 alertDiv.classList.remove('show');

@@ -305,10 +305,9 @@ class PolicyValidator extends BaseManager {
           actions: {
             type: 'array',
             minItems: 1,
-            items: {
-              type: 'string',
-              enum: ['view', 'edit', 'delete', 'upload', 'download', 'admin', 'create', 'update']
-            }
+            // #2278: the actions are permission names (`page-edit`), not the old fixed verbs, so
+            // every shipped policy was refused by the enum that stood here.
+            items: { type: 'string', minLength: 1 }
           },
           // #2255, #2261: the shape of the tree (operators, depth, types) is
           // checked by conditionProblems, which can say what to change.
@@ -406,6 +405,27 @@ class PolicyValidator extends BaseManager {
     this.validationCache.set(cacheKey, result);
 
     return result;
+  }
+
+  /**
+   * The problems in a list of policies, each as `'<id>': <message>` (#2278):
+   * the schema's, then `conditionProblems`' (the boot warning's own messages).
+   * Used on save and on load in Admin → Configuration. Empty when all are fine.
+   *
+   * @param {unknown} policies - The value of `ngdpbase.access.policies`
+   * @returns {string[]} One line per problem
+   */
+  policyProblems(policies: unknown): string[] {
+    if (!Array.isArray(policies)) return ['the policies must be a list'];
+    const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
+    return policies.flatMap((policy: unknown, index) => {
+      const id = typeof (policy as { id?: unknown } | null)?.id === 'string' ? (policy as { id: string }).id : `#${index + 1}`;
+      const schema = this.schemaValidatorCompiled && !this.schemaValidatorCompiled(policy)
+        ? this.formatSchemaErrors(this.schemaValidatorCompiled.errors || []).map((e) => `${e.field} ${e.message}`.trim())
+        : [];
+      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}) : [];
+      return [...schema, ...condition].map((message) => `'${id}': ${message}`);
+    });
   }
 
   /**
