@@ -347,7 +347,7 @@ __A permission over a user's own records__ ("your receipts", "your health record
 ```
 
 - Never declare a core policy's `id` (such as `signed-in-self-service`) to add to it: policies merge by `id`, so that changes core's own policy, and the change outlives your add-on.
-- Never use `"type": "authenticated"` (or `user`, `group`, `attribute`, `admin`) as a subject: a decision matches only `role` and `job` subjects, so such a policy grants nothing, and the validator refuses it.
+- Never use `user`, `group`, `attribute`, `anonymous` or `admin` as a subject type: a decision matches only `role`, `job`, `authenticated` and `anyone` subjects, so such a policy grants nothing, and the validator refuses it. `{ "type": "authenticated" }` (any signed-in user) and `{ "type": "anyone" }` (every caller, anonymous included) take no `value`; prefer a role your add-on declares, and use these two only where the grant is meant to reach every signed-in user or everyone.
 - A list of every role by name misses any role added later; name the every-account role.
 
 __A permission your scheduled job needs__ goes to the job itself, not to a role ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999), operator 2026-10-22). Name the job as the policy's subject, with only what its work needs:

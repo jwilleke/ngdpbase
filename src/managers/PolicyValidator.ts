@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS } from './PolicyEvaluator.js';
+import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -19,7 +19,7 @@ const AjvCtor = Ajv as unknown as new (...args: unknown[]) => AjvLike;
 const applyFormats = addFormats as unknown as (ajv: AjvLike) => void;
 
 /**
- * Subject type: one the evaluator matches, `role` or `job` (#1999) —
+ * Subject type: one the evaluator matches, `role`, `job` (#1999), `authenticated` or `anyone` (#2261) —
  * `SUBJECT_MATCHERS` in PolicyEvaluator, not listed here. A policy naming any
  * other type would grant nothing, so it is refused.
  */
@@ -277,7 +277,13 @@ class PolicyValidator extends BaseManager {
                   type: 'string'
                 }
               },
-              oneOf: [{ required: ['type', 'value'] }, { required: ['type', 'key', 'value'] }]
+              // #2261: `role` and `job` need a value; `authenticated` and `anyone` take none
+              // (a value on them is refused in validateBusinessLogic, with a message that says so).
+              oneOf: [
+                { required: ['type', 'value'], properties: { type: { not: { enum: VALUELESS_SUBJECT_TYPES } } } },
+                { required: ['type', 'key', 'value'], properties: { type: { not: { enum: VALUELESS_SUBJECT_TYPES } } } },
+                { properties: { type: { enum: VALUELESS_SUBJECT_TYPES } } }
+              ]
             }
           },
           resources: {
@@ -436,7 +442,14 @@ class PolicyValidator extends BaseManager {
     // Check for duplicate subjects
     const subjectKeys = new Set<string>();
     policy.subjects.forEach((subject, index) => {
-      const key = `${subject.type}:${subject.value || subject.key}`;
+      if (VALUELESS_SUBJECT_TYPES.includes(subject.type) && subject.value !== undefined) {
+        errors.push({
+          type: 'business',
+          field: `subjects[${index}]`,
+          message: `'${subject.type}' takes no value; remove it`
+        });
+      }
+      const key = `${subject.type}:${subject.value || subject.key || ''}`;
       if (subjectKeys.has(key)) {
         errors.push({
           type: 'business',
@@ -804,6 +817,7 @@ class PolicyValidator extends BaseManager {
     case 'attribute':
       return s1.key === s2.key && s1.value === s2.value;
     case 'authenticated':
+    case 'anyone':
     case 'anonymous':
     case 'admin':
       return true; // These are global

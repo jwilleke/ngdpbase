@@ -91,7 +91,7 @@ describe('#1999 policy subjects: role and job', () => {
   });
 
   test('any other subject type matches nobody, a prototype key included', async () => {
-    for (const type of ['user', 'authenticated', 'constructor', 'toString']) {
+    for (const type of ['user', 'constructor', 'toString']) {
       const pe = evaluatorWith([policy([{ type, value: 'jim' }])]);
       expect((await pe.evaluateAccess({ pageName: '*', action: 'ledger-read', userContext: jim })).allowed).toBe(false);
     }
