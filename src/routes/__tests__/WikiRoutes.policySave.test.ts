@@ -4,7 +4,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import PolicyValidator from '../../managers/PolicyValidator';
 
 const KEY = 'ngdpbase.access.policies';
@@ -15,12 +15,12 @@ const policy = (id: string, condition?: unknown) => ({
   id, name: id, effect: 'allow', priority: 50,
   subjects: [{ type: 'role', value: 'editor' }],
   resources: [{ type: 'page', pattern: '*' }],
-  actions: ['view'],
+  actions: ['page-read'],
   ...(condition === undefined ? {} : { condition })
 });
 
-async function makeRoutes(inForce: unknown[] = [], resourceTypes: unknown = { page: { attributes: PAGE_ATTRIBUTES } }) {
-  const config: Record<string, unknown> = { [KEY]: inForce, 'ngdpbase.access.resource-types': resourceTypes };
+async function makeRoutes(inForce: unknown[] = [], resourceTypes: unknown = { page: { attributes: PAGE_ATTRIBUTES } }, definitions: unknown = { 'page-read': {}, 'page-edit': {} }) {
+  const config: Record<string, unknown> = { [KEY]: inForce, 'ngdpbase.access.resource-types': resourceTypes, 'ngdpbase.permissions.definitions': definitions };
   const configManager = {
     getProperty: vi.fn((k: string, d: unknown) => (k in config ? config[k] : d)),
     getDefaultProperties: () => ({}),
@@ -77,6 +77,32 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
     expect(String(r.json.mock.calls[0][0].error)).toContain("'p2'");
   });
 
+  it('refuses an action that is not a defined permission, naming the policy and the action', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([{ ...policy('p4'), effect: 'deny', actions: ['page-read', 'page-edt'] }]), r);
+    expect(configManager.setProperty).not.toHaveBeenCalled();
+    expect(r.status).toHaveBeenCalledWith(400);
+    const error = String(r.json.mock.calls[0][0].error);
+    expect(error).toContain("'p4'");
+    expect(error).toContain("'page-edt'");
+    expect(error).toContain('ngdpbase.permissions.definitions');
+  });
+
+  it("accepts the evaluator's '*' wildcard", async () => {
+    const { routes, configManager } = await makeRoutes();
+    await routes.adminUpdateConfiguration(save([{ ...policy('p5'), actions: ['*'] }]), res());
+    expect(configManager.setProperty).toHaveBeenCalled();
+  });
+
+  it('refuses the save, saying why, when the permission definitions cannot be read', async () => {
+    const { routes, configManager } = await makeRoutes([], undefined, {});
+    const r = res();
+    await routes.adminUpdateConfiguration(save([policy('p1')]), r);
+    expect(configManager.setProperty).not.toHaveBeenCalled();
+    expect(String(r.json.mock.calls[0][0].error)).toContain('could not be read');
+  });
+
   it('redirects a form post with the problem in the error', async () => {
     const { routes, configManager } = await makeRoutes();
     const r = res();
@@ -113,10 +139,23 @@ describe('loading Admin → Configuration with policies in force that have probl
   });
 });
 
+describe('the policies add-ons ship (#2278)', () => {
+  it('only name permissions their own definitions or the core defaults define', () => {
+    const read = (f: string) => JSON.parse(readFileSync(f, 'utf8')) as Record<string, unknown>;
+    const files = ['config/app-default-config.json', ...readdirSync('addons').map((a) => `addons/${a}/config/default-config.json`).filter((f) => existsSync(f))];
+    const configs = files.map(read);
+    const defined = new Set(configs.flatMap((c) => Object.keys((c['ngdpbase.permissions.definitions'] ?? {}) as object)));
+    const unknown = files.flatMap((f, i) => ((configs[i][KEY] ?? []) as { id: string; actions: string[] }[])
+      .flatMap((p) => p.actions.filter((a) => a !== '*' && !defined.has(a)).map((a) => `${f} '${p.id}': ${a}`)));
+    expect(unknown).toEqual([]);
+    expect(configs.filter((c) => c[KEY]).length).toBeGreaterThan(1); // core plus at least one add-on
+  });
+});
+
 describe('the shipped policies', () => {
   it('have no problems, so saving them unchanged is not refused', async () => {
     const shipped = JSON.parse(readFileSync('config/app-default-config.json', 'utf8')) as Record<string, unknown>;
-    const { routes } = await makeRoutes([], shipped['ngdpbase.access.resource-types']);
+    const { routes } = await makeRoutes([], shipped['ngdpbase.access.resource-types'], shipped['ngdpbase.permissions.definitions']);
     const r = res();
     await routes.adminUpdateConfiguration(save(shipped[KEY] as unknown[]), r);
     expect(r.json.mock.calls[0][0]).toEqual(expect.objectContaining({ success: true }));
