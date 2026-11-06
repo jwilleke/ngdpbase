@@ -178,6 +178,14 @@ interface PolicySchema {
   properties: Record<string, unknown>;
 }
 
+/** #2284: `authenticated` and `anyone` take neither a value nor a key; say which one to remove. */
+function valuelessSubjectProblem(subject: PolicySubject | null | undefined): string | null {
+  if (!subject || !VALUELESS_SUBJECT_TYPES.includes(subject.type)) return null;
+  if (subject.value !== undefined) return `'${subject.type}' takes no value; remove it`;
+  if (subject.key !== undefined) return `'${subject.type}' takes no key; remove it`;
+  return null;
+}
+
 /**
  * PolicyValidator - Validates policy schemas and detects conflicts
  * Ensures policy integrity and prevents conflicting rules
@@ -439,7 +447,10 @@ class PolicyValidator extends BaseManager {
       const actions = Array.isArray((policy as { actions?: unknown } | null)?.actions) ? (policy as { actions: unknown[] }).actions : [];
       const unknown = actions.filter((a) => typeof a === 'string' && a !== '*' && !Object.prototype.hasOwnProperty.call(definitions, a))
         .map((a) => `action '${String(a)}' is not a defined permission; use a name from ngdpbase.permissions.definitions (add-on permissions included), or '*'`);
-      return [...schema, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
+      const subjects = Array.isArray((policy as { subjects?: unknown } | null)?.subjects) ? (policy as { subjects: unknown[] }).subjects : [];
+      const extra = subjects.map((sub) => valuelessSubjectProblem(sub as PolicySubject)).filter((m): m is string => !!m)
+        .map((m) => `subjects: ${m}`);
+      return [...schema, ...extra, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
     });
   }
 
@@ -471,14 +482,13 @@ class PolicyValidator extends BaseManager {
     // Check for duplicate subjects
     const subjectKeys = new Set<string>();
     policy.subjects.forEach((subject, index) => {
-      if (VALUELESS_SUBJECT_TYPES.includes(subject.type) && subject.value !== undefined) {
-        errors.push({
-          type: 'business',
-          field: `subjects[${index}]`,
-          message: `'${subject.type}' takes no value; remove it`
-        });
+      const valueless = VALUELESS_SUBJECT_TYPES.includes(subject.type);
+      const extra = valuelessSubjectProblem(subject);
+      if (extra) {
+        errors.push({ type: 'business', field: `subjects[${index}]`, message: extra });
       }
-      const key = `${subject.type}:${subject.value || subject.key || ''}`;
+      // #2284: a valueless type is one subject whatever extra fields it carries.
+      const key = valueless ? subject.type : `${subject.type}:${subject.value || subject.key || ''}`;
       if (subjectKeys.has(key)) {
         errors.push({
           type: 'business',
@@ -835,6 +845,11 @@ class PolicyValidator extends BaseManager {
    * @returns {boolean} True if subjects match
    */
   subjectsMatch(s1: PolicySubject, s2: PolicySubject): boolean {
+    // #2284: `anyone` overlaps every subject; `authenticated` every one but anonymous.
+    if (s1.type === 'anyone' || s2.type === 'anyone') return true;
+    if (s1.type === 'authenticated' || s2.type === 'authenticated') {
+      return s1.type !== 'anonymous' && s2.type !== 'anonymous';
+    }
     if (s1.type !== s2.type) return false;
 
     switch (s1.type) {

@@ -156,6 +156,14 @@ describe('PolicyValidator — subject types are the ones the evaluator matches (
     }
   });
 
+  test('a key on authenticated or anyone is refused with "takes no key" (#2284)', async () => {
+    for (const type of ['authenticated', 'anyone']) {
+      const result = await validate([{ type, key: 'x' }]);
+      expect(result.isValid).toBe(false);
+      expect(JSON.stringify(result.errors)).toContain('takes no key');
+    }
+  });
+
   test('role and job still need a value (#2261)', async () => {
     expect((await validate([{ type: 'role' }])).isValid).toBe(false);
     expect((await validate([{ type: 'job' }])).isValid).toBe(false);
@@ -164,6 +172,25 @@ describe('PolicyValidator — subject types are the ones the evaluator matches (
   test('two valueless subjects of the same type are a duplicate; different types are not (#2261)', async () => {
     expect((await validate([{ type: 'anyone' }, { type: 'anyone' }])).isValid).toBe(false);
     expect((await validate([{ type: 'anyone' }, { type: 'authenticated' }])).isValid).toBe(true);
+  });
+
+  test('valueless subjects are keyed by type alone, so a stray key does not hide a duplicate (#2284)', async () => {
+    expect((await validate([{ type: 'anyone' }, { type: 'anyone', key: 'x' }])).isValid).toBe(false);
+  });
+
+  test('anyone overlaps every subject; authenticated every subject but anonymous (#2284)', async () => {
+    const v = await makeValidator();
+    for (const type of ['role', 'job', 'user', 'anonymous', 'authenticated', 'anyone']) {
+      expect(v.subjectsMatch({ type: 'anyone' }, { type, value: 'x' })).toBe(true);
+      expect(v.subjectsMatch({ type, value: 'x' }, { type: 'anyone' })).toBe(true);
+    }
+    for (const type of ['role', 'job', 'user', 'authenticated']) {
+      expect(v.subjectsMatch({ type: 'authenticated' }, { type, value: 'x' })).toBe(true);
+      expect(v.subjectsMatch({ type, value: 'x' }, { type: 'authenticated' })).toBe(true);
+    }
+    expect(v.subjectsMatch({ type: 'authenticated' }, { type: 'anonymous' })).toBe(false);
+    expect(v.subjectsMatch({ type: 'anonymous' }, { type: 'authenticated' })).toBe(false);
+    expect(v.subjectsMatch({ type: 'role', value: 'a' }, { type: 'role', value: 'b' })).toBe(false);
   });
 
   test('two job subjects match when they name the same job', async () => {
