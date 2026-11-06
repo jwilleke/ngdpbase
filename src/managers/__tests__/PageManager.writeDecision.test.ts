@@ -159,6 +159,20 @@ describe('PageManager write door (#1815)', () => {
       ]);
     });
 
+    // #2272: the refusal names the policy that decided it, and is recorded once.
+    test('a create refused by a deny policy is recorded once, with metadata.policyIds', async () => {
+      site.config['ngdpbase.access.policies'] = [...(site.config['ngdpbase.access.policies'] as unknown[]), {
+        id: 'verify-deny-page-writes', name: 'deny', description: 'deny', priority: 1, effect: 'deny',
+        subjects: [{ type: 'role', value: 'contributor' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-create']
+      }];
+      await site.ready();
+      await expect(site.pageManager.savePage('Brand New', 'new', {}, request('cora') as never, OPTS))
+        .rejects.toMatchObject({ action: 'page-create' });
+      const denials = site.audit.filter((e) => e.eventType === 'authorization-deny');
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({ action: 'page-create', metadata: { policyIds: ['verify-deny-page-writes'] } });
+    });
+
     test('a reader may neither edit nor create a public page; nothing is written', async () => {
       await expect(site.pageManager.savePage('Main', 'new', {}, request('rita') as never, OPTS))
         .rejects.toMatchObject({ name: 'PageWriteRefusedError', action: 'page-edit' });

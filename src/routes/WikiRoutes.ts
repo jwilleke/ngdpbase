@@ -2372,11 +2372,41 @@ class WikiRoutes {
   private async writeRefusal(req: Request, pageName: string, existing: { metadata?: unknown } | null): Promise<string | null> {
     const ctx = this.createWikiContext(req, { pageName });
     if (!existing) {
-      return (await ctx.hasPermissionOn('page-create', pageName)) ? null : 'You do not have permission to create pages';
+      if (await ctx.hasPermissionOn('page-create', pageName)) return null;
+      await this.recordWriteRefusal(req, pageName, 'page-create');
+      return 'You do not have permission to create pages';
     }
-    if (!(await ctx.hasPermissionOn('page-edit', pageName))) return 'You do not have permission to edit this page';
+    if (!(await ctx.hasPermissionOn('page-edit', pageName))) {
+      await this.recordWriteRefusal(req, pageName, 'page-edit');
+      return 'You do not have permission to edit this page';
+    }
     (ctx as { pageMetadata: unknown }).pageMetadata = existing.metadata ?? null;
+    // The page door (editRefusal) records its own refusal; only the capability refusals above are recorded here.
     return this.editRefusal(ctx);
+  }
+
+  /**
+   * Record a write refused on the capability (#2272): `hasPermissionOn`
+   * records nothing, and the refusal returns before PageManager's own door,
+   * so this is the one record. Only recording: the answer is already given.
+   * The deciding policies are asked again for their ids (public pages; a vault
+   * page is decided by the container rule, which names none). Best-effort.
+   */
+  private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create'): Promise<void> {
+    try {
+      const pip = this.engine.getManager<{ recordPageRefusal?: (s: unknown, p: string, a: string, r: string, ids: string[]) => Promise<void> }>('PolicyInformationPoint');
+      if (typeof pip?.recordPageRefusal !== 'function') return;
+      let policyIds: string[] = [];
+      const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      if (!parsePrivatePageName(pageName) && typeof pdp?.decide === 'function') {
+        const ctx = this.createWikiContext(req, { pageName });
+        const d = await pdp.decide(ctx.getActor(), { action, resource: { type: 'page', id: pageName } });
+        policyIds = d?.policyIds ?? [];
+      }
+      await pip.recordPageRefusal(req.userContext, pageName, action, 'capability_deny', policyIds);
+    } catch (err) {
+      logger.warn(`[WikiRoutes] audit of a refused ${action} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -4201,6 +4231,7 @@ ${panes}
       // #1542: the editor's doors. A new page had no check at all — anyone,
       // signed out included, could create one — and an existing page asked
       // only the page-create capability.
+      if (!currentUser) await this.recordWriteRefusal(req, pageName, existingPage ? 'page-edit' : 'page-create');
       const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
       if (refusal) return await fail(403, 'Access Denied', refusal);
 

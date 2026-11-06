@@ -2138,6 +2138,12 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string): Promise<void> {
     const who = actorOf(ctx);
+    // #2272: the policies that decided, so a recorded refusal names them.
+    let policyIds: string[] = [];
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!parsePrivatePageName(pageName) && typeof pdp?.decide === 'function') {
+      policyIds = (await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: pageName }, attributes: {} }).catch(() => null))?.policyIds ?? [];
+    }
     await recordAuditEvent(
       this.engine.getManager('AuditManager'),
       {
@@ -2149,7 +2155,7 @@ class PageManager extends BaseManager implements CatalogSource {
         result: 'deny',
         reason,
         severity: 'medium',
-        metadata: { ...who.metadata }
+        metadata: { ...who.metadata, ...(policyIds.length > 0 ? { policyIds } : {}) }
       },
       (err) => logger.warn(`[PageManager] audit of a refused create failed: ${err instanceof Error ? err.message : String(err)}`)
     );

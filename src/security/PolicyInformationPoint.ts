@@ -1444,6 +1444,16 @@ class PolicyInformationPoint extends BaseManager {
     }
   }
 
+  /**
+   * Record a page write a door refused on a capability alone (#2272): the
+   * route's `page-edit` / `page-create` check asks the PDP, which records
+   * nothing. Same record as every other page denial, `policyIds` included.
+   */
+  recordPageRefusal(subject: UserContext | null | undefined, pageName: string, action: string, reason: string, policyIds: readonly string[] = []): Promise<void> {
+    this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} page=${pageName} action=${action} allowed=false reason=${reason}`);
+    return this.auditDenial(subject, pageName, action, reason, 'page', policyIds);
+  }
+
   /** The name a decision is recorded under: the subject's, or `anonymous`. */
   private static recordedUser(subject: UserContext | null | undefined): string {
     return subject?.username || subject?.name || 'anonymous';

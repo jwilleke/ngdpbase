@@ -137,7 +137,7 @@ How access fits together. The full rules of evaluation are in [access-policies.m
   - `actions`: which permissions;
   - `effect`: `allow` or `deny`;
   - `condition` (optional, [#2255](https://github.com/jwilleke/ngdpbase/issues/2255)): `{ "attribute": "resource:owner", "equals": "subject:id" }`. A value starting `subject:`, `resource:` or `environment:` names an attribute; anything else is a literal. `equals` is the only operator so far, and the attributes are `subject:id` and those declared on the `page` resource type in `ngdpbase.access.resource-types` (`system-category`, `owner`). A condition reading a missing attribute is unknown and fails closed: an allow with it does not apply, a deny with it does.
-  - __A deny overrides any allow__ among the policies that match, whatever their `priority`; with no deny, any matching allow permits; no match is a refusal. Every decision returns the ids of the policies that decided it (`Decision.policyIds`), and a recorded refusal carries them.
+  - __A deny overrides any allow__ among the policies that match, whatever their `priority`; with no deny, any matching allow permits; no match is a refusal. Every decision returns the ids of the policies that decided it (`Decision.policyIds`), and a recorded refusal carries them: a refused page edit, create, delete or rename is an `authorization-deny` record with `metadata.policyIds` ([#2272](https://github.com/jwilleke/ngdpbase/issues/2272)).
 
 ### Aiming a permission at a resource
 
