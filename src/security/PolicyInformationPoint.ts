@@ -7,6 +7,7 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
+import { valueFits } from '../utils/policyAttributes.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
@@ -1296,7 +1297,9 @@ class PolicyInformationPoint extends BaseManager {
       if (field === 'system-category') value = category;
       else if (field) {
         const raw = (metadata as Record<string, unknown>)[field];
-        value = decl?.type === 'identity' ? this.identityValue(raw) : raw;
+        // A value that does not fit the declared type is missing, never coerced (#2261).
+        const type = decl?.type ?? 'string';
+        value = type === 'identity' ? this.identityValue(raw) : valueFits(type, raw) ? raw : undefined;
       }
       memo.set(name, value);
       return value;
@@ -1338,7 +1341,7 @@ class PolicyInformationPoint extends BaseManager {
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     const username = identities
       ? await identities.usernameOf(systemContext(this.engine, 'policy condition: the account a page owner names (#2255)'), stored)
-      : stored;
+      : stored.startsWith('urn:') ? undefined : stored; // without IdentityManager a urn: id names no username, so it is unknown
     return username ? normalizeUsername(username) : undefined;
   }
 
