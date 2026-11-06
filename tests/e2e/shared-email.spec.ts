@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword } from './fixtures/helpers';
+import { signInWithPassword, openProfileCards } from './fixtures/helpers';
 
 /**
  * #2073 — two accounts may share one email. An administrator creating the
@@ -59,6 +59,7 @@ test.describe('Shared emails (#2073)', () => {
         await signInWithPassword(user, cal, password);
         await user.goto('/profile');
         const card = user.locator('#contact-details');
+        await openProfileCards(user); // #2248: the card starts collapsed
         await card.getByLabel('Email', { exact: true }).fill(shared);
         await card.getByRole('button', { name: 'Save contact details' }).click();
         // A site with email sends a link to the new address; one without refuses and says an administrator can change it.

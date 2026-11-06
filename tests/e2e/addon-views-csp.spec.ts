@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { openProfileCards } from './fixtures/helpers';
 
 /**
  * #1706 — add-on views work with listeners in place of inline handlers.
@@ -60,6 +61,7 @@ test.describe('#1706 — add-on views without inline handlers', () => {
 
   test('profile: the journal section reminder checkbox shows and hides the time', async ({ page }) => {
     await page.goto('/profile');
+    await openProfileCards(page); // #2248
     const box = page.locator('#journal_reminderEnabled');
     test.skip(await box.count() === 0, 'journal profile section not shown (add-on not enabled on this instance)');
     const row = page.locator('#journal_reminderTimeRow');

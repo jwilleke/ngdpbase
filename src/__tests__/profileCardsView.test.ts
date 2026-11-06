@@ -1,7 +1,7 @@
 /**
  * #1541 — every card on /profile, add-on sections included, collapses under
  * the header /admin's Share Manager card uses: `.card > .card-body.py-2 >
- * details#id[open] > summary.card-summary` with an icon and an h6 title,
+ * details#id > summary.card-summary` with an icon and an h6 title,
  * and the content in `div.mt-3`.
  *
  * Renders the real profile.ejs as Express does, with header and footer
@@ -62,7 +62,8 @@ function expectAdminHeader(card: Element): void {
   const details = body?.firstElementChild;
   expect(details?.tagName).toBe('DETAILS');
   expect(details?.id).not.toBe('');
-  expect(details?.hasAttribute('open')).toBe(true);
+  // #2248: only Account Information starts open.
+  expect(details?.hasAttribute('open')).toBe(details?.id === 'profile-account-information');
   const summary = details?.firstElementChild;
   expect(summary?.matches('summary.card-summary')).toBe(true);
   expect(summary?.querySelector(':scope > i.fas')).not.toBeNull();
@@ -71,7 +72,7 @@ function expectAdminHeader(card: Element): void {
 }
 
 describe('#1541 /profile cards collapse under the /admin header', () => {
-  test('every card starts open under a summary.card-summary with an icon and a title, each with its own id', async () => {
+  test('every card starts collapsed (Account Information open) under a summary.card-summary with an icon and a title, each with its own id', async () => {
     const doc = await render();
     const cards = sectionCards(doc);
     const titles = cards.map(c => text(c.querySelector('summary h6')));
@@ -81,6 +82,12 @@ describe('#1541 /profile cards collapse under the /admin header', () => {
       'My tokens and devices', 'Proxy access', 'User Preferences'
     ]));
     for (const card of cards) expectAdminHeader(card);
+    expect([...doc.querySelectorAll('details[open]')].map(d => d.id)).toEqual(['profile-account-information']);
+    // #2248: every card is full width, one per row.
+    for (const card of cards) {
+      expect(card.parentElement?.classList.contains('col-12')).toBe(true);
+    }
+    expect(doc.querySelector('.col-md-8.offset-md-2')).toBeNull();
     // The title stays a heading, so the page outline and tests/e2e/profile-contact-details.spec.ts find it.
     expect(text(doc.querySelector('#contact-details summary.card-summary > h6'))).toBe('Contact details');
     expect(doc.querySelectorAll('.card-header').length).toBe(1); // the page's own frame, "User Profile"

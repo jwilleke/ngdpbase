@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword } from './fixtures/helpers';
+import { signInWithPassword, openProfileCards } from './fixtures/helpers';
 
 /**
  * #2073 — a user edits their own details in the "Contact details" card on
@@ -43,6 +43,7 @@ test.describe('Contact details on /profile (#2073)', () => {
       await signInWithPassword(user, username, password);
       await user.goto('/profile');
       const card = user.locator('#contact-details');
+      await openProfileCards(user); // #2248: the card starts collapsed
       await expect(card.getByRole('heading', { name: /Contact details/ })).toBeVisible();
       await expect(card.getByLabel('Country for home phone')).toHaveValue('US');
 
@@ -63,6 +64,7 @@ test.describe('Contact details on /profile (#2073)', () => {
 
       await user.reload();
       const again = user.locator('#contact-details');
+      await openProfileCards(user); // #2248: the card starts collapsed
       await expect(again.getByLabel('Name', { exact: true })).toHaveValue(`Pat ${RUN}`);
       await expect(again.getByLabel('Email', { exact: true })).toHaveValue(`${username}@example.test`);
       await expect(again.getByLabel('Home phone', { exact: true })).toHaveValue('(415) 555-2671');
@@ -87,6 +89,7 @@ test.describe('Contact details on /profile (#2073)', () => {
       await expect(user.locator('#contact-details').getByLabel('Mobile phone', { exact: true })).toHaveValue('020 7946 0958');
 
       // #2073: a new email is never saved by the form: a link goes to it, or a site without email refuses it.
+      await openProfileCards(user);
       const card2 = user.locator('#contact-details');
       await card2.getByLabel('Email', { exact: true }).fill(`${username}.new@example.test`);
       await card2.getByRole('button', { name: 'Save contact details' }).click();

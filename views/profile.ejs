@@ -2,7 +2,7 @@
 
 <div class="container-fluid">
     <div class="row">
-        <div class="col-md-8 offset-md-2">
+        <div class="col-12">
             <div class="card mt-4">
                 <div class="card-header">
                     <h4><i class="fas fa-user"></i> User Profile</h4>
@@ -22,7 +22,7 @@
                     
                     <!-- User Information Display -->
                     <div class="row mb-4">
-                        <div class="col-md-6">
+                        <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
                                     <details id="profile-account-information" open>
@@ -56,10 +56,10 @@
                             </div>
                         </div>
                         
-                        <div class="col-md-6">
+                        <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-permissions" open>
+                                    <details id="profile-permissions">
                                         <%- include('_card-summary', { icon: 'fa-shield-alt', title: 'Permissions' }) %>
                                         <div class="mt-3" style="max-height: 200px; overflow-y: auto;">
                                     <% if (permissions && permissions.length > 0) { %>
@@ -88,7 +88,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-my-contributions" open>
+                                    <details id="profile-my-contributions">
                                         <%- include('_card-summary', { icon: 'fa-star', title: 'My Contributions' }) %>
                                         <div class="mt-3">
                                     <ul class="list-group list-group-flush">
@@ -177,7 +177,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-share-links" open>
+                                    <details id="profile-share-links">
                                         <%- include('_card-summary', { icon: 'fa-share-nodes', title: 'Share Links', helpSlug: 'share-links', helpLabel: 'Share Links' }) %>
                                         <div class="mt-3">
                                     <ul class="list-group list-group-flush">
@@ -207,7 +207,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-your-consents" open>
+                                    <details id="profile-your-consents">
                                         <%- include('_card-summary', { icon: 'fa-file-signature', title: 'Your consents', helpSlug: 'your-consents', helpLabel: 'Your consents' }) %>
                                         <div class="mt-3">
                                     <% if (yourConsents.length === 0) { %>
@@ -262,7 +262,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-vault-repairs" open>
+                                    <details id="profile-vault-repairs">
                                         <%- include('_card-summary', { icon: 'fa-lock-open', title: 'Vault pages with data outside their vault' }) %>
                                         <div class="mt-3">
                                     <% if (repairNotice) { %><div class="alert alert-success small"><%= repairNotice %></div><% } %>
@@ -315,7 +315,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-unused-vault-files" open>
+                                    <details id="profile-unused-vault-files">
                                         <%- include('_card-summary', { icon: 'fa-box-open', title: 'Unused files in your vaults' }) %>
                                         <div class="mt-3">
                                     <p class="small text-muted">Files in your vaults that no page in that vault uses — for example a copy left behind when a page moved to another vault. Only you see this.</p>
@@ -358,7 +358,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-sign-in-methods" open>
+                                    <details id="profile-sign-in-methods">
                                         <%- include('_card-summary', { icon: 'fa-key', title: 'Sign-in methods' }) %>
                                         <div class="mt-3">
                                     <% if (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable) { %>
@@ -476,7 +476,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-tokens-and-devices" open>
+                                    <details id="profile-tokens-and-devices">
                                         <%- include('_card-summary', { icon: 'fa-key', title: 'My tokens and devices' }) %>
                                         <div class="mt-3">
                                     <% if (mayMint) { %>
@@ -561,7 +561,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-proxy-access" open>
+                                    <details id="profile-proxy-access">
                                         <%- include('_card-summary', { icon: 'fa-user-friends', title: 'Proxy access' }) %>
                                         <div class="mt-3">
                                     <% if (proxyAccess.given !== null) { %>
@@ -603,7 +603,7 @@
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-body py-2">
-                                    <details id="profile-user-preferences" open>
+                                    <details id="profile-user-preferences">
                                         <%- include('_card-summary', { icon: 'fa-cogs', title: 'User Preferences' }) %>
                                         <div class="mt-3">
                                     <form action="/preferences" method="POST">
@@ -820,7 +820,7 @@
                                                 <%# #1541: core draws each section's card and header, so every add-on's section collapses like the rest. %>
                                                 <div class="card mt-4" data-addon="<%= section.addonName %>">
                                                     <div class="card-body py-2">
-                                                    <details id="profile-addon-<%= section.addonName %>" open>
+                                                    <details id="profile-addon-<%= section.addonName %>">
                                                     <%- include('_card-summary', { icon: section.icon || 'fa-puzzle-piece', title: section.title, hint: section.hint }) %>
                                                     <div class="mt-3"><%- section.html %>
                                                         <%# #1603: what this add-on asks you to accept before it turns on, recorded before its switch flips. %>
@@ -868,7 +868,7 @@
                     <form action="/profile" method="POST">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <h5><i class="fas fa-edit"></i> Update Profile</h5>
                                 
                                 <%# #2073: the name and email are changed under Contact details. %>
@@ -895,7 +895,7 @@
                             
                             <!-- Password Change Section - Only for Local Users -->
                             <% if (!user.isExternal) { %>
-                            <div class="col-md-6" id="change-password">
+                            <div class="col-12" id="change-password">
                                 <h5><i class="fas fa-key"></i> Change Password</h5>
                                 <p class="text-muted small">Leave blank to keep current password</p>
                                 
@@ -918,7 +918,7 @@
                                 </div>
                             </div>
                             <% } else { %>
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <%# #1026: isExternal covers every passwordless account, not just
                                     OAuth — magic-link signups are external too, and telling those
                                     users to go change a password at "their OAuth provider" names a
@@ -1265,6 +1265,21 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   });
+})();
+</script>
+
+<script nonce="<%= locals.cspNonce %>">
+// #2248: cards start collapsed, so a deep link such as /profile#sign-in-methods
+// opens the card it points at.
+(function () {
+    function openTarget() {
+        var el = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+        if (!el) return;
+        var d = el.tagName === 'DETAILS' ? el : el.querySelector('details');
+        if (d) { d.open = true; el.scrollIntoView(); }
+    }
+    openTarget();
+    window.addEventListener('hashchange', openTarget);
 })();
 </script>
 
