@@ -2693,7 +2693,8 @@ class WikiRoutes {
     // this page" — counting a name that can no longer match errs toward an
     // empty sitemap, which is the safe direction.
     const anonSubject = (s: { type?: string; value?: string }) =>
-      s?.type === 'role' && ['anonymous', 'all', 'asserted'].includes(String(s.value).toLowerCase());
+      s?.type === 'anyone'
+      || (s?.type === 'role' && ['anonymous', 'all', 'asserted'].includes(String(s.value).toLowerCase()));
     const readers = policies.filter((p) =>
       (p.actions ?? []).includes('page-read') && (p.subjects ?? []).some(anonSubject)
     );

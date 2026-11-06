@@ -31,8 +31,8 @@ import type { Policy } from '../types/Policy.js';
 
 const PAGE_WRITES = ['page-edit', 'page-delete', 'page-rename'] as const;
 
-/** Every page-write permission a policy can grant, for the boot review of grants to everyone (#2261). */
-const ALL_PAGE_WRITES: readonly string[] = ['page-edit', 'page-create', 'page-delete', 'page-rename', 'pushed-pages-edit', 'pushed-pages-delete', 'pushed-pages-rename'];
+/** The one action a grant to everyone may hold without a review line (#2261, #2283). */
+const READ_ONLY_ACTION = 'page-read';
 
 /**
  * The shipped role policies whose page writes moved to the category policies
@@ -98,8 +98,8 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
 /**
  * Policies in force that an administrator should review after #2255: an
  * allow that grants a page write on a `page` resource to a role other than
- * admin (it reaches pushed pages), an allow that grants any page write to
- * `anyone` or `authenticated` (#2261), and every deny (a deny now overrides any
+ * admin (it reaches pushed pages), an allow that grants anything but
+ * page-read to `anyone` or `authenticated` (#2261, #2283), and every deny (a deny now overrides any
  * allow, whatever the priorities).
  */
 export function pageWritePoliciesToReview(policies: readonly Policy[]): string[] {
@@ -111,9 +111,11 @@ export function pageWritePoliciesToReview(policies: readonly Policy[]): string[]
     }
     const everyone = (policy.subjects ?? []).some((s) => s.type === 'anyone') ? 'anyone, including signed-out visitors'
       : (policy.subjects ?? []).some((s) => s.type === 'authenticated') ? 'every signed-in user' : null;
-    const granted = (policy.actions ?? []).filter((a) => ALL_PAGE_WRITES.includes(a) || a === '*');
+    // Missing or empty `actions` means `*` (#2283); anything but page-read is flagged.
+    const held = (policy.actions ?? []).length > 0 ? (policy.actions ?? []) : ['*'];
+    const granted = held.filter((a) => a !== READ_ONLY_ACTION);
     if (everyone && granted.length > 0) {
-      out.push(`'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can write pages; grant it to named roles instead (#2261)`);
+      out.push(`'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`);
     }
     const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');
     const roles = (policy.subjects ?? []).filter((s) => s.type === 'role' && s.value !== 'admin').map((s) => s.value);
