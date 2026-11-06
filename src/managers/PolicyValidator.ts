@@ -310,16 +310,9 @@ class PolicyValidator extends BaseManager {
               enum: ['view', 'edit', 'delete', 'upload', 'download', 'admin', 'create', 'update']
             }
           },
-          // #2255: one condition, `equals` only; conditionProblems checks the attributes.
-          condition: {
-            type: 'object',
-            required: ['attribute', 'equals'],
-            additionalProperties: false,
-            properties: {
-              attribute: { type: 'string' },
-              equals: { type: ['string', 'number', 'boolean'] }
-            }
-          },
+          // #2255, #2261: the shape of the tree (operators, depth, types) is
+          // checked by conditionProblems, which can say what to change.
+          condition: { type: 'object' },
           conditions: {
             type: 'array',
             items: {

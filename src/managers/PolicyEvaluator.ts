@@ -3,6 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
+import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, NOT_OPERATOR, compareLeaf, literalFits, literalType } from '../utils/policyAttributes.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -56,23 +57,24 @@ interface AccessContext {
 /** The subject attributes a condition may read before subject attributes are declared in config (#2261). */
 const BUILT_IN_SUBJECT_ATTRIBUTES: Readonly<Record<string, string>> = { id: 'identity' };
 
+/** The key that holds the operator of a node, or the keys when there is more than one. */
+function operatorKeys(node: object): string[] {
+  return Object.keys(node).filter((k) => k !== 'attribute');
+}
+
 /**
- * What is wrong with a policy's condition, one sentence each (#2255); empty
- * when it is fine. `equals` is the only operator. Each side that names an
- * attribute must be one that exists: `subject:id`, or a `resource:<name>`
- * declared on the `page` resource type. Two attributes must have the same
- * type. A condition with a problem never holds: an allow with it does not
- * apply and a deny with it does, as for a missing attribute.
+ * What is wrong with a policy's condition, one sentence each (#2255, #2261);
+ * empty when it is fine. Each sentence says what is wrong, then what to
+ * change. A node is a comparison (`attribute` and one operator) or `any-of`,
+ * `all-of` or `not` over other conditions, nested at most
+ * {@link MAX_CONDITION_DEPTH} deep. Each attribute a comparison names must be
+ * declared: `subject:id`, or a `resource:<name>` declared on the `page`
+ * resource type. The types of the two sides must agree. A condition with a
+ * problem never holds: an allow with it does not apply and a deny with it
+ * does, as for a missing attribute.
  */
 export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>): string[] {
   if (condition === undefined) return [];
-  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) return ['condition must be an object: { "attribute": …, "equals": … }'];
-  const keys = Object.keys(condition);
-  const unknown = keys.filter((k) => k !== 'attribute' && k !== 'equals');
-  if (unknown.length > 0) return [`condition uses ${unknown.map((k) => `'${k}'`).join(', ')}; only "attribute" and "equals" are supported (more operators are #2261)`];
-  const c = condition as { attribute?: unknown; equals?: unknown };
-  if (!isAttributeName(c.attribute)) return [`condition "attribute" must name an attribute (subject:, resource: or environment:), not ${JSON.stringify(c.attribute)}`];
-  if (!('equals' in c)) return ['condition has no "equals"'];
   const typeOf = (name: string): string | null => {
     const [category, ...rest] = name.split(':');
     const attr = rest.join(':');
@@ -80,28 +82,116 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
     if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
     return null;
   };
-  const problems: string[] = [];
-  const sides = [c.attribute, ...(isAttributeName(c.equals) ? [c.equals] : [])];
-  for (const side of sides) {
-    if (typeOf(side) === null) problems.push(`condition reads '${side}', which is not declared (resource attributes are declared on the page resource type in ngdpbase.access.resource-types; subject:id is the only subject attribute so far)`);
-  }
-  if (problems.length === 0 && sides.length === 2 && typeOf(sides[0]) !== typeOf(sides[1])) {
-    problems.push(`condition compares '${sides[0]}' (${typeOf(sides[0])}) with '${sides[1]}' (${typeOf(sides[1])}); both sides must have the same type`);
-  }
-  return problems;
+  const undeclared = (name: string): string => {
+    const where = name.startsWith('resource:')
+      ? 'declare it on the page resource type in ngdpbase.access.resource-types'
+      : name.startsWith('subject:')
+        ? 'subject:id is the only subject attribute until subject attributes are declared in ngdpbase.access.subject-attributes'
+        : 'no environment attributes are declared yet';
+    return `condition reads '${name}', which is not declared; ${where}`;
+  };
+  const list = (values: readonly string[]): string => values.join(', ');
+
+  const walk = (node: unknown, depth: number): string[] => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return ['condition must be an object; write { "attribute": …, "equals": … } or { "any-of": […] }'];
+    if (depth > MAX_CONDITION_DEPTH) return [`conditions are nested ${depth} deep; the limit is ${MAX_CONDITION_DEPTH}; flatten with all-of or any-of`];
+    const c = node as Record<string, unknown>;
+    const ops = operatorKeys(node);
+
+    if (!('attribute' in c)) {
+      const known = ops.filter((k) => (GROUP_OPERATORS as readonly string[]).includes(k) || k === NOT_OPERATOR);
+      const stray = ops.filter((k) => !known.includes(k));
+      if (stray.length > 0 || known.length === 0) {
+        const used = stray.length > 0 ? stray : ops;
+        return [`condition uses ${used.length > 0 ? used.map((k) => `'${k}'`).join(', ') : 'no operator'}; use one of ${list(CONDITION_OPERATORS)}`];
+      }
+      if (known.length > 1) return [`condition has both '${known[0]}' and '${known[1]}'; use one operator per condition, combine with all-of`];
+      const op = known[0];
+      if (op === NOT_OPERATOR) return walk(c.not, depth + 1);
+      const children = c[op];
+      if (!Array.isArray(children)) return [`'${op}' must be a list of conditions; write { "${op}": [ … ] }`];
+      if (children.length === 0) return [`'${op}' is empty; list at least one condition, or remove the condition`];
+      return children.flatMap((child) => walk(child, depth + 1));
+    }
+
+    if (!isAttributeName(c.attribute)) return [`condition "attribute" must name an attribute (subject:, resource: or environment:), not ${JSON.stringify(c.attribute)}`];
+    const leafOps = ops.filter((k) => Object.hasOwn(LEAF_OPERATORS, k));
+    const stray = ops.filter((k) => !leafOps.includes(k));
+    if (stray.length > 0) return [`condition uses ${stray.map((k) => `'${k}'`).join(', ')}; use one of ${list(CONDITION_OPERATORS)}`];
+    if (leafOps.length === 0) return [`condition on '${c.attribute}' has no operator; use one of ${list(Object.keys(LEAF_OPERATORS))}`];
+    if (leafOps.length > 1) return [`condition has both '${leafOps[0]}' and '${leafOps[1]}'; use one operator per condition, combine with all-of`];
+
+    const op = leafOps[0];
+    const operand = c[op];
+    const leftType = typeOf(c.attribute);
+    const problems: string[] = [];
+    if (leftType === null) problems.push(undeclared(c.attribute));
+    const rightIsAttribute = isAttributeName(operand);
+    const rightType = rightIsAttribute ? typeOf(operand) : null;
+    if (rightIsAttribute && rightType === null) problems.push(undeclared(operand));
+    if (problems.length > 0) return problems;
+    const left = leftType as string;
+
+    if (!LEAF_OPERATORS[op].left.includes(left as never)) {
+      return [`condition applies '${op}' to '${c.attribute}' (${left}); '${op}' works on ${list(LEAF_OPERATORS[op].left)} attributes`];
+    }
+    const mismatch = (rightLabel: string, rightKind: string): string =>
+      `condition compares '${String(c.attribute)}' (${left}) with ${rightLabel} (${rightKind}); both sides must have the same type`;
+
+    if (op === 'in') {
+      if (rightIsAttribute) {
+        return rightType === 'list' ? [] : [`'in' needs a list; '${String(operand)}' is ${String(rightType)}; use a list attribute or write the values as an array`];
+      }
+      if (!Array.isArray(operand)) return ['\'in\' must be a list of values or a list attribute; write { "in": [ … ] }'];
+      if (operand.length === 0) return ['\'in\' is empty; list at least one value, or remove the condition'];
+      const items = operand as unknown[];
+      const attributeLike = items.find((v) => isAttributeName(v));
+      if (attributeLike !== undefined) return [`'in' lists '${String(attributeLike)}', which names an attribute; list literal values only, or use an attribute that is a list`];
+      const wrong = items.find((v) => !literalFits(left, v));
+      return wrong === undefined ? [] : [mismatch(JSON.stringify(wrong), literalType(wrong) ?? typeof wrong)];
+    }
+    if (rightIsAttribute) return rightType === left ? [] : [mismatch(`'${String(operand)}'`, String(rightType))];
+    return literalFits(left, operand) ? [] : [mismatch(JSON.stringify(operand) ?? String(operand), literalType(operand) ?? typeof operand)];
+  };
+
+  return walk(condition, 1);
 }
 
 /**
- * Does the condition hold (#2255)? `true` or `false`, or `undefined` when an
- * attribute it reads is missing: unknown, which the caller fails closed on.
+ * Is the condition true, false or unknown (#2255, #2261)? `true` or `false`,
+ * or `undefined` when it cannot be told because an attribute it reads is
+ * missing; the caller fails closed on that. Each node is judged on its own:
+ * a missing attribute makes its leaf unknown, a true branch decides `any-of`,
+ * a false branch decides `all-of`, and `not` of unknown is unknown.
  */
-export async function conditionHolds(condition: PolicyCondition | undefined, read: AttributeReader | undefined): Promise<boolean | undefined> {
+export async function conditionHolds(condition: PolicyCondition | undefined, read: AttributeReader | undefined, depth = 1): Promise<boolean | undefined> {
   if (!condition) return true;
+  if (depth > MAX_CONDITION_DEPTH) return undefined;
+  const node = condition as Record<string, unknown>;
+
+  if ('any-of' in node || 'all-of' in node) {
+    const anyOf = 'any-of' in node;
+    const children = node[anyOf ? 'any-of' : 'all-of'];
+    if (!Array.isArray(children) || children.length === 0) return undefined;
+    const decisive = anyOf; // the value that settles the node: true for any-of, false for all-of
+    let sawUnknown = false;
+    for (const child of children as PolicyCondition[]) {
+      const result = await conditionHolds(child, read, depth + 1);
+      if (result === decisive) return decisive;
+      if (result === undefined) sawUnknown = true;
+    }
+    return sawUnknown ? undefined : !decisive;
+  }
+  if ('not' in node) {
+    if (!node.not) return undefined;
+    const inner = await conditionHolds(node.not as PolicyCondition, read, depth + 1);
+    return inner === undefined ? undefined : !inner;
+  }
+
+  const operator = Object.keys(node).find((k) => Object.hasOwn(LEAF_OPERATORS, k));
+  if (!operator) return undefined;
   const value = async (side: unknown): Promise<unknown> => (isAttributeName(side) ? (read ? await read(side) : undefined) : side);
-  const left = await value(condition.attribute);
-  const right = await value(condition.equals);
-  if (left === undefined || left === null || right === undefined || right === null) return undefined;
-  return left === right;
+  return compareLeaf(operator, await value(node.attribute), await value(node[operator]));
 }
 
 /**

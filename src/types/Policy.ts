@@ -34,18 +34,33 @@ export interface PolicyResource {
 }
 
 /**
- * A policy's condition (#2255, the seed of #2261): two attributes, or an
- * attribute and a literal, that must be equal. A string starting with
+ * A comparison of one attribute with a value (#2255, #2261). A string starting
  * `subject:`, `resource:` or `environment:` names an attribute; anything else
- * is a literal. `equals` is the only operator so far.
- *
- * A condition reading an attribute that is missing is UNKNOWN, and fails
- * closed: an allow with it does not apply, a deny with it does.
+ * is a literal. Exactly one operator key beside `attribute`:
+ * `equals`, `not-equals`, `in`, `greater-or-equal`, `less-or-equal`.
  */
-export interface PolicyCondition {
-  attribute: string;
-  equals: unknown;
-}
+export type LeafCondition = { attribute: string } & (
+  | { equals: unknown }
+  | { 'not-equals': unknown }
+  | { in: unknown[] | string }
+  | { 'greater-or-equal': number | string }
+  | { 'less-or-equal': number | string }
+);
+
+/**
+ * A policy's condition: a {@link LeafCondition}, or `any-of` / `all-of` /
+ * `not` over other conditions, nested at most 4 deep.
+ *
+ * Each node is true, false or unknown. A leaf reading an attribute that is
+ * missing is unknown; in `any-of` a true branch decides, in `all-of` a false
+ * one does, and `not` of unknown is unknown. An allow applies only when the
+ * condition is true; a deny applies when it is true or unknown.
+ */
+export type PolicyCondition =
+  | LeafCondition
+  | { 'any-of': PolicyCondition[] }
+  | { 'all-of': PolicyCondition[] }
+  | { not: PolicyCondition };
 
 /** The prefixes that mark a condition value as an attribute rather than a literal (#2255). */
 export const ATTRIBUTE_CATEGORIES = ['subject', 'resource', 'environment'] as const;

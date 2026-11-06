@@ -95,7 +95,7 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
 
   describe('a condition with a problem never applies as an allow', () => {
     test.each([
-      [{ attribute: 'resource:owner', 'not-equals': 'subject:id' }, /only "attribute" and "equals"/],
+      [{ attribute: 'resource:owner', contains: 'subject:id' }, /uses 'contains'; use one of equals, not-equals/],
       [{ attribute: 'owner', equals: 'subject:id' }, /must name an attribute/],
       [{ attribute: 'resource:department', equals: 'subject:id' }, /'resource:department', which is not declared/],
       [{ attribute: 'environment:is-business-hours', equals: true }, /not declared/],

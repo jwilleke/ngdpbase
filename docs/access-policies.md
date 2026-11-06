@@ -53,9 +53,32 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`, or `{ "type": "job", "value": "<job id>" }` for a scheduled job that holds its own permissions ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)). Only `role` and `job` are matched; the validator refuses any other type | The policy applies to everyone |
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in; `shared-folder` matches a shared folder as `shared/<name>` (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
-| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) | `{ "attribute": a, "equals": b }`. A string starting `subject:`, `resource:` or `environment:` names an attribute, anything else is a literal. `equals` is the only operator; the attributes are `subject:id` (the signed-in account) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Both sides that name attributes must have the same declared type. More operators and declared subject and environment attributes are [#2261](https://github.com/jwilleke/ngdpbase/issues/2261) | The policy applies whenever it matches |
+| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | A comparison `{ "attribute": a, "equals": b }`, or `any-of`, `all-of` or `not` over other conditions (see [Conditions](#conditions)). A string starting `subject:`, `resource:` or `environment:` names an attribute, anything else is a literal. The attributes are `subject:id` (the signed-in account) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Declared subject and environment attributes are still to come ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | The policy applies whenever it matches |
 
 A permission that was renamed or split keeps working under its old name: a policy or an agent token naming it is read as what it now stands for, and a policy naming it is warned about once, at the first decision that reads it, naming the policy. The list is `RETIRED_PERMISSIONS` in `src/utils/permissionCatalog.ts`: `share-manage` is read as `share-create`, `share-extend` and `share-revoke` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)); `contact-read` as `identity-read` and `contact-manage` as `identity-manage`, accepted for one release only ([#2038](https://github.com/jwilleke/ngdpbase/issues/2038)). Name the new permissions in anything you write.
+
+### Conditions
+
+A condition is a comparison, or `any-of`, `all-of` or `not` over other conditions. A comparison has an `attribute` and exactly one operator:
+
+| Operator | Reads | Left attribute | Notes |
+| --- | --- | --- | --- |
+| `equals`, `not-equals` | `{ "attribute": a, "equals": b }` | string, integer, boolean, identity | `b` is a literal or an attribute of the same type |
+| `in` | `{ "attribute": a, "in": ["x", "y"] }` | string, integer, identity | A non-empty array of literals of the attribute's type, or an attribute declared as a `list` |
+| `greater-or-equal`, `less-or-equal` | `{ "attribute": a, "greater-or-equal": 2 }` | integer | An integer literal or an integer attribute |
+| `any-of`, `all-of` | `{ "any-of": [c1, c2] }` | | A non-empty array of conditions |
+| `not` | `{ "not": c }` | | One condition |
+
+`{ "attribute": "resource:owner", "equals": "subject:id" }` is a comparison, and stays valid as it is. Conditions nest at most 4 deep, counting every node, so `any-of` > `all-of` > `not` > comparison is the limit; the validator refuses a fifth level. The validator also refuses a comparison with two operators or none, an empty `in`, `any-of` or `all-of`, an attribute that is not declared, and two sides of different types. Each message says what is wrong and what to change. A policy with such a condition is named at boot and never applies as an allow.
+
+Every node is judged on its own as true, false or unknown:
+
+- A comparison reading an attribute that is missing (a page with no `author`, a caller not signed in) is unknown.
+- `any-of`: a true branch decides it, whatever the others. Otherwise it is unknown if any branch is, else false.
+- `all-of`: a false branch decides it, whatever the others. Otherwise it is unknown if any branch is, else true.
+- `not` of unknown is unknown.
+
+An __allow__ applies only when its condition is true. A __deny__ applies when its condition is true or unknown, so a missing attribute fails closed. A condition with one attribute behaves as before.
 
 ### How a decision is made
 
@@ -65,7 +88,7 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 - A subject matches when the user holds at least one of the listed roles. A user with no roles matches no policy that names roles. An unauthenticated caller holds the `anonymous` role.
 - A `job` subject matches a scheduled run of that job. When any policy names a job, its scheduled runs act as `job:<id>` with no roles, holding only what such policies grant; a job no policy names runs with the system principal's roles (`ngdpbase.system.roles`). A run started by hand acts as the admin who started it.
 - __A deny overrides any allow__ ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)): if a matching deny applies, the answer is deny, whatever the priorities. Otherwise a matching allow permits. Until #2255 the first match by `priority` decided; a site's own deny policies, and allows that relied on outranking a deny, are named at boot.
-- __A condition__ makes a policy apply only when it holds. One that reads a missing attribute (a page with no `author`, a caller not signed in) is unknown and fails closed: an allow with it does not apply, a deny with it does. A condition naming an undeclared attribute or an unknown operator never applies as an allow, and is named at boot.
+- __A condition__ makes a policy apply only when it is true. See [Conditions](#conditions) for the operators, how a missing attribute is judged, and what an allow and a deny do with an unknown answer. A condition naming an undeclared attribute or an unknown operator never applies as an allow, and is named at boot.
 - __No matching policy means deny.__
 - __Every decision names its policies__: `Decision.policyIds` holds the denies that matched, or, when none did, the allows; empty when none matched. A recorded refusal carries them (`authorization-deny`, `metadata.policyIds`).
 - __A page's attributes come from the PIP.__ A caller names the page; the PDP asks `PolicyInformationPoint.pageAttributes` for its `system-category` and `owner` from the page itself. No route passes them.
