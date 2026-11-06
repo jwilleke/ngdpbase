@@ -6,6 +6,7 @@
 
 import PolicyEvaluator, { conditionHolds, conditionProblems } from '../PolicyEvaluator';
 import type { Policy } from '../../types/Policy';
+import logger from '../../utils/logger';
 
 const PAGE_ATTRIBUTES = { 'system-category': { type: 'string' }, owner: { type: 'identity' } };
 
@@ -114,5 +115,27 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
       const r = await ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor, readAttribute: () => 'x' });
       expect(r.allowed).toBe(false);
     });
+  });
+});
+
+describe('the boot warning for a condition with a problem (#2278)', () => {
+  const bad = { 'any-of': [] } as never;
+  const warned = async (policies: Policy[]): Promise<string[]> => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await evaluatorWith(policies).initialize();
+    const lines = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("'p1'"));
+    warn.mockRestore();
+    return lines;
+  };
+
+  test('an allow never applies', async () => {
+    const lines = await warned([allow('p1', { condition: bad })]);
+    expect(lines.join()).toContain('the policy never applies as an allow');
+  });
+
+  test('a deny always applies', async () => {
+    const lines = await warned([allow('p1', { effect: 'deny', condition: bad })]);
+    expect(lines.join()).toContain('the deny always applies');
+    expect(lines.join()).not.toContain('never applies as an allow');
   });
 });

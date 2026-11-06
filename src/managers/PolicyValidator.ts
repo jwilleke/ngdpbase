@@ -311,10 +311,9 @@ class PolicyValidator extends BaseManager {
           actions: {
             type: 'array',
             minItems: 1,
-            items: {
-              type: 'string',
-              enum: ['view', 'edit', 'delete', 'upload', 'download', 'admin', 'create', 'update']
-            }
+            // #2278: the actions are permission names (`page-edit`), not the old fixed verbs, so
+            // every shipped policy was refused by the enum that stood here.
+            items: { type: 'string', minLength: 1 }
           },
           // #2255, #2261: the shape of the tree (operators, depth, types) is
           // checked by conditionProblems, which can say what to change.
@@ -412,6 +411,36 @@ class PolicyValidator extends BaseManager {
     this.validationCache.set(cacheKey, result);
 
     return result;
+  }
+
+  /**
+   * The problems in a list of policies, each as `'<id>': <message>` (#2278):
+   * the schema's, unknown action names, then `conditionProblems`' (the boot warning's own messages).
+   * Used on save and on load in Admin → Configuration. Empty when all are fine.
+   *
+   * @param {unknown} policies - The value of `ngdpbase.access.policies`
+   * @returns {string[]} One line per problem
+   */
+  policyProblems(policies: unknown): string[] {
+    if (!Array.isArray(policies)) return ['the policies must be a list'];
+    // #2278: an action must be a defined permission (add-ons' included, the config layer merges
+    // them), else a mistyped deny never applies. `*` is the evaluator's wildcard.
+    const definitions = this.configManager?.getProperty('ngdpbase.permissions.definitions', null) as Record<string, unknown> | null;
+    if (!definitions || typeof definitions !== 'object' || Object.keys(definitions).length === 0) {
+      return ['the permission definitions (ngdpbase.permissions.definitions) could not be read, so the policies\' actions cannot be checked'];
+    }
+    const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
+    return policies.flatMap((policy: unknown, index) => {
+      const id = typeof (policy as { id?: unknown } | null)?.id === 'string' ? (policy as { id: string }).id : `#${index + 1}`;
+      const schema = this.schemaValidatorCompiled && !this.schemaValidatorCompiled(policy)
+        ? this.formatSchemaErrors(this.schemaValidatorCompiled.errors || []).map((e) => `${e.field} ${e.message}`.trim())
+        : [];
+      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}) : [];
+      const actions = Array.isArray((policy as { actions?: unknown } | null)?.actions) ? (policy as { actions: unknown[] }).actions : [];
+      const unknown = actions.filter((a) => typeof a === 'string' && a !== '*' && !Object.prototype.hasOwnProperty.call(definitions, a))
+        .map((a) => `action '${String(a)}' is not a defined permission; use a name from ngdpbase.permissions.definitions (add-on permissions included), or '*'`);
+      return [...schema, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
+    });
   }
 
   /**

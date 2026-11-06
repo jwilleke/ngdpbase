@@ -14284,11 +14284,17 @@ ${panes}
         };
       }
 
+      // #2278: problems in the policies in force, shown on that key's row.
+      const policyProblems = this.engine.getManager('PolicyValidator')
+        ?.policyProblems(configManager.getProperty('ngdpbase.access.policies', [])) ?? [];
+      const configProblems: Record<string, string[]> = policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {};
+
       const commonData = await this.getCommonTemplateData(req);
 
       const templateData = {
         ...commonData,
         title: 'Configuration Management',
+        configProblems,
         message: req.query.success,
         error: req.query.error,
         defaultProperties,
@@ -14547,6 +14553,17 @@ ${panes}
       // hidden; a placeholder sent back keeps what is stored there.
       parsedValue = keepHiddenValues(property, parsedValue, ((configManager.getAllProperties() ?? {}) as Record<string, unknown>)[property],
         valueLevels((k: string, d: unknown) => configManager.getProperty(k, d)));
+      // #2278: a policy with a problem is refused here, with the validator's own
+      // messages, rather than found at the next start.
+      if (property === 'ngdpbase.access.policies') {
+        const refused = this.engine.getManager('PolicyValidator')?.policyProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Policies not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
       // #2195: a media folder overlapping private storage is refused here, not
       // only skipped at the next start.
       // `$SLOW_STORAGE` and the like are resolved first, as startup reads them.
