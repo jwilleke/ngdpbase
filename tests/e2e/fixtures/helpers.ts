@@ -377,6 +377,7 @@ async function createPrivatePage(page: import('@playwright/test').Page, title: s
 }
 
 export {
+  openProfileCards,
   TEST_PAGE_PREFIX,
   acceptTermsIfAsked,
   signInWithPassword,
@@ -395,3 +396,13 @@ export {
   getNotifications,
   hasText
 };
+
+/**
+ * #2248: /profile cards start collapsed (only Account Information is open), and
+ * a closed `<details>` neither shows nor lets Playwright fill or click what is
+ * inside it. @param {import('@playwright/test').Page} page. Call this after `page.goto('/profile')` in a spec that works with
+ * a card's content.
+ */
+async function openProfileCards(page) {
+  await page.locator('details[id^="profile-"]').evaluateAll((els) => els.forEach((d) => { d.open = true; }));
+}

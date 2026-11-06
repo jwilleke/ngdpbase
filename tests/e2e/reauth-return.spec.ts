@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, CDPSession, Page, Request } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_PAGE_PREFIX } from './fixtures/helpers';
+import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_PAGE_PREFIX, openProfileCards } from './fixtures/helpers';
 
 /**
  * #2145 — after "Confirm it is you" with a passkey the browser goes where the
@@ -65,6 +65,7 @@ async function signInWithPasskey(browser: Browser): Promise<Person> {
   const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: AUTHENTICATOR });
   await signInWithPassword(page, USERNAME, PASSWORD);
   await page.goto('/profile');
+  await openProfileCards(page); // #2248
   await page.fill('#passkey-label', `e2e-reauth-${RUN}`);
   await page.locator('[data-passkey-enrol]').click();
   await page.waitForURL(/\/profile\?success=Passkey/);
@@ -205,6 +206,7 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       const page = me().page;
       const renamed = `e2e-reauth-renamed-${RUN}`;
       await page.goto('/profile');
+      await openProfileCards(page); // #2248
       await page.waitForTimeout(STALE_MS);
       const form = page.locator(`form[action$="/rename"]:has(input[name="label"][value="e2e-reauth-${RUN}"])`);
       await form.locator('input[name="label"]').fill(renamed);
@@ -230,7 +232,9 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
         const first = `e2e-reauth-tab1-${RUN}`;
         const other = `e2e-reauth-tab2-${RUN}`;
         await page.goto('/profile');
+        await openProfileCards(page); // #2248
         await second.goto('/profile');
+        await openProfileCards(second); // #2248
         await page.waitForTimeout(STALE_MS);
         // Tab 1 presses, then tab 2 presses the same button: two prompts.
         await rename(page).locator('input[name="label"]').fill(first);
@@ -263,6 +267,7 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
     test('a script\'s request comes back to its page, which says it can be done now', async () => {
       const page = me().page;
       await page.goto('/profile');
+      await openProfileCards(page); // #2248
       await page.waitForTimeout(STALE_MS);
       await page.fill('#passkey-label', `e2e-reauth-b-${RUN}`);
       // Adding a passkey asks account-security for its options as JSON; the answer names the prompt.

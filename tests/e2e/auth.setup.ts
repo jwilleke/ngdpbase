@@ -1,5 +1,5 @@
 import { test as setup, type Page } from '@playwright/test';
-import { waitForServerReady, TEST_PAGE_PREFIX, acceptTermsIfAsked } from './fixtures/helpers';
+import { waitForServerReady, TEST_PAGE_PREFIX, acceptTermsIfAsked, openProfileCards } from './fixtures/helpers';
 
 const STORAGE_STATE = './tests/e2e/.auth/user.json';
 
@@ -126,6 +126,7 @@ async function removeE2EPasskeys(page: Page): Promise<void> {
   // backlog, not just one leftover.
   for (let i = 0; i < 100; i++) {
     await page.goto('/profile');
+    await openProfileCards(page); // #2248
     const row = page.locator('tr', { has: page.locator(`input[name="label"][value="${E2E_PASSKEY_LABEL}"]`) }).first();
     if ((await row.count()) === 0) return;
     await row.getByRole('button', { name: 'Remove' }).click();
@@ -148,6 +149,7 @@ async function removeE2EPasskeys(page: Page): Promise<void> {
  */
 async function upgradeToPasskeySession(page: Page, adminUser: string): Promise<void> {
   await page.goto('/profile');
+  await openProfileCards(page); // #2248
   await assertSignedIn(page, adminUser, 'password sign-in (before the passkey upgrade)');
   const enrol = page.locator('[data-passkey-enrol]');
   if ((await enrol.count()) === 0) {
@@ -164,6 +166,7 @@ async function upgradeToPasskeySession(page: Page, adminUser: string): Promise<v
   });
   try {
     await page.goto('/profile');
+    await openProfileCards(page); // #2248
     await page.fill('#passkey-label', E2E_PASSKEY_LABEL);
     await page.locator('[data-passkey-enrol]').click();
     await page.waitForURL(/\/profile\?success=Passkey/);

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { deletePage, markTestArtifact, signInWithPassword } from './fixtures/helpers';
+import { deletePage, markTestArtifact, signInWithPassword, openProfileCards } from './fixtures/helpers';
 
 /**
  * #1603 — the site's terms: accepted at sign-up, asked at the first sign-in
@@ -44,6 +44,7 @@ async function freshContext(browser: Browser): Promise<{ context: BrowserContext
 /** The status of one document in "Your consents": its data attributes and its text. */
 async function consentStatus(page: Page, id: string): Promise<{ accepted: string | null; text: string }> {
   await page.goto('/profile');
+  await openProfileCards(page); // #2248
   const row = page.locator(`[data-consent-status="${id}"]`);
   await expect(row).toHaveCount(1);
   return { accepted: await row.getAttribute('data-consent-accepted'), text: (await row.innerText()).replace(/\s+/g, ' ') };
