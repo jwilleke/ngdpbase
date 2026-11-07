@@ -15312,8 +15312,9 @@ ${panes}
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
       }
       const version = this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+      const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-upgrade', {
-        ...(await this.getCommonTemplateData(req)),
+        ...commonData,
         title: `After updating to ${version}`,
         version,
         items: await this.upgradeItemsFor(wikiContext.userContext),
