@@ -64,4 +64,13 @@ describe('ThemeManager theme stylesheets', () => {
     expect(themeAt).toBeGreaterThan(coreAt);
     expect(addonAt).toBeGreaterThan(themeAt);
   });
+
+  test('Fairways shell fills the viewport and keeps a reading measure', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
+    expect(css).toMatch(/min-height:\s*100dvh/);
+    expect(css).toMatch(/max-width:\s*65ch/);
+    expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
+    expect(css).not.toMatch(/46rem/);
+    expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
+  });
 });

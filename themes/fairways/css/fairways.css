@@ -52,12 +52,55 @@
   }
 }
 
+html {
+  height: 100%;
+}
+
 body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
   font-size: 1.125rem;
   line-height: 1.65;
+}
+
+body > .jspwiki-header,
+body > .navigation {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+/* The page row grows so a short page still fills the window. */
+body > .container-fluid {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+}
+
+body > .container-fluid > .row {
+  flex: 1 1 auto;
+  width: 100%;
+  align-items: stretch;
+}
+
+main[role="main"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+  max-width: none;
+}
+
+main[role="main"] > .footer-content,
+main[role="main"] > .footer-contact {
+  margin-top: auto;
 }
 
 :focus-visible {
@@ -71,9 +114,14 @@ body {
 .form-select:focus-visible,
 .btn:focus-visible,
 .btn-primary:focus-visible,
+.jspwiki-header a:focus-visible,
+.jspwiki-header button:focus-visible,
+.jspwiki-header input:focus-visible,
 a:focus-visible,
 button:focus-visible {
-  outline: 3px solid var(--focus-ring) !important;
+  outline-style: solid !important;
+  outline-width: 3px !important;
+  outline-color: var(--focus-ring) !important;
   outline-offset: 3px !important;
   box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 6px var(--focus-ring) !important;
 }
@@ -94,10 +142,26 @@ button:focus-visible {
   color: var(--navbar-text);
 }
 
+.jspwiki-header .container-fluid {
+  gap: 0.75rem 1rem;
+}
+
+.jspwiki-header .navbar-collapse {
+  flex: 1 1 auto;
+}
+
+/* The template pins search at 400px. Let it grow with the header, then stop. */
+.jspwiki-header form[action="/search"] {
+  max-width: min(34rem, 100%) !important;
+  width: 100% !important;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .jspwiki-header .navbar-brand img {
-  height: 46px !important;
+  height: 42px !important;
   width: auto !important;
-  max-width: min(52vw, 220px);
+  max-width: min(46vw, 210px);
   margin-right: 0.75rem !important;
 }
 
@@ -132,24 +196,33 @@ button:focus-visible {
   border-color: var(--resident-border);
 }
 
+.navigation {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+/* Page name in the tool bar stays available, and stays quieter than the page heading. */
 .navigation-title h5 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--text-heading);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 /* Sidebar: public links, then the existing Members Only page as the resident door. */
 @media (min-width: 768px) {
-  .container-fluid > .row > .jspwiki-sidebar {
-    flex: 0 0 18rem;
-    width: 18rem;
-    max-width: 18rem;
+  .row > .jspwiki-sidebar {
+    flex: 0 0 clamp(14.5rem, 18vw, 18.5rem);
+    width: clamp(14.5rem, 18vw, 18.5rem);
+    max-width: clamp(14.5rem, 18vw, 18.5rem);
   }
 
+  .row > .jspwiki-sidebar + main.main-content,
   .container-fluid > .row > main[role="main"] {
-    flex: 1 1 auto;
+    flex: 1 1 0%;
     width: auto;
     max-width: none;
+    min-width: 0;
+    padding: clamp(1.25rem, 2vw, 2.5rem) clamp(1.35rem, 2.6vw, 3.25rem);
   }
 }
 
@@ -238,13 +311,14 @@ button:focus-visible {
 
 .markdown-body h1,
 .jspwiki-content h1 {
-  font-size: clamp(1.9rem, 3vw, 2.55rem);
-  line-height: 1.2;
+  font-size: clamp(2.05rem, 3.1vw, 2.85rem);
+  line-height: 1.15;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   border-bottom: none;
-  margin-top: 0.2rem;
-  margin-bottom: 0.8rem;
+  margin-top: 0;
+  margin-bottom: 0.85rem;
+  max-width: 18ch;
   color: var(--text-heading);
 }
 
@@ -262,9 +336,13 @@ button:focus-visible {
 
 .markdown-body p,
 .markdown-body li {
-  max-width: 68ch;
+  max-width: 65ch;
   font-size: 1.125rem;
-  line-height: 1.65;
+  line-height: 1.7;
+}
+
+.markdown-body p {
+  margin-bottom: 1.15rem;
 }
 
 .markdown-body a,
@@ -284,13 +362,43 @@ button:focus-visible {
   color: var(--link-color);
 }
 
+/* In-content pictures, including the wordmark some pages repeat, stay a plate
+   rather than a banner. Wide pages set the first one beside the writing. */
 .markdown-body img,
 .wiki-image {
   display: block;
-  max-width: min(100%, 46rem);
+  width: auto;
+  max-width: min(100%, 18rem);
   height: auto;
-  margin: 0.4rem 0 1.2rem;
-  border-radius: 12px;
+  margin: 0 0 1.25rem !important;
+  border-radius: 10px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+@media (min-width: 1100px) {
+  .markdown-body:has(img) {
+    display: grid;
+    grid-template-columns: minmax(0, 65ch) minmax(12rem, 18rem);
+    column-gap: clamp(1.75rem, 3vw, 3.5rem);
+    align-items: start;
+    justify-content: start;
+    width: 100%;
+  }
+
+  .markdown-body:has(img) > * {
+    grid-column: 1;
+    min-width: 0;
+  }
+
+  .markdown-body:has(img) > p:has(> img) {
+    grid-column: 2;
+    margin: 0;
+  }
+
+  .markdown-body:has(img) > p:first-child:has(> img) {
+    grid-row: 1;
+  }
 }
 
 .btn-primary {
@@ -300,7 +408,7 @@ button:focus-visible {
   border-radius: 8px;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:focus-visible) {
   transform: none;
   box-shadow: none;
 }
@@ -331,7 +439,11 @@ button:focus-visible {
 
 @media (max-width: 767.98px) {
   .jspwiki-header .navbar-brand img {
-    height: 36px !important;
+    height: 34px !important;
+  }
+
+  .markdown-body:has(img) {
+    display: block;
   }
 
   .markdown-body h1,
