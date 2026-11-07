@@ -1375,4 +1375,54 @@ describe('a pin line that pins nothing blocks even beside a real pin', () => {
   it('blocks on a $HOME path pin', () => {
     expect(blocks(wrap(['# $HOME/sites/wiki (pinned)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
   });
+
+  describe('a pin array entry built from a variable blocks and is named', () => {
+    const quoted = ['PINNED=(/srv/old-site "$HOME/sites/wiki")'];
+    const multiLine = ['PINNED=(', '  /srv/old-site', '  ${SITES_DIR}/wiki', ')'];
+    const bare = (pinLines: string[]) =>
+      [...pinLines, 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n');
+
+    it('single-line quoted $HOME entry, beside another pin', () => {
+      expect(blocks(wrap(quoted), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
+    });
+
+    it('single-line quoted $HOME entry, as the only pin', () => {
+      expect(blocks(bare(quoted), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
+    });
+
+    it('multi-line ${SITES_DIR} entry, beside another pin', () => {
+      expect(blocks(wrap(multiLine), ['wiki-prod']).map((r) => r[2]).join()).toContain('${SITES_DIR}/wiki');
+    });
+
+    it('multi-line ${SITES_DIR} entry, as the only pin', () => {
+      expect(blocks(bare(multiLine), ['wiki-prod']).map((r) => r[2]).join()).toContain('${SITES_DIR}/wiki');
+    });
+  });
+
+  it('counts a PM2 app name in a pin array when it is the only pin', () => {
+    const text = ['PINNED=(wiki-prod)', 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join(
+      '\n'
+    );
+    const rows = classifyScript(text, '/updater.sh', ['wiki-prod']);
+    expect(rows.filter((r) => r[0] === 'name').map((r) => r[2])).toEqual(['wiki-prod']);
+    expect(blocks(text, ['wiki-prod'])).toEqual([]);
+  });
+});
+
+describe('update-all-scan.mjs process entry', () => {
+  const scanner = path.join(REPO_ROOT, 'scripts', 'update-all-scan.mjs');
+
+  it('sanitize-pm2 trims whitespace around PM2 app names', () => {
+    const jlist = JSON.stringify([{ name: ' \tprod-site  \t', pm2_env: { pm_cwd: '/x/a-site', status: 'online' } }]);
+    const result = spawnSync(process.execPath, [scanner, 'sanitize-pm2'], { input: jlist, encoding: 'utf8', env: envWithoutGit });
+    expect(result.status).toBe(0);
+    expect(result.stdout.split('\0')[0]).toBe('prod-site');
+  });
+
+  it('exits 1 and names the path when its own path cannot be resolved', () => {
+    const code = `process.argv[1] = '/nonexistent/update-all-scan.mjs'; await import(${JSON.stringify(scanner)});`;
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', env: envWithoutGit });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('cannot resolve /nonexistent/update-all-scan.mjs');
+  });
 });

@@ -399,7 +399,7 @@ Ownership, most protective first:
   `$VAR` or path, or a name differing only in case from a PM2 app, that pins nothing (a basename
   or app name under 6 characters, wrong case, a trailing dot, a symlink alias, a typo) is
   reported by name, and so is a `PINNED` / `EXCLUDE` / `SKIP` array entry that is neither a path
-  nor an exact PM2 app name. Such a pin does not stop the run outright: checkouts the updater
+  nor an exact PM2 app name, a `$VAR` entry included, even beside a path in the same array. Such a pin does not stop the run outright: checkouts the updater
   does not list become unknown and the run exits 3, while checkouts already automatic, pinned or
   `manual` are processed as usual.
   A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater

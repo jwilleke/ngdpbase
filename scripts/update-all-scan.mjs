@@ -266,9 +266,13 @@ export function classifyScript(text, scriptPath, names) {
       let rest = body.split('\n').map(stripInlineComment).join(' ');
       rest = rest.slice(0, rest.indexOf(')') < 0 ? undefined : rest.indexOf(')'));
       for (const filePath of paths) rest = rest.split(filePath).join(' ');
-      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter((e) => e && !e.startsWith('$'))) {
-        if (names.includes(entry)) {
+      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter(Boolean)) {
+        if (entry.includes('$')) {
+          // The scanner cannot resolve a variable, so it cannot tell which checkout this pins.
+          records.push(['note', 'block', `pin ${name} lists ${entry}, a variable the scan cannot resolve, so it pins nothing`, scriptPath]);
+        } else if (names.includes(entry)) {
           records.push(['name', 'pinned', entry, scriptPath]);
+          pinCount += 1;
         } else {
           records.push(['note', 'block', `pin ${name} lists ${entry}, which is not a path or a PM2 app name, so it pins nothing`, scriptPath]);
         }
