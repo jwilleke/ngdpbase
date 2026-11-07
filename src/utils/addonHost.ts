@@ -51,6 +51,7 @@ import { auditDeclarationsFrom } from './auditRegistry.js';
 import logger from './logger.js';
 import type { IceReceiver, IceShim } from '../ice/types.js';
 import type { AddonReviews, ReviewHandler } from '../types/Review.js';
+import { declareAddonSignedOutWrite, type SignedOutWriteRoute } from '../security/signedOutWrites.js';
 import type { AddonManifest } from '../managers/AddonsManager.js';
 
 /** The values core offers an add-on, under the names they were imported as. */
@@ -121,6 +122,17 @@ export interface AddonHost {
    * context; throw to leave the request open with your message as the reason.
    */
   readonly registerReviewHandler: (handlerId: string, handler: ReviewHandler) => void;
+  /**
+   * #2298: every POST, PUT, PATCH and DELETE from someone who is not signed in
+   * is refused before your route runs. A route that signed-out people must
+   * reach (a public form) is declared here, in `register()`, with the reason:
+   * `host.allowSignedOutWrite({ method: 'POST', path: '/api/<slug>/submit/:id', reason })`.
+   * The path must be under `/api/<slug>/` or `/addons/<slug>/` (literal
+   * segments and `:name` only) or this throws; nothing else can add to the
+   * list. It only lets the request reach your route: the route still asks its
+   * own permission through `ApiContext.requirePermission`.
+   */
+  readonly allowSignedOutWrite: (route: SignedOutWriteRoute) => void;
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -274,6 +286,7 @@ export function buildAddonHost(
     zonedParts,
     keyedSerial: () => new KeyedSerial(),
     reviews,
-    registerReviewHandler: (handlerId: string, handler: ReviewHandler) => reviewDoor().registerHandler(slug, handlerId, handler)
+    registerReviewHandler: (handlerId: string, handler: ReviewHandler) => reviewDoor().registerHandler(slug, handlerId, handler),
+    allowSignedOutWrite: (route: SignedOutWriteRoute) => declareAddonSignedOutWrite(slug, route)
   });
 }

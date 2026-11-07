@@ -1555,6 +1555,17 @@ class PolicyInformationPoint extends BaseManager {
     return this.auditDenial(subject, pageName, action, reason, 'page', policyIds, conditionNotMet);
   }
 
+  /**
+   * Record a write the signed-out write gate refused before any route ran
+   * (#2298). The resource is the route as asked (`POST /save/Home`): method
+   * and path, never the query or the body, which can carry a password or a
+   * token. Standard tier and best-effort, like every other denial.
+   */
+  recordRouteRefusal(subject: UserContext | null | undefined, route: string): Promise<void> {
+    this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} route=${route} allowed=false reason=signed_out_write`);
+    return this.auditDenial(subject, route, 'signed-out-write', 'signed_out_write', 'route');
+  }
+
   /** The name a decision is recorded under: the subject's, or `anonymous`. */
   private static recordedUser(subject: UserContext | null | undefined): string {
     return subject?.username || subject?.name || 'anonymous';
@@ -1579,7 +1590,7 @@ class PolicyInformationPoint extends BaseManager {
     pageName: string | undefined,
     action: string | undefined,
     reason: string | undefined,
-    resourceType: 'page' | 'media' = 'page',
+    resourceType: 'page' | 'media' | 'route' = 'page',
     policyIds: readonly string[] = [],
     conditionNotMet: readonly string[] = []
   ): Promise<void> {
