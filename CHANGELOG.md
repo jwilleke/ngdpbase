@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+### Added
+
+- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, by calling each checkout's own `./server.sh update`. Checkouts an automatic updater already updates, and checkouts marked pinned, are skipped. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md).
+
 ## [5.43.0] - 2026-11-07
 
 ### Upgrade notes
