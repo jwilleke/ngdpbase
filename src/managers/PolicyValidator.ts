@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { declaredSubjectAttributes, subjectAttributesProblems } from '../utils/policyAttributes.js';
+import { declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
@@ -441,12 +441,13 @@ class PolicyValidator extends BaseManager {
     }
     const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
     const subjectAttributes = declaredSubjectAttributes(this.configManager?.getProperty('ngdpbase.access.subject-attributes', null));
+    const environmentAttributes = declaredEnvironmentAttributes(this.configManager?.getProperty('ngdpbase.access.environment-attributes', null));
     return policies.flatMap((policy: unknown, index) => {
       const id = typeof (policy as { id?: unknown } | null)?.id === 'string' ? (policy as { id: string }).id : `#${index + 1}`;
       const schema = this.schemaValidatorCompiled && !this.schemaValidatorCompiled(policy)
         ? this.formatSchemaErrors(this.schemaValidatorCompiled.errors || []).map((e) => `${e.field} ${e.message}`.trim())
         : [];
-      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes) : [];
+      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes, environmentAttributes) : [];
       const actions = Array.isArray((policy as { actions?: unknown } | null)?.actions) ? (policy as { actions: unknown[] }).actions : [];
       const unknown = actions.filter((a) => typeof a === 'string' && a !== '*' && !Object.prototype.hasOwnProperty.call(definitions, a))
         .map((a) => `action '${String(a)}' is not a defined permission; use a name from ngdpbase.permissions.definitions (add-on permissions included), or '*'`);
@@ -468,6 +469,20 @@ class PolicyValidator extends BaseManager {
    */
   subjectAttributeProblems(declared: unknown): string[] {
     return subjectAttributesProblems(declared, SENSITIVE_USER_FIELDS);
+  }
+
+  /**
+   * The problems in the value of `ngdpbase.access.environment-attributes`
+   * (#2261): a type other than boolean, a source that is not `schedule:` or
+   * `config:`. Any configuration key may be read, so none is refused; no
+   * message holds a value. For save and load in Admin → Configuration, and the
+   * boot warning. Empty when fine.
+   *
+   * @param {unknown} declared - The value of `ngdpbase.access.environment-attributes`
+   * @returns {string[]} One line per problem
+   */
+  environmentAttributeProblems(declared: unknown): string[] {
+    return environmentAttributesProblems(declared);
   }
 
   /**
@@ -563,7 +578,8 @@ class PolicyValidator extends BaseManager {
     // #2255: a condition may read only declared attributes, of matching types.
     const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
     const subjectAttributes = declaredSubjectAttributes(this.configManager?.getProperty('ngdpbase.access.subject-attributes', null));
-    for (const message of conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes)) {
+    const environmentAttributes = declaredEnvironmentAttributes(this.configManager?.getProperty('ngdpbase.access.environment-attributes', null));
+    for (const message of conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes, environmentAttributes)) {
       errors.push({ type: 'semantic', field: 'condition', message });
     }
 

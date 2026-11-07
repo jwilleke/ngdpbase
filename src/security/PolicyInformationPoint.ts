@@ -7,7 +7,8 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
-import { declaredSubjectAttributes, effectiveAal, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { declaredEnvironmentAttributes, declaredSubjectAttributes, effectiveAal, environmentDeclarationProblem, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsOpen, type Schedule } from '../utils/availability.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
@@ -250,8 +251,9 @@ class PolicyInformationPoint extends BaseManager {
    *
    * @constructor
    * @param {WikiEngine} engine - The wiki engine instance
+   * @param {() => Date} [clock] - The time `environment:` attributes are read at; injectable for tests
    */
-  constructor(engine: WikiEngine) {
+  constructor(engine: WikiEngine, private readonly clock: () => Date = () => new Date()) {
     super(engine);
   }
 
@@ -1140,6 +1142,8 @@ class PolicyInformationPoint extends BaseManager {
       if (!subjectReads.has(name)) subjectReads.set(name, this.subjectAttribute(subjectForConditions, name));
       return subjectReads.get(name);
     };
+    // #2261: nor does the moment: the clock is read once for the listing.
+    const readEnvironment = this.environmentReader();
     const matchable = await this.matchableNow(userContext);
     // #1964: the subject's add-ons, resolved once for the whole batch and only
     // if some page names one.
@@ -1177,7 +1181,7 @@ class PolicyInformationPoint extends BaseManager {
           // #2255: the same page attributes the PDP asks this PIP for.
           const page = this.pageAttributesFrom(title, metadata);
           const p = await decidePolicy?.(title, { ...extra, ...page.attributes }, (name) =>
-            name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : readSubject(name));
+            name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : name.startsWith('environment:') ? readEnvironment(name) : readSubject(name));
           if (p?.hasDecision) return { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds, conditionNotMet: p.conditionNotMet };
           return p?.conditionNotMet ? { applicable: false, permit: false, reason: 'default_deny', conditionNotMet: p.conditionNotMet } : null;
         }
@@ -1338,6 +1342,55 @@ class PolicyInformationPoint extends BaseManager {
     const declared = declaredSubjectAttributes(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.subject-attributes', null));
     if (!Object.hasOwn(declared, attr) || subjectDeclarationProblem(attr, declared[attr], SENSITIVE_USER_FIELDS) !== null) return undefined;
     return this.readSubjectSource(attr, declared[attr], subject);
+  }
+
+  /**
+   * An environment attribute a condition reads (#2261): `environment:<name>`,
+   * declared in `ngdpbase.access.environment-attributes` and read from its
+   * `from` source here, the only place one is read. `schedule:<name>` is whether
+   * that schedule in `ngdpbase.schedules` is open at `now`; `config:<key>` is
+   * the boolean stored at that configuration key, any key, secrets included.
+   * Missing when it is not declared, the schedule is absent, the stored value is
+   * not a boolean, or the read fails; the evaluator then fails closed. The value
+   * is returned to the evaluator and goes nowhere else: it is never logged.
+   */
+  environmentAttribute(name: string, now: Date = this.clock()): boolean | undefined {
+    if (!name.startsWith('environment:')) return undefined;
+    const attr = name.slice('environment:'.length);
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declared = declaredEnvironmentAttributes(config?.getProperty('ngdpbase.access.environment-attributes', null));
+    if (!config || !Object.hasOwn(declared, attr) || environmentDeclarationProblem(attr, declared[attr]) !== null) return undefined;
+    const from = declared[attr].from as string;
+    try {
+      if (from.startsWith('config:')) {
+        const stored: unknown = config.getProperty(from.slice('config:'.length), undefined);
+        return typeof stored === 'boolean' ? stored : undefined;
+      }
+      const schedules = config.getProperty(SCHEDULES_KEY, null) as Record<string, Schedule> | null;
+      const key = from.slice('schedule:'.length);
+      const schedule = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, key) ? schedules[key] : undefined;
+      if (!schedule || typeof schedule !== 'object') return undefined;
+      const zone: unknown = config.getProperty(TIME_ZONE_KEY, 'UTC');
+      return scheduleIsOpen(schedule, now, typeof zone === 'string' && zone ? zone : 'UTC');
+    } catch (err) {
+      // Said without the value: a `config:` read may be a secret's.
+      logger.warn(`[PIP] environment:${attr} could not be read from ${from.startsWith('config:') ? 'config' : 'its schedule'}: ${err instanceof Error ? err.name : 'error'}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * A reader of environment attributes for one decision or one listing
+   * (#2261): the clock is read once, on the first attribute asked for, and
+   * each attribute once, so every policy and every page sees one instant.
+   */
+  environmentReader(): (name: string) => unknown {
+    let now: Date | undefined;
+    const reads = new Map<string, unknown>();
+    return (name) => {
+      if (!reads.has(name)) reads.set(name, this.environmentAttribute(name, (now ??= this.clock())));
+      return reads.get(name);
+    };
   }
 
   /** One read of a declared subject attribute from its source. A value of the wrong type, or a source that throws, is missing. */

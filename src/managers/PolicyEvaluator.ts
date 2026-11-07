@@ -3,7 +3,8 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredSubjectAttributes, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { SCHEDULES_KEY } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
@@ -60,6 +61,7 @@ interface AccessContext {
 }
 
 const SUBJECT_ATTRIBUTES_KEY = 'ngdpbase.access.subject-attributes';
+const ENVIRONMENT_ATTRIBUTES_KEY = 'ngdpbase.access.environment-attributes';
 
 /** The key that holds the operator of a node, or the keys when there is more than one. */
 function operatorKeys(node: object): string[] {
@@ -67,10 +69,11 @@ function operatorKeys(node: object): string[] {
 }
 
 /** The declared type of an attribute a condition names, or `null` when it is not declared. */
-function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute>): string | null {
+function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute>, environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}): string | null {
   const [category, ...rest] = name.split(':');
   const attr = rest.join(':');
   if (category === 'subject') return Object.hasOwn(subjectAttributes, attr) ? (subjectAttributes[attr]?.type ?? null) : null;
+  if (category === 'environment') return Object.hasOwn(environmentAttributes, attr) ? (environmentAttributes[attr]?.type ?? null) : null;
   if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
   return null;
 }
@@ -85,22 +88,27 @@ function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: s
  * `all-of` of at most {@link MAX_GROUP_CHILDREN}. Each attribute a comparison names must be
  * declared: a `subject:<name>` in `ngdpbase.access.subject-attributes`
  * (`id` always, `aal` as shipped), or a `resource:<name>` declared on the `page`
- * resource type. The types of the two sides must agree. A condition with a
+ * resource type, or an `environment:<name>` in
+ * `ngdpbase.access.environment-attributes`. The types of the two sides must agree. A condition with a
  * problem never holds: an allow with it does not apply and a deny with it
  * does, as for a missing attribute.
  */
-export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null)): string[] {
+export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null), environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}): string[] {
   if (condition === undefined) return [];
-  const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes, subjectAttributes);
+  const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes, subjectAttributes, environmentAttributes);
   // A subject attribute that is declared but cannot be read (a bad `from`, a field that is never readable) is a problem in its own right.
-  const declaration = (name: string): string | null =>
-    name.startsWith('subject:') && typeOf(name) !== null ? subjectDeclarationProblem(name.slice('subject:'.length), subjectAttributes[name.slice('subject:'.length)], SENSITIVE_USER_FIELDS) : null;
+  const declaration = (name: string): string | null => {
+    if (typeOf(name) === null) return null;
+    if (name.startsWith('subject:')) return subjectDeclarationProblem(name.slice('subject:'.length), subjectAttributes[name.slice('subject:'.length)], SENSITIVE_USER_FIELDS);
+    if (name.startsWith('environment:')) return environmentDeclarationProblem(name.slice('environment:'.length), environmentAttributes[name.slice('environment:'.length)]);
+    return null;
+  };
   const undeclared = (name: string): string => {
     const where = name.startsWith('resource:')
       ? 'declare it on the page resource type in ngdpbase.access.resource-types'
       : name.startsWith('subject:')
         ? 'add it to ngdpbase.access.subject-attributes'
-        : 'no environment attributes are declared yet';
+        : 'add it to ngdpbase.access.environment-attributes';
     return `condition reads '${name}', which is not declared; ${where}`;
   };
   const list = (values: readonly string[]): string => values.join(', ');
@@ -462,6 +470,9 @@ class PolicyEvaluator extends BaseManager {
     }
     // #2287: the declaration itself, add-on defaults included (this reads the merged value). `id` and `aal` keep their built-in meaning either way.
     lines.push(...subjectAttributesProblems(config.getProperty(SUBJECT_ATTRIBUTES_KEY, null), SENSITIVE_USER_FIELDS));
+    // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
+    lines.push(...environmentAttributesProblems(config.getProperty(ENVIRONMENT_ATTRIBUTES_KEY, null)));
+    lines.push(...this.scheduleProblems());
     const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
     // An installed add-on's category is declared even while the add-on is off
@@ -512,10 +523,11 @@ class PolicyEvaluator extends BaseManager {
     const conditional = policies.some((p) => p.condition !== undefined);
     const declared = conditional ? this.declaredPageAttributes() : {};
     const subjects = conditional ? this.declaredSubjectAttributes() : {};
+    const environment = conditional ? this.declaredEnvironmentAttributes() : {};
     return policies.map((policy) => {
       if (policy.condition === undefined) return { policy, invalid: false };
-      if (conditionProblems(policy.condition, declared, subjects).length > 0) return { policy, invalid: true };
-      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared, subjects)) };
+      if (conditionProblems(policy.condition, declared, subjects, environment).length > 0) return { policy, invalid: true };
+      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared, subjects, environment)) };
     });
   }
 
@@ -669,12 +681,36 @@ class PolicyEvaluator extends BaseManager {
     return declaredSubjectAttributes(this.configManager?.getProperty(SUBJECT_ATTRIBUTES_KEY, null));
   }
 
+  /** The environment attributes a condition may read (#2261): those declared in `ngdpbase.access.environment-attributes`. */
+  declaredEnvironmentAttributes(): Record<string, DeclaredEnvironmentAttribute> {
+    return declaredEnvironmentAttributes(this.configManager?.getProperty(ENVIRONMENT_ATTRIBUTES_KEY, null));
+  }
+
+  /**
+   * One line for each declared `schedule:` attribute whose schedule is not in
+   * `ngdpbase.schedules` (the attribute is missing and a condition on it fails
+   * closed) or has no rules (it reads as always open), for the boot warning.
+   */
+  private scheduleProblems(): string[] {
+    const schedules = this.configManager?.getProperty(SCHEDULES_KEY, null) as Record<string, { rules?: unknown }> | null;
+    return Object.entries(this.declaredEnvironmentAttributes()).flatMap(([name, decl]) => {
+      const from = typeof decl?.from === 'string' ? decl.from : '';
+      if (!from.startsWith('schedule:') || environmentDeclarationProblem(name, decl) !== null) return [];
+      const schedule = from.slice('schedule:'.length);
+      const found = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, schedule) ? schedules[schedule] : undefined;
+      if (!found || typeof found !== 'object') return [`environment attribute '${name}' reads schedule '${schedule}', which is not in ngdpbase.schedules; a condition on it never holds (an allow does not apply, a deny does)`];
+      if (!Array.isArray(found.rules) || found.rules.length === 0) return [`environment attribute '${name}' reads schedule '${schedule}', which has no rules; it reads as always open`];
+      return [];
+    });
+  }
+
   /** Each policy in force whose condition has a problem, with the problems (#2255): for the boot warning. */
   conditionProblemsInForce(): Array<{ id: string; effect: Policy['effect']; problems: string[] }> {
     const declared = this.declaredPageAttributes();
     const subjects = this.declaredSubjectAttributes();
+    const environment = this.declaredEnvironmentAttributes();
     return this.policies()
-      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared, subjects) }))
+      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared, subjects, environment) }))
       .filter((r) => r.problems.length > 0);
   }
 

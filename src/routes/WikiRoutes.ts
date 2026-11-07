@@ -14302,9 +14302,12 @@ ${panes}
       // #2287: and in the subject attributes in force.
       const subjectProblems = this.engine.getManager('PolicyValidator')
         ?.subjectAttributeProblems(configManager.getProperty('ngdpbase.access.subject-attributes', null)) ?? [];
+      const environmentProblems = this.engine.getManager('PolicyValidator')
+        ?.environmentAttributeProblems(configManager.getProperty('ngdpbase.access.environment-attributes', null)) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
-        ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {})
+        ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),
+        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {})
       };
 
       const commonData = await this.getCommonTemplateData(req);
@@ -14588,6 +14591,16 @@ ${panes}
         const refused = this.engine.getManager('PolicyValidator')?.subjectAttributeProblems(parsedValue) ?? [];
         if (refused.length > 0) {
           const error = `Subject attributes not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
+      // #2261: an environment attribute reads a boolean from a schedule or a configuration key.
+      if (property === 'ngdpbase.access.environment-attributes') {
+        const refused = this.engine.getManager('PolicyValidator')?.environmentAttributeProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Environment attributes not saved: ${refused.join('; ')}`;
           const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
           if (wantsJson) return res.status(400).json({ error });
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);

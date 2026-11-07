@@ -258,3 +258,50 @@ export function subjectDeclarationProblem(name: string, decl: DeclaredSubjectAtt
   }
   return null;
 }
+
+/** Where an environment attribute may be read from: `schedule:<name>` or `config:<key>` (#2261 slice 4). */
+export const ENVIRONMENT_SOURCES = ['schedule:', 'config:'] as const;
+
+/** One declared environment attribute, as `ngdpbase.access.environment-attributes` holds it. */
+export interface DeclaredEnvironmentAttribute {
+  type?: string;
+  from?: string;
+}
+
+/** The environment attributes a site declares. Anything not an object is ignored. */
+export function declaredEnvironmentAttributes(raw: unknown): Record<string, DeclaredEnvironmentAttribute> {
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, DeclaredEnvironmentAttribute>) : {};
+}
+
+/**
+ * What is wrong with an environment attribute's declaration, or `null`: a
+ * `type` that is not `boolean` (both sources yield a boolean and nothing
+ * else), a `from` that is not `schedule:<name>` or `config:<key>`, or one with
+ * no name or key after the prefix. Any configuration key may be read, secrets
+ * included (#2261): a condition can only compare the value, and the value is
+ * never written to a log, an audit record or a message.
+ */
+export function environmentDeclarationProblem(name: string, decl: DeclaredEnvironmentAttribute | undefined): string | null {
+  const where = `environment attribute '${name}' in ngdpbase.access.environment-attributes`;
+  if (!decl || typeof decl !== 'object') return `${where} must be an object with a type and a from`;
+  if (decl.type !== 'boolean') return `${where} has type ${JSON.stringify(decl.type)}; schedule: and config: attributes are boolean only, so use "boolean"`;
+  const from = decl.from;
+  const source = typeof from === 'string' ? ENVIRONMENT_SOURCES.find((s) => from.startsWith(s)) : undefined;
+  if (!source) return `${where} reads from ${JSON.stringify(from)}; start it with ${ENVIRONMENT_SOURCES.join(' or ')}`;
+  if (!(from as string).slice(source.length)) return `${where} reads from '${source}' with no ${source === 'schedule:' ? 'schedule name' : 'key'}; write ${source}<${source === 'schedule:' ? 'name' : 'key'}>`;
+  return null;
+}
+
+/**
+ * What is wrong with the value of `ngdpbase.access.environment-attributes`
+ * itself, one message each: not an object, or a declaration
+ * {@link environmentDeclarationProblem} refuses. Used on save, on load and at boot.
+ */
+export function environmentAttributesProblems(raw: unknown): string[] {
+  if (raw === null || raw === undefined) return [];
+  if (typeof raw !== 'object' || Array.isArray(raw)) return ['ngdpbase.access.environment-attributes must be an object of attribute name to { type, from }'];
+  return Object.entries(raw as Record<string, DeclaredEnvironmentAttribute>).flatMap(([name, decl]) => {
+    const problem = environmentDeclarationProblem(name, decl);
+    return problem ? [problem] : [];
+  });
+}
