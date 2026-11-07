@@ -102,7 +102,21 @@ ngdp_update_all_root_from() {
     *) return 1 ;;
   esac
   ngdp_update_all_is_root "$cwd" || return 1
-  ngdp_update_all_canon "$cwd"
+  local canon
+  canon="$(ngdp_update_all_canon "$cwd")" || return 1
+  # The real path is printed. One that resolves through a symlink to a name
+  # with control characters (which a terminal acts on) is not a checkout here.
+  ngdp_update_all_has_control "$canon" && return 1
+  printf '%s\n' "$canon"
+}
+
+# True when the text holds a C0 control, DEL, or a UTF-8 encoded C1 control.
+ngdp_update_all_has_control() {
+  local LC_ALL=C
+  case "$1" in
+    *[[:cntrl:]]*|*$'\xc2'[$'\x80'-$'\x9f']*) return 0 ;;
+  esac
+  return 1
 }
 
 # Parallel arrays, one row per canonical checkout.
@@ -224,18 +238,32 @@ ngdp_update_all_gate() {
     printf '%s uncommitted or untracked file(s), first: %s' "$count" "$first"
     return 0
   fi
+  # git status does not show edits to files marked assume-unchanged (lowercase
+  # tag) or skip-worktree (S). update's rollback would overwrite them.
+  local tags
+  if ! tags="$(git -C "$root" ls-files -v 2>/dev/null)"; then
+    printf 'git ls-files failed, so hidden changes could not be ruled out'
+    return 0
+  fi
+  if printf '%s\n' "$tags" | grep -q '^[a-zS] '; then
+    printf 'files hidden from git status (assume-unchanged or skip-worktree)'
+    return 0
+  fi
   # Refresh origin/master first: a stale ref can hide local commits.
   # A dry run fetches nothing and compares against the last fetch.
   if [ "${_UA_DRY:-0}" -eq 0 ] && ! GIT_TERMINAL_PROMPT=0 git -C "$root" fetch --quiet origin master >/dev/null 2>&1; then
     printf 'could not fetch origin/master to check for local commits'
     return 0
   fi
-  if git -C "$root" rev-parse --verify --quiet origin/master >/dev/null 2>&1; then
-    ahead="$(git -C "$root" rev-list --count origin/master..HEAD 2>/dev/null || echo 0)"
-    if [ "${ahead:-0}" -gt 0 ]; then
-      printf '%s commit(s) ahead of origin/master' "$ahead"
-      return 0
-    fi
+  if ! git -C "$root" rev-parse --verify --quiet refs/remotes/origin/master >/dev/null 2>&1 \
+    || ! ahead="$(git -C "$root" rev-list --count origin/master..HEAD 2>/dev/null)" \
+    || [ -z "$ahead" ]; then
+    printf 'cannot compare with origin/master, so local commits could not be ruled out'
+    return 0
+  fi
+  if [ "$ahead" -gt 0 ]; then
+    printf '%s commit(s) ahead of origin/master' "$ahead"
+    return 0
   fi
   printf 'ok'
 }
@@ -261,8 +289,12 @@ ngdp_update_all_run_one() {
   local root="$1" ref="$2" envname="$3"
   local -a update_args env_args
   update_args=(update)
-  [ -n "$ref" ] && update_args+=("$ref")
-  [ -n "$envname" ] && update_args+=("$envname")
+  # An empty ref stays in its slot when env is given, so env is never read as a ref.
+  if [ -n "$envname" ]; then
+    update_args+=("$ref" "$envname")
+  elif [ -n "$ref" ]; then
+    update_args+=("$ref")
+  fi
   local field
   env_args=()
   while IFS= read -r -d '' field; do
@@ -279,6 +311,15 @@ ngdp_update_all() {
     echo "❌ Refusing recursive update all. Nothing was updated."
     exit 2
   fi
+  # An inherited GIT_DIR, GIT_INDEX_FILE or GIT_WORK_TREE (from a git hook, a
+  # shell or a .env) would make every git -C below read some other repository.
+  local gitvar
+  while IFS= read -r gitvar; do
+    case "$gitvar" in
+      GIT_SSH|GIT_SSH_COMMAND|GIT_TERMINAL_PROMPT) ;;
+      GIT_*) unset "$gitvar" ;;
+    esac
+  done < <(compgen -e)
   local dry=0
   local -a positionals=()
   local arg ref="" envname=""
@@ -432,8 +473,11 @@ ngdp_update_all() {
       continue
     fi
     cmd_show=(./server.sh update)
-    [ -n "$ref" ] && cmd_show+=("$ref")
-    [ -n "$envname" ] && cmd_show+=("$envname")
+    if [ -n "$envname" ]; then
+      cmd_show+=("${ref:-\"\"}" "$envname")
+    elif [ -n "$ref" ]; then
+      cmd_show+=("$ref")
+    fi
     if [ "$dry" -eq 1 ]; then
       echo "    dry-run: would run: ${cmd_show[*]}"
       echo "    (origin/master was not refreshed in this dry run; the ahead check used the last fetch)"

@@ -616,6 +616,119 @@ describe('./server.sh update all', () => {
     expect(dry.out).toContain('would run');
   }, 60000);
 
+  it('ignores an inherited GIT_DIR and GIT_INDEX_FILE, so a checkout on another branch is still skipped', () => {
+    const feature = cloneFrom(primary(), 'feature');
+    const other = cloneFrom(primary(), 'other');
+    git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'feature', cwd: feature }]);
+    const otherGit = path.join(other, '.git');
+
+    const result = run(['update', 'all'], { GIT_DIR: otherGit, GIT_INDEX_FILE: path.join(otherGit, 'index'), GIT_WORK_TREE: other });
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('skip: on branch feature, not master');
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(installsFor(feature)).toEqual([]);
+  }, 60000);
+
+  it('skips checkouts with files hidden by assume-unchanged or skip-worktree, and keeps the edits', () => {
+    const assumed = cloneFrom(primary(), 'assumed');
+    const skipped = cloneFrom(primary(), 'skipped');
+    fs.appendFileSync(path.join(assumed, '.gitignore'), '# my local edit\n');
+    git(assumed, 'update-index', '--assume-unchanged', '.gitignore');
+    fs.appendFileSync(path.join(skipped, '.gitignore'), '# my local edit\n');
+    git(skipped, 'update-index', '--skip-worktree', '.gitignore');
+    const heads = [git(assumed, 'rev-parse', 'HEAD'), git(skipped, 'rev-parse', 'HEAD')];
+    fs.appendFileSync(path.join(seed, '.gitignore'), 'upstream/\n');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'assumed', cwd: assumed },
+      { name: 'skipped', cwd: skipped }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out.match(/skip: files hidden from git status \(assume-unchanged or skip-worktree\)/g)).toHaveLength(2);
+    expect([git(assumed, 'rev-parse', 'HEAD'), git(skipped, 'rev-parse', 'HEAD')]).toEqual(heads);
+    expect(fs.readFileSync(path.join(assumed, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(fs.readFileSync(path.join(skipped, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(installsFor(assumed)).toEqual([]);
+  }, 60000);
+
+  it('plain update refuses a checkout with an assume-unchanged file before changing anything', () => {
+    fs.appendFileSync(path.join(driver, '.gitignore'), '# my local edit\n');
+    git(driver, 'update-index', '--assume-unchanged', '.gitignore');
+    const head = git(driver, 'rev-parse', 'HEAD');
+    fs.appendFileSync(path.join(seed, '.gitignore'), 'upstream/\n');
+    publish(primary(), '1.1.0');
+
+    const result = run(['update']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('Refusing to update: files hidden from git status');
+    expect(result.out).toContain('.gitignore');
+    expect(git(driver, 'rev-parse', 'HEAD')).toBe(head);
+    expect(fs.readFileSync(path.join(driver, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(installsFor(driver)).toEqual([]);
+  }, 60000);
+
+  it('skips a checkout when origin/master cannot be resolved, even after a fetch', () => {
+    const site = cloneFrom(primary(), 'noref');
+    git(site, 'commit', '-q', '--allow-empty', '-m', 'local');
+    const head = git(site, 'rev-parse', 'HEAD');
+    git(site, 'config', '--unset-all', 'remote.origin.fetch');
+    git(site, 'update-ref', '-d', 'refs/remotes/origin/master');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'noref', cwd: site }]);
+
+    const result = run(['update', 'all']);
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('skip: cannot compare with origin/master');
+    expect(dry.out).toContain('skip: cannot compare with origin/master');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+    expect(installsFor(site)).toEqual([]);
+  }, 60000);
+
+  it('prints no control characters from PM2 names', () => {
+    const site = cloneFrom(primary(), 'evil');
+    writeJlist([
+      { name: 'evil\x1b]0;PWNED\x07\x1b[2J\u009b', cwd: site },
+      { name: 'other\x1b[31mRED\x7f', cwd: path.join(tmp, 'not-a-checkout') }
+    ]);
+
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(dry.status, dry.out).toBe(0);
+    const controls = [...dry.out].filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return ch !== '\n' && ch !== '\t' && (code < 0x20 || (code >= 0x7f && code <= 0x9f));
+    });
+    expect(controls).toEqual([]);
+    expect(dry.out).toContain('evil?]0;PWNED??[2J?');
+    expect(dry.out).toContain('other?[31mRED?');
+  }, 60000);
+
+  it('keeps an empty ref in its slot when env is given', () => {
+    const site = cloneFrom(primary(), 'emptyref');
+    const next = publish(primary(), '1.1.0');
+    writeJlist([{ name: 'emptyref', cwd: site }]);
+
+    const dry = run(['update', 'all', '--dry-run', '', 'development']);
+    const real = run(['update', 'all', '', 'development']);
+
+    expect(dry.status, dry.out).toBe(0);
+    expect(dry.out).toContain('dry-run: would run: ./server.sh update "" development');
+    expect(real.out).not.toContain('Cannot check out development');
+    expect(git(site, 'symbolic-ref', '--short', 'HEAD')).toBe('master');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(next);
+  }, 60000);
+
   describe('#2305 hardening', () => {
     it('F2: a nested checkout without its own .git is refused by the gate', () => {
       const outer = cloneFrom(primary(), 'outer');
@@ -832,6 +945,22 @@ describe('update-all-scan.mjs process entry', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('pm2-json-unusable\n');
+  });
+
+  it('sanitize-pm2 fails closed when more than one line is a list', () => {
+    const result = sanitize([jlistLine, '[]'].join('\n'));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('pm2-json-unusable\n');
+  });
+
+  it('sanitize-pm2 drops a path with a control character and replaces them in names', () => {
+    const list = JSON.stringify([
+      { name: 'a\x1b[2J\x07b\u009b', pm2_env: { pm_cwd: '/x/\x1b[31mred', status: 'online' } }
+    ]);
+    const result = sanitize(list);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.split('\0').slice(0, 2)).toEqual(['a?[2J?b?', '']);
   });
 
   it('exits 1 and names the path when its own path cannot be resolved', () => {

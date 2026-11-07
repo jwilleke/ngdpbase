@@ -432,6 +432,19 @@ case "${1:-}" in
       echo "$DIRTY" | sed 's/^/     /'
       exit 1
     fi
+    # git status hides edits to files marked assume-unchanged (lowercase tag)
+    # or skip-worktree (S); a failed update's rollback would overwrite them.
+    if ! HIDDEN=$(git ls-files -v); then
+      echo "❌ Refusing to update: git ls-files failed in $SCRIPT_DIR"
+      exit 1
+    fi
+    HIDDEN=$(printf '%s\n' "$HIDDEN" | grep '^[a-zS] ' || true)
+    if [ -n "$HIDDEN" ]; then
+      echo "❌ Refusing to update: files hidden from git status (assume-unchanged or skip-worktree) in $SCRIPT_DIR"
+      echo "$HIDDEN" | cut -c3- | sed 's/^/     /'
+      echo "   Clear the flag with: git update-index --no-assume-unchanged --no-skip-worktree <file>"
+      exit 1
+    fi
 
     _version() { node -p "require('./package.json').version" 2>/dev/null || echo "unknown"; }
     OLD_SHA=$(git rev-parse HEAD)
