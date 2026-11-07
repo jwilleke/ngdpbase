@@ -436,9 +436,36 @@ button:focus-visible {
   }
 }
 
-/* Last, so it wins over Bootstrap's button shadow and our own hover reset. */
+/* Last, so it wins over Bootstrap's outline:0 on .btn:focus-visible.
+   Literal colors: a variable in this shorthand was not painting on these controls. */
+.jspwiki-header button.btn-primary:focus-visible,
 .jspwiki-header a[href^="/login"]:focus-visible,
-.jspwiki-header button:focus-visible,
-.leftmenu-content a:focus-visible {
-  box-shadow: 0 0 0 3px #f4f7f4, 0 0 0 6px #083d27 !important;
+.jspwiki-header input.form-control:focus-visible {
+  outline: 3px solid #083d27 !important;
+  outline-offset: 3px !important;
+}
+
+/* Inset ring stays visible even when the outer outline is clipped or overridden. */
+.jspwiki-header button.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 3px #f4f7f4 !important;
+}
+
+.jspwiki-header a[href^="/login"]:focus-visible {
+  border-color: #083d27 !important;
+  box-shadow: inset 0 0 0 3px #083d27 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header button.btn-primary:focus-visible,
+[data-bs-theme="dark"] .jspwiki-header a[href^="/login"]:focus-visible,
+[data-bs-theme="dark"] .jspwiki-header input.form-control:focus-visible {
+  outline-color: #8ee0c2 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header button.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 3px #8ee0c2 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header a[href^="/login"]:focus-visible {
+  border-color: #8ee0c2 !important;
+  box-shadow: inset 0 0 0 3px #8ee0c2 !important;
 }
