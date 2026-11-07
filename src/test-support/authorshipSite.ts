@@ -55,6 +55,7 @@ export async function authorshipSite(opts: {
   };
   const configManager = {
     getProperty: (key: string, fallback: unknown) => (config[key] !== undefined ? config[key] : fallback),
+    getUnresolvedProperty: (key: string, fallback: unknown) => (config[key] !== undefined ? config[key] : fallback),
     getResolvedDataPath: (key: string, fallback: unknown) => {
       if (key === 'ngdpbase.page.provider.versioning.indexfile') return indexFile;
       if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;

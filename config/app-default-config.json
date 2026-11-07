@@ -42,6 +42,7 @@
     "ngdpbase.auth.oidc.providers": "sensitive",
     "ngdpbase.access.policies": "sensitive",
     "ngdpbase.access.subject-attributes": "sensitive",
+    "ngdpbase.access.environment-attributes": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
     "ngdpbase.backup.restore-manifest": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
@@ -735,6 +736,10 @@
       "restart": false
     },
     "ngdpbase.access.subject-attributes": {
+      "group": "Access control",
+      "restart": false
+    },
+    "ngdpbase.access.environment-attributes": {
       "group": "Access control",
       "restart": false
     },
@@ -2881,6 +2886,17 @@
     "aal": {
       "type": "integer",
       "from": "sign-in"
+    }
+  },
+  "_comment_access_environment_attributes": "Environment attributes (#2261, docs/access-policies.md): what a policy's condition may read about the moment or the site, as environment:<name>. Each is a boolean (type boolean) with a from: schedule:<name> (whether that schedule in ngdpbase.schedules is open now, in its own time zone) or config:<key> (the boolean stored at that configuration key; any key may be read, secrets included, and its value is never written to a log, an audit record or a message). A schedule that is not in ngdpbase.schedules, or a key that does not hold a boolean, makes the attribute missing, so an allow with the condition does not apply and a deny does; the start-up log names a missing schedule. The time is read once per decision or listing.",
+  "ngdpbase.access.environment-attributes": {
+    "is-business-hours": {
+      "type": "boolean",
+      "from": "schedule:business-hours"
+    },
+    "vaults-admin-access": {
+      "type": "boolean",
+      "from": "config:ngdpbase.vaults.admin-access"
     }
   },
   "ngdpbase.access.policies": [

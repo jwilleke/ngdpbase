@@ -37,7 +37,7 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
   const boot = async (policies: unknown[]) => {
     config = { ...core, 'ngdpbase.access.policies': policies };
     const managers: Record<string, unknown> = {
-      ConfigurationManager: { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) },
+      ConfigurationManager: { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def), getUnresolvedProperty: (key: string, def: unknown) => (key in config ? config[key] : def) },
       ValidationManager: { getDefaultSystemCategory: () => 'general' },
       AuditManager: { logAuditEvent: () => Promise.resolve() },
       UserManager: { getUser: (name: string) => Promise.resolve(accounts[name]) },

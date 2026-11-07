@@ -12,7 +12,7 @@ const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/ap
 
 async function validatorWith(extra: Record<string, unknown> = {}): Promise<PolicyValidator> {
   const config: Record<string, unknown> = { ...core, ...extra };
-  const engine = { getManager: (name: string) => (name === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d) } : null) };
+  const engine = { getManager: (name: string) => (name === 'ConfigurationManager' ? { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d), getUnresolvedProperty: (k: string, d: unknown) => (k in config ? config[k] : d) } : null) };
   const v = new PolicyValidator(engine);
   await v.initialize();
   return v;
