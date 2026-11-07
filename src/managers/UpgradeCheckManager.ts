@@ -22,10 +22,27 @@ import type { ActorContext } from '../context/ActorContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 
+/** A page named in an item, with where to look at it. */
+export interface UpgradePageLink {
+  title: string;
+  href: string;
+}
+
 /** What an administrator is told, and the one button that settles it. Plain words about pages, never about how the site is set up. */
 export interface UpgradeItem {
+  /** What is wrong, short: "7 pages can't be edited". The dashboard notice leads with it. */
+  headline: string;
+  /** The sentence before the pages: "These 7 pages can't be edited by anyone, including you". */
   text: string;
+  /** The pages `viewer` may see, in the order to show them. */
+  pages: UpgradePageLink[];
+  /** What follows the pages, such as " and 2 private pages"; empty when there is nothing more. */
+  more: string;
+  /** What the button does and does not do, shown above it. */
+  note: string;
   button: string;
+  /** What to tell the administrator once the button has worked. */
+  done: string;
 }
 
 export interface UpgradeCheck {
@@ -82,23 +99,32 @@ class UpgradeCheckManager extends BaseManager {
 
   /**
    * Run each check that has not run under this version. A check that throws is
-   * logged and left unrecorded, so the next start tries it again.
+   * logged and left unrecorded, so the next start tries it again. Never throws:
+   * a damaged record or a version that is not a release number must not stop the site.
    */
   async runAtBoot(): Promise<void> {
-    const version = this.version();
-    const record = await this.readRecord();
-    const ctx = systemContext(this.engine, 'upgrade checks on the first start after a version change (#2301)');
-    for (const check of this.checks.values()) {
-      if (semver.lt(version, check.since) || record[check.id]?.version === version) continue;
-      try {
-        const { affected, log } = await check.detect(ctx);
-        const line = `[UPGRADE] ${check.id} (${check.since}): ${log}`;
-        if (affected.length > 0) logger.warn(line); else logger.info(line);
-        record[check.id] = { version, ranAt: new Date().toISOString(), affected };
-        await this.writeRecord(record);
-      } catch (err) {
-        logger.warn(`[UPGRADE] ${check.id} could not run, it will be tried at the next start: ${err instanceof Error ? err.message : String(err)}`);
+    try {
+      const version = this.version();
+      if (!semver.valid(version)) {
+        logger.warn(`[UPGRADE] The site version '${version}' is not a release number, so the upgrade checks were skipped`);
+        return;
       }
+      const record = await this.readRecord();
+      const ctx = systemContext(this.engine, 'upgrade checks on the first start after a version change (#2301)');
+      for (const check of this.checks.values()) {
+        if (semver.lt(version, check.since) || record[check.id]?.version === version) continue;
+        try {
+          const { affected, log } = await check.detect(ctx);
+          const line = `[UPGRADE] ${check.id} (${check.since}): ${log}`;
+          if (affected.length > 0) logger.warn(line); else logger.info(line);
+          record[check.id] = { version, ranAt: new Date().toISOString(), affected };
+          await this.writeRecord(record);
+        } catch (err) {
+          logger.warn(`[UPGRADE] ${check.id} could not run, it will be tried at the next start: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[UPGRADE] The upgrade checks could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -115,16 +141,21 @@ class UpgradeCheckManager extends BaseManager {
     return items;
   }
 
-  /** Apply one item's fix as `ctx` and close the item. Returns false when there is no such open item. */
-  async applyFix(id: string, ctx: ActorContext): Promise<boolean> {
+  /**
+   * Apply one item's fix as `ctx` and close the item. Returns what to tell the
+   * administrator, or null when there is no such open item.
+   */
+  async applyFix(id: string, ctx: ActorContext): Promise<string | null> {
     const check = this.checks.get(id);
     const record = await this.readRecord();
     const found = record[id];
-    if (!check || !found || found.fixedAt || found.affected.length === 0) return false;
+    if (!check || !found || found.fixedAt || found.affected.length === 0) return null;
+    // Named before the change: once it is made, nothing is left to name.
+    const done = (await check.item(found.affected, ctx))?.done;
     await check.fix(found.affected, ctx);
     found.fixedAt = new Date().toISOString();
     await this.writeRecord(record);
-    return true;
+    return done ?? 'Done.';
   }
 
   private configManager(): ConfigurationManager {
@@ -137,13 +168,35 @@ class UpgradeCheckManager extends BaseManager {
     return path.join(this.configManager().getInstanceDataFolder(), RECORD_FILE);
   }
 
+  /** The record, or an empty one when the file is missing, damaged or not a record: the checks then run again, which is harmless. */
   private async readRecord(): Promise<Record<string, CheckRecord>> {
     const file = this.recordPath();
-    return (await fse.pathExists(file) ? await fse.readJson(file) : {}) as Record<string, CheckRecord>;
+    try {
+      if (!(await fse.pathExists(file))) return {};
+      const parsed: unknown = await fse.readJson(file);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('it is not a list of checks');
+      const record: Record<string, CheckRecord> = {};
+      for (const [id, entry] of Object.entries(parsed as Record<string, Partial<CheckRecord> | null>)) {
+        if (entry && typeof entry.version === 'string' && Array.isArray(entry.affected)) record[id] = entry as CheckRecord;
+      }
+      return record;
+    } catch (err) {
+      logger.warn(`[UPGRADE] ${RECORD_FILE} could not be read, so the upgrade checks start afresh: ${err instanceof Error ? err.message : String(err)}`);
+      return {};
+    }
   }
 
+  /** Written to a temporary file and renamed into place, so a crash or full disk never leaves a half-written record. */
   private async writeRecord(record: Record<string, CheckRecord>): Promise<void> {
-    await fse.writeJson(this.recordPath(), record, { spaces: 2 });
+    const file = this.recordPath();
+    const temp = `${file}.${process.pid}.tmp`;
+    try {
+      await fse.writeJson(temp, record, { spaces: 2 });
+      await fse.rename(temp, file);
+    } catch (err) {
+      await fse.remove(temp).catch(() => undefined);
+      throw err;
+    }
   }
 }
 

@@ -8,6 +8,9 @@
 import UpgradeCheckManager from '../../managers/UpgradeCheckManager';
 import { shippedUpgradeChecks } from '../index';
 import logger from '../../utils/logger';
+import fs from 'node:fs';
+import path from 'node:path';
+import { UPGRADE_FIX_ERRORS, UPGRADE_INTRO, UPGRADE_READ_ONLY, itemSentence, upgradeEmpty, upgradeHeading, upgradeNotice } from '../wording';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
 describe('pages nobody can edit (#2299)', () => {
@@ -37,29 +40,62 @@ describe('pages nobody can edit (#2299)', () => {
     expect(await manager.openItems(admin)).toEqual([]);
   });
 
-  test('pages are named when the viewer may see them and counted when not', async () => {
+  test('pages are named A–Z and linked when the viewer may see them, and counted when not', async () => {
     f.pages.notes = ['Trip Notes', 'Budget 2026', 'Packing List', 'private:bob/default/Diary', 'private:bob/default/Plans'];
     f.hidden = new Set(['private:bob/default/Diary', 'private:bob/default/Plans']);
     await manager.runAtBoot();
-    expect(await manager.openItems(admin)).toEqual([{
+    const [item] = await manager.openItems(admin);
+    expect(item).toEqual({
       id: 'pages-nobody-can-edit',
-      text: 'These 5 pages can\'t be edited by anyone, including you: Trip Notes, Budget 2026, Packing List and 2 private pages.',
-      button: 'Let admins edit them'
-    }]);
+      headline: '5 pages can\'t be edited',
+      text: 'These 5 pages can\'t be edited by anyone, including you: ',
+      pages: [
+        { title: 'Budget 2026', href: '/view/Budget%202026' },
+        { title: 'Packing List', href: '/view/Packing%20List' },
+        { title: 'Trip Notes', href: '/view/Trip%20Notes' }
+      ],
+      more: ' and 2 private pages',
+      note: 'The button lets everyone who signs in as an administrator edit them. Nothing in the pages changes, and no one else gets access.',
+      button: 'Let administrators edit these pages',
+      done: 'Administrators can now edit Budget 2026, Packing List, Trip Notes and 2 private pages.'
+    });
+    expect(itemSentence(item)).toBe('These 5 pages can\'t be edited by anyone, including you: Budget 2026, Packing List, Trip Notes and 2 private pages.');
   });
 
   test('one page, and a page the viewer may not see by title', async () => {
     f.pages.notes = ['Trip Notes'];
     await manager.runAtBoot();
-    expect((await manager.openItems(admin))[0]).toMatchObject({ text: 'This page can\'t be edited by anyone, including you: Trip Notes.', button: 'Let admins edit it' });
+    const [one] = await manager.openItems(admin);
+    expect(itemSentence(one)).toBe('This page can\'t be edited by anyone, including you: Trip Notes.');
+    expect(one.button).toBe('Let administrators edit this page');
+    expect(one.note).toContain('edit it. Nothing in the page changes');
     f.hidden = new Set(['Trip Notes']);
-    expect((await manager.openItems(admin))[0].text).toBe('This page can\'t be edited by anyone, including you.');
+    expect(itemSentence((await manager.openItems(admin))[0])).toBe('This page can\'t be edited by anyone, including you.');
+  });
+
+  test('more than ten visible titles: the first ten A–Z, then a count, and the rest are not asked about', async () => {
+    f.pages.notes = Array.from({ length: 13 }, (_, i) => `Page ${String.fromCharCode(65 + i)}`);
+    await manager.runAtBoot();
+    const asked = vi.spyOn(f.engine.getManager('PageManager') as { mayShowPage: (n: string) => Promise<boolean> }, 'mayShowPage');
+    const [item] = await manager.openItems(admin);
+    expect(item.pages.map((p) => p.title)).toEqual(Array.from({ length: 10 }, (_, i) => `Page ${String.fromCharCode(65 + i)}`));
+    expect(item.more).toBe(' and 3 more pages');
+    expect(asked).toHaveBeenCalledTimes(10);
+  });
+
+  test('the pages are listed when the check runs, not on each look at Admin', async () => {
+    f.pages.notes = ['Trip Notes'];
+    await manager.runAtBoot();
+    const listed = vi.spyOn(f.engine.getManager('PageManager') as { listCategoryPages: (c: string) => Promise<string[]> }, 'listCategoryPages');
+    await manager.openItems(admin);
+    await manager.openItems(admin);
+    expect(listed).not.toHaveBeenCalled();
   });
 
   test('the button adds a policy through setProperty as the person, and the item is gone without a restart', async () => {
     f.pages.notes = ['Trip Notes'];
     await manager.runAtBoot();
-    expect(await manager.applyFix('pages-nobody-can-edit', admin)).toBe(true);
+    expect(await manager.applyFix('pages-nobody-can-edit', admin)).toBe('Administrators can now edit Trip Notes.');
     expect(f.saved).toHaveLength(1);
     expect(f.saved[0].ctx).toBe(admin);
     expect(f.saved[0].key).toBe('ngdpbase.access.policies');
@@ -85,22 +121,42 @@ describe('pages nobody can edit (#2299)', () => {
     expect(await manager.openItems(admin)).toHaveLength(1);
   });
 
-  test('no registered check\'s text or button names how the site is set up', async () => {
-    const titles = ['Trip Notes', 'Budget 2026', 'Packing List'];
-    f.pages.notes = [...titles, 'private:bob/default/Diary'];
+  test('everything an administrator reads from every registered check names no part of how the site is set up', async () => {
+    f.pages.notes = [...Array.from({ length: 12 }, (_, i) => `Note ${String.fromCharCode(65 + i)}`), 'private:bob/default/Diary'];
     f.pages.sealed = ['Sealed One'];
     f.hidden = new Set(['private:bob/default/Diary']);
-    await manager.runAtBoot();
+    // Forced affected: every stored category is recorded as affected, whatever a check's detect would find.
+    const checks = shippedUpgradeChecks(f.engine);
+    const record = Object.fromEntries(checks.map((c) => [c.id, { version: '5.43.0', ranAt: 'now', affected: ['notes', 'test-sealed'] }]));
+    fs.writeFileSync(path.join(f.dataDir, 'upgrade-checks.json'), JSON.stringify(record));
     const items = await manager.openItems(admin);
-    expect(items.length).toBeGreaterThan(0);
+    expect(items.map((i) => i.id).sort()).toEqual(checks.map((c) => c.id).sort());
+    const words: string[] = [UPGRADE_INTRO, UPGRADE_READ_ONLY, UPGRADE_FIX_ERRORS.alreadyFixed, UPGRADE_FIX_ERRORS.failed,
+      upgradeHeading('5.43.0'), upgradeHeading(''), upgradeEmpty('5.43.0'), upgradeEmpty('')];
     for (const item of items) {
-      for (const words of [item.text, item.button]) {
-        expect(words).not.toMatch(/#\d+/);
-        expect(words).not.toContain('docs/');
-        expect(words).not.toContain('ngdpbase.');
-        expect(words.toLowerCase()).not.toContain('log');
-        expect(words).not.toMatch(/categor|polic|permission/i);
+      words.push(item.headline, item.text, ...item.pages.map((p) => p.title), item.more, item.note, item.button, item.done, itemSentence(item));
+      for (const canFix of [true, false]) {
+        for (const version of ['5.43.0', '']) words.push(...Object.values(upgradeNotice([item], version, canFix) ?? {}), ...Object.values(upgradeNotice([item, item], version, canFix) ?? {}));
       }
     }
+    expect(words.length).toBeGreaterThan(20);
+    for (const w of words) {
+      expect(w).not.toMatch(/#\d+/);
+      expect(w).not.toContain('docs/');
+      expect(w).not.toContain('ngdpbase.');
+      expect(w.toLowerCase()).not.toContain('log');
+      expect(w).not.toMatch(/categor|polic|permission/i);
+    }
+  });
+
+  test('the dashboard notice leads with the item, and does not ask a read-only administrator to decide', async () => {
+    f.pages.notes = ['Trip Notes', 'Plans'];
+    await manager.runAtBoot();
+    const items = await manager.openItems(admin);
+    expect(upgradeNotice(items, '5.43.0', true)).toEqual({ text: '2 pages can\'t be edited after the update to 5.43.0.', link: 'Review and fix' });
+    expect(upgradeNotice(items, '5.43.0', false)).toEqual({ text: '2 pages can\'t be edited after the update to 5.43.0.', link: 'Review' });
+    expect(upgradeNotice([...items, ...items, ...items], '5.43.0', true)?.text).toBe('The update to 5.43.0 needs 3 decisions from you.');
+    expect(upgradeNotice([...items, ...items], '5.43.0', false)?.text).toContain('from an administrator who can change site settings');
+    expect(upgradeNotice([], '5.43.0', true)).toBeNull();
   });
 });

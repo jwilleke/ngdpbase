@@ -2,28 +2,31 @@
 
 <div class="container mt-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fas fa-circle-up"></i> After updating to <%= version %></h1>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1><i class="fas fa-circle-up"></i> <%= heading %></h1>
         <a href="/admin" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
     </div>
+    <p class="text-muted mb-4"><%= intro %></p>
 
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
     <% if (error) { %><div class="alert alert-danger"><%= error %></div><% } %>
 
-    <% if (!items || items.length === 0) { %>
-        <div class="alert alert-info">Nothing to do after this update.</div>
+    <% if ((!items || items.length === 0) && !success) { %>
+        <div class="alert alert-info"><%= empty %> <a href="/admin" class="alert-link">Back to Dashboard</a></div>
     <% } %>
 
     <% (items || []).forEach(function(item) { %>
     <div class="card mb-3">
-        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div><%= item.text %></div>
+        <div class="card-body">
+            <p class="mb-2"><%= item.text %><% item.pages.forEach(function(page, i) { %><%= i === 0 ? '' : ', ' %><a href="<%= page.href %>"><%= page.title %></a><% }); %><%= item.more %>.</p>
             <form method="post" action="/admin/upgrade/fix">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <input type="hidden" name="id" value="<%= item.id %>">
-                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>><%= item.button %></button>
+                <p class="text-muted small mb-2"><%= item.note %></p>
+                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage', 'read-only-' + item.id) %>><%= item.button %></button>
+                <% if (!can('config-manage')) { %><p class="text-muted small mt-2 mb-0" id="read-only-<%= item.id %>"><%= readOnly %></p><% } %>
             </form>
         </div>
     </div>

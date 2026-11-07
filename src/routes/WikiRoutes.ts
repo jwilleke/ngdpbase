@@ -68,6 +68,7 @@ import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
+import { UPGRADE_FIX_ERRORS, UPGRADE_INTRO, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeNotice } from '../upgradeChecks/wording.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
@@ -1148,11 +1149,14 @@ class WikiRoutes {
      * Presentation only — the server still refuses the request. A disabled
      * button is a courtesy, never a control.
      */
-    const lockedUnless = (permission: string): string =>
+    const lockedUnless = (permission: string, describedBy?: string): string =>
       can(permission)
         ? ''
-        : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
-          + ' this account has read-only access"';
+        // `describedBy` names a line on the page that says why, in place of the tooltip that names the permission (#2301).
+        : describedBy
+          ? ` disabled aria-disabled="true" aria-describedby="${describedBy}"`
+          : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
+            + ' this account has read-only access"';
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -1224,7 +1228,7 @@ class WikiRoutes {
       canViewAdmin: boolean;
       canCreatePage: boolean;
       can: (permission: string) => boolean;
-      lockedUnless: (permission: string) => string;
+      lockedUnless: (permission: string, describedBy?: string) => string;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -13219,7 +13223,9 @@ ${panes}
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
         // #2301: one notice linking to "After updating" while it has items.
-        upgradeItems: currentUser ? await this.upgradeItemsFor(currentUser) : []
+        upgradeItems: currentUser ? await this.upgradeItemsFor(currentUser) : [],
+        upgradeVersion: this.upgradeVersion(),
+        upgradeNotice
       };
 
       res.render('admin-dashboard', templateData);
@@ -15304,6 +15310,15 @@ ${panes}
     }
   }
 
+  /** The site version for the "After updating" wording; empty when it is not known, which the wording handles. */
+  private upgradeVersion(): string {
+    try {
+      return this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+    } catch {
+      return '';
+    }
+  }
+
   /** GET /admin/upgrade — "After updating to X.Y.Z": what the last update left for an administrator to decide (#2301). */
   async adminUpgradePage(req: Request, res: Response) {
     try {
@@ -15311,12 +15326,16 @@ ${panes}
       if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
       }
-      const version = this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+      const version = this.upgradeVersion();
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-upgrade', {
         ...commonData,
-        title: `After updating to ${version}`,
+        title: upgradeHeading(version),
         version,
+        heading: upgradeHeading(version),
+        intro: UPGRADE_INTRO,
+        empty: upgradeEmpty(version),
+        readOnly: UPGRADE_READ_ONLY,
         items: await this.upgradeItemsFor(wikiContext.userContext),
         success: typeof req.query.success === 'string' ? req.query.success : null,
         error: typeof req.query.error === 'string' ? req.query.error : null
@@ -15335,13 +15354,12 @@ ${panes}
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
       const currentUser = wikiContext.userContext;
       const id = typeof req.body?.id === 'string' ? req.body.id : '';
-      if (!currentUser || !(await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser))) {
-        return back('error', 'There is nothing left to do for that.');
-      }
-      return back('success', 'Done.');
+      const done = currentUser ? await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser) : null;
+      if (!done) return back('error', UPGRADE_FIX_ERRORS.alreadyFixed);
+      return back('success', done);
     } catch (err: unknown) {
       logger.error('[upgrade] The fix did not complete:', err);
-      return back('error', 'That could not be done.');
+      return back('error', UPGRADE_FIX_ERRORS.failed);
     }
   }
 

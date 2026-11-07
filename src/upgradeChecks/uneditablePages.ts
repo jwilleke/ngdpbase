@@ -9,7 +9,7 @@
  */
 import type { ActorContext } from '../context/ActorContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import type { UpgradeCheck } from '../managers/UpgradeCheckManager.js';
+import type { UpgradeCheck, UpgradePageLink } from '../managers/UpgradeCheckManager.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type PageManager from '../managers/PageManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
@@ -23,12 +23,31 @@ const POLICY_ID = 'admins-edit-pages-no-one-could';
 /** Titles named in an item before the rest are counted. */
 const MOST_TITLES = 10;
 
+/** "A", "A and B", "A, B and C". */
+const list = (parts: string[]): string => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+
+const titleOf = (name: string): string => parsePrivatePageName(name)?.title ?? name;
+
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
   const config = (): ConfigurationManager => engine.getManager<ConfigurationManager>('ConfigurationManager') as ConfigurationManager;
   const pages = (): PageManager => engine.getManager<PageManager>('PageManager') as PageManager;
   const pdp = (): PolicyDecisionPoint => engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint') as PolicyDecisionPoint;
+
+  /**
+   * Every page in each category, by title A–Z, read when the check ran (or the first time it is
+   * asked after a restart). A page cannot be added to or taken from a category nobody can edit,
+   * so what Admin shows does not walk the site on each load; who may see which is still asked per viewer.
+   */
+  const known = new Map<string, string[]>();
+  const pagesIn = async (category: string): Promise<string[]> => {
+    const cached = known.get(category);
+    if (cached) return cached;
+    const names = [...(await pages().listCategoryPages(category))].sort((a, b) => titleOf(a).localeCompare(titleOf(b), undefined, { sensitivity: 'base' }));
+    known.set(category, names);
+    return names;
+  };
 
   /** Stored categories (labels, lower case) that no policy lets anyone change. */
   const uncovered = (): string[] => {
@@ -49,7 +68,8 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
 
     async detect() {
       const found: Array<{ category: string; count: number }> = [];
-      for (const category of uncovered()) found.push({ category, count: (await pages().listCategoryPages(category)).length });
+      known.clear();
+      for (const category of uncovered()) found.push({ category, count: (await pagesIn(category)).length });
       const withPages = found.filter((f) => f.count > 0);
       const detail = found.map((f) => `${f.category} (${plural(f.count, 'page', 'pages')})`).join(', ');
       return {
@@ -63,21 +83,31 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
     async item(affected: string[], viewer: ActorContext) {
       // Still uncovered now: an administrator who fixed it another way has nothing left to decide.
       const open = uncovered().filter((category) => affected.includes(category));
-      const names = (await Promise.all(open.map((category) => pages().listCategoryPages(category)))).flat();
+      const names = (await Promise.all(open.map(pagesIn))).flat();
       if (names.length === 0) return null;
-      const seen: string[] = [];
+      names.sort((a, b) => titleOf(a).localeCompare(titleOf(b), undefined, { sensitivity: 'base' }));
+      // Stop asking once enough titles are found; the pages not asked about are counted as "more".
+      const shown: UpgradePageLink[] = [];
+      let asked = 0;
       for (const name of names) {
-        if (await pages().mayShowPage(name, viewer)) seen.push(parsePrivatePageName(name)?.title ?? name);
+        if (shown.length === MOST_TITLES) break;
+        asked += 1;
+        if (await pages().mayShowPage(name, viewer)) shown.push({ title: titleOf(name), href: `/view/${encodeURIComponent(name)}` });
       }
-      const shown = seen.slice(0, MOST_TITLES);
       const rest = names.length - shown.length;
-      const tail = rest === 0 ? '' : shown.length === 0
+      const more = rest === 0 || shown.length === 0
         ? ''
-        : ` and ${rest} ${seen.length > shown.length ? 'more' : 'private'} ${rest === 1 ? 'page' : 'pages'}`;
-      const who = names.length === 1 ? 'This page can\'t' : `These ${names.length} pages can't`;
+        : ` and ${rest} ${asked < names.length ? 'more' : 'private'} ${rest === 1 ? 'page' : 'pages'}`;
+      const one = names.length === 1;
+      const who = one ? 'This page can\'t' : `These ${names.length} pages can't`;
       return {
-        text: `${who} be edited by anyone, including you${shown.length > 0 ? `: ${shown.join(', ')}${tail}` : ''}.`,
-        button: names.length === 1 ? 'Let admins edit it' : 'Let admins edit them'
+        headline: `${plural(names.length, 'page', 'pages')} can't be edited`,
+        text: `${who} be edited by anyone, including you${shown.length > 0 ? ': ' : ''}`,
+        pages: shown,
+        more,
+        note: `The button lets everyone who signs in as an administrator edit ${one ? 'it' : 'them'}. Nothing in the ${one ? 'page' : 'pages'} changes, and no one else gets access.`,
+        button: one ? 'Let administrators edit this page' : 'Let administrators edit these pages',
+        done: `Administrators can now edit ${shown.length > 0 ? list([...shown.map((p) => p.title), ...(more ? [more.slice(5)] : [])]) : (one ? 'that page' : 'those pages')}.`
       };
     },
 

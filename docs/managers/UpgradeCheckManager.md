@@ -22,12 +22,12 @@ A release registers checks in `src/upgradeChecks/index.ts`. Each has:
 | --- | --- |
 | `id`, `since` | A stable id (kept in the record, never shown) and the version it shipped in. A site older than `since` skips it. |
 | `detect(ctx)` | Looks for what the release affects. Returns the names affected (empty means nothing is) and one line for developers. |
-| `item(affected, viewer)` | What `viewer` is told, as `{ text, button }`, or `null` when nothing is left to decide. |
+| `item(affected, viewer)` | What `viewer` is told, as `{ headline, text, pages, more, note, button, done }`, or `null` when nothing is left to decide. |
 | `fix(affected, ctx)` | The button. It changes things through the normal checked and audited route for that change (for a setting, `ConfigurationManager.setProperty` with the person's context, which writes the `config-change` audit record). |
 
 ## When it runs, and what is recorded
 
-`runAtBoot()` runs each check once on the first start under a version: the result is written to `upgrade-checks.json` in the instance data folder (`id`, version, time, names affected, and when it was fixed). A later start under the same version does not run it. A different version, whether an update, a restore of older data, or a downgrade, runs it again. A check that throws is logged and left unrecorded, so the next start tries it again.
+`runAtBoot()` runs each check once on the first start under a version: the result is written to `upgrade-checks.json` in the instance data folder (`id`, version, time, names affected, and when it was fixed). A later start under the same version does not run it. A different version, whether an update, a restore of older data, or a downgrade, runs it again. A check that throws is logged and left unrecorded, so the next start tries it again. `runAtBoot` never throws: a record that is missing a part, truncated or not JSON is treated as empty (with a warning, so the checks run again), and a site version that is not a release number (such as `dev`) skips the checks with a warning. The record is written to a temporary file and renamed into place.
 
 Nothing affected: one log line (`[UPGRADE] <id> (<since>): …`) and nothing in Admin. Something affected: the same line as a warning, and an item.
 

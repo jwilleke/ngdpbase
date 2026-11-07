@@ -42,12 +42,13 @@
     }) %>
 
     <%# #2301 — one notice while the last update left something to decide; the page lists it. %>
-    <% if (typeof upgradeItems !== 'undefined' && upgradeItems && upgradeItems.length > 0) { %>
+    <% const afterUpdating = (typeof upgradeItems !== 'undefined' && upgradeItems) ? upgradeNotice(upgradeItems, upgradeVersion, typeof can === 'function' && can('config-manage')) : null; %>
+    <% if (afterUpdating) { %>
         <div class="alert alert-info d-flex align-items-start" role="status" id="after-updating-notice">
             <i class="fas fa-circle-info me-2 mt-1" aria-hidden="true"></i>
             <div>
-                <strong>The last update left <%= upgradeItems.length === 1 ? 'one thing' : upgradeItems.length + ' things' %> for you to decide.</strong>
-                <a href="/admin/upgrade">See what to do after updating</a>
+                <strong><%= afterUpdating.text %></strong>
+                <a href="/admin/upgrade" class="alert-link"><%= afterUpdating.link %></a>
             </div>
         </div>
     <% } %>

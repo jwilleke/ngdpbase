@@ -5,6 +5,8 @@ import UpgradeCheckManager, { type UpgradeCheck } from '../../managers/UpgradeCh
 import logger from '../../utils/logger';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
+const ITEM = { headline: 'Something', text: 'Something to do.', pages: [], more: '', note: 'A note.', button: 'Do it', done: 'It is done.' };
+
 describe('UpgradeCheckManager (#2301)', () => {
   let f: Fixture;
   let detects: number;
@@ -13,7 +15,7 @@ describe('UpgradeCheckManager (#2301)', () => {
     id: 'sample',
     since: '5.43.0',
     detect: async () => { detects += 1; return { affected, log: 'sample detail' }; },
-    item: async () => ({ text: 'Something to do.', button: 'Do it' }),
+    item: async () => ITEM,
     fix: async (a) => { fixed.push(a); },
     ...over
   });
@@ -58,11 +60,11 @@ describe('UpgradeCheckManager (#2301)', () => {
   test('a decision is an item until its button runs; the fix gets the affected list and is not repeated', async () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
-    expect(await m.openItems(admin)).toEqual([{ id: 'sample', text: 'Something to do.', button: 'Do it' }]);
-    expect(await m.applyFix('sample', admin)).toBe(true);
+    expect(await m.openItems(admin)).toEqual([{ id: 'sample', ...ITEM }]);
+    expect(await m.applyFix('sample', admin)).toBe('It is done.');
     expect(fixed).toEqual([['x']]);
     expect(await m.openItems(admin)).toEqual([]);
-    expect(await m.applyFix('sample', admin)).toBe(false);
+    expect(await m.applyFix('sample', admin)).toBeNull();
     expect(fixed).toHaveLength(1);
   });
 
@@ -83,6 +85,49 @@ describe('UpgradeCheckManager (#2301)', () => {
   test('an unknown id is refused', async () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
-    expect(await m.applyFix('nope', admin)).toBe(false);
+    expect(await m.applyFix('nope', admin)).toBeNull();
+  });
+
+  describe('a damaged record or version never stops the start', () => {
+    const file = () => path.join(f.dataDir, 'upgrade-checks.json');
+    beforeEach(() => { vi.spyOn(logger, 'warn').mockImplementation(() => logger); vi.spyOn(logger, 'info').mockImplementation(() => logger); });
+
+    test.each([
+      ['a truncated file', '{"sample": {"vers'],
+      ['a file that is not JSON', 'this is not json'],
+      ['JSON that is not a record', '[1, 2]'],
+      ['an entry missing its parts', '{"sample": {"version": "5.43.0"}}']
+    ])('%s is treated as empty, warned about, and the check runs and is recorded again', async (_name, content) => {
+      fs.writeFileSync(file(), content);
+      const m = manager(check(['x']));
+      await expect(m.runAtBoot()).resolves.toBeUndefined();
+      expect(detects).toBe(1);
+      expect(JSON.parse(fs.readFileSync(file(), 'utf8')).sample.affected).toEqual(['x']);
+      expect(await m.openItems(admin)).toHaveLength(1);
+    });
+
+    test('an unreadable file is warned about', async () => {
+      fs.writeFileSync(file(), '{"sample": {"vers');
+      await manager(check(['x'])).runAtBoot();
+      expect(vi.mocked(logger.warn).mock.calls.some((c) => String(c[0]).includes('upgrade-checks.json could not be read'))).toBe(true);
+    });
+
+    test('the version "dev" skips the checks with a warning', async () => {
+      f.props['ngdpbase.version'] = 'dev';
+      await expect(manager(check(['x'])).runAtBoot()).resolves.toBeUndefined();
+      expect(detects).toBe(0);
+      expect(vi.mocked(logger.warn).mock.calls.some((c) => String(c[0]).includes("'dev'"))).toBe(true);
+    });
+
+    test('a record that cannot be written is warned about and does not throw; no temporary file is left', async () => {
+      fs.mkdirSync(file()); // a directory where the file belongs: the rename fails
+      await expect(manager(check(['x'])).runAtBoot()).resolves.toBeUndefined();
+      expect(fs.readdirSync(f.dataDir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+    });
+
+    test('a record is written through a temporary file that is renamed into place', async () => {
+      await manager(check(['x'])).runAtBoot();
+      expect(fs.readdirSync(f.dataDir)).toEqual(['upgrade-checks.json']);
+    });
   });
 });
