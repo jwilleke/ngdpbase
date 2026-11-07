@@ -228,6 +228,12 @@ describe('signed-out restore, ingest, capture and upload answer the same whether
       run: (routes, r) => routes.restorePageVersion({ ...base, params: { identifier: 'P', version: '1' }, path: '/api/page/P/restore/1', body: {} }, r) },
     { label: 'POST /api/page/ingest', status: 401,
       run: (routes, r) => routes.ingestPageMarkdown({ ...base, params: {}, path: '/api/page/ingest', body: { pageName: 'P', markdown: '# Hi' } }, r) },
+    { label: 'POST /admin/convert/preview', status: 401,
+      run: (routes, r) => routes.adminConvertPreview({ ...base, params: {}, path: '/admin/convert/preview', body: { page: 'P' } }, r) },
+    { label: 'POST /admin/convert/execute', status: 401,
+      run: (routes, r) => routes.adminConvertExecute({ ...base, params: {}, path: '/admin/convert/execute', body: { page: 'P' } }, r) },
+    { label: 'POST /files/upload', status: 401,
+      run: (routes, r) => routes.uploadFile({ ...base, params: {}, path: '/files/upload', body: { place: 'any' }, file: { buffer: Buffer.from('x'), originalname: 'a.txt', mimetype: 'text/plain', size: 1 } }, r) },
     { label: 'POST /attachments/upload/:page', status: 401,
       run: (routes, r) => routes.uploadAttachment({ ...base, params: { page: 'P' }, path: '/attachments/upload/P', body: {}, file: { buffer: Buffer.from('x'), originalname: 'a.txt', mimetype: 'text/plain', size: 1 } }, r) }
   ];
@@ -287,6 +293,19 @@ describe('signed-out restore, ingest, capture and upload answer the same whether
       expect(record).toHaveBeenCalledWith(expect.anything(), 'P', 'page-delete');
       expect(r.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/view/P'));
       expect(pageManager.getPage).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe('POST /admin/edit-raw/:page with a malformed % sequence (#2294)', () => {
+  test('is a 400 and never throws, whoever asks', async () => {
+    for (const user of [ANON, EDITOR]) {
+      const { routes, pageManager } = makeRoutes('P');
+      const r = res();
+      await expect(routes.adminSaveRaw({ ...req('%E0%A4%A', user), body: { rawContent: 'x' } }, r)).resolves.toBeUndefined();
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(pageManager.getPage).not.toHaveBeenCalled();
+      expect(pageManager.savePage).not.toHaveBeenCalled();
     }
   });
 });

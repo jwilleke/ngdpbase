@@ -4491,8 +4491,15 @@ ${panes}
    */
   async adminSaveRaw(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    const pageName = decodeURIComponent(req.params.page);
     const rawContent = typeof req.body?.rawContent === 'string' ? req.body.rawContent : '';
+    let pageName: string;
+    try {
+      pageName = decodeURIComponent(req.params.page);
+    } catch {
+      // A malformed % sequence in the address is the caller's mistake: 400, not an unhandled rejection.
+      res.status(400).send('Bad request');
+      return;
+    }
     try {
       // #1034: was hasRole('admin') — a role NAME check. Messages name the
       // PERMISSION that was actually tested; roles are bundles and the same
@@ -5874,6 +5881,8 @@ ${panes}
   async uploadFile(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     try {
+      // #2294: files go up only for someone signed in; an anonymous grant of asset-upload is not honoured here.
+      if (this.isSignedOut(wikiContext)) return await this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const files = this.engine.getManager<FileManager>('FileManager');
       if (!files) return res.status(503).json({ success: false, error: 'Files are not available right now' });
       if (!req.file) return res.status(400).json({ success: false, error: 'No file was sent' });
@@ -17476,6 +17485,12 @@ ${panes}
    */
   async adminConvertPreview(req: Request, res: Response) {
     try {
+      // #2294: someone not signed in gets one answer before the page is looked up, so a 404 or a 403
+      // never tells them whether it exists.
+      const signedOutCtx = this.createWikiContext(req);
+      if (this.isSignedOut(signedOutCtx)) {
+        return await this.refuse(signedOutCtx, req, res, 'json', 'page-edit');
+      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });
@@ -17530,6 +17545,12 @@ ${panes}
    */
   async adminConvertExecute(req: Request, res: Response) {
     try {
+      // #2294: someone not signed in gets one answer before the page is looked up, so a 404 or a 403
+      // never tells them whether it exists.
+      const signedOutCtx = this.createWikiContext(req);
+      if (this.isSignedOut(signedOutCtx)) {
+        return await this.refuse(signedOutCtx, req, res, 'json', 'page-edit');
+      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });

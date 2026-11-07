@@ -59,7 +59,9 @@ class FileLoggingProvider extends BaseLoggingProvider {
       redactPrivateNamesFormat(),
       format.printf((info) => {
         const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
-        const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
+        // #2294: a caller-sent value (a page name) in the message could carry a CR or LF and start a log line of
+        // its own. Escaped here, once, for every transport and every call site; the escape is visible, not removed.
+        const msg = FileLoggingProvider.oneLine(typeof info.message === 'string' ? info.message : JSON.stringify(info.message));
         // #1141: render the metadata too. This printf used to emit only
         // timestamp/level/message, so the second argument of every
         // `logger.error(msg, { error, stack })` call in the codebase was
@@ -73,6 +75,11 @@ class FileLoggingProvider extends BaseLoggingProvider {
     );
   }
 
+  /** CR and LF as the visible two-character sequences `\r` and `\n`, so a value cannot start a line of its own (#2294). */
+  private static oneLine(text: string): string {
+    return text.replace(/[\r\n]/g, (c) => (c === '\r' ? '\\r' : '\\n'));
+  }
+
   /**
    * Render whatever a caller passed as the second argument to `logger.*`.
    *
@@ -82,7 +89,8 @@ class FileLoggingProvider extends BaseLoggingProvider {
    * line would be noise at best.
    *
    * A `stack` is emitted on its own lines because a one-line stack is
-   * unreadable, and reading the stack is the entire reason this exists.
+   * unreadable, and reading the stack is the entire reason this exists. It is
+   * the one value not escaped; string values of the other keys are.
    *
    * @param info - The winston info object for one log record
    * @returns The rendered metadata, or an empty string when there is none
@@ -100,7 +108,7 @@ class FileLoggingProvider extends BaseLoggingProvider {
         stack = value;
         continue;
       }
-      parts.push(`${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`);
+      parts.push(`${key}=${typeof value === 'string' ? FileLoggingProvider.oneLine(value) : JSON.stringify(value)}`);
     }
 
     const inline = parts.length > 0 ? parts.join(' ') : '';
