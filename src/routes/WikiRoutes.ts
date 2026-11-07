@@ -284,6 +284,11 @@ const REWRITE_BUDGET_MS = 20_000;
  */
 const MAX_LISTED_NOT_REWRITTEN = 20;
 
+/** A `created` value as an ISO string (YAML may hand back a Date), or null when the page has none (#2290). */
+function createdOf(raw: unknown): string | null {
+  return versionTokenOf({ lastModified: raw });
+}
+
 /** Helper to extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -19931,6 +19936,7 @@ ${panes}
       let versionInfo = null;
       let topContributors: { author: string; editCount: number }[] = [];
       let avgDaysBetweenEdits: number | null = null;
+      let firstVersionTime: string | null = null;
       try {
         const provider = pageManager.provider;
         if (provider && typeof provider.getVersionHistory === 'function') {
@@ -19946,6 +19952,8 @@ ${panes}
               changeType: currentVersion.changeType,
               comment: currentVersion.comment
             };
+
+            firstVersionTime = createdOf(versions[versions.length - 1].timestamp);
 
             // Aggregate contributors
             const contributorMap: Record<string, number> = {};
@@ -19990,8 +19998,13 @@ ${panes}
         tags: metadata.tags || [],
 
         // Timestamps
-        created: fileStats?.created || null,
-        lastModified: versionInfo?.lastModified || metadata.lastModified || fileStats?.modified || null,
+        // #2290: the page's own `created` (frontmatter, set once and kept by
+        // every save), else its first version. Never the file's birthtime: each
+        // save writes a new file, so that is the last save's time.
+        created: createdOf(metadata.created) ?? firstVersionTime,
+        // #2290: the token ingest's `baseLastModified` check compares against
+        // (versionTokenOf), so the value a caller reads here is accepted there.
+        lastModified: versionTokenOf(metadata) || versionInfo?.lastModified || fileStats?.modified || null,
         lastAccessed: fileStats?.accessed || null,
 
         // Content statistics
