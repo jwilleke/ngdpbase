@@ -65,12 +65,13 @@ describe('ThemeManager theme stylesheets', () => {
     expect(addonAt).toBeGreaterThan(themeAt);
   });
 
-  test('Fairways shell fills the viewport and keeps a reading measure', () => {
+  test('Fairways text uses the main column and the wordmark stays a plate', () => {
     const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
     expect(css).toMatch(/min-height:\s*100dvh/);
-    expect(css).toMatch(/max-width:\s*65ch/);
+    expect(css).not.toMatch(/65ch/);
+    expect(css).not.toMatch(/18ch/);
+    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li \{\s*\n\s*max-width:\s*none;/);
     expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
-    expect(css).not.toMatch(/46rem/);
     expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
   });
 });

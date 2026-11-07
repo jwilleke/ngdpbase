@@ -318,7 +318,7 @@ button:focus-visible {
   border-bottom: none;
   margin-top: 0;
   margin-bottom: 0.85rem;
-  max-width: 18ch;
+  max-width: none;
   color: var(--text-heading);
 }
 
@@ -336,7 +336,7 @@ button:focus-visible {
 
 .markdown-body p,
 .markdown-body li {
-  max-width: 65ch;
+  max-width: none;
   font-size: 1.125rem;
   line-height: 1.7;
 }
@@ -362,8 +362,7 @@ button:focus-visible {
   color: var(--link-color);
 }
 
-/* In-content pictures, including the wordmark some pages repeat, stay a plate
-   rather than a banner. Wide pages set the first one beside the writing. */
+/* In-page wordmark stays a plate. Writing uses the main column. */
 .markdown-body img,
 .wiki-image {
   display: block;
@@ -374,31 +373,6 @@ button:focus-visible {
   border-radius: 10px;
   object-fit: contain;
   object-position: left center;
-}
-
-@media (min-width: 1100px) {
-  .markdown-body:has(img) {
-    display: grid;
-    grid-template-columns: minmax(0, 65ch) minmax(12rem, 18rem);
-    column-gap: clamp(1.75rem, 3vw, 3.5rem);
-    align-items: start;
-    justify-content: start;
-    width: 100%;
-  }
-
-  .markdown-body:has(img) > * {
-    grid-column: 1;
-    min-width: 0;
-  }
-
-  .markdown-body:has(img) > p:has(> img) {
-    grid-column: 2;
-    margin: 0;
-  }
-
-  .markdown-body:has(img) > p:first-child:has(> img) {
-    grid-row: 1;
-  }
 }
 
 .btn-primary {
@@ -440,10 +414,6 @@ button:focus-visible {
 @media (max-width: 767.98px) {
   .jspwiki-header .navbar-brand img {
     height: 34px !important;
-  }
-
-  .markdown-body:has(img) {
-    display: block;
   }
 
   .markdown-body h1,
