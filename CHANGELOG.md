@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, one at a time, by calling each checkout's own `./server.sh update`. It needs no configuration. It skips a checkout, with a one-line reason, only when it is not online, not the top of its own git repository, owned by another user, has git's index locked, is detached, is on a branch other than `master`, has uncommitted or untracked files, or is ahead of `origin/master`. A notice PM2 prints before its process list, such as `In-memory PM2 is out-of-date`, is ignored. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md#updating-every-checkout-on-this-host).
+- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, one at a time, by calling each checkout's own `./server.sh update`. It needs no configuration. It skips a checkout, with a one-line reason, when it is not online, not the top of its own git repository, owned by another user, has git's index locked, is detached, is on a branch other than `master`, has uncommitted or untracked files, has files marked assume-unchanged or skip-worktree, or is ahead of `origin/master`. It also skips one when a git check cannot run: `git status` or `git ls-files` fails, the fetch of `origin/master` fails, or `origin/master` cannot be compared. Inherited `GIT_*` variables other than `GIT_SSH`, `GIT_SSH_COMMAND` and `GIT_TERMINAL_PROMPT` are unset first. A notice PM2 prints before its process list, such as `In-memory PM2 is out-of-date`, is ignored; output with more than one list stops the run. Control characters in PM2 names are shown as `?`. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md#updating-every-checkout-on-this-host).
+
+### Changed
+
+- `./server.sh update` refuses, before it changes anything, a checkout with files marked `git update-index --assume-unchanged` or `--skip-worktree`, and lists them. `git status` does not show edits to those files, and a failed update's rollback overwrote them.
 
 ## [5.43.0] - 2026-11-07
 

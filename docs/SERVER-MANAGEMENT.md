@@ -379,15 +379,30 @@ these reasons, each printed as one line under the checkout's name:
 | `skip: git index is locked (another git command is running)` | `.git/index.lock` exists. |
 | `skip: detached HEAD, not on a branch` | The checkout is not on a branch. |
 | `skip: on branch <name>, not master` | The checkout is on a branch other than `master`, even one with no commits of its own. It is not switched to `master`. |
+| `skip: git status failed, so uncommitted changes could not be ruled out` | `git status` exited with an error. |
 | `skip: N uncommitted or untracked file(s), first: <file>` | `git status` shows changes, staged or not, or untracked files. |
-| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `origin/master`. |
+| `skip: git ls-files failed, so hidden changes could not be ruled out` | `git ls-files -v` exited with an error. |
+| `skip: files hidden from git status (assume-unchanged or skip-worktree)` | A tracked file is marked `git update-index --assume-unchanged` or `--skip-worktree`. `git status` does not show edits to it, and a failed update's rollback would overwrite them. Clear the mark with `git update-index --no-assume-unchanged --no-skip-worktree <file>`. |
 | `skip: could not fetch origin/master to check for local commits` | The fetch before the ahead check failed. |
+| `skip: cannot compare with origin/master, so local commits could not be ruled out` | `origin/master` does not exist in the checkout after the fetch, or `git rev-list` failed. |
+| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `origin/master`. |
 
 A skipped checkout is not touched, so `update`'s rollback (`git checkout -f`, `git reset --hard`)
 never runs on it. It does not pull before the per-checkout `update`, which fetches and
 fast-forwards itself; it does fetch `origin/master` first, so the ahead check is current. A
 `--dry-run` fetches nothing and compares against the last fetch. A checkout on another branch is
 skipped even when a ref is given; run `./server.sh update [ref]` in it by hand to move it.
+
+Plain `./server.sh update` also refuses, before it changes anything, a checkout with files marked
+assume-unchanged or skip-worktree, and lists them.
+
+Before any git check, `update all` unsets every inherited `GIT_*` variable except `GIT_SSH`,
+`GIT_SSH_COMMAND` and `GIT_TERMINAL_PROMPT`. A `GIT_DIR` or `GIT_INDEX_FILE` left by a git hook,
+a shell or a `.env` would otherwise make the checks read another repository.
+
+To pass an env with no ref, give an empty ref: `./server.sh update all "" production` runs
+`./server.sh update "" production` in each checkout, which updates to the tip of `master` and
+starts in production.
 
 It refuses to run as root, because it would run `npm` and the build as root in other users'
 trees. PM2 `watch` restarts a process when files change. It is not a release update, and it does
@@ -400,21 +415,26 @@ never taken over; remove it by hand once you know nothing is running. A dead hol
 replaced. `--dry-run` shows the same plan with no `update` run, and takes no lock.
 
 The command ends with a summary: updated (or would update), not online, held by git (any of the
-other skip reasons), and failed. It exits 0 when every online checkout was updated or there was
-nothing to update, 1 when a checkout was held by git or its update failed, 2 when PM2 could not
-be read, it was run as root, or another `update all` holds the lock, and 3 when PM2 lists
-processes but none is an ngdpbase checkout. A checkout is recognised only when the PM2 working
-directory itself holds its `server.sh`.
+other skip reasons), and failed. A checkout is recognised only when the PM2 working directory
+itself holds its `server.sh`. Exit codes:
+
+| Code | When |
+| --- | --- |
+| 0 | Every online checkout was updated (or would be, in a dry run), or PM2 runs no processes at all. |
+| 1 | A checkout was held by git, or its update failed. |
+| 2 | Nothing was updated because: an unknown option, more than two arguments, `all` given as the ref, a ref or env that starts with `-` or holds a space, a recursive `update all`, it was run as root, no temporary directory could be made, another `update all` holds the lock (or the lock holds no pid), `node` or `scripts/update-all-scan.mjs` is missing, or the PM2 list could not be read or was not usable. |
+| 3 | PM2 lists processes but none is an ngdpbase checkout. |
 
 PM2 can print a notice before its process list, for example `In-memory PM2 is out-of-date` when
-the PM2 daemon is older than the installed PM2. Those lines are ignored: the list is the last
-line of `pm2 jlist` output that is a JSON array. When no line is, the run stops with exit 2 and
-updates nothing.
+the PM2 daemon is older than the installed PM2. Those lines are ignored: the list is the one
+line of `pm2 jlist` output that is a JSON array. When no line is, or more than one is, the run
+stops with exit 2 and updates nothing. Control characters in a PM2 app name are shown as `?`. A
+PM2 directory, or its real path, that holds a control character is not treated as a checkout.
 
 The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
-variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own `.env`. The PM2 document is
-reduced to name, directory, script, status, and watch before it is printed; the process
-environment is not.
+variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own
+`.env`. The raw PM2 list is never printed. It is reduced to name, directory, script, status and
+watch before it is read, and the process environment is dropped.
 
 ## Validation Steps (Pre-Start Checklist)
 
