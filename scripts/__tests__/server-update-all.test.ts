@@ -13,6 +13,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { classifyScript } from '../update-all-scan.mjs';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET = `test-only-${randomUUID()}`;
@@ -832,4 +833,175 @@ describe('./server.sh update all', () => {
     expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
     expect(result.out).toContain('No automatic updater script found');
   }, 60000);
+
+  it('dry-runs the updater comment that pins one directory basename', () => {
+    const place = (rel: string): string => {
+      const dir = path.join(tmp, rel);
+      fs.mkdirSync(path.dirname(dir), { recursive: true });
+      git(tmp, 'clone', '-q', origin, dir);
+      writeInstanceEnv(dir);
+      return dir;
+    };
+    const jimstest = place('github/ngdpbase');
+    const fairways = place('github/fairways-base');
+    const yourphr = place('github/ngdpbase-yourphr');
+    const accounting = place('github/ngdpbase-accounting');
+    const addons = place('instances/ngdpbase-addons-instance');
+    const encrypted = place('github/ngdpbase-encrypted');
+    const tempBuild = path.join(tmp, 'temp-builds', 'ngdpbase');
+    const heads = [jimstest, fairways, yourphr, accounting, addons, encrypted].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
+    fs.mkdirSync(path.dirname(script), { recursive: true });
+    fs.writeFileSync(script, [
+      '# Order matters: jimstest first, then satellites. Not here on purpose:',
+      '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
+      'SITES=(',
+      `  ${jimstest}`,
+      `  ${fairways}`,
+      `  ${yourphr}`,
+      `  ${tempBuild}`,
+      ')',
+      'TAG=v1.0.0',
+      'for site in "${SITES[@]}"; do',
+      '  (cd "$site" && ./server.sh update "$TAG")',
+      'done',
+      '# skip a checkout that has local changes',
+      ''
+    ].join('\n'));
+    const agents = path.join(home, 'Library', 'LaunchAgents');
+    fs.mkdirSync(agents, { recursive: true });
+    fs.writeFileSync(path.join(agents, 'com.example.ngdp-autoupdate.plist'), [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
+      `<string>${script}</string>`,
+      '</array></dict></plist>',
+      ''
+    ].join('\n'));
+    writeJlist([
+      { name: 'jimstest', cwd: jimstest },
+      { name: 'The Fairways', cwd: fairways },
+      { name: 'ngdpbase-yourphr', cwd: yourphr },
+      { name: 'Accounting Dev', cwd: accounting },
+      { name: 'ngdpbase-addons', cwd: addons },
+      { name: 'ngdp-encrypted', cwd: encrypted }
+    ]);
+
+    const result = run(['update', 'all', '--dry-run']);
+
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).not.toContain('ambiguous-pin');
+    expect(result.out).not.toContain('unknown ownership');
+    expect(result.out.match(/skip \(automatic\)/g)).toHaveLength(3);
+    expect(result.out).toContain('skip (pinned)');
+    expect(result.out).toContain(accounting);
+    expect(result.out).not.toContain('site list stays authoritative');
+    const blocks = result.out.split(/\n(?=\[\d+\/\d+\])/);
+    const yourBlock = blocks.find((block) => block.includes(yourphr));
+    expect(yourBlock).toContain('skip (automatic)');
+    expect(yourBlock).not.toContain('skip (pinned)');
+    expect(result.out.match(/dry-run: would run: \.\/server\.sh update/g)).toEqual([
+      'dry-run: would run: ./server.sh update',
+      'dry-run: would run: ./server.sh update'
+    ]);
+    expect(blocks.find((block) => block.includes(addons))).toContain('dry-run: would run: ./server.sh update');
+    expect(blocks.find((block) => block.includes(encrypted))).toContain('dry-run: would run: ./server.sh update');
+    expect(npmLines()).toEqual([]);
+    [jimstest, fairways, yourphr, accounting, addons, encrypted].forEach((dir, index) => {
+      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
+    });
+  }, 60000);
+
+  it('does not guess when two checkouts share a pinned directory basename', () => {
+    const place = (rel: string): string => {
+      const dir = path.join(tmp, rel);
+      fs.mkdirSync(path.dirname(dir), { recursive: true });
+      git(tmp, 'clone', '-q', origin, dir);
+      writeInstanceEnv(dir);
+      return dir;
+    };
+    const first = place('one/ngdpbase-accounting');
+    const second = place('two/ngdpbase-accounting');
+    const auto = place('github/fairways-base');
+    const other = place('instances/ngdpbase-addons-instance');
+    const heads = [first, second, auto, other].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
+    fs.mkdirSync(path.dirname(script), { recursive: true });
+    fs.writeFileSync(script, [
+      '# ngdpbase-accounting (pinned)',
+      'SITES=(',
+      `  ${auto}`,
+      ')',
+      'for site in "${SITES[@]}"; do',
+      '  (cd "$site" && ./server.sh update "$TAG")',
+      'done',
+      ''
+    ].join('\n'));
+    const agents = path.join(home, 'Library', 'LaunchAgents');
+    fs.mkdirSync(agents, { recursive: true });
+    fs.writeFileSync(path.join(agents, 'com.example.collide.plist'), [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
+      `<string>${script}</string>`,
+      '</array></dict></plist>',
+      ''
+    ].join('\n'));
+    writeJlist([
+      { name: 'Accounting Dev', cwd: first },
+      { name: 'Accounting Dev copy', cwd: second },
+      { name: 'The Fairways', cwd: auto },
+      { name: 'ngdpbase-addons', cwd: other }
+    ]);
+
+    const result = run(['update', 'all', '--dry-run']);
+
+    expect(result.status, result.out).toBe(3);
+    expect(result.out).toContain('2 running checkouts use it');
+    expect(result.out).toContain('unknown ownership');
+    expect(result.out).not.toContain('dry-run: would run:');
+    expect(npmLines()).toEqual([]);
+    [first, second, auto, other].forEach((dir, index) => {
+      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
+    });
+  }, 60000);
+});
+
+describe('updater comment fixture', () => {
+  const fixture = [
+    '# Order matters: jimstest first, then satellites. Not here on purpose:',
+    '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
+    'SITES=(',
+    '  /Volumes/hd2A/workspaces/github/ngdpbase',
+    '  /Volumes/hd2A/workspaces/github/fairways-base',
+    '  /Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
+    '  /Volumes/hd2/ngdp-temp-builds/ngdpbase',
+    ')',
+    'for site in "${SITES[@]}"; do',
+    '  (cd "$site" && ./server.sh update "$TAG")',
+    'done',
+    '# skip a checkout that has local changes',
+    ''
+  ].join('\n');
+
+  it('keeps the site list authoritative and pins only the marked basename', () => {
+    const rows = classifyScript(fixture, '/updater.sh', [
+      'Accounting Dev',
+      'yourphr',
+      'jimstest',
+      'The Fairways',
+      'ngdpbase-yourphr'
+    ]);
+    const autos = rows.filter((row) => row[0] === 'path' && row[1] === 'auto').map((row) => row[2]);
+    expect(autos).toEqual([
+      '/Volumes/hd2A/workspaces/github/ngdpbase',
+      '/Volumes/hd2A/workspaces/github/fairways-base',
+      '/Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
+      '/Volumes/hd2/ngdp-temp-builds/ngdpbase'
+    ]);
+    expect(rows.filter((row) => row[0] === 'basename')).toEqual([
+      ['basename', 'pinned', 'ngdpbase-accounting', '/updater.sh']
+    ]);
+    expect(rows.some((row) => row[0] === 'name')).toBe(false);
+    expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
+    expect(rows.some((row) => row[1] === 'pinned' && String(row[2]).includes('yourphr'))).toBe(false);
+  });
 });
