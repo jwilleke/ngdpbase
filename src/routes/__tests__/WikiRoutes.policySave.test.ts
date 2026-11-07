@@ -103,6 +103,20 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
     expect(String(r.json.mock.calls[0][0].error)).toContain('could not be read');
   });
 
+  it.each([
+    ['a key on anyone', { type: 'anyone', key: 'x' }, "'anyone' takes no key"],
+    ['a value on authenticated', { type: 'authenticated', value: 'x' }, "'authenticated' takes no value"]
+  ])('refuses %s, shows the message with the id, and writes nothing (#2284)', async (_name, subject, message) => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([{ ...policy('p4'), subjects: [subject] }]), r);
+    expect(configManager.setProperty).not.toHaveBeenCalled();
+    expect(r.status).toHaveBeenCalledWith(400);
+    const error = String(r.json.mock.calls[0][0].error);
+    expect(error).toContain("'p4'");
+    expect(error).toContain(message);
+  });
+
   it('redirects a form post with the problem in the error', async () => {
     const { routes, configManager } = await makeRoutes();
     const r = res();

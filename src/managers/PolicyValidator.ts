@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS } from './PolicyEvaluator.js';
+import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -19,7 +19,7 @@ const AjvCtor = Ajv as unknown as new (...args: unknown[]) => AjvLike;
 const applyFormats = addFormats as unknown as (ajv: AjvLike) => void;
 
 /**
- * Subject type: one the evaluator matches, `role` or `job` (#1999) —
+ * Subject type: one the evaluator matches, `role`, `job` (#1999), `authenticated` or `anyone` (#2261) —
  * `SUBJECT_MATCHERS` in PolicyEvaluator, not listed here. A policy naming any
  * other type would grant nothing, so it is refused.
  */
@@ -178,6 +178,14 @@ interface PolicySchema {
   properties: Record<string, unknown>;
 }
 
+/** #2284: `authenticated` and `anyone` take neither a value nor a key; say which one to remove. */
+function valuelessSubjectProblem(subject: PolicySubject | null | undefined): string | null {
+  if (!subject || !VALUELESS_SUBJECT_TYPES.includes(subject.type)) return null;
+  if (subject.value !== undefined) return `'${subject.type}' takes no value; remove it`;
+  if (subject.key !== undefined) return `'${subject.type}' takes no key; remove it`;
+  return null;
+}
+
 /**
  * PolicyValidator - Validates policy schemas and detects conflicts
  * Ensures policy integrity and prevents conflicting rules
@@ -277,7 +285,13 @@ class PolicyValidator extends BaseManager {
                   type: 'string'
                 }
               },
-              oneOf: [{ required: ['type', 'value'] }, { required: ['type', 'key', 'value'] }]
+              // #2261: `role` and `job` need a value; `authenticated` and `anyone` take none
+              // (a value on them is refused in validateBusinessLogic, with a message that says so).
+              oneOf: [
+                { required: ['type', 'value'], properties: { type: { not: { enum: VALUELESS_SUBJECT_TYPES } } } },
+                { required: ['type', 'key', 'value'], properties: { type: { not: { enum: VALUELESS_SUBJECT_TYPES } } } },
+                { properties: { type: { enum: VALUELESS_SUBJECT_TYPES } } }
+              ]
             }
           },
           resources: {
@@ -433,7 +447,10 @@ class PolicyValidator extends BaseManager {
       const actions = Array.isArray((policy as { actions?: unknown } | null)?.actions) ? (policy as { actions: unknown[] }).actions : [];
       const unknown = actions.filter((a) => typeof a === 'string' && a !== '*' && !Object.prototype.hasOwnProperty.call(definitions, a))
         .map((a) => `action '${String(a)}' is not a defined permission; use a name from ngdpbase.permissions.definitions (add-on permissions included), or '*'`);
-      return [...schema, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
+      const subjects = Array.isArray((policy as { subjects?: unknown } | null)?.subjects) ? (policy as { subjects: unknown[] }).subjects : [];
+      const extra = subjects.map((sub) => valuelessSubjectProblem(sub as PolicySubject)).filter((m): m is string => !!m)
+        .map((m) => `subjects: ${m}`);
+      return [...schema, ...extra, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
     });
   }
 
@@ -465,7 +482,13 @@ class PolicyValidator extends BaseManager {
     // Check for duplicate subjects
     const subjectKeys = new Set<string>();
     policy.subjects.forEach((subject, index) => {
-      const key = `${subject.type}:${subject.value || subject.key}`;
+      const valueless = VALUELESS_SUBJECT_TYPES.includes(subject.type);
+      const extra = valuelessSubjectProblem(subject);
+      if (extra) {
+        errors.push({ type: 'business', field: `subjects[${index}]`, message: extra });
+      }
+      // #2284: a valueless type is one subject whatever extra fields it carries.
+      const key = valueless ? subject.type : `${subject.type}:${subject.value || subject.key || ''}`;
       if (subjectKeys.has(key)) {
         errors.push({
           type: 'business',
@@ -822,6 +845,11 @@ class PolicyValidator extends BaseManager {
    * @returns {boolean} True if subjects match
    */
   subjectsMatch(s1: PolicySubject, s2: PolicySubject): boolean {
+    // #2284: `anyone` overlaps every subject; `authenticated` every one but anonymous.
+    if (s1.type === 'anyone' || s2.type === 'anyone') return true;
+    if (s1.type === 'authenticated' || s2.type === 'authenticated') {
+      return s1.type !== 'anonymous' && s2.type !== 'anonymous';
+    }
     if (s1.type !== s2.type) return false;
 
     switch (s1.type) {
@@ -833,6 +861,7 @@ class PolicyValidator extends BaseManager {
     case 'attribute':
       return s1.key === s2.key && s1.value === s2.value;
     case 'authenticated':
+    case 'anyone':
     case 'anonymous':
     case 'admin':
       return true; // These are global

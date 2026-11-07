@@ -15,11 +15,12 @@
  * how a field gets added to one and missed in the others.
  */
 
-/** Who a policy grants to. The evaluator matches `role` and `job` (#1999), its `SUBJECT_MATCHERS`. */
+/** Who a policy grants to. The evaluator matches `role`, `job` (#1999), `authenticated` and `anyone` (#2261), its `SUBJECT_MATCHERS`. */
 export interface PolicySubject {
-  /** `role`, or `job` for a scheduled job acting as itself (#1999). */
+  /** `role`, `job` for a scheduled job acting as itself (#1999), or `authenticated` / `anyone` (#2261). */
   type: string;
-  value: string;
+  /** The role or the job id. `authenticated` and `anyone` take none. */
+  value?: string;
 }
 
 /**

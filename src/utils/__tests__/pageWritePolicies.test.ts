@@ -52,4 +52,42 @@ describe('pageWritePoliciesToReview (#2255)', () => {
     expect(lines[0]).toMatch(/'my-own' grants page-edit .* to editor/);
     expect(lines[1]).toMatch(/'no-docs' is a deny/);
   });
+
+  test('a page write granted to anyone or to authenticated is flagged, saying who can write', () => {
+    const lines = pageWritePoliciesToReview([
+      { id: 'open-edit', effect: 'allow', subjects: [{ type: 'anyone' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-read', 'page-edit'] },
+      { id: 'signed-in-create', effect: 'allow', subjects: [{ type: 'authenticated' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['pushed-pages-edit', 'page-create'] },
+      { id: 'read-only', effect: 'allow', subjects: [{ type: 'anyone' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-read'] }
+    ] as Policy[]);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/'open-edit' grants page-edit to anyone, including signed-out visitors/);
+    expect(lines[1]).toMatch(/'signed-in-create' grants pushed-pages-edit, page-create to every signed-in user/);
+  });
+
+  test('any non-read allow to anyone or authenticated is flagged, including other page actions and missing actions', () => {
+    const base = { effect: 'allow', resources: [{ type: 'page', pattern: '*' }] };
+    const lines = pageWritePoliciesToReview([
+      { ...base, id: 'raw', subjects: [{ type: 'anyone' }], actions: ['page-raw-edit'] },
+      { ...base, id: 'cat', subjects: [{ type: 'authenticated' }], actions: ['page-categorize'] },
+      { ...base, id: 'pub', subjects: [{ type: 'anyone' }], actions: ['page-public'] },
+      { ...base, id: 'admin', subjects: [{ type: 'authenticated' }], actions: ['admin-config'] },
+      { ...base, id: 'missing', subjects: [{ type: 'anyone' }] },
+      { ...base, id: 'empty', subjects: [{ type: 'authenticated' }], actions: [] }
+    ] as Policy[]);
+    expect(lines).toHaveLength(6);
+    expect(lines[0]).toMatch(/'raw' grants page-raw-edit to anyone, including signed-out visitors/);
+    expect(lines[1]).toMatch(/'cat' grants page-categorize to every signed-in user/);
+    expect(lines[4]).toMatch(/'missing' grants \* to anyone/);
+    expect(lines[5]).toMatch(/'empty' grants \* to every signed-in user/);
+  });
+
+  test('a deny for anyone or authenticated is not flagged as a grant', () => {
+    const lines = pageWritePoliciesToReview([
+      { id: 'deny-anyone', effect: 'deny', subjects: [{ type: 'anyone' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-edit'] },
+      { id: 'deny-signed-in', effect: 'deny', subjects: [{ type: 'authenticated' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-create'] }
+    ] as Policy[]);
+    expect(lines).toHaveLength(2);
+    for (const l of lines) expect(l).toMatch(/is a deny/);
+    expect(lines.join()).not.toMatch(/signed-out|every signed-in/);
+  });
 });

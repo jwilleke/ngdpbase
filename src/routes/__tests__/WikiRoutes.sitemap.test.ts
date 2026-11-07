@@ -161,6 +161,25 @@ describe('GET /sitemap.xml', () => {
       expect(res.body).not.toContain('<loc>');
     });
 
+    test('an anyone deny of page-read beats an anonymous allow', async () => {
+      const res = makeRes();
+      await makeRoutes({
+        policies: [
+          ALLOW_ANON[0],
+          { id: 'no-read', effect: 'deny', subjects: [{ type: 'anyone' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read'] }
+        ]
+      }).sitemap(req(), res);
+      expect(res.body).not.toContain('<loc>');
+    });
+
+    test('an anyone allow of page-read counts as an anonymous reader', async () => {
+      const res = makeRes();
+      await makeRoutes({
+        policies: [{ ...ALLOW_ANON[0], id: 'open', subjects: [{ type: 'anyone' }] }]
+      }).sitemap(req(), res);
+      expect(res.body).toContain('<loc>');
+    });
+
     test('an empty or missing policy list yields no URLs', async () => {
       const res = makeRes();
       await makeRoutes({ policies: [] }).sitemap(req(), res);

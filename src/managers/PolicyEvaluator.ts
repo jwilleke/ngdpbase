@@ -296,16 +296,33 @@ export const RESOURCE_MATCHERS: Record<string, (pattern: string, pageName: strin
  * PolicyValidator accepts: a type with no matcher here would be a policy that
  * grants nothing.
  */
-export const SUBJECT_MATCHERS: Record<string, (value: string, userContext: UserContext | undefined) => boolean> = {
+export const SUBJECT_MATCHERS: Record<string, (value: string | undefined, userContext: UserContext | undefined) => boolean> = {
   /** A subject holding the role. */
-  role: (value, userContext) => (userContext?.roles ?? []).includes(value),
+  role: (value, userContext) => typeof value === 'string' && (userContext?.roles ?? []).includes(value),
   /**
    * A scheduled job acting as itself, by its id (#1999). The PIP gives a
    * scheduled run's subject `job` only when a policy names the job, and only
    * for the system principal's context.
    */
-  job: (value, userContext) => typeof userContext?.job === 'string' && userContext.job === value
+  job: (value, userContext) => typeof userContext?.job === 'string' && userContext.job === value,
+  /**
+   * Any signed-in user, whatever their roles (#2261). An agent token is its
+   * account, so it counts. Not a job's own subject (`job` is set; a job is
+   * not signed in, it matches `anyone` and its `job` policies only), and not
+   * a share-link visitor: a share is covered by its own resources, never by a
+   * grant to the signed-in (the PDP's share ceiling decides first; this is
+   * the second line). Takes no value.
+   */
+  authenticated: (_value, userContext) => userContext?.isAuthenticated === true && !userContext.viaShare && typeof userContext.job !== 'string',
+  /** Every caller: anonymous, a share visitor, a job and an admin too, so a deny for `anyone` refuses admin (#2261). Takes no value. */
+  anyone: () => true
 };
+
+/**
+ * The subject types that take no `value` (#2261), for the validator. A value
+ * on one is refused rather than ignored.
+ */
+export const VALUELESS_SUBJECT_TYPES: readonly string[] = ['authenticated', 'anyone'];
 
 const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
 
