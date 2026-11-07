@@ -13,6 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [5.43.0] - 2026-11-07
+
+### Upgrade notes
+
+- __#2255__ — the `access:` frontmatter key is removed. Page writes are now decided by system-category policies, with conditions and deny-overrides (#2265). A site that relied on `access:` stamps must express them as policies in `ngdpbase.access.policies`. At boot, the startup log and Admin → needs attention list the categories that no policy lets anyone edit (the "Access policies need review" notice). See [docs/access-policies.md](docs/access-policies.md).
+- __#2281__ — saving `ngdpbase.access.policies` in Admin → Configuration is now checked. A policy with a problem, or an action that is not a defined permission, is refused and nothing is written (#2281).
+- __#2289__ — on save and delete, a signed-out JSON request now gets 401 instead of 403; a signed-out form goes to sign-in (#2292).
+
+### Added
+
+- __#2255__ — page writes are decided by the page's system-category and the policies, with conditions and deny-overrides, and `access:` frontmatter is removed (#2265). `PageManager` decides every page write (#1815, #2257).
+- __#2261__ — attribute-based access in policies: condition operators and the condition tree (#2277), `authenticated` and `anyone` policy subjects (#2280), and subject attributes with `subject:aal` (#2286).
+- __#2278__ — Admin → Configuration checks access policies when `ngdpbase.access.policies` is saved and when it loads (#2281).
+- __#2245__ — `/my/vaults` lists pages by vault and shows whether each is encrypted (#2253).
+- __#2246__ — boot warns about the legacy `ngdpbase.stores.<kind>.owner` and `encrypt` keys (#2254).
+
+### Fixed
+
+- __#2264__ — New Token on `/profile` follows the step-up reauth answer (#2264).
+- __#2275__ — the audit record names a refused page save or create, with the `policyIds` that refused it (#2275).
+- __#2288__, __#2289__ — a refusal names the allow whose condition was not met (`metadata.conditionNotMet`, ids only), and a signed-out page save or delete goes to sign-in, or gets 401 for JSON (#2292).
+- __#2290__ — an ingest update keeps the page's creation time and has one `lastModified` source (#2291).
+- __#2241__ — `./server.sh update` checks readiness over https on a TLS site (#2242).
+
+### Changed
+
+- Every `/admin` dashboard section card is full width (#2273), and `/profile` cards are full width with only Account Information open by default (#2274).
+- Theme: card outlines are 2px at 3:1 contrast in every theme (#2266).
+- Docs: planning for attribute-based access in config (#2261, #2262).
+
 ## [5.42.0] - 2026-11-02
 
 ### Added
