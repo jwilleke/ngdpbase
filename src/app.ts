@@ -1088,6 +1088,8 @@ void (async (): Promise<void> => {
             ...subject,
             roles,
             ...(aalCap !== undefined ? { aalCap } : {}),
+            // #2287: a verified JWT that carries no level (not an agent token, no `aal`) has no `subject:aal`.
+            ...(!result.viaToken && result.aal === undefined ? { bearerWithoutLevel: true as const } : {}),
             ipAddress: req.ip,
             // #946: scopes ride on userContext so they reach both the ACL
             // scope gate and the save path (for via-token provenance) through

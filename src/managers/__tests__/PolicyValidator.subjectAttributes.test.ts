@@ -43,3 +43,38 @@ describe('policyProblems and subject attributes', () => {
     expect(v.policyProblems(withCondition({ attribute: 'subject:department-id', 'greater-or-equal': 2 })).join(' ')).toContain("applies 'greater-or-equal' to 'subject:department-id' (string)");
   });
 });
+
+describe('subjectAttributeProblems — the key itself (#2287)', () => {
+  test('the shipped declaration has no problem', async () => {
+    expect((await validatorWith()).subjectAttributeProblems(core['ngdpbase.access.subject-attributes'])).toEqual([]);
+  });
+
+  test('redefining aal or id is reported, with where and what to do', async () => {
+    const problems = (await validatorWith()).subjectAttributeProblems({ aal: { type: 'integer', from: 'profile:aal' }, id: { type: 'string', from: 'profile:id' } });
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain("'aal' in ngdpbase.access.subject-attributes cannot be redefined");
+    expect(problems[0]).toContain('remove it');
+  });
+
+  test('a sensitive account field and a non-object are reported', async () => {
+    const v = await validatorWith();
+    expect(v.subjectAttributeProblems({ x: { type: 'string', from: 'account:email' } }).join(' ')).toContain("'account:email' cannot be used in a condition");
+    expect(v.subjectAttributeProblems('nope')).toHaveLength(1);
+  });
+
+  test('a policy reading subject:aal is judged against the built-in even when config redefines it', async () => {
+    const v = await validatorWith({ 'ngdpbase.access.subject-attributes': { aal: { type: 'string', from: 'profile:department' } } });
+    expect(v.policyProblems(withCondition({ attribute: 'subject:aal', 'greater-or-equal': 2 }))).toEqual([]);
+  });
+});
+
+describe('add-ons that ship config (#2287)', () => {
+  test('none declares subject:id or subject:aal with another meaning', () => {
+    const dir = path.join(__dirname, '../../../addons');
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir).map((a) => path.join(dir, a, 'config/default-config.json')).filter((f) => fs.existsSync(f)) : [];
+    for (const f of files) {
+      const declared = (JSON.parse(fs.readFileSync(f, 'utf8')) as Record<string, unknown>)['ngdpbase.access.subject-attributes'];
+      expect({ f, problems: declared === undefined ? [] : new PolicyValidator({ getManager: () => null }).subjectAttributeProblems(declared) }).toEqual({ f, problems: [] });
+    }
+  });
+});

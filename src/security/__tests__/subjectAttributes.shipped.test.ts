@@ -94,6 +94,25 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
       expect((await decide({ ...token(undefined), signIn: signedIn(3).signIn })).permit).toBe(false);
     });
 
+    test('a bearer JWT with no recorded level has none: refused by an AAL1 rule too, unlike a pre-#1523 session (#2287)', async () => {
+      const { signIn: _gone, ...bare } = signedIn(2);
+      expect((await decide({ ...bare, bearerWithoutLevel: true })).permit).toBe(false);
+      await boot([policy('qa-edit-aal1', 'allow', ['page-edit'], { attribute: 'subject:aal', 'greater-or-equal': 1 })]);
+      expect((await decide(bare)).permit).toBe(true);
+      expect((await decide({ ...bare, bearerWithoutLevel: true })).permit).toBe(false);
+    });
+
+    test('config redefining aal or id changes nothing: aal is still the sign-in level, id still the account (#2287)', async () => {
+      await boot([policy('qa-edit-aal2', 'allow', ['page-edit'], AAL2)]);
+      config['ngdpbase.access.subject-attributes'] = { aal: { type: 'integer', from: 'profile:level' }, id: { type: 'string', from: 'profile:department' } };
+      accounts.quinn = { level: 3, department: 'x' };
+      expect((await decide(signedIn(1))).permit).toBe(false);
+      expect((await decide(signedIn(2))).permit).toBe(true);
+      expect(pip.subjectAttribute({ ...aalFactsOf(signedIn(2)), username: 'Quinn', isAuthenticated: true }, 'subject:id')).toBe('quinn');
+      expect(evaluator.declaredSubjectAttributes().aal).toEqual({ type: 'integer', from: 'sign-in' });
+      expect(evaluator.conditionProblemsInForce()).toEqual([]);
+    });
+
     test('a share visitor has no level', async () => {
       expect((await decide(signedIn(3, { viaShare: { id: 's1', resources: [], actions: ['page-edit'] } }))).permit).toBe(false);
     });

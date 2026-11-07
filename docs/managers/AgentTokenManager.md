@@ -51,7 +51,7 @@ Mint, extend and revoke emit audit events through `AuditManager` ([#1111](https:
 
 | Event | `action` | Carries |
 |---|---|---|
-| `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
+| `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt`, `aal` (the level stored with the token, `null` when none) |
 | `token-extend` | `token-extend` | `id`, `owner`, `name`, `previousExpiresAt`, `expiresAt` |
 | `token-revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
 

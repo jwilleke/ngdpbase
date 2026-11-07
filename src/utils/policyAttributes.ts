@@ -139,6 +139,8 @@ export interface AalFacts {
   viaToken?: { aal?: unknown } | null;
   /** A share visitor has no sign-in. */
   viaShare?: unknown;
+  /** A bearer JWT (Authentik): verified, but it records no sign-in level, so the subject has none (#2287). */
+  bearerWithoutLevel?: unknown;
   /** A background job: the level stored when the job was requested. */
   grantedAal?: unknown;
   /** A background job (`JobSubject`): it has no session to read. */
@@ -153,14 +155,16 @@ export interface AalFacts {
  *   stored one has none.
  * - A background job: the level stored with the job's request. A job with
  *   none (a schedule, boot, a request from before this) has none.
+ * - A bearer JWT that records no level (Authentik): none. It is not a session
+ *   from before sign-ins were recorded, so the AAL 1 rule below does not apply.
  * - A session: its sign-in record's level; a session from before sign-ins
- *   were recorded is AAL 1, as `AuthManager` treats it.
+ *   were recorded (#1523) is AAL 1, as `AuthManager` treats it.
  *
  * Capped at `aalCap`, as a role is. Reads the record; it never works the level
  * out from factors.
  */
 export function effectiveAal(subject: AalFacts | null | undefined): SubjectAal | undefined {
-  if (!subject?.isAuthenticated || subject.viaShare) return undefined;
+  if (!subject?.isAuthenticated || subject.viaShare || subject.bearerWithoutLevel) return undefined;
   let raw: SubjectAal | undefined;
   if (subject.viaToken) raw = toAal(subject.viaToken.aal);
   else if (subject.resolveRolesNow) raw = toAal(subject.grantedAal);
@@ -181,6 +185,7 @@ export function aalFactsOf(subject: object | null | undefined): AalFacts {
     aalCap: typeof s.aalCap === 'number' ? s.aalCap : undefined,
     viaToken: s.viaToken as AalFacts['viaToken'],
     viaShare: s.viaShare,
+    bearerWithoutLevel: s.bearerWithoutLevel,
     grantedAal: s.grantedAal,
     resolveRolesNow: s.resolveRolesNow
   };
@@ -195,13 +200,42 @@ export interface DeclaredSubjectAttribute {
   from?: string;
 }
 
-/** `subject:id` keeps working on a site whose configuration does not declare it. `aal` has no fallback. */
-const BUILT_IN_SUBJECT_ATTRIBUTES: Readonly<Record<string, DeclaredSubjectAttribute>> = { id: { type: 'identity', from: 'account:id' } };
+/**
+ * `id` and `aal` mean what they mean here, whatever the configuration (or an
+ * add-on's default-config.json) says (#2287). `aal` is read from the sign-in
+ * record and `id` from the account; a site that could redefine either could
+ * make `subject:aal` read a field it controls and pass a "second factor" rule.
+ */
+export const PINNED_SUBJECT_ATTRIBUTES: Readonly<Record<string, DeclaredSubjectAttribute>> = {
+  id: { type: 'identity', from: 'account:id' },
+  aal: { type: 'integer', from: 'sign-in' }
+};
 
-/** The subject attributes a site declares, with `id` always there. Anything not an object is ignored. */
+/** The subject attributes a site declares, with `id` and `aal` pinned to their built-in meaning. Anything not an object is ignored. */
 export function declaredSubjectAttributes(raw: unknown): Record<string, DeclaredSubjectAttribute> {
   const declared = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, DeclaredSubjectAttribute>) : {};
-  return { ...BUILT_IN_SUBJECT_ATTRIBUTES, ...declared };
+  return { ...declared, ...PINNED_SUBJECT_ATTRIBUTES };
+}
+
+/**
+ * What is wrong with the value of `ngdpbase.access.subject-attributes` itself
+ * (#2287), one message each: not an object; `id` or `aal` declared with any
+ * meaning but the built-in one (the built-in is kept regardless; the same
+ * declaration as the built-in is harmless and not reported); and any other
+ * declaration `subjectDeclarationProblem` refuses. Used on save, on load and at boot.
+ */
+export function subjectAttributesProblems(raw: unknown, sensitive: readonly string[]): string[] {
+  if (raw === null || raw === undefined) return [];
+  if (typeof raw !== 'object' || Array.isArray(raw)) return ['ngdpbase.access.subject-attributes must be an object of attribute name to { type, from }'];
+  return Object.entries(raw as Record<string, DeclaredSubjectAttribute>).flatMap(([name, decl]) => {
+    const pinned = Object.hasOwn(PINNED_SUBJECT_ATTRIBUTES, name) ? PINNED_SUBJECT_ATTRIBUTES[name] : undefined;
+    if (pinned) {
+      const same = !!decl && typeof decl === 'object' && decl.type === pinned.type && decl.from === pinned.from;
+      return same ? [] : [`subject attribute '${name}' in ngdpbase.access.subject-attributes cannot be redefined: it is built in (type ${pinned.type}, from ${pinned.from}) and keeps that meaning; remove it`];
+    }
+    const problem = subjectDeclarationProblem(name, decl, sensitive);
+    return problem ? [problem] : [];
+  });
 }
 
 /**

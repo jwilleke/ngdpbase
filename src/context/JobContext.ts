@@ -33,7 +33,7 @@
 
 import type { JobSubject, AgentTokenGrant, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
-import { effectiveAal } from '../utils/policyAttributes.js';
+import { effectiveAal, toAal } from '../utils/policyAttributes.js';
 
 /**
  * Where the work came from.
@@ -106,6 +106,13 @@ export interface RequestIdentity {
   viaShare?: ShareGrant;
   viaProxy?: ProxyClaim;
   ipAddress?: string;
+  /** An `ApiContext` holds the request's subject here, a `WikiContext` as `userContext`: the level is read from that, not from the wrapper (#2287). */
+  subject?: object | null;
+  userContext?: object | null;
+  /** A `JobContext` handed back in: it already holds the level its requester's session had. */
+  origin?: unknown;
+  requestedAt?: unknown;
+  aal?: unknown;
 }
 
 /**
@@ -143,9 +150,21 @@ export function jobContextFromRequest(
   };
 }
 
-/** The level the requester's session or token has right now (#2261), as a field to store with the job; nothing when it has none. */
+/**
+ * The level the requester's session or token has right now (#2261), as a field
+ * to store with the job; nothing when it has none. Read from the granting
+ * session's own subject whatever the caller passed (#2287): a request's subject
+ * as is, an `ApiContext`'s `subject`, a `WikiContext`'s `userContext`, or a
+ * `JobContext` handed back in, whose stored level is kept as it is.
+ */
 function aalOf(identity: RequestIdentity | null | undefined): { aal?: 1 | 2 | 3 } {
-  const aal = effectiveAal(identity);
+  if (!identity) return {};
+  if (typeof identity.origin === 'string' && typeof identity.requestedAt === 'string') {
+    const kept = toAal(identity.aal);
+    return kept ? { aal: kept } : {};
+  }
+  const wrapped = identity.subject ?? identity.userContext;
+  const aal = effectiveAal(wrapped && typeof wrapped === 'object' ? (wrapped) : identity);
   return aal ? { aal } : {};
 }
 

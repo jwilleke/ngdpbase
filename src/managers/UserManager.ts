@@ -208,6 +208,12 @@ export interface PermissionSubject {
    * account's cap, since it is the actor who signs in (#1762).
    */
   aalCap?: import('../providers/BaseAuthProvider.js').Aal;
+  /**
+   * Set by the bearer middleware on a subject authenticated by a JWT that
+   * records no sign-in level (Authentik, #2287): its `subject:aal` is missing,
+   * not AAL 1. Set from the verified result, never from a request field.
+   */
+  bearerWithoutLevel?: true;
 }
 
 /**

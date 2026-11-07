@@ -177,6 +177,8 @@ export interface TokenInput extends CommonInput {
   previousExpiresAt?: string;
   /** Only meaningful for `revoke`; ignored otherwise. */
   revokedBy?: string;
+  /** Only meaningful for `mint` (#2287): the sign-in level stored with the token; absent when it stored none. */
+  aal?: 1 | 2 | 3;
 }
 
 /**
@@ -522,7 +524,7 @@ export async function recordAuditEvent(
  * every event is useless as a filter.
  */
 export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
-  const { op, id, owner, ownerUser, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
+  const { op, id, owner, ownerUser, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken, aal } = input;
   const who = whoOf(input);
 
   const metadata: Record<string, unknown> = {
@@ -537,6 +539,8 @@ export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
   if (op === 'mint') {
     metadata.scopes = [...(scopes ?? [])];
     metadata.expiresAt = expiresAt;
+    // #2287: the level the token holds, or null when it stored none; the record that answers "was this minted after a second factor?"
+    metadata.aal = aal ?? null;
   }
 
   if (op === 'extend') {

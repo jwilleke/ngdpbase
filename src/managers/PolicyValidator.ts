@@ -4,7 +4,8 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { declaredSubjectAttributes } from '../utils/policyAttributes.js';
+import { declaredSubjectAttributes, subjectAttributesProblems } from '../utils/policyAttributes.js';
+import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
@@ -454,6 +455,19 @@ class PolicyValidator extends BaseManager {
         .map((m) => `subjects: ${m}`);
       return [...schema, ...extra, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
     });
+  }
+
+  /**
+   * The problems in the value of `ngdpbase.access.subject-attributes` (#2287):
+   * `id` and `aal` declared with another meaning (refused; the built-in is kept
+   * regardless), a bad type or source, a sensitive account field. For save and
+   * load in Admin → Configuration, and the boot warning. Empty when fine.
+   *
+   * @param {unknown} declared - The value of `ngdpbase.access.subject-attributes`
+   * @returns {string[]} One line per problem
+   */
+  subjectAttributeProblems(declared: unknown): string[] {
+    return subjectAttributesProblems(declared, SENSITIVE_USER_FIELDS);
   }
 
   /**

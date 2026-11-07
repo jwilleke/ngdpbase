@@ -705,6 +705,22 @@ describe('#1111 the token lifecycle is audited', () => {
     });
   });
 
+  test('a mint\'s record carries the level stored with the token, or null when none (#2287)', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    const at = (aal: number | null, extra: Record<string, unknown> = {}) =>
+      ({ ...subject('alice'), ...(aal === null ? {} : { signIn: { provider: 'password', factors: [], at: '2026-01-01T00:00:00Z', aal } }), ...extra }) as unknown as PermissionSubject;
+    const two = (await m.mint(at(2), 'two', ['page-read'])).record;
+    const one = (await m.mint(at(1), 'one', ['page-read'])).record;
+    const none = (await m.mint(at(3, { viaShare: { id: 's' } }), 'none', ['page-read'])).record;
+    const minted = (id: string) => events.find((e) => e.eventType === 'token-mint' && (e.metadata as { id: string }).id === id).metadata;
+    expect(minted(two.id)).toMatchObject({ aal: 2 });
+    expect(minted(one.id)).toMatchObject({ aal: 1 });
+    expect(minted(none.id)).toMatchObject({ aal: null });
+    expect(two.aal).toBe(2); // the audited level is the stored one
+  });
+
   test('a revoke is audited with who did it', async () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);

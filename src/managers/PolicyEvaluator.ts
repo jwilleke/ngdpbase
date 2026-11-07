@@ -3,7 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredSubjectAttributes, literalFits, literalType, subjectDeclarationProblem, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredSubjectAttributes, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
@@ -458,6 +458,8 @@ class PolicyEvaluator extends BaseManager {
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
       lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
     }
+    // #2287: the declaration itself, add-on defaults included (this reads the merged value). `id` and `aal` keep their built-in meaning either way.
+    lines.push(...subjectAttributesProblems(config.getProperty(SUBJECT_ATTRIBUTES_KEY, null), SENSITIVE_USER_FIELDS));
     const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
     // An installed add-on's category is declared even while the add-on is off

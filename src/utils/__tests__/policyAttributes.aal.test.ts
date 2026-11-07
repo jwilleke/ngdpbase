@@ -6,7 +6,7 @@
  * none stored has none. Sabotage check: read `aal` from the request in
  * `jobContextFromRequest` or `mint`, or drop the `aalCap`, and the cap rows go red.
  */
-import { effectiveAal } from '../policyAttributes';
+import { effectiveAal, aalFactsOf, declaredSubjectAttributes, subjectAttributesProblems, PINNED_SUBJECT_ATTRIBUTES } from '../policyAttributes';
 import { jobContextFromRequest, toPermissionSubject } from '../../context/JobContext';
 
 const signIn = (aal: number) => ({ provider: 'password', factors: [], at: '2026-01-01T00:00:00Z', aal });
@@ -77,5 +77,79 @@ describe('a job requested by a user stores that user\'s level (job grants)', () 
     const old = { username: 'quinn', origin: 'request' as const, requestedAt: '2026-01-01T00:00:00Z' };
     expect(toPermissionSubject(old)).not.toHaveProperty('grantedAal');
     expect(toPermissionSubject({ ...old, aal: 2 })).toMatchObject({ grantedAal: 2 });
+  });
+});
+
+describe('the level a job stores is the granting session\'s, whatever object carries it (#2287)', () => {
+  // The shapes callers hand over: a request subject, an ApiContext (its `subject`), a WikiContext (its `userContext`), a JobContext handed back in.
+  const apiContext = (subject: Record<string, unknown>) => ({ username: subject.username as string, isAuthenticated: true, subject });
+  const wikiContext = (subject: Record<string, unknown>) => ({ userContext: subject });
+  const jobContext = (aal?: number) => ({ username: 'quinn', origin: 'request', requestedAt: '2026-01-01T00:00:00Z', ...(aal ? { aal } : {}) });
+
+  test('an AAL2 session through ApiContext stores 2, not 1', () => {
+    expect(jobContextFromRequest(apiContext(session(2)) as never).aal).toBe(2);
+    expect(jobContextFromRequest(apiContext(session(3, { aalCap: 2 })) as never).aal).toBe(2);
+  });
+
+  test('a WikiContext stores its session\'s level', () => {
+    expect(jobContextFromRequest(wikiContext(session(2)) as never).aal).toBe(2);
+    expect(jobContextFromRequest(wikiContext(session(1)) as never).aal).toBe(1);
+  });
+
+  test('a JobContext handed back in keeps its level, and a forged one is not believed on a request', () => {
+    expect(jobContextFromRequest(jobContext(2) as never).aal).toBe(2);
+    expect(jobContextFromRequest(jobContext() as never).aal).toBeUndefined();
+    expect(jobContextFromRequest(jobContext(7) as never).aal).toBeUndefined();
+  });
+
+  test('a token or share behind the wrapper still gives the token\'s level, or none', () => {
+    expect(jobContextFromRequest(apiContext(session(1, { viaToken: { id: 't', name: 'n', scopes: [], aal: 2 } })) as never).aal).toBe(2);
+    expect(jobContextFromRequest(wikiContext(session(3, { viaShare: { id: 's' } })) as never).aal).toBeUndefined();
+    expect(jobContextFromRequest(apiContext(session(3, { viaToken: { id: 't', name: 'n', scopes: [] } })) as never).aal).toBeUndefined();
+  });
+});
+
+describe('a bearer JWT with no recorded sign-in level has no subject:aal (#2287)', () => {
+  test('it is missing, not AAL 1, and not the AAL 1 of a session from before #1523', () => {
+    expect(effectiveAal({ isAuthenticated: true, bearerWithoutLevel: true })).toBeUndefined();
+    expect(effectiveAal({ isAuthenticated: true, bearerWithoutLevel: true, aalCap: 3 })).toBeUndefined();
+    // the pre-#1523 session, which has no sign-in record, is still 1
+    expect(effectiveAal({ isAuthenticated: true })).toBe(1);
+  });
+
+  test('the marker survives the PDP\'s rebuild of the subject', () => {
+    expect(aalFactsOf({ bearerWithoutLevel: true })).toMatchObject({ bearerWithoutLevel: true });
+    expect(effectiveAal({ ...aalFactsOf({ bearerWithoutLevel: true }), isAuthenticated: true })).toBeUndefined();
+  });
+});
+
+describe('id and aal are pinned (#2287)', () => {
+  const evil = { id: { type: 'string', from: 'profile:department' }, aal: { type: 'integer', from: 'account:level' }, 'department-id': { type: 'string', from: 'profile:department' } };
+
+  test('config cannot redefine them; other declarations are kept', () => {
+    const declared = declaredSubjectAttributes(evil);
+    expect(declared.aal).toEqual({ type: 'integer', from: 'sign-in' });
+    expect(declared.id).toEqual({ type: 'identity', from: 'account:id' });
+    expect(declared['department-id']).toEqual(evil['department-id']);
+  });
+
+  test('they are there when config declares nothing, or not an object', () => {
+    for (const raw of [null, undefined, [], 'x']) expect(Object.keys(declaredSubjectAttributes(raw)).sort()).toEqual(['aal', 'id']);
+  });
+
+  test('declaring either with another meaning is reported; the same declaration is not', () => {
+    const problems = subjectAttributesProblems(evil, []);
+    expect(problems).toHaveLength(2);
+    expect(problems.join(' ')).toContain("'aal' in ngdpbase.access.subject-attributes cannot be redefined");
+    expect(problems.join(' ')).toContain("'id' in ngdpbase.access.subject-attributes cannot be redefined");
+    expect(subjectAttributesProblems({ id: PINNED_SUBJECT_ATTRIBUTES.id, aal: PINNED_SUBJECT_ATTRIBUTES.aal }, [])).toEqual([]);
+    expect(subjectAttributesProblems({ aal: null }, []).join(' ')).toContain('cannot be redefined');
+  });
+
+  test('other declarations are checked as before; not-an-object is reported; nothing is fine', () => {
+    expect(subjectAttributesProblems({ d: { type: 'string', from: 'account:password' } }, ['password']).join(' ')).toContain("'account:password' cannot be used");
+    expect(subjectAttributesProblems({ d: { type: 'string', from: 'profile:department' } }, ['password'])).toEqual([]);
+    expect(subjectAttributesProblems(['x'], [])).toHaveLength(1);
+    expect(subjectAttributesProblems(null, [])).toEqual([]);
   });
 });

@@ -565,6 +565,7 @@ class AgentTokenManager extends BaseManager {
         name: record.name,
         scopes: record.scopes,
         expiresAt: record.expiresAt,
+        ...(aal ? { aal } : {}),
         viaProxy: claim
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-mint of ${id}:`, err)
