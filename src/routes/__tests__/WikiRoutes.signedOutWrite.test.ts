@@ -64,7 +64,7 @@ describe('POST /save by someone not signed in (#2289)', () => {
     const r = res();
     await routes.savePage(req('TestPage', ANON, { accept: 'application/json' }), r);
     expect(r.status).toHaveBeenCalledWith(401);
-    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ ok: false, error: 'Authentication required' }));
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'Authentication required' }));
     expect(r.redirect).not.toHaveBeenCalled();
   });
 
