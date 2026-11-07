@@ -76,6 +76,7 @@ interface SubjectSourceLike {
   subjectFor(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean } | null>;
   pageAttributes?(caller: unknown, pageName: string, knownMetadata?: Record<string, unknown> | null): Promise<PageAttributes>;
   subjectAttribute?(subject: SubjectFacts, name: string): unknown;
+  environmentReader?(): (name: string) => unknown;
 }
 
 interface EvaluationLike { allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null; policyIds?: string[]; conditionNotMet?: string[] }
@@ -636,6 +637,9 @@ export class PolicyDecisionPoint extends BaseManager {
       if (!reads.has(name)) reads.set(name, pip?.subjectAttribute?.(facts, name));
       return reads.get(name);
     };
+    // #2261: and the moment, read once per decision and shared by the page, the capability and the per-category asks.
+    const environment = pip?.environmentReader?.();
+    const readFacts = (name: string): unknown => (name.startsWith('environment:') ? environment?.(name) : readSubject(name));
     let result: EvaluationLike;
     if (request.resource?.type === 'page' && pageName !== '*') {
       // #2255 (XACML): the PEP names the page; the PIP supplies what the
@@ -647,14 +651,14 @@ export class PolicyDecisionPoint extends BaseManager {
         actions,
         userContext,
         attributes: { ...request.attributes, ...page?.attributes },
-        readAttribute: (name) => (name.startsWith('resource:') ? page?.read(name.slice('resource:'.length)) : readSubject(name))
+        readAttribute: (name) => (name.startsWith('resource:') ? page?.read(name.slice('resource:'.length)) : readFacts(name))
       });
     } else {
-      result = await policyEvaluator.evaluateAccess({ pageName, action, actions, userContext, attributes: request.attributes, readAttribute: readSubject });
+      result = await policyEvaluator.evaluateAccess({ pageName, action, actions, userContext, attributes: request.attributes, readAttribute: readFacts });
       // #2255: a page write asked with no page — a token's scope, a proxy
       // grant, an affordance — holds when some category grants it.
       if (!result.allowed && actions.length > 1 && !request.attributes) {
-        result = await this.onSomeCategory(policyEvaluator, userContext, action, actions, readSubject) ?? result;
+        result = await this.onSomeCategory(policyEvaluator, userContext, action, actions, readFacts) ?? result;
       }
     }
     // `hasDecision` false means no policy spoke — NotApplicable, not a deny.
@@ -688,13 +692,13 @@ export class PolicyDecisionPoint extends BaseManager {
     userContext: { username: string; roles: string[]; isAuthenticated: boolean },
     action: string,
     actions: readonly string[],
-    readSubject: (name: string) => unknown
+    readFacts: (name: string) => unknown
   ): Promise<EvaluationLike | null> {
     for (const category of this.declaredCategories(true)) {
       const r = await evaluator.evaluateAccess({
         pageName: '*', action, actions, userContext,
         attributes: { 'system-category': category },
-        readAttribute: (name) => (name.startsWith('resource:') ? undefined : readSubject(name))
+        readAttribute: (name) => (name.startsWith('resource:') ? undefined : readFacts(name))
       });
       if (r.allowed) return r;
     }

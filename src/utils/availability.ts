@@ -162,6 +162,85 @@ function minutesOf(hhmm: unknown): number | null {
   return hours * 60 + mins;
 }
 
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+function knownZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a schedule is switched on: `enabled: false` turns it off, as the site gate reads it. */
+export function scheduleIsEnabled(schedule: Schedule): boolean {
+  return toBoolean(schedule.enabled, true);
+}
+
+// Exactly the keys the site gate reads (resolveAvailability, scheduleIsOpen), plus `name`/`description`, which only label.
+// `exceptions` is declared on Schedule but nothing reads it, so only the empty list the shipped schedules carry is accepted.
+const SCHEDULE_KEYS = ['name', 'description', 'timeZone', 'rules', 'exceptions', 'enabled', 'message'];
+const RULE_KEYS = ['type', 'days', 'startTime', 'endTime'];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The first thing in a schedule that is not in its exact allowed shape, or
+ * `null`. The shape is an allowlist, so a misspelled key reads as a problem,
+ * never as an open window: top-level keys `name`, `description`, `message`
+ * (text), `timeZone` (a known IANA zone), `enabled` (true or false), `rules`
+ * (a list) and `exceptions` (only empty); each rule an object with `type`
+ * (`allow`, `deny` or absent), `days` (a non-empty list of weekday names) and
+ * `startTime` and `endTime` (HH:MM, both or neither). A `deny` rule closes its
+ * whole day, so times on it are a problem rather than silently ignored.
+ * Names the path (`rules[1].dayz`), never a value. The site gate lets a
+ * malformed schedule stay open; a policy must not (#2261).
+ */
+export function scheduleProblem(schedule: Schedule, fallbackZone: string): string | null {
+  const top: unknown = schedule;
+  if (!isPlainObject(top)) return 'the schedule is not an object';
+  for (const key of Object.keys(top)) {
+    if (!SCHEDULE_KEYS.includes(key)) return `${key} is not a schedule setting`;
+  }
+  for (const key of ['name', 'description', 'message']) {
+    if (top[key] !== undefined && typeof top[key] !== 'string') return `${key} is not text`;
+  }
+  if (top.exceptions !== undefined && !(Array.isArray(top.exceptions) && top.exceptions.length === 0)) {
+    return 'exceptions is not read by anything and must be empty';
+  }
+  const zone = schedule.timeZone === undefined ? fallbackZone : schedule.timeZone;
+  if (typeof zone !== 'string' || !zone.trim() || !knownZone(zone)) {
+    return `${schedule.timeZone === undefined ? 'the site time zone (ngdpbase.time-zone)' : 'timeZone'} is not a known time zone`;
+  }
+  if (schedule.enabled !== undefined && typeof schedule.enabled !== 'boolean') return 'enabled is not true or false';
+  if (schedule.rules === undefined) return null;
+  if (!Array.isArray(schedule.rules)) return 'rules is not a list';
+  for (const [i, rule] of (schedule.rules as unknown[]).entries()) {
+    const at = `rules[${i}]`;
+    if (!isPlainObject(rule)) return `${at} is not an object`;
+    for (const key of Object.keys(rule)) {
+      if (!RULE_KEYS.includes(key)) return `${at}.${key} is not a rule setting`;
+    }
+    // Only `allow`, `deny` or no type: scheduleIsOpen reads anything but 'deny' as allow, so a typo like "Deny" would fail open.
+    if (rule.type !== undefined && rule.type !== 'allow' && rule.type !== 'deny') return `${at}.type is not allow or deny`;
+    if (rule.days !== undefined) {
+      if (!Array.isArray(rule.days) || rule.days.length === 0) return `${at}.days is not a non-empty list`;
+      if (rule.days.some((d) => typeof d !== 'string' || !WEEKDAYS.includes(d.trim().toLowerCase()))) return `${at}.days is not a list of weekday names`;
+    }
+    const given = ['startTime', 'endTime'].filter((f) => rule[f] !== undefined);
+    if (rule.type === 'deny' && given.length > 0) return `${at}.${given[0]} is ignored on a deny rule, which closes its whole day`;
+    // With neither time a rule covers its whole day; with one, or a bad one, it cannot be read.
+    if (given.length === 0) continue;
+    for (const f of ['startTime', 'endTime']) {
+      if (minutesOf(rule[f]) === null) return `${at}.${f} is not a time of day (HH:MM), or only one of startTime and endTime is given`;
+    }
+  }
+  return null;
+}
+
 /**
  * Whether a schedule is open at `now`.
  *
