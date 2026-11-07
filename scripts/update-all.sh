@@ -184,6 +184,8 @@ _UA_OWN_KIND=()
 _UA_OWN_SRC=()
 _UA_OWN_NAME=()
 _UA_OWN_NAME_SRC=()
+_UA_BASE_PIN=()
+_UA_BASE_PIN_SRC=()
 _UA_UPDATER=0
 _UA_BLOCK=0
 _UA_BLOCK_WHY=""
@@ -283,6 +285,10 @@ ngdp_update_all_scan_ownership() {
         _UA_OWN_NAME+=("$value")
         _UA_OWN_NAME_SRC+=("$source")
         ;;
+      basename)
+        _UA_BASE_PIN+=("$value")
+        _UA_BASE_PIN_SRC+=("$source")
+        ;;
       note)
         if [ "$policy" = "updater" ]; then
           _UA_UPDATER=1
@@ -293,6 +299,57 @@ ngdp_update_all_scan_ownership() {
         ;;
     esac
   done < "$scan"
+  ngdp_update_all_resolve_basenames
+}
+
+# A "(pinned)" directory basename applies only when one running checkout has
+# that basename. Two checkouts with it are ambiguous: neither is pinned, and
+# unlisted checkouts stay untouched. A checkout the site list already names
+# stays automatic.
+ngdp_update_all_resolve_basenames() {
+  local i=0 base source root base_name r k already
+  local -a matches
+  while [ "$i" -lt "${#_UA_BASE_PIN[@]}" ]; do
+    base="${_UA_BASE_PIN[$i]}"
+    source="${_UA_BASE_PIN_SRC[$i]}"
+    i=$((i + 1))
+    matches=()
+    r=0
+    while [ "$r" -lt "${#_UA_ROOTS[@]}" ]; do
+      root="${_UA_ROOTS[$r]}"
+      r=$((r + 1))
+      base_name="$(basename -- "$root")"
+      if [ "$base_name" = "$base" ]; then
+        matches+=("$root")
+      fi
+    done
+    if [ "${#matches[@]}" -gt 1 ]; then
+      _UA_BLOCK=1
+      _UA_BLOCK_WHY="basename ${base} matches ${#matches[@]} checkouts (${source})"
+      echo "⚠️  Directory name ${base} is pinned, but ${#matches[@]} running checkouts use it. None of them is pinned, and unlisted checkouts are left alone."
+      continue
+    fi
+    if [ "${#matches[@]}" -eq 0 ]; then
+      echo "⚠️  Directory name ${base} is pinned, and no running checkout uses it."
+      continue
+    fi
+    root="${matches[0]}"
+    already=""
+    k=0
+    while [ "$k" -lt "${#_UA_OWN_PATH[@]}" ]; do
+      if [ "${_UA_OWN_PATH[$k]}" = "$root" ] && [ "${_UA_OWN_KIND[$k]}" = "auto" ]; then
+        already="auto"
+      fi
+      k=$((k + 1))
+    done
+    if [ "$already" = "auto" ]; then
+      echo "⚠️  Directory name ${base} is marked pinned, and the updater lists ${root}. The site list stays authoritative."
+      continue
+    fi
+    _UA_OWN_PATH+=("$root")
+    _UA_OWN_KIND+=("pinned")
+    _UA_OWN_SRC+=("$source")
+  done
 }
 
 ngdp_update_all_checkout_word() {

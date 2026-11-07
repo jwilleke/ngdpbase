@@ -15,6 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const MAX_SCRIPT = 512 * 1024;
 const MAX_PLIST = 1024 * 1024;
@@ -181,12 +182,30 @@ function isUpdaterScript(text, filePath) {
 const SITE_ARRAY = /^(SITES|SITE|INSTANCES|INSTANCE|REPOS|REPO|CHECKOUTS|CHECKOUT|TARGETS|TARGET)$|_SITES$/;
 const PIN_ARRAY = /(PIN|PINNED|EXCLUDE|EXCLUDED|SKIP|SKIPPED|HOLD|FREEZE)/i;
 const PIN_WORD = /\b(pinned|pin|exclude|excluded|skip|skipped)\b/i;
+// A directory basename marked (pinned). The marker binds only that token, not
+// every other name on the same comment. At least six characters, so a short
+// English word next to "(pinned)" is not a checkout name.
+const BASENAME_PIN = /(?:^|[^A-Za-z0-9._-])([A-Za-z0-9][A-Za-z0-9._-]{5,80})\s*\(\s*pinned\s*\)/gi;
+
+function explicitBasenamePins(line) {
+  const found = [];
+  const seen = new Set();
+  const re = new RegExp(BASENAME_PIN.source, 'gi');
+  let match;
+  while ((match = re.exec(line))) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      found.push(match[1]);
+    }
+  }
+  return found;
+}
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function classifyScript(text, scriptPath, names) {
+export function classifyScript(text, scriptPath, names) {
   const lines = text.split('\n');
   const arrays = new Map();
   let arrayName = '';
@@ -271,13 +290,23 @@ function classifyScript(text, scriptPath, names) {
         }
       }
       if (/^\s*#/.test(line)) {
-        const comment = line.replace(/^\s*#\s?/, '');
-        for (const appName of names) {
-          if (appName.length < 6) continue;
-          const bound = new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(appName)}([^A-Za-z0-9]|$)`);
-          if (bound.test(comment)) {
-            records.push(['name', 'pinned', appName, scriptPath]);
-            pinCount += 1;
+        const basenamePins = explicitBasenamePins(line);
+        for (const base of basenamePins) {
+          records.push(['basename', 'pinned', base, scriptPath]);
+          pinCount += 1;
+        }
+        // A "(pinned)" basename owns this comment. Other names listed beside
+        // it are not pins. A comment with no such marker can still name one
+        // PM2 app ("Accounting Dev is pinned").
+        if (basenamePins.length === 0) {
+          const comment = line.replace(/^\s*#\s?/, '');
+          for (const appName of names) {
+            if (appName.length < 6) continue;
+            const bound = new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(appName)}([^A-Za-z0-9]|$)`);
+            if (bound.test(comment)) {
+              records.push(['name', 'pinned', appName, scriptPath]);
+              pinCount += 1;
+            }
           }
         }
       }
@@ -445,26 +474,32 @@ function argValue(flag) {
   return process.argv[index + 1] || '';
 }
 
-const command = process.argv[2];
-if (command === 'sanitize-pm2') {
-  const chunks = [];
-  process.stdin.on('data', (chunk) => chunks.push(chunk));
-  process.stdin.on('end', () => {
-    const list = sanitizePm2(Buffer.concat(chunks).toString('utf8'));
-    if (!list) {
-      process.stderr.write('pm2-json-unusable\n');
+function main() {
+  const command = process.argv[2];
+  if (command === 'sanitize-pm2') {
+    const chunks = [];
+    process.stdin.on('data', (chunk) => chunks.push(chunk));
+    process.stdin.on('end', () => {
+      const list = sanitizePm2(Buffer.concat(chunks).toString('utf8'));
+      if (!list) {
+        process.stderr.write('pm2-json-unusable\n');
+        process.exit(1);
+      }
+      emitProcesses(list);
+    });
+  } else if (command === 'scan-ownership') {
+    const home = argValue('--home');
+    if (!home || !home.startsWith('/')) {
+      process.stderr.write('scan-ownership needs --home\n');
       process.exit(1);
     }
-    emitProcesses(list);
-  });
-} else if (command === 'scan-ownership') {
-  const home = argValue('--home');
-  if (!home || !home.startsWith('/')) {
-    process.stderr.write('scan-ownership needs --home\n');
-    process.exit(1);
+    scanOwnership(home, argValue('--xdg'), argValue('--crontab'), argValue('--names'));
+  } else {
+    process.stderr.write('usage: update-all-scan.mjs <sanitize-pm2|scan-ownership>\n');
+    process.exit(2);
   }
-  scanOwnership(home, argValue('--xdg'), argValue('--crontab'), argValue('--names'));
-} else {
-  process.stderr.write('usage: update-all-scan.mjs <sanitize-pm2|scan-ownership>\n');
-  process.exit(2);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }
