@@ -403,6 +403,14 @@ case "${1:-}" in
     ;;
 
   update)
+    # "all" is this command, never a git ref. It discovers other PM2 checkouts
+    # and runs each one's own `update` (no "all" argument, so this does not recurse).
+    if [ "${2:-}" = "all" ]; then
+      # shellcheck source=scripts/update-all.sh
+      . "$SCRIPT_DIR/scripts/update-all.sh"
+      ngdp_update_all "${@:3}"
+      exit $?
+    fi
     # Bring this checkout to the tip of master, or to <ref>, then install,
     # build and restart it. Any failure after the checkout puts the previous
     # commit back and starts that, so the instance is never left stopped.
@@ -728,6 +736,11 @@ case "${1:-}" in
     echo "               - Pull master (or check out ref), npm install, build, restart,"
     echo "                 wait for /health/readiness (https, then http); rolls back to the old commit on failure"
     echo "                 Refuses uncommitted changes and non-fast-forward pulls"
+    echo "  update all [--dry-run] [ref] [env]"
+    echo "               - Update each online ngdpbase checkout PM2 is running, by calling"
+    echo "                 that checkout's own ./server.sh update. Skips checkouts an"
+    echo "                 automatic updater already updates, and checkouts marked pinned."
+    echo "                 'all' is not a git ref. See docs/SERVER-MANAGEMENT.md"
     echo "  status       - Show comprehensive server status"
     echo "                 • PID lock validity"
     echo "                 • PM2 process list"
