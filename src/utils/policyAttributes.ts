@@ -269,7 +269,8 @@ export function subjectDeclarationProblem(name: string, decl: DeclaredSubjectAtt
 export function readDeclaredAsWritten(config: { getUnresolvedProperty?: (key: string, def?: unknown) => unknown; getProperty: (key: string, def?: unknown) => unknown } | null | undefined, key: string): unknown {
   if (!config) return null;
   try {
-    return typeof config.getUnresolvedProperty === 'function' ? config.getUnresolvedProperty(key, null) : config.getProperty(key, null);
+    // No unresolved read means no way to avoid resolving `$NAME`, so read nothing.
+    return typeof config.getUnresolvedProperty === 'function' ? config.getUnresolvedProperty(key, null) : null;
   } catch {
     return null;
   }

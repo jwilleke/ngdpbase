@@ -14,6 +14,8 @@ import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import PolicyEvaluator from '../../managers/PolicyEvaluator';
 import PolicyValidator from '../../managers/PolicyValidator';
 import logger from '../../utils/logger';
+import { scheduleProblem } from '../../utils/availability';
+import { readDeclaredAsWritten } from '../../utils/policyAttributes';
 
 const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
@@ -360,7 +362,12 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
       ['rules that are not a list', { timeZone: 'America/New_York', rules: 'always' }, 'rules'],
       ['a rule that is not an object', { timeZone: 'America/New_York', rules: ['monday'] }, 'rule 1'],
       ['a time zone that does not exist', rule({}) && { ...rule({}), timeZone: 'Mars/Olympus' }, 'timeZone'],
-      ['a time zone that is not text', { ...rule({}), timeZone: 5 }, 'timeZone']
+      ['a time zone that is not text', { ...rule({}), timeZone: 5 }, 'timeZone'],
+      ['a rule type "Deny" (wrong case) that would read as allow', rule({ type: 'Deny' }), 'type'],
+      ['a rule type that is not allow or deny', rule({ type: 'block' }), 'type'],
+      ['a rule type that is not text', rule({ type: true }), 'type'],
+      ['an empty days list', rule({ days: [] }), 'days'],
+      ['enabled that is not a boolean ("false" as text)', { ...rule({}), enabled: 'false' }, 'enabled']
     ])('%s: the attribute is missing (not open), an allow does not apply, and the boot log names the schedule and the field', async (_label, schedule, field) => {
       const warn = vi.spyOn(logger, 'warn');
       try {
@@ -379,6 +386,18 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
       } finally {
         warn.mockRestore();
       }
+    });
+
+    test('a rule with type allow, deny or no type is accepted', () => {
+      for (const type of ['allow', 'deny', undefined]) {
+        expect(scheduleProblem(rule({ type }), 'UTC')).toBeNull();
+      }
+    });
+
+    test('readDeclaredAsWritten returns null, and never calls the resolving getProperty, when getUnresolvedProperty is missing', () => {
+      const getProperty = vi.fn(() => ({ a: { from: 'resolved-secret' } }));
+      expect(readDeclaredAsWritten({ getProperty }, 'ngdpbase.access.environment-attributes')).toBeNull();
+      expect(getProperty).not.toHaveBeenCalled();
     });
 
     test('a well-formed schedule and a rule with no times (open all day) still read normally', async () => {

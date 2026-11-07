@@ -15,6 +15,7 @@ async function makeRoutes(inForce: unknown = null, resourceTypes: unknown = { pa
   const config: Record<string, unknown> = { [POLICIES]: [], ...(inForce === null ? {} : { [KEY]: inForce }), 'ngdpbase.access.resource-types': resourceTypes, 'ngdpbase.permissions.definitions': definitions };
   const configManager = {
     getProperty: vi.fn((k: string, d: unknown) => (k in config ? config[k] : d)),
+    getUnresolvedProperty: vi.fn((k: string, d: unknown) => (k in config ? config[k] : d)),
     getDefaultProperties: () => ({}),
     getCustomProperties: () => ({}),
     getAllProperties: () => ({ ...config }),

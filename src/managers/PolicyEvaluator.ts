@@ -706,9 +706,9 @@ class PolicyEvaluator extends BaseManager {
       const schedule = from.slice('schedule:'.length);
       const found = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, schedule) ? schedules[schedule] : undefined;
       if (!found || typeof found !== 'object') return [`environment attribute '${name}' reads schedule '${schedule}', which is not in ngdpbase.schedules; a condition on it never holds (an allow does not apply, a deny does)`];
-      if (!scheduleIsEnabled(found)) return [`environment attribute '${name}' reads schedule '${schedule}', which is switched off (enabled: false); a condition on it never holds (an allow does not apply, a deny does)`];
       const bad = scheduleProblem(found, typeof zone === 'string' && zone ? zone : 'UTC');
       if (bad) return [`environment attribute '${name}' reads schedule '${schedule}', which cannot be read (${bad}); a condition on it never holds (an allow does not apply, a deny does)`];
+      if (!scheduleIsEnabled(found)) return [`environment attribute '${name}' reads schedule '${schedule}', which is switched off (enabled: false); a condition on it never holds (an allow does not apply, a deny does)`];
       if (!Array.isArray(found.rules) || found.rules.length === 0) return [`environment attribute '${name}' reads schedule '${schedule}', which has no rules; it reads as always open`];
       return [];
     });

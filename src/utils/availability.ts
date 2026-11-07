@@ -190,11 +190,15 @@ export function scheduleProblem(schedule: Schedule, fallbackZone: string): strin
   if (typeof zone !== 'string' || !zone.trim() || !knownZone(zone)) {
     return `${schedule.timeZone === undefined ? 'the site time zone (ngdpbase.time-zone)' : 'timeZone'} is not a known time zone`;
   }
+  if (schedule.enabled !== undefined && typeof schedule.enabled !== 'boolean') return 'enabled is not true or false';
   if (schedule.rules === undefined) return null;
   if (!Array.isArray(schedule.rules)) return 'rules is not a list';
   for (const [i, rule] of schedule.rules.entries()) {
     const at = `rule ${i + 1}`;
     if (!rule || typeof rule !== 'object') return `${at} is not an object`;
+    // Only `allow`, `deny` or no type: scheduleIsOpen reads anything but 'deny' as allow, so a typo like "Deny" would fail open.
+    if (rule.type !== undefined && rule.type !== 'allow' && rule.type !== 'deny') return `${at} type is not allow or deny`;
+    if (Array.isArray(rule.days) && rule.days.length === 0) return `${at} days is an empty list`;
     if (rule.days !== undefined && (!Array.isArray(rule.days) || rule.days.some((d) => typeof d !== 'string' || !WEEKDAYS.includes(d.trim().toLowerCase())))) {
       return `${at} days is not a list of weekday names`;
     }
