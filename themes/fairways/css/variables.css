@@ -1,183 +1,192 @@
 /* =============================================================
-   Fairways Theme — CSS Custom Properties
-   Palette derived from fairwayscondos.org Wix color variables (temp.css).
-   Primary: warm cream (#f3f2dc) background, slate blue (#5c739d) accents,
-   light navbar with gray pill nav items. Logo text brown (#6c3c17) is
-   decorative only — NOT a background color.
-   Fonts: Enriqueta (headings), Open Sans (body) — loaded via theme.json.
-   Structural/layout CSS lives in themes/core.css.
+   Fairways theme — color tokens.
+   Paper background, fairway green actions, brick only as the
+   resident cue (it matches the wordmark). Layout is fairways.css,
+   which loads after themes/core.css.
+   Atkinson Hyperlegible is loaded from theme.json.
    ============================================================= */
 
-/*
-  Wix source palette (temp.css):
-  color_11: 243,242,220 → #f3f2dc  body bg (cream)
-  color_12: 194,194,176 → #c2c2b0  secondary bg / nav pill buttons
-  color_13: 146,145,132 → #929184  muted text / borders
-  color_14:  97, 97, 88 → #616158  secondary text
-  color_15:  49, 48, 44 → #31302c  primary text (near-black warm)
-  color_16: 192,203,222 → #c0cbde  light slate blue
-  color_17: 150,164,190 → #96a4be  medium slate blue
-  color_18:  92,115,157 → #5c739d  action / accent / button bg
-  color_19:  61, 77,105 → #3d4d69  dark slate blue / links
-  color_20:  31, 38, 52 → #1f2634  darkest (dark mode bg)
-  color_6/7/10: 108,60,23 → #6c3c17  logo text brown (decorative only)
-*/
-
-/* Light mode (default) */
 :root {
-  /* Bootstrap 5 native variables */
-  --bs-body-bg:                   #f3f2dc;
-  --bs-body-color:                #31302c;
-  --bs-secondary-bg:              #e5e4ce;
-  --bs-tertiary-bg:               #c2c2b0;
-  --bs-secondary-color:           #616158;
-  --bs-tertiary-color:            #929184;
-  --bs-emphasis-color:            #1f2634;
-  --bs-heading-color:             #31302c;
-  --bs-link-color:                #3d4d69;
-  --bs-link-hover-color:          #1f2634;
-  --bs-border-color:              #c2c2b0;
-  --card-outline-width:  2px;
-  --card-outline:        #7f7e68;
-  --card-outline-hover:  #5f5e4c;
+  --bs-body-bg:                   #f4f7f4;
+  --bs-body-color:                #1a2822;
+  --bs-secondary-bg:              #e7f0ea;
+  --bs-tertiary-bg:               #d5e6db;
+  --bs-secondary-color:           #2f463c;
+  --bs-tertiary-color:            #3d5649;
+  --bs-emphasis-color:            #14241c;
+  --bs-heading-color:             #14241c;
+  --bs-link-color:                #0c5a3a;
+  --bs-link-hover-color:          #083d27;
+  --bs-border-color:              #c5d5cc;
+  --bs-primary:                   #146844;
+  --bs-primary-rgb:               20, 104, 68;
+  --card-outline-width:           2px;
+  --card-outline:                 #5e7568;
+  --card-outline-hover:           #3d5649;
 
-  /* Semantic vars */
-  --bg-primary:        var(--bs-body-bg, #f3f2dc);
-  --bg-secondary:      var(--bs-secondary-bg, #e5e4ce);
-  --bg-tertiary:       var(--bs-tertiary-bg, #c2c2b0);
-  --text-primary:      var(--bs-body-color, #31302c);
-  --text-secondary:    var(--bs-secondary-color, #616158);
-  --text-muted:        var(--bs-tertiary-color, #929184);
-  --text-heading:      var(--bs-heading-color, #31302c);
-  --text-content:      var(--bs-body-color, #31302c);
-  --border-color:      var(--bs-border-color, #c2c2b0);
-  --link-color:        var(--bs-link-color, #3d4d69);
-  --link-hover:        var(--bs-link-hover-color, #1f2634);
-  --card-bg:           #faf9ee;
-  --card-border:       var(--bs-border-color, #c2c2b0);
-  --input-bg:          #faf9ee;
-  --code-bg:           var(--bs-tertiary-bg, #c2c2b0);
+  --bg-primary:        var(--bs-body-bg);
+  --bg-secondary:      var(--bs-secondary-bg);
+  --bg-tertiary:       var(--bs-tertiary-bg);
+  --text-primary:      var(--bs-body-color);
+  --text-secondary:    var(--bs-secondary-color);
+  --text-muted:        var(--bs-tertiary-color);
+  --text-heading:      var(--bs-heading-color);
+  --text-content:      var(--bs-body-color);
+  --border-color:      var(--bs-border-color);
+  --link-color:        var(--bs-link-color);
+  --link-hover:        var(--bs-link-hover-color);
+  --card-bg:           #ffffff;
+  --card-border:       var(--bs-border-color);
+  --input-bg:          #ffffff;
+  --code-bg:           var(--bs-tertiary-bg);
 
-  /* Fairways-specific vars
-     Navbar: light cream background matching the site header,
-     with dark warm text. Nav items styled via --button vars. */
-  --border-color-strong: #929184;
-  --navbar-bg:           #f3f2dc;
-  --navbar-border:       #c2c2b0;
-  --navbar-text:         #31302c;
-  --navbar-text-hover:   #5c739d;
-  --input-border:        #929184;
-  --button-primary-bg:   #5c739d;
-  --button-primary-hover: #3d4d69;
-  --code-border:         #c2c2b0;
+  --border-color-strong: #5e7568;
+  --navbar-bg:           #ffffff;
+  --navbar-border:       #c5d5cc;
+  --navbar-text:         #1a2822;
+  --navbar-text-hover:   #0c5a3a;
+  --input-border:        #8aa497;
+  --button-primary-bg:   #146844;
+  --button-primary-hover: #0c5a3a;
+  --code-border:         #c5d5cc;
+  --focus-ring:          #083d27;
+  --resident-bg:         #f7f1ea;
+  --resident-border:     #7a3828;
+  --resident-label:      #7a3828;
+  --resident-text:       #1a2822;
 
-  /* Alerts */
-  --alert-success-bg:     #d4edda;
-  --alert-success-border: #b8ddc0;
-  --alert-success-text:   #155724;
-  --alert-danger-bg:      #f8d7da;
-  --alert-danger-border:  #f5c2c7;
-  --alert-danger-text:    #842029;
-  --alert-info-bg:        #dce4f0;
-  --alert-info-border:    #bccde4;
-  --alert-info-text:      #3d4d69;
+  --alert-success-bg:     #dceee4;
+  --alert-success-border: #8fbfa4;
+  --alert-success-text:   #0c3d28;
+  --alert-danger-bg:      #f8e4e0;
+  --alert-danger-border:  #e0b0a6;
+  --alert-danger-text:    #6d2c22;
+  --alert-info-bg:        #e4eeea;
+  --alert-info-border:    #a9c4b8;
+  --alert-info-text:      #1a3d32;
 
-  /* Tables */
-  --table-stripe:     #ebe9d0;
-  --table-hover:      #dddbc2;
-  --zebra-row-even:   rgba(92, 115, 157, 0.06);
-  --zebra-row-odd:    rgba(92, 115, 157, 0);
-  --zebra-row-hover:  rgba(92, 115, 157, 0.14);
+  --table-stripe:     #e7f0ea;
+  --table-hover:      #d5e6db;
+  --zebra-row-even:   rgba(20, 104, 68, 0.06);
+  --zebra-row-odd:    rgba(20, 104, 68, 0);
+  --zebra-row-hover:  rgba(20, 104, 68, 0.12);
 }
 
-/* Dark mode */
 [data-bs-theme="dark"] {
-  --bs-body-bg:        #1f2634;
-  --bs-body-color:     #e8e6d0;
-  --bs-secondary-bg:   #282e3e;
-  --bs-tertiary-bg:    #333a4e;
-  --bs-secondary-color: #a0a898;
-  --bs-tertiary-color: #707868;
-  --bs-emphasis-color: #f3f2dc;
-  --bs-heading-color:  #f3f2dc;
-  --bs-link-color:     #96a4be;
-  --bs-link-hover-color: #c0cbde;
-  --bs-border-color:   #3a4258;
+  --bs-body-bg:        #121a16;
+  --bs-body-color:     #e8f3ec;
+  --bs-secondary-bg:   #1b2620;
+  --bs-tertiary-bg:    #24312a;
+  --bs-secondary-color: #c5d9ce;
+  --bs-tertiary-color: #b7cdc2;
+  --bs-emphasis-color: #f4fbf7;
+  --bs-heading-color:  #f4fbf7;
+  --bs-link-color:     #8ee0c2;
+  --bs-link-hover-color: #c8f6e4;
+  --bs-border-color:   #31443c;
+  --bs-primary:        #146844;
+  --bs-primary-rgb:    20, 104, 68;
   --card-outline-width:  2px;
-  --card-outline:        #7a869c;
-  --card-outline-hover:  #98a3b8;
+  --card-outline:        #8aa396;
+  --card-outline-hover:  #b7cdc2;
 
-  --bg-primary:        #1f2634;
-  --bg-secondary:      #282e3e;
-  --bg-tertiary:       #333a4e;
-  --text-primary:      #e8e6d0;
-  --text-secondary:    #a0a898;
-  --text-muted:        #707868;
-  --text-heading:      #f3f2dc;
-  --text-content:      #e8e6d0;
-  --border-color:      #3a4258;
-  --link-color:        #96a4be;
-  --link-hover:        #c0cbde;
-  --card-bg:           #282e3e;
-  --card-border:       #3a4258;
-  --input-bg:          #1f2634;
-  --code-bg:           #333a4e;
+  --bg-primary:        #121a16;
+  --bg-secondary:      #1b2620;
+  --bg-tertiary:       #24312a;
+  --text-primary:      #e8f3ec;
+  --text-secondary:    #c5d9ce;
+  --text-muted:        #b7cdc2;
+  --text-heading:      #f4fbf7;
+  --text-content:      #e8f3ec;
+  --border-color:      #31443c;
+  --link-color:        #8ee0c2;
+  --link-hover:        #c8f6e4;
+  --card-bg:           #1b2620;
+  --card-border:       #31443c;
+  --input-bg:          #121a16;
+  --code-bg:           #24312a;
 
-  --border-color-strong: #5c6880;
-  --navbar-bg:           #282e3e;
-  --navbar-border:       #3a4258;
-  --navbar-text:         #e8e6d0;
-  --navbar-text-hover:   #96a4be;
-  --input-border:        #3a4258;
-  --button-primary-bg:   #5c739d;
-  --button-primary-hover: #96a4be;
-  --code-border:         #3a4258;
+  --border-color-strong: #8aa396;
+  --navbar-bg:           #18241e;
+  --navbar-border:       #31443c;
+  --navbar-text:         #e8f3ec;
+  --navbar-text-hover:   #8ee0c2;
+  --input-border:        #8aa396;
+  --button-primary-bg:   #146844;
+  --button-primary-hover: #0c5a3a;
+  --code-border:         #31443c;
+  --focus-ring:          #8ee0c2;
+  --resident-bg:         #2c221c;
+  --resident-border:     #e7b2a4;
+  --resident-label:      #f0c7ba;
+  --resident-text:       #f6efe9;
 
-  --alert-success-bg:     #0d2e14;
-  --alert-success-border: #1a5c26;
-  --alert-success-text:   #6ed88a;
-  --alert-danger-bg:      #2e0d0d;
-  --alert-danger-border:  #5c1a1a;
-  --alert-danger-text:    #f09090;
-  --alert-info-bg:        #1c2438;
-  --alert-info-border:    #2e3e5c;
-  --alert-info-text:      #96a4be;
+  --alert-success-bg:     #143226;
+  --alert-success-border: #1f6b4a;
+  --alert-success-text:   #c8f6e4;
+  --alert-danger-bg:      #3a221c;
+  --alert-danger-border:  #8a4a3c;
+  --alert-danger-text:    #f6d2ca;
+  --alert-info-bg:        #1a2c26;
+  --alert-info-border:    #3d6b5a;
+  --alert-info-text:      #d5eee4;
 
-  --table-stripe:    #252c3c;
-  --table-hover:     #2e3650;
-  --zebra-row-even:  rgba(150, 164, 190, 0.08);
-  --zebra-row-odd:   rgba(150, 164, 190, 0);
-  --zebra-row-hover: rgba(150, 164, 190, 0.16);
+  --table-stripe:    #1b2620;
+  --table-hover:     #24312a;
+  --zebra-row-even:  rgba(142, 224, 194, 0.08);
+  --zebra-row-odd:   rgba(142, 224, 194, 0);
+  --zebra-row-hover: rgba(142, 224, 194, 0.16);
 }
 
-/* System dark mode */
 @media (prefers-color-scheme: dark) {
   :root:not([data-bs-theme]) {
-    --bs-body-bg:        #1f2634;
-    --bs-body-color:     #e8e6d0;
-    --bs-secondary-bg:   #282e3e;
-    --bs-tertiary-bg:    #333a4e;
-    --bs-secondary-color: #a0a898;
-    --bs-tertiary-color: #707868;
-    --bs-border-color:   #3a4258;
+    --bs-body-bg:        #121a16;
+    --bs-body-color:     #e8f3ec;
+    --bs-secondary-bg:   #1b2620;
+    --bs-tertiary-bg:    #24312a;
+    --bs-secondary-color: #c5d9ce;
+    --bs-tertiary-color: #b7cdc2;
+    --bs-emphasis-color: #f4fbf7;
+    --bs-heading-color:  #f4fbf7;
+    --bs-link-color:     #8ee0c2;
+    --bs-link-hover-color: #c8f6e4;
+    --bs-border-color:   #31443c;
+    --bs-primary:        #146844;
+    --bs-primary-rgb:    20, 104, 68;
     --card-outline-width:  2px;
-    --card-outline:        #7a869c;
-    --card-outline-hover:  #98a3b8;
-    --bs-link-color:     #96a4be;
-    --bs-link-hover-color: #c0cbde;
+    --card-outline:        #8aa396;
+    --card-outline-hover:  #b7cdc2;
 
-    --border-color-strong: #5c6880;
-    --navbar-bg:           #282e3e;
-    --navbar-border:       #3a4258;
-    --navbar-text:         #e8e6d0;
-    --navbar-text-hover:   #96a4be;
-    --input-border:        #3a4258;
-    --button-primary-bg:   #5c739d;
-    --button-primary-hover: #96a4be;
-    --table-stripe:    #252c3c;
-    --table-hover:     #2e3650;
-    --zebra-row-even:  rgba(150, 164, 190, 0.08);
-    --zebra-row-odd:   rgba(150, 164, 190, 0);
-    --zebra-row-hover: rgba(150, 164, 190, 0.16);
+    --bg-primary:        #121a16;
+    --bg-secondary:      #1b2620;
+    --bg-tertiary:       #24312a;
+    --text-primary:      #e8f3ec;
+    --text-secondary:    #c5d9ce;
+    --text-muted:        #b7cdc2;
+    --text-heading:      #f4fbf7;
+    --text-content:      #e8f3ec;
+    --border-color:      #31443c;
+    --link-color:        #8ee0c2;
+    --link-hover:        #c8f6e4;
+    --card-bg:           #1b2620;
+    --input-bg:          #121a16;
+    --border-color-strong: #8aa396;
+    --navbar-bg:           #18241e;
+    --navbar-border:       #31443c;
+    --navbar-text:         #e8f3ec;
+    --navbar-text-hover:   #8ee0c2;
+    --input-border:        #8aa396;
+    --button-primary-bg:   #146844;
+    --button-primary-hover: #0c5a3a;
+    --focus-ring:          #8ee0c2;
+    --resident-bg:         #2c221c;
+    --resident-border:     #e7b2a4;
+    --resident-label:      #f0c7ba;
+    --resident-text:       #f6efe9;
+    --table-stripe:    #1b2620;
+    --table-hover:     #24312a;
+    --zebra-row-even:  rgba(142, 224, 194, 0.08);
+    --zebra-row-odd:   rgba(142, 224, 194, 0);
+    --zebra-row-hover: rgba(142, 224, 194, 0.16);
   }
 }

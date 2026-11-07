@@ -9,6 +9,12 @@ export interface ThemeInfo {
   author: string;
   /** Optional Google Fonts (or other) stylesheet URLs to inject in <head> */
   fonts?: string[];
+  /**
+   * Optional CSS filenames in this theme's css/ directory. Loaded after
+   * core.css so a site theme can adjust layout without editing the shared
+   * sheet. Basenames only; paths are rejected.
+   */
+  stylesheets?: string[];
 }
 
 export interface ThemePaths {
@@ -28,6 +34,8 @@ export interface ThemePaths {
   themeInfo: ThemeInfo | null;
   /** Optional font stylesheet URLs from theme.json fonts[] */
   fontUrls: string[];
+  /** Theme CSS files to load after core.css. Public URLs. */
+  themeStylesheets: string[];
 }
 
 const DEFAULT_THEME_INFO: ThemeInfo = {
@@ -106,8 +114,27 @@ export class ThemeManager {
       faviconPath: this.resolveFaviconPath(assetsDir, t),
       locationCssPath: '/themes/plugins/location.css',
       themeInfo,
-      fontUrls: Array.isArray(themeInfo?.fonts) ? themeInfo.fonts : []
+      fontUrls: Array.isArray(themeInfo?.fonts) ? themeInfo.fonts : [],
+      themeStylesheets: this.resolveThemeStylesheets(t, themeInfo)
     };
+  }
+
+  /**
+   * Publish theme.json stylesheets[] as /themes/<theme>/css/<file>.
+   * Only a basename ending in .css that exists in that directory is kept,
+   * so a theme cannot point the browser at another path.
+   */
+  private resolveThemeStylesheets(t: string, themeInfo: ThemeInfo | null): string[] {
+    const listed = Array.isArray(themeInfo?.stylesheets) ? themeInfo.stylesheets : [];
+    const urls: string[] = [];
+    for (const entry of listed) {
+      if (typeof entry !== 'string' || entry !== path.basename(entry)) continue;
+      if (!entry.endsWith('.css') || entry.startsWith('.')) continue;
+      const abs = path.join(this.themesDir, t, 'css', entry);
+      if (!fs.existsSync(abs)) continue;
+      urls.push(`/themes/${t}/css/${entry}`);
+    }
+    return urls;
   }
 
   /** Resolve variables.css path — falls back to empty placeholder if theme has no custom vars */

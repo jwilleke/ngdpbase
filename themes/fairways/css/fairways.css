@@ -1,0 +1,361 @@
+/* =============================================================
+   Fairways layout. Loads after themes/core.css.
+   core.css restates shared tokens on :root, so the values that
+   must differ (white cards, white bar, resident cue) are set
+   again here. Other sites do not load this file.
+   ============================================================= */
+
+:root {
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --navbar-bg: #ffffff;
+  --navbar-text: #1a2822;
+  --navbar-border: #c5d5cc;
+  --button-primary-bg: #146844;
+  --button-primary-hover: #0c5a3a;
+  --focus-ring: #083d27;
+  --resident-bg: #f7f1ea;
+  --resident-border: #7a3828;
+  --resident-label: #7a3828;
+  --resident-text: #1a2822;
+}
+
+[data-bs-theme="dark"] {
+  --card-bg: #1b2620;
+  --input-bg: #121a16;
+  --navbar-bg: #18241e;
+  --navbar-text: #e8f3ec;
+  --navbar-border: #31443c;
+  --button-primary-bg: #146844;
+  --button-primary-hover: #0c5a3a;
+  --focus-ring: #8ee0c2;
+  --resident-bg: #2c221c;
+  --resident-border: #e7b2a4;
+  --resident-label: #f0c7ba;
+  --resident-text: #f6efe9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-bs-theme]) {
+    --card-bg: #1b2620;
+    --input-bg: #121a16;
+    --navbar-bg: #18241e;
+    --navbar-text: #e8f3ec;
+    --navbar-border: #31443c;
+    --button-primary-bg: #146844;
+    --button-primary-hover: #0c5a3a;
+    --focus-ring: #8ee0c2;
+    --resident-bg: #2c221c;
+    --resident-border: #e7b2a4;
+    --resident-label: #f0c7ba;
+    --resident-text: #f6efe9;
+  }
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.65;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* Buttons ship outline:0 plus their own shadow. A second ring drawn with
+   box-shadow stays visible on those controls. */
+.form-control:focus-visible,
+.form-select:focus-visible,
+.btn:focus-visible,
+.btn-primary:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 6px var(--focus-ring) !important;
+}
+
+/* Header. The wordmark file is wide; the inline height is 24px. */
+.jspwiki-header {
+  background-color: var(--navbar-bg) !important;
+  border-bottom: 1px solid var(--navbar-border) !important;
+  box-shadow: inset 0 4px 0 var(--button-primary-bg);
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.jspwiki-header .navbar-brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--navbar-text);
+}
+
+.jspwiki-header .navbar-brand img {
+  height: 46px !important;
+  width: auto !important;
+  max-width: min(52vw, 220px);
+  margin-right: 0.75rem !important;
+}
+
+.jspwiki-header .form-control {
+  min-height: 44px;
+  font-size: 1rem;
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+.jspwiki-header .input-group .btn,
+.jspwiki-header a[href^="/login"] {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 1rem;
+}
+
+.jspwiki-header a[href^="/login"] {
+  padding: 0.4rem 0.95rem;
+  font-weight: 700;
+  color: var(--resident-label);
+  background: var(--resident-bg);
+  border: 2px solid var(--resident-border);
+  border-radius: 8px;
+}
+
+.jspwiki-header a[href^="/login"]:hover {
+  color: var(--resident-text);
+  background: var(--card-bg);
+  border-color: var(--resident-border);
+}
+
+.navigation-title h5 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+/* Sidebar: public links, then the existing Members Only page as the resident door. */
+@media (min-width: 768px) {
+  .container-fluid > .row > .jspwiki-sidebar {
+    flex: 0 0 18rem;
+    width: 18rem;
+    max-width: 18rem;
+  }
+
+  .container-fluid > .row > main[role="main"] {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.jspwiki-sidebar {
+  background-color: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border-color);
+}
+
+.leftmenu-content > ul {
+  position: relative;
+}
+
+.leftmenu-content > ul::before {
+  content: "Explore";
+  display: block;
+  margin: 0 0.35rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.leftmenu-content ul li a {
+  color: var(--text-primary);
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  min-height: 44px;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.leftmenu-content ul li a i {
+  width: 1.1em;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.leftmenu-content ul li a:before {
+  content: none;
+}
+
+.leftmenu-content ul li a:hover {
+  color: var(--link-hover);
+  background-color: var(--bg-tertiary);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"],
+.leftmenu-content a[href="/view/Members Only"] {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.1rem;
+  margin-top: 0.9rem;
+  font-weight: 700;
+  color: var(--resident-text);
+  background: var(--resident-bg);
+  border: 2px solid var(--resident-border);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"]::before,
+.leftmenu-content a[href="/view/Members Only"]::before {
+  content: "Residents";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--resident-label);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"]:hover,
+.leftmenu-content a[href="/view/Members Only"]:hover {
+  color: var(--resident-text);
+  background: var(--card-bg);
+}
+
+/* Reading column */
+.markdown-body {
+  padding-top: 0.5rem;
+  color: var(--text-content);
+}
+
+.markdown-body h1,
+.jspwiki-content h1 {
+  font-size: clamp(1.9rem, 3vw, 2.55rem);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border-bottom: none;
+  margin-top: 0.2rem;
+  margin-bottom: 0.8rem;
+  color: var(--text-heading);
+}
+
+.markdown-body h2,
+.markdown-body h3,
+.jspwiki-content h2,
+.jspwiki-content h3 {
+  border-bottom: none;
+  letter-spacing: -0.015em;
+  color: var(--text-heading);
+}
+
+.markdown-body h2 { font-size: 1.55rem; }
+.markdown-body h3 { font-size: 1.3rem; }
+
+.markdown-body p,
+.markdown-body li {
+  max-width: 68ch;
+  font-size: 1.125rem;
+  line-height: 1.65;
+}
+
+.markdown-body a,
+.wikipage {
+  color: var(--link-color);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.markdown-body a:hover,
+.wikipage:hover {
+  color: var(--link-hover);
+}
+
+.external-link,
+.external-link:hover {
+  color: var(--link-color);
+}
+
+.markdown-body img,
+.wiki-image {
+  display: block;
+  max-width: min(100%, 46rem);
+  height: auto;
+  margin: 0.4rem 0 1.2rem;
+  border-radius: 12px;
+}
+
+.btn-primary {
+  font-size: 1rem;
+  min-height: 44px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.btn-primary:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.form-control,
+.form-select {
+  font-size: 1rem;
+  min-height: 44px;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--input-border);
+}
+
+.footer-content,
+.footer-content small {
+  font-size: 1rem;
+}
+
+.footer-content,
+.footer-content .text-muted,
+.footer-content a {
+  color: var(--text-muted) !important;
+}
+
+.footer-content a:hover {
+  color: var(--link-hover) !important;
+}
+
+@media (max-width: 767.98px) {
+  .jspwiki-header .navbar-brand img {
+    height: 36px !important;
+  }
+
+  .markdown-body h1,
+  .jspwiki-content h1 {
+    font-size: 1.85rem;
+  }
+
+  #mobileNavOffcanvas .leftmenu-content a {
+    min-height: 48px;
+    font-size: 1.125rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary,
+  .jspwiki-header .navbar-brand,
+  .leftmenu-content ul li a {
+    transition: none;
+  }
+}
+
+/* Last, so it wins over Bootstrap's button shadow and our own hover reset. */
+.jspwiki-header a[href^="/login"]:focus-visible,
+.jspwiki-header button:focus-visible,
+.leftmenu-content a:focus-visible {
+  box-shadow: 0 0 0 3px #f4f7f4, 0 0 0 6px #083d27 !important;
+}

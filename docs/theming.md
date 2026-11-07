@@ -40,11 +40,14 @@ mkdir -p themes/my-theme/css themes/my-theme/assets
   "author": "Your Name",
   "fonts": [
     "https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
-  ]
+  ],
+  "stylesheets": ["site.css"]
 }
 ```
 
 The `fonts` array is optional. Each URL is injected as a `<link rel="stylesheet">` in `<head>` before the theme CSS, making them available to `variables.css`.
+
+`stylesheets` is optional. Each entry is a CSS filename in `themes/<name>/css/`. The page loads those files after `themes/core.css`, so a site can adjust type, focus, and chrome without editing the shared sheet. A path (`../` or a slash) is ignored. `variables.css` is loaded on its own and does not need to be listed.
 
 ### 3. Create `css/variables.css`
 
@@ -111,7 +114,7 @@ Bundled values for `--card-outline`; each is at least 3:1 against both the page 
 | default | `#868e96` | `#6e7681` | `#868e96` |
 | flatly | `#868e96` | `#6e7681` | `#868e96` |
 | volcano | `#8f7364` | `#9a6a58` | `#9a6a58` |
-| fairways | `#7f7e68` | `#7a869c` | `#7a869c` |
+| fairways | `#5e7568` | `#8aa396` | `#8aa396` |
 
 A custom theme that omits the variables gets `2px` and `#868e96`. Check the contrast of your own colours against your page and card backgrounds. Bootstrap border utilities such as `border-info` still override the colour.
 
@@ -191,9 +194,10 @@ Stylesheets are injected in this order:
 4. `themes/<active>/css/variables.css` — theme custom properties
 5. `themes/core.css` — structural layout
 6. `themes/plugins/location.css` — location plugin CSS
-7. __Add-on stylesheets__ (in registration order)
+7. `theme.json` `stylesheets[]` — site layout CSS, after core
+8. __Add-on stylesheets__ (in registration order)
 
-This means add-on CSS can reference any CSS variable defined by the active theme, and can override any `core.css` rule.
+Add-on CSS still loads last, so an add-on can override a theme rule. A theme stylesheet can override `core.css` for that site only.
 
 ## ThemeManager API
 
@@ -205,7 +209,8 @@ import { ThemeManager } from './managers/ThemeManager';
 const themeManager = new ThemeManager(activeTheme, themesDir);
 const paths = themeManager.paths;
 // paths.coreCssPath, paths.variablesCssPath, paths.logoPath,
-// paths.faviconPath, paths.locationCssPath, paths.themeInfo, paths.fontUrls
+// paths.faviconPath, paths.locationCssPath, paths.themeInfo,
+// paths.fontUrls, paths.themeStylesheets
 ```
 
 __Static helpers:__
@@ -229,4 +234,5 @@ The following variables are available in every EJS template:
 | `faviconPath` | `string` | Path to theme favicon |
 | `locationCssPath` | `string` | Path to location plugin CSS |
 | `themeFontUrls` | `string[]` | Font URLs from `theme.json fonts[]` |
+| `themeStylesheets` | `string[]` | Theme CSS files from `theme.json stylesheets[]`, loaded after core |
 | `addonStylesheets` | `string[]` | Stylesheets registered by add-ons |
