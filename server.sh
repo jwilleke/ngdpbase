@@ -432,6 +432,19 @@ case "${1:-}" in
       echo "$DIRTY" | sed 's/^/     /'
       exit 1
     fi
+    # git status hides edits to files marked assume-unchanged (lowercase tag)
+    # or skip-worktree (S); a failed update's rollback would overwrite them.
+    if ! HIDDEN=$(git ls-files -v); then
+      echo "❌ Refusing to update: git ls-files failed in $SCRIPT_DIR"
+      exit 1
+    fi
+    HIDDEN=$(printf '%s\n' "$HIDDEN" | grep '^[a-zS] ' || true)
+    if [ -n "$HIDDEN" ]; then
+      echo "❌ Refusing to update: files hidden from git status (assume-unchanged or skip-worktree) in $SCRIPT_DIR"
+      echo "$HIDDEN" | cut -c3- | sed 's/^/     /'
+      echo "   Clear the flag with: git update-index --no-assume-unchanged --no-skip-worktree <file>"
+      exit 1
+    fi
 
     _version() { node -p "require('./package.json').version" 2>/dev/null || echo "unknown"; }
     OLD_SHA=$(git rev-parse HEAD)
@@ -735,11 +748,14 @@ case "${1:-}" in
     echo "  update [ref] [env]"
     echo "               - Pull master (or check out ref), npm install, build, restart,"
     echo "                 wait for /health/readiness (https, then http); rolls back to the old commit on failure"
-    echo "                 Refuses uncommitted changes and non-fast-forward pulls"
+    echo "                 Refuses uncommitted changes, files marked assume-unchanged or"
+    echo "                 skip-worktree (so sparse checkouts too), and non-fast-forward pulls"
     echo "  update all [--dry-run] [ref] [env]"
     echo "               - Update each online ngdpbase checkout PM2 is running, by calling"
-    echo "                 that checkout's own ./server.sh update. Skips checkouts an"
-    echo "                 automatic updater already updates, and checkouts marked pinned."
+    echo "                 that checkout's own ./server.sh update. Skips a checkout that is"
+    echo "                 not online, inside another repo, not yours, locked by git,"
+    echo "                 detached, not on master, dirty, has files hidden from git status,"
+    echo "                 ahead of origin/master, or when a git check or the fetch fails."
     echo "                 'all' is not a git ref. See docs/SERVER-MANAGEMENT.md"
     echo "  status       - Show comprehensive server status"
     echo "                 • PID lock validity"

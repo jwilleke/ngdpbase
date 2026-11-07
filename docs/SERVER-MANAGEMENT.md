@@ -356,10 +356,11 @@ restart itself.
 ## Updating every checkout on this host
 
 `./server.sh update all [--dry-run] [ref] [env]` asks PM2 which ngdpbase checkouts are running
-and updates each one by calling that checkout's own `./server.sh update`. Run it from any
-checkout that has this command. The word `all` is the command, not a git ref.
-`./server.sh update v1.2.3` is unchanged. To check out a ref that is literally named `all`,
-run `./server.sh update refs/heads/all` on that one checkout.
+and updates each one by calling that checkout's own `./server.sh update [ref] [env]`, one at a
+time, with the checkout you ran it from last. Run it from any checkout that has this command.
+The word `all` is the command, not a git ref. `./server.sh update v1.2.3` is unchanged. To check
+out a ref that is literally named `all`, run `./server.sh update refs/heads/all` on that one
+checkout.
 
 ```bash
 ./server.sh update all --dry-run
@@ -367,51 +368,76 @@ run `./server.sh update refs/heads/all` on that one checkout.
 ./server.sh update all v5.43.0
 ```
 
-It does not pull before the per-checkout `update`. That command already fetches and
-fast-forwards. Bulk mode also does not run an update whose rollback would
-`git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on `master`
-(when no ref is given), diverged from the last fetched `origin/master`, or ahead of it with
-local commits. Those checkouts are listed and left as they are. A ref (`./server.sh update all v5.43.0`)
-may be given for a checkout that is not on `master`; a detached or dirty checkout is still skipped.
+There is no configuration. Every checkout PM2 runs is updated unless it is skipped for one of
+these reasons, each printed as one line under the checkout's name:
 
-PM2 `watch` restarts a process when files change. It is not an automatic release update, and it
-does not by itself include or exclude a checkout.
+| Printed reason | When |
+| --- | --- |
+| `skip: not online in PM2` | PM2 lists it as stopped or errored. It is left stopped. |
+| `skip: not the top of its own git repository` | The directory sits inside another repo, so git would act on the parent. |
+| `skip: owned by another user` | The directory is not owned by the user running the command. |
+| `skip: git index is locked (another git command is running)` | `.git/index.lock` exists. |
+| `skip: detached HEAD, not on a branch` | The checkout is not on a branch. |
+| `skip: on branch <name>, not master` | The checkout is on a branch other than `master`, even one with no commits of its own. It is not switched to `master`. |
+| `skip: git status failed, so uncommitted changes could not be ruled out` | `git status` exited with an error. |
+| `skip: N uncommitted or untracked file(s), first: <file>` | `git status` shows changes, staged or not, or untracked files. |
+| `skip: git ls-files failed, so hidden changes could not be ruled out` | `git ls-files -v` exited with an error. |
+| `skip: files hidden from git status (assume-unchanged or skip-worktree)` | A tracked file is marked `git update-index --assume-unchanged` or `--skip-worktree`. `git status` does not show edits to it, and a failed update's rollback might overwrite them. To keep a local edit, clear the mark with `git update-index --no-assume-unchanged --no-skip-worktree <file>` and commit or move the edit. A sparse checkout is refused too, because `git sparse-checkout` marks every file outside the sparse set skip-worktree; update it by hand, since clearing the marks would undo the sparse layout. |
+| `skip: could not fetch origin/master to check for local commits` | The fetch before the ahead check failed. |
+| `skip: cannot compare with origin/master, so local commits could not be ruled out` | `origin/master` does not exist in the checkout after the fetch, or `git rev-list` failed. |
+| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `refs/remotes/origin/master`. The full ref name is used, so a local branch or tag named `origin/master` cannot hide them. |
 
-Ownership, most protective first:
+A skipped checkout is not touched, so `update`'s rollback (`git checkout -f`, `git reset --hard`)
+never runs on it. It does not pull before the per-checkout `update`, which fetches and
+fast-forwards itself; it does fetch `origin/master` first, so the ahead check is current. A
+`--dry-run` fetches nothing and compares against the last fetch. A checkout on another branch is
+skipped even when a ref is given; run `./server.sh update [ref]` in it by hand to move it.
 
-- Pinned, then automatic, then an explicit manual mark. A checkout an updater already updates
-  stays skipped even if a policy line says `manual`.
-- An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
-  user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
-  `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
-  A comment pins one checkout by writing its directory basename as `basename (pinned)`, and only when exactly one running checkout has that basename. Other names in that comment are not pins. A path on a pin line, or a PM2 app name the comment names on its own, still pins that checkout. A checkout the site list already names stays automatic. The same basename on two checkouts, or a pin word with no path and no `basename (pinned)`, leaves unlisted checkouts alone.
-- When that script is read completely, a checkout it does not mention is updated, and the output
-  says it was not listed. When the script cannot be read completely (a site list built from
-  variables, or a pin that names neither a path nor an app name), unlisted checkouts are not
-  updated.
-- With no updater script, nothing is updated unless a line names it. The file is
-  `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`:
+Plain `./server.sh update` also refuses, before it changes anything, a checkout with files marked
+assume-unchanged or skip-worktree, and lists them. That includes a sparse checkout; update one by
+hand.
 
-```bash
-manual /absolute/path/to/checkout
-pinned /absolute/path/to/another
-auto /absolute/path/to/a/third
-```
+Before any git check, `update all` unsets every inherited `GIT_*` variable except `GIT_SSH`,
+`GIT_SSH_COMMAND` and `GIT_TERMINAL_PROMPT`. A `GIT_DIR` or `GIT_INDEX_FILE` left by a git hook,
+a shell or a `.env` would otherwise make the checks read another repository. A `GIT_*` variable
+that cannot be unset, because a `.env` declared it `readonly`, stops the run with exit 2 before
+any check, naming the variable.
 
-A line there does not authorize every other checkout. A checkout may also carry a one-word
-`.ngdpbase-update-policy` file (`auto`, `pinned`, or `manual`). That file is gitignored.
+To pass an env with no ref, give an empty ref: `./server.sh update all "" production` runs
+`./server.sh update "" production` in each checkout, which updates to the tip of `master` and
+starts in production.
+
+It refuses to run as root, because it would run `npm` and the build as root in other users'
+trees. PM2 `watch` restarts a process when files change. It is not a release update, and it does
+not include or exclude a checkout.
 
 Checkouts are updated one at a time. One failure does not stop the others. Two `update all`
-runs do not overlap: the second exits and updates nothing. The command prints a summary and
-exits 0 when every included checkout was updated (or there was nothing to update), 1 when an
-included checkout was held back or its update failed, 2 when PM2 could not be read or another
-`update all` holds the lock, and 3 when it updated nothing because ownership was unknown.
-`--dry-run` is the same plan with no `update` run.
+runs do not overlap: the lock is a symlink in `~/.config/ngdpbase/update-all.lock` whose target
+is the holder's pid, and the second run exits and updates nothing. A lock that holds no pid is
+never taken over; remove it by hand once you know nothing is running. A dead holder's lock is
+replaced. `--dry-run` shows the same plan with no `update` run, and takes no lock.
+
+The command ends with a summary: updated (or would update), not online, held by git (any of the
+other skip reasons), and failed. A checkout is recognised only when the PM2 working directory
+itself holds its `server.sh`. Exit codes:
+
+| Code | When |
+| --- | --- |
+| 0 | Every online checkout was updated (or would be, in a dry run), or PM2 runs no processes at all. |
+| 1 | A checkout was held by git, or its update failed. |
+| 2 | Nothing was updated because: an unknown option, more than two arguments, `all` given as the ref, a ref or env that starts with `-` or holds a space, a recursive `update all`, a `GIT_*` variable set read-only, it was run as root, no temporary directory could be made, another `update all` holds the lock (or the lock holds no pid), `node` or `scripts/update-all-scan.mjs` is missing, or the PM2 list could not be read or was not usable. |
+| 3 | PM2 lists processes but none is an ngdpbase checkout. |
+
+PM2 can print a notice before its process list, for example `In-memory PM2 is out-of-date` when
+the PM2 daemon is older than the installed PM2. Those lines are ignored: the list is the one
+line of `pm2 jlist` output that is a JSON array. When no line is, or more than one is, the run
+stops with exit 2 and updates nothing. Control characters in a PM2 app name are shown as `?`. A
+PM2 directory, or its real path, that holds a control character is not treated as a checkout.
 
 The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
-variables git and npm need. It then loads that checkout's own `.env`. The PM2 document is
-reduced to name, directory, script, status, and watch before it is printed; the process
-environment is not.
+variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own
+`.env`. The raw PM2 list is never printed. It is reduced to name, directory, script, status and
+watch before it is read, and the process environment is dropped.
 
 ## Validation Steps (Pre-Start Checklist)
 

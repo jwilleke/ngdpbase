@@ -4,8 +4,8 @@
  * The real server.sh runs against throwaway git checkouts. `npx`, `npm`, `curl`,
  * `lsof`, `pgrep` and `pkill` are stubs, so nothing starts a server or talks to
  * a real PM2 daemon. Git is real, inside the temp directory only. HOME and
- * XDG_CONFIG_HOME point at that directory, so LaunchAgents and the policy file
- * are fixtures, not the machine running the test.
+ * XDG_CONFIG_HOME point at that directory, so the lock file is a fixture, not
+ * the machine running the test.
  */
 
 import { randomUUID } from 'crypto';
@@ -13,7 +13,6 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { classifyScript } from '../update-all-scan.mjs';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET = `test-only-${randomUUID()}`;
@@ -87,7 +86,7 @@ function makeOrigin(name: string): Origin {
   git(tmp, 'clone', '-q', bare, originSeed);
   git(originSeed, 'symbolic-ref', 'HEAD', 'refs/heads/master');
   layServer(originSeed);
-  fs.writeFileSync(path.join(originSeed, '.gitignore'), 'dist/\nnode_modules/\n.ngdpbase*.pid\n.ngdpbase-update-policy\n.env\n');
+  fs.writeFileSync(path.join(originSeed, '.gitignore'), 'dist/\nnode_modules/\n.ngdpbase*.pid\n.env\n');
   fs.writeFileSync(path.join(originSeed, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.0.0' }));
   git(originSeed, 'add', '-A');
   git(originSeed, 'commit', '-q', '-m', 'v1.0.0');
@@ -115,51 +114,9 @@ function cloneFrom(which: Origin, name: string): string {
   return dir;
 }
 
-function writePolicy(lines: string[]): void {
-  const dir = path.join(xdg, 'ngdpbase');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'update-policy'), `${lines.join('\n')}\n`);
-}
-
 function quote(value: string): string {
   const embedded = ['\'', '\\', '\''].join('');
   return `'${value.split("'").join(embedded)}'`;
-}
-
-function writeUpdater(sites: string[], pinned: string[], extra = ''): string {
-  const bin = path.join(home, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
-  const script = path.join(bin, 'ngdp-autoupdate.sh');
-  fs.writeFileSync(script, [
-    '#!/bin/bash',
-    'SITES=(',
-    ...sites.map((site) => `  ${quote(site)}`),
-    ')',
-    'PINNED=(',
-    ...pinned.map((site) => `  ${quote(site)}`),
-    ')',
-    'TAG=v1.0.0',
-    'for site in "${SITES[@]}"; do',
-    '  (cd "$site" && ./server.sh update "$TAG")',
-    'done',
-    extra,
-    ''
-  ].join('\n'));
-  fs.chmodSync(script, 0o755);
-  const agents = path.join(home, 'Library', 'LaunchAgents');
-  fs.mkdirSync(agents, { recursive: true });
-  fs.writeFileSync(path.join(agents, 'com.example.ngdp-autoupdate.plist'), [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<plist version="1.0"><dict>',
-    '<key>ProgramArguments</key>',
-    '<array>',
-    `<string>${script}</string>`,
-    '</array>',
-    '<key>StartInterval</key><integer>900</integer>',
-    '</dict></plist>',
-    ''
-  ].join('\n'));
-  return script;
 }
 
 interface Proc {
@@ -200,16 +157,15 @@ function installsFor(dir: string): string[] {
   return npmLines().filter((line) => line.startsWith(`${real} `) || line.startsWith(`${dir} `));
 }
 
-function run(args: string[], extra: NodeJS.ProcessEnv = {}): { status: number | null; out: string } {
-  const result = spawnSync('bash', [path.join(driver, 'server.sh'), ...args], {
-    cwd: driver,
+function run(args: string[], extra: NodeJS.ProcessEnv = {}, entry: string = driver): { status: number | null; out: string } {
+  const result = spawnSync('bash', [path.join(entry, 'server.sh'), ...args], {
+    cwd: entry,
     encoding: 'utf8',
     env: {
       ...envWithoutGit,
       PATH: `${stubBin}:${process.env.PATH}`,
       HOME: home,
       XDG_CONFIG_HOME: xdg,
-      NGDP_UPDATE_CRONTAB_FILE: '',
       PM2_JLIST_FILE: jlistFile,
       PM2_JLIST_EXIT: '0',
       STUB_PID: String(process.pid),
@@ -320,11 +276,10 @@ describe('./server.sh update all', () => {
     expect(result.out).not.toContain('pathspec');
   }, 60000);
 
-  it('updates an explicitly manual checkout and does not pass all to git', () => {
+  it('updates a clean checkout and does not pass all to git', () => {
     const site = cloneFrom(primary(), 'addons');
     const before = git(site, 'rev-parse', 'HEAD');
     const next = publish(primary(), '1.1.0');
-    writePolicy([`manual ${site}`, 'nope not-a-line', 'manual relative/path', 'manual /no/such/ngdpbase-dir']);
     writeJlist([
       { name: 'pm2-logrotate', cwd: path.join(tmp, 'not-a-checkout') },
       { name: 'ngdpbase-addons', cwd: site }
@@ -349,9 +304,6 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('http://localhost:39999');
     expect(result.out).not.toContain('39991');
     expect(result.out).not.toContain('should-not-leak');
-    expect(result.out).toContain('update-policy:2 ignored');
-    expect(result.out).toContain('update-policy:3 ignored');
-    expect(result.out).toContain('update-policy:4 ignored');
   }, 60000);
 
   it('dry-run prints the plan and does not fetch, install, or move HEAD', () => {
@@ -359,7 +311,6 @@ describe('./server.sh update all', () => {
     const head = git(site, 'rev-parse', 'HEAD');
     const originMaster = git(site, 'rev-parse', 'origin/master');
     publish(primary(), '1.1.0');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
 
     const result = run(['update', 'all', '--dry-run']);
@@ -373,11 +324,31 @@ describe('./server.sh update all', () => {
     expect(result.out).not.toContain(SECRET);
   }, 60000);
 
+  it('updates two clean master checkouts with no config file anywhere', () => {
+    const first = cloneFrom(primary(), 'first');
+    const second = cloneFrom(primary(), 'second');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'first-app', cwd: first },
+      { name: 'second-app', cwd: second }
+    ]);
+    expect(fs.readdirSync(xdg)).toEqual([]);
+
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(dry.status, dry.out).toBe(0);
+    expect(dry.out.match(/dry-run: would run: \.\/server\.sh update$/gm)).toHaveLength(2);
+    expect(dry.out).toContain('[1/2] first-app');
+    expect(dry.out).toContain('[2/2] second-app');
+    expect(dry.out).not.toContain('skip:');
+    expect(dry.out).toContain('would update  2');
+    expect(npmLines()).toEqual([]);
+  }, 60000);
+
   it('checks out a release tag passed after all', () => {
     const site = cloneFrom(primary(), 'addons');
     const tagged = publish(primary(), '1.1.0');
     publish(primary(), '1.2.0');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
 
     const result = run(['update', 'all', 'v1.1.0']);
@@ -387,146 +358,14 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('running: ./server.sh update v1.1.0');
   }, 60000);
 
-  it('skips updater-owned and pinned checkouts and updates one the updater does not list', () => {
-    const auto = cloneFrom(primary(), 'fairways');
-    const pinned = cloneFrom(primary(), 'accounting');
-    const other = cloneFrom(primary(), 'encrypted');
-    const autoHead = git(auto, 'rev-parse', 'HEAD');
-    const pinnedHead = git(pinned, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    const script = writeUpdater([auto], [pinned]);
-    writeJlist([
-      { name: 'The Fairways', cwd: auto, watch: true },
-      { name: 'Accounting Dev', cwd: pinned },
-      { name: 'ngdp-encrypted', cwd: other }
-    ]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
-    expect(git(pinned, 'rev-parse', 'HEAD')).toBe(pinnedHead);
-    expect(git(other, 'rev-parse', 'HEAD')).toBe(next);
-    expect(installsFor(auto)).toEqual([]);
-    expect(installsFor(pinned)).toEqual([]);
-    expect(installsFor(other).some((line) => line.endsWith(' install'))).toBe(true);
-    expect(result.out).toContain('skip (automatic)');
-    expect(result.out).toContain('skip (pinned)');
-    expect(result.out).toContain(script);
-    expect(result.out).toContain('not listed by the automatic updater');
-    expect(result.out).toContain('not release updating');
-    expect(result.out).toContain('The Fairways');
-    expect(result.out).not.toContain(SECRET);
-  }, 60000);
-
-  it('pins a checkout by its PM2 name in a comment and updates one the script does not mention', () => {
-    const auto = cloneFrom(primary(), 'fairways');
-    const named = cloneFrom(primary(), 'accounting');
-    const other = cloneFrom(primary(), 'encrypted');
-    const autoHead = git(auto, 'rev-parse', 'HEAD');
-    const namedHead = git(named, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    writeUpdater([auto], [], '# Accounting Dev explicitly excluded as pinned\n');
-    writeJlist([
-      { name: 'The Fairways', cwd: auto },
-      { name: 'Accounting Dev', cwd: named },
-      { name: 'ngdp-encrypted', cwd: other }
-    ]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
-    expect(git(named, 'rev-parse', 'HEAD')).toBe(namedHead);
-    expect(git(other, 'rev-parse', 'HEAD')).toBe(next);
-    expect(result.out).toContain('skip (pinned)');
-    expect(result.out).toContain('not listed by the automatic updater');
-    expect(installsFor(named)).toEqual([]);
-  }, 60000);
-
-  it('still updates an explicit manual checkout when the updater script is incomplete', () => {
-    const auto = cloneFrom(primary(), 'fairways');
-    const manual = cloneFrom(primary(), 'addons');
-    const loose = cloneFrom(primary(), 'encrypted');
-    const autoHead = git(auto, 'rev-parse', 'HEAD');
-    const looseHead = git(loose, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    writeUpdater([auto], [], 'OTHER="$UNRESOLVED"\n# pinned somewhere, path not given\n');
-    writePolicy([`manual ${manual}`]);
-    writeJlist([
-      { name: 'The Fairways', cwd: auto },
-      { name: 'ngdpbase-addons', cwd: manual },
-      { name: 'ngdp-encrypted', cwd: loose }
-    ]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
-    expect(git(manual, 'rev-parse', 'HEAD')).toBe(next);
-    expect(git(loose, 'rev-parse', 'HEAD')).toBe(looseHead);
-    expect(result.out).toContain('incomplete');
-    expect(result.out).toContain('unknown ownership');
-  }, 60000);
-
-  it('does not let one manual policy line authorize every other checkout', () => {
-    const named = cloneFrom(primary(), 'addons');
-    const other = cloneFrom(primary(), 'encrypted');
-    const otherHead = git(other, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    writePolicy([`manual "${named}"`]);
-    writeJlist([
-      { name: 'ngdpbase-addons', cwd: named },
-      { name: 'ngdp-encrypted', cwd: other }
-    ]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(named, 'rev-parse', 'HEAD')).toBe(next);
-    expect(git(other, 'rev-parse', 'HEAD')).toBe(otherHead);
-    expect(result.out).toContain(`manual ${fs.realpathSync(other)}`);
-  }, 60000);
-
-  it('keeps an updater-owned checkout skipped when the policy file says manual', () => {
-    const auto = cloneFrom(primary(), 'fairways');
-    const head = git(auto, 'rev-parse', 'HEAD');
-    publish(primary(), '1.1.0');
-    writeUpdater([auto], []);
-    writePolicy([`manual ${auto}`]);
-    writeJlist([{ name: 'The Fairways', cwd: auto }]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(head);
-    expect(result.out).toContain('also marked manual, still skipped');
-    expect(npmLines()).toEqual([]);
-  }, 60000);
-
-  it('honors a one-word checkout policy file without treating the tree as dirty', () => {
-    const site = cloneFrom(primary(), 'addons');
-    fs.writeFileSync(path.join(site, '.ngdpbase-update-policy'), 'manual\n');
-    const next = publish(primary(), '1.1.0');
-    writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
-
-    expect(git(site, 'status', '--porcelain')).toBe('');
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(git(site, 'rev-parse', 'HEAD')).toBe(next);
-  }, 60000);
-
-  it('updates a path with spaces once when PM2 lists it twice, including via a symlink and the script path', () => {
+  it('updates a path with spaces once when PM2 lists it twice, including via a symlink', () => {
     const site = cloneFrom(primary(), 'My Site');
     const link = path.join(tmp, 'sites', 'site-link');
     fs.symlinkSync(site, link);
     const next = publish(primary(), '1.1.0');
-    writePolicy([`manual ${site}`]);
     writeJlist([
       { name: 'The Fairways', cwd: site, watch: true },
-      { name: 'fairways-again', cwd: link },
-      { name: 'from-script', cwd: '', script: path.join(site, 'dist', 'src', 'app.js') }
+      { name: 'fairways-again', cwd: link }
     ]);
 
     const result = run(['update', 'all']);
@@ -541,7 +380,7 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('not release updating');
   }, 60000);
 
-  it('holds dirty, detached, diverged, ahead, and locked checkouts and still updates the clean one', () => {
+  it('skips dirty, detached, diverged, ahead, and locked checkouts with a reason and still updates the clean one', () => {
     const clean = cloneFrom(primary(), 'clean');
     const dirty = cloneFrom(primary(), 'dirty');
     const staged = cloneFrom(primary(), 'staged');
@@ -559,18 +398,23 @@ describe('./server.sh update all', () => {
     git(diverged, 'add', 'local.txt');
     git(diverged, 'commit', '-q', '-m', 'local');
     const divergedHead = git(diverged, 'rev-parse', 'HEAD');
-    fs.writeFileSync(path.join(ahead, 'ahead.txt'), 'local only');
-    git(ahead, 'add', 'ahead.txt');
-    git(ahead, 'commit', '-q', '-m', 'ahead');
-    const aheadHead = git(ahead, 'rev-parse', 'HEAD');
     git(feature, 'checkout', '-q', '-b', 'feature');
+    fs.writeFileSync(path.join(feature, 'feature.txt'), 'branch work');
+    git(feature, 'add', 'feature.txt');
+    git(feature, 'commit', '-q', '-m', 'feature');
     const featureHead = git(feature, 'rev-parse', 'HEAD');
     const gitDir = git(locked, 'rev-parse', '--absolute-git-dir');
     fs.writeFileSync(path.join(gitDir, 'index.lock'), '');
     const lockedHead = git(locked, 'rev-parse', 'HEAD');
     const next = publish(primary(), '1.1.0');
     git(diverged, 'fetch', '-q', 'origin');
-    writePolicy([clean, dirty, staged, detached, diverged, ahead, feature, locked].map((dir) => `manual ${dir}`));
+    // Ahead only: level with the new origin/master, plus a local commit.
+    git(ahead, 'fetch', '-q', 'origin');
+    git(ahead, 'reset', '-q', '--hard', 'origin/master');
+    fs.writeFileSync(path.join(ahead, 'ahead.txt'), 'local only');
+    git(ahead, 'add', 'ahead.txt');
+    git(ahead, 'commit', '-q', '-m', 'ahead');
+    const aheadHead = git(ahead, 'rev-parse', 'HEAD');
     writeJlist([
       { name: 'clean', cwd: clean },
       { name: 'dirty', cwd: dirty },
@@ -600,35 +444,43 @@ describe('./server.sh update all', () => {
     expect(fs.existsSync(path.join(gitDir, 'index.lock'))).toBe(true);
     expect(installsFor(dirty)).toEqual([]);
     expect(installsFor(diverged)).toEqual([]);
-    expect(result.out).toContain('skip (dirty)');
-    expect(result.out).toContain('notes.txt');
-    expect(result.out).toContain('skip (detached)');
-    expect(result.out).toContain('skip (divergent)');
-    expect(result.out).toContain('skip (ahead)');
-    expect(result.out).toContain('skip (not-on-master)');
-    expect(result.out).toContain('skip (index-locked)');
+    expect(result.out).toContain('skip: 1 uncommitted or untracked file(s), first: notes.txt');
+    expect(result.out).toContain('skip: 1 uncommitted or untracked file(s), first: staged.txt');
+    expect(result.out).toContain('skip: detached HEAD, not on a branch');
+    expect(result.out.match(/skip: 1 commit\(s\) ahead of origin\/master/g)).toHaveLength(2);
+    expect(result.out).toContain('skip: on branch feature, not master');
+    expect(result.out).toContain('skip: git index is locked');
+    expect(result.out).toContain('held by git   7');
+    expect(result.out).toContain('updated       1');
     expect(result.out).not.toContain('reset --hard');
   }, 60000);
 
-  it('updates a non-master checkout when a ref is given, and still skips a detached one', () => {
+  it('skips a checkout on another branch, even with no commits of its own or a ref given', () => {
     const feature = cloneFrom(primary(), 'feature');
     const detached = cloneFrom(primary(), 'detached');
+    const clean = cloneFrom(primary(), 'clean');
     git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
     git(detached, 'checkout', '-q', '--detach');
     const detachedHead = git(detached, 'rev-parse', 'HEAD');
     const tagged = publish(primary(), '1.1.0');
     publish(primary(), '1.2.0');
-    writePolicy([`manual ${feature}`, `manual ${detached}`]);
     writeJlist([
       { name: 'feature', cwd: feature },
-      { name: 'detached', cwd: detached }
+      { name: 'detached', cwd: detached },
+      { name: 'clean', cwd: clean }
     ]);
 
     const result = run(['update', 'all', 'v1.1.0']);
 
     expect(result.status, result.out).toBe(1);
-    expect(git(feature, 'rev-parse', 'HEAD')).toBe(tagged);
+    expect(result.out).toContain('skip: on branch feature, not master');
+    expect(result.out).toContain('skip: detached HEAD, not on a branch');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(installsFor(feature)).toEqual([]);
     expect(git(detached, 'rev-parse', 'HEAD')).toBe(detachedHead);
+    expect(git(clean, 'rev-parse', 'HEAD')).toBe(tagged);
   }, 60000);
 
   it('continues after one checkout fails to build and rolls only that checkout back', () => {
@@ -639,7 +491,6 @@ describe('./server.sh update all', () => {
     const badHead = git(bad, 'rev-parse', 'HEAD');
     const goodNext = publish(goodOrigin, '1.1.0');
     publish(badOrigin, '1.1.0', 'BREAK_BUILD');
-    writePolicy([`manual ${good}`, `manual ${bad}`]);
     writeJlist([
       { name: 'good', cwd: good },
       { name: 'bad', cwd: bad }
@@ -660,7 +511,6 @@ describe('./server.sh update all', () => {
     const site = cloneFrom(primary(), 'stopped');
     const head = git(site, 'rev-parse', 'HEAD');
     publish(primary(), '1.1.0');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'stopped-app', cwd: site, status: 'stopped' }]);
 
     const result = run(['update', 'all']);
@@ -676,7 +526,6 @@ describe('./server.sh update all', () => {
     const next = publish(primary(), '1.1.0');
     const pwnedName = path.join(tmp, 'pwned-name');
     const pwnedCwd = path.join(tmp, 'pwned-cwd');
-    writePolicy([`manual ${site}`]);
     writeJlist([
       { name: `$(touch ${pwnedName})`, cwd: path.join(tmp, `no-such; touch ${pwnedCwd}`) },
       { name: 'ok-app', cwd: site }
@@ -691,26 +540,9 @@ describe('./server.sh update all', () => {
     expect(result.out).not.toContain(SECRET);
   }, 60000);
 
-  it('exits 3 when every checkout has unknown ownership', () => {
-    const site = cloneFrom(primary(), 'addons');
-    const head = git(site, 'rev-parse', 'HEAD');
-    publish(primary(), '1.1.0');
-    writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
-
-    const result = run(['update', 'all']);
-
-    expect(result.status, result.out).toBe(3);
-    expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
-    expect(result.out).toContain('unknown ownership');
-    expect(result.out).toContain('update-policy');
-    expect(result.out).toContain(`manual ${fs.realpathSync(site)}`);
-    expect(npmLines()).toEqual([]);
-  }, 60000);
-
   it('refuses a recursive update all and a second all used as a ref', () => {
     const site = cloneFrom(primary(), 'addons');
     const head = git(site, 'rev-parse', 'HEAD');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
 
     const recursive = run(['update', 'all'], { NGDP_UPDATE_ALL_PARENT: '1' });
@@ -726,28 +558,28 @@ describe('./server.sh update all', () => {
   it('refuses to run while another update all holds the lock, and reclaims a dead lock', () => {
     const site = cloneFrom(primary(), 'addons');
     const head = git(site, 'rev-parse', 'HEAD');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
     const lock = path.join(xdg, 'ngdpbase', 'update-all.lock');
-    fs.mkdirSync(lock, { recursive: true });
-    fs.writeFileSync(path.join(lock, 'pid'), String(process.pid));
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.symlinkSync(String(process.pid), lock);
 
-    const held = run(['update', 'all', '--dry-run']);
+    const held = run(['update', 'all']);
 
     expect(held.status, held.out).toBe(2);
     expect(held.out).toContain('already running');
     expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
 
-    fs.writeFileSync(path.join(lock, 'pid'), String(deadPid()));
-    const reclaimed = run(['update', 'all', '--dry-run']);
+    fs.rmSync(lock);
+    fs.symlinkSync(String(deadPid()), lock);
+    const reclaimed = run(['update', 'all']);
     expect(reclaimed.status, reclaimed.out).toBe(0);
-    expect(reclaimed.out).toContain('dry-run: would run: ./server.sh update');
+    expect(reclaimed.out).toContain('result: updated');
     expect(fs.existsSync(lock)).toBe(false);
+    expect(fs.lstatSync(path.join(xdg, 'ngdpbase')).isDirectory()).toBe(true);
   }, 60000);
 
   it('fails closed when PM2 output is missing or not JSON, without echoing it', () => {
     const site = cloneFrom(primary(), 'addons');
-    writePolicy([`manual ${site}`]);
     writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
 
     const missing = run(['update', 'all'], { PM2_JLIST_EXIT: '1' });
@@ -762,246 +594,419 @@ describe('./server.sh update all', () => {
     expect(missing.out).not.toContain(SECRET);
   }, 60000);
 
-  it('reads an updater from crontab or a systemd user unit, not only LaunchAgents', () => {
-    const auto = cloneFrom(primary(), 'fairways');
-    const other = cloneFrom(primary(), 'encrypted');
-    const autoHead = git(auto, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, [
-      '#!/bin/bash',
-      'SITES=(',
-      `  ${quote(auto)}`,
-      ')',
-      'for site in "${SITES[@]}"; do',
-      '  (cd "$site" && ./server.sh update "$TAG")',
-      'done',
-      ''
-    ].join('\n'));
-    const cron = path.join(tmp, 'crontab');
-    fs.writeFileSync(cron, `*/15 * * * * ${script}\n`);
-    writeJlist([
-      { name: 'The Fairways', cwd: auto },
-      { name: 'ngdp-encrypted', cwd: other }
-    ]);
-
-    const fromCron = run(['update', 'all'], { NGDP_UPDATE_CRONTAB_FILE: cron });
-
-    expect(fromCron.status, fromCron.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
-    expect(git(other, 'rev-parse', 'HEAD')).toBe(next);
-
-    const unitDir = path.join(xdg, 'systemd', 'user');
-    fs.mkdirSync(unitDir, { recursive: true });
-    fs.writeFileSync(path.join(unitDir, 'ngdp-autoupdate.service'), `[Service]\nExecStart=${script}\n`);
-    const second = cloneFrom(primary(), 'addons');
-    const secondHead = git(auto, 'rev-parse', 'HEAD');
-    publish(primary(), '1.2.0');
-    writeJlist([
-      { name: 'The Fairways', cwd: auto },
-      { name: 'ngdpbase-addons', cwd: second }
-    ]);
-    const emptyCron = path.join(tmp, 'empty-cron');
-    fs.writeFileSync(emptyCron, '');
-    const fromUnit = run(['update', 'all'], { NGDP_UPDATE_CRONTAB_FILE: emptyCron });
-
-    expect(fromUnit.status, fromUnit.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(secondHead);
-    expect(git(second, 'rev-parse', 'HEAD')).toBe(git(seed, 'rev-parse', 'HEAD'));
-  }, 60000);
-
-  it('does not treat server.sh itself as an automatic updater', () => {
-    const site = cloneFrom(primary(), 'addons');
+  it('reads the PM2 list after an out-of-date notice, and updates nothing when the notice has no list', () => {
+    const site = cloneFrom(primary(), 'noticed');
     const head = git(site, 'rev-parse', 'HEAD');
     publish(primary(), '1.1.0');
-    const agents = path.join(home, 'Library', 'LaunchAgents');
-    fs.mkdirSync(agents, { recursive: true });
-    fs.writeFileSync(path.join(agents, 'com.example.direct.plist'), [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
-      `<string>${path.join(site, 'server.sh')}</string>`,
-      '<string>update</string>',
-      '</array></dict></plist>',
-      ''
-    ].join('\n'));
-    writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+    writeJlist([{ name: 'noticed', cwd: site }]);
+    const list = fs.readFileSync(jlistFile, 'utf8');
+    const notice = '\n\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m\n>>>> $ pm2 update\nIn memory PM2 version: 7.0.1\nLocal PM2 version: 7.1.1\n\n\n';
+
+    fs.writeFileSync(jlistFile, notice);
+    const noList = run(['update', 'all']);
+    fs.writeFileSync(jlistFile, `${notice}${list}\n`);
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(noList.status, noList.out).toBe(2);
+    expect(noList.out).toContain('not usable');
+    expect(noList.out).not.toContain('In-memory PM2');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+    expect(installsFor(site)).toEqual([]);
+    expect(dry.status, dry.out).toBe(0);
+    expect(dry.out).toContain('would run');
+  }, 60000);
+
+  it('ignores an inherited GIT_DIR and GIT_INDEX_FILE, so a checkout on another branch is still skipped', () => {
+    const feature = cloneFrom(primary(), 'feature');
+    const other = cloneFrom(primary(), 'other');
+    git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'feature', cwd: feature }]);
+    const otherGit = path.join(other, '.git');
+
+    const result = run(['update', 'all'], { GIT_DIR: otherGit, GIT_INDEX_FILE: path.join(otherGit, 'index'), GIT_WORK_TREE: other });
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('skip: on branch feature, not master');
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(installsFor(feature)).toEqual([]);
+  }, 60000);
+
+  it('refuses when a .env sets GIT_DIR read-only, so it cannot be cleared', () => {
+    const feature = cloneFrom(primary(), 'feature');
+    const other = cloneFrom(primary(), 'other');
+    git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'feature', cwd: feature }]);
+    fs.appendFileSync(path.join(driver, '.env'), `readonly GIT_DIR=${path.join(other, '.git')}\n`);
 
     const result = run(['update', 'all']);
 
-    expect(result.status, result.out).toBe(3);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('Refusing: GIT_DIR is set read-only and cannot be cleared');
+    expect(result.out).not.toContain('running:');
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(installsFor(feature)).toEqual([]);
+  }, 60000);
+
+  it('a local branch or tag named origin/master does not hide local commits', () => {
+    const branched = cloneFrom(primary(), 'branched');
+    const tagged = cloneFrom(primary(), 'tagged');
+    for (const dir of [branched, tagged]) git(dir, 'commit', '-q', '--allow-empty', '-m', 'local');
+    git(branched, 'branch', 'origin/master', 'HEAD');
+    git(tagged, 'tag', '-a', '-m', 't', 'origin/master', 'HEAD');
+    const heads = [git(branched, 'rev-parse', 'HEAD'), git(tagged, 'rev-parse', 'HEAD')];
+    writeJlist([
+      { name: 'branched', cwd: branched },
+      { name: 'tagged', cwd: tagged }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out.match(/skip: 1 commit\(s\) ahead of origin\/master/g)).toHaveLength(2);
+    expect([git(branched, 'rev-parse', 'HEAD'), git(tagged, 'rev-parse', 'HEAD')]).toEqual(heads);
+    expect(installsFor(branched)).toEqual([]);
+    expect(installsFor(tagged)).toEqual([]);
+  }, 60000);
+
+  it('skips checkouts with files hidden by assume-unchanged or skip-worktree, and keeps the edits', () => {
+    const assumed = cloneFrom(primary(), 'assumed');
+    const skipped = cloneFrom(primary(), 'skipped');
+    fs.appendFileSync(path.join(assumed, '.gitignore'), '# my local edit\n');
+    git(assumed, 'update-index', '--assume-unchanged', '.gitignore');
+    fs.appendFileSync(path.join(skipped, '.gitignore'), '# my local edit\n');
+    git(skipped, 'update-index', '--skip-worktree', '.gitignore');
+    const heads = [git(assumed, 'rev-parse', 'HEAD'), git(skipped, 'rev-parse', 'HEAD')];
+    fs.appendFileSync(path.join(seed, '.gitignore'), 'upstream/\n');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'assumed', cwd: assumed },
+      { name: 'skipped', cwd: skipped }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out.match(/skip: files hidden from git status \(assume-unchanged or skip-worktree\)/g)).toHaveLength(2);
+    expect([git(assumed, 'rev-parse', 'HEAD'), git(skipped, 'rev-parse', 'HEAD')]).toEqual(heads);
+    expect(fs.readFileSync(path.join(assumed, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(fs.readFileSync(path.join(skipped, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(installsFor(assumed)).toEqual([]);
+  }, 60000);
+
+  it('plain update refuses a checkout with an assume-unchanged file before changing anything', () => {
+    fs.appendFileSync(path.join(driver, '.gitignore'), '# my local edit\n');
+    git(driver, 'update-index', '--assume-unchanged', '.gitignore');
+    const head = git(driver, 'rev-parse', 'HEAD');
+    fs.appendFileSync(path.join(seed, '.gitignore'), 'upstream/\n');
+    publish(primary(), '1.1.0');
+
+    const result = run(['update']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('Refusing to update: files hidden from git status');
+    expect(result.out).toContain('.gitignore');
+    expect(git(driver, 'rev-parse', 'HEAD')).toBe(head);
+    expect(fs.readFileSync(path.join(driver, '.gitignore'), 'utf8')).toContain('# my local edit');
+    expect(installsFor(driver)).toEqual([]);
+  }, 60000);
+
+  it('skips a checkout when origin/master cannot be resolved, even after a fetch', () => {
+    const site = cloneFrom(primary(), 'noref');
+    git(site, 'commit', '-q', '--allow-empty', '-m', 'local');
+    const head = git(site, 'rev-parse', 'HEAD');
+    git(site, 'config', '--unset-all', 'remote.origin.fetch');
+    git(site, 'update-ref', '-d', 'refs/remotes/origin/master');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'noref', cwd: site }]);
+
+    const result = run(['update', 'all']);
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('skip: cannot compare with origin/master');
+    expect(dry.out).toContain('skip: cannot compare with origin/master');
     expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
-    expect(result.out).toContain('No automatic updater script found');
+    expect(installsFor(site)).toEqual([]);
   }, 60000);
 
-  it('dry-runs the updater comment that pins one directory basename', () => {
-    const place = (rel: string): string => {
-      const dir = path.join(tmp, rel);
-      fs.mkdirSync(path.dirname(dir), { recursive: true });
-      git(tmp, 'clone', '-q', origin, dir);
-      writeInstanceEnv(dir);
-      return dir;
-    };
-    const jimstest = place('github/ngdpbase');
-    const fairways = place('github/fairways-base');
-    const yourphr = place('github/ngdpbase-yourphr');
-    const accounting = place('github/ngdpbase-accounting');
-    const addons = place('instances/ngdpbase-addons-instance');
-    const encrypted = place('github/ngdpbase-encrypted');
-    const tempBuild = path.join(tmp, 'temp-builds', 'ngdpbase');
-    const heads = [jimstest, fairways, yourphr, accounting, addons, encrypted].map((dir) => git(dir, 'rev-parse', 'HEAD'));
-    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, [
-      '# Order matters: jimstest first, then satellites. Not here on purpose:',
-      '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
-      'SITES=(',
-      `  ${jimstest}`,
-      `  ${fairways}`,
-      `  ${yourphr}`,
-      `  ${tempBuild}`,
-      ')',
-      'TAG=v1.0.0',
-      'for site in "${SITES[@]}"; do',
-      '  (cd "$site" && ./server.sh update "$TAG")',
-      'done',
-      '# skip a checkout that has local changes',
-      ''
-    ].join('\n'));
-    const agents = path.join(home, 'Library', 'LaunchAgents');
-    fs.mkdirSync(agents, { recursive: true });
-    fs.writeFileSync(path.join(agents, 'com.example.ngdp-autoupdate.plist'), [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
-      `<string>${script}</string>`,
-      '</array></dict></plist>',
-      ''
-    ].join('\n'));
+  it('prints no control characters from PM2 names', () => {
+    const site = cloneFrom(primary(), 'evil');
     writeJlist([
-      { name: 'jimstest', cwd: jimstest },
-      { name: 'The Fairways', cwd: fairways },
-      { name: 'ngdpbase-yourphr', cwd: yourphr },
-      { name: 'Accounting Dev', cwd: accounting },
-      { name: 'ngdpbase-addons', cwd: addons },
-      { name: 'ngdp-encrypted', cwd: encrypted }
+      { name: 'evil\x1b]0;PWNED\x07\x1b[2J\u009b', cwd: site },
+      { name: 'other\x1b[31mRED\x7f', cwd: path.join(tmp, 'not-a-checkout') }
     ]);
 
-    const result = run(['update', 'all', '--dry-run']);
+    const dry = run(['update', 'all', '--dry-run']);
 
-    expect(result.status, result.out).toBe(0);
-    expect(result.out).not.toContain('ambiguous-pin');
-    expect(result.out).not.toContain('unknown ownership');
-    expect(result.out.match(/skip \(automatic\)/g)).toHaveLength(3);
-    expect(result.out).toContain('skip (pinned)');
-    expect(result.out).toContain(accounting);
-    expect(result.out).not.toContain('site list stays authoritative');
-    const blocks = result.out.split(/\n(?=\[\d+\/\d+\])/);
-    const yourBlock = blocks.find((block) => block.includes(yourphr));
-    expect(yourBlock).toContain('skip (automatic)');
-    expect(yourBlock).not.toContain('skip (pinned)');
-    expect(result.out.match(/dry-run: would run: \.\/server\.sh update/g)).toEqual([
-      'dry-run: would run: ./server.sh update',
-      'dry-run: would run: ./server.sh update'
-    ]);
-    expect(blocks.find((block) => block.includes(addons))).toContain('dry-run: would run: ./server.sh update');
-    expect(blocks.find((block) => block.includes(encrypted))).toContain('dry-run: would run: ./server.sh update');
-    expect(npmLines()).toEqual([]);
-    [jimstest, fairways, yourphr, accounting, addons, encrypted].forEach((dir, index) => {
-      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
+    expect(dry.status, dry.out).toBe(0);
+    const controls = [...dry.out].filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return ch !== '\n' && ch !== '\t' && (code < 0x20 || (code >= 0x7f && code <= 0x9f));
     });
+    expect(controls).toEqual([]);
+    expect(dry.out).toContain('evil?]0;PWNED??[2J?');
+    expect(dry.out).toContain('other?[31mRED?');
   }, 60000);
 
-  it('does not guess when two checkouts share a pinned directory basename', () => {
-    const place = (rel: string): string => {
-      const dir = path.join(tmp, rel);
-      fs.mkdirSync(path.dirname(dir), { recursive: true });
-      git(tmp, 'clone', '-q', origin, dir);
-      writeInstanceEnv(dir);
-      return dir;
-    };
-    const first = place('one/ngdpbase-accounting');
-    const second = place('two/ngdpbase-accounting');
-    const auto = place('github/fairways-base');
-    const other = place('instances/ngdpbase-addons-instance');
-    const heads = [first, second, auto, other].map((dir) => git(dir, 'rev-parse', 'HEAD'));
-    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, [
-      '# ngdpbase-accounting (pinned)',
-      'SITES=(',
-      `  ${auto}`,
-      ')',
-      'for site in "${SITES[@]}"; do',
-      '  (cd "$site" && ./server.sh update "$TAG")',
-      'done',
-      ''
-    ].join('\n'));
-    const agents = path.join(home, 'Library', 'LaunchAgents');
-    fs.mkdirSync(agents, { recursive: true });
-    fs.writeFileSync(path.join(agents, 'com.example.collide.plist'), [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
-      `<string>${script}</string>`,
-      '</array></dict></plist>',
-      ''
-    ].join('\n'));
-    writeJlist([
-      { name: 'Accounting Dev', cwd: first },
-      { name: 'Accounting Dev copy', cwd: second },
-      { name: 'The Fairways', cwd: auto },
-      { name: 'ngdpbase-addons', cwd: other }
-    ]);
+  it('keeps an empty ref in its slot when env is given', () => {
+    const site = cloneFrom(primary(), 'emptyref');
+    const next = publish(primary(), '1.1.0');
+    writeJlist([{ name: 'emptyref', cwd: site }]);
 
-    const result = run(['update', 'all', '--dry-run']);
+    const dry = run(['update', 'all', '--dry-run', '', 'development']);
+    const real = run(['update', 'all', '', 'development']);
 
-    expect(result.status, result.out).toBe(3);
-    expect(result.out).toContain('2 running checkouts use it');
-    expect(result.out).toContain('unknown ownership');
-    expect(result.out).not.toContain('dry-run: would run:');
-    expect(npmLines()).toEqual([]);
-    [first, second, auto, other].forEach((dir, index) => {
-      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
-    });
+    expect(dry.status, dry.out).toBe(0);
+    expect(dry.out).toContain('dry-run: would run: ./server.sh update "" development');
+    expect(real.out).not.toContain('Cannot check out development');
+    expect(git(site, 'symbolic-ref', '--short', 'HEAD')).toBe('master');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(next);
   }, 60000);
+
+  describe('#2305 hardening', () => {
+    it('F2: a nested checkout without its own .git is refused by the gate', () => {
+      const outer = cloneFrom(primary(), 'outer');
+      const inner = path.join(outer, 'inner');
+      fs.mkdirSync(inner);
+      layServer(inner);
+      writeJlist([{ name: 'inner-app', cwd: inner }]);
+      const head = git(outer, 'rev-parse', 'HEAD');
+      publish(primary(), '1.1.0');
+
+      const result = run(['update', 'all']);
+
+      expect(result.status, result.out).toBe(1);
+      expect(result.out).toContain('skip: not the top of its own git repository');
+      expect(git(outer, 'rev-parse', 'HEAD')).toBe(head);
+      expect(npmLines()).toEqual([]);
+    }, 60000);
+
+    it('F3: a lock without a pid is not taken over, and concurrent lockers never both win', () => {
+      const site = cloneFrom(primary(), 'addons');
+      writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+      const lock = path.join(xdg, 'ngdpbase', 'update-all.lock');
+      fs.mkdirSync(lock, { recursive: true });
+
+      const result = run(['update', 'all']);
+
+      expect(result.status, result.out).toBe(2);
+      expect(result.out).toContain('holds no pid');
+      expect(fs.existsSync(lock)).toBe(true);
+      expect(npmLines()).toEqual([]);
+      fs.rmSync(lock, { recursive: true });
+
+      fs.symlinkSync(String(deadPid()), lock);
+      const harness = [
+        `source ${quote(path.join(REPO_ROOT, 'scripts', 'update-all.sh'))}`,
+        'for i in 1 2 3 4 5 6 7 8; do',
+        '  ( ngdp_update_all_lock >/dev/null 2>&1 && { echo WON; sleep 2; } ) &',
+        'done',
+        'wait'
+      ].join('\n');
+      const raced = spawnSync('bash', ['-c', harness], {
+        encoding: 'utf8',
+        env: { ...envWithoutGit, HOME: home, XDG_CONFIG_HOME: xdg, PATH: process.env.PATH }
+      });
+      expect(String(raced.stdout).split('\n').filter((line) => line === 'WON')).toHaveLength(1);
+    }, 60000);
+
+    it('F4: refuses to run as root and holds a checkout the invoking uid does not own', () => {
+      const site = cloneFrom(primary(), 'addons');
+      const head = git(site, 'rev-parse', 'HEAD');
+      publish(primary(), '1.1.0');
+      writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+      const idStub = path.join(stubBin, 'id');
+      fs.writeFileSync(idStub, '#!/bin/bash\necho "${STUB_UID:-0}"\n');
+      fs.chmodSync(idStub, 0o755);
+
+      const asRoot = run(['update', 'all'], { STUB_UID: '0' });
+      expect(asRoot.status, asRoot.out).toBe(2);
+      expect(asRoot.out).toContain('Refusing to run as root');
+
+      const asOther = run(['update', 'all'], { STUB_UID: '4242' });
+      expect(asOther.status, asOther.out).toBe(1);
+      expect(asOther.out).toContain('skip: owned by another user');
+      expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+      expect(npmLines()).toEqual([]);
+    }, 60000);
+
+    it('F5: leaves no temp files behind, with or without a dry run', () => {
+      const site = cloneFrom(primary(), 'addons');
+      publish(primary(), '1.1.0');
+      writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+      const scratch = path.join(tmp, 'scratch');
+      fs.mkdirSync(scratch);
+
+      const dry = run(['update', 'all', '--dry-run'], { TMPDIR: scratch });
+      const real = run(['update', 'all'], { TMPDIR: scratch });
+
+      expect(dry.status, dry.out).toBe(0);
+      expect(real.status, real.out).toBe(0);
+      expect(fs.readdirSync(scratch)).toEqual([]);
+    }, 60000);
+
+    it('F6: does not pass test-only STUB_*, NPM_LOG or CURL_LOG variables to the child', () => {
+      const site = cloneFrom(primary(), 'addons');
+      publish(primary(), '1.1.0');
+      writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+      const probe = path.join(tmp, 'probe.log');
+      fs.writeFileSync(path.join(stubBin, 'npm'), [
+        '#!/bin/bash',
+        `echo "STUB_INSTANCE=\${STUB_INSTANCE-unset} FROM_PARENT=\${PARENT_ONLY_NPM_LOG-unset}" >> ${quote(probe)}`,
+        'if [ "$1 $2" = "run build" ]; then mkdir -p dist/src && echo "" > dist/src/app.js; fi',
+        'exit 0'
+      ].join('\n'));
+
+      const result = run(['update', 'all'], { STUB_INSTANCE: 'leaked', PARENT_ONLY_NPM_LOG: 'leaked' });
+
+      expect(result.status, result.out).toBe(0);
+      const seen = fs.readFileSync(probe, 'utf8');
+      expect(seen).toContain('STUB_INSTANCE=unset');
+      expect(seen).not.toContain('leaked');
+      const source = fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'update-all.sh'), 'utf8');
+      expect(source).not.toMatch(/NPM_LOG|CURL_LOG|STUB_/);
+    }, 60000);
+
+    it('F7: does not resolve a checkout from a PM2 script path when the working directory is not one', () => {
+      const site = cloneFrom(primary(), 'addons');
+      const head = git(site, 'rev-parse', 'HEAD');
+      publish(primary(), '1.1.0');
+      writeJlist([{ name: 'rogue', cwd: path.join(tmp, 'elsewhere'), script: path.join(site, 'dist', 'src', 'app.js') }]);
+
+      const result = run(['update', 'all']);
+
+      expect(result.status, result.out).toBe(3);
+      expect(result.out).toContain('none is an ngdpbase checkout');
+      expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+      expect(npmLines()).toEqual([]);
+    }, 60000);
+
+    it('F8: refreshes origin/master before the ahead check, skips when it cannot fetch, and a dry run takes no lock', () => {
+      const ahead = cloneFrom(primary(), 'ahead');
+      fs.writeFileSync(path.join(ahead, 'ahead.txt'), 'local only');
+      git(ahead, 'add', 'ahead.txt');
+      git(ahead, 'commit', '-q', '-m', 'ahead');
+      const aheadHead = git(ahead, 'rev-parse', 'HEAD');
+      git(ahead, 'update-ref', 'refs/remotes/origin/master', 'HEAD');
+      const offline = cloneFrom(primary(), 'offline');
+      git(offline, 'remote', 'set-url', 'origin', path.join(tmp, 'no-such-origin.git'));
+      writeJlist([
+        { name: 'ahead-app', cwd: ahead },
+        { name: 'offline-app', cwd: offline }
+      ]);
+
+      const result = run(['update', 'all']);
+
+      expect(result.status, result.out).toBe(1);
+      expect(result.out).toContain('skip: 1 commit(s) ahead of origin/master');
+      expect(result.out).toContain('skip: could not fetch origin/master');
+      expect(git(ahead, 'rev-parse', 'HEAD')).toBe(aheadHead);
+      expect(npmLines()).toEqual([]);
+
+      const lock = path.join(xdg, 'ngdpbase', 'update-all.lock');
+      fs.mkdirSync(path.dirname(lock), { recursive: true });
+      fs.symlinkSync(String(process.pid), lock);
+      const dry = run(['update', 'all', '--dry-run']);
+      expect(dry.out).not.toContain('already running');
+      expect(dry.out).toContain('Dry run');
+      expect(fs.readlinkSync(lock)).toBe(String(process.pid));
+    }, 60000);
+
+    it('N3: run through a symlinked checkout path, discovery finds the same checkouts as the real path', () => {
+      const site = cloneFrom(primary(), 'addons');
+      publish(primary(), '1.1.0');
+      writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+      const link = path.join(tmp, 'driver-link');
+      fs.symlinkSync(driver, link);
+
+      const real = run(['update', 'all', '--dry-run']);
+      const linked = run(['update', 'all', '--dry-run'], {}, link);
+
+      expect(linked.status, linked.out).toBe(real.status);
+      expect(linked.out).toContain('[1/1] ngdpbase-addons');
+      expect(linked.out).toContain(fs.realpathSync(site));
+      expect(linked.out).not.toContain('No ngdpbase checkouts');
+    }, 60000);
+  });
+
 });
 
-describe('updater comment fixture', () => {
-  const fixture = [
-    '# Order matters: jimstest first, then satellites. Not here on purpose:',
-    '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
-    'SITES=(',
-    '  /Volumes/hd2A/workspaces/github/ngdpbase',
-    '  /Volumes/hd2A/workspaces/github/fairways-base',
-    '  /Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
-    '  /Volumes/hd2/ngdp-temp-builds/ngdpbase',
-    ')',
-    'for site in "${SITES[@]}"; do',
-    '  (cd "$site" && ./server.sh update "$TAG")',
-    'done',
-    '# skip a checkout that has local changes',
-    ''
-  ].join('\n');
+describe('update-all-scan.mjs process entry', () => {
+  const scanner = path.join(REPO_ROOT, 'scripts', 'update-all-scan.mjs');
 
-  it('keeps the site list authoritative and pins only the marked basename', () => {
-    const rows = classifyScript(fixture, '/updater.sh', [
-      'Accounting Dev',
-      'yourphr',
-      'jimstest',
-      'The Fairways',
-      'ngdpbase-yourphr'
+  it('sanitize-pm2 trims whitespace around PM2 app names', () => {
+    const jlist = JSON.stringify([{ name: ' \tprod-site  \t', pm2_env: { pm_cwd: '/x/a-site', status: 'online' } }]);
+    const result = spawnSync(process.execPath, [scanner, 'sanitize-pm2'], { input: jlist, encoding: 'utf8', env: envWithoutGit });
+    expect(result.status).toBe(0);
+    expect(result.stdout.split('\0')[0]).toBe('prod-site');
+  });
+
+  const sanitize = (input: string) =>
+    spawnSync(process.execPath, [scanner, 'sanitize-pm2'], { input, encoding: 'utf8', env: envWithoutGit });
+  const jlistLine = JSON.stringify([
+    { name: 'site-a', pm2_env: { pm_cwd: '/x/site-a', status: 'online', SECRET_TOKEN: 'do-not-print' } },
+    { name: 'site-b', pm2_env: { pm_cwd: '/x/site-b', status: 'stopped' } }
+  ]);
+  const names = (stdout: string) => stdout.split('\0').slice(0, -1).filter((_, i) => i % 5 === 0);
+
+  it('sanitize-pm2 reads the list after the coloured out-of-date notice', () => {
+    const notice = [
+      '',
+      '\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m',
+      '>>>> $ pm2 update',
+      'In memory PM2 version: 7.0.1',
+      'Local PM2 version: 7.1.1',
+      '',
+      '',
+      jlistLine,
+      ''
+    ].join('\n');
+    const result = sanitize(notice);
+    expect(result.status, result.stderr).toBe(0);
+    expect(names(result.stdout)).toEqual(['site-a', 'site-b']);
+    expect(result.stdout.split('\0').slice(0, 5)).toEqual(['site-a', '/x/site-a', '', 'online', '0']);
+    expect(result.stdout).not.toContain('do-not-print');
+  });
+
+  it('sanitize-pm2 ignores [PM2] and [PM2][WARN] lines before the list', () => {
+    const result = sanitize(['[PM2] Spawning PM2 daemon with pm2_home=/x/.pm2', '[PM2][WARN] Current process list is not synchronized', jlistLine].join('\n'));
+    expect(result.status, result.stderr).toBe(0);
+    expect(names(result.stdout)).toEqual(['site-a', 'site-b']);
+  });
+
+  it('sanitize-pm2 fails closed, printing nothing from the input, when no line is a list', () => {
+    const result = sanitize(['\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m', '[PM2][WARN] do-not-print', '{"not": "a list"}'].join('\n'));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('pm2-json-unusable\n');
+  });
+
+  it('sanitize-pm2 fails closed when more than one line is a list', () => {
+    const result = sanitize([jlistLine, '[]'].join('\n'));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('pm2-json-unusable\n');
+  });
+
+  it('sanitize-pm2 drops a path with a control character and replaces them in names', () => {
+    const list = JSON.stringify([
+      { name: 'a\x1b[2J\x07b\u009b', pm2_env: { pm_cwd: '/x/\x1b[31mred', status: 'online' } }
     ]);
-    const autos = rows.filter((row) => row[0] === 'path' && row[1] === 'auto').map((row) => row[2]);
-    expect(autos).toEqual([
-      '/Volumes/hd2A/workspaces/github/ngdpbase',
-      '/Volumes/hd2A/workspaces/github/fairways-base',
-      '/Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
-      '/Volumes/hd2/ngdp-temp-builds/ngdpbase'
-    ]);
-    expect(rows.filter((row) => row[0] === 'basename')).toEqual([
-      ['basename', 'pinned', 'ngdpbase-accounting', '/updater.sh']
-    ]);
-    expect(rows.some((row) => row[0] === 'name')).toBe(false);
-    expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
-    expect(rows.some((row) => row[1] === 'pinned' && String(row[2]).includes('yourphr'))).toBe(false);
+    const result = sanitize(list);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.split('\0').slice(0, 2)).toEqual(['a?[2J?b?', '']);
+  });
+
+  it('exits 1 and names the path when its own path cannot be resolved', () => {
+    const code = `process.argv[1] = '/nonexistent/update-all-scan.mjs'; await import(${JSON.stringify(scanner)});`;
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', env: envWithoutGit });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('cannot resolve /nonexistent/update-all-scan.mjs');
   });
 });
