@@ -26,12 +26,15 @@ Content-Type: application/json
   "pageName": "My Doc Title",     // required — also the upsert key
   "markdown": "# My Doc\n\n...",  // required — raw Markdown (normalized to NCM)
   "category": "documentation",    // optional — must be an enabled system category
-  "keywords": ["api", "ingest"]   // optional — max 5
+  "keywords": ["api", "ingest"],  // optional — max 5
+  "baseLastModified": "2026-…Z"   // optional — the page's lastModified as you read it; see below
 }
 ```
 
 - __Upsert:__ `pageName` is the key. Re-sending an edited doc __updates the page in place__ (it does not create a duplicate).
 - __Author:__ set from the authenticated identity on create and __immutable across edits__ (later edits bump `editor`, not `author`).
+- __Creation time:__ an update never changes it. `created` is set when the page is first saved and kept by every later save, so do not send it. `GET /api/page-metadata/:page` reports it at the top level; a page saved before `created` existed reports the time of its first version. The same frontmatter field also appears under `custom.created`.
+- __Conflict check:__ send the `lastModified` from `GET /api/page-metadata/:page` as `baseLastModified`. If the page is unchanged the update goes through; if someone edited it since, the answer is `409` with `currentLastModified` and `currentContent`, and nothing is written. Leave it out to overwrite without the check.
 - __NCM:__ the Markdown is normalized to NGDP-Compatible Markdown — link normalization, GFM-table up-conversion, frontmatter sort, and an `ncmVersion` stamp.
 
 ## Response
@@ -61,6 +64,7 @@ HTTP status: `201` on create, `200` on update.
 | `400` | missing `pageName`/`markdown`, invalid characters in `pageName` (`/ \ # ? % " < > \| *`), bad `category`, or >5 keywords |
 | `401` | not authenticated |
 | `403` | authenticated but lacks `page-create` (new) / `page-edit` (existing), or the agent token was refused by the edge gate — see [What an agent token may reach](#what-an-agent-token-may-reach) |
+| `409` | `baseLastModified` no longer matches the page: it was edited after you read it. Nothing was written |
 | `500` | save/normalization failure |
 
 ## Authentication (Authentik OAuth bearer)
