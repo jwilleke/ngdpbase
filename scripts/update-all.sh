@@ -256,7 +256,7 @@ ngdp_update_all_gate() {
     return 0
   fi
   if ! git -C "$root" rev-parse --verify --quiet refs/remotes/origin/master >/dev/null 2>&1 \
-    || ! ahead="$(git -C "$root" rev-list --count origin/master..HEAD 2>/dev/null)" \
+    || ! ahead="$(git -C "$root" rev-list --count refs/remotes/origin/master..HEAD 2>/dev/null)" \
     || [ -z "$ahead" ]; then
     printf 'cannot compare with origin/master, so local commits could not be ruled out'
     return 0
@@ -317,7 +317,17 @@ ngdp_update_all() {
   while IFS= read -r gitvar; do
     case "$gitvar" in
       GIT_SSH|GIT_SSH_COMMAND|GIT_TERMINAL_PROMPT) ;;
-      GIT_*) unset "$gitvar" ;;
+      GIT_*) unset "$gitvar" 2>/dev/null ;;
+    esac
+  done < <(compgen -e)
+  # unset fails on a readonly variable (readonly GIT_DIR=... in a .env).
+  while IFS= read -r gitvar; do
+    case "$gitvar" in
+      GIT_SSH|GIT_SSH_COMMAND|GIT_TERMINAL_PROMPT) ;;
+      GIT_*)
+        echo "❌ Refusing: ${gitvar} is set read-only and cannot be cleared, so git checks would read another repository. Nothing was updated."
+        exit 2
+        ;;
     esac
   done < <(compgen -e)
   local dry=0

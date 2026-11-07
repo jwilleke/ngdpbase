@@ -749,7 +749,7 @@ case "${1:-}" in
     echo "               - Pull master (or check out ref), npm install, build, restart,"
     echo "                 wait for /health/readiness (https, then http); rolls back to the old commit on failure"
     echo "                 Refuses uncommitted changes, files marked assume-unchanged or"
-    echo "                 skip-worktree, and non-fast-forward pulls"
+    echo "                 skip-worktree (so sparse checkouts too), and non-fast-forward pulls"
     echo "  update all [--dry-run] [ref] [env]"
     echo "               - Update each online ngdpbase checkout PM2 is running, by calling"
     echo "                 that checkout's own ./server.sh update. Skips a checkout that is"

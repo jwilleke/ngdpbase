@@ -634,6 +634,46 @@ describe('./server.sh update all', () => {
     expect(installsFor(feature)).toEqual([]);
   }, 60000);
 
+  it('refuses when a .env sets GIT_DIR read-only, so it cannot be cleared', () => {
+    const feature = cloneFrom(primary(), 'feature');
+    const other = cloneFrom(primary(), 'other');
+    git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'feature', cwd: feature }]);
+    fs.appendFileSync(path.join(driver, '.env'), `readonly GIT_DIR=${path.join(other, '.git')}\n`);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('Refusing: GIT_DIR is set read-only and cannot be cleared');
+    expect(result.out).not.toContain('running:');
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(installsFor(feature)).toEqual([]);
+  }, 60000);
+
+  it('a local branch or tag named origin/master does not hide local commits', () => {
+    const branched = cloneFrom(primary(), 'branched');
+    const tagged = cloneFrom(primary(), 'tagged');
+    for (const dir of [branched, tagged]) git(dir, 'commit', '-q', '--allow-empty', '-m', 'local');
+    git(branched, 'branch', 'origin/master', 'HEAD');
+    git(tagged, 'tag', '-a', '-m', 't', 'origin/master', 'HEAD');
+    const heads = [git(branched, 'rev-parse', 'HEAD'), git(tagged, 'rev-parse', 'HEAD')];
+    writeJlist([
+      { name: 'branched', cwd: branched },
+      { name: 'tagged', cwd: tagged }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out.match(/skip: 1 commit\(s\) ahead of origin\/master/g)).toHaveLength(2);
+    expect([git(branched, 'rev-parse', 'HEAD'), git(tagged, 'rev-parse', 'HEAD')]).toEqual(heads);
+    expect(installsFor(branched)).toEqual([]);
+    expect(installsFor(tagged)).toEqual([]);
+  }, 60000);
+
   it('skips checkouts with files hidden by assume-unchanged or skip-worktree, and keeps the edits', () => {
     const assumed = cloneFrom(primary(), 'assumed');
     const skipped = cloneFrom(primary(), 'skipped');

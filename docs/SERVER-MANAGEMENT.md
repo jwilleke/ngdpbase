@@ -382,10 +382,10 @@ these reasons, each printed as one line under the checkout's name:
 | `skip: git status failed, so uncommitted changes could not be ruled out` | `git status` exited with an error. |
 | `skip: N uncommitted or untracked file(s), first: <file>` | `git status` shows changes, staged or not, or untracked files. |
 | `skip: git ls-files failed, so hidden changes could not be ruled out` | `git ls-files -v` exited with an error. |
-| `skip: files hidden from git status (assume-unchanged or skip-worktree)` | A tracked file is marked `git update-index --assume-unchanged` or `--skip-worktree`. `git status` does not show edits to it, and a failed update's rollback would overwrite them. Clear the mark with `git update-index --no-assume-unchanged --no-skip-worktree <file>`. |
+| `skip: files hidden from git status (assume-unchanged or skip-worktree)` | A tracked file is marked `git update-index --assume-unchanged` or `--skip-worktree`. `git status` does not show edits to it, and a failed update's rollback might overwrite them. To keep a local edit, clear the mark with `git update-index --no-assume-unchanged --no-skip-worktree <file>` and commit or move the edit. A sparse checkout is refused too, because `git sparse-checkout` marks every file outside the sparse set skip-worktree; update it by hand, since clearing the marks would undo the sparse layout. |
 | `skip: could not fetch origin/master to check for local commits` | The fetch before the ahead check failed. |
 | `skip: cannot compare with origin/master, so local commits could not be ruled out` | `origin/master` does not exist in the checkout after the fetch, or `git rev-list` failed. |
-| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `origin/master`. |
+| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `refs/remotes/origin/master`. The full ref name is used, so a local branch or tag named `origin/master` cannot hide them. |
 
 A skipped checkout is not touched, so `update`'s rollback (`git checkout -f`, `git reset --hard`)
 never runs on it. It does not pull before the per-checkout `update`, which fetches and
@@ -394,11 +394,14 @@ fast-forwards itself; it does fetch `origin/master` first, so the ahead check is
 skipped even when a ref is given; run `./server.sh update [ref]` in it by hand to move it.
 
 Plain `./server.sh update` also refuses, before it changes anything, a checkout with files marked
-assume-unchanged or skip-worktree, and lists them.
+assume-unchanged or skip-worktree, and lists them. That includes a sparse checkout; update one by
+hand.
 
 Before any git check, `update all` unsets every inherited `GIT_*` variable except `GIT_SSH`,
 `GIT_SSH_COMMAND` and `GIT_TERMINAL_PROMPT`. A `GIT_DIR` or `GIT_INDEX_FILE` left by a git hook,
-a shell or a `.env` would otherwise make the checks read another repository.
+a shell or a `.env` would otherwise make the checks read another repository. A `GIT_*` variable
+that cannot be unset, because a `.env` declared it `readonly`, stops the run with exit 2 before
+any check, naming the variable.
 
 To pass an env with no ref, give an empty ref: `./server.sh update all "" production` runs
 `./server.sh update "" production` in each checkout, which updates to the tip of `master` and
@@ -422,7 +425,7 @@ itself holds its `server.sh`. Exit codes:
 | --- | --- |
 | 0 | Every online checkout was updated (or would be, in a dry run), or PM2 runs no processes at all. |
 | 1 | A checkout was held by git, or its update failed. |
-| 2 | Nothing was updated because: an unknown option, more than two arguments, `all` given as the ref, a ref or env that starts with `-` or holds a space, a recursive `update all`, it was run as root, no temporary directory could be made, another `update all` holds the lock (or the lock holds no pid), `node` or `scripts/update-all-scan.mjs` is missing, or the PM2 list could not be read or was not usable. |
+| 2 | Nothing was updated because: an unknown option, more than two arguments, `all` given as the ref, a ref or env that starts with `-` or holds a space, a recursive `update all`, a `GIT_*` variable set read-only, it was run as root, no temporary directory could be made, another `update all` holds the lock (or the lock holds no pid), `node` or `scripts/update-all-scan.mjs` is missing, or the PM2 list could not be read or was not usable. |
 | 3 | PM2 lists processes but none is an ngdpbase checkout. |
 
 PM2 can print a notice before its process list, for example `In-memory PM2 is out-of-date` when
