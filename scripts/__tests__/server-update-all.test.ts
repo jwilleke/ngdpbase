@@ -1465,6 +1465,16 @@ describe('every pin line is read in full or blocks', () => {
   unresolved.push(['# pinned: /var $HOME/sites/wiki', ['# pinned: /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
   unresolved.push(['# pinned: then /var $HOME/sites/wiki on the next comment', ['# pinned:', '#   /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
   unresolved.push(['# /var (pinned) and ~/wiki', ['# /var (pinned) and ~/wiki'], '~/wiki']);
+  unresolved.push(['a $VAR in the comment of a pin array line', ['PINNED=(/var)  # also $HOME/x'], '$HOME/x']);
+  unresolved.push(['a $VAR comment inside a multi-line pin array', ['declare -a PINNED=(', '  /var', '  # $HOME/x', ')'], '$HOME/x']);
+
+  for (const [layout, build] of layouts) {
+    it(`pins a path in the comment of a pin array line, ${layout}`, () => {
+      const text = build(['declare -a PINNED=(/var)  # and /tmp']);
+      expect(pinnedPaths(text)).toEqual(expect.arrayContaining([varPath, fs.realpathSync('/tmp')]));
+      expect(blockText(text)).toBe('');
+    });
+  }
 
   for (const [label, pinLines, named] of unresolved) {
     for (const [layout, build] of layouts) {

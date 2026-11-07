@@ -394,14 +394,32 @@ Ownership, most protective first:
   PM2 app names on that comment line stay pinned, and so does a PM2 app name written as
   `name (pinned)`. A path on a pin line still pins that checkout. A checkout the site list already
   names stays automatic. The same basename on two checkouts, or a pin word with no path and no
-  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed. Every
-  pin line is checked on its own, whatever other pins the script has: a `(pinned)` marker, a
-  `$VAR` or path, or a name differing only in case from a PM2 app, that pins nothing (a basename
-  or app name under 6 characters, wrong case, a trailing dot, a symlink alias, a typo) is
-  reported by name, and so is a `PINNED` / `EXCLUDE` / `SKIP` array entry that is neither a path
-  nor an exact PM2 app name, a `$VAR` entry included, even beside a path in the same array. Such a pin does not stop the run outright: checkouts the updater
-  does not list become unknown and the run exits 3, while checkouts already automatic, pinned or
-  `manual` are processed as usual.
+  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed.
+- A pin variable is any variable whose name contains `PIN`, `EXCLUDE`, `SKIP`, `HOLD` or `FREEZE`,
+  in any case, other than a site list name above. Every assignment to one is read: `NAME=(...)`
+  and `NAME+=(...)`, one-line or multi-line, with or without `declare`, `typeset`, `local`,
+  `readonly` or `export` and their flags in front, `NAME[i]=value`, and a string value
+  (`PINNED=/srv/a:/srv/b`), split on spaces, colons and commas. A quoted value is one path, as in
+  an array. Each entry must be a path or an exact PM2 app name.
+- Every pin line is checked on its own, whatever other pins the script has. A pin line is an
+  assignment to a pin variable (a comment on it, or a comment inside a pin array, included), or
+  any line with a pin word (`pin`, `pinned`, `exclude`,
+  `excluded`, `skip`, `skipped`) or a `(pinned)` marker. These block, each reported by its line or
+  entry:
+  - a `$`, backtick or `~` left on a pin line once its literal paths are taken out, even beside a
+    path on the same line (`# pinned: /srv/old $HOME/sites/wiki`, `PINNED=/var:$HOME/x`);
+  - a pin array entry that is neither a path nor an exact PM2 app name, a `$VAR` entry included;
+  - a pin array opened anywhere but the start of a line (`true; PINNED=(...)`), or filled by
+    `read`, `readarray` or `mapfile`;
+  - a pin path that does not exist;
+  - a `(pinned)` marker, path or `$VAR`, or a name differing only in case from a PM2 app, on a pin
+    line that pins nothing (a basename or app name under 6 characters, wrong case, a trailing
+    dot, a symlink alias, a typo).
+
+  A pin line in plain prose with none of those (`# skip a checkout that has local changes`) does
+  not block on its own, but a script whose only pin lines pin nothing does. A block does not stop
+  the run outright: checkouts the updater does not list become unknown and the run exits 3, while
+  checkouts already automatic, pinned or `manual` are processed as usual.
   A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater
   too, and is read the same way.
 - When that script is read completely, a checkout it does not mention is updated, and the output

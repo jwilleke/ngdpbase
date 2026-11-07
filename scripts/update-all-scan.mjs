@@ -323,8 +323,8 @@ export function classifyScript(text, scriptPath, names) {
 
   let updateLinesWithoutPath = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const code = stripInlineComment(line);
+    const fullLine = lines[i];
+    const code = stripInlineComment(fullLine);
     // A pin array's lines were read with the array. Any other assignment to a pin
     // variable is read here in full, or blocks.
     let pinAssignment = pinArrayLines.has(i);
@@ -333,7 +333,7 @@ export function classifyScript(text, scriptPath, names) {
         if (!isPinName(assigned[1])) continue;
         pinAssignment = true;
         if (assigned[2] === '(') {
-          records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" opens a pin array in a form the scan cannot read`, scriptPath]);
+          records.push(['note', 'block', `pin line "${fullLine.trim().slice(0, 80)}" opens a pin array in a form the scan cannot read`, scriptPath]);
           continue;
         }
         // A string value: paths split on spaces, colons or commas; every other word must be a PM2 app name.
@@ -347,10 +347,12 @@ export function classifyScript(text, scriptPath, names) {
       const words = code.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
       if (!pinAssignment && /\b(?:readarray|mapfile|read)\b/.test(code) && words.some(isPinName)) {
         pinAssignment = true;
-        records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" fills a pin variable in a form the scan cannot read`, scriptPath]);
+        records.push(['note', 'block', `pin line "${fullLine.trim().slice(0, 80)}" fills a pin variable in a form the scan cannot read`, scriptPath]);
       }
     }
-    if (!pinAssignment && PIN_WORD.test(line)) {
+    // On a pin assignment line, its comment is a pin line too, pin word or not.
+    const line = pinAssignment ? fullLine.slice(code.length) : fullLine;
+    if (pinAssignment ? /^\s*#./.test(line) : PIN_WORD.test(line)) {
       const pinsBefore = pinCount;
       const direct = extractPaths(line);
       for (const filePath of direct) addPath('pinned', filePath);
