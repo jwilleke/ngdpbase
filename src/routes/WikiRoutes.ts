@@ -2328,6 +2328,15 @@ class WikiRoutes {
   }
 
   /**
+   * Whether the request has no signed-in subject (#2294). Classifies who is
+   * asking so a write route can refuse before it looks at the page; it grants
+   * nothing, and a signed-in subject still goes through policy.
+   */
+  private isSignedOut(wikiContext: { userContext: { isAuthenticated?: boolean } | null }): boolean {
+    return !wikiContext.userContext?.isAuthenticated;
+  }
+
+  /**
    * What `wikiContext`'s subject may create (#1539): a public page
    * (`page-create`), and, per system-category, a private page in that
    * category's vault — asked about a page in their own vault, so `vault-owner`
@@ -3951,6 +3960,16 @@ ${panes}
         return res.status(400).send(TITLE_RULE_MESSAGE);
       }
 
+      // #2294: someone not signed in gets one answer, whether or not the page
+      // exists and whatever its category, so no gate below can tell them. The
+      // lookup is only for the audit record's action; it is never answered from.
+      if (this.isSignedOut(this.createWikiContext(req, { pageName }))) {
+        // page-door-ignore: names the refused action in the audit record only; the refusal below never depends on it.
+        const existing = await this.engine.getManager('PageManager').getPage(pageName, req.userContext);
+        await this.recordWriteRefusal(req, pageName, existing ? 'page-edit' : 'page-create');
+        return await this.refuse(this.createWikiContext(req, { pageName }), req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName, 'edit'), signedIn: () => undefined });
+      }
+
       // Section editing: if a section index was submitted, splice edited section
       // back into the full page content before saving
       let content = _rawContent;
@@ -5324,6 +5343,13 @@ ${panes}
 
       const pageManager = this.engine.getManager('PageManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+
+      // #2294: someone not signed in gets the refusal before the page is looked up,
+      // so a 404 never tells them whether it exists.
+      if (this.isSignedOut(wikiContext)) {
+        const wantsJson = Boolean(req.xhr) || Boolean(req.headers.accept?.includes('application/json')) || Boolean(req.headers['content-type']?.includes('application/json'));
+        return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName), signedIn: () => undefined });
+      }
 
       // Check if page exists
       // page-door-ignore: the delete door decides page-delete below.
