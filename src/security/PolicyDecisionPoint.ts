@@ -78,7 +78,7 @@ interface SubjectSourceLike {
   subjectAttribute?(subject: SubjectFacts, name: string): unknown;
 }
 
-interface EvaluationLike { allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null; policyIds?: string[] }
+interface EvaluationLike { allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null; policyIds?: string[]; conditionNotMet?: string[] }
 
 interface PolicyEvaluatorLike {
   evaluateAccess(request: {
@@ -669,7 +669,8 @@ export class PolicyDecisionPoint extends BaseManager {
       permit: result.allowed,
       applicable: result.hasDecision !== false,
       reason: result.policyName ?? result.reason ?? (result.allowed ? 'policy_allow' : 'policy_deny'),
-      policyIds: result.policyIds ?? []
+      policyIds: result.policyIds ?? [],
+      ...(result.conditionNotMet?.length ? { conditionNotMet: result.conditionNotMet } : {})
     };
   }
 

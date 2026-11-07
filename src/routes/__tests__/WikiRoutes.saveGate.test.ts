@@ -66,12 +66,13 @@ const READER = { username: 'molly', roles: ['reader'], isAuthenticated: true };
 const CONTRIBUTOR = { username: 'jim', roles: ['contributor'], isAuthenticated: true };
 
 describe('savePage asks the editor’s doors (#1542)', () => {
-  test('a signed-out visitor cannot create a page', async () => {
+  test('a signed-out visitor cannot create a page, and is sent to sign-in (#2289)', async () => {
     const { engine, pageManager } = makeEngine({ existing: false, granted: ['page-read'], pageAllows: false });
     const r = res();
     await new WikiRoutes(engine).savePage(req(ANON), r);
     expect(pageManager.savePage).not.toHaveBeenCalled();
-    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.status).not.toHaveBeenCalledWith(403);
+    expect(r.redirect).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?redirect=%2Fedit%2F/));
   });
 
   test('a reader cannot create a public page', async () => {

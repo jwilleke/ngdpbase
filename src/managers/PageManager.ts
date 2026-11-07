@@ -2046,15 +2046,15 @@ class PageManager extends BaseManager implements CatalogSource {
    *   one was made (#2272); a vault page is decided by the container rule and
    *   `permitsInVault`, which name none.
    */
-  private async decideCreateAt(ctx: ActorContext, destination: string): Promise<{ permit: boolean; policyIds: string[] }> {
+  private async decideCreateAt(ctx: ActorContext, destination: string): Promise<{ permit: boolean; policyIds: string[]; conditionNotMet?: string[] }> {
     const pdp = this.engine.getManager<VaultDecider>('PolicyDecisionPoint');
     if (!pdp) return { permit: false, policyIds: [] };
     const vault = parsePrivatePageName(destination);
     if (vault) return { permit: await permitsInVault(pdp, ctx, 'page-create', { owner: vault.owner, vault: vault.store, resource: destination }), policyIds: [] };
     // #2255: the PDP reads what it needs about the page from the PIP; a page
     // not made yet has no attributes, and `page-create` is granted on `page: *`.
-    const { permit, policyIds } = await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: destination }, attributes: {} });
-    return { permit, policyIds: policyIds ?? [] };
+    const { permit, policyIds, conditionNotMet } = await pdp.decide(ctx, { action: 'page-create', resource: { type: 'page', id: destination }, attributes: {} });
+    return { permit, policyIds: policyIds ?? [], conditionNotMet };
   }
 
   /**
@@ -2129,7 +2129,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const createDecision = (!existing || moving) ? await this.decideCreateAt(ctx, destination) : null;
     if (createDecision && !createDecision.permit) {
       logger.warn(`[PageManager] create of ${nameForLog(destination, metadata)} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
-      await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there', createDecision.policyIds);
+      await this.recordCreateRefusal(ctx, destination, moving ? 'may not move it into this container' : 'may not create it there', createDecision.policyIds, createDecision.conditionNotMet);
       throw new PageWriteRefusedError(destination, 'page-create');
     }
   }
@@ -2144,8 +2144,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param policyIds - The policies of the `page-create` decision that refused
    *   (#2272). Only a refusal that decision made passes any; one no policy
    *   decided (`createdFor` misuse) leaves the field off the record.
+   * @param conditionNotMet - Allows of that decision that matched but whose condition was not met (#2288).
    */
-  private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string, policyIds: string[] = []): Promise<void> {
+  private async recordCreateRefusal(ctx: ActorContext, pageName: string, reason: string, policyIds: string[] = [], conditionNotMet: string[] = []): Promise<void> {
     const who = actorOf(ctx);
     await recordAuditEvent(
       this.engine.getManager('AuditManager'),
@@ -2158,7 +2159,7 @@ class PageManager extends BaseManager implements CatalogSource {
         result: 'deny',
         reason,
         severity: 'medium',
-        metadata: { ...who.metadata, ...(policyIds.length > 0 ? { policyIds } : {}) }
+        metadata: { ...who.metadata, ...(policyIds.length > 0 ? { policyIds } : {}), ...(conditionNotMet.length > 0 ? { conditionNotMet } : {}) }
       },
       (err) => logger.warn(`[PageManager] audit of a refused create failed: ${err instanceof Error ? err.message : String(err)}`)
     );
@@ -3009,7 +3010,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const restoreDecision = trashed ? await this.decideCreateAt(ctx, trashed.name) : null;
     if (trashed && restoreDecision && !restoreDecision.permit) {
       logger.warn(`[PageManager] restore of ${nameForLog(trashed.name, { ...trashed.metadata, uuid })} refused: ${actorOf(ctx).user} may not create it there (#1815)`);
-      await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there', restoreDecision.policyIds);
+      await this.recordCreateRefusal(ctx, trashed.name, 'may not restore it there', restoreDecision.policyIds, restoreDecision.conditionNotMet);
       throw new PageWriteRefusedError(trashed.name, 'page-create');
     }
 

@@ -355,6 +355,8 @@ interface EvaluationResult {
   policyName: string | null;
   /** The deciding policies' ids (#2255): the denies that matched, else the allows. Empty when none matched. */
   policyIds: string[];
+  /** Allows that matched subject, resource and action but whose condition was false or unknown (#2288). Absent when none. */
+  conditionNotMet?: string[];
 }
 
 const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null, policyIds: [] };
@@ -525,17 +527,21 @@ class PolicyEvaluator extends BaseManager {
   private async combine(matching: readonly PreparedPolicy[], read: AttributeReader | undefined): Promise<EvaluationResult> {
     const denies: string[] = [];
     const allows: string[] = [];
+    const notMet: string[] = [];
     for (const { policy, invalid, condition } of matching) {
       const holds = invalid ? undefined : await conditionHolds(condition, read);
       if (policy.effect === 'deny') {
         if (holds !== false) denies.push(policy.id);
       } else if (holds === true) {
         allows.push(policy.id);
+      } else {
+        notMet.push(policy.id);
       }
     }
-    if (denies.length > 0) return { hasDecision: true, allowed: false, reason: `Policy deny: ${denies.join(',')}`, policyName: denies[0], policyIds: denies };
-    if (allows.length > 0) return { hasDecision: true, allowed: true, reason: `Policy allow: ${allows.join(',')}`, policyName: allows[0], policyIds: allows };
-    return NO_POLICY;
+    const conditionNotMet = notMet.length > 0 ? { conditionNotMet: notMet } : {};
+    if (denies.length > 0) return { hasDecision: true, allowed: false, reason: `Policy deny: ${denies.join(',')}`, policyName: denies[0], policyIds: denies, ...conditionNotMet };
+    if (allows.length > 0) return { hasDecision: true, allowed: true, reason: `Policy allow: ${allows.join(',')}`, policyName: allows[0], policyIds: allows, ...conditionNotMet };
+    return { ...NO_POLICY, ...conditionNotMet };
   }
 
   /**
