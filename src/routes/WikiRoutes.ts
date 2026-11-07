@@ -19990,22 +19990,9 @@ ${panes}
       const characterCount = content.length;
       const lineCount = content.split('\n').length;
 
-      // Get file stats if available
-
-      let fileStats = null;
-
-      try {
-        const filePath = page.filePath;
-        const stats = await fse.stat(filePath);
-        fileStats = {
-          size: stats.size,
-          created: stats.birthtime,
-          modified: stats.mtime,
-          accessed: stats.atime
-        };
-      } catch {
-        // File stats not available
-      }
+      const configManager = this.engine.getManager('ConfigurationManager') as IConfigManager | null;
+      const baseUrl = configManager?.isBaseUrlExplicit?.() ? (configManager.getBaseURL?.() ?? '') : '';
+      const pageLinkUrl = baseUrl.replace(/\/+$/, '') + pageUrl(pageName);
 
       // Get filesystem filename from page.filePath (path is already imported at top of file)
       const filesystemName = page.filePath ? path.basename(page.filePath) : null;
@@ -20070,6 +20057,9 @@ ${panes}
         slug: metadata.slug || pageName,
         uuid: metadata.uuid || page.uuid,
         filesystemName: filesystemName,
+        // #2304: base-url (when set) plus the page's own route, so a vault page
+        // gets /vaults/... and the link never carries a fragment or query.
+        url: pageLinkUrl,
 
         // Categorization and tags
         category: metadata['system-category'] || metadata.category || 'general',
@@ -20087,15 +20077,17 @@ ${panes}
         created: createdOf(metadata.created) ?? firstVersionTime,
         // #2290: the token ingest's `baseLastModified` check compares against
         // (versionTokenOf), so the value a caller reads here is accepted there.
-        lastModified: versionTokenOf(metadata) || versionInfo?.lastModified || fileStats?.modified || null,
-        lastAccessed: fileStats?.accessed || null,
+        // #2304: nothing here comes from the file's stat times. ngdpbase does not
+        // track page views, so there is no last-accessed value to report.
+        lastModified: versionTokenOf(metadata) || versionInfo?.lastModified || null,
 
         // Content statistics
         stats: {
           wordCount: wordCount,
           characterCount: characterCount,
           lineCount: lineCount,
-          fileSize: fileStats?.size || null,
+          // #2304: the body's size in bytes, not the file's stat size.
+          fileSize: Buffer.byteLength(content, 'utf8'),
           internalLinks: internalLinkCount,
           externalLinks: externalLinkCount,
           attachmentRefs: attachmentRefCount

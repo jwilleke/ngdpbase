@@ -286,7 +286,7 @@
                                 <i class="fas fa-info-circle"></i> Info
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="showPageInfo()">
+                                <li><a class="dropdown-item" href="#" onclick="showPageInfo(); return false;">
                                     <i class="fas fa-info"></i> Page Information
                                 </a></li>
                                 <li><a class="dropdown-item" href="#" onclick="showPageHistory()">
@@ -824,6 +824,12 @@
         });
     }
 
+    /** The page's link: the server's (base-url plus the page's route, vault pages included), else this page's address without any query or fragment (#2304). */
+    function pageInfoUrl(metadata) {
+        if (metadata && metadata.url) return new URL(metadata.url, window.location.origin).href;
+        return window.location.origin + window.location.pathname;
+    }
+
     function extractClientSideMetadata(pageName) {
         // Extract basic metadata from the current page
         const content = document.querySelector('.wiki-content, .page-content, main');
@@ -848,7 +854,6 @@
             tags: [],
             created: null,
             lastModified: null,
-            lastAccessed: null,
             stats: {
                 wordCount: wordCount,
                 characterCount: characterCount,
@@ -1046,7 +1051,7 @@
                                         <tr><td><strong>Filesystem Name:</strong></td><td><code class="small">${metadata.filesystemName || 'Not available'}</code></td></tr>
                                         <tr><td><strong>System Category:</strong></td><td><span class="badge bg-primary">${metadata.category}</span></td></tr>
                                         <tr><td><strong>Status:</strong></td><td><span class="badge bg-success">${metadata.status}</span></td></tr>
-                                        <tr><td><strong>URL:</strong></td><td><small>${window.location.href}</small></td></tr>
+                                        <tr><td><strong>URL:</strong></td><td><small>${pageInfoUrl(metadata)}</small></td></tr>
                                     </table>
 
                                     <h6><i class="fas fa-tags"></i> Classification</h6>
@@ -1064,7 +1069,6 @@
                                     <table class="table table-bordered table-sm">
                                         <tr><td><strong>Created:</strong></td><td>${formatDate(metadata.created)}</td></tr>
                                         <tr><td><strong>Last Modified:</strong></td><td>${formatDate(metadata.lastModified)}</td></tr>
-                                        <tr><td><strong>Last Accessed:</strong></td><td>${formatDate(metadata.lastAccessed)}</td></tr>
                                     </table>
 
                                     <h6><i class="fas fa-chart-bar"></i> Content Statistics</h6>
@@ -1072,7 +1076,7 @@
                                         <tr><td><strong>Word Count:</strong></td><td>${metadata.stats.wordCount || 0} words</td></tr>
                                         <tr><td><strong>Character Count:</strong></td><td>${metadata.stats.characterCount || 0} characters</td></tr>
                                         <tr><td><strong>Line Count:</strong></td><td>${metadata.stats.lineCount || 0} lines</td></tr>
-                                        <tr><td><strong>File Size:</strong></td><td>${formatFileSize(metadata.stats.fileSize)}</td></tr>
+                                        <tr><td><strong>Content Size:</strong></td><td>${formatFileSize(metadata.stats.fileSize)}</td></tr>
                                     </table>
 
                                     ${metadata.schemaType ? `
@@ -1126,10 +1130,9 @@
             `Slug:          ${metadata.slug || 'Not set'}`,
             `UUID:          ${metadata.uuid || 'Not available'}`,
             `Version:       ${metadata.version || 'Not versioned'}`,
-            `URL:           ${window.location.href}`,
+            `URL:           ${pageInfoUrl(metadata)}`,
             `Created:       ${fmtDate(metadata.created)}`,
             `Last Modified: ${fmtDate(metadata.lastModified)}`,
-            `Last Accessed: ${fmtDate(metadata.lastAccessed)}`,
         ];
         if (metadata.author) lines.push(`Author:        ${metadata.author}`);
         if (metadata.editor) lines.push(`Editor:        ${metadata.editor}`);
@@ -1337,7 +1340,7 @@
                             <tr><td>Words</td><td class="text-end fw-bold">${fmtNum(s.wordCount)}</td></tr>
                             <tr><td>Characters</td><td class="text-end">${fmtNum(s.characterCount)}</td></tr>
                             <tr><td>Lines</td><td class="text-end">${fmtNum(s.lineCount)}</td></tr>
-                            <tr><td>File size</td><td class="text-end">${fmtSize(s.fileSize)}</td></tr>
+                            <tr><td>Content size</td><td class="text-end">${fmtSize(s.fileSize)}</td></tr>
                         </table>
                         <h6 class="mt-3"><i class="fas fa-link"></i> Links &amp; References</h6>
                         <table class="table table-bordered table-sm">

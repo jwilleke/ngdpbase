@@ -3,7 +3,7 @@ title: Page Information
 uuid: e1cc9c1d-bd53-4cf9-916a-fda0e31a3e2f
 system-category: documentation
 slug: page-information
-lastModified: '2026-10-26T00:00:00.000Z'
+lastModified: '2026-11-07T00:00:00.000Z'
 author: system
 ---
 # Page Information
@@ -18,10 +18,11 @@ __Page Information__ is available from the __Info__ dropdown in the toolbar. It 
 | Slug | The URL-friendly identifier |
 | UUID | The page's unique system identifier |
 | Version | Whether the page is versioned |
-| URL | The direct link to the page |
+| URL | The direct link to the page, built from the site's address and the page's route; it opens the same page and carries no `#` or query |
 | Created | Date and time the page was first created |
 | Last Modified | Date and time of the most recent save |
-| Last Accessed | Date and time of the most recent view |
+
+There is no Last Accessed: ngdpbase does not record when a page is viewed.
 | Author | The user who originally created the page, shown as their username followed by their id |
 | Editor | The user who saved the latest version, shown the same way |
 | Category | The [System Category] of the page |
