@@ -182,6 +182,7 @@ button:focus-visible {
 }
 
 .jspwiki-header a[href^="/login"] {
+  gap: 0.5rem;
   padding: 0.4rem 0.95rem;
   font-weight: 700;
   color: var(--resident-label);

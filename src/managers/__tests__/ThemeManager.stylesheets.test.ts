@@ -72,6 +72,7 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).not.toMatch(/18ch/);
     expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li \{\s*\n\s*max-width:\s*none;/);
     expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
+    expect(css).toMatch(/a\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
     expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
   });
 });
