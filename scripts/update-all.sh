@@ -198,7 +198,7 @@ ngdp_update_all_gate() {
   fi
   # index.lock is checked before status: status itself fails while another git
   # command holds the index, and update all must not join that operation.
-  local gitdir dirty count first ahead
+  local gitdir dirty count first ahead branch
   gitdir="$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null || true)"
   if [ -n "$gitdir" ] && [ -e "$gitdir/index.lock" ]; then
     printf 'git index is locked (another git command is running)'
@@ -206,6 +206,11 @@ ngdp_update_all_gate() {
   fi
   if ! git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
     printf 'detached HEAD, not on a branch'
+    return 0
+  fi
+  branch="$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+  if [ "$branch" != "master" ]; then
+    printf 'on branch %s, not master' "$branch"
     return 0
   fi
   if ! dirty="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null)"; then

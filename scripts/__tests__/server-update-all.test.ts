@@ -447,31 +447,40 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('skip: 1 uncommitted or untracked file(s), first: notes.txt');
     expect(result.out).toContain('skip: 1 uncommitted or untracked file(s), first: staged.txt');
     expect(result.out).toContain('skip: detached HEAD, not on a branch');
-    expect(result.out.match(/skip: 1 commit\(s\) ahead of origin\/master/g)).toHaveLength(3);
+    expect(result.out.match(/skip: 1 commit\(s\) ahead of origin\/master/g)).toHaveLength(2);
+    expect(result.out).toContain('skip: on branch feature, not master');
     expect(result.out).toContain('skip: git index is locked');
     expect(result.out).toContain('held by git   7');
     expect(result.out).toContain('updated       1');
     expect(result.out).not.toContain('reset --hard');
   }, 60000);
 
-  it('updates a non-master checkout when a ref is given, and still skips a detached one', () => {
+  it('skips a checkout on another branch, even with no commits of its own or a ref given', () => {
     const feature = cloneFrom(primary(), 'feature');
     const detached = cloneFrom(primary(), 'detached');
+    const clean = cloneFrom(primary(), 'clean');
     git(feature, 'checkout', '-q', '-b', 'feature');
+    const featureHead = git(feature, 'rev-parse', 'HEAD');
     git(detached, 'checkout', '-q', '--detach');
     const detachedHead = git(detached, 'rev-parse', 'HEAD');
     const tagged = publish(primary(), '1.1.0');
     publish(primary(), '1.2.0');
     writeJlist([
       { name: 'feature', cwd: feature },
-      { name: 'detached', cwd: detached }
+      { name: 'detached', cwd: detached },
+      { name: 'clean', cwd: clean }
     ]);
 
     const result = run(['update', 'all', 'v1.1.0']);
 
     expect(result.status, result.out).toBe(1);
-    expect(git(feature, 'rev-parse', 'HEAD')).toBe(tagged);
+    expect(result.out).toContain('skip: on branch feature, not master');
+    expect(result.out).toContain('skip: detached HEAD, not on a branch');
+    expect(git(feature, 'rev-parse', 'HEAD')).toBe(featureHead);
+    expect(git(feature, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+    expect(installsFor(feature)).toEqual([]);
     expect(git(detached, 'rev-parse', 'HEAD')).toBe(detachedHead);
+    expect(git(clean, 'rev-parse', 'HEAD')).toBe(tagged);
   }, 60000);
 
   it('continues after one checkout fails to build and rolls only that checkout back', () => {
@@ -583,6 +592,28 @@ describe('./server.sh update all', () => {
     expect(garbage.out).toContain('not usable');
     expect(garbage.out).not.toContain(SECRET);
     expect(missing.out).not.toContain(SECRET);
+  }, 60000);
+
+  it('reads the PM2 list after an out-of-date notice, and updates nothing when the notice has no list', () => {
+    const site = cloneFrom(primary(), 'noticed');
+    const head = git(site, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'noticed', cwd: site }]);
+    const list = fs.readFileSync(jlistFile, 'utf8');
+    const notice = '\n\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m\n>>>> $ pm2 update\nIn memory PM2 version: 7.0.1\nLocal PM2 version: 7.1.1\n\n\n';
+
+    fs.writeFileSync(jlistFile, notice);
+    const noList = run(['update', 'all']);
+    fs.writeFileSync(jlistFile, `${notice}${list}\n`);
+    const dry = run(['update', 'all', '--dry-run']);
+
+    expect(noList.status, noList.out).toBe(2);
+    expect(noList.out).toContain('not usable');
+    expect(noList.out).not.toContain('In-memory PM2');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+    expect(installsFor(site)).toEqual([]);
+    expect(dry.status, dry.out).toBe(0);
+    expect(dry.out).toContain('would run');
   }, 60000);
 
   describe('#2305 hardening', () => {
@@ -761,6 +792,46 @@ describe('update-all-scan.mjs process entry', () => {
     const result = spawnSync(process.execPath, [scanner, 'sanitize-pm2'], { input: jlist, encoding: 'utf8', env: envWithoutGit });
     expect(result.status).toBe(0);
     expect(result.stdout.split('\0')[0]).toBe('prod-site');
+  });
+
+  const sanitize = (input: string) =>
+    spawnSync(process.execPath, [scanner, 'sanitize-pm2'], { input, encoding: 'utf8', env: envWithoutGit });
+  const jlistLine = JSON.stringify([
+    { name: 'site-a', pm2_env: { pm_cwd: '/x/site-a', status: 'online', SECRET_TOKEN: 'do-not-print' } },
+    { name: 'site-b', pm2_env: { pm_cwd: '/x/site-b', status: 'stopped' } }
+  ]);
+  const names = (stdout: string) => stdout.split('\0').slice(0, -1).filter((_, i) => i % 5 === 0);
+
+  it('sanitize-pm2 reads the list after the coloured out-of-date notice', () => {
+    const notice = [
+      '',
+      '\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m',
+      '>>>> $ pm2 update',
+      'In memory PM2 version: 7.0.1',
+      'Local PM2 version: 7.1.1',
+      '',
+      '',
+      jlistLine,
+      ''
+    ].join('\n');
+    const result = sanitize(notice);
+    expect(result.status, result.stderr).toBe(0);
+    expect(names(result.stdout)).toEqual(['site-a', 'site-b']);
+    expect(result.stdout.split('\0').slice(0, 5)).toEqual(['site-a', '/x/site-a', '', 'online', '0']);
+    expect(result.stdout).not.toContain('do-not-print');
+  });
+
+  it('sanitize-pm2 ignores [PM2] and [PM2][WARN] lines before the list', () => {
+    const result = sanitize(['[PM2] Spawning PM2 daemon with pm2_home=/x/.pm2', '[PM2][WARN] Current process list is not synchronized', jlistLine].join('\n'));
+    expect(result.status, result.stderr).toBe(0);
+    expect(names(result.stdout)).toEqual(['site-a', 'site-b']);
+  });
+
+  it('sanitize-pm2 fails closed, printing nothing from the input, when no line is a list', () => {
+    const result = sanitize(['\x1b[31m>>>> In-memory PM2 is out-of-date, do:\x1b[39m', '[PM2][WARN] do-not-print', '{"not": "a list"}'].join('\n'));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('pm2-json-unusable\n');
   });
 
   it('exits 1 and names the path when its own path cannot be resolved', () => {

@@ -35,18 +35,24 @@ function cleanStatus(value) {
   return /^[a-z]{1,32}$/.test(value) ? value : 'unknown';
 }
 
+// pm2 can print notices on stdout before the JSON, such as the coloured
+// "In-memory PM2 is out-of-date" block or "[PM2] ..." lines. ANSI colour codes
+// contain '[', so search line by line: the list is the last line that starts
+// with '[' and parses to an array. Nothing from the raw output is ever echoed.
 function sanitizePm2(raw) {
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start < 0 || end <= start) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return null;
+  let found = null;
+  for (const line of raw.split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text.startsWith('[')) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (Array.isArray(parsed)) found = parsed;
   }
-  if (!Array.isArray(parsed)) return null;
-  return parsed;
+  return found;
 }
 
 function emitProcesses(list) {
