@@ -15,9 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, by calling each checkout's own `./server.sh update`. Checkouts an automatic updater already updates, and checkouts marked pinned, are skipped. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md).
-- `./server.sh update all` reads pins only from the update-policy file (`pinned <absolute path>`) and a checkout's `.ngdpbase-update-policy` file, never from an updater script. Pin wording in an updater script stops the run and says to move the pin to the update-policy file: a variable whose whole name is `PINNED`, `PINS`, `EXCLUDE`, `EXCLUDED`, `SKIP` or `SKIPPED` (or ends in `_PINNED`, `_PINS`, `_EXCLUDE`, `_SKIP`), or a comment with a whole pin word (`pin`, `pins`, `pinned`, `pinning`, `exclude`, `excluded`, `skip`, `skipped`, `hold`, `frozen`, `freeze`) or `do not update`. Whole-word matching leaves `THRESHOLD`, `HOLD_SECONDS` and lowercase loop flags such as `skip=0` alone. A line in either policy file that cannot be honoured (unknown kind, a path that is not absolute, missing or unresolvable) stops the run naming the file and line, instead of being skipped. See [Moving a pin out of an updater script](docs/SERVER-MANAGEMENT.md#moving-a-pin-out-of-an-updater-script).
-- `update-all-scan.mjs` compares real paths before running, so `update all` run through a symlinked checkout path finds the same checkouts as through the real path.
+- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, one at a time, by calling each checkout's own `./server.sh update`. It needs no configuration. It skips a checkout, with a one-line reason, only when it is not online, not the top of its own git repository, owned by another user, has git's index locked, is detached, has uncommitted or untracked files, or is ahead of `origin/master`. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md#updating-every-checkout-on-this-host).
 
 ## [5.43.0] - 2026-11-07
 

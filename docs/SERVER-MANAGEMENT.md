@@ -356,10 +356,11 @@ restart itself.
 ## Updating every checkout on this host
 
 `./server.sh update all [--dry-run] [ref] [env]` asks PM2 which ngdpbase checkouts are running
-and updates each one by calling that checkout's own `./server.sh update`. Run it from any
-checkout that has this command. The word `all` is the command, not a git ref.
-`./server.sh update v1.2.3` is unchanged. To check out a ref that is literally named `all`,
-run `./server.sh update refs/heads/all` on that one checkout.
+and updates each one by calling that checkout's own `./server.sh update [ref] [env]`, one at a
+time, with the checkout you ran it from last. Run it from any checkout that has this command.
+The word `all` is the command, not a git ref. `./server.sh update v1.2.3` is unchanged. To check
+out a ref that is literally named `all`, run `./server.sh update refs/heads/all` on that one
+checkout.
 
 ```bash
 ./server.sh update all --dry-run
@@ -367,123 +368,42 @@ run `./server.sh update refs/heads/all` on that one checkout.
 ./server.sh update all v5.43.0
 ```
 
-It does not pull before the per-checkout `update`. That command already fetches and
-fast-forwards. Bulk mode does fetch `origin/master` first when no ref is given, so the ahead
-check is current; if that fetch fails the checkout is held as `ahead-unknown`. A `--dry-run`
-fetches nothing and compares against the last fetch. Bulk mode also does not run an update whose
-rollback would `git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on
-`master` (when no ref is given), diverged from `origin/master`, or ahead of it with local commits.
-A checkout must also be the top of its own git repository (a copy nested inside another repo is
-held as `not-git`) and be owned by the invoking user (`not-owned`). Those checkouts are listed and
-left as they are. It refuses to run as root, because it would run `npm` and the build as root in
-other users' trees. A ref (`./server.sh update all v5.43.0`)
-may be given for a checkout that is not on `master`; a detached or dirty checkout is still skipped.
+There is no configuration. Every checkout PM2 runs is updated unless it is skipped for one of
+these reasons, each printed as one line under the checkout's name:
 
-PM2 `watch` restarts a process when files change. It is not an automatic release update, and it
-does not by itself include or exclude a checkout.
+| Printed reason | When |
+| --- | --- |
+| `skip: not online in PM2` | PM2 lists it as stopped or errored. It is left stopped. |
+| `skip: not the top of its own git repository` | The directory sits inside another repo, so git would act on the parent. |
+| `skip: owned by another user` | The directory is not owned by the user running the command. |
+| `skip: git index is locked (another git command is running)` | `.git/index.lock` exists. |
+| `skip: detached HEAD, not on a branch` | The checkout is not on a branch. |
+| `skip: N uncommitted or untracked file(s), first: <file>` | `git status` shows changes, staged or not, or untracked files. |
+| `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `origin/master`. |
+| `skip: could not fetch origin/master to check for local commits` | The fetch before the ahead check failed. |
 
-Ownership, most protective first:
+A skipped checkout is not touched, so `update`'s rollback (`git checkout -f`, `git reset --hard`)
+never runs on it. It does not pull before the per-checkout `update`, which fetches and
+fast-forwards itself; it does fetch `origin/master` first, so the ahead check is current. A
+`--dry-run` fetches nothing and compares against the last fetch. A checkout on another branch with
+no commits of its own is not skipped: `update` with no ref moves it to `master`.
 
-- Pinned, then automatic, then an explicit manual mark. A checkout an updater already updates
-  stays skipped even if a policy line says `manual`.
-- Pins come only from two files: the update-policy file and a checkout's own
-  `.ngdpbase-update-policy` file. `update all` never reads a pin from an updater script. The
-  update-policy file is
-  `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`, one
-  line per checkout:
-
-  ```bash
-  manual /absolute/path/to/checkout
-  pinned /absolute/path/to/another
-  auto /absolute/path/to/a/third
-  ```
-
-  Blank lines and lines starting with `#` are ignored. A path may be quoted. A checkout may also
-  carry a `.ngdpbase-update-policy` file holding one word, `auto`, `pinned` or `manual`. That
-  file is gitignored.
-- A line in either file that cannot be honoured stops the run before anything is updated, and
-  the output names the file and line: a kind other than `auto`, `pinned` or `manual`, a path
-  that is missing or not absolute, a directory that does not exist, or a path that cannot be
-  resolved. A typo in a `pinned` line never un-pins a checkout.
-- An updater script is read, not executed, only to find the checkouts it updates. The lookup is
-  the user LaunchAgents directory, systemd user units, and the user crontab. A crontab line,
-  systemd unit or LaunchAgent that runs `server.sh update` itself is an updater too. In a script,
-  a `SITES` (or `SITE`, `INSTANCES`, `REPOS`, `CHECKOUTS`, `TARGETS`, or any `*_SITES`) array,
-  and a path on a line that runs `server.sh update`, are automatic.
-- Pin wording in an updater script stops the run, names the script and line, and says to move
-  the pin to the update-policy file. Pin wording is:
-  - an assignment to, declaration of, or read of a variable whose whole name is `PINNED`,
-    `PINS`, `EXCLUDE`, `EXCLUDED`, `SKIP` or `SKIPPED`, starts with one of those and `_`, or
-    ends in `_PINNED`, `_PINS`, `_EXCLUDE` or `_SKIP`, in any case. That covers `NAME=(...)`,
-    `NAME+=`, `NAME[i]=`, `declare`/`local`/`readonly`/`export`, `read`, `mapfile`,
-    `printf -v` and `eval "NAME=..."`;
-  - a comment with one of the whole words `pin`, `pins`, `pinned`, `pinning`, `exclude`,
-    `excluded`, `skip`, `skipped`, `hold`, `frozen` or `freeze`, or the phrase `do not update`;
-  - a command or function with one of those words as its name (`pin /srv/old`), or a sourced
-    file with one in its name (`source ~/pins.sh`).
-
-  Words match whole, so `THRESHOLD=90`, `PLACEHOLDER=x`, `SPINNER_PID=$!`, `HOLD_SECONDS=5` and
-  `MAPPING=foo` do not block. A lowercase variable set to a number or `true`/`false` is a loop
-  flag, not a pin list, and is left alone on purpose, so this common loop does not block:
-
-  ```bash
-  for s in "${SITES[@]}"; do
-    skip=0
-    for p in /srv/sites/wiki; do [ "$s" = "$p" ] && skip=1; done
-    [ "$skip" -eq 1 ] && continue
-    "$s/server.sh" update
-  done
-  ```
-
-  A comment that only mentions a pin word in passing blocks too. Reword it or move the pin.
-- When an updater script is read completely, a checkout it does not mention is updated, and the
-  output says it was not listed. An updater counts as read completely only when it names its
-  checkouts as paths or in a site array. A loop over a glob (`for d in ~/sites/*`), command
-  output or a `while read` list, a function or variable that supplies the directory, or a cron
-  line such as `cd ~/site && ./server.sh update` cannot be read. Then `update all` names that
-  updater, treats every checkout no file names as unknown and leaves it alone, still processes
-  checkouts that are automatic, pinned or `manual`, and exits 3.
-- With no updater script, nothing is updated unless a policy line names it. A line there does
-  not authorize every other checkout.
-
-### Moving a pin out of an updater script
-
-When `update all` stops with "Move each pin to ...", the updater script holds a pin it will not
-read. For example, `~/bin/ngdp-autoupdate.sh` has:
-
-```bash
-SITES=(
-  /Users/jim/sites/fairways
-)
-# Pinned: /Users/jim/sites/wiki (waiting on the plugin fix)
-```
-
-1. Open the update-policy file named in the message, by default `~/.config/ngdpbase/update-policy`,
-   creating it if it does not exist.
-2. Add one line per pinned checkout, with its absolute path:
-
-   ```bash
-   pinned /Users/jim/sites/wiki
-   ```
-
-3. Remove the pin comment or variable from the updater script, or reword the comment so it has
-   no pin word.
-4. Check with a dry run. The wiki should show as `skip (pinned)`, with the reason `update-policy`:
-
-   ```bash
-   ./server.sh update all --dry-run
-   ```
+It refuses to run as root, because it would run `npm` and the build as root in other users'
+trees. PM2 `watch` restarts a process when files change. It is not a release update, and it does
+not include or exclude a checkout.
 
 Checkouts are updated one at a time. One failure does not stop the others. Two `update all`
 runs do not overlap: the lock is a symlink in `~/.config/ngdpbase/update-all.lock` whose target
 is the holder's pid, and the second run exits and updates nothing. A lock that holds no pid is
 never taken over; remove it by hand once you know nothing is running. A dead holder's lock is
-replaced. The command prints a summary and exits 0 when every included checkout was updated (or
-there was nothing to update), 1 when an included checkout was held back or its update failed,
-2 when PM2 could not be read, it was run as root, or another `update all` holds the lock, and 3
-when the ownership of any checkout was unknown, or PM2 lists processes but none is an ngdpbase
-checkout. A checkout is recognised only when the PM2 working directory itself holds its
-`server.sh`. `--dry-run` is the same plan with no `update` run, and takes no lock.
+replaced. `--dry-run` shows the same plan with no `update` run, and takes no lock.
+
+The command ends with a summary: updated (or would update), not online, held by git (any of the
+other skip reasons), and failed. It exits 0 when every online checkout was updated or there was
+nothing to update, 1 when a checkout was held by git or its update failed, 2 when PM2 could not
+be read, it was run as root, or another `update all` holds the lock, and 3 when PM2 lists
+processes but none is an ngdpbase checkout. A checkout is recognised only when the PM2 working
+directory itself holds its `server.sh`.
 
 The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
 variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own `.env`. The PM2 document is
