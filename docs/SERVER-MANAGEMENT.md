@@ -386,59 +386,93 @@ Ownership, most protective first:
 
 - Pinned, then automatic, then an explicit manual mark. A checkout an updater already updates
   stays skipped even if a policy line says `manual`.
-- An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
-  user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
-  `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
-  A comment pins one checkout by writing its directory basename as `basename (pinned)`, and only
-  when exactly one running checkout has that basename (a stopped PM2 entry does not count). Other
-  PM2 app names on that comment line stay pinned, and so does a PM2 app name written as
-  `name (pinned)`. A path on a pin line still pins that checkout. A checkout the site list already
-  names stays automatic. The same basename on two checkouts, or a pin word with no path and no
-  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed.
-- A pin variable is any variable whose name contains `PIN`, `EXCLUDE`, `SKIP`, `HOLD` or `FREEZE`,
-  in any case, other than a site list name above. Every assignment to one is read: `NAME=(...)`
-  and `NAME+=(...)`, one-line or multi-line, with or without `declare`, `typeset`, `local`,
-  `readonly` or `export` and their flags in front, `NAME[i]=value`, and a string value
-  (`PINNED=/srv/a:/srv/b`), split on spaces, colons and commas. A quoted value is one path, as in
-  an array. Each entry must be a path or an exact PM2 app name.
-- Every pin line is checked on its own, whatever other pins the script has. A pin line is an
-  assignment to a pin variable (a comment on it, or a comment inside a pin array, included), or
-  any line with a pin word (`pin`, `pinned`, `exclude`,
-  `excluded`, `skip`, `skipped`) or a `(pinned)` marker. These block, each reported by its line or
-  entry:
-  - a `$`, backtick or `~` left on a pin line once its literal paths are taken out, even beside a
-    path on the same line (`# pinned: /srv/old $HOME/sites/wiki`, `PINNED=/var:$HOME/x`);
-  - a pin array entry that is neither a path nor an exact PM2 app name, a `$VAR` entry included;
-  - a pin array opened anywhere but the start of a line (`true; PINNED=(...)`), or filled by
-    `read`, `readarray` or `mapfile`;
-  - a pin path that does not exist;
-  - a `(pinned)` marker, path or `$VAR`, or a name differing only in case from a PM2 app, on a pin
-    line that pins nothing (a basename or app name under 6 characters, wrong case, a trailing
-    dot, a symlink alias, a typo).
+- Pins come only from two files: the update-policy file and a checkout's own
+  `.ngdpbase-update-policy` file. `update all` never reads a pin from an updater script. The
+  update-policy file is
+  `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`, one
+  line per checkout:
 
-  A pin line in plain prose with none of those (`# skip a checkout that has local changes`) does
-  not block on its own, but a script whose only pin lines pin nothing does. A block does not stop
-  the run outright: checkouts the updater does not list become unknown and the run exits 3, while
-  checkouts already automatic, pinned or `manual` are processed as usual.
-  A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater
-  too, and is read the same way.
-- When that script is read completely, a checkout it does not mention is updated, and the output
-  says it was not listed. An updater counts as read completely only when it names its checkouts
-  as paths or in a site array. A loop over a glob (`for d in ~/sites/*`), command output or a
-  `while read` list, a function or variable that supplies the directory, or a cron line such as
-  `cd ~/site && ./server.sh update` cannot be read. Then `update all` names that updater and
-  updates only checkouts you list yourself with a `manual` line in the policy file below.
-- With no updater script, nothing is updated unless a line names it. The file is
-  `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`:
+  ```bash
+  manual /absolute/path/to/checkout
+  pinned /absolute/path/to/another
+  auto /absolute/path/to/a/third
+  ```
+
+  Blank lines and lines starting with `#` are ignored. A path may be quoted. A checkout may also
+  carry a `.ngdpbase-update-policy` file holding one word, `auto`, `pinned` or `manual`. That
+  file is gitignored.
+- A line in either file that cannot be honoured stops the run before anything is updated, and
+  the output names the file and line: a kind other than `auto`, `pinned` or `manual`, a path
+  that is missing or not absolute, a directory that does not exist, or a path that cannot be
+  resolved. A typo in a `pinned` line never un-pins a checkout.
+- An updater script is read, not executed, only to find the checkouts it updates. The lookup is
+  the user LaunchAgents directory, systemd user units, and the user crontab. A crontab line,
+  systemd unit or LaunchAgent that runs `server.sh update` itself is an updater too. In a script,
+  a `SITES` (or `SITE`, `INSTANCES`, `REPOS`, `CHECKOUTS`, `TARGETS`, or any `*_SITES`) array,
+  and a path on a line that runs `server.sh update`, are automatic.
+- Pin wording in an updater script stops the run, names the script and line, and says to move
+  the pin to the update-policy file. Pin wording is:
+  - an assignment to, declaration of, or read of a variable whose whole name is `PINNED`,
+    `PINS`, `EXCLUDE`, `EXCLUDED`, `SKIP` or `SKIPPED`, starts with one of those and `_`, or
+    ends in `_PINNED`, `_PINS`, `_EXCLUDE` or `_SKIP`, in any case. That covers `NAME=(...)`,
+    `NAME+=`, `NAME[i]=`, `declare`/`local`/`readonly`/`export`, `read`, `mapfile`,
+    `printf -v` and `eval "NAME=..."`;
+  - a comment with one of the whole words `pin`, `pins`, `pinned`, `pinning`, `exclude`,
+    `excluded`, `skip`, `skipped`, `hold`, `frozen` or `freeze`, or the phrase `do not update`;
+  - a command or function with one of those words as its name (`pin /srv/old`), or a sourced
+    file with one in its name (`source ~/pins.sh`).
+
+  Words match whole, so `THRESHOLD=90`, `PLACEHOLDER=x`, `SPINNER_PID=$!`, `HOLD_SECONDS=5` and
+  `MAPPING=foo` do not block. A lowercase variable set to a number or `true`/`false` is a loop
+  flag, not a pin list, and is left alone on purpose, so this common loop does not block:
+
+  ```bash
+  for s in "${SITES[@]}"; do
+    skip=0
+    for p in /srv/sites/wiki; do [ "$s" = "$p" ] && skip=1; done
+    [ "$skip" -eq 1 ] && continue
+    "$s/server.sh" update
+  done
+  ```
+
+  A comment that only mentions a pin word in passing blocks too. Reword it or move the pin.
+- When an updater script is read completely, a checkout it does not mention is updated, and the
+  output says it was not listed. An updater counts as read completely only when it names its
+  checkouts as paths or in a site array. A loop over a glob (`for d in ~/sites/*`), command
+  output or a `while read` list, a function or variable that supplies the directory, or a cron
+  line such as `cd ~/site && ./server.sh update` cannot be read. Then `update all` names that
+  updater, treats every checkout no file names as unknown and leaves it alone, still processes
+  checkouts that are automatic, pinned or `manual`, and exits 3.
+- With no updater script, nothing is updated unless a policy line names it. A line there does
+  not authorize every other checkout.
+
+### Moving a pin out of an updater script
+
+When `update all` stops with "Move each pin to ...", the updater script holds a pin it will not
+read. For example, `~/bin/ngdp-autoupdate.sh` has:
 
 ```bash
-manual /absolute/path/to/checkout
-pinned /absolute/path/to/another
-auto /absolute/path/to/a/third
+SITES=(
+  /Users/jim/sites/fairways
+)
+# Pinned: /Users/jim/sites/wiki (waiting on the plugin fix)
 ```
 
-A line there does not authorize every other checkout. A checkout may also carry a one-word
-`.ngdpbase-update-policy` file (`auto`, `pinned`, or `manual`). That file is gitignored.
+1. Open the update-policy file named in the message, by default `~/.config/ngdpbase/update-policy`,
+   creating it if it does not exist.
+2. Add one line per pinned checkout, with its absolute path:
+
+   ```bash
+   pinned /Users/jim/sites/wiki
+   ```
+
+3. Remove the pin comment or variable from the updater script, or reword the comment so it has
+   no pin word.
+4. Check with a dry run. The wiki should show as `skip (pinned)`, with the reason `update-policy`:
+
+   ```bash
+   ./server.sh update all --dry-run
+   ```
 
 Checkouts are updated one at a time. One failure does not stop the others. Two `update all`
 runs do not overlap: the lock is a symlink in `~/.config/ngdpbase/update-all.lock` whose target
