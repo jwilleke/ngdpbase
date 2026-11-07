@@ -33,6 +33,7 @@
 
 import type { JobSubject, AgentTokenGrant, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
+import { effectiveAal } from '../utils/policyAttributes.js';
 
 /**
  * Where the work came from.
@@ -70,6 +71,15 @@ export interface JobContext {
   viaProxy?: ProxyClaim;
   /** The address the requesting call came from (#1179), when there was one. Provenance for the record. */
   ipAddress?: string;
+  /**
+   * The assurance level (1 to 3) of the requester's session when the work was
+   * requested (#2261), which is the job's `subject:aal` whenever it runs. Taken
+   * from the requester's own session or token, never from an argument, so it
+   * cannot exceed it. Absent for work no session asked for (boot, a schedule,
+   * the command line) and for a job requested before it was stored: its
+   * `subject:aal` is missing and a condition on it fails closed.
+   */
+  aal?: 1 | 2 | 3;
   /** ISO 8601. When the work was requested, not when it ran. */
   requestedAt: string;
   /** Why, for origins with no person to ask. Free text, for the audit record. */
@@ -88,6 +98,10 @@ export interface JobContext {
 /** The shape a request-bound context exposes; both WikiContext and ApiContext satisfy it. */
 export interface RequestIdentity {
   username?: string | null;
+  /** With `signIn`, `aalCap` and `viaToken`, what the level the job stores is read from (#2261). */
+  isAuthenticated?: boolean;
+  signIn?: { aal?: unknown } | null;
+  aalCap?: number;
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
   viaProxy?: ProxyClaim;
@@ -120,12 +134,19 @@ export function jobContextFromRequest(
   return {
     username: identity?.username ?? ANONYMOUS_USERNAME,
     origin: 'request',
+    ...aalOf(identity),
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
     ...(identity?.viaShare ? { viaShare: identity.viaShare } : {}),
     ...(identity?.viaProxy ? { viaProxy: proxyClaimForJob(identity.viaProxy) } : {}),
     ...(identity?.ipAddress ? { ipAddress: identity.ipAddress } : {}),
     requestedAt: now.toISOString()
   };
+}
+
+/** The level the requester's session or token has right now (#2261), as a field to store with the job; nothing when it has none. */
+function aalOf(identity: RequestIdentity | null | undefined): { aal?: 1 | 2 | 3 } {
+  const aal = effectiveAal(identity);
+  return aal ? { aal } : {};
 }
 
 /** The proxy claim without its key handle (#2047): the actor, grant and scopes stay for the ceiling and the record. */
@@ -240,7 +261,9 @@ export function toPermissionSubject(ctx: JobContext): JobSubject {
     ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {}),
     ...(ctx.viaProxy ? { viaProxy: ctx.viaProxy } : {}),
     // #1999: the job a scheduled run acts as, for the PIP to resolve.
-    ...(ctx.job ? { job: ctx.job } : {})
+    ...(ctx.job ? { job: ctx.job } : {}),
+    // #2261: the level stored when it was requested, for `subject:aal`.
+    ...(ctx.aal ? { grantedAal: ctx.aal } : {})
   };
 }
 

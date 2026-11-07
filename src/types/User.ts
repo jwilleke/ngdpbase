@@ -72,6 +72,13 @@ export interface UserPreferences {
 }
 
 /**
+ * The account fields whose change is recorded on `user-edit` with the field name
+ * only, and that a policy condition may never read as `account:` or `profile:`
+ * (#2261): the password, the email, the roles and the like.
+ */
+export const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'isTest', 'email', 'profileLocked', 'username'] as const;
+
+/**
  * User object
  *
  * Complete user record stored in the user provider.

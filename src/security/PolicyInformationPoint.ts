@@ -7,7 +7,8 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
-import { valueFits } from '../utils/policyAttributes.js';
+import { declaredSubjectAttributes, effectiveAal, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
@@ -124,6 +125,9 @@ type PageQuestionCaller = ActorContext | UserContext | null | undefined;
 function asSubject(caller: PageQuestionCaller): UserContext | null | undefined {
   return decisionSubject(caller) as UserContext | null | undefined;
 }
+
+/** What a subject attribute is read from (#2261): who, and what bears on `subject:aal`. */
+export type SubjectFacts = AalFacts & { username?: string };
 
 /**
  * Access decision log entry
@@ -1125,7 +1129,14 @@ class PolicyInformationPoint extends BaseManager {
       ? await this.resolveSubjectNow(userContext?.username, jobOf(userContext))
       : userContext;
     const decidePolicy = this.policyEvaluator?.compile(subjectNow ?? undefined, policyAction, pageWriteAlternatives(policyAction));
-    const subjectForConditions = { username: subjectNow?.username ?? '', isAuthenticated: subjectNow?.isAuthenticated === true };
+    // #2261: the resolved identity, and what bears on `subject:aal` from the caller's own subject.
+    const subjectForConditions = { ...aalFactsOf(userContext), username: subjectNow?.username ?? '', isAuthenticated: subjectNow?.isAuthenticated === true };
+    // A subject attribute does not vary by page: read once per listing.
+    const subjectReads = new Map<string, unknown>();
+    const readSubject = (name: string): unknown => {
+      if (!subjectReads.has(name)) subjectReads.set(name, this.subjectAttribute(subjectForConditions, name));
+      return subjectReads.get(name);
+    };
     const matchable = await this.matchableNow(userContext);
     // #1964: the subject's add-ons, resolved once for the whole batch and only
     // if some page names one.
@@ -1163,7 +1174,7 @@ class PolicyInformationPoint extends BaseManager {
           // #2255: the same page attributes the PDP asks this PIP for.
           const page = this.pageAttributesFrom(title, metadata);
           const p = await decidePolicy?.(title, { ...extra, ...page.attributes }, (name) =>
-            name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : this.subjectAttribute(subjectForConditions, name));
+            name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : readSubject(name));
           return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds } : null;
         }
       });
@@ -1308,14 +1319,39 @@ class PolicyInformationPoint extends BaseManager {
   }
 
   /**
-   * A subject attribute a condition reads (#2255). Only `subject:id` so far:
-   * the signed-in account, compared by username like a page's `owner`.
-   * Missing for anyone not signed in. Declaring subject attributes is #2261.
+   * A subject attribute a condition reads (#2255, #2261): `subject:<name>`,
+   * declared in `ngdpbase.access.subject-attributes` (`id` always is) and read
+   * from its `from` source here, the only place a subject attribute is read. A
+   * request cannot send one. Missing when it is not declared, cannot be read, or
+   * the subject has none (`subject:aal` of a visitor who is not signed in, of a
+   * token made before it was stored); the evaluator then fails closed. Returns
+   * the value, or a Promise of it for a field read from the account (the
+   * evaluator awaits every read).
    */
-  subjectAttribute(subject: { username?: string; isAuthenticated?: boolean } | null | undefined, name: string): unknown {
-    if (name !== 'subject:id') return undefined;
+  subjectAttribute(subject: SubjectFacts | null | undefined, name: string): unknown {
+    if (!name.startsWith('subject:')) return undefined;
+    const attr = name.slice('subject:'.length);
+    const declared = declaredSubjectAttributes(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.subject-attributes', null));
+    if (!Object.hasOwn(declared, attr) || subjectDeclarationProblem(attr, declared[attr], SENSITIVE_USER_FIELDS) !== null) return undefined;
+    return this.readSubjectSource(attr, declared[attr], subject);
+  }
+
+  /** One read of a declared subject attribute from its source. A value of the wrong type, or a source that throws, is missing. */
+  private readSubjectSource(attr: string, decl: DeclaredSubjectAttribute, subject: SubjectFacts | null | undefined): unknown {
+    const from = decl.from as string;
+    const type = decl.type as string;
+    const fit = (value: unknown): unknown => (valueFits(type, value) ? (type === 'identity' ? normalizeUsername(value) : value) : undefined);
+    if (from === 'sign-in') return fit(effectiveAal(subject));
     if (!subject?.isAuthenticated || !subject.username) return undefined;
-    return normalizeUsername(subject.username);
+    if (from === 'account:id') return fit(subject.username);
+    const field = from.slice(from.indexOf(':') + 1);
+    return this.userManager().getUser(subject.username).then(
+      (record) => (record && Object.hasOwn(record, field) ? fit((record as unknown as Record<string, unknown>)[field]) : undefined),
+      (err: unknown) => {
+        logger.warn(`[PIP] subject:${attr} could not be read from ${from}: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+      }
+    );
   }
 
   /** The page's category for the policies (#2255): lowercased; the default when it has none; `shared` in a shared folder. */

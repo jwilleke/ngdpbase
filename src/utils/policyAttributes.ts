@@ -115,3 +115,112 @@ export function compareLeaf(operator: string, left: unknown, right: unknown): bo
     return undefined;
   }
 }
+
+/** The assurance level a sign-in reached: NIST SP 800-63B, 1 to 3. */
+export type SubjectAal = 1 | 2 | 3;
+
+/** `value` as an assurance level, or `undefined` when it is not 1, 2 or 3. Never coerces. */
+export function toAal(value: unknown): SubjectAal | undefined {
+  return value === 1 || value === 2 || value === 3 ? value : undefined;
+}
+
+/**
+ * What a subject carries that bears on its assurance level (#2261 slice 3).
+ * Read from the request's subject, never from a request field: a caller
+ * cannot send an `aal` and have it believed.
+ */
+export interface AalFacts {
+  isAuthenticated?: boolean;
+  /** The session's sign-in record; absent on a session from before #1523. */
+  signIn?: { aal?: unknown } | null;
+  /** The highest level the account's methods can reach; the level never exceeds it. */
+  aalCap?: number;
+  /** A token request: the level stored when the token was made. */
+  viaToken?: { aal?: unknown } | null;
+  /** A share visitor has no sign-in. */
+  viaShare?: unknown;
+  /** A background job: the level stored when the job was requested. */
+  grantedAal?: unknown;
+  /** A background job (`JobSubject`): it has no session to read. */
+  resolveRolesNow?: unknown;
+}
+
+/**
+ * The subject's `subject:aal`, or `undefined` when it has none (#2261).
+ *
+ * - Not signed in, or a share visitor: none.
+ * - An agent token: the level stored with the token. A token made before this
+ *   stored one has none.
+ * - A background job: the level stored with the job's request. A job with
+ *   none (a schedule, boot, a request from before this) has none.
+ * - A session: its sign-in record's level; a session from before sign-ins
+ *   were recorded is AAL 1, as `AuthManager` treats it.
+ *
+ * Capped at `aalCap`, as a role is. Reads the record; it never works the level
+ * out from factors.
+ */
+export function effectiveAal(subject: AalFacts | null | undefined): SubjectAal | undefined {
+  if (!subject?.isAuthenticated || subject.viaShare) return undefined;
+  let raw: SubjectAal | undefined;
+  if (subject.viaToken) raw = toAal(subject.viaToken.aal);
+  else if (subject.resolveRolesNow) raw = toAal(subject.grantedAal);
+  else raw = toAal(subject.signIn?.aal) ?? (subject.signIn ? undefined : 1);
+  if (raw === undefined) return undefined;
+  return toAal(Math.min(raw, typeof subject.aalCap === 'number' && subject.aalCap >= 1 ? subject.aalCap : 3));
+}
+
+/**
+ * The fields of a request's subject that bear on its level, copied by name so
+ * a subject rebuilt for a decision keeps them (the #1164 lesson: a field not
+ * forwarded is silently lost). Reads nothing else from it.
+ */
+export function aalFactsOf(subject: object | null | undefined): AalFacts {
+  const s = (subject ?? {}) as Record<string, unknown>;
+  return {
+    signIn: s.signIn as AalFacts['signIn'],
+    aalCap: typeof s.aalCap === 'number' ? s.aalCap : undefined,
+    viaToken: s.viaToken as AalFacts['viaToken'],
+    viaShare: s.viaShare,
+    grantedAal: s.grantedAal,
+    resolveRolesNow: s.resolveRolesNow
+  };
+}
+
+/** Where a subject attribute may be read from: `account:<field>`, `profile:<field>` or `sign-in`. */
+export const SUBJECT_SOURCES = ['account:', 'profile:', 'sign-in'] as const;
+
+/** One declared subject attribute, as `ngdpbase.access.subject-attributes` holds it. */
+export interface DeclaredSubjectAttribute {
+  type?: string;
+  from?: string;
+}
+
+/** `subject:id` keeps working on a site whose configuration does not declare it. `aal` has no fallback. */
+const BUILT_IN_SUBJECT_ATTRIBUTES: Readonly<Record<string, DeclaredSubjectAttribute>> = { id: { type: 'identity', from: 'account:id' } };
+
+/** The subject attributes a site declares, with `id` always there. Anything not an object is ignored. */
+export function declaredSubjectAttributes(raw: unknown): Record<string, DeclaredSubjectAttribute> {
+  const declared = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, DeclaredSubjectAttribute>) : {};
+  return { ...BUILT_IN_SUBJECT_ATTRIBUTES, ...declared };
+}
+
+/**
+ * What is wrong with a subject attribute's declaration, or `null`: a `type`
+ * that is not known, a `from` that is not a subject source, or an account field
+ * that must never be read (`sensitive`, the password, email, roles and the
+ * like). Said so a condition naming it is refused rather than silently unknown.
+ */
+export function subjectDeclarationProblem(name: string, decl: DeclaredSubjectAttribute | undefined, sensitive: readonly string[]): string | null {
+  const where = `subject attribute '${name}' in ngdpbase.access.subject-attributes`;
+  if (!decl || typeof decl !== 'object') return `${where} must be an object with a type and a from`;
+  if (!ATTRIBUTE_TYPES.includes(decl.type as AttributeType)) return `${where} has type ${JSON.stringify(decl.type)}; use one of ${ATTRIBUTE_TYPES.join(', ')}`;
+  const from = decl.from;
+  const source = typeof from === 'string' ? SUBJECT_SOURCES.find((s) => from === s || (s !== 'sign-in' && from.startsWith(s))) : undefined;
+  if (!source) return `${where} reads from ${JSON.stringify(from)}; start it with ${SUBJECT_SOURCES.join(', ')}`;
+  if (source !== 'sign-in') {
+    const field = (from as string).slice(source.length);
+    if (!field) return `${where} reads from '${source}' with no field; write ${source}<field>`;
+    if (sensitive.includes(field)) return `'${source}${field}' cannot be used in a condition`;
+  }
+  return null;
+}

@@ -3,7 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, literalFits, literalType } from '../utils/policyAttributes.js';
+import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredSubjectAttributes, literalFits, literalType, subjectDeclarationProblem, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
@@ -12,6 +12,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { pageWritePoliciesToReview } from '../utils/pageWritePolicies.js';
 import { categoryStored } from './ValidationManager.js';
+import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 
 /**
  * User context for policy evaluation
@@ -58,8 +59,7 @@ interface AccessContext {
   readAttribute?: AttributeReader;
 }
 
-/** The subject attributes a condition may read before subject attributes are declared in config (#2261). */
-const BUILT_IN_SUBJECT_ATTRIBUTES: Readonly<Record<string, string>> = { id: 'identity' };
+const SUBJECT_ATTRIBUTES_KEY = 'ngdpbase.access.subject-attributes';
 
 /** The key that holds the operator of a node, or the keys when there is more than one. */
 function operatorKeys(node: object): string[] {
@@ -67,10 +67,10 @@ function operatorKeys(node: object): string[] {
 }
 
 /** The declared type of an attribute a condition names, or `null` when it is not declared. */
-function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>): string | null {
+function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute>): string | null {
   const [category, ...rest] = name.split(':');
   const attr = rest.join(':');
-  if (category === 'subject') return Object.hasOwn(BUILT_IN_SUBJECT_ATTRIBUTES, attr) ? BUILT_IN_SUBJECT_ATTRIBUTES[attr] : null;
+  if (category === 'subject') return Object.hasOwn(subjectAttributes, attr) ? (subjectAttributes[attr]?.type ?? null) : null;
   if (category === 'resource') return Object.hasOwn(pageAttributes, attr) ? (pageAttributes[attr]?.type ?? 'string') : null;
   return null;
 }
@@ -83,19 +83,23 @@ function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: s
  * {@link MAX_CONDITION_DEPTH} deep, at most {@link MAX_CONDITION_NODES} nodes
  * in all, an `in` list of at most {@link MAX_IN_ITEMS} and an `any-of` or
  * `all-of` of at most {@link MAX_GROUP_CHILDREN}. Each attribute a comparison names must be
- * declared: `subject:id`, or a `resource:<name>` declared on the `page`
+ * declared: a `subject:<name>` in `ngdpbase.access.subject-attributes`
+ * (`id` always, `aal` as shipped), or a `resource:<name>` declared on the `page`
  * resource type. The types of the two sides must agree. A condition with a
  * problem never holds: an allow with it does not apply and a deny with it
  * does, as for a missing attribute.
  */
-export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>): string[] {
+export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null)): string[] {
   if (condition === undefined) return [];
-  const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes);
+  const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes, subjectAttributes);
+  // A subject attribute that is declared but cannot be read (a bad `from`, a field that is never readable) is a problem in its own right.
+  const declaration = (name: string): string | null =>
+    name.startsWith('subject:') && typeOf(name) !== null ? subjectDeclarationProblem(name.slice('subject:'.length), subjectAttributes[name.slice('subject:'.length)], SENSITIVE_USER_FIELDS) : null;
   const undeclared = (name: string): string => {
     const where = name.startsWith('resource:')
       ? 'declare it on the page resource type in ngdpbase.access.resource-types'
       : name.startsWith('subject:')
-        ? 'subject:id is the only subject attribute until subject attributes are declared in ngdpbase.access.subject-attributes'
+        ? 'add it to ngdpbase.access.subject-attributes'
         : 'no environment attributes are declared yet';
     return `condition reads '${name}', which is not declared; ${where}`;
   };
@@ -142,6 +146,10 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
     const rightIsAttribute = isAttributeName(operand);
     const rightType = rightIsAttribute ? typeOf(operand) : null;
     if (rightIsAttribute && rightType === null) problems.push(undeclared(operand));
+    for (const name of [c.attribute, ...(rightIsAttribute ? [operand] : [])]) {
+      const bad = declaration(String(name));
+      if (bad && !problems.includes(bad)) problems.push(bad);
+    }
     if (problems.length > 0) return problems;
     const left = leftType as string;
 
@@ -497,11 +505,13 @@ class PolicyEvaluator extends BaseManager {
    * once for a whole listing; a single decision does it for its few matches.
    */
   private prepare(policies: readonly Policy[]): PreparedPolicy[] {
-    const declared = policies.some((p) => p.condition !== undefined) ? this.declaredPageAttributes() : {};
+    const conditional = policies.some((p) => p.condition !== undefined);
+    const declared = conditional ? this.declaredPageAttributes() : {};
+    const subjects = conditional ? this.declaredSubjectAttributes() : {};
     return policies.map((policy) => {
       if (policy.condition === undefined) return { policy, invalid: false };
-      if (conditionProblems(policy.condition, declared).length > 0) return { policy, invalid: true };
-      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared)) };
+      if (conditionProblems(policy.condition, declared, subjects).length > 0) return { policy, invalid: true };
+      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared, subjects)) };
     });
   }
 
@@ -646,11 +656,17 @@ class PolicyEvaluator extends BaseManager {
     return attributes && typeof attributes === 'object' ? attributes : {};
   }
 
+  /** The subject attributes a condition may read (#2261): `id` always, and those declared in `ngdpbase.access.subject-attributes`. */
+  declaredSubjectAttributes(): Record<string, DeclaredSubjectAttribute> {
+    return declaredSubjectAttributes(this.configManager?.getProperty(SUBJECT_ATTRIBUTES_KEY, null));
+  }
+
   /** Each policy in force whose condition has a problem, with the problems (#2255): for the boot warning. */
   conditionProblemsInForce(): Array<{ id: string; effect: Policy['effect']; problems: string[] }> {
     const declared = this.declaredPageAttributes();
+    const subjects = this.declaredSubjectAttributes();
     return this.policies()
-      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared) }))
+      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared, subjects) }))
       .filter((r) => r.problems.length > 0);
   }
 

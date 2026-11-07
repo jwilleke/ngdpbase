@@ -11,7 +11,7 @@ import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { UserProvider, ProviderInfo } from '../types/Provider.js';
-import { User, UserPreferences, UserSession } from '../types/User.js';
+import { SENSITIVE_USER_FIELDS, User, UserPreferences, UserSession } from '../types/User.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type IdentityManager from './IdentityManager.js';
 import type OrganizationManager from './OrganizationManager.js';
@@ -48,7 +48,6 @@ import type NotificationManager from './NotificationManager.js';
 /** The role whose accounts never share an email (#2073, operator 2026-10-25). */
 const ADMIN_ROLE = 'admin';
 
-const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'isTest', 'email', 'profileLocked', 'username'] as const;
 
 /**
  * An account record as UserManager hands it out: never the password hash, and
@@ -82,6 +81,12 @@ export interface AgentTokenGrant {
   id: string;
   name: string;
   scopes: string[];
+  /**
+   * The assurance level stored with the token when it was made (#2261): the
+   * level of the minting session at that moment, never higher. Absent on a
+   * token made before it was stored, which then has no `subject:aal`.
+   */
+  aal?: 1 | 2 | 3;
 }
 
 /**
@@ -226,6 +231,8 @@ export interface JobSubject {
   viaProxy?: ProxyClaim;
   /** #1999: the scheduled job a run acts as (`JobContext.job`). */
   job?: string;
+  /** #2261: the level stored with the job's request (`JobContext.aal`); absent when it stored none. */
+  grantedAal?: 1 | 2 | 3;
 }
 
 

@@ -72,6 +72,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
 import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
+import { effectiveAal } from '../utils/policyAttributes.js';
 import { RETIRED_PERMISSIONS } from '../utils/permissionCatalog.js';
 
 /** Configuration namespace. See the extraction note in the file header. */
@@ -139,6 +140,14 @@ export interface AgentTokenRecord {
   approvedBy?: string;
   /** The proxy grant it was minted under. Ending that grant ends this token; it works only while the grant is in force. */
   proxyGrantId?: string;
+  /**
+   * #2261: the assurance level (1 to 3) of the minting session when the token
+   * was made, which is `subject:aal` for every request the token makes. Taken
+   * from the session, never from the request, so it cannot exceed it. Absent
+   * on a token made before this was stored: its `subject:aal` is missing and a
+   * condition on it fails closed.
+   */
+  aal?: 1 | 2 | 3;
 }
 
 /** A record safe to return over the API — no hash. */
@@ -508,6 +517,7 @@ class AgentTokenManager extends BaseManager {
       throw new Error(`Token limit reached (${this.tokenConfig.maxPerUser} live tokens per user)`);
     }
 
+    const aal = effectiveAal(subject);
     const secret = randomBytes(TOKEN_BYTES).toString('base64url');
     const token = `${TOKEN_PREFIX}${secret}`;
     const id = `tok_${randomBytes(6).toString('hex')}`;
@@ -524,7 +534,9 @@ class AgentTokenManager extends BaseManager {
       lastUsedAt: null,
       revokedAt: null,
       revokedBy: null,
-      ...(claim ? { approvedBy: claim.actor, proxyGrantId: claim.grantId } : {})
+      ...(claim ? { approvedBy: claim.actor, proxyGrantId: claim.grantId } : {}),
+      // #2261: the minting session's level now, capped as a role is; a request cannot name a higher one.
+      ...(aal ? { aal } : {})
     };
 
     // #1121: token-mint is CRITICAL, so the audit is written and flushed BEFORE
