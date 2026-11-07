@@ -604,6 +604,7 @@ async register(engine, config) {
 | `zonedParts(instant, timeZone)` | An instant's local `year`, `month` (1–12), `date` (`YYYY-MM-DD`), `day` (weekday) and `minutes` since midnight in a time zone: core's own, so a job needs no Intl code ([A job that runs on a schedule](#a-job-that-runs-on-a-schedule), [#1998](https://github.com/jwilleke/ngdpbase/issues/1998)) |
 | `keyedSerial()` | A new `KeyedSerial`, core's own per-key queue, at each call: one per manager, to [change your own records one at a time](#change-your-own-records-one-at-a-time) ([#2065](https://github.com/jwilleke/ngdpbase/issues/2065)) |
 | `reviews`, `registerReviewHandler` | Core's one way to review requests: file one for the holders of a permission to decide, and register the handler that carries an approval out, only under this add-on's slug ([Ask for a review](#ask-for-a-review), [#2072](https://github.com/jwilleke/ngdpbase/issues/2072)) |
+| `allowSignedOutWrite({ method, path, reason })` | Let a caller who is not signed in reach one of this add-on's own write routes ([Let a signed-out caller reach a route](#let-a-signed-out-caller-reach-a-route), [#2298](https://github.com/jwilleke/ngdpbase/issues/2298)) |
 
 ```typescript
 async register(engine, config, host) {
@@ -1011,6 +1012,22 @@ Express is core's. An add-on gets a Router from `engine.createRouter(options?)` 
 > __Note:__ When your add-on lives in an external repo, the core's automatic static
 > serving at `/addons/...` only covers the ngdpbase `addons/` directory. You must
 > mount your own static middleware in `register()` as shown above.
+
+### Let a signed-out caller reach a route
+
+Core refuses every POST, PUT, PATCH and DELETE from a caller who is not signed in before your route runs (a form is sent to sign-in, anything else gets 401; a valid Bearer token counts as signed in). A route that visitors must reach signed out, such as a public form, is declared in `register()`:
+
+```typescript
+host.allowSignedOutWrite({
+  method: 'POST',
+  path: '/api/my-addon/submit/:formId',
+  reason: 'the public form submit; the route asks form-submit'
+});
+```
+
+- The path must be under `/api/<your-slug>/` or `/addons/<your-slug>/`, with literal segments and `:name` parameters only; anything else throws. Declare it before the list is sealed, which happens once all add-ons have loaded.
+- It lets the request reach your route and grants nothing: the route still asks its permission through `ApiContext.requirePermission`, so policy decides who may submit.
+- A route you do not declare is refused signed out. Declare only what a person must reach without an account; the forms add-on declares its public submit this way.
 
 ### Register Plugins
 

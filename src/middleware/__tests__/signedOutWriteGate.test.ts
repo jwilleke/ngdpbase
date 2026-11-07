@@ -66,8 +66,10 @@ describe('a signed-out write to any registered write route', () => {
     expect(declared.map((d) => `${d.slug} ${d.method} ${d.path}`)).toEqual(['forms POST /api/forms/submit/:formId']);
     for (const d of declared) declareAddonSignedOutWrite(d.slug, { method: d.method as 'POST', path: d.path, reason: d.reason });
     const bypassed: string[] = [];
-    const { app, reached } = appWith(writes.map((w) => ({ method: w.method, path: w.path })), 'anonymous');
-    for (const w of writes) {
+    // The two routes registered ahead of the gate (own authentication) are not behind it; the lint holds them.
+    const behind = writes.filter((w) => !w.origin.startsWith('app'));
+    const { app, reached } = appWith(behind.map((w) => ({ method: w.method, path: w.path })), 'anonymous');
+    for (const w of behind) {
       const listed = signedOutWriteReason(w.method, sample(w.path)) !== null;
       const agent = request(app) as unknown as Record<string, (u: string) => request.Test>;
       const before = reached.length;
