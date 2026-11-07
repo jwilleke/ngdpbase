@@ -378,6 +378,7 @@ these reasons, each printed as one line under the checkout's name:
 | `skip: owned by another user` | The directory is not owned by the user running the command. |
 | `skip: git index is locked (another git command is running)` | `.git/index.lock` exists. |
 | `skip: detached HEAD, not on a branch` | The checkout is not on a branch. |
+| `skip: on branch <name>, not master` | The checkout is on a branch other than `master`, even one with no commits of its own. It is not switched to `master`. |
 | `skip: N uncommitted or untracked file(s), first: <file>` | `git status` shows changes, staged or not, or untracked files. |
 | `skip: N commit(s) ahead of origin/master` | The branch has commits that are not on `origin/master`. |
 | `skip: could not fetch origin/master to check for local commits` | The fetch before the ahead check failed. |
@@ -385,8 +386,8 @@ these reasons, each printed as one line under the checkout's name:
 A skipped checkout is not touched, so `update`'s rollback (`git checkout -f`, `git reset --hard`)
 never runs on it. It does not pull before the per-checkout `update`, which fetches and
 fast-forwards itself; it does fetch `origin/master` first, so the ahead check is current. A
-`--dry-run` fetches nothing and compares against the last fetch. A checkout on another branch with
-no commits of its own is not skipped: `update` with no ref moves it to `master`.
+`--dry-run` fetches nothing and compares against the last fetch. A checkout on another branch is
+skipped even when a ref is given; run `./server.sh update [ref]` in it by hand to move it.
 
 It refuses to run as root, because it would run `npm` and the build as root in other users'
 trees. PM2 `watch` restarts a process when files change. It is not a release update, and it does
@@ -404,6 +405,11 @@ nothing to update, 1 when a checkout was held by git or its update failed, 2 whe
 be read, it was run as root, or another `update all` holds the lock, and 3 when PM2 lists
 processes but none is an ngdpbase checkout. A checkout is recognised only when the PM2 working
 directory itself holds its `server.sh`.
+
+PM2 can print a notice before its process list, for example `In-memory PM2 is out-of-date` when
+the PM2 daemon is older than the installed PM2. Those lines are ignored: the list is the last
+line of `pm2 jlist` output that is a JSON array. When no line is, the run stops with exit 2 and
+updates nothing.
 
 The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
 variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own `.env`. The PM2 document is

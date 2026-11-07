@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, one at a time, by calling each checkout's own `./server.sh update`. It needs no configuration. It skips a checkout, with a one-line reason, only when it is not online, not the top of its own git repository, owned by another user, has git's index locked, is detached, has uncommitted or untracked files, or is ahead of `origin/master`. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md#updating-every-checkout-on-this-host).
+- `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, one at a time, by calling each checkout's own `./server.sh update`. It needs no configuration. It skips a checkout, with a one-line reason, only when it is not online, not the top of its own git repository, owned by another user, has git's index locked, is detached, is on a branch other than `master`, has uncommitted or untracked files, or is ahead of `origin/master`. A notice PM2 prints before its process list, such as `In-memory PM2 is out-of-date`, is ignored. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md#updating-every-checkout-on-this-host).
 
 ## [5.43.0] - 2026-11-07
 
