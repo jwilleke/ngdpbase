@@ -13,7 +13,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { classifyScript } from '../update-all-scan.mjs';
+import { classifyScript, extractProcessList } from '../update-all-scan.mjs';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET = `test-only-${randomUUID()}`;
@@ -553,6 +553,9 @@ describe('./server.sh update all', () => {
     fs.writeFileSync(path.join(dirty, 'notes.txt'), 'wip');
     fs.writeFileSync(path.join(staged, 'staged.txt'), 'staged');
     git(staged, 'add', 'staged.txt');
+    fs.writeFileSync(path.join(detached, 'untagged.txt'), 'not a release');
+    git(detached, 'add', 'untagged.txt');
+    git(detached, 'commit', '-q', '-m', 'untagged');
     git(detached, 'checkout', '-q', '--detach');
     const detachedHead = git(detached, 'rev-parse', 'HEAD');
     fs.writeFileSync(path.join(diverged, 'local.txt'), 'keep');
@@ -614,6 +617,9 @@ describe('./server.sh update all', () => {
     const feature = cloneFrom(primary(), 'feature');
     const detached = cloneFrom(primary(), 'detached');
     git(feature, 'checkout', '-q', '-b', 'feature');
+    fs.writeFileSync(path.join(detached, 'untagged.txt'), 'not a release');
+    git(detached, 'add', 'untagged.txt');
+    git(detached, 'commit', '-q', '-m', 'untagged');
     git(detached, 'checkout', '-q', '--detach');
     const detachedHead = git(detached, 'rev-parse', 'HEAD');
     const tagged = publish(primary(), '1.1.0');
@@ -963,6 +969,173 @@ describe('./server.sh update all', () => {
       expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
     });
   }, 60000);
+
+  it('reads a process list that starts with the PM2 out-of-date warning', () => {
+    const site = cloneFrom(primary(), 'addons');
+    writePolicy([`manual ${site}`]);
+    const banner = '\u001b[31m>>>> In-memory PM2 is out-of-date, do:\u001b[39m\n>>>> $ pm2 update\n';
+    fs.writeFileSync(jlistFile, banner + JSON.stringify([{
+      name: 'ngdpbase-addons',
+      pm_id: 0,
+      pm2_env: {
+        pm_cwd: site,
+        status: 'online',
+        pm_exec_path: path.join(site, 'dist', 'src', 'app.js'),
+        watch: false,
+        env: { SECRET_TOKEN: SECRET, NOTE: `bracket]inside[${SECRET}` }
+      }
+    }]));
+
+    const result = run(['update', 'all', '--dry-run']);
+
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('dry-run: would run: ./server.sh update');
+    expect(result.out).not.toContain('not usable');
+    expect(result.out).not.toContain(SECRET);
+    expect(result.out).not.toContain('bracket]inside');
+  }, 60000);
+
+  it('refuses a PM2 stream that is not a process list and does not print it', () => {
+    fs.writeFileSync(jlistFile, `\u001b[31m>>>> In-memory PM2 is out-of-date, do:\u001b[39m\n>>>> $ pm2 update\n[not-json ${SECRET}]\n`);
+    const garbage = run(['update', 'all']);
+    expect(garbage.status, garbage.out).toBe(2);
+    expect(garbage.out).toContain('not usable');
+    expect(garbage.out).not.toContain(SECRET);
+
+    fs.writeFileSync(jlistFile, JSON.stringify([SECRET]));
+    const strings = run(['update', 'all']);
+    expect(strings.status, strings.out).toBe(2);
+    expect(strings.out).not.toContain(SECRET);
+
+    fs.writeFileSync(jlistFile, `>>>> $ pm2 update\n${JSON.stringify({ name: 'x', token: SECRET })}`);
+    const object = run(['update', 'all']);
+    expect(object.status, object.out).toBe(2);
+    expect(object.out).not.toContain(SECRET);
+
+    fs.writeFileSync(jlistFile, `${SECRET}\n`);
+    const failed = run(['update', 'all'], { PM2_JLIST_EXIT: '1' });
+    expect(failed.status, failed.out).toBe(2);
+    expect(failed.out).toContain('Could not read the PM2 process list');
+    expect(failed.out).not.toContain(SECRET);
+  }, 60000);
+
+  it('leaves a clean release checkout detached when no release tag is passed', () => {
+    const site = cloneFrom(primary(), 'addons');
+    git(site, 'checkout', '-q', '--detach', 'v1.0.0');
+    const head = git(site, 'rev-parse', 'HEAD');
+    publish(primary(), '1.1.0');
+    writePolicy([`manual ${site}`]);
+    writeJlist([{ name: 'ngdpbase-addons', cwd: site }]);
+
+    const plain = run(['update', 'all']);
+    const ontoMaster = run(['update', 'all', 'master']);
+
+    expect(plain.status, plain.out).toBe(0);
+    expect(plain.out).toContain('skip (release): detached at v1.0.0');
+    expect(plain.out).toContain('not moved onto master');
+    expect(ontoMaster.status, ontoMaster.out).toBe(0);
+    expect(ontoMaster.out).toContain('master is not a release tag');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(site, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    expect(git(site, 'tag', '-l', 'v1.1.0')).toBe('');
+    expect(npmLines()).toEqual([]);
+  }, 60000);
+
+  it('dry-run names a release update without fetching a missing or present tag', () => {
+    const stale = cloneFrom(primary(), 'addons');
+    const current = cloneFrom(primary(), 'encrypted');
+    publish(primary(), '1.1.0');
+    git(current, 'fetch', '-q', '--tags', 'origin');
+    git(stale, 'checkout', '-q', '--detach', 'v1.0.0');
+    git(current, 'checkout', '-q', '--detach', 'v1.0.0');
+    const staleHead = git(stale, 'rev-parse', 'HEAD');
+    const currentHead = git(current, 'rev-parse', 'HEAD');
+    writePolicy([`manual ${stale}`, `manual ${current}`]);
+    writeJlist([
+      { name: 'ngdpbase-addons', cwd: stale },
+      { name: 'ngdp-encrypted', cwd: current }
+    ]);
+
+    const result = run(['update', 'all', '--dry-run', 'v1.1.0']);
+
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(`${fs.realpathSync(stale)}`);
+    expect(result.out).toContain('v1.1.0 is not in this checkout');
+    expect(result.out).toContain('v1.1.0 is already in this checkout');
+    expect(result.out).toContain('A dry run does not fetch.');
+    expect(result.out.match(/dry-run: would run: \.\/server\.sh update v1\.1\.0/g)).toHaveLength(2);
+    expect(git(stale, 'tag', '-l', 'v1.1.0')).toBe('');
+    expect(git(stale, 'rev-parse', 'HEAD')).toBe(staleHead);
+    expect(git(current, 'rev-parse', 'HEAD')).toBe(currentHead);
+    expect(npmLines()).toEqual([]);
+  }, 60000);
+
+  it('checks a release tag out of a detached checkout without taking master from its worktree', () => {
+    const site = cloneFrom(primary(), 'encrypted');
+    const masterSha = git(site, 'rev-parse', 'master');
+    git(site, 'checkout', '-q', '--detach', 'v1.0.0');
+    const wt = path.join(tmp, 'sites', 'master-wt');
+    git(site, 'worktree', 'add', '-q', wt, 'master');
+    const next = publish(primary(), '1.1.0');
+    writePolicy([`manual ${site}`]);
+    writeJlist([{ name: 'ngdp-encrypted', cwd: site }]);
+
+    const result = run(['update', 'all', 'v1.1.0']);
+
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('origin has v1.1.0');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(next);
+    expect(git(site, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    expect(git(site, 'status', '--porcelain')).toBe('');
+    expect(git(wt, 'symbolic-ref', '--short', 'HEAD')).toBe('master');
+    expect(git(wt, 'rev-parse', 'HEAD')).toBe(masterSha);
+  }, 60000);
+
+  it('does not check out a release when the detached tree is dirty or the tag is not on origin', () => {
+    const dirty = cloneFrom(primary(), 'addons');
+    git(dirty, 'checkout', '-q', '--detach', 'v1.0.0');
+    fs.writeFileSync(path.join(dirty, 'notes.txt'), 'wip');
+    const head = git(dirty, 'rev-parse', 'HEAD');
+    writePolicy([`manual ${dirty}`]);
+    writeJlist([{ name: 'ngdpbase-addons', cwd: dirty }]);
+
+    const held = run(['update', 'all', 'v9.9.9']);
+
+    expect(held.status, held.out).toBe(1);
+    expect(held.out).toContain('skip (dirty)');
+    expect(fs.readFileSync(path.join(dirty, 'notes.txt'), 'utf8')).toBe('wip');
+    expect(git(dirty, 'rev-parse', 'HEAD')).toBe(head);
+    expect(npmLines()).toEqual([]);
+
+    fs.rmSync(path.join(dirty, 'notes.txt'));
+    const missing = run(['update', 'all', 'v9.9.9']);
+    expect(missing.status, missing.out).toBe(1);
+    expect(missing.out).toContain('could not verify v9.9.9 on origin');
+    expect(git(dirty, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(dirty, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+  }, 60000);
+
+  it('rolls a failed release checkout back to the same detached tag', () => {
+    const site = cloneFrom(primary(), 'encrypted');
+    const masterSha = git(site, 'rev-parse', 'master');
+    const start = git(site, 'rev-parse', 'HEAD');
+    git(site, 'checkout', '-q', '--detach', 'v1.0.0');
+    const wt = path.join(tmp, 'sites', 'master-wt');
+    git(site, 'worktree', 'add', '-q', wt, 'master');
+    publish(primary(), '1.1.0', 'BREAK_BUILD');
+    writePolicy([`manual ${site}`]);
+    writeJlist([{ name: 'ngdp-encrypted', cwd: site }]);
+
+    const result = run(['update', 'all', 'v1.1.0']);
+
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('Rolled back');
+    expect(git(site, 'rev-parse', 'HEAD')).toBe(start);
+    expect(git(site, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    expect(git(site, 'status', '--porcelain')).toBe('');
+    expect(git(wt, 'rev-parse', 'HEAD')).toBe(masterSha);
+    expect(git(wt, 'symbolic-ref', '--short', 'HEAD')).toBe('master');
+  }, 60000);
 });
 
 describe('updater comment fixture', () => {
@@ -1003,5 +1176,29 @@ describe('updater comment fixture', () => {
     expect(rows.some((row) => row[0] === 'name')).toBe(false);
     expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
     expect(rows.some((row) => row[1] === 'pinned' && String(row[2]).includes('yourphr'))).toBe(false);
+  });
+});
+
+describe('PM2 process list parsing', () => {
+  const secret = `parse-${randomUUID()}`;
+  const banner = '\u001b[31m>>>> In-memory PM2 is out-of-date, do:\u001b[39m\n>>>> $ pm2 update\n';
+
+  it('accepts a warning plus a process array, and a clean array', () => {
+    const warned = extractProcessList(banner + JSON.stringify([
+      { name: 'ngdpbase-addons', pm2_env: { env: { TOKEN: `bracket]${secret}[` }, pm_cwd: '/tmp/addons' } }
+    ]));
+    expect(warned).toHaveLength(1);
+    expect(warned?.[0].name).toBe('ngdpbase-addons');
+
+    const clean = extractProcessList(JSON.stringify([{ name: 'jimstest', pm2_env: { status: 'online' } }]));
+    expect(clean).toEqual([expect.objectContaining({ name: 'jimstest' })]);
+    expect(extractProcessList('[]')).toEqual([]);
+  });
+
+  it('rejects warnings, objects, and arrays that are not process lists', () => {
+    expect(extractProcessList(`${banner}[not-json ${secret}]`)).toBeNull();
+    expect(extractProcessList(JSON.stringify([secret]))).toBeNull();
+    expect(extractProcessList(`${banner}${JSON.stringify({ name: 'x', token: secret })}`)).toBeNull();
+    expect(extractProcessList(banner)).toBeNull();
   });
 });

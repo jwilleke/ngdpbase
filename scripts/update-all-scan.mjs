@@ -44,18 +44,73 @@ function cleanStatus(value) {
   return /^[a-z]{1,32}$/.test(value) ? value : 'unknown';
 }
 
-function sanitizePm2(raw) {
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start < 0 || end <= start) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return null;
+function stripAnsi(text) {
+  return String(text).replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
+function matchingBracket(text, start) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '[') depth += 1;
+    else if (ch === ']') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
   }
-  if (!Array.isArray(parsed)) return null;
-  return parsed;
+  return -1;
+}
+
+function isProcessList(value) {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) => item && typeof item === 'object' && !Array.isArray(item) && typeof item.name === 'string');
+}
+
+/**
+ * A PM2 client newer than the running daemon prints a warning on stdout
+ * before `jlist`'s JSON. The warning can contain '[' from a colour code.
+ * Take a JSON array of named processes from that stream and ignore the rest.
+ * An array of something else, or text that only looks a bit like JSON, is
+ * not a process list.
+ */
+export function extractProcessList(raw) {
+  const text = stripAnsi(raw);
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '[') {
+      const end = matchingBracket(text, i);
+      if (end > i) {
+        try {
+          const parsed = JSON.parse(text.slice(i, end + 1));
+          if (isProcessList(parsed)) return parsed;
+        } catch {
+          // This '[' did not start a process list.
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    i += 1;
+  }
+  return null;
 }
 
 function emitProcesses(list) {
@@ -428,7 +483,7 @@ function main() {
     const chunks = [];
     process.stdin.on('data', (chunk) => chunks.push(chunk));
     process.stdin.on('end', () => {
-      const list = sanitizePm2(Buffer.concat(chunks).toString('utf8'));
+      const list = extractProcessList(Buffer.concat(chunks).toString('utf8'));
       if (!list) {
         process.stderr.write('pm2-json-unusable\n');
         process.exit(1);

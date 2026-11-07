@@ -425,6 +425,29 @@ ngdp_update_all_decide() {
   _UA_DECISION="unknown"
 }
 
+ngdp_update_all_is_release_tag() {
+  printf '%s\n' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+ngdp_update_all_exact_release_tag() {
+  local root="$1" tag found=""
+  while IFS= read -r tag; do
+    if ngdp_update_all_is_release_tag "$tag"; then
+      found="$tag"
+      break
+    fi
+  done <<EOF
+$(git -C "$root" tag --points-at HEAD 2>/dev/null || true)
+EOF
+  printf '%s' "$found"
+}
+
+ngdp_update_all_origin_has_tag() {
+  local root="$1" tag="$2" out
+  out="$(GIT_TERMINAL_PROMPT=0 git -C "$root" ls-remote --tags origin "refs/tags/${tag}" 2>/dev/null || true)"
+  printf '%s\n' "$out" | grep -F "refs/tags/${tag}" >/dev/null
+}
+
 ngdp_update_all_gate() {
   local root="$1" ref="$2"
   if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -439,10 +462,6 @@ ngdp_update_all_gate() {
     printf 'index-locked'
     return 0
   fi
-  if ! git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
-    printf 'detached'
-    return 0
-  fi
   dirty="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null || echo "status-failed")"
   if [ "$dirty" = "status-failed" ]; then
     printf 'status-failed'
@@ -451,6 +470,24 @@ ngdp_update_all_gate() {
   if [ -n "$dirty" ]; then
     printf '%s\n' "$dirty" > "${_UA_DIRTY_FILE:-/dev/null}" 2>/dev/null || true
     printf 'dirty'
+    return 0
+  fi
+  # A release checkout is often detached on the tag it runs. That is not an
+  # invitation to check out master: master may be checked out in another
+  # worktree, and the release was chosen on purpose. Another detached HEAD
+  # may hold commits that exist only there, so it stays untouched.
+  if ! git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    local rel
+    rel="$(ngdp_update_all_exact_release_tag "$root")"
+    if [ -n "$rel" ]; then
+      if ngdp_update_all_is_release_tag "$ref"; then
+        printf 'release-ok'
+      else
+        printf 'release-held:%s' "$rel"
+      fi
+    else
+      printf 'detached'
+    fi
     return 0
   fi
   if [ -n "$ref" ]; then
@@ -688,7 +725,18 @@ ngdp_update_all() {
     local gate
     gate="$(ngdp_update_all_gate "$root" "$ref")"
     case "$gate" in
-      ok) ;;
+      ok|release-ok) ;;
+      release-held:*)
+        local held_tag="${gate#release-held:}"
+        echo "    skip (release): detached at ${held_tag}. A release checkout is not moved onto master."
+        if [ -z "$ref" ]; then
+          echo "    To move it to a release, run: ./server.sh update all vX.Y.Z"
+        else
+          echo "    ${ref} is not a release tag, so this checkout stays at ${held_tag}."
+        fi
+        skipped=$((skipped + 1))
+        continue
+        ;;
       *)
         echo "    skip (${gate}): not running update, so nothing is reset"
         if [ "$gate" = "dirty" ] && [ -s "$dirty_file" ]; then
@@ -698,6 +746,21 @@ ngdp_update_all() {
         continue
         ;;
     esac
+    if [ "$gate" = "release-ok" ]; then
+      if git -C "$root" rev-parse --verify --quiet "refs/tags/${ref}" >/dev/null 2>&1; then
+        echo "    ${ref} is already in this checkout. A real run checks that origin has that tag before checkout. A dry run does not fetch."
+      else
+        echo "    ${ref} is not in this checkout. A real run checks that origin has that tag before checkout. A dry run does not fetch."
+      fi
+      if [ "$dry" -eq 0 ]; then
+        if ! ngdp_update_all_origin_has_tag "$root" "$ref"; then
+          echo "    failed: could not verify ${ref} on origin. Nothing was checked out."
+          failed=$((failed + 1))
+          continue
+        fi
+        echo "    origin has ${ref}"
+      fi
+    fi
     cmd_show=(./server.sh update)
     [ -n "$ref" ] && cmd_show+=("$ref")
     [ -n "$envname" ] && cmd_show+=("$envname")

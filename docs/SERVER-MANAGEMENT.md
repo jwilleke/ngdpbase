@@ -368,11 +368,31 @@ run `./server.sh update refs/heads/all` on that one checkout.
 ```
 
 It does not pull before the per-checkout `update`. That command already fetches and
-fast-forwards. Bulk mode also does not run an update whose rollback would
-`git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on `master`
-(when no ref is given), diverged from the last fetched `origin/master`, or ahead of it with
-local commits. Those checkouts are listed and left as they are. A ref (`./server.sh update all v5.43.0`)
-may be given for a checkout that is not on `master`; a detached or dirty checkout is still skipped.
+fast-forwards. Bulk mode does not run an update whose rollback would
+`git checkout -f` / `git reset --hard` on a tree that is dirty, not exactly on a release
+tag while detached, not on `master` (when no ref is given), diverged from the last fetched
+`origin/master`, or ahead of it with local commits. Those checkouts are listed and left as
+they are.
+
+A checkout detached exactly on a release tag (`v1.2.3`) is not moved onto `master`.
+`./server.sh update all` skips it and says so. `./server.sh update all v5.43.0` updates it
+to that tag when the tree is clean. The argument has to be a release tag (`v` plus three
+numbers). A real run asks origin whether that tag exists (`git ls-remote`, which does not
+move HEAD) and only then runs that checkout's `update`, which fetches and checks the tag
+out. It does not check out `master`, so another worktree may keep `master`. A dry run does
+not fetch. If the tag is not already in the checkout, the dry run says a real run still has
+to verify it on origin. A detached HEAD that is not exactly a release tag is left alone
+even when a release is named, because those commits may exist only on that HEAD.
+
+If install or build then fails, that checkout's own update rolls back. From a detached
+tag the rollback is `git checkout -f` of the commit it started on, not a switch to
+`master` and not `reset --hard`. Bulk mode only reaches that path after the checks above,
+on a tree that was clean. Dirty, diverged, and locally ahead checkouts never enter it.
+
+PM2 may print a version warning on stdout before the process list, including when the
+checkout's PM2 and the running daemon differ. Discovery reads a JSON array of processes
+from that output and ignores the warning. Text that is not that array is refused and is
+not printed. The process environment is not printed.
 
 PM2 `watch` restarts a process when files change. It is not an automatic release update, and it
 does not by itself include or exclude a checkout.

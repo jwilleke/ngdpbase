@@ -740,6 +740,8 @@ case "${1:-}" in
     echo "               - Update each online ngdpbase checkout PM2 is running, by calling"
     echo "                 that checkout's own ./server.sh update. Skips checkouts an"
     echo "                 automatic updater already updates, and checkouts marked pinned."
+    echo "                 A checkout detached on a release tag stays there unless the"
+    echo "                 argument is a release tag (./server.sh update all vX.Y.Z)."
     echo "                 'all' is not a git ref. See docs/SERVER-MANAGEMENT.md"
     echo "  status       - Show comprehensive server status"
     echo "                 • PID lock validity"
