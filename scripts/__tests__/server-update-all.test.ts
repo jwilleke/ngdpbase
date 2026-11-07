@@ -121,7 +121,8 @@ function writePolicy(lines: string[]): void {
 }
 
 function quote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  const embedded = ['\'', '\\', '\''].join('');
+  return `'${value.split("'").join(embedded)}'`;
 }
 
 function writeUpdater(sites: string[], pinned: string[], extra = ''): string {
