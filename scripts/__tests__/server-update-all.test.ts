@@ -1346,3 +1346,33 @@ describe('updater comment fixture', () => {
     expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
   });
 });
+
+describe('a pin line that pins nothing blocks even beside a real pin', () => {
+  const wrap = (pinLines: string[]) =>
+    ['# /tmp (pinned)', ...pinLines, 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n');
+  const blocks = (text: string, names: string[]) =>
+    classifyScript(text, '/updater.sh', names).filter((row) => row[0] === 'note' && row[1] === 'block');
+
+  it('control: the real pin alone does not block', () => {
+    expect(blocks(wrap([]), ['wiki-prod'])).toEqual([]);
+  });
+
+  it('blocks on an unmatched short basename', () => {
+    expect(blocks(wrap(['# blog (pinned)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('# blog (pinned)');
+  });
+
+  it('blocks on a case mismatch with a PM2 app name', () => {
+    expect(blocks(wrap(['# skip Wiki-Prod']), ['wiki-prod']).map((r) => r[2]).join()).toContain('Wiki-Prod');
+  });
+
+  it('pins array names that are PM2 apps and blocks on names that are not', () => {
+    const rows = classifyScript(wrap(['PINNED=(wiki-prod)']), '/updater.sh', ['wiki-prod']);
+    expect(rows.filter((r) => r[0] === 'name').map((r) => r[2])).toEqual(['wiki-prod']);
+    expect(blocks(wrap(['PINNED=(wiki-prod)']), ['wiki-prod'])).toEqual([]);
+    expect(blocks(wrap(['PINNED=(wiki-prd)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('wiki-prd');
+  });
+
+  it('blocks on a $HOME path pin', () => {
+    expect(blocks(wrap(['# $HOME/sites/wiki (pinned)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
+  });
+});

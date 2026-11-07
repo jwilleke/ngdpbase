@@ -36,7 +36,7 @@ function cleanPath(value) {
 
 function cleanName(value) {
   if (typeof value !== 'string') return '';
-  return value.replace(/[\0\r\n]/g, ' ').slice(0, 200);
+  return value.replace(/[\0\r\n\x1e]/g, ' ').trim().slice(0, 200);
 }
 
 function cleanStatus(value) {
@@ -239,6 +239,7 @@ export function classifyScript(text, scriptPath, names) {
   let pinCount = 0;
   let incomplete = '';
   const knownArrays = new Set();
+  const pinArrays = new Set();
 
   function addPath(policy, filePath) {
     // A line that runs <checkout>/server.sh update names the checkout, not the file.
@@ -258,8 +259,20 @@ export function classifyScript(text, scriptPath, names) {
     const paths = extractPaths(body);
     if (PIN_ARRAY.test(name) && !SITE_ARRAY.test(name)) {
       knownArrays.add(name);
+      pinArrays.add(name);
       if (paths.length === 0 && /\$[{A-Za-z_]/.test(body)) incomplete ||= 'a pin list is built from variables';
       for (const filePath of paths) addPath('pinned', filePath);
+      // Entries that are not paths must be PM2 app names; any other entry pins nothing.
+      let rest = body.split('\n').map(stripInlineComment).join(' ');
+      rest = rest.slice(0, rest.indexOf(')') < 0 ? undefined : rest.indexOf(')'));
+      for (const filePath of paths) rest = rest.split(filePath).join(' ');
+      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter((e) => e && !e.startsWith('$'))) {
+        if (names.includes(entry)) {
+          records.push(['name', 'pinned', entry, scriptPath]);
+        } else {
+          records.push(['note', 'block', `pin ${name} lists ${entry}, which is not a path or a PM2 app name, so it pins nothing`, scriptPath]);
+        }
+      }
       continue;
     }
     if (SITE_ARRAY.test(name)) {
@@ -278,6 +291,7 @@ export function classifyScript(text, scriptPath, names) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (PIN_WORD.test(line)) {
+      const pinsBefore = pinCount;
       const direct = extractPaths(line);
       for (const filePath of direct) addPath('pinned', filePath);
       if (direct.length === 0) {
@@ -307,6 +321,16 @@ export function classifyScript(text, scriptPath, names) {
           }
         }
       }
+      // Each pin line must pin something, whatever other pins the script has.
+      // A pin array's own entries are checked above.
+      const opensPinArray = pinArrays.has(stripInlineComment(line).match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=\(/)?.[1]);
+      // Plain prose ("# skip a checkout that has local changes") names nothing, so it
+      // blocks only when it has a (pinned) marker, a path or $VAR, or a name in a different case.
+      const lower = line.toLowerCase();
+      const aimed = /\(\s*pinned\s*\)|\$|\//i.test(line) || names.some((n) => n.length > 0 && lower.includes(n.toLowerCase()));
+      if (pinCount === pinsBefore && !opensPinArray && aimed) {
+        records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" names no path or PM2 app name`, scriptPath]);
+      }
     }
     const code = stripInlineComment(line);
     if (/server\.sh\b/.test(code) && /\bupdate\b/.test(code)) {
@@ -325,10 +349,10 @@ export function classifyScript(text, scriptPath, names) {
   }
   if (autoCount === 0) incomplete ||= 'no checkout path could be read from it';
 
-  const pinMentioned = lines.some((line) => PIN_WORD.test(line));
   if (incomplete) {
     records.push(['note', 'block', `could not read which checkouts it updates: ${incomplete}`, scriptPath]);
-  } else if (pinMentioned && pinCount === 0) {
+  } else if (pinCount === 0 && lines.some((line) => PIN_WORD.test(line))) {
+    // Prose pin lines are exempt above, but a script whose only pin talk pins nothing still blocks.
     records.push(['note', 'block', 'a pin comment names no path or PM2 app name', scriptPath]);
   }
   records.push(['note', 'updater', '', scriptPath]);
@@ -504,7 +528,8 @@ function isMain() {
   try {
     return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
   } catch {
-    return false;
+    process.stderr.write(`error: cannot resolve ${process.argv[1]}\n`);
+    process.exit(1);
   }
 }
 

@@ -115,6 +115,9 @@ _UA_IGNORED=()
 ngdp_update_all_add_process() {
   local name="$1" cwd="$2" status="$4" watch="$5"
   local root index
+  # Same trim as readNames in update-all-scan.mjs, so name pins compare equal.
+  name="${name#"${name%%[![:space:]]*}"}"
+  name="${name%"${name##*[![:space:]]}"}"
   root="$(ngdp_update_all_root_from "$cwd" 2>/dev/null || true)"
   if [ -z "$root" ]; then
     [ -n "$name" ] && _UA_IGNORED+=("$name")

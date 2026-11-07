@@ -394,9 +394,14 @@ Ownership, most protective first:
   PM2 app names on that comment line stay pinned, and so does a PM2 app name written as
   `name (pinned)`. A path on a pin line still pins that checkout. A checkout the site list already
   names stays automatic. The same basename on two checkouts, or a pin word with no path and no
-  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed. A pin
-  that names a path, a directory name or an app name that matches nothing (wrong case, a
-  trailing dot, a symlink alias, a typo) stops the run and names the pin.
+  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed. Every
+  pin line is checked on its own, whatever other pins the script has: a `(pinned)` marker, a
+  `$VAR` or path, or a name differing only in case from a PM2 app, that pins nothing (a basename
+  or app name under 6 characters, wrong case, a trailing dot, a symlink alias, a typo) is
+  reported by name, and so is a `PINNED` / `EXCLUDE` / `SKIP` array entry that is neither a path
+  nor an exact PM2 app name. Such a pin does not stop the run outright: checkouts the updater
+  does not list become unknown and the run exits 3, while checkouts already automatic, pinned or
+  `manual` are processed as usual.
   A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater
   too, and is read the same way.
 - When that script is read completely, a checkout it does not mention is updated, and the output
