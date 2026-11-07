@@ -2309,9 +2309,14 @@ class WikiRoutes {
     req: Request,
     res: Response,
     mode: ReauthMode,
-    permission?: string
+    permission?: string,
+    write?: { back: string; signedIn: () => unknown }
   ): Promise<void> {
     const anonymous = !wikiContext.userContext?.isAuthenticated;
+    // #2289: a page write that was refused. Someone signed in gets the caller's own refusal (`signedIn`); a
+    // signed-out form goes to sign-in and back to `back` (a POST address cannot be returned to), JSON is a 401.
+    if (write && !anonymous) { await write.signedIn(); return; }
+    if (write && answeredWithPage(mode)) { res.redirect('/login?redirect=' + encodeURIComponent(safeRedirect(write.back))); return; }
     if (answeredWithPage(mode)) {
       if (anonymous) { sendApiError(res, new ApiError(401, 'Authentication required'), 'page'); return; }
       await this.renderError(req, res, 403, 'Access Denied', permission
@@ -2399,16 +2404,18 @@ class WikiRoutes {
    */
   private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create'): Promise<void> {
     try {
-      const pip = this.engine.getManager<{ recordPageRefusal?: (s: unknown, p: string, a: string, r: string, ids: string[]) => Promise<void> }>('PolicyInformationPoint');
+      const pip = this.engine.getManager<{ recordPageRefusal?: (s: unknown, p: string, a: string, r: string, ids: string[], notMet: string[]) => Promise<void> }>('PolicyInformationPoint');
       if (typeof pip?.recordPageRefusal !== 'function') return;
       let policyIds: string[] = [];
+      let conditionNotMet: string[] = [];
       const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
       if (!parsePrivatePageName(pageName) && typeof pdp?.decide === 'function') {
         const ctx = this.createWikiContext(req, { pageName });
         const d = await pdp.decide(ctx.getActor(), { action, resource: { type: 'page', id: pageName } });
         policyIds = d?.policyIds ?? [];
+        conditionNotMet = d?.conditionNotMet ?? [];
       }
-      await pip.recordPageRefusal(req.userContext, pageName, action, 'capability_deny', policyIds);
+      await pip.recordPageRefusal(req.userContext, pageName, action, 'capability_deny', policyIds, conditionNotMet);
     } catch (err) {
       logger.warn(`[WikiRoutes] audit of a refused ${action} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -4239,7 +4246,9 @@ ${panes}
       // only the page-create capability.
       if (!currentUser) await this.recordWriteRefusal(req, pageName, existingPage ? 'page-edit' : 'page-create');
       const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
-      if (refusal) return await fail(403, 'Access Denied', refusal);
+      if (refusal) {
+        return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName, 'edit'), signedIn: () => fail(403, 'Access Denied', refusal) });
+      }
 
       // Save-time validation (#596). Delegates to ValidationManager which
       // delegates to MarkupParser's FilterChain. Only severity:'error' rule
@@ -5343,13 +5352,11 @@ ${panes}
       );
 
       if (!hasDeletePermission) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to delete this page'
-        );
+        const wantsJson = Boolean(req.xhr) || Boolean(req.headers.accept?.includes('application/json')) || Boolean(req.headers['content-type']?.includes('application/json'));
+        return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, {
+          back: pageUrl(pageName),
+          signedIn: () => this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to delete this page')
+        });
       }
     
 

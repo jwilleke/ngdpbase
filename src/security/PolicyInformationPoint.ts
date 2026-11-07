@@ -140,6 +140,8 @@ interface AccessDecisionLog {
   reason?: string;
   /** The policies that decided (#2255), recorded on a denial. */
   policyIds?: string[];
+  /** Allows that matched but whose condition was not met (#2288), recorded on a denial. */
+  conditionNotMet?: string[];
   context?: Record<string, unknown>;
 }
 
@@ -617,7 +619,7 @@ class PolicyInformationPoint extends BaseManager {
    * walk, with no audit record and its trace at debug, because it only decides
    * whether to show a control.
    */
-  private async _runEvaluator(wikiContext: WikiContext, action: string, record = true): Promise<{ allowed: boolean; reason: string; policyIds?: string[] }> {
+  private async _runEvaluator(wikiContext: WikiContext, action: string, record = true): Promise<{ allowed: boolean; reason: string; policyIds?: string[]; conditionNotMet?: string[] }> {
     if (!wikiContext) {
       throw new Error('PolicyInformationPoint.checkPagePermissionWithContext requires a WikiContext');
     }
@@ -739,7 +741,7 @@ class PolicyInformationPoint extends BaseManager {
             pageMetadata: wikiContext.pageMetadata
           });
           trace(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason} policies=${d.policyIds.join(',')}`);
-          return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy', policyIds: d.policyIds };
+          return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy', policyIds: d.policyIds, conditionNotMet: d.conditionNotMet };
         } catch (e) {
           logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
           return null;
@@ -757,6 +759,7 @@ class PolicyInformationPoint extends BaseManager {
       allowed: decision.allowed,
       reason: decision.reason,
       policyIds: decision.policyIds,
+      conditionNotMet: decision.conditionNotMet,
       context: decision.reason === 'share_grant' && viaShare
         ? { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
         : { wikiContext: wikiContext.context }
@@ -823,8 +826,8 @@ class PolicyInformationPoint extends BaseManager {
     enabledAddons: () => Promise<readonly string[]>;
     /** The subject as Tier 1 matches it ({@link matchableNow}); asked only for a page with frontmatter rules. */
     matchable: () => Promise<UserContext | null | undefined>;
-    policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string; policyIds?: string[] } | null>;
-  }): Promise<{ allowed: boolean; reason: string; policyIds?: string[] }> {
+    policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string; policyIds?: string[]; conditionNotMet?: string[] } | null>;
+  }): Promise<{ allowed: boolean; reason: string; policyIds?: string[]; conditionNotMet?: string[] }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
 
     // #1677: a page whose feature is off is not there to view — for anyone, so
@@ -851,8 +854,8 @@ class PolicyInformationPoint extends BaseManager {
         return { allowed: false, reason: 'author_lock_deny' };
       }
       const policy = await args.policy({});
-      if (policy?.applicable) return { allowed: policy.permit, reason: policy.permit ? 'shared_folder_allow' : policy.reason, policyIds: policy.policyIds };
-      return { allowed: false, reason: 'default_deny' };
+      if (policy?.applicable) return { allowed: policy.permit, reason: policy.permit ? 'shared_folder_allow' : policy.reason, policyIds: policy.policyIds, conditionNotMet: policy.conditionNotMet };
+      return { allowed: false, reason: 'default_deny', conditionNotMet: policy?.conditionNotMet };
     }
 
     // Tier 0: private. Refuses only (#1539); an admitted subject goes on to
@@ -893,9 +896,9 @@ class PolicyInformationPoint extends BaseManager {
     // Tier 2: the share is the policy for a share visitor; global policy otherwise.
     if (viaShare) return { allowed: true, reason: 'share_grant' };
     const policy = await args.policy(vault === undefined ? {} : { vault });
-    if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason, policyIds: policy.policyIds };
+    if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason, policyIds: policy.policyIds, conditionNotMet: policy.conditionNotMet };
 
-    return { allowed: false, reason: 'default_deny' };
+    return { allowed: false, reason: 'default_deny', conditionNotMet: policy?.conditionNotMet };
   }
 
   /**
@@ -1175,7 +1178,8 @@ class PolicyInformationPoint extends BaseManager {
           const page = this.pageAttributesFrom(title, metadata);
           const p = await decidePolicy?.(title, { ...extra, ...page.attributes }, (name) =>
             name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : readSubject(name));
-          return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds } : null;
+          if (p?.hasDecision) return { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds, conditionNotMet: p.conditionNotMet };
+          return p?.conditionNotMet ? { applicable: false, permit: false, reason: 'default_deny', conditionNotMet: p.conditionNotMet } : null;
         }
       });
       if (decision.allowed) out.push(title);
@@ -1448,6 +1452,7 @@ class PolicyInformationPoint extends BaseManager {
   logAccessDecision(userOrObj: UserContext | AccessDecisionLog, pageName?: string, action?: string, allowed?: boolean, reason?: string, _context: Record<string, unknown> = {}): void {
     let user: UserContext | undefined = userOrObj as UserContext;
     let policyIds: string[] | undefined;
+    let conditionNotMet: string[] | undefined;
     if (arguments.length === 1 && userOrObj && typeof userOrObj === 'object') {
       const obj = userOrObj as AccessDecisionLog;
       user = obj.user;
@@ -1456,6 +1461,7 @@ class PolicyInformationPoint extends BaseManager {
       allowed = obj.allowed;
       reason = obj.reason;
       policyIds = obj.policyIds;
+      conditionNotMet = obj.conditionNotMet;
       // context preserved for potential future use or logging
       void (obj.context || {});
     }
@@ -1479,7 +1485,7 @@ class PolicyInformationPoint extends BaseManager {
     // that auditRegistry exempts `page-read` for and that #334 was filed about.
     // A denial is rare and is the half worth keeping.
     if (!allowed) {
-      void this.auditDenial(user, pageName, action, reason, 'page', policyIds);
+      void this.auditDenial(user, pageName, action, reason, 'page', policyIds, conditionNotMet);
     }
   }
 
@@ -1488,9 +1494,9 @@ class PolicyInformationPoint extends BaseManager {
    * route's `page-edit` / `page-create` check asks the PDP, which records
    * nothing. Same record as every other page denial, `policyIds` included.
    */
-  recordPageRefusal(subject: UserContext | null | undefined, pageName: string, action: string, reason: string, policyIds: readonly string[] = []): Promise<void> {
+  recordPageRefusal(subject: UserContext | null | undefined, pageName: string, action: string, reason: string, policyIds: readonly string[] = [], conditionNotMet: readonly string[] = []): Promise<void> {
     this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} page=${pageName} action=${action} allowed=false reason=${reason}`);
-    return this.auditDenial(subject, pageName, action, reason, 'page', policyIds);
+    return this.auditDenial(subject, pageName, action, reason, 'page', policyIds, conditionNotMet);
   }
 
   /** The name a decision is recorded under: the subject's, or `anonymous`. */
@@ -1518,7 +1524,8 @@ class PolicyInformationPoint extends BaseManager {
     action: string | undefined,
     reason: string | undefined,
     resourceType: 'page' | 'media' = 'page',
-    policyIds: readonly string[] = []
+    policyIds: readonly string[] = [],
+    conditionNotMet: readonly string[] = []
   ): Promise<void> {
     const username = PolicyInformationPoint.recordedUser(subject);
     const ipAddress = typeof subject?.ipAddress === 'string' && subject.ipAddress ? subject.ipAddress : undefined;
@@ -1548,7 +1555,9 @@ class PolicyInformationPoint extends BaseManager {
         // #2255: the policies that decided, so "why was I refused" has an answer.
         metadata: {
           ...(viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : proxyMeta),
-          ...(policyIds.length > 0 ? { policyIds: [...policyIds] } : {})
+          ...(policyIds.length > 0 ? { policyIds: [...policyIds] } : {}),
+          // #2288: allows that matched but whose condition was not met. Ids only, never attribute values.
+          ...(conditionNotMet.length > 0 ? { conditionNotMet: [...conditionNotMet] } : {})
         }
       },
       (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)

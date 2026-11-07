@@ -189,6 +189,12 @@ export interface Decision {
    * or something other than policy decided (a ceiling, step-up).
    */
   policyIds: string[];
+  /**
+   * The ids of allow policies that matched subject, resource and action but
+   * whose condition was false or unknown (#2288), so a refusal can say which
+   * allow was not met. Ids only, never attribute values. Absent when none.
+   */
+  conditionNotMet?: string[];
 }
 
 /**

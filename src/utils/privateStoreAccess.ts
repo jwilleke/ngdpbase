@@ -42,7 +42,7 @@ export interface VaultDecider extends AdminVaultEntry {
   decide(
     subject: unknown,
     request: { action: string; resource: { type: string; id: string }; attributes: Record<string, unknown> }
-  ): Promise<{ permit: boolean; policyIds?: string[] }>;
+  ): Promise<{ permit: boolean; policyIds?: string[]; conditionNotMet?: string[] }>;
 }
 
 /** The PDP surface {@link holdsInVault} needs. */
