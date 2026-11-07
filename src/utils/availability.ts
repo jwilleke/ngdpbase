@@ -162,6 +162,53 @@ function minutesOf(hhmm: unknown): number | null {
   return hours * 60 + mins;
 }
 
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+function knownZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a schedule is switched on: `enabled: false` turns it off, as the site gate reads it. */
+export function scheduleIsEnabled(schedule: Schedule): boolean {
+  return toBoolean(schedule.enabled, true);
+}
+
+/**
+ * The first thing in a schedule that cannot be read, or `null`: a time that
+ * is not `HH:MM`, a day that is not a weekday name, `rules` that is not a
+ * list, or a time zone that is not known. Names the field, never its value.
+ * The site gate lets a malformed window stay open; a policy must not
+ * (#2261), so a schedule with a problem is not read as open or closed.
+ */
+export function scheduleProblem(schedule: Schedule, fallbackZone: string): string | null {
+  const zone = schedule.timeZone === undefined ? fallbackZone : schedule.timeZone;
+  if (typeof zone !== 'string' || !zone.trim() || !knownZone(zone)) {
+    return `${schedule.timeZone === undefined ? 'the site time zone (ngdpbase.time-zone)' : 'timeZone'} is not a known time zone`;
+  }
+  if (schedule.rules === undefined) return null;
+  if (!Array.isArray(schedule.rules)) return 'rules is not a list';
+  for (const [i, rule] of schedule.rules.entries()) {
+    const at = `rule ${i + 1}`;
+    if (!rule || typeof rule !== 'object') return `${at} is not an object`;
+    if (rule.days !== undefined && (!Array.isArray(rule.days) || rule.days.some((d) => typeof d !== 'string' || !WEEKDAYS.includes(d.trim().toLowerCase())))) {
+      return `${at} days is not a list of weekday names`;
+    }
+    const times: Array<[string, unknown]> = [['startTime', rule.startTime], ['endTime', rule.endTime]];
+    const given = times.filter(([, v]) => v !== undefined);
+    // With neither time a rule covers its whole day; with one, or a bad one, it cannot be read.
+    if (given.length === 0) continue;
+    for (const [field, value] of times) {
+      if (minutesOf(value) === null) return `${at} ${field} is not a time of day (HH:MM)`;
+    }
+  }
+  return null;
+}
+
 /**
  * Whether a schedule is open at `now`.
  *

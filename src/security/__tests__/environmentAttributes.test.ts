@@ -31,6 +31,17 @@ const policy = (id: string, effect: 'allow' | 'deny', actions: string[], conditi
 const editor = { username: 'quinn', roles: ['qa'], isAuthenticated: true };
 const meta = { title: 'P', uuid: 'u1', lastModified: '', 'system-category': 'general', author: 'system' };
 
+const resolveRefs = (value: unknown): unknown => {
+  if (typeof value === 'string' && /^\$[A-Z_][A-Z0-9_]*$/.test(value)) {
+    const found = process.env[value.slice(1)];
+    if (found === undefined) throw new Error(`environment variable ${value.slice(1)} is not set`);
+    return found;
+  }
+  if (Array.isArray(value)) return value.map(resolveRefs);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveRefs(v)]));
+  return value;
+};
+
 describe('environment attributes (#2261 slice 4, shipped configuration)', () => {
   let pip: PolicyInformationPoint;
   let pdp: PolicyDecisionPoint;
@@ -44,7 +55,11 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
   const boot = async (policies: unknown[]) => {
     config = { ...core, 'ngdpbase.access.policies': policies, 'ngdpbase.permissions.definitions': { 'page-edit': {}, 'page-read': {} } };
     const managers: Record<string, unknown> = {
-      ConfigurationManager: { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) },
+      // Like the real one: getProperty resolves a `$NAME` string inside a map (and throws when it is unset), getUnresolvedProperty does not.
+      ConfigurationManager: {
+        getProperty: (key: string, def: unknown) => (key in config ? resolveRefs(config[key]) : def),
+        getUnresolvedProperty: (key: string, def: unknown) => (key in config ? config[key] : def)
+      },
       ValidationManager: { getDefaultSystemCategory: () => 'general' },
       AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve(); } },
       PageManager: { checkPrivatePageAccess: () => Promise.resolve(null) }
@@ -280,6 +295,126 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
         expect(JSON.stringify(evaluator.conditionProblemsInForce())).not.toContain(SECRET);
       } finally {
         spies.forEach((s) => s.mockRestore());
+      }
+    });
+  });
+
+  describe('review fixes (#2300): declarations as written, malformed schedules fail closed', () => {
+    const SECRET = `env-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+    const allLogged = (spies: Array<{ mock: { calls: unknown[][] } }>) => spies.flatMap((s) => s.mock.calls.map((c) => JSON.stringify(c))).join('\n');
+    const logSpies = () => (['error', 'warn', 'info', 'debug'] as const).map((level) => vi.spyOn(logger, level as 'info'));
+    const declareSchedule = (schedule: unknown) => {
+      config['ngdpbase.schedules'] = { 'business-hours': schedule };
+      config['ngdpbase.access.environment-attributes'] = { 'is-business-hours': { type: 'boolean', from: 'schedule:business-hours' } };
+    };
+    const rule = (extra: Record<string, unknown>) => ({ timeZone: 'America/New_York', rules: [{ days: ['monday', 'tuesday'], startTime: '09:00', endTime: '17:00', type: 'allow', ...extra }] });
+
+    test('a $VAR in type or from is judged and shown as written, and its value is in no message, log line or audit record', async () => {
+      const spies = logSpies();
+      process.env.PROBE_ENV_SECRET = SECRET;
+      try {
+        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'deny', ['page-edit'], { attribute: 'environment:a', equals: true })]);
+        config['ngdpbase.access.environment-attributes'] = { a: { type: '$PROBE_ENV_SECRET', from: '$PROBE_ENV_SECRET' }, b: { type: 'boolean', from: '$PROBE_ENV_SECRET' } };
+        const messages = [...validator.environmentAttributeProblems(config['ngdpbase.access.environment-attributes']), ...validator.policyProblems(config['ngdpbase.access.policies'])];
+        expect(messages.join('\n')).toContain('$PROBE_ENV_SECRET');
+        const refused = await decide();
+        await pip.recordPageRefusal(editor, 'P', 'edit', refused.reason, refused.policyIds);
+        await evaluator.initialize();
+        expect(pip.environmentAttribute('environment:b', TUESDAY_10)).toBeUndefined();
+        expect(JSON.stringify(evaluator.conditionProblemsInForce())).not.toContain(SECRET);
+        expect(JSON.stringify(messages)).not.toContain(SECRET);
+        expect(allLogged(spies)).not.toContain(SECRET);
+        expect(JSON.stringify(audit)).not.toContain(SECRET);
+        // The boot log says the declaration as written.
+        expect(allLogged(spies)).toContain('$PROBE_ENV_SECRET');
+      } finally {
+        delete process.env.PROBE_ENV_SECRET;
+        spies.forEach((s) => s.mockRestore());
+      }
+    });
+
+    test('an unset $VAR in a declaration does not throw at boot, in a decision or in the validator: the attribute is missing and reported', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        delete process.env.PROBE_UNSET_VAR;
+        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'allow', ['page-edit'], { attribute: 'environment:a', equals: true }, [{ type: 'role', value: 'qa' }])]);
+        config['ngdpbase.access.environment-attributes'] = { a: { type: 'boolean', from: '$PROBE_UNSET_VAR' } };
+        await expect(evaluator.initialize()).resolves.not.toThrow();
+        expect(() => pip.environmentAttribute('environment:a', TUESDAY_10)).not.toThrow();
+        expect(pip.environmentAttribute('environment:a', TUESDAY_10)).toBeUndefined();
+        await expect(decide()).resolves.toMatchObject({ permit: true, policyIds: ['qa-edit'] });
+        expect(() => validator.policyProblems(config['ngdpbase.access.policies'])).not.toThrow();
+        expect(validator.environmentAttributeProblems(config['ngdpbase.access.environment-attributes'])[0]).toContain('$PROBE_UNSET_VAR');
+        expect(warn.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('$PROBE_UNSET_VAR');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test.each([
+      ['a time that is not a time of day', rule({ startTime: '9am' }), 'startTime'],
+      ['an end time that is not a time of day', rule({ endTime: '25:00' }), 'endTime'],
+      ['only one of the two times', rule({ endTime: undefined }), 'endTime'],
+      ['a day that is not a weekday', rule({ days: ['monday', 'funday'] }), 'days'],
+      ['days that are not a list', rule({ days: 'monday' }), 'days'],
+      ['rules that are not a list', { timeZone: 'America/New_York', rules: 'always' }, 'rules'],
+      ['a rule that is not an object', { timeZone: 'America/New_York', rules: ['monday'] }, 'rule 1'],
+      ['a time zone that does not exist', rule({}) && { ...rule({}), timeZone: 'Mars/Olympus' }, 'timeZone'],
+      ['a time zone that is not text', { ...rule({}), timeZone: 5 }, 'timeZone']
+    ])('%s: the attribute is missing (not open), an allow does not apply, and the boot log names the schedule and the field', async (_label, schedule, field) => {
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        await boot([policy('qa-edit', 'allow', ['page-edit'], INSIDE, [{ type: 'role', value: 'qa' }])]);
+        declareSchedule(schedule);
+        // Monday 03:00 in New York: a malformed window read as open would let the allow apply.
+        const monday3am = new Date('2026-03-09T07:00:00Z');
+        expect(pip.environmentAttribute('environment:is-business-hours', monday3am)).toBeUndefined();
+        expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBeUndefined();
+        now = monday3am;
+        expect((await decide()).permit).toBe(false);
+        await evaluator.initialize();
+        const said = warn.mock.calls.map((c) => c.join(' ')).filter((l) => l.includes("schedule 'business-hours'")).join('\n');
+        expect(said).toContain(field);
+        expect(said).toContain('cannot be read');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('a well-formed schedule and a rule with no times (open all day) still read normally', async () => {
+      await boot([]);
+      declareSchedule(rule({}));
+      expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBe(true);
+      declareSchedule(rule({ startTime: undefined, endTime: undefined }));
+      expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBe(true);
+    });
+
+    test('a schedule with enabled: false is missing, as the site gate treats it as off, and the boot log says so', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        await boot([]);
+        declareSchedule({ ...rule({}), enabled: false });
+        expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBeUndefined();
+        await evaluator.initialize();
+        expect(warn.mock.calls.map((c) => c.join(' ')).join('\n')).toContain("schedule 'business-hours', which is switched off");
+        declareSchedule({ ...rule({}), enabled: true });
+        expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('an unknown site time zone, used when the schedule has none, is missing and warned at boot, not read as UTC', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        await boot([]);
+        declareSchedule({ rules: [{ startTime: '00:00', endTime: '23:59', type: 'allow' }] });
+        config['ngdpbase.time-zone'] = 'Not/AZone';
+        expect(pip.environmentAttribute('environment:is-business-hours', TUESDAY_10)).toBeUndefined();
+        await evaluator.initialize();
+        expect(warn.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('ngdpbase.time-zone');
+      } finally {
+        warn.mockRestore();
       }
     });
   });

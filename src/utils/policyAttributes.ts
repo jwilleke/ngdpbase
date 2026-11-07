@@ -259,6 +259,22 @@ export function subjectDeclarationProblem(name: string, decl: DeclaredSubjectAtt
   return null;
 }
 
+/**
+ * A declaration map as written, every `$NAME` left unresolved, or `null` when
+ * it cannot be read. Declarations are read this way so a `$NAME` in one is
+ * judged and reported as written and an environment variable's value never
+ * reaches a message or a log line; a throwing read (an unset variable) is
+ * `null`, not an exception.
+ */
+export function readDeclaredAsWritten(config: { getUnresolvedProperty?: (key: string, def?: unknown) => unknown; getProperty: (key: string, def?: unknown) => unknown } | null | undefined, key: string): unknown {
+  if (!config) return null;
+  try {
+    return typeof config.getUnresolvedProperty === 'function' ? config.getUnresolvedProperty(key, null) : config.getProperty(key, null);
+  } catch {
+    return null;
+  }
+}
+
 /** Where an environment attribute may be read from: `schedule:<name>` or `config:<key>` (#2261 slice 4). */
 export const ENVIRONMENT_SOURCES = ['schedule:', 'config:'] as const;
 

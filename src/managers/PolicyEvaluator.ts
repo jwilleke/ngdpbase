@@ -3,8 +3,8 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
-import { SCHEDULES_KEY } from '../utils/availability.js';
+import { readDeclaredAsWritten, CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
@@ -469,9 +469,9 @@ class PolicyEvaluator extends BaseManager {
       lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
     }
     // #2287: the declaration itself, add-on defaults included (this reads the merged value). `id` and `aal` keep their built-in meaning either way.
-    lines.push(...subjectAttributesProblems(config.getProperty(SUBJECT_ATTRIBUTES_KEY, null), SENSITIVE_USER_FIELDS));
+    lines.push(...subjectAttributesProblems(readDeclaredAsWritten(config, SUBJECT_ATTRIBUTES_KEY), SENSITIVE_USER_FIELDS));
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
-    lines.push(...environmentAttributesProblems(config.getProperty(ENVIRONMENT_ATTRIBUTES_KEY, null)));
+    lines.push(...environmentAttributesProblems(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)));
     lines.push(...this.scheduleProblems());
     const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
@@ -678,12 +678,12 @@ class PolicyEvaluator extends BaseManager {
 
   /** The subject attributes a condition may read (#2261): `id` always, and those declared in `ngdpbase.access.subject-attributes`. */
   declaredSubjectAttributes(): Record<string, DeclaredSubjectAttribute> {
-    return declaredSubjectAttributes(this.configManager?.getProperty(SUBJECT_ATTRIBUTES_KEY, null));
+    return declaredSubjectAttributes(readDeclaredAsWritten(this.configManager, SUBJECT_ATTRIBUTES_KEY));
   }
 
   /** The environment attributes a condition may read (#2261): those declared in `ngdpbase.access.environment-attributes`. */
   declaredEnvironmentAttributes(): Record<string, DeclaredEnvironmentAttribute> {
-    return declaredEnvironmentAttributes(this.configManager?.getProperty(ENVIRONMENT_ATTRIBUTES_KEY, null));
+    return declaredEnvironmentAttributes(readDeclaredAsWritten(this.configManager, ENVIRONMENT_ATTRIBUTES_KEY));
   }
 
   /**
@@ -692,13 +692,23 @@ class PolicyEvaluator extends BaseManager {
    * closed) or has no rules (it reads as always open), for the boot warning.
    */
   private scheduleProblems(): string[] {
-    const schedules = this.configManager?.getProperty(SCHEDULES_KEY, null) as Record<string, { rules?: unknown }> | null;
+    let schedules: Record<string, Schedule> | null = null;
+    let zone: unknown = 'UTC';
+    try {
+      schedules = this.configManager?.getProperty(SCHEDULES_KEY, null) as Record<string, Schedule> | null;
+      zone = this.configManager?.getProperty(TIME_ZONE_KEY, 'UTC');
+    } catch {
+      return ['ngdpbase.schedules could not be read, so no attribute that reads a schedule can be used; a condition on one never holds (an allow does not apply, a deny does)'];
+    }
     return Object.entries(this.declaredEnvironmentAttributes()).flatMap(([name, decl]) => {
       const from = typeof decl?.from === 'string' ? decl.from : '';
       if (!from.startsWith('schedule:') || environmentDeclarationProblem(name, decl) !== null) return [];
       const schedule = from.slice('schedule:'.length);
       const found = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, schedule) ? schedules[schedule] : undefined;
       if (!found || typeof found !== 'object') return [`environment attribute '${name}' reads schedule '${schedule}', which is not in ngdpbase.schedules; a condition on it never holds (an allow does not apply, a deny does)`];
+      if (!scheduleIsEnabled(found)) return [`environment attribute '${name}' reads schedule '${schedule}', which is switched off (enabled: false); a condition on it never holds (an allow does not apply, a deny does)`];
+      const bad = scheduleProblem(found, typeof zone === 'string' && zone ? zone : 'UTC');
+      if (bad) return [`environment attribute '${name}' reads schedule '${schedule}', which cannot be read (${bad}); a condition on it never holds (an allow does not apply, a deny does)`];
       if (!Array.isArray(found.rules) || found.rules.length === 0) return [`environment attribute '${name}' reads schedule '${schedule}', which has no rules; it reads as always open`];
       return [];
     });

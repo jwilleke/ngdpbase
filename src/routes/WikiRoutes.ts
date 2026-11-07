@@ -44,6 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { readDeclaredAsWritten } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -14301,9 +14302,9 @@ ${panes}
         ?.policyProblems(configManager.getProperty('ngdpbase.access.policies', [])) ?? [];
       // #2287: and in the subject attributes in force.
       const subjectProblems = this.engine.getManager('PolicyValidator')
-        ?.subjectAttributeProblems(configManager.getProperty('ngdpbase.access.subject-attributes', null)) ?? [];
+        ?.subjectAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.subject-attributes')) ?? [];
       const environmentProblems = this.engine.getManager('PolicyValidator')
-        ?.environmentAttributeProblems(configManager.getProperty('ngdpbase.access.environment-attributes', null)) ?? [];
+        ?.environmentAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.environment-attributes')) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
         ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),

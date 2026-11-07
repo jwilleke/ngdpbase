@@ -7,8 +7,8 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
-import { declaredEnvironmentAttributes, declaredSubjectAttributes, effectiveAal, environmentDeclarationProblem, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
-import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsOpen, type Schedule } from '../utils/availability.js';
+import { readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, effectiveAal, environmentDeclarationProblem, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleIsOpen, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
 import { decisionSubject, type ActorContext } from '../context/ActorContext.js';
@@ -1339,7 +1339,7 @@ class PolicyInformationPoint extends BaseManager {
   subjectAttribute(subject: SubjectFacts | null | undefined, name: string): unknown {
     if (!name.startsWith('subject:')) return undefined;
     const attr = name.slice('subject:'.length);
-    const declared = declaredSubjectAttributes(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.subject-attributes', null));
+    const declared = declaredSubjectAttributes(readDeclaredAsWritten(this.engine.getManager<ConfigurationManager>('ConfigurationManager'), 'ngdpbase.access.subject-attributes'));
     if (!Object.hasOwn(declared, attr) || subjectDeclarationProblem(attr, declared[attr], SENSITIVE_USER_FIELDS) !== null) return undefined;
     return this.readSubjectSource(attr, declared[attr], subject);
   }
@@ -1358,7 +1358,7 @@ class PolicyInformationPoint extends BaseManager {
     if (!name.startsWith('environment:')) return undefined;
     const attr = name.slice('environment:'.length);
     const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const declared = declaredEnvironmentAttributes(config?.getProperty('ngdpbase.access.environment-attributes', null));
+    const declared = declaredEnvironmentAttributes(readDeclaredAsWritten(config, 'ngdpbase.access.environment-attributes'));
     if (!config || !Object.hasOwn(declared, attr) || environmentDeclarationProblem(attr, declared[attr]) !== null) return undefined;
     const from = declared[attr].from as string;
     try {
@@ -1371,7 +1371,10 @@ class PolicyInformationPoint extends BaseManager {
       const schedule = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, key) ? schedules[key] : undefined;
       if (!schedule || typeof schedule !== 'object') return undefined;
       const zone: unknown = config.getProperty(TIME_ZONE_KEY, 'UTC');
-      return scheduleIsOpen(schedule, now, typeof zone === 'string' && zone ? zone : 'UTC');
+      const fallback = typeof zone === 'string' && zone ? zone : 'UTC';
+      // A switched-off, malformed or wrong-zone schedule is missing, not open: the site gate's leniency does not carry over.
+      if (!scheduleIsEnabled(schedule) || scheduleProblem(schedule, fallback) !== null) return undefined;
+      return scheduleIsOpen(schedule, now, fallback);
     } catch (err) {
       // Said without the value: a `config:` read may be a secret's.
       logger.warn(`[PIP] environment:${attr} could not be read from ${from.startsWith('config:') ? 'config' : 'its schedule'}: ${err instanceof Error ? err.name : 'error'}`);

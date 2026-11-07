@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
+import { readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
@@ -440,8 +440,8 @@ class PolicyValidator extends BaseManager {
       return ['the permission definitions (ngdpbase.permissions.definitions) could not be read, so the policies\' actions cannot be checked'];
     }
     const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
-    const subjectAttributes = declaredSubjectAttributes(this.configManager?.getProperty('ngdpbase.access.subject-attributes', null));
-    const environmentAttributes = declaredEnvironmentAttributes(this.configManager?.getProperty('ngdpbase.access.environment-attributes', null));
+    const subjectAttributes = declaredSubjectAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.subject-attributes'));
+    const environmentAttributes = declaredEnvironmentAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.environment-attributes'));
     return policies.flatMap((policy: unknown, index) => {
       const id = typeof (policy as { id?: unknown } | null)?.id === 'string' ? (policy as { id: string }).id : `#${index + 1}`;
       const schema = this.schemaValidatorCompiled && !this.schemaValidatorCompiled(policy)
@@ -577,8 +577,8 @@ class PolicyValidator extends BaseManager {
 
     // #2255: a condition may read only declared attributes, of matching types.
     const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
-    const subjectAttributes = declaredSubjectAttributes(this.configManager?.getProperty('ngdpbase.access.subject-attributes', null));
-    const environmentAttributes = declaredEnvironmentAttributes(this.configManager?.getProperty('ngdpbase.access.environment-attributes', null));
+    const subjectAttributes = declaredSubjectAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.subject-attributes'));
+    const environmentAttributes = declaredEnvironmentAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.environment-attributes'));
     for (const message of conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes, environmentAttributes)) {
       errors.push({ type: 'semantic', field: 'condition', message });
     }
