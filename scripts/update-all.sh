@@ -1,9 +1,9 @@
 # Bulk update for ./server.sh update all. Sourced by server.sh; not a second entrypoint.
 # Discovers ngdpbase checkouts from PM2, skips ones an automatic updater already
 # updates and ones marked pinned, then runs each remaining checkout's own
-# ./server.sh update. Does not fetch or pull on its own, and does not call
-# update's rollback (checkout -f / reset --hard) on a tree that fails the
-# safety checks below.
+# ./server.sh update. Does not pull on its own (it fetches origin/master so the
+# ahead check is current), and does not call update's rollback
+# (checkout -f / reset --hard) on a tree that fails the safety checks below.
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "Run ./server.sh update all" >&2
@@ -12,47 +12,75 @@ fi
 
 _NGDP_UPDATE_ALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _NGDP_UPDATE_ALL_LOCK=""
-_NGDP_UPDATE_ALL_TMPS=""
+_NGDP_UPDATE_ALL_TMPDIR=""
 
 ngdp_update_all_release() {
   if [ -n "$_NGDP_UPDATE_ALL_LOCK" ]; then
-    rm -rf "$_NGDP_UPDATE_ALL_LOCK"
+    [ -L "$_NGDP_UPDATE_ALL_LOCK" ] && rm -f "$_NGDP_UPDATE_ALL_LOCK"
     _NGDP_UPDATE_ALL_LOCK=""
   fi
-  local tmp
-  for tmp in $_NGDP_UPDATE_ALL_TMPS; do
-    rm -f "$tmp"
-  done
-  _NGDP_UPDATE_ALL_TMPS=""
+  if [ -n "$_NGDP_UPDATE_ALL_TMPDIR" ]; then
+    rm -rf "$_NGDP_UPDATE_ALL_TMPDIR"
+    _NGDP_UPDATE_ALL_TMPDIR=""
+  fi
 }
 
+# Must run in the main shell (not in $(...)) so the EXIT trap sees the directory.
+ngdp_update_all_tmpdir() {
+  [ -n "$_NGDP_UPDATE_ALL_TMPDIR" ] && return 0
+  _NGDP_UPDATE_ALL_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/ngdp-update-all.XXXXXX")" || return 1
+}
+
+# Prints the path of a named file inside the private temp directory.
 ngdp_update_all_tmp() {
-  local file
-  file="$(mktemp)"
-  _NGDP_UPDATE_ALL_TMPS="$_NGDP_UPDATE_ALL_TMPS $file"
-  printf '%s\n' "$file"
+  printf '%s/%s\n' "$_NGDP_UPDATE_ALL_TMPDIR" "$1"
 }
 
+# The lock is a symlink whose target is the holder's pid: creating it is one
+# atomic step that also records the pid, so there is never a lock without one.
+# A lock that is anything else (an old-format directory, a file) is not ours to
+# take over. A dead holder's lock is replaced under a second mkdir mutex, after
+# re-reading it, so two runs cannot both reclaim it.
 ngdp_update_all_lock() {
   local base="${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase"
   mkdir -p "$base" || return 1
-  local dir="$base/update-all.lock"
-  if mkdir "$dir" 2>/dev/null; then
-    echo $$ > "$dir/pid" 2>/dev/null || true
-    _NGDP_UPDATE_ALL_LOCK="$dir"
+  local lock="$base/update-all.lock"
+  # ln -s into an existing directory would create the link inside it, so only
+  # try when nothing is at the path.
+  if [ ! -e "$lock" ] && [ ! -L "$lock" ] && ln -s "$$" "$lock" 2>/dev/null; then
+    _NGDP_UPDATE_ALL_LOCK="$lock"
     return 0
   fi
-  local pid
-  pid="$(cat "$dir/pid" 2>/dev/null || true)"
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  local pid=""
+  if [ -L "$lock" ]; then
+    pid="$(readlink "$lock" 2>/dev/null || true)"
+  fi
+  case "$pid" in
+    ''|*[!0-9]*)
+      echo "❌ ${lock} exists but holds no pid, so it was not taken over. Nothing was updated."
+      echo "   If no update all is running, remove it and try again."
+      return 1
+      ;;
+  esac
+  if kill -0 "$pid" 2>/dev/null; then
     echo "❌ Another update all is already running (pid $pid). Nothing was updated."
     return 1
   fi
-  rm -rf "$dir"
-  mkdir "$dir" 2>/dev/null || return 1
-  echo $$ > "$dir/pid" 2>/dev/null || true
-  _NGDP_UPDATE_ALL_LOCK="$dir"
-  return 0
+  local mutex="$lock.reclaim"
+  if ! mkdir "$mutex" 2>/dev/null; then
+    echo "❌ Another update all is reclaiming ${lock} (or died doing so; remove ${mutex}). Nothing was updated."
+    return 1
+  fi
+  local now got=1
+  now="$(readlink "$lock" 2>/dev/null || true)"
+  if [ "$now" = "$pid" ] && rm -f "$lock" && ln -s "$$" "$lock" 2>/dev/null; then
+    got=0
+    _NGDP_UPDATE_ALL_LOCK="$lock"
+  else
+    echo "❌ Another update all took the lock first. Nothing was updated."
+  fi
+  rmdir "$mutex" 2>/dev/null || true
+  return "$got"
 }
 
 ngdp_update_all_canon() {
@@ -62,37 +90,19 @@ ngdp_update_all_canon() {
 ngdp_update_all_is_root() {
   local dir="$1"
   [ -n "$dir" ] && [ -d "$dir" ] && [ -f "$dir/server.sh" ] || return 1
-  if grep -q "ngdpbase Server Management Script" "$dir/server.sh" 2>/dev/null; then
-    return 0
-  fi
-  [ -f "$dir/package.json" ] && grep -q '"name"[[:space:]]*:[[:space:]]*"ngdpbase"' "$dir/package.json" 2>/dev/null
+  grep -q "ngdpbase Server Management Script" "$dir/server.sh" 2>/dev/null
 }
 
+# The PM2 working directory must itself be a checkout. The script path is not
+# walked upward: an unrelated app whose script sits under a checkout is not one.
 ngdp_update_all_root_from() {
-  local cwd="$1" script="$2" dir hops
+  local cwd="$1"
   case "$cwd" in
-    /*) ;;
-    *) cwd="" ;;
-  esac
-  if [ -n "$cwd" ] && ngdp_update_all_is_root "$cwd"; then
-    ngdp_update_all_canon "$cwd"
-    return 0
-  fi
-  case "$script" in
     /*) ;;
     *) return 1 ;;
   esac
-  dir="$(dirname -- "$script")"
-  hops=0
-  while [ "$hops" -lt 6 ] && [ -n "$dir" ] && [ "$dir" != "/" ]; do
-    if ngdp_update_all_is_root "$dir"; then
-      ngdp_update_all_canon "$dir"
-      return 0
-    fi
-    dir="$(dirname -- "$dir")"
-    hops=$((hops + 1))
-  done
-  return 1
+  ngdp_update_all_is_root "$cwd" || return 1
+  ngdp_update_all_canon "$cwd"
 }
 
 # Parallel arrays, one row per canonical checkout.
@@ -103,9 +113,9 @@ _UA_WATCH=()
 _UA_IGNORED=()
 
 ngdp_update_all_add_process() {
-  local name="$1" cwd="$2" script="$3" status="$4" watch="$5"
+  local name="$1" cwd="$2" status="$4" watch="$5"
   local root index
-  root="$(ngdp_update_all_root_from "$cwd" "$script" 2>/dev/null || true)"
+  root="$(ngdp_update_all_root_from "$cwd" 2>/dev/null || true)"
   if [ -z "$root" ]; then
     [ -n "$name" ] && _UA_IGNORED+=("$name")
     return 0
@@ -227,13 +237,13 @@ ngdp_update_all_read_policy_file() {
 
 ngdp_update_all_scan_ownership() {
   local names_file crontab scan home
-  names_file="$(ngdp_update_all_tmp)"
+  names_file="$(ngdp_update_all_tmp names)"
   local index=0
   while [ "$index" -lt "${#_UA_NAMES[@]}" ]; do
     ngdp_update_all_name_list "${_UA_NAMES[$index]}" >> "$names_file"
     index=$((index + 1))
   done
-  crontab="$(ngdp_update_all_tmp)"
+  crontab="$(ngdp_update_all_tmp crontab)"
   if [ -n "${NGDP_UPDATE_CRONTAB_FILE+x}" ]; then
     if [ -n "$NGDP_UPDATE_CRONTAB_FILE" ] && [ -f "$NGDP_UPDATE_CRONTAB_FILE" ]; then
       cp "$NGDP_UPDATE_CRONTAB_FILE" "$crontab"
@@ -241,7 +251,7 @@ ngdp_update_all_scan_ownership() {
   else
     crontab -l > "$crontab" 2>/dev/null || true
   fi
-  scan="$(ngdp_update_all_tmp)"
+  scan="$(ngdp_update_all_tmp ownership)"
   home="${HOME:-}"
   if [ -z "$home" ] || [ ! -d "$home" ]; then
     echo "⚠️  HOME is unset; automatic-updater scripts were not looked up."
@@ -254,7 +264,7 @@ ngdp_update_all_scan_ownership() {
       --names "$names_file" > "$scan"; then
     echo "⚠️  Could not read updater ownership. Unlisted checkouts will not be updated."
     _UA_BLOCK=1
-    _UA_BLOCK_WHY="ownership scan failed"
+    _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }ownership scan failed"
     return 0
   fi
   local kind policy value source
@@ -278,7 +288,7 @@ ngdp_update_all_scan_ownership() {
           _UA_UPDATER=1
         elif [ "$policy" = "block" ]; then
           _UA_BLOCK=1
-          _UA_BLOCK_WHY="$value ($source)"
+          _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }${source}: ${value}"
         fi
         ;;
     esac
@@ -370,8 +380,17 @@ ngdp_update_all_decide() {
 
 ngdp_update_all_gate() {
   local root="$1" ref="$2"
-  if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # The checkout must be the top of its own repository. Inside another repo,
+  # git would act on the parent.
+  local top
+  top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)"
+  top="$(ngdp_update_all_canon "$top" 2>/dev/null || true)"
+  if [ -z "$top" ] || [ "$top" != "$(ngdp_update_all_canon "$root")" ]; then
     printf 'not-git'
+    return 0
+  fi
+  if [ -z "$(find "$root" -maxdepth 0 -user "$(id -u)" 2>/dev/null)" ]; then
+    printf 'not-owned'
     return 0
   fi
   # index.lock is checked before status: status itself fails while another git
@@ -405,6 +424,13 @@ ngdp_update_all_gate() {
     printf 'not-on-master'
     return 0
   fi
+  # Refresh origin/master first: a stale ref can hide local commits. If the
+  # fetch fails the answer is unknown, and the checkout is held.
+  # A dry run fetches nothing and compares against the last fetch.
+  if [ "${_UA_DRY:-0}" -eq 0 ] && ! GIT_TERMINAL_PROMPT=0 git -C "$root" fetch --quiet origin master >/dev/null 2>&1; then
+    printf 'ahead-unknown'
+    return 0
+  fi
   if git -C "$root" rev-parse --verify --quiet origin/master >/dev/null 2>&1; then
     ahead="$(git -C "$root" rev-list --count origin/master..HEAD 2>/dev/null || echo 0)"
     behind="$(git -C "$root" rev-list --count HEAD..origin/master 2>/dev/null || echo 0)"
@@ -429,7 +455,7 @@ ngdp_update_all_child_env() {
   for key in USER LOGNAME SHELL LANG LC_ALL LC_CTYPE TERM PM2_HOME \
     SSH_AUTH_SOCK GIT_SSH_COMMAND GIT_SSH \
     HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy \
-    UPDATE_READY_TIMEOUT NPM_LOG CURL_LOG STUB_INSTANCE STUB_PID STUB_SCHEME; do
+    UPDATE_READY_TIMEOUT; do
     if [ -n "${!key+x}" ] && [ -n "${!key}" ]; then
       args+=("${key}=${!key}")
     fi
@@ -479,6 +505,7 @@ ngdp_update_all() {
     echo "   Usage: ./server.sh update all [--dry-run] [ref] [env]"
     exit 2
   fi
+  _UA_DRY="$dry"
   ref="${positionals[0]:-}"
   envname="${positionals[1]:-}"
   if [ "$ref" = "all" ]; then
@@ -498,8 +525,18 @@ ngdp_update_all() {
       ;;
   esac
 
+  if [ "$(id -u)" = "0" ]; then
+    echo "❌ Refusing to run as root: it would run npm and the build as root in checkouts owned by"
+    echo "   another user. Run it as the user who owns the checkouts. Nothing was updated."
+    exit 2
+  fi
   trap ngdp_update_all_release EXIT
-  if ! ngdp_update_all_lock; then
+  if ! ngdp_update_all_tmpdir; then
+    echo "❌ Could not create a temporary directory. Nothing was updated."
+    exit 2
+  fi
+  # A dry run changes nothing, so it neither needs nor blocks on the lock.
+  if [ "$dry" -eq 0 ] && ! ngdp_update_all_lock; then
     exit 2
   fi
   if ! command -v node >/dev/null 2>&1; then
@@ -512,8 +549,8 @@ ngdp_update_all() {
   fi
 
   local raw safe
-  raw="$(ngdp_update_all_tmp)"
-  safe="$(ngdp_update_all_tmp)"
+  raw="$(ngdp_update_all_tmp pm2-raw)"
+  safe="$(ngdp_update_all_tmp pm2-safe)"
   echo "Discovering PM2 processes..."
   if ! npx --no pm2 jlist > "$raw" 2>/dev/null; then
     echo "❌ Could not read the PM2 process list. Nothing was updated."
@@ -546,6 +583,11 @@ ngdp_update_all() {
   fi
   local total="${#_UA_ROOTS[@]}"
   if [ "$total" -eq 0 ]; then
+    if [ "$ignored_n" -gt 0 ]; then
+      echo "❌ PM2 lists ${ignored_n} process(es) but none is an ngdpbase checkout. Nothing was updated."
+      echo "   A checkout is recognised by the PM2 working directory holding its server.sh."
+      exit 3
+    fi
     echo "No ngdpbase checkouts in PM2. Nothing was updated."
     exit 0
   fi
@@ -558,7 +600,8 @@ ngdp_update_all() {
   fi
   if [ "$_UA_BLOCK" -eq 1 ]; then
     echo "⚠️  Updater ownership is incomplete (${_UA_BLOCK_WHY})."
-    echo "    Checkouts it does not name are left alone. List them in:"
+    echo "    Nothing that no updater clearly owns is updated. To update a checkout, list it explicitly"
+    echo "    with a line 'manual <absolute path>' in:"
     echo "    ${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
   fi
 
@@ -626,7 +669,7 @@ ngdp_update_all() {
       eligible) echo "    included (${_UA_WHY})" ;;
     esac
     local dirty_file
-    dirty_file="$(ngdp_update_all_tmp)"
+    dirty_file="$(ngdp_update_all_tmp "dirty.${number}")"
     _UA_DIRTY_FILE="$dirty_file"
     local gate
     gate="$(ngdp_update_all_gate "$root" "$ref")"
@@ -646,6 +689,7 @@ ngdp_update_all() {
     [ -n "$envname" ] && cmd_show+=("$envname")
     if [ "$dry" -eq 1 ]; then
       echo "    dry-run: would run: ${cmd_show[*]}"
+      [ -z "$ref" ] && echo "    (origin/master was not refreshed in this dry run; the ahead check used the last fetch)"
       updated=$((updated + 1))
       continue
     fi
@@ -679,7 +723,7 @@ ngdp_update_all() {
   if [ "$failed" -gt 0 ] || [ "$safety" -gt 0 ]; then
     exit 1
   fi
-  if [ "$updated" -eq 0 ] && [ "$unknown" -gt 0 ]; then
+  if [ "$unknown" -gt 0 ]; then
     exit 3
   fi
   exit 0

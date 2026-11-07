@@ -216,29 +216,46 @@ function classifyScript(text, scriptPath, names) {
 
   const records = [];
   let autoCount = 0;
+  let arrayAutoCount = 0;
   let pinCount = 0;
-  let incomplete = false;
+  let incomplete = '';
+  const knownArrays = new Set();
 
   function addPath(policy, filePath) {
-    const canon = canonPath(filePath);
+    // A line that runs <checkout>/server.sh update names the checkout, not the file.
+    const target = path.basename(filePath) === 'server.sh' ? path.dirname(filePath) : filePath;
+    const canon = canonPath(target);
     records.push(['path', policy, canon, scriptPath]);
     if (policy === 'auto') autoCount += 1;
-    if (policy === 'pinned') pinCount += 1;
+    if (policy === 'pinned') {
+      pinCount += 1;
+      if (!fs.existsSync(canon)) {
+        records.push(['note', 'block', `a pin names ${canon}, which does not exist, so it pins nothing`, scriptPath]);
+      }
+    }
   }
 
   for (const [name, body] of arrays) {
     const paths = extractPaths(body);
     if (PIN_ARRAY.test(name) && !SITE_ARRAY.test(name)) {
-      if (paths.length === 0 && /\$[{A-Za-z_]/.test(body)) incomplete = true;
+      knownArrays.add(name);
+      if (paths.length === 0 && /\$[{A-Za-z_]/.test(body)) incomplete ||= 'a pin list is built from variables';
       for (const filePath of paths) addPath('pinned', filePath);
       continue;
     }
     if (SITE_ARRAY.test(name)) {
-      if (paths.length === 0 || /\$[{A-Za-z_]/.test(stripInlineComment(body))) incomplete = true;
-      for (const filePath of paths) addPath('auto', filePath);
+      knownArrays.add(name);
+      if (paths.length === 0 || /\$[{A-Za-z_]/.test(stripInlineComment(body))) {
+        incomplete ||= 'a site list is empty or built from variables';
+      }
+      for (const filePath of paths) {
+        addPath('auto', filePath);
+        arrayAutoCount += 1;
+      }
     }
   }
 
+  let updateLinesWithoutPath = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (PIN_WORD.test(line)) {
@@ -267,21 +284,47 @@ function classifyScript(text, scriptPath, names) {
     }
     const code = stripInlineComment(line);
     if (/server\.sh\b/.test(code) && /\bupdate\b/.test(code)) {
-      for (const filePath of extractPaths(code)) addPath('auto', filePath);
+      const found = extractPaths(code);
+      if (found.length === 0) updateLinesWithoutPath += 1;
+      for (const filePath of found) addPath('auto', filePath);
     }
+    const loop = unreadableLoop(code, knownArrays);
+    if (loop) incomplete ||= loop;
   }
 
+  // A script that runs server.sh update on checkouts it takes from somewhere
+  // other than a parsed list has not been read completely.
+  if (updateLinesWithoutPath > 0 && arrayAutoCount === 0) {
+    incomplete ||= 'it runs server.sh update on a directory taken from a variable, function argument or relative path';
+  }
+  if (autoCount === 0) incomplete ||= 'no checkout path could be read from it';
+
   const pinMentioned = lines.some((line) => PIN_WORD.test(line));
-  if (incomplete || (pinMentioned && pinCount === 0)) {
-    const why = incomplete ? 'incomplete-sites' : 'ambiguous-pin';
-    records.push(['note', 'block', why, scriptPath]);
+  if (incomplete) {
+    records.push(['note', 'block', `could not read which checkouts it updates: ${incomplete}`, scriptPath]);
+  } else if (pinMentioned && pinCount === 0) {
+    records.push(['note', 'block', 'a pin comment names no path or PM2 app name', scriptPath]);
   }
   records.push(['note', 'updater', '', scriptPath]);
   return records;
 }
 
+// A for/while loop whose list is not a literal or a parsed site array.
+function unreadableLoop(code, knownArrays) {
+  if (/\bwhile\b[^;]*\bread\b/.test(code)) return 'it reads checkouts in a while-read loop';
+  const loop = code.match(/^\s*for\s+[A-Za-z_][A-Za-z0-9_]*\s+in\s+(.*?)\s*(?:;|$)/);
+  if (!loop) return '';
+  let list = loop[1].replace(/^do\b.*/, '');
+  list = list.replace(/"?\$\{([A-Za-z_][A-Za-z0-9_]*)\[[@*]\]\}"?/g, (all, name) => (knownArrays.has(name) ? '' : all));
+  if (/[*?[\]$`]/.test(list)) return 'it loops over a glob, command output or variable';
+  return '';
+}
+
+// Text that runs `server.sh update` itself (a cron line, a unit, a plist
+// argument list) is an updater too, not only the scripts it points at.
 function collectCandidateFiles(home, xdg, crontabFile) {
   const files = new Set();
+  const inline = [];
   const plistDirs = [
     path.join(home, 'Library', 'LaunchAgents'),
     path.join(home, 'Library', 'LaunchDaemons')
@@ -305,7 +348,10 @@ function collectCandidateFiles(home, xdg, crontabFile) {
         process.stderr.write(`warn: skipped unreadable plist ${name}\n`);
         continue;
       }
-      for (const value of xmlStrings(xml)) {
+      const strings = xmlStrings(xml);
+      const joined = strings.join(' ');
+      if (isUpdaterScript(joined, full)) inline.push({ file: full, text: joined });
+      for (const value of strings) {
         if (!value.startsWith('/') || value.includes('\n')) continue;
         try {
           if (fs.statSync(value).isFile()) files.add(canonPath(value));
@@ -334,6 +380,7 @@ function collectCandidateFiles(home, xdg, crontabFile) {
       } catch {
         continue;
       }
+      if (isUpdaterScript(text, path.join(dir, name))) inline.push({ file: path.join(dir, name), text });
       for (const filePath of extractPaths(text)) {
         try {
           if (fs.statSync(filePath).isFile()) files.add(canonPath(filePath));
@@ -351,6 +398,7 @@ function collectCandidateFiles(home, xdg, crontabFile) {
     } catch {
       text = '';
     }
+    if (isUpdaterScript(text, 'crontab')) inline.push({ file: 'crontab', text });
     for (const filePath of extractPaths(text)) {
       try {
         if (fs.statSync(filePath).isFile()) files.add(canonPath(filePath));
@@ -359,7 +407,7 @@ function collectCandidateFiles(home, xdg, crontabFile) {
       }
     }
   }
-  return [...files];
+  return { files: [...files], inline };
 }
 
 function readNames(file) {
@@ -375,7 +423,11 @@ function readNames(file) {
 
 function scanOwnership(home, xdg, crontabFile, namesFile) {
   const names = readNames(namesFile);
-  for (const file of collectCandidateFiles(home, xdg, crontabFile)) {
+  const { files, inline } = collectCandidateFiles(home, xdg, crontabFile);
+  for (const entry of inline) {
+    for (const record of classifyScript(entry.text, entry.file, names)) writeFields(record);
+  }
+  for (const file of files) {
     let text = '';
     try {
       text = readScript(file) || '';

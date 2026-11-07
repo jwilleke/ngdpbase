@@ -368,10 +368,15 @@ run `./server.sh update refs/heads/all` on that one checkout.
 ```
 
 It does not pull before the per-checkout `update`. That command already fetches and
-fast-forwards. Bulk mode also does not run an update whose rollback would
-`git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on `master`
-(when no ref is given), diverged from the last fetched `origin/master`, or ahead of it with
-local commits. Those checkouts are listed and left as they are. A ref (`./server.sh update all v5.43.0`)
+fast-forwards. Bulk mode does fetch `origin/master` first when no ref is given, so the ahead
+check is current; if that fetch fails the checkout is held as `ahead-unknown`. A `--dry-run`
+fetches nothing and compares against the last fetch. Bulk mode also does not run an update whose
+rollback would `git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on
+`master` (when no ref is given), diverged from `origin/master`, or ahead of it with local commits.
+A checkout must also be the top of its own git repository (a copy nested inside another repo is
+held as `not-git`) and be owned by the invoking user (`not-owned`). Those checkouts are listed and
+left as they are. It refuses to run as root, because it would run `npm` and the build as root in
+other users' trees. A ref (`./server.sh update all v5.43.0`)
 may be given for a checkout that is not on `master`; a detached or dirty checkout is still skipped.
 
 PM2 `watch` restarts a process when files change. It is not an automatic release update, and it
@@ -384,11 +389,16 @@ Ownership, most protective first:
 - An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
   user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
   `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
-  A comment that says pinned, excluded, or skipped can name a path or the PM2 app name.
+  A comment that says pinned, excluded, or skipped can name a path or the PM2 app name. A pin
+  that names a path that does not exist stops the run (it pins nothing) and names the path.
+  A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater
+  too, and is read the same way.
 - When that script is read completely, a checkout it does not mention is updated, and the output
-  says it was not listed. When the script cannot be read completely (a site list built from
-  variables, or a pin that names neither a path nor an app name), unlisted checkouts are not
-  updated.
+  says it was not listed. An updater counts as read completely only when it names its checkouts
+  as paths or in a site array. A loop over a glob (`for d in ~/sites/*`), command output or a
+  `while read` list, a function or variable that supplies the directory, or a cron line such as
+  `cd ~/site && ./server.sh update` cannot be read. Then `update all` names that updater and
+  updates only checkouts you list yourself with a `manual` line in the policy file below.
 - With no updater script, nothing is updated unless a line names it. The file is
   `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`:
 
@@ -402,14 +412,18 @@ A line there does not authorize every other checkout. A checkout may also carry 
 `.ngdpbase-update-policy` file (`auto`, `pinned`, or `manual`). That file is gitignored.
 
 Checkouts are updated one at a time. One failure does not stop the others. Two `update all`
-runs do not overlap: the second exits and updates nothing. The command prints a summary and
-exits 0 when every included checkout was updated (or there was nothing to update), 1 when an
-included checkout was held back or its update failed, 2 when PM2 could not be read or another
-`update all` holds the lock, and 3 when it updated nothing because ownership was unknown.
-`--dry-run` is the same plan with no `update` run.
+runs do not overlap: the lock is a symlink in `~/.config/ngdpbase/update-all.lock` whose target
+is the holder's pid, and the second run exits and updates nothing. A lock that holds no pid is
+never taken over; remove it by hand once you know nothing is running. A dead holder's lock is
+replaced. The command prints a summary and exits 0 when every included checkout was updated (or
+there was nothing to update), 1 when an included checkout was held back or its update failed,
+2 when PM2 could not be read, it was run as root, or another `update all` holds the lock, and 3
+when the ownership of any checkout was unknown, or PM2 lists processes but none is an ngdpbase
+checkout. A checkout is recognised only when the PM2 working directory itself holds its
+`server.sh`. `--dry-run` is the same plan with no `update` run, and takes no lock.
 
 The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
-variables git and npm need. It then loads that checkout's own `.env`. The PM2 document is
+variables git and npm need (`UPDATE_READY_TIMEOUT` too). It then loads that checkout's own `.env`. The PM2 document is
 reduced to name, directory, script, status, and watch before it is printed; the process
 environment is not.
 
