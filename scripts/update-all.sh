@@ -1,9 +1,9 @@
 # Bulk update for ./server.sh update all. Sourced by server.sh; not a second entrypoint.
-# Discovers ngdpbase checkouts from PM2, skips ones an automatic updater already
-# updates and ones marked pinned, then runs each remaining checkout's own
-# ./server.sh update. Does not pull on its own (it fetches origin/master so the
-# ahead check is current), and does not call update's rollback
-# (checkout -f / reset --hard) on a tree that fails the safety checks below.
+# Discovers ngdpbase checkouts from PM2 and runs each one's own ./server.sh update,
+# one at a time, this checkout last. A checkout that is not online, or that fails
+# a git check in ngdp_update_all_gate, is skipped with its reason. Does not pull
+# on its own (it fetches origin/master so the ahead check is current), and never
+# calls update's rollback (checkout -f / reset --hard) on a skipped checkout.
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "Run ./server.sh update all" >&2
@@ -179,274 +179,56 @@ ngdp_update_all_name_list() {
   printf '%s\n' "${raw//$'\036'/$'\n'}"
 }
 
-# policy file and detected ownership, matched by canonical path.
-_UA_POL_PATH=()
-_UA_POL_KIND=()
-_UA_OWN_PATH=()
-_UA_OWN_KIND=()
-_UA_OWN_SRC=()
-# Lines that stop the run before anything is updated: a policy line that
-# cannot be honoured, or pin wording in an updater script.
-_UA_STOP=()
-_UA_PIN_WORDING=0
-_UA_UPDATER=0
-_UA_BLOCK=0
-_UA_BLOCK_WHY=""
-
-ngdp_update_all_read_policy_file() {
-  local file="${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
-  [ -f "$file" ] || return 0
-  local line number=0 trimmed kind rest canon
-  while IFS= read -r line || [ -n "$line" ]; do
-    number=$((number + 1))
-    trimmed="${line#"${line%%[![:space:]]*}"}"
-    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-    case "$trimmed" in
-      ''|'#'*) continue ;;
-    esac
-    kind="${trimmed%%[[:space:]]*}"
-    rest="${trimmed#"$kind"}"
-    rest="${rest#"${rest%%[![:space:]]*}"}"
-    rest="${rest%"${rest##*[![:space:]]}"}"
-    case "$kind" in
-      auto|pinned|manual) ;;
-      *)
-        _UA_STOP+=("${file}:${number}: \"${kind}\" is not auto, pinned, or manual")
-        continue
-        ;;
-    esac
-    case "$rest" in
-      \"*\") rest="${rest#\"}"; rest="${rest%\"}" ;;
-      \'*\') rest="${rest#\'}"; rest="${rest%\'}" ;;
-    esac
-    case "$rest" in
-      /*) ;;
-      *)
-        _UA_STOP+=("${file}:${number}: the path is not absolute")
-        continue
-        ;;
-    esac
-    if [ ! -d "$rest" ]; then
-      _UA_STOP+=("${file}:${number}: ${rest} is not a directory")
-      continue
-    fi
-    canon="$(ngdp_update_all_canon "$rest" || true)"
-    if [ -z "$canon" ]; then
-      _UA_STOP+=("${file}:${number}: ${rest} could not be resolved")
-      continue
-    fi
-    _UA_POL_PATH+=("$canon")
-    _UA_POL_KIND+=("$kind")
-  done < "$file"
-}
-
-ngdp_update_all_scan_ownership() {
-  local crontab scan home
-  crontab="$(ngdp_update_all_tmp crontab)"
-  if [ -n "${NGDP_UPDATE_CRONTAB_FILE+x}" ]; then
-    if [ -n "$NGDP_UPDATE_CRONTAB_FILE" ] && [ -f "$NGDP_UPDATE_CRONTAB_FILE" ]; then
-      cp "$NGDP_UPDATE_CRONTAB_FILE" "$crontab"
-    fi
-  else
-    crontab -l > "$crontab" 2>/dev/null || true
-  fi
-  scan="$(ngdp_update_all_tmp ownership)"
-  home="${HOME:-}"
-  if [ -z "$home" ] || [ ! -d "$home" ]; then
-    echo "⚠️  HOME is unset; automatic-updater scripts were not looked up."
-    return 0
-  fi
-  if ! node "$_NGDP_UPDATE_ALL_DIR/update-all-scan.mjs" scan-ownership \
-      --home "$home" \
-      --xdg "${XDG_CONFIG_HOME:-}" \
-      --crontab "$crontab" > "$scan"; then
-    echo "⚠️  Could not read updater ownership. Unlisted checkouts will not be updated."
-    _UA_BLOCK=1
-    _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }ownership scan failed"
-    return 0
-  fi
-  local kind policy value source
-  while true; do
-    IFS= read -r -d '' kind || break
-    IFS= read -r -d '' policy || break
-    IFS= read -r -d '' value || break
-    IFS= read -r -d '' source || break
-    case "$kind" in
-      path)
-        _UA_OWN_PATH+=("$value")
-        _UA_OWN_KIND+=("$policy")
-        _UA_OWN_SRC+=("$source")
-        ;;
-      note)
-        if [ "$policy" = "updater" ]; then
-          _UA_UPDATER=1
-        elif [ "$policy" = "pinword" ]; then
-          _UA_PIN_WORDING=1
-          _UA_STOP+=("${source}:${value}")
-        elif [ "$policy" = "block" ]; then
-          _UA_BLOCK=1
-          _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }${source}: ${value}"
-        fi
-        ;;
-    esac
-  done < "$scan"
-}
-
-ngdp_update_all_checkout_word() {
-  local root="$1" word
-  [ -f "$root/.ngdpbase-update-policy" ] || return 0
-  word="$(tr -d '[:space:]' < "$root/.ngdpbase-update-policy" 2>/dev/null || true)"
-  case "$word" in
-    auto|pinned|manual) printf '%s' "$word" ;;
-  esac
-}
-
-# A checkout policy file that is not exactly one of auto, pinned or manual
-# stops the run: a typo in "pinned" must not un-pin the checkout.
-ngdp_update_all_check_checkout_words() {
-  local index=0 root file word number
-  while [ "$index" -lt "${#_UA_ROOTS[@]}" ]; do
-    root="${_UA_ROOTS[$index]}"
-    index=$((index + 1))
-    file="$root/.ngdpbase-update-policy"
-    [ -f "$file" ] || continue
-    if [ ! -r "$file" ]; then
-      _UA_STOP+=("${file}:1: the file cannot be read")
-      continue
-    fi
-    word="$(tr -d '[:space:]' < "$file")"
-    case "$word" in
-      auto|pinned|manual|'') continue ;;
-    esac
-    number="$(grep -n -m 1 '[^[:space:]]' "$file" | cut -d: -f1)"
-    _UA_STOP+=("${file}:${number:-1}: want one word, auto, pinned, or manual")
-  done
-}
-
-# Sets _UA_DECISION to pinned, auto, manual, eligible, or unknown, and
-# _UA_WHY to a short reason. Pinned wins, then automatic, then an explicit
-# manual mark. A parsed updater that is not blocked makes a checkout it does
-# not mention eligible. A policy file does not: it only names the lines it has.
-ngdp_update_all_decide() {
-  local root="$1" names="$2"
-  local saw_pin=0 saw_auto=0 saw_manual=0
-  local why_pin="" why_auto="" why_manual="" word index
-  _UA_WHY=""
-  word="$(ngdp_update_all_checkout_word "$root")"
-  case "$word" in
-    pinned) saw_pin=1; why_pin="checkout policy file" ;;
-    auto) saw_auto=1; why_auto="checkout policy file" ;;
-    manual) saw_manual=1; why_manual="checkout policy file" ;;
-  esac
-  index=0
-  while [ "$index" -lt "${#_UA_POL_PATH[@]}" ]; do
-    if [ "${_UA_POL_PATH[$index]}" = "$root" ]; then
-      case "${_UA_POL_KIND[$index]}" in
-        pinned) saw_pin=1; why_pin="update-policy" ;;
-        auto) saw_auto=1; why_auto="update-policy" ;;
-        manual) saw_manual=1; why_manual="update-policy" ;;
-      esac
-    fi
-    index=$((index + 1))
-  done
-  index=0
-  while [ "$index" -lt "${#_UA_OWN_PATH[@]}" ]; do
-    if [ "${_UA_OWN_PATH[$index]}" = "$root" ]; then
-      case "${_UA_OWN_KIND[$index]}" in
-        auto) saw_auto=1; why_auto="updater ${_UA_OWN_SRC[$index]}" ;;
-      esac
-    fi
-    index=$((index + 1))
-  done
-  if [ "$saw_pin" -eq 1 ]; then
-    _UA_WHY="$why_pin"
-    _UA_DECISION="pinned"
-    return 0
-  fi
-  if [ "$saw_auto" -eq 1 ]; then
-    _UA_WHY="$why_auto"
-    if [ "$saw_manual" -eq 1 ]; then
-      _UA_WHY="${_UA_WHY}; also marked manual, still skipped"
-    fi
-    _UA_DECISION="auto"
-    return 0
-  fi
-  if [ "$saw_manual" -eq 1 ]; then
-    _UA_WHY="$why_manual"
-    _UA_DECISION="manual"
-    return 0
-  fi
-  if [ "$_UA_UPDATER" -eq 1 ] && [ "$_UA_BLOCK" -eq 0 ]; then
-    _UA_WHY="not listed by the automatic updater"
-    _UA_DECISION="eligible"
-    return 0
-  fi
-  _UA_WHY="ownership was not identified"
-  _UA_DECISION="unknown"
-}
-
+# Prints "ok", or the one-line reason the checkout is skipped. Nothing here
+# changes the checkout, so a skipped one is never reset by update's rollback.
 ngdp_update_all_gate() {
-  local root="$1" ref="$2"
+  local root="$1"
   # The checkout must be the top of its own repository. Inside another repo,
   # git would act on the parent.
   local top
   top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)"
   top="$(ngdp_update_all_canon "$top" 2>/dev/null || true)"
   if [ -z "$top" ] || [ "$top" != "$(ngdp_update_all_canon "$root")" ]; then
-    printf 'not-git'
+    printf 'not the top of its own git repository'
     return 0
   fi
   if [ -z "$(find "$root" -maxdepth 0 -user "$(id -u)" 2>/dev/null)" ]; then
-    printf 'not-owned'
+    printf 'owned by another user'
     return 0
   fi
   # index.lock is checked before status: status itself fails while another git
-  # command holds the index, and bulk mode must not join that operation.
-  local gitdir dirty branch ahead behind
+  # command holds the index, and update all must not join that operation.
+  local gitdir dirty count first ahead
   gitdir="$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null || true)"
   if [ -n "$gitdir" ] && [ -e "$gitdir/index.lock" ]; then
-    printf 'index-locked'
+    printf 'git index is locked (another git command is running)'
     return 0
   fi
   if ! git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
-    printf 'detached'
+    printf 'detached HEAD, not on a branch'
     return 0
   fi
-  dirty="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null || echo "status-failed")"
-  if [ "$dirty" = "status-failed" ]; then
-    printf 'status-failed'
+  if ! dirty="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null)"; then
+    printf 'git status failed, so uncommitted changes could not be ruled out'
     return 0
   fi
   if [ -n "$dirty" ]; then
-    printf '%s\n' "$dirty" > "${_UA_DIRTY_FILE:-/dev/null}" 2>/dev/null || true
-    printf 'dirty'
+    count="$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')"
+    first="$(printf '%s\n' "$dirty" | head -n 1)"
+    first="${first:3}"
+    printf '%s uncommitted or untracked file(s), first: %s' "$count" "$first"
     return 0
   fi
-  if [ -n "$ref" ]; then
-    printf 'ok'
-    return 0
-  fi
-  branch="$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null || true)"
-  if [ "$branch" != "master" ]; then
-    printf 'not-on-master'
-    return 0
-  fi
-  # Refresh origin/master first: a stale ref can hide local commits. If the
-  # fetch fails the answer is unknown, and the checkout is held.
+  # Refresh origin/master first: a stale ref can hide local commits.
   # A dry run fetches nothing and compares against the last fetch.
   if [ "${_UA_DRY:-0}" -eq 0 ] && ! GIT_TERMINAL_PROMPT=0 git -C "$root" fetch --quiet origin master >/dev/null 2>&1; then
-    printf 'ahead-unknown'
+    printf 'could not fetch origin/master to check for local commits'
     return 0
   fi
   if git -C "$root" rev-parse --verify --quiet origin/master >/dev/null 2>&1; then
     ahead="$(git -C "$root" rev-list --count origin/master..HEAD 2>/dev/null || echo 0)"
-    behind="$(git -C "$root" rev-list --count HEAD..origin/master 2>/dev/null || echo 0)"
-    if [ "${ahead:-0}" -gt 0 ] && [ "${behind:-0}" -gt 0 ]; then
-      printf 'divergent'
-      return 0
-    fi
     if [ "${ahead:-0}" -gt 0 ]; then
-      printf 'ahead'
+      printf '%s commit(s) ahead of origin/master' "$ahead"
       return 0
     fi
   fi
@@ -600,35 +382,6 @@ ngdp_update_all() {
   fi
   echo "Found ${total} ngdpbase checkout(s)."
 
-  local policy_file="${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
-  ngdp_update_all_read_policy_file
-  ngdp_update_all_check_checkout_words
-  ngdp_update_all_scan_ownership
-  if [ "${#_UA_STOP[@]}" -gt 0 ]; then
-    local item
-    echo "❌ These lines cannot be honoured. Nothing was updated."
-    for item in "${_UA_STOP[@]}"; do
-      echo "   ${item}"
-    done
-    if [ "$_UA_PIN_WORDING" -eq 1 ]; then
-      echo "   update all reads pins only from ${policy_file}"
-      echo "   and from a checkout's .ngdpbase-update-policy file, never from an updater script."
-      echo "   Move each pin to ${policy_file} as one line per checkout, for example:"
-      echo "     pinned ${_UA_ROOTS[0]}"
-      echo "   then remove the pin comment or variable from the updater script."
-    fi
-    exit 3
-  fi
-  if [ "$_UA_UPDATER" -eq 0 ]; then
-    echo "No automatic updater script found in LaunchAgents, systemd user units, or crontab."
-  fi
-  if [ "$_UA_BLOCK" -eq 1 ]; then
-    echo "⚠️  Updater ownership is incomplete (${_UA_BLOCK_WHY})."
-    echo "    Nothing that no updater clearly owns is updated. To update a checkout, list it explicitly"
-    echo "    with a line 'manual <absolute path>' in:"
-    echo "    ${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
-  fi
-
   local self
   self="$(ngdp_update_all_canon "$SCRIPT_DIR" 2>/dev/null || true)"
   local -a order=()
@@ -645,7 +398,7 @@ ngdp_update_all() {
     order+=("$self_index")
   fi
 
-  local updated=0 failed=0 unknown=0 skipped=0 safety=0 number=0
+  local updated=0 failed=0 skipped=0 held=0 number=0
   local -a cmd_show
   index=0
   while [ "$index" -lt "${#order[@]}" ]; do
@@ -655,64 +408,30 @@ ngdp_update_all() {
     local root="${_UA_ROOTS[$row]}"
     local display
     display="$(ngdp_update_all_display_name "${_UA_NAMES[$row]}")"
-    ngdp_update_all_decide "$root" "${_UA_NAMES[$row]}"
-    local decision="$_UA_DECISION"
     echo ""
     echo "[${number}/${total}] ${display}"
     echo "    ${root}"
     if [ "${_UA_WATCH[$row]}" = "1" ]; then
       echo "    pm2 watch is on; that restarts on file changes and is not release updating"
     fi
-    case "$decision" in
-      pinned)
-        echo "    skip (pinned): ${_UA_WHY}"
-        skipped=$((skipped + 1))
-        continue
-        ;;
-      auto)
-        echo "    skip (automatic): ${_UA_WHY}"
-        skipped=$((skipped + 1))
-        continue
-        ;;
-      unknown)
-        echo "    unknown ownership — not updated"
-        echo "    ${_UA_WHY}. To include it, add a line to ${policy_file}:"
-        echo "      manual ${root}"
-        unknown=$((unknown + 1))
-        continue
-        ;;
-    esac
     if [ "${_UA_ONLINE[$row]}" != "1" ]; then
-      echo "    skip (not online in PM2). Start it before including it."
+      echo "    skip: not online in PM2"
       skipped=$((skipped + 1))
       continue
     fi
-    case "$decision" in
-      manual) echo "    included (${_UA_WHY})" ;;
-      eligible) echo "    included (${_UA_WHY})" ;;
-    esac
-    local dirty_file
-    dirty_file="$(ngdp_update_all_tmp "dirty.${number}")"
-    _UA_DIRTY_FILE="$dirty_file"
     local gate
-    gate="$(ngdp_update_all_gate "$root" "$ref")"
-    case "$gate" in
-      ok) ;;
-      *)
-        echo "    skip (${gate}): not running update, so nothing is reset"
-        if [ "$gate" = "dirty" ] && [ -s "$dirty_file" ]; then
-          sed 's/^/      /' "$dirty_file"
-        fi
-        safety=$((safety + 1))
-        continue
-        ;;
-    esac
+    gate="$(ngdp_update_all_gate "$root")"
+    if [ "$gate" != "ok" ]; then
+      echo "    skip: ${gate}"
+      held=$((held + 1))
+      continue
+    fi
     cmd_show=(./server.sh update)
     [ -n "$ref" ] && cmd_show+=("$ref")
     [ -n "$envname" ] && cmd_show+=("$envname")
     if [ "$dry" -eq 1 ]; then
       echo "    dry-run: would run: ${cmd_show[*]}"
-      [ -z "$ref" ] && echo "    (origin/master was not refreshed in this dry run; the ahead check used the last fetch)"
+      echo "    (origin/master was not refreshed in this dry run; the ahead check used the last fetch)"
       updated=$((updated + 1))
       continue
     fi
@@ -735,19 +454,15 @@ ngdp_update_all() {
   else
     echo "  updated       ${updated}"
   fi
-  echo "  skipped       ${skipped}"
-  echo "  safety hold   ${safety}"
-  echo "  unknown       ${unknown}"
+  echo "  not online    ${skipped}"
+  echo "  held by git   ${held}"
   echo "  failed        ${failed}"
   if [ "$dry" -eq 1 ]; then
     echo "Dry run: no checkout was updated."
   fi
 
-  if [ "$failed" -gt 0 ] || [ "$safety" -gt 0 ]; then
+  if [ "$failed" -gt 0 ] || [ "$held" -gt 0 ]; then
     exit 1
-  fi
-  if [ "$unknown" -gt 0 ]; then
-    exit 3
   fi
   exit 0
 }
