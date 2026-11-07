@@ -6,7 +6,9 @@
  *                to the output.
  * scan-ownership read LaunchAgents, systemd user units and a crontab file
  *                the caller already collected, and report checkouts an
- *                updater script updates or pins. Scripts are not executed.
+ *                updater script updates, and lines in it that look like a
+ *                pin. Pins are never read from a script. Scripts are not
+ *                executed.
  *
  * Records are NUL-separated fields, four per record for scan-ownership and
  * five for sanitize-pm2. A field never contains NUL.
@@ -179,225 +181,142 @@ function isUpdaterScript(text, filePath) {
   return /server\.sh['"]?\)?\s+update\b/.test(code);
 }
 
-const SITE_ARRAY = /^(SITES|SITE|INSTANCES|INSTANCE|REPOS|REPO|CHECKOUTS|CHECKOUT|TARGETS|TARGET)$|_SITES$/;
-const PIN_ARRAY = /(PIN|PINNED|EXCLUDE|EXCLUDED|SKIP|SKIPPED|HOLD|FREEZE)/i;
-const PIN_WORD = /\b(pinned|pin|exclude|excluded|skip|skipped)\b/i;
-// A directory basename marked (pinned). The marker binds only that token, not
-// every other name on the same comment. At least six characters, so a short
-// English word next to "(pinned)" is not a checkout name.
-const BASENAME_PIN = /(?:^|[^A-Za-z0-9._-])([A-Za-z0-9][A-Za-z0-9._-]{5,80})\s*\(\s*pinned\s*\)/gi;
-
-function explicitBasenamePins(line) {
-  const found = [];
-  const seen = new Set();
-  const re = new RegExp(BASENAME_PIN.source, 'gi');
-  let match;
-  while ((match = re.exec(line))) {
-    if (!seen.has(match[1])) {
-      seen.add(match[1]);
-      found.push(match[1]);
-    }
-  }
-  return found;
-}
-
-// A pin variable: any name with a pin word in it, other than a site list.
-function isPinName(name) {
-  return PIN_ARRAY.test(name) && !SITE_ARRAY.test(name);
-}
-
 // An array opened at the start of a line: NAME=(, NAME+=(, or either after
 // declare, typeset, local, readonly or export and their flags.
 const ARRAY_OPEN = /^\s*(?:(?:declare|typeset|local|readonly|export)\s+(?:[-+][A-Za-z]+\s+)*)?([A-Za-z_][A-Za-z0-9_]*)\+?=\(\s*(.*)$/;
-// Any assignment anywhere on a line: NAME=, NAME+=, NAME[i]=, and whether it opens an array.
-const ASSIGN = /(?:^|[\s;&|({])([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=(\(?)/g;
-// Characters the scan cannot resolve: a variable, command substitution or home directory.
-const UNRESOLVED = /[$`~]/;
+const SITE_ARRAY
+ = /^(SITES|SITE|INSTANCES|INSTANCE|REPOS|REPO|CHECKOUTS|CHECKOUT|TARGETS|TARGET)$|_SITES$/;
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Pins are read only from the update-policy file and a checkout's
+// .ngdpbase-update-policy file. An updater script that looks like it holds a
+// pin blocks the run, so the pin is moved, not guessed at.
+//
+// A pin variable: the whole name is PINNED, PINS, EXCLUDE, EXCLUDED, SKIP or
+// SKIPPED, starts with one of those and an underscore, or ends in _PINNED,
+// _PINS, _EXCLUDE or _SKIP, in any case. THRESHOLD, SPINNER_PID and
+// HOLD_SECONDS are not.
+const PIN_NAME = /^(?:pinned|pins|exclude|excluded|skip|skipped)(?:_[a-z0-9_]*)?$|_(?:pinned|pins|exclude|skip)$/i;
+// Whole words that mark pin wording in a comment, a command name or a sourced file.
+const PIN_WORDS = new Set(['pin', 'pins', 'pinned', 'pinning', 'exclude', 'excluded', 'skip', 'skipped', 'hold', 'frozen', 'freeze']);
+const DO_NOT_UPDATE = /\bdo\s+not\s+update\b|\bdon'?t\s+update\b/i;
+// An assignment anywhere on a line: NAME=, NAME+=, NAME[i]=, also inside a quoted eval string.
+const ASSIGN = /(?:^|[\s;&|({"'`])([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=([^\s;&|)]*)/g;
+// A lowercase local flag such as skip=0 or skip=true is a loop flag, not a pin list.
+const FLAG_VALUE = /^(?:-?\d+|true|false)?$/;
+const DECLARE = /(?:^|[\s;&|({])(?:declare|typeset|local|readonly|export|readarray|mapfile|read|unset)\s+(.*)$/;
+
+function isPinName(name) {
+  return PIN_NAME.test(name);
 }
 
-export function classifyScript(text, scriptPath, names) {
+function isFlag(name, value) {
+  return name === name.toLowerCase() && FLAG_VALUE.test(value);
+}
+
+function hasPinWord(text) {
+  if (DO_NOT_UPDATE.test(text)) return true;
+  return text.toLowerCase().split(/[^a-z0-9]+/).some((word) => PIN_WORDS.has(word));
+}
+
+// Why a line reads as a pin, or '' when it does not.
+export function pinWording(line) {
+  const code = stripInlineComment(line);
+  const comment = line.slice(code.length);
+  if (comment.startsWith('#!')) {
+    // A shebang names an interpreter, not a pin.
+  } else if (comment && hasPinWord(comment)) {
+    return 'a comment with pin wording';
+  }
+  for (const match of code.matchAll(ASSIGN)) {
+    if (isPinName(match[1]) && !isFlag(match[1], match[2])) return `an assignment to ${match[1]}`;
+    if (isPinName(match[2].replace(/["'(]/g, ''))) return `a reference to ${match[2].replace(/["'(]/g, '')}`;
+  }
+  const declared = code.match(DECLARE);
+  if (declared) {
+    const rest = declared[1].replace(/\b[a-z_][a-z0-9_]*=(?:-?\d+|true|false)?(?=\s|;|$)/g, ' ');
+    const name = (rest.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []).find(isPinName);
+    if (name) return `a declaration of ${name}`;
+  }
+  // A read of an uppercase pin variable ("${PINNED[@]}", $SKIP) means one is set somewhere.
+  for (const match of code.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)) {
+    if (isPinName(match[1]) && match[1] !== match[1].toLowerCase()) return `a reference to ${match[1]}`;
+  }
+  const printed = code.match(/\bprintf\s+-v\s+([A-Za-z_][A-Za-z0-9_]*)/);
+  if (printed && isPinName(printed[1])) return `an assignment to ${printed[1]}`;
+  for (const match of code.matchAll(/(?:^|[;&|({]|\b(?:then|do|else)\b)\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_-]*)(?=\s|\(|$)/g)) {
+    if (PIN_WORDS.has(match[1].toLowerCase()) || isPinName(match[1])) return `a command named ${match[1]}`;
+  }
+  const sourced = code.match(/(?:^|[;&|]\s*|\s)(?:source|\.)\s+(\S+)/);
+  if (sourced && hasPinWord(sourced[1])) return `a sourced file named ${sourced[1]}`;
+  return '';
+}
+
+export function classifyScript(text, scriptPath) {
   const lines = text.split('\n');
   // Each NAME=( or NAME+=( is its own entry, so an append is read like the first list.
   const arrays = [];
-  // Lines that open or continue a pin array; its entries are checked with the array.
-  const pinArrayLines = new Set();
   let arrayName = '';
   let arrayLines = [];
-  let arrayStart = 0;
 
-  function flushArray(end) {
+  function flushArray() {
     if (!arrayName) return;
     arrays.push([arrayName, arrayLines.join('\n')]);
-    if (isPinName(arrayName)) for (let k = arrayStart; k <= end; k++) pinArrayLines.add(k);
     arrayName = '';
     arrayLines = [];
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of lines) {
     if (arrayName) {
       arrayLines.push(line);
-      if (stripInlineComment(line).includes(')')) flushArray(i);
+      if (stripInlineComment(line).includes(')')) flushArray();
       continue;
     }
     const opened = stripInlineComment(line).match(ARRAY_OPEN);
     if (opened) {
       arrayName = opened[1];
       arrayLines = [opened[2]];
-      arrayStart = i;
-      if (opened[2].includes(')')) flushArray(i);
+      if (opened[2].includes(')')) flushArray();
     }
   }
-  flushArray(lines.length - 1);
+  flushArray();
 
   const records = [];
   let autoCount = 0;
   let arrayAutoCount = 0;
-  let pinCount = 0;
   let incomplete = '';
   const knownArrays = new Set();
 
-  function addPath(policy, filePath) {
+  function addAuto(filePath) {
     // A line that runs <checkout>/server.sh update names the checkout, not the file.
     const target = path.basename(filePath) === 'server.sh' ? path.dirname(filePath) : filePath;
-    const canon = canonPath(target);
-    records.push(['path', policy, canon, scriptPath]);
-    if (policy === 'auto') autoCount += 1;
-    if (policy === 'pinned') {
-      pinCount += 1;
-      if (!fs.existsSync(canon)) {
-        records.push(['note', 'block', `a pin names ${canon}, which does not exist, so it pins nothing`, scriptPath]);
-      }
-    }
-  }
-
-  // An entry of a pin list that is not a path must be a PM2 app name; any other entry pins nothing.
-  function checkPinEntry(name, entry) {
-    if (UNRESOLVED.test(entry)) {
-      // The scanner cannot resolve a variable, so it cannot tell which checkout this pins.
-      records.push(['note', 'block', `pin ${name} lists ${entry}, a variable the scan cannot resolve, so it pins nothing`, scriptPath]);
-    } else if (names.includes(entry)) {
-      records.push(['name', 'pinned', entry, scriptPath]);
-      pinCount += 1;
-    } else {
-      records.push(['note', 'block', `pin ${name} lists ${entry}, which is not a path or a PM2 app name, so it pins nothing`, scriptPath]);
-    }
-  }
-
-  // A pin line must be read completely: once its literal paths are out, any $, backtick or ~ left blocks.
-  function blockUnresolved(line, paths) {
-    let rest = line;
-    for (const filePath of paths) rest = rest.split(filePath).join(' ');
-    if (UNRESOLVED.test(rest)) {
-      records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" has a $, backtick or ~ the scan cannot resolve`, scriptPath]);
-    }
+    records.push(['path', 'auto', canonPath(target), scriptPath]);
+    autoCount += 1;
   }
 
   for (const [name, body] of arrays) {
+    if (!SITE_ARRAY.test(name) || isPinName(name)) continue;
+    knownArrays.add(name);
     const paths = extractPaths(body);
-    if (isPinName(name)) {
-      knownArrays.add(name);
-      if (paths.length === 0 && /\$[{A-Za-z_]/.test(body)) incomplete ||= 'a pin list is built from variables';
-      for (const filePath of paths) addPath('pinned', filePath);
-      // Entries that are not paths must be PM2 app names; any other entry pins nothing.
-      let rest = body.split('\n').map(stripInlineComment).join(' ');
-      rest = rest.slice(0, rest.indexOf(')') < 0 ? undefined : rest.indexOf(')'));
-      for (const filePath of paths) rest = rest.split(filePath).join(' ');
-      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter(Boolean)) checkPinEntry(name, entry);
-      continue;
+    if (paths.length === 0 || /\$[{A-Za-z_]/.test(stripInlineComment(body))) {
+      incomplete ||= 'a site list is empty or built from variables';
     }
-    if (SITE_ARRAY.test(name)) {
-      knownArrays.add(name);
-      if (paths.length === 0 || /\$[{A-Za-z_]/.test(stripInlineComment(body))) {
-        incomplete ||= 'a site list is empty or built from variables';
-      }
-      for (const filePath of paths) {
-        addPath('auto', filePath);
-        arrayAutoCount += 1;
-      }
+    for (const filePath of paths) {
+      addAuto(filePath);
+      arrayAutoCount += 1;
     }
   }
 
   let updateLinesWithoutPath = 0;
   for (let i = 0; i < lines.length; i++) {
-    const fullLine = lines[i];
-    const code = stripInlineComment(fullLine);
-    // A pin array's lines were read with the array. Any other assignment to a pin
-    // variable is read here in full, or blocks.
-    let pinAssignment = pinArrayLines.has(i);
-    if (!pinAssignment) {
-      for (const assigned of code.matchAll(ASSIGN)) {
-        if (!isPinName(assigned[1])) continue;
-        pinAssignment = true;
-        if (assigned[2] === '(') {
-          records.push(['note', 'block', `pin line "${fullLine.trim().slice(0, 80)}" opens a pin array in a form the scan cannot read`, scriptPath]);
-          continue;
-        }
-        // A string value: paths split on spaces, colons or commas; every other word must be a PM2 app name.
-        const value = code.slice(assigned.index + assigned[0].length).replace(/[:,]/g, ' ');
-        const paths = extractPaths(value);
-        for (const filePath of paths) addPath('pinned', filePath);
-        let rest = value;
-        for (const filePath of paths) rest = rest.split(filePath).join(' ');
-        for (const entry of rest.replace(/["';]/g, ' ').split(/\s+/).filter(Boolean)) checkPinEntry(assigned[1], entry);
-      }
-      const words = code.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
-      if (!pinAssignment && /\b(?:readarray|mapfile|read)\b/.test(code) && words.some(isPinName)) {
-        pinAssignment = true;
-        records.push(['note', 'block', `pin line "${fullLine.trim().slice(0, 80)}" fills a pin variable in a form the scan cannot read`, scriptPath]);
-      }
+    const why = pinWording(lines[i]);
+    if (why) {
+      records.push(['note', 'pinword', `${i + 1}: ${why}: ${lines[i].trim().slice(0, 80)}`, scriptPath]);
     }
-    // On a pin assignment line, its comment is a pin line too, pin word or not.
-    const line = pinAssignment ? fullLine.slice(code.length) : fullLine;
-    if (pinAssignment ? /^\s*#./.test(line) : PIN_WORD.test(line)) {
-      const pinsBefore = pinCount;
-      const direct = extractPaths(line);
-      for (const filePath of direct) addPath('pinned', filePath);
-      blockUnresolved(line, direct);
-      if (direct.length === 0) {
-        for (let j = i + 1; j < lines.length; j++) {
-          if (!/^\s*#/.test(lines[j])) break;
-          if (/^\s*#\s*$/.test(lines[j])) continue;
-          const continued = extractPaths(lines[j]);
-          if (continued.length === 0) break;
-          for (const filePath of continued) addPath('pinned', filePath);
-          blockUnresolved(lines[j], continued);
-        }
-      }
-      if (/^\s*#/.test(line)) {
-        const basenamePins = explicitBasenamePins(line);
-        for (const base of basenamePins) {
-          records.push(['basename', 'pinned', base, scriptPath]);
-          pinCount += 1;
-        }
-        // Other PM2 app names on the same comment stay pinned too. The
-        // "(pinned)" marker adds a basename pin, it does not narrow the line.
-        const comment = line.replace(/^\s*#\s?/, '');
-        for (const appName of names) {
-          if (appName.length < 6) continue;
-          const bound = new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(appName)}([^A-Za-z0-9]|$)`);
-          if (bound.test(comment)) {
-            records.push(['name', 'pinned', appName, scriptPath]);
-            pinCount += 1;
-          }
-        }
-      }
-      // Each pin line must pin something, whatever other pins the script has.
-      // Plain prose ("# skip a checkout that has local changes") names nothing, so it
-      // blocks only when it has a (pinned) marker, a path or $VAR, or a name in a different case.
-      const lower = line.toLowerCase();
-      const aimed = /\(\s*pinned\s*\)|\$|\//i.test(line) || names.some((n) => n.length > 0 && lower.includes(n.toLowerCase()));
-      if (pinCount === pinsBefore && aimed) {
-        records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" names no path or PM2 app name`, scriptPath]);
-      }
-    }
+    const code = stripInlineComment(lines[i]);
     if (/server\.sh\b/.test(code) && /\bupdate\b/.test(code)) {
       const found = extractPaths(code);
       if (found.length === 0) updateLinesWithoutPath += 1;
-      for (const filePath of found) addPath('auto', filePath);
+      for (const filePath of found) addAuto(filePath);
     }
     const loop = unreadableLoop(code, knownArrays);
     if (loop) incomplete ||= loop;
@@ -412,9 +331,6 @@ export function classifyScript(text, scriptPath, names) {
 
   if (incomplete) {
     records.push(['note', 'block', `could not read which checkouts it updates: ${incomplete}`, scriptPath]);
-  } else if (pinCount === 0 && lines.some((line) => PIN_WORD.test(line))) {
-    // Prose pin lines are exempt above, but a script whose only pin talk pins nothing still blocks.
-    records.push(['note', 'block', 'a pin comment names no path or PM2 app name', scriptPath]);
   }
   records.push(['note', 'updater', '', scriptPath]);
   return records;
@@ -521,22 +437,10 @@ function collectCandidateFiles(home, xdg, crontabFile) {
   return { files: [...files], inline };
 }
 
-function readNames(file) {
-  if (!file) return [];
-  let text = '';
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch {
-    return [];
-  }
-  return text.split('\n').map((line) => line.trim()).filter((line) => line && !line.includes('\0'));
-}
-
-function scanOwnership(home, xdg, crontabFile, namesFile) {
-  const names = readNames(namesFile);
+function scanOwnership(home, xdg, crontabFile) {
   const { files, inline } = collectCandidateFiles(home, xdg, crontabFile);
   for (const entry of inline) {
-    for (const record of classifyScript(entry.text, entry.file, names)) writeFields(record);
+    for (const record of classifyScript(entry.text, entry.file)) writeFields(record);
   }
   for (const file of files) {
     let text = '';
@@ -546,7 +450,7 @@ function scanOwnership(home, xdg, crontabFile, namesFile) {
       continue;
     }
     if (!text || !isUpdaterScript(text, file)) continue;
-    for (const record of classifyScript(text, file, names)) writeFields(record);
+    for (const record of classifyScript(text, file)) writeFields(record);
   }
 }
 
@@ -575,7 +479,7 @@ function main() {
       process.stderr.write('scan-ownership needs --home\n');
       process.exit(1);
     }
-    scanOwnership(home, argValue('--xdg'), argValue('--crontab'), argValue('--names'));
+    scanOwnership(home, argValue('--xdg'), argValue('--crontab'));
   } else {
     process.stderr.write('usage: update-all-scan.mjs <sanitize-pm2|scan-ownership>\n');
     process.exit(2);

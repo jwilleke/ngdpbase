@@ -115,7 +115,7 @@ _UA_IGNORED=()
 ngdp_update_all_add_process() {
   local name="$1" cwd="$2" status="$4" watch="$5"
   local root index
-  # Same trim as readNames in update-all-scan.mjs, so name pins compare equal.
+  # Trim the PM2 app name, as sanitize-pm2 does, so one app is listed once.
   name="${name#"${name%%[![:space:]]*}"}"
   name="${name%"${name##*[![:space:]]}"}"
   root="$(ngdp_update_all_root_from "$cwd" 2>/dev/null || true)"
@@ -179,16 +179,16 @@ ngdp_update_all_name_list() {
   printf '%s\n' "${raw//$'\036'/$'\n'}"
 }
 
-# policy file and detected ownership, matched by canonical path or PM2 name.
+# policy file and detected ownership, matched by canonical path.
 _UA_POL_PATH=()
 _UA_POL_KIND=()
 _UA_OWN_PATH=()
 _UA_OWN_KIND=()
 _UA_OWN_SRC=()
-_UA_OWN_NAME=()
-_UA_OWN_NAME_SRC=()
-_UA_BASE_PIN=()
-_UA_BASE_PIN_SRC=()
+# Lines that stop the run before anything is updated: a policy line that
+# cannot be honoured, or pin wording in an updater script.
+_UA_STOP=()
+_UA_PIN_WORDING=0
 _UA_UPDATER=0
 _UA_BLOCK=0
 _UA_BLOCK_WHY=""
@@ -211,7 +211,7 @@ ngdp_update_all_read_policy_file() {
     case "$kind" in
       auto|pinned|manual) ;;
       *)
-        echo "⚠️  ${file}:${number} ignored (want: auto, pinned, or manual, then an absolute path)"
+        _UA_STOP+=("${file}:${number}: \"${kind}\" is not auto, pinned, or manual")
         continue
         ;;
     esac
@@ -222,17 +222,17 @@ ngdp_update_all_read_policy_file() {
     case "$rest" in
       /*) ;;
       *)
-        echo "⚠️  ${file}:${number} ignored (path is not absolute)"
+        _UA_STOP+=("${file}:${number}: the path is not absolute")
         continue
         ;;
     esac
     if [ ! -d "$rest" ]; then
-      echo "⚠️  ${file}:${number} ignored (not a directory)"
+      _UA_STOP+=("${file}:${number}: ${rest} is not a directory")
       continue
     fi
     canon="$(ngdp_update_all_canon "$rest" || true)"
     if [ -z "$canon" ]; then
-      echo "⚠️  ${file}:${number} ignored (path could not be resolved)"
+      _UA_STOP+=("${file}:${number}: ${rest} could not be resolved")
       continue
     fi
     _UA_POL_PATH+=("$canon")
@@ -241,13 +241,7 @@ ngdp_update_all_read_policy_file() {
 }
 
 ngdp_update_all_scan_ownership() {
-  local names_file crontab scan home
-  names_file="$(ngdp_update_all_tmp names)"
-  local index=0
-  while [ "$index" -lt "${#_UA_NAMES[@]}" ]; do
-    ngdp_update_all_name_list "${_UA_NAMES[$index]}" >> "$names_file"
-    index=$((index + 1))
-  done
+  local crontab scan home
   crontab="$(ngdp_update_all_tmp crontab)"
   if [ -n "${NGDP_UPDATE_CRONTAB_FILE+x}" ]; then
     if [ -n "$NGDP_UPDATE_CRONTAB_FILE" ] && [ -f "$NGDP_UPDATE_CRONTAB_FILE" ]; then
@@ -265,8 +259,7 @@ ngdp_update_all_scan_ownership() {
   if ! node "$_NGDP_UPDATE_ALL_DIR/update-all-scan.mjs" scan-ownership \
       --home "$home" \
       --xdg "${XDG_CONFIG_HOME:-}" \
-      --crontab "$crontab" \
-      --names "$names_file" > "$scan"; then
+      --crontab "$crontab" > "$scan"; then
     echo "⚠️  Could not read updater ownership. Unlisted checkouts will not be updated."
     _UA_BLOCK=1
     _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }ownership scan failed"
@@ -284,17 +277,12 @@ ngdp_update_all_scan_ownership() {
         _UA_OWN_KIND+=("$policy")
         _UA_OWN_SRC+=("$source")
         ;;
-      name)
-        _UA_OWN_NAME+=("$value")
-        _UA_OWN_NAME_SRC+=("$source")
-        ;;
-      basename)
-        _UA_BASE_PIN+=("$value")
-        _UA_BASE_PIN_SRC+=("$source")
-        ;;
       note)
         if [ "$policy" = "updater" ]; then
           _UA_UPDATER=1
+        elif [ "$policy" = "pinword" ]; then
+          _UA_PIN_WORDING=1
+          _UA_STOP+=("${source}:${value}")
         elif [ "$policy" = "block" ]; then
           _UA_BLOCK=1
           _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }${source}: ${value}"
@@ -302,78 +290,6 @@ ngdp_update_all_scan_ownership() {
         ;;
     esac
   done < "$scan"
-  ngdp_update_all_resolve_basenames
-}
-
-# A "(pinned)" directory basename applies only when one running checkout has
-# that basename. Two checkouts with it are ambiguous: neither is pinned, and
-# unlisted checkouts stay untouched. A checkout the site list already names
-# stays automatic.
-ngdp_update_all_resolve_basenames() {
-  local i=0 base source root base_name r k already named
-  local -a matches all_matches
-  while [ "$i" -lt "${#_UA_BASE_PIN[@]}" ]; do
-    base="${_UA_BASE_PIN[$i]}"
-    source="${_UA_BASE_PIN_SRC[$i]}"
-    i=$((i + 1))
-    matches=()
-    all_matches=()
-    named=0
-    r=0
-    while [ "$r" -lt "${#_UA_ROOTS[@]}" ]; do
-      root="${_UA_ROOTS[$r]}"
-      base_name="$(basename -- "$root")"
-      if [ "$base_name" = "$base" ]; then
-        all_matches+=("$root")
-        # A stopped PM2 entry is not a running checkout.
-        if [ "${_UA_ONLINE[$r]}" = "1" ]; then
-          matches+=("$root")
-        fi
-      fi
-      if ngdp_update_all_name_list "${_UA_NAMES[$r]}" | grep -F -x -q -- "$base"; then
-        named=1
-      fi
-      r=$((r + 1))
-    done
-    # "name (pinned)" can also name a PM2 app, as it did before basename pins.
-    if [ "$named" -eq 1 ]; then
-      _UA_OWN_NAME+=("$base")
-      _UA_OWN_NAME_SRC+=("$source")
-    fi
-    if [ "${#matches[@]}" -eq 0 ] && [ "${#all_matches[@]}" -gt 0 ]; then
-      matches=("${all_matches[@]}")
-    fi
-    if [ "${#matches[@]}" -gt 1 ]; then
-      _UA_BLOCK=1
-      _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }basename ${base} matches ${#matches[@]} checkouts (${source})"
-      echo "⚠️  Directory name ${base} is pinned, but ${#matches[@]} running checkouts use it. None of them is pinned, and unlisted checkouts are left alone."
-      continue
-    fi
-    if [ "${#matches[@]}" -eq 0 ]; then
-      if [ "$named" -eq 0 ]; then
-        _UA_BLOCK=1
-        _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }pin ${base} matches no checkout or PM2 app name (${source})"
-        echo "⚠️  Directory name ${base} is pinned, but no checkout or PM2 app has that name (check case, a trailing dot, symlink aliases and typos). Unlisted checkouts are left alone."
-      fi
-      continue
-    fi
-    root="${matches[0]}"
-    already=""
-    k=0
-    while [ "$k" -lt "${#_UA_OWN_PATH[@]}" ]; do
-      if [ "${_UA_OWN_PATH[$k]}" = "$root" ] && [ "${_UA_OWN_KIND[$k]}" = "auto" ]; then
-        already="auto"
-      fi
-      k=$((k + 1))
-    done
-    if [ "$already" = "auto" ]; then
-      echo "⚠️  Directory name ${base} is marked pinned, and the updater lists ${root}. The site list stays authoritative."
-      continue
-    fi
-    _UA_OWN_PATH+=("$root")
-    _UA_OWN_KIND+=("pinned")
-    _UA_OWN_SRC+=("$source")
-  done
 }
 
 ngdp_update_all_checkout_word() {
@@ -382,9 +298,29 @@ ngdp_update_all_checkout_word() {
   word="$(tr -d '[:space:]' < "$root/.ngdpbase-update-policy" 2>/dev/null || true)"
   case "$word" in
     auto|pinned|manual) printf '%s' "$word" ;;
-    '') ;;
-    *) echo "⚠️  ${root}/.ngdpbase-update-policy is not auto, pinned, or manual; ignoring it" >&2 ;;
   esac
+}
+
+# A checkout policy file that is not exactly one of auto, pinned or manual
+# stops the run: a typo in "pinned" must not un-pin the checkout.
+ngdp_update_all_check_checkout_words() {
+  local index=0 root file word number
+  while [ "$index" -lt "${#_UA_ROOTS[@]}" ]; do
+    root="${_UA_ROOTS[$index]}"
+    index=$((index + 1))
+    file="$root/.ngdpbase-update-policy"
+    [ -f "$file" ] || continue
+    if [ ! -r "$file" ]; then
+      _UA_STOP+=("${file}:1: the file cannot be read")
+      continue
+    fi
+    word="$(tr -d '[:space:]' < "$file")"
+    case "$word" in
+      auto|pinned|manual|'') continue ;;
+    esac
+    number="$(grep -n -m 1 '[^[:space:]]' "$file" | cut -d: -f1)"
+    _UA_STOP+=("${file}:${number:-1}: want one word, auto, pinned, or manual")
+  done
 }
 
 # Sets _UA_DECISION to pinned, auto, manual, eligible, or unknown, and
@@ -394,7 +330,7 @@ ngdp_update_all_checkout_word() {
 ngdp_update_all_decide() {
   local root="$1" names="$2"
   local saw_pin=0 saw_auto=0 saw_manual=0
-  local why_pin="" why_auto="" why_manual="" word index list
+  local why_pin="" why_auto="" why_manual="" word index
   _UA_WHY=""
   word="$(ngdp_update_all_checkout_word "$root")"
   case "$word" in
@@ -417,18 +353,8 @@ ngdp_update_all_decide() {
   while [ "$index" -lt "${#_UA_OWN_PATH[@]}" ]; do
     if [ "${_UA_OWN_PATH[$index]}" = "$root" ]; then
       case "${_UA_OWN_KIND[$index]}" in
-        pinned) saw_pin=1; why_pin="updater ${_UA_OWN_SRC[$index]}" ;;
         auto) saw_auto=1; why_auto="updater ${_UA_OWN_SRC[$index]}" ;;
       esac
-    fi
-    index=$((index + 1))
-  done
-  list="$(ngdp_update_all_name_list "$names")"
-  index=0
-  while [ "$index" -lt "${#_UA_OWN_NAME[@]}" ]; do
-    if printf '%s\n' "$list" | grep -F -x -q -- "${_UA_OWN_NAME[$index]}"; then
-      saw_pin=1
-      why_pin="updater names ${_UA_OWN_NAME_SRC[$index]}"
     fi
     index=$((index + 1))
   done
@@ -674,8 +600,25 @@ ngdp_update_all() {
   fi
   echo "Found ${total} ngdpbase checkout(s)."
 
+  local policy_file="${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
   ngdp_update_all_read_policy_file
+  ngdp_update_all_check_checkout_words
   ngdp_update_all_scan_ownership
+  if [ "${#_UA_STOP[@]}" -gt 0 ]; then
+    local item
+    echo "❌ These lines cannot be honoured. Nothing was updated."
+    for item in "${_UA_STOP[@]}"; do
+      echo "   ${item}"
+    done
+    if [ "$_UA_PIN_WORDING" -eq 1 ]; then
+      echo "   update all reads pins only from ${policy_file}"
+      echo "   and from a checkout's .ngdpbase-update-policy file, never from an updater script."
+      echo "   Move each pin to ${policy_file} as one line per checkout, for example:"
+      echo "     pinned ${_UA_ROOTS[0]}"
+      echo "   then remove the pin comment or variable from the updater script."
+    fi
+    exit 3
+  fi
   if [ "$_UA_UPDATER" -eq 0 ]; then
     echo "No automatic updater script found in LaunchAgents, systemd user units, or crontab."
   fi
@@ -686,7 +629,6 @@ ngdp_update_all() {
     echo "    ${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
   fi
 
-  local policy_file="${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}"
   local self
   self="$(ngdp_update_all_canon "$SCRIPT_DIR" 2>/dev/null || true)"
   local -a order=()

@@ -135,9 +135,7 @@ function writeUpdater(sites: string[], pinned: string[], extra = ''): string {
     'SITES=(',
     ...sites.map((site) => `  ${quote(site)}`),
     ')',
-    'PINNED=(',
-    ...pinned.map((site) => `  ${quote(site)}`),
-    ')',
+    ...(pinned.length > 0 ? ['PINNED=(', ...pinned.map((site) => `  ${quote(site)}`), ')'] : []),
     'TAG=v1.0.0',
     'for site in "${SITES[@]}"; do',
     '  (cd "$site" && ./server.sh update "$TAG")',
@@ -324,7 +322,7 @@ describe('./server.sh update all', () => {
     const site = cloneFrom(primary(), 'addons');
     const before = git(site, 'rev-parse', 'HEAD');
     const next = publish(primary(), '1.1.0');
-    writePolicy([`manual ${site}`, 'nope not-a-line', 'manual relative/path', 'manual /no/such/ngdpbase-dir']);
+    writePolicy([`manual ${site}`]);
     writeJlist([
       { name: 'pm2-logrotate', cwd: path.join(tmp, 'not-a-checkout') },
       { name: 'ngdpbase-addons', cwd: site }
@@ -349,9 +347,6 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('http://localhost:39999');
     expect(result.out).not.toContain('39991');
     expect(result.out).not.toContain('should-not-leak');
-    expect(result.out).toContain('update-policy:2 ignored');
-    expect(result.out).toContain('update-policy:3 ignored');
-    expect(result.out).toContain('update-policy:4 ignored');
   }, 60000);
 
   it('dry-run prints the plan and does not fetch, install, or move HEAD', () => {
@@ -387,14 +382,15 @@ describe('./server.sh update all', () => {
     expect(result.out).toContain('running: ./server.sh update v1.1.0');
   }, 60000);
 
-  it('skips updater-owned and pinned checkouts and updates one the updater does not list', () => {
+  it('skips updater-owned checkouts and an update-policy pin the updater also lists, and updates one it does not list', () => {
     const auto = cloneFrom(primary(), 'fairways');
     const pinned = cloneFrom(primary(), 'accounting');
     const other = cloneFrom(primary(), 'encrypted');
     const autoHead = git(auto, 'rev-parse', 'HEAD');
     const pinnedHead = git(pinned, 'rev-parse', 'HEAD');
     const next = publish(primary(), '1.1.0');
-    const script = writeUpdater([auto], [pinned]);
+    const script = writeUpdater([auto, pinned], []);
+    writePolicy([`pinned ${pinned}`]);
     writeJlist([
       { name: 'The Fairways', cwd: auto, watch: true },
       { name: 'Accounting Dev', cwd: pinned },
@@ -419,29 +415,32 @@ describe('./server.sh update all', () => {
     expect(result.out).not.toContain(SECRET);
   }, 60000);
 
-  it('pins a checkout by its PM2 name in a comment and updates one the script does not mention', () => {
+  it('stops and updates nothing when an updater script holds a pin, naming the policy file', () => {
     const auto = cloneFrom(primary(), 'fairways');
     const named = cloneFrom(primary(), 'accounting');
-    const other = cloneFrom(primary(), 'encrypted');
-    const autoHead = git(auto, 'rev-parse', 'HEAD');
-    const namedHead = git(named, 'rev-parse', 'HEAD');
-    const next = publish(primary(), '1.1.0');
-    writeUpdater([auto], [], '# Accounting Dev explicitly excluded as pinned\n');
+    const manual = cloneFrom(primary(), 'addons');
+    const heads = [auto, named, manual].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+    publish(primary(), '1.1.0');
+    const script = writeUpdater([auto], [], '# Accounting Dev explicitly excluded as pinned\n');
+    writePolicy([`manual ${manual}`]);
     writeJlist([
       { name: 'The Fairways', cwd: auto },
       { name: 'Accounting Dev', cwd: named },
-      { name: 'ngdp-encrypted', cwd: other }
+      { name: 'ngdpbase-addons', cwd: manual }
     ]);
 
     const result = run(['update', 'all']);
 
-    expect(result.status, result.out).toBe(0);
-    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
-    expect(git(named, 'rev-parse', 'HEAD')).toBe(namedHead);
-    expect(git(other, 'rev-parse', 'HEAD')).toBe(next);
-    expect(result.out).toContain('skip (pinned)');
-    expect(result.out).toContain('not listed by the automatic updater');
-    expect(installsFor(named)).toEqual([]);
+    expect(result.status, result.out).toBe(3);
+    [auto, named, manual].forEach((dir, index) => {
+      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
+    });
+    expect(npmLines()).toEqual([]);
+    expect(result.out).toContain('Nothing was updated');
+    expect(result.out).toContain(`${script}:`);
+    expect(result.out).toContain('Accounting Dev explicitly excluded as pinned');
+    expect(result.out).toContain(`Move each pin to ${path.join(xdg, 'ngdpbase', 'update-policy')}`);
+    expect(result.out).toMatch(/pinned \/\S+/);
   }, 60000);
 
   it('still updates an explicit manual checkout when the updater script is incomplete', () => {
@@ -451,7 +450,7 @@ describe('./server.sh update all', () => {
     const autoHead = git(auto, 'rev-parse', 'HEAD');
     const looseHead = git(loose, 'rev-parse', 'HEAD');
     const next = publish(primary(), '1.1.0');
-    writeUpdater([auto], [], 'OTHER="$UNRESOLVED"\n# pinned somewhere, path not given\n');
+    writeUpdater([auto], [], 'for d in ~/sites/*; do :; done\n');
     writePolicy([`manual ${manual}`]);
     writeJlist([
       { name: 'The Fairways', cwd: auto },
@@ -1044,45 +1043,6 @@ describe('./server.sh update all', () => {
       expect(fs.readlinkSync(lock)).toBe(String(process.pid));
     }, 60000);
 
-    it('N1: a pin that matches no checkout stops the run, naming it', () => {
-      const auto = cloneFrom(primary(), 'fairways');
-      const other = cloneFrom(primary(), 'encrypted');
-      const otherHead = git(other, 'rev-parse', 'HEAD');
-      publish(primary(), '1.1.0');
-      writeUpdater([auto], [path.join(tmp, 'sites', 'Encrypted-typo')]);
-      writeJlist([
-        { name: 'The Fairways', cwd: auto },
-        { name: 'ngdp-encrypted', cwd: other }
-      ]);
-
-      const result = run(['update', 'all']);
-
-      expect(result.status, result.out).toBe(3);
-      expect(result.out).toContain('Encrypted-typo');
-      expect(result.out).toContain('unknown ownership');
-      expect(git(other, 'rev-parse', 'HEAD')).toBe(otherHead);
-      expect(npmLines()).toEqual([]);
-    }, 60000);
-
-    it('N2: a single-word PM2 app name followed by (pinned) still pins', () => {
-      const auto = cloneFrom(primary(), 'fairways');
-      const named = cloneFrom(primary(), 'addons-instance');
-      const namedHead = git(named, 'rev-parse', 'HEAD');
-      publish(primary(), '1.1.0');
-      writeUpdater([auto], [], '# ngdpbase-addons (pinned)\n');
-      writeJlist([
-        { name: 'The Fairways', cwd: auto },
-        { name: 'ngdpbase-addons', cwd: named }
-      ]);
-
-      const result = run(['update', 'all']);
-
-      expect(result.status, result.out).toBe(0);
-      expect(result.out).toContain('skip (pinned)');
-      expect(git(named, 'rev-parse', 'HEAD')).toBe(namedHead);
-      expect(installsFor(named)).toEqual([]);
-    }, 60000);
-
     it('N3: run through a symlinked checkout path, discovery finds the same checkouts as the real path', () => {
       const site = cloneFrom(primary(), 'addons');
       publish(primary(), '1.1.0');
@@ -1099,407 +1059,226 @@ describe('./server.sh update all', () => {
       expect(linked.out).toContain(fs.realpathSync(site));
       expect(linked.out).not.toContain('No ngdpbase checkouts');
     }, 60000);
+  });
 
-    it('N1: a (pinned) basename with the wrong case blocks the run and names the pin', () => {
-      const auto = cloneFrom(primary(), 'fairways');
-      const held = cloneFrom(primary(), 'ngdpbase-accounting');
-      const other = cloneFrom(primary(), 'encrypted');
-      const heads = [held, other].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+});
+
+describe('pins come only from policy files', () => {
+  const primary = (): Origin => ({ bare: origin, seed });
+  const policyFile = (): string => path.join(xdg, 'ngdpbase', 'update-policy');
+
+  it('honours valid pinned, manual and auto lines in update-policy', () => {
+    const pinned = cloneFrom(primary(), 'accounting');
+    const manual = cloneFrom(primary(), 'addons');
+    const auto = cloneFrom(primary(), 'fairways');
+    const pinnedHead = git(pinned, 'rev-parse', 'HEAD');
+    const autoHead = git(auto, 'rev-parse', 'HEAD');
+    const next = publish(primary(), '1.1.0');
+    writePolicy(['# pins live here', `pinned ${pinned}`, `manual '${manual}'`, `  auto ${auto}  `]);
+    writeJlist([
+      { name: 'Accounting Dev', cwd: pinned },
+      { name: 'ngdpbase-addons', cwd: manual },
+      { name: 'The Fairways', cwd: auto }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(0);
+    expect(git(pinned, 'rev-parse', 'HEAD')).toBe(pinnedHead);
+    expect(git(manual, 'rev-parse', 'HEAD')).toBe(next);
+    expect(git(auto, 'rev-parse', 'HEAD')).toBe(autoHead);
+    expect(result.out).toContain('skip (pinned)');
+    expect(result.out).toContain('skip (automatic)');
+  }, 60000);
+
+  const invalid: Array<[string, (site: string) => string, string]> = [
+    ['an unknown kind', (site) => `pinnned ${site}`, '"pinnned" is not auto, pinned, or manual'],
+    ['a relative path', () => 'pinned sites/accounting', 'the path is not absolute'],
+    ['no path', () => 'pinned', 'the path is not absolute'],
+    ['a missing directory', (site) => `pinned ${site}-typo`, 'is not a directory'],
+    ['a path that cannot be resolved', () => 'pinned /proc/1/root/nonexistent-ngdp', 'is not a directory']
+  ];
+  for (const [label, line, reason] of invalid) {
+    it(`stops on ${label} in update-policy, naming file:line, and updates nothing`, () => {
+      const pinned = cloneFrom(primary(), 'accounting');
+      const manual = cloneFrom(primary(), 'addons');
+      const heads = [pinned, manual].map((dir) => git(dir, 'rev-parse', 'HEAD'));
       publish(primary(), '1.1.0');
-      writeUpdater([auto], [], '# Ngdpbase-Accounting (pinned)\n');
+      writePolicy([`manual ${manual}`, '', line(pinned)]);
       writeJlist([
-        { name: 'The Fairways', cwd: auto },
-        { name: 'Accounting Dev', cwd: held },
-        { name: 'ngdp-encrypted', cwd: other }
+        { name: 'Accounting Dev', cwd: pinned },
+        { name: 'ngdpbase-addons', cwd: manual }
       ]);
 
       const result = run(['update', 'all']);
 
       expect(result.status, result.out).toBe(3);
-      expect(result.out).toContain('Ngdpbase-Accounting');
-      expect(result.out).toContain('unknown ownership');
-      expect([held, other].map((dir) => git(dir, 'rev-parse', 'HEAD'))).toEqual(heads);
+      expect(result.out).toContain(`${policyFile()}:3: `);
+      expect(result.out).toContain(reason);
+      expect(result.out).toContain('Nothing was updated');
+      [pinned, manual].forEach((dir, index) => {
+        expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
+      });
       expect(npmLines()).toEqual([]);
     }, 60000);
+  }
 
-    it('N4: other PM2 app names on a (pinned) comment line stay pinned', () => {
-      const rows = classifyScript(
-        ['# Not here: geohazardwatch, yourphr, ngdpbase-accounting (pinned)', 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n'),
-        '/updater.sh',
-        ['geohazardwatch', 'yourphr', 'Accounting Dev']
-      );
-      expect(rows.filter((row) => row[0] === 'name').map((row) => row[2])).toEqual(['geohazardwatch', 'yourphr']);
-      expect(rows.filter((row) => row[0] === 'basename').map((row) => row[2])).toEqual(['ngdpbase-accounting']);
+  it('stops on a checkout policy file that is not one of the three words, naming file:line', () => {
+    const site = cloneFrom(primary(), 'accounting');
+    const manual = cloneFrom(primary(), 'addons');
+    const heads = [site, manual].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+    fs.writeFileSync(path.join(site, '.ngdpbase-update-policy'), '\npinnned\n');
+    publish(primary(), '1.1.0');
+    writePolicy([`manual ${site}`, `manual ${manual}`]);
+    writeJlist([
+      { name: 'Accounting Dev', cwd: site },
+      { name: 'ngdpbase-addons', cwd: manual }
+    ]);
+
+    const result = run(['update', 'all']);
+
+    expect(result.status, result.out).toBe(3);
+    expect(result.out).toContain(`${fs.realpathSync(site)}/.ngdpbase-update-policy:2: `);
+    [site, manual].forEach((dir, index) => {
+      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
     });
+  }, 60000);
+});
 
-    it('N5: every ambiguous pin reason is shown', () => {
-      const a1 = cloneFrom(primary(), 'one/ngdpbase-accounting');
-      const a2 = cloneFrom(primary(), 'two/ngdpbase-accounting');
-      const b1 = cloneFrom(primary(), 'one/ngdpbase-reports');
-      const b2 = cloneFrom(primary(), 'two/ngdpbase-reports');
-      const auto = cloneFrom(primary(), 'fairways');
-      writeUpdater([auto], [], '# ngdpbase-accounting (pinned), ngdpbase-reports (pinned)\n');
-      writeJlist([
-        { name: 'Acc one', cwd: a1 },
-        { name: 'Acc two', cwd: a2 },
-        { name: 'Rep one', cwd: b1 },
-        { name: 'Rep two', cwd: b2 },
-        { name: 'The Fairways', cwd: auto }
-      ]);
+describe('pin wording in an updater script blocks', () => {
+  const wrap = (lines: string[]): string =>
+    [
+      '#!/bin/bash',
+      'SITES=(',
+      '  /srv/sites/wiki',
+      '  /srv/sites/fairways',
+      ')',
+      ...lines,
+      'for site in "${SITES[@]}"; do',
+      '  (cd "$site" && ./server.sh update "$TAG")',
+      'done',
+      ''
+    ].join('\n');
+  const pinRows = (lines: string[]): string[][] =>
+    classifyScript(wrap(lines), '/updater.sh').filter((row: string[]) => row[0] === 'note' && row[1] === 'pinword');
 
-      const result = run(['update', 'all', '--dry-run']);
+  const blocked: string[][] = [
+    ['PINNED=(/var)'],
+    ['PINNED=()'],
+    ['pinned=(/var)'],
+    ['PINS=(/var)'],
+    ['EXCLUDE=/var'],
+    ['EXCLUDED=(/var)'],
+    ['SKIP=/var'],
+    ['SKIPPED=(/var)'],
+    ['OLD_PINNED=(/var)'],
+    ['OLD_PINS=(/var)'],
+    ['site_exclude=/var'],
+    ['MY_SKIP=/var'],
+    ['PINNED_SITES=(/var)'],
+    ['SKIP_SITES=(/var)'],
+    ['declare -ga PINNED=(/var)'],
+    ['declare -r PINNED=(/var)'],
+    ['f() {', '  local -a PINNED=(/var)', '}'],
+    ['PINNED[0]=/var'],
+    ['PINNED[0]="$HOME/x"'],
+    ['eval "PINNED=(/var)"'],
+    ["eval 'PINNED=($HOME/x)'"],
+    ['printf -v PINNED %s /var'],
+    ['declare -a \\', '  PINNED=(/var)'],
+    ['PINNED=(', '\t/var\r', ')'],
+    ['PINNED+=(/var)'],
+    ['PINNED+=("$HOME/x")'],
+    ['export PINNED=(/var)'],
+    ['declare -a PINNED=("$HOME/x")'],
+    ['mapfile -t PINNED < /etc/pins'],
+    ['read -ra PINNED <<< "/var"'],
+    ['read -r -d "" PINNED_LIST <<EOF', '/var', 'EOF'],
+    ['mapfile -t PINS <<EOF', '/var', 'EOF'],
+    ['PINNED=$(cat <<EOF', '/var', 'EOF', ')'],
+    ['set -- /var; PINNED=("$@")'],
+    ['PINNED=\\', '(/var)'],
+    ['true; PINNED=(/var)'],
+    ['PINNED=/usr:$HOME/x'],
+    ['readonly PINNED="$HOME/x"'],
+    ['PINNED=(', '  ~/x', ')'],
+    ['PINNED=(', '  "/srv/a) b"  # ) in a comment', ')'],
+    ['declare -n ref=PINNED'],
+    ['[ -n "$SKIP" ] && exit 0'],
+    ['for p in "${PINNED[@]}"; do :; done'],
+    ['pin /var'],
+    ['pin "$HOME/x"'],
+    ['source ~/.config/ngdp/pinned.conf'],
+    ['. ~/pins.sh'],
+    ['# Pinned: /var'],
+    ['# pinned: /usr $HOME/sites/wiki'],
+    ['# pinned-sites: /var'],
+    ['# pinned_dirs: /var'],
+    ['# /usr (pinned)'],
+    ['# Pins: /var'],
+    ['# Pinning /var at 5.42 until the plugin is fixed'],
+    ['# hold /var at 5.42'],
+    ['# /var is frozen'],
+    ['# freeze /var'],
+    ['# do not update /var'],
+    ['# Pinned checkouts:', '#   /srv/a', '#   ~/sites/old'],
+    ['# Excluded: wiki-prod'],
+    ['# skip a checkout that has local changes'],
+    ['echo start # skipped on Sundays']
+  ];
+  for (const lines of blocked) {
+    it(`blocks ${JSON.stringify(lines.join(' / '))}`, () => {
+      expect(pinRows(lines).length).toBeGreaterThan(0);
+    });
+  }
 
-      expect(result.status, result.out).toBe(3);
-      const why = result.out.split('\n').find((line) => line.includes('ownership is incomplete')) ?? '';
-      expect(why).toContain('basename ngdpbase-accounting');
-      expect(why).toContain('basename ngdpbase-reports');
-    }, 60000);
+  const allowed: string[][] = [
+    ['THRESHOLD=90'],
+    ['PLACEHOLDER=x'],
+    ['SPINNER_PID=$!'],
+    ['HOLD_SECONDS=5'],
+    ['MAPPING=foo'],
+    ['PINO_LOG_LEVEL=info'],
+    ['TAG=v1.0.0'],
+    ['# update every site at 3am'],
+    [
+      'for s in "${SITES[@]}"; do',
+      '  skip=0',
+      '  for p in /x; do [ "$s" = "$p" ] && skip=1; done',
+      '  [ "$skip" -eq 1 ] && continue',
+      'done'
+    ],
+    ['local skip=false']
+  ];
+  for (const lines of allowed) {
+    it(`does not block ${JSON.stringify(lines.join(' / '))}`, () => {
+      expect(pinRows(lines)).toEqual([]);
+    });
+  }
 
-    it('N6: a stopped PM2 entry does not count as a running checkout for a pin', () => {
-      const live = cloneFrom(primary(), 'one/ngdpbase-accounting');
-      const stopped = cloneFrom(primary(), 'two/ngdpbase-accounting');
-      const auto = cloneFrom(primary(), 'fairways');
-      writeUpdater([auto], [], '# ngdpbase-accounting (pinned)\n');
-      writeJlist([
-        { name: 'Acc live', cwd: live },
-        { name: 'Acc stopped', cwd: stopped, status: 'stopped' },
-        { name: 'The Fairways', cwd: auto }
-      ]);
-
-      const result = run(['update', 'all', '--dry-run']);
-
-      expect(result.out).not.toContain('2 running checkouts use it');
-      expect(result.out).not.toContain('unknown ownership');
-      expect(result.status, result.out).toBe(0);
-      expect(result.out).toContain('skip (pinned)');
-    }, 60000);
+  it('names the script line in the block', () => {
+    const rows = pinRows(['# hold /var at 5.42']);
+    expect(rows[0][2]).toMatch(/^6: a comment with pin wording: # hold \/var at 5\.42$/);
   });
 
-  it('dry-runs the updater comment that pins one directory basename', () => {
-    const place = (rel: string): string => {
-      const dir = path.join(tmp, rel);
-      fs.mkdirSync(path.dirname(dir), { recursive: true });
-      git(tmp, 'clone', '-q', origin, dir);
-      writeInstanceEnv(dir);
-      return dir;
-    };
-    const jimstest = place('github/ngdpbase');
-    const fairways = place('github/fairways-base');
-    const yourphr = place('github/ngdpbase-yourphr');
-    const accounting = place('github/ngdpbase-accounting');
-    const addons = place('instances/ngdpbase-addons-instance');
-    const encrypted = place('github/ngdpbase-encrypted');
-    const tempBuild = path.join(tmp, 'temp-builds', 'ngdpbase');
-    const heads = [jimstest, fairways, yourphr, accounting, addons, encrypted].map((dir) => git(dir, 'rev-parse', 'HEAD'));
-    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, [
+  it('still reads the site list as automatic and reads no pins from Jim\'s updater', () => {
+    const fixture = [
       '# Order matters: jimstest first, then satellites. Not here on purpose:',
       '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
       'SITES=(',
-      `  ${jimstest}`,
-      `  ${fairways}`,
-      `  ${yourphr}`,
-      `  ${tempBuild}`,
-      ')',
-      'TAG=v1.0.0',
-      'for site in "${SITES[@]}"; do',
-      '  (cd "$site" && ./server.sh update "$TAG")',
-      'done',
-      '# skip a checkout that has local changes',
-      ''
-    ].join('\n'));
-    const agents = path.join(home, 'Library', 'LaunchAgents');
-    fs.mkdirSync(agents, { recursive: true });
-    fs.writeFileSync(path.join(agents, 'com.example.ngdp-autoupdate.plist'), [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
-      `<string>${script}</string>`,
-      '</array></dict></plist>',
-      ''
-    ].join('\n'));
-    writeJlist([
-      { name: 'jimstest', cwd: jimstest },
-      { name: 'The Fairways', cwd: fairways },
-      { name: 'ngdpbase-yourphr', cwd: yourphr },
-      { name: 'Accounting Dev', cwd: accounting },
-      { name: 'ngdpbase-addons', cwd: addons },
-      { name: 'ngdp-encrypted', cwd: encrypted }
-    ]);
-
-    const result = run(['update', 'all', '--dry-run']);
-
-    expect(result.status, result.out).toBe(0);
-    expect(result.out).not.toContain('ambiguous-pin');
-    expect(result.out).not.toContain('unknown ownership');
-    expect(result.out.match(/skip \(automatic\)/g)).toHaveLength(3);
-    expect(result.out).toContain('skip (pinned)');
-    expect(result.out).toContain(accounting);
-    expect(result.out).not.toContain('site list stays authoritative');
-    const blocks = result.out.split(/\n(?=\[\d+\/\d+\])/);
-    const yourBlock = blocks.find((block) => block.includes(yourphr));
-    expect(yourBlock).toContain('skip (automatic)');
-    expect(yourBlock).not.toContain('skip (pinned)');
-    expect(result.out.match(/dry-run: would run: \.\/server\.sh update/g)).toEqual([
-      'dry-run: would run: ./server.sh update',
-      'dry-run: would run: ./server.sh update'
-    ]);
-    expect(blocks.find((block) => block.includes(addons))).toContain('dry-run: would run: ./server.sh update');
-    expect(blocks.find((block) => block.includes(encrypted))).toContain('dry-run: would run: ./server.sh update');
-    expect(npmLines()).toEqual([]);
-    [jimstest, fairways, yourphr, accounting, addons, encrypted].forEach((dir, index) => {
-      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
-    });
-  }, 60000);
-
-  it('does not guess when two checkouts share a pinned directory basename', () => {
-    const place = (rel: string): string => {
-      const dir = path.join(tmp, rel);
-      fs.mkdirSync(path.dirname(dir), { recursive: true });
-      git(tmp, 'clone', '-q', origin, dir);
-      writeInstanceEnv(dir);
-      return dir;
-    };
-    const first = place('one/ngdpbase-accounting');
-    const second = place('two/ngdpbase-accounting');
-    const auto = place('github/fairways-base');
-    const other = place('instances/ngdpbase-addons-instance');
-    const heads = [first, second, auto, other].map((dir) => git(dir, 'rev-parse', 'HEAD'));
-    const script = path.join(home, 'bin', 'ngdp-autoupdate.sh');
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, [
-      '# ngdpbase-accounting (pinned)',
-      'SITES=(',
-      `  ${auto}`,
+      '  /Volumes/hd2A/workspaces/github/ngdpbase',
+      '  /Volumes/hd2A/workspaces/github/fairways-base',
       ')',
       'for site in "${SITES[@]}"; do',
       '  (cd "$site" && ./server.sh update "$TAG")',
       'done',
       ''
-    ].join('\n'));
-    const agents = path.join(home, 'Library', 'LaunchAgents');
-    fs.mkdirSync(agents, { recursive: true });
-    fs.writeFileSync(path.join(agents, 'com.example.collide.plist'), [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<plist version="1.0"><dict><key>ProgramArguments</key><array>',
-      `<string>${script}</string>`,
-      '</array></dict></plist>',
-      ''
-    ].join('\n'));
-    writeJlist([
-      { name: 'Accounting Dev', cwd: first },
-      { name: 'Accounting Dev copy', cwd: second },
-      { name: 'The Fairways', cwd: auto },
-      { name: 'ngdpbase-addons', cwd: other }
-    ]);
-
-    const result = run(['update', 'all', '--dry-run']);
-
-    expect(result.status, result.out).toBe(3);
-    expect(result.out).toContain('2 running checkouts use it');
-    expect(result.out).toContain('unknown ownership');
-    expect(result.out).not.toContain('dry-run: would run:');
-    expect(npmLines()).toEqual([]);
-    [first, second, auto, other].forEach((dir, index) => {
-      expect(git(dir, 'rev-parse', 'HEAD')).toBe(heads[index]);
-    });
-  }, 60000);
-});
-
-describe('updater comment fixture', () => {
-  const fixture = [
-    '# Order matters: jimstest first, then satellites. Not here on purpose:',
-    '# geohazardwatch, yourphr, ngdpbase-accounting (pinned), worktrees.',
-    'SITES=(',
-    '  /Volumes/hd2A/workspaces/github/ngdpbase',
-    '  /Volumes/hd2A/workspaces/github/fairways-base',
-    '  /Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
-    '  /Volumes/hd2/ngdp-temp-builds/ngdpbase',
-    ')',
-    'for site in "${SITES[@]}"; do',
-    '  (cd "$site" && ./server.sh update "$TAG")',
-    'done',
-    '# skip a checkout that has local changes',
-    ''
-  ].join('\n');
-
-  it('keeps the site list authoritative and pins the marked basename and the other named app', () => {
-    const rows = classifyScript(fixture, '/updater.sh', [
-      'Accounting Dev',
-      'yourphr',
-      'jimstest',
-      'The Fairways',
-      'ngdpbase-yourphr'
-    ]);
-    const autos = rows.filter((row) => row[0] === 'path' && row[1] === 'auto').map((row) => row[2]);
-    expect(autos).toEqual([
-      '/Volumes/hd2A/workspaces/github/ngdpbase',
-      '/Volumes/hd2A/workspaces/github/fairways-base',
-      '/Volumes/hd2A/workspaces/github/ngdpbase-yourphr',
-      '/Volumes/hd2/ngdp-temp-builds/ngdpbase'
-    ]);
-    expect(rows.filter((row) => row[0] === 'basename')).toEqual([
-      ['basename', 'pinned', 'ngdpbase-accounting', '/updater.sh']
-    ]);
-    // N4: the other PM2 app name on the pin line stays pinned.
-    expect(rows.filter((row) => row[0] === 'name')).toEqual([['name', 'pinned', 'yourphr', '/updater.sh']]);
-    expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
+    ].join('\n');
+    const rows = classifyScript(fixture, '/updater.sh');
+    expect(rows.filter((row: string[]) => row[0] === 'path').map((row: string[]) => row[1])).toEqual(['auto', 'auto']);
+    expect(rows.filter((row: string[]) => row[1] === 'pinword').map((row: string[]) => row[2].split(':')[0])).toEqual(['2']);
+    expect(rows.some((row: string[]) => row[1] === 'pinned')).toBe(false);
   });
-});
-
-describe('a pin line that pins nothing blocks even beside a real pin', () => {
-  const wrap = (pinLines: string[]) =>
-    ['# /tmp (pinned)', ...pinLines, 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n');
-  const blocks = (text: string, names: string[]) =>
-    classifyScript(text, '/updater.sh', names).filter((row) => row[0] === 'note' && row[1] === 'block');
-
-  it('control: the real pin alone does not block', () => {
-    expect(blocks(wrap([]), ['wiki-prod'])).toEqual([]);
-  });
-
-  it('blocks on an unmatched short basename', () => {
-    expect(blocks(wrap(['# blog (pinned)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('# blog (pinned)');
-  });
-
-  it('blocks on a case mismatch with a PM2 app name', () => {
-    expect(blocks(wrap(['# skip Wiki-Prod']), ['wiki-prod']).map((r) => r[2]).join()).toContain('Wiki-Prod');
-  });
-
-  it('pins array names that are PM2 apps and blocks on names that are not', () => {
-    const rows = classifyScript(wrap(['PINNED=(wiki-prod)']), '/updater.sh', ['wiki-prod']);
-    expect(rows.filter((r) => r[0] === 'name').map((r) => r[2])).toEqual(['wiki-prod']);
-    expect(blocks(wrap(['PINNED=(wiki-prod)']), ['wiki-prod'])).toEqual([]);
-    expect(blocks(wrap(['PINNED=(wiki-prd)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('wiki-prd');
-  });
-
-  it('blocks on a $HOME path pin', () => {
-    expect(blocks(wrap(['# $HOME/sites/wiki (pinned)']), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
-  });
-
-  describe('a pin array entry built from a variable blocks and is named', () => {
-    const quoted = ['PINNED=(/srv/old-site "$HOME/sites/wiki")'];
-    const multiLine = ['PINNED=(', '  /srv/old-site', '  ${SITES_DIR}/wiki', ')'];
-    const bare = (pinLines: string[]) =>
-      [...pinLines, 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n');
-
-    it('single-line quoted $HOME entry, beside another pin', () => {
-      expect(blocks(wrap(quoted), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
-    });
-
-    it('single-line quoted $HOME entry, as the only pin', () => {
-      expect(blocks(bare(quoted), ['wiki-prod']).map((r) => r[2]).join()).toContain('$HOME/sites/wiki');
-    });
-
-    it('multi-line ${SITES_DIR} entry, beside another pin', () => {
-      expect(blocks(wrap(multiLine), ['wiki-prod']).map((r) => r[2]).join()).toContain('${SITES_DIR}/wiki');
-    });
-
-    it('multi-line ${SITES_DIR} entry, as the only pin', () => {
-      expect(blocks(bare(multiLine), ['wiki-prod']).map((r) => r[2]).join()).toContain('${SITES_DIR}/wiki');
-    });
-  });
-
-  it('counts a PM2 app name in a pin array when it is the only pin', () => {
-    const text = ['PINNED=(wiki-prod)', 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join(
-      '\n'
-    );
-    const rows = classifyScript(text, '/updater.sh', ['wiki-prod']);
-    expect(rows.filter((r) => r[0] === 'name').map((r) => r[2])).toEqual(['wiki-prod']);
-    expect(blocks(text, ['wiki-prod'])).toEqual([]);
-  });
-});
-
-describe('every pin line is read in full or blocks', () => {
-  const tail = ['SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''];
-  const layouts: [string, (pinLines: string[]) => string][] = [
-    ['alone', (pinLines) => [...pinLines, ...tail].join('\n')],
-    ['beside another pin', (pinLines) => ['# /usr (pinned)', ...pinLines, ...tail].join('\n')]
-  ];
-  const rowsFor = (text: string) => classifyScript(text, '/updater.sh', ['wiki-prod']);
-  const blockText = (text: string) =>
-    rowsFor(text)
-      .filter((row) => row[0] === 'note' && row[1] === 'block')
-      .map((row) => row[2])
-      .join('\n');
-  const pinnedPaths = (text: string) => rowsFor(text).filter((row) => row[0] === 'path' && row[1] === 'pinned').map((row) => row[2]);
-  const pinnedNames = (text: string) => rowsFor(text).filter((row) => row[0] === 'name').map((row) => row[2]);
-  const varPath = fs.realpathSync('/var');
-
-  const prefixes = ['declare -a ', 'declare -ga ', 'typeset -a ', 'readonly ', 'readonly -a ', 'local ', 'export ', '  local -a '];
-
-  // Literal entries in every prefixed form are pinned, one-line and multi-line.
-  const literal: [string, string[]][] = [];
-  for (const prefix of prefixes) {
-    literal.push([`${prefix}PINNED=(/var wiki-prod)`, [`${prefix}PINNED=(/var wiki-prod)`]]);
-    literal.push([`${prefix}SKIP=( multi-line )`, [`${prefix}SKIP=(`, '  /var', '  wiki-prod', ')']]);
-  }
-  literal.push(['PINNED+=(/var wiki-prod)', ['PINNED+=(/var wiki-prod)']]);
-  literal.push(['PINNED+=( multi-line )', ['PINNED+=(', '  /var', '  wiki-prod', ')']]);
-  literal.push(['exclude=(/var wiki-prod) in lower case', ['exclude=(/var wiki-prod)']]);
-  literal.push(['PINNED=/var:wiki-prod string', ['PINNED=/var:wiki-prod']]);
-  literal.push(['local in a function', ['pins() {', '  local PINNED=(', '    /var', '    wiki-prod', '  )', '}']]);
-
-  for (const [label, pinLines] of literal) {
-    for (const [layout, build] of layouts) {
-      it(`pins /var and wiki-prod from ${label}, ${layout}`, () => {
-        const text = build(pinLines);
-        expect(pinnedPaths(text)).toContain(varPath);
-        expect(pinnedNames(text)).toContain('wiki-prod');
-        expect(blockText(text)).toBe('');
-      });
-    }
-  }
-
-  // A variable, command or ~ left on any pin line blocks and is named, even next to a literal pin.
-  const unresolved: [string, string[], string][] = [];
-  for (const prefix of prefixes) {
-    unresolved.push([`${prefix}PINNED=(/var "$HOME/x")`, [`${prefix}PINNED=(/var "$HOME/x")`], '$HOME/x']);
-    unresolved.push([`${prefix}PINNED=( multi-line $HOME )`, [`${prefix}PINNED=(`, '  /var', '  "$HOME/x"', ')'], '$HOME/x']);
-  }
-  unresolved.push(['PINNED+=(/var "$HOME/x") after PINNED=(/var)', ['PINNED=(/var)', 'PINNED+=(/var "$HOME/x")'], '$HOME/x']);
-  unresolved.push(['PINNED+=( multi-line $HOME )', ['PINNED=(/var)', 'PINNED+=(', '  /var', '  ${SITES_DIR}/wiki', ')'], '${SITES_DIR}/wiki']);
-  unresolved.push(['PINNED=/var:$HOME/x string', ['PINNED=/var:$HOME/x'], '$HOME/x']);
-  unresolved.push(['export PINNED="/var $HOME/x" string', ['export PINNED="/var $HOME/x"'], '$HOME/x']);
-  unresolved.push(['PINNED=~/wiki string', ['PINNED=~/wiki'], '~/wiki']);
-  unresolved.push(['PINNED=(/var `cat /etc/pins`)', ['PINNED=(/var `cat /etc/pins`)'], '`cat']);
-  unresolved.push(['# pinned: /var $HOME/sites/wiki', ['# pinned: /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
-  unresolved.push(['# pinned: then /var $HOME/sites/wiki on the next comment', ['# pinned:', '#   /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
-  unresolved.push(['# /var (pinned) and ~/wiki', ['# /var (pinned) and ~/wiki'], '~/wiki']);
-  unresolved.push(['a $VAR in the comment of a pin array line', ['PINNED=(/var)  # also $HOME/x'], '$HOME/x']);
-  unresolved.push(['a $VAR comment inside a multi-line pin array', ['declare -a PINNED=(', '  /var', '  # $HOME/x', ')'], '$HOME/x']);
-
-  for (const [layout, build] of layouts) {
-    it(`pins a path in the comment of a pin array line, ${layout}`, () => {
-      const text = build(['declare -a PINNED=(/var)  # and /tmp']);
-      expect(pinnedPaths(text)).toEqual(expect.arrayContaining([varPath, fs.realpathSync('/tmp')]));
-      expect(blockText(text)).toBe('');
-    });
-  }
-
-  for (const [label, pinLines, named] of unresolved) {
-    for (const [layout, build] of layouts) {
-      it(`blocks on ${label}, ${layout}`, () => {
-        expect(blockText(build(pinLines))).toContain(named);
-      });
-    }
-  }
-
-  // A pin variable filled in a way the scan does not read blocks, naming the line.
-  const unreadable: [string, string[], string][] = [];
-  unreadable.push(['a pin array opened mid-line', ['true; PINNED=(/var)'], 'true; PINNED=(/var)']);
-  unreadable.push(['a multi-line pin array opened mid-line', ['true; PINNED=(', '  /srv/unread-site', ')'], 'true; PINNED=(']);
-  // A quoted string is one path, as in an array, so a space-separated list in quotes names a path that does not exist.
-  unreadable.push(['a quoted space-separated pin string', ['export PINNED="/var wiki-prod"'], '/var wiki-prod']);
-  unreadable.push(['readarray into a pin array', ['readarray -t PINNED < /etc/pins'], 'readarray -t PINNED']);
-  unreadable.push(['an indexed pin assignment with a variable', ['PINNED[0]=$HOME/x'], '$HOME/x']);
-
-  for (const [label, pinLines, named] of unreadable) {
-    for (const [layout, build] of layouts) {
-      it(`blocks on ${label}, ${layout}`, () => {
-        expect(blockText(build(pinLines))).toContain(named);
-      });
-    }
-  }
 });
 
 describe('update-all-scan.mjs process entry', () => {
