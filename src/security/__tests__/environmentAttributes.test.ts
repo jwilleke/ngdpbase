@@ -354,20 +354,39 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
     });
 
     test.each([
-      ['a time that is not a time of day', rule({ startTime: '9am' }), 'startTime'],
-      ['an end time that is not a time of day', rule({ endTime: '25:00' }), 'endTime'],
-      ['only one of the two times', rule({ endTime: undefined }), 'endTime'],
-      ['a day that is not a weekday', rule({ days: ['monday', 'funday'] }), 'days'],
-      ['days that are not a list', rule({ days: 'monday' }), 'days'],
+      ['a time that is not a time of day', rule({ startTime: '9am' }), 'rules[0].startTime'],
+      ['an end time that is not a time of day', rule({ endTime: '25:00' }), 'rules[0].endTime'],
+      ['only one of the two times', rule({ endTime: undefined }), 'rules[0].endTime'],
+      ['only an end time', rule({ startTime: undefined }), 'rules[0].startTime'],
+      ['a day that is not a weekday', rule({ days: ['monday', 'funday'] }), 'rules[0].days'],
+      ['days that are not a list', rule({ days: 'monday' }), 'rules[0].days'],
+      ['an empty days list', rule({ days: [] }), 'rules[0].days'],
       ['rules that are not a list', { timeZone: 'America/New_York', rules: 'always' }, 'rules'],
-      ['a rule that is not an object', { timeZone: 'America/New_York', rules: ['monday'] }, 'rule 1'],
-      ['a time zone that does not exist', rule({}) && { ...rule({}), timeZone: 'Mars/Olympus' }, 'timeZone'],
+      ['a rule that is a text', { timeZone: 'America/New_York', rules: ['monday'] }, 'rules[0]'],
+      ['a rule that is an array', { timeZone: 'America/New_York', rules: [[]] }, 'rules[0]'],
+      ['a rule that is null', { timeZone: 'America/New_York', rules: [null] }, 'rules[0]'],
+      ['a bad second rule is named by its index', { timeZone: 'America/New_York', rules: [{ days: ['monday'] }, { dayz: ['monday'] }] }, 'rules[1].dayz'],
+      ['misspelled days (dayz)', rule({ days: undefined, dayz: ['monday'] }), 'rules[0].dayz'],
+      ['misspelled start and end (start, end)', rule({ startTime: undefined, endTime: undefined, start: '09:00', end: '10:00' }), 'rules[0].start'],
+      ['misspelled startTime (startime)', rule({ startTime: undefined, startime: '09:00' }), 'rules[0].startime'],
+      ['misspelled endTime (endtime)', rule({ endTime: undefined, endtime: '17:00' }), 'rules[0].endtime'],
+      ['an unknown rule key', rule({ priority: 1 }), 'rules[0].priority'],
+      ['times on a deny rule, which the site gate ignores', rule({ type: 'deny' }), 'rules[0].startTime'],
+      ['an end time alone on a deny rule', rule({ type: 'deny', startTime: undefined }), 'rules[0].endTime'],
+      ['an unknown top-level key', { ...rule({}), rulez: [] }, 'rulez'],
+      ['a misspelled time zone key (timezone)', { rules: rule({}).rules, timezone: 'America/New_York' }, 'timezone'],
+      ['a non-empty exceptions list, which nothing reads', { ...rule({}), exceptions: ['2026-12-25'] }, 'exceptions'],
+      ['exceptions that is not a list', { ...rule({}), exceptions: 'none' }, 'exceptions'],
+      ['a name that is not text', { ...rule({}), name: 5 }, 'name'],
+      ['a message that is not text', { ...rule({}), message: {} }, 'message'],
+      ['a time zone that does not exist', { ...rule({}), timeZone: 'Mars/Olympus' }, 'timeZone'],
       ['a time zone that is not text', { ...rule({}), timeZone: 5 }, 'timeZone'],
-      ['a rule type "Deny" (wrong case) that would read as allow', rule({ type: 'Deny' }), 'type'],
-      ['a rule type that is not allow or deny', rule({ type: 'block' }), 'type'],
-      ['a rule type that is not text', rule({ type: true }), 'type'],
-      ['an empty days list', rule({ days: [] }), 'days'],
-      ['enabled that is not a boolean ("false" as text)', { ...rule({}), enabled: 'false' }, 'enabled']
+      ['a rule type "Deny" (wrong case) that would read as allow', rule({ type: 'Deny' }), 'rules[0].type'],
+      ['a rule type that is not allow or deny', rule({ type: 'block' }), 'rules[0].type'],
+      ['a rule type that is not text', rule({ type: true }), 'rules[0].type'],
+      ['a null rule type', rule({ type: null }), 'rules[0].type'],
+      ['enabled that is not a boolean ("false" as text)', { ...rule({}), enabled: 'false' }, 'enabled'],
+      ['a schedule that is an array', [], 'not an object']
     ])('%s: the attribute is missing (not open), an allow does not apply, and the boot log names the schedule and the field', async (_label, schedule, field) => {
       const warn = vi.spyOn(logger, 'warn');
       try {
@@ -383,15 +402,23 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
         const said = warn.mock.calls.map((c) => c.join(' ')).filter((l) => l.includes("schedule 'business-hours'")).join('\n');
         expect(said).toContain(field);
         expect(said).toContain('cannot be read');
+        expect(scheduleProblem(schedule as never, 'UTC')).toContain(field);
       } finally {
         warn.mockRestore();
       }
     });
 
+    test('the shapes the shipped schedules use are accepted: name, description, message, empty exceptions, a deny rule with days only, a rule with no keys', () => {
+      const shipped = { name: 'x', description: 'y', message: 'z', timeZone: 'UTC', enabled: true, exceptions: [], rules: [{ days: ['Saturday', 'sunday'], type: 'deny' }, { days: ['monday'], startTime: '09:00', endTime: '17:00', type: 'allow' }, {}] };
+      expect(scheduleProblem(shipped, 'UTC')).toBeNull();
+      expect(scheduleProblem({}, 'UTC')).toBeNull();
+    });
+
     test('a rule with type allow, deny or no type is accepted', () => {
-      for (const type of ['allow', 'deny', undefined]) {
-        expect(scheduleProblem(rule({ type }), 'UTC')).toBeNull();
-      }
+      expect(scheduleProblem(rule({ type: 'allow' }), 'UTC')).toBeNull();
+      expect(scheduleProblem(rule({}), 'UTC')).toBeNull();
+      expect(scheduleProblem(rule({ type: undefined }), 'UTC')).toBeNull();
+      expect(scheduleProblem(rule({ type: 'deny', startTime: undefined, endTime: undefined }), 'UTC')).toBeNull();
     });
 
     test('readDeclaredAsWritten returns null, and never calls the resolving getProperty, when getUnresolvedProperty is missing', () => {
