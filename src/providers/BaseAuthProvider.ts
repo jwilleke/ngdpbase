@@ -74,6 +74,8 @@ export interface ViaToken {
   name: string;
   /** Scope ceiling this token may act within */
   scopes: string[];
+  /** The assurance level stored with the token when it was made (#2261); absent on an older token. */
+  aal?: 1 | 2 | 3;
 }
 
 /**

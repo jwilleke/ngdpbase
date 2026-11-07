@@ -705,6 +705,22 @@ describe('#1111 the token lifecycle is audited', () => {
     });
   });
 
+  test('a mint\'s record carries the level stored with the token, or null when none (#2287)', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    const at = (aal: number | null, extra: Record<string, unknown> = {}) =>
+      ({ ...subject('alice'), ...(aal === null ? {} : { signIn: { provider: 'password', factors: [], at: '2026-01-01T00:00:00Z', aal } }), ...extra }) as unknown as PermissionSubject;
+    const two = (await m.mint(at(2), 'two', ['page-read'])).record;
+    const one = (await m.mint(at(1), 'one', ['page-read'])).record;
+    const none = (await m.mint(at(3, { viaShare: { id: 's' } }), 'none', ['page-read'])).record;
+    const minted = (id: string) => events.find((e) => e.eventType === 'token-mint' && (e.metadata as { id: string }).id === id).metadata;
+    expect(minted(two.id)).toMatchObject({ aal: 2 });
+    expect(minted(one.id)).toMatchObject({ aal: 1 });
+    expect(minted(none.id)).toMatchObject({ aal: null });
+    expect(two.aal).toBe(2); // the audited level is the stored one
+  });
+
   test('a revoke is audited with who did it', async () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);
@@ -940,5 +956,69 @@ describe('#1734 extend', () => {
     (m as unknown as { engine: unknown }).engine = withAudit(true).engine;
     await expect(m.extend(record.id, subject('alice'), 1)).rejects.toThrow(/on-failure: refuse/i);
     expect(m.getById(record.id)!.expiresAt).toBe(record.expiresAt);
+  });
+});
+
+describe('#2261 — a token stores the sign-in level of the session that made it', () => {
+  const signIn = (aal: number) => ({ provider: 'password', factors: [], at: '2026-01-01T00:00:00Z', aal });
+  const session = (aal: number | null, extra: Record<string, unknown> = {}) =>
+    ({ ...subject('jim'), ...(aal === null ? {} : { signIn: signIn(aal) }), ...extra }) as unknown as PermissionSubject;
+
+  test('a token minted from an AAL2 session carries aal 2', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint(session(2), 'one', ['page-read']);
+    expect(record.aal).toBe(2);
+    expect(m.getById(record.id)?.aal).toBe(2);
+  });
+
+  test('a token minted from an AAL1 session carries 1', async () => {
+    const m = await makeManager();
+    expect((await m.mint(session(1), 'one', ['page-read'])).record.aal).toBe(1);
+  });
+
+  test('a session from before sign-ins were recorded mints at AAL 1', async () => {
+    const m = await makeManager();
+    expect((await m.mint(session(null), 'one', ['page-read'])).record.aal).toBe(1);
+  });
+
+  test('the stored level can never exceed the granting session\'s, whatever the request asks', async () => {
+    const m = await makeManager();
+    // Nothing in the request is read for it: not an `aal` on the subject, not one in a stray argument.
+    const forged = { ...session(1), aal: 3, grantedAal: 3 } as unknown as PermissionSubject;
+    const { record } = await (m.mint as (...a: unknown[]) => Promise<{ record: { aal?: number } }>)(forged, 'one', ['page-read'], 1, Date.now(), 3);
+    expect(record.aal).toBe(1);
+    // And the account\'s cap bounds it, as it bounds a role.
+    expect((await m.mint(session(3, { aalCap: 2 }), 'two', ['page-read'])).record.aal).toBe(2);
+  });
+
+  test('a token minted by a subject with no session level (a share) stores none', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint(session(3, { viaShare: { id: 's' } }), 'one', ['page-read']);
+    expect(record.aal).toBeUndefined();
+  });
+
+  test('the level comes back when the token is presented, for the provider to carry', async () => {
+    const m = await makeManager();
+    const { token } = await m.mint(session(2), 'one', ['page-read']);
+    expect((await m.verify(token))?.aal).toBe(2);
+  });
+
+  test('a token whose grant has no stored aal is missing: the record has none and verify returns none', async () => {
+    const m = await makeManager();
+    const { token, record } = await m.mint(session(2), 'old', ['page-read']);
+    // A token made before this change: the stored record has no `aal` at all.
+    const stored = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8')) as Record<string, Record<string, unknown>>;
+    delete stored[record.id].aal;
+    await fs.writeFile(path.join(tmpDir, 'agent-tokens.json'), JSON.stringify(stored));
+    const reloaded = await makeManager();
+    const verified = await reloaded.verify(token);
+    expect(verified).not.toBeNull();
+    expect(verified).not.toHaveProperty('aal');
+  });
+
+  test('the level survives a restart', async () => {
+    const m = await makeManager();
+    const { token } = await m.mint(session(2), 'one', ['page-read']);
+    expect((await (await makeManager()).verify(token))?.aal).toBe(2);
   });
 });

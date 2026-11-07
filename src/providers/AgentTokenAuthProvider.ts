@@ -65,7 +65,7 @@ export class AgentTokenAuthProvider implements AuthProvider {
 
     return {
       username: record.owner,
-      viaToken: { id: record.id, name: record.name, scopes: record.scopes }
+      viaToken: { id: record.id, name: record.name, scopes: record.scopes, ...(record.aal ? { aal: record.aal } : {}) }
     };
   }
 }

@@ -35,12 +35,15 @@ A record:
     "expiresAt": "2026-07-26T14:32:11Z",
     "lastUsedAt": "2026-07-25T18:04:02Z",
     "revokedAt": null,
-    "revokedBy": null
+    "revokedBy": null,
+    "aal": 2                        // the minting session's sign-in level; absent on a token made before it was stored
   }
 }
 ```
 
 `owner` is a __reference, not a copy of the user's roles.__ That is what makes permissions resolve live — demoting or disabling a user immediately weakens every token they hold.
+
+`aal` ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) is the one thing a token does keep from the session that made it: the sign-in level (1 to 3) that session had at that moment, capped at what the account's sign-in methods can reach. `mint` reads it from the subject it is given (`effectiveAal`), never from the request, so a token's level can never exceed its minting session's. A session with no sign-in record (from before sign-ins were recorded) mints at 1; a subject with no level of its own (a share) stores none. It is the token's `subject:aal` on every request: `AgentTokenAuthProvider` carries it on `viaToken.aal`. A token made before it was stored has none, so a policy condition on `subject:aal` is unknown for it and fails closed. The level is never raised later, and extending a token does not change it.
 
 ## Audit events
 
@@ -48,7 +51,7 @@ Mint, extend and revoke emit audit events through `AuditManager` ([#1111](https:
 
 | Event | `action` | Carries |
 |---|---|---|
-| `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
+| `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt`, `aal` (the level stored with the token, `null` when none) |
 | `token-extend` | `token-extend` | `id`, `owner`, `name`, `previousExpiresAt`, `expiresAt` |
 | `token-revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
 
@@ -74,7 +77,7 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 | Method | Purpose |
 |---|---|
-| `mint(subject, name, scopes, ttlHours?)` | `subject` is the owner's `PermissionSubject` from the session (#1178). Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. |
+| `mint(subject, name, scopes, ttlHours?)` | `subject` is the owner's `PermissionSubject` from the session (#1178). Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. The record's `aal` is the subject's sign-in level now (#2261). |
 | `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked, or minted under a proxy grant that is no longer in force. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
 | `listForOwner(owner)` | That owner's live tokens, without hashes. |
 | `listAll()` | Every live token — admin oversight. |

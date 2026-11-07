@@ -48,7 +48,8 @@ import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCat
 import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
 import { actorOf, decisionSubject, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { pageWriteAlternatives } from '../utils/permissionCatalog.js';
-import type { PageAttributes } from './PolicyInformationPoint.js';
+import type { PageAttributes, SubjectFacts } from './PolicyInformationPoint.js';
+import { aalFactsOf } from '../utils/policyAttributes.js';
 import micromatch from 'micromatch';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
@@ -74,7 +75,7 @@ interface SubjectSourceLike {
   resolveSubjectNow(username: string, job?: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean }>;
   subjectFor(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean } | null>;
   pageAttributes?(caller: unknown, pageName: string, knownMetadata?: Record<string, unknown> | null): Promise<PageAttributes>;
-  subjectAttribute?(subject: { username: string; isAuthenticated: boolean }, name: string): unknown;
+  subjectAttribute?(subject: SubjectFacts, name: string): unknown;
 }
 
 interface EvaluationLike { allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null; policyIds?: string[] }
@@ -626,7 +627,15 @@ export class PolicyDecisionPoint extends BaseManager {
     // and as `pushed-pages-<verb>` on the pushed ones; either is the right.
     const actions = pageWriteAlternatives(action);
     const pip = this.informationPoint();
-    const readSubject = (name: string): unknown => pip?.subjectAttribute?.(userContext, name);
+    // #2261: the resolved identity, and what bears on `subject:aal` copied from the subject asked about
+    // (a session's sign-in, a token's or a job's stored level), which the resolved context drops.
+    const facts = { ...aalFactsOf(subject), username: userContext.username, isAuthenticated: userContext.isAuthenticated };
+    // A subject attribute is read once per decision, however many policies name it.
+    const reads = new Map<string, unknown>();
+    const readSubject = (name: string): unknown => {
+      if (!reads.has(name)) reads.set(name, pip?.subjectAttribute?.(facts, name));
+      return reads.get(name);
+    };
     let result: EvaluationLike;
     if (request.resource?.type === 'page' && pageName !== '*') {
       // #2255 (XACML): the PEP names the page; the PIP supplies what the

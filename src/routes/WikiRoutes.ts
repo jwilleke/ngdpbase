@@ -14287,7 +14287,13 @@ ${panes}
       // #2278: problems in the policies in force, shown on that key's row.
       const policyProblems = this.engine.getManager('PolicyValidator')
         ?.policyProblems(configManager.getProperty('ngdpbase.access.policies', [])) ?? [];
-      const configProblems: Record<string, string[]> = policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {};
+      // #2287: and in the subject attributes in force.
+      const subjectProblems = this.engine.getManager('PolicyValidator')
+        ?.subjectAttributeProblems(configManager.getProperty('ngdpbase.access.subject-attributes', null)) ?? [];
+      const configProblems: Record<string, string[]> = {
+        ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
+        ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {})
+      };
 
       const commonData = await this.getCommonTemplateData(req);
 
@@ -14559,6 +14565,17 @@ ${panes}
         const refused = this.engine.getManager('PolicyValidator')?.policyProblems(parsedValue) ?? [];
         if (refused.length > 0) {
           const error = `Policies not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
+      // #2287: `id` and `aal` keep their built-in meaning; a declaration of either, or any
+      // other bad one, is refused here rather than silently ignored.
+      if (property === 'ngdpbase.access.subject-attributes') {
+        const refused = this.engine.getManager('PolicyValidator')?.subjectAttributeProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Subject attributes not saved: ${refused.join('; ')}`;
           const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
           if (wantsJson) return res.status(400).json({ error });
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);

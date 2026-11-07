@@ -41,6 +41,7 @@
     "ngdpbase.auth.google-oidc.client-secret": "secret",
     "ngdpbase.auth.oidc.providers": "sensitive",
     "ngdpbase.access.policies": "sensitive",
+    "ngdpbase.access.subject-attributes": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
     "ngdpbase.backup.restore-manifest": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
@@ -730,6 +731,10 @@
       "restart": false
     },
     "ngdpbase.access.policies": {
+      "group": "Access control",
+      "restart": false
+    },
+    "ngdpbase.access.subject-attributes": {
       "group": "Access control",
       "restart": false
     },
@@ -2865,6 +2870,17 @@
     },
     "shared-folder": {
       "description": "A shared folder, its pages and files, matched by the folder as shared/<name> (glob pattern; shared/* is every folder). Only shared-folder-read and shared-folder-file are asked with it (#2125)"
+    }
+  },
+  "_comment_access_subject_attributes": "Subject attributes (#2261, docs/access-policies.md): what a policy's condition may read about whoever asks, as subject:<name>. Each has a type (string, integer, boolean, identity, list) and a from, the source the PIP reads it from: account:<field> or profile:<field> (a field of the person's account record; the password, email, roles and the like are never readable), or sign-in (the assurance level, 1 to 3, the session's sign-in reached; an agent token or a background job has the level stored when it was made, and a visitor who is not signed in, or a token made before it was stored, has none, so a condition on it fails closed). id and aal are built in and cannot be redefined here (a declaration of either with another meaning is refused on save and reported at start-up; the built-in is kept). A site adds its own, for example department-id with type string and from profile:department; a condition naming one that is not declared here is refused on save and reported at start-up.",
+  "ngdpbase.access.subject-attributes": {
+    "id": {
+      "type": "identity",
+      "from": "account:id"
+    },
+    "aal": {
+      "type": "integer",
+      "from": "sign-in"
     }
   },
   "ngdpbase.access.policies": [

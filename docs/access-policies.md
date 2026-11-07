@@ -22,6 +22,7 @@ Whether a user may do something is decided by the policies alone. No other setti
 | `ngdpbase.access.policies` | The list of policies |
 | `ngdpbase.access.policies.enabled` | Must be `true`. When it is not, no policy applies and every check is denied |
 | `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator. The `page` type declares its `attributes`, what a `condition` may read as `resource:<name>`, each with a `type` and the PIP source it comes `from` ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) |
+| `ngdpbase.access.subject-attributes` | The attributes of whoever asks that a `condition` may read as `subject:<name>`, each with a `type` and the `from` source the PIP reads it from ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). Shipped: `id` and `aal`. See [Subject attributes](#subject-attributes) |
 | `ngdpbase.vaults.admin-access` | Whether a holder of `admin-system` may enter another person's unencrypted vault at a door ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)); shipped `true`. See the [security guide](guides/security-developer-guide.md#a-vault-is-its-owners-an-administrator-may-enter-one-that-is-not-encrypted) |
 
 All three live in `config/app-default-config.json`, overridable per instance in `app-custom-config.json`.
@@ -53,7 +54,7 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`, `{ "type": "job", "value": "<job id>" }` for a scheduled job that holds its own permissions ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)), `{ "type": "authenticated" }` for any signed-in user, or `{ "type": "anyone" }` for every caller ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). `authenticated` and `anyone` take no `value`; the validator refuses one ("takes no value"). Only these four types are matched; the validator refuses any other | The policy applies to everyone |
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in; `shared-folder` matches a shared folder as `shared/<name>` (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
-| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | A comparison `{ "attribute": a, "equals": b }`, or `any-of`, `all-of` or `not` over other conditions (see [Conditions](#conditions)). A string starting `subject:`, `resource:` or `environment:` names an attribute, anything else is a literal. The attributes are `subject:id` (the signed-in account) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Declared subject and environment attributes are still to come ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | The policy applies whenever it matches |
+| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | A comparison `{ "attribute": a, "equals": b }`, or `any-of`, `all-of` or `not` over other conditions (see [Conditions](#conditions)). A string starting `subject:`, `resource:` or `environment:` names an attribute, anything else is a literal. The attributes are those declared in `ngdpbase.access.subject-attributes` (`subject:id`, the signed-in account; `subject:aal`, the sign-in level; see [Subject attributes](#subject-attributes)) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Declared environment attributes are still to come ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | The policy applies whenever it matches |
 
 A permission that was renamed or split keeps working under its old name: a policy or an agent token naming it is read as what it now stands for, and a policy naming it is warned about once, at the first decision that reads it, naming the policy. The list is `RETIRED_PERMISSIONS` in `src/utils/permissionCatalog.ts`: `share-manage` is read as `share-create`, `share-extend` and `share-revoke` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)); `contact-read` as `identity-read` and `contact-manage` as `identity-manage`, accepted for one release only ([#2038](https://github.com/jwilleke/ngdpbase/issues/2038)). Name the new permissions in anything you write.
 
@@ -82,6 +83,35 @@ Every node is judged on its own as true, false or unknown:
 
 An __allow__ applies only when its condition is true. A __deny__ applies when its condition is true or unknown, so a missing attribute fails closed. A condition with one attribute behaves as before.
 
+### Subject attributes
+
+A condition reads something about whoever asks as `subject:<name>`. Each is declared in `ngdpbase.access.subject-attributes` as `{ "type": …, "from": … }` and read only by `PolicyInformationPoint.subjectAttribute`, from the source `from` names. A request cannot send one: a body field, header or query named `aal` or `department` is never read. A name that is not declared is a problem the validator reports ("add it to ngdpbase.access.subject-attributes"), so a typo never silently holds.
+
+| `from` | Reads | Missing when |
+| --- | --- | --- |
+| `account:id` | The username, trimmed and lower-cased | Not signed in |
+| `account:<field>` | A field of the account record, through `UserManager` | Not signed in, no account, no such field, or a value not of the declared `type` |
+| `profile:<field>` | A field of the same record, under its own prefix | As above |
+| `sign-in` | The sign-in level the subject has (below) | The subject has none |
+
+The password, email, roles and the other fields in `SENSITIVE_USER_FIELDS` (`src/types/User.ts`) are refused as `account:` or `profile:` fields, in the validator's words (`'account:password' cannot be used in a condition`). Roles stay a subject matcher, not an attribute. A declaration whose `type` is unknown or whose `from` starts with none of `account:`, `profile:` and `sign-in` is a problem too. `id` and `aal` are pinned in code (`PINNED_SUBJECT_ATTRIBUTES`, [#2287](https://github.com/jwilleke/ngdpbase/issues/2287)): they are always there and always mean `account:id` and `sign-in`, whatever the configuration, an add-on's `default-config.json` or a site's own says. Declaring either with another meaning is refused on save in Admin → Configuration, shown on that key's row on load, and reported at start-up (an add-on's declaration is reported there, as the merged value is read); the built-in meaning is kept in every case. The same declaration as the built-in is harmless and not reported. A site adds its own: `"department-id": { "type": "string", "from": "profile:department" }` makes `subject:department-id equals "x"` hold for an account whose record has `department: "x"`, and fail closed for one without. The shipped configuration declares no `department-id`, and no account field `department` exists until a site adds one.
+
+__`subject:aal`__ is the NIST assurance level (1 to 3) of the sign-in, read from the record (`effectiveAal`, `src/utils/policyAttributes.ts`); it is never worked out from factors. It is capped at the level the account's sign-in methods can reach (`aalCap`), as a role's required level is.
+
+| Who asks | `subject:aal` |
+| --- | --- |
+| A session | The level in its sign-in record. Only a session from before sign-ins were recorded ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523)), which has no sign-in record, is 1 |
+| A bearer JWT from Authentik (`AuthentikBearerAuthProvider`) | Missing. It is verified but records no sign-in level, and it is not a session from before #1523, so it is not given 1: a condition on `subject:aal` fails closed, whatever the level asked for ([#2287](https://github.com/jwilleke/ngdpbase/issues/2287)) |
+| Someone not signed in | Missing, so a condition on it is unknown and fails closed. The route answers the refusal as it does for any action that needs an account: a page request is redirected to sign-in (returning to the page), a JSON request is a 401. A signed-in person below the level gets the ordinary 403 |
+| An agent token | The level stored with the token when it was minted: the minting session's, never higher. A token made before this was stored has none: missing |
+| A background job | The level stored with the job when it was requested (`JobContext.aal`), set by `jobContextFromRequest` from the requesting session or token and never higher than it. Work no session asked for (boot, a schedule, the command line) has none, and neither has a job stored before this: missing |
+| A share-link visitor | Missing |
+| Someone acting under a proxy grant | The actor's own session level, as for step-up |
+
+An access token from this site's own OpenID Connect server (`OidcBearerAuthProvider`) carries no stored level either: missing.
+
+`subject:aal` and `"step-up": true` on a permission are separate. Step-up asks for a fresh factor at the moment of the action; `subject:aal` asks what level the session reached. A policy such as an allow of `page-edit` on `general` for `editor` with `{ "attribute": "subject:aal", "greater-or-equal": 2 }` refuses an editor signed in with a password only, with that policy absent from the refusal's `policyIds`, and leaves reading alone. The page list and search apply the same condition, reading the subject's attributes once per listing. Because an allow needs a true condition and a deny applies when its condition is unknown, `less-or-equal 1` as a deny also refuses a token or job with no level.
+
 ### How a decision is made
 
 In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with the policies from `PolicyDecisionPoint.policies()`:
@@ -95,6 +125,7 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 - __A condition__ makes a policy apply only when it is true. See [Conditions](#conditions) for the operators, how a missing attribute is judged, and what an allow and a deny do with an unknown answer. A condition naming an undeclared attribute or an unknown operator never applies as an allow, and is named at boot.
 - __No matching policy means deny.__
 - __Every decision names its policies__: `Decision.policyIds` holds the denies that matched, or, when none did, the allows; empty when none matched. A recorded refusal carries them (`authorization-deny`, `metadata.policyIds`).
+- __A subject's attributes come from the PIP__ ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)): the PDP gives it the subject's sign-in record, `aalCap` and the level stored with a token or job, and it reads each attribute once per decision.
 - __A page's attributes come from the PIP.__ A caller names the page; the PDP asks `PolicyInformationPoint.pageAttributes` for its `system-category` and `owner` from the page itself. No route passes them.
 
 __Page writes by system-category ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), built).__ `page-edit`, `page-delete` and `page-rename` are granted on `system-category` resources, never on `page` / `*`, and a page write is granted under either of two names, `page-<verb>` or `pushed-pages-<verb>`. The shipped policies, as groups of categories:
