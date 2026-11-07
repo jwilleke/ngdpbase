@@ -12,7 +12,6 @@ import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { pageWritePoliciesToReview } from '../utils/pageWritePolicies.js';
-import { categoryStored } from './ValidationManager.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 
 /**
@@ -452,17 +451,15 @@ class PolicyEvaluator extends BaseManager {
   }
 
   /**
-   * Say at boot what an administrator should look at in the policies after
-   * #2255, one warning each, and one needs-attention entry for them all:
-   * stored policies the upgrade rewrote, policies it left that now decide
-   * differently (a deny) or reach pushed pages, conditions that never hold,
-   * and stored categories no policy lets anyone change (their pages are
-   * changed by nobody, admin included).
+   * Say at boot what a developer should look at in the policies after #2255,
+   * one warning each: stored policies the upgrade rewrote, policies it left
+   * that now decide differently (a deny) or reach pushed pages, and conditions
+   * that never hold. These are log lines only; categories no policy lets anyone
+   * change are an upgrade check (`upgradeChecks/uneditablePages.ts`).
    */
   private reportPageWritePolicies(): void {
     const config = this.configManager;
-    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!config || !pdp) return;
+    if (!config) return;
     const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
     lines.push(...pageWritePoliciesToReview(this.policies()));
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
@@ -473,22 +470,8 @@ class PolicyEvaluator extends BaseManager {
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
     lines.push(...environmentAttributesProblems(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)));
     lines.push(...this.scheduleProblems());
-    const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
-    const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
-    // An installed add-on's category is declared even while the add-on is off
-    // (#1559), and its policies are not; that is the add-on being off, not a gap.
-    const addonOff = (owner: unknown): boolean => typeof owner === 'string' && owner !== 'admin'
-      && config.getProperty(`ngdpbase.addons.${owner}.enabled`, false) !== true;
-    const unwritable = Object.entries(catalogue ?? {})
-      .filter(([, entry]) => categoryStored(entry) !== 'none' && !addonOff(entry?.owner))
-      .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
-      .filter((category) => !writable.has(category));
-    if (unwritable.length > 0) {
-      lines.push(`no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`);
-    }
     if (lines.length === 0) return;
     for (const line of lines) logger.warn(`[POLICY] ${line}`);
-    this.markNeedsAttention(`Access policies need review after the #2255 upgrade (${lines.length}): ${lines.join('; ')}. See the start-up log and docs/access-policies.md.`, 'ngdpbase.access.policies');
   }
 
   /**

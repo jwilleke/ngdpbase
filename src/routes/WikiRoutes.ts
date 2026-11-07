@@ -66,6 +66,8 @@ import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, REMEMBE
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
+import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
+import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
@@ -13215,7 +13217,9 @@ ${panes}
         jobLastRuns,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
-        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
+        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
+        // #2301: one notice linking to "After updating" while it has items.
+        upgradeItems: currentUser ? await this.upgradeItemsFor(currentUser) : []
       };
 
       res.render('admin-dashboard', templateData);
@@ -15287,6 +15291,56 @@ ${panes}
         success: false,
         error: getErrorMessage(err) || 'Error starting reindex'
       });
+    }
+  }
+
+  /** The "After updating" items `ctx` has open (#2301). Best-effort: a failure leaves the notice out, not the page. */
+  private async upgradeItemsFor(ctx: NonNullable<Request['userContext']>): Promise<OpenUpgradeItem[]> {
+    try {
+      return await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openItems(ctx) ?? [];
+    } catch (err) {
+      logger.warn('[upgrade] The open items could not be read:', err);
+      return [];
+    }
+  }
+
+  /** GET /admin/upgrade — "After updating to X.Y.Z": what the last update left for an administrator to decide (#2301). */
+  async adminUpgradePage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const version = this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+      return res.render('admin-upgrade', {
+        ...(await this.getCommonTemplateData(req)),
+        title: `After updating to ${version}`,
+        version,
+        items: await this.upgradeItemsFor(wikiContext.userContext),
+        success: typeof req.query.success === 'string' ? req.query.success : null,
+        error: typeof req.query.error === 'string' ? req.query.error : null
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the After updating page:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). */
+  async adminUpgradeFix(req: Request, res: Response) {
+    const back = (kind: 'success' | 'error', text: string) => res.redirect(`/admin/upgrade?${kind}=${encodeURIComponent(text)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
+      const currentUser = wikiContext.userContext;
+      const id = typeof req.body?.id === 'string' ? req.body.id : '';
+      if (!currentUser || !(await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser))) {
+        return back('error', 'There is nothing left to do for that.');
+      }
+      return back('success', 'Done.');
+    } catch (err: unknown) {
+      logger.error('[upgrade] The fix did not complete:', err);
+      return back('error', 'That could not be done.');
     }
   }
 
@@ -18975,6 +19029,8 @@ ${panes}
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
+    app.get('/admin/upgrade', (req: Request, res: Response) => void this.adminUpgradePage(req, res));
+    app.post('/admin/upgrade/fix', (req: Request, res: Response) => void this.adminUpgradeFix(req, res));
     app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
     app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));

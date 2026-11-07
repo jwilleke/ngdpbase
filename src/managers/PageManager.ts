@@ -45,6 +45,7 @@ import {
   SHARED_PAGE_NAME_PREFIX,
   SHARED_FOLDER_OWNER,
   isSharedFolderOwner,
+  systemCategoryVaults,
   PRIVATE_SLUG_PREFIX
 } from '../utils/privateStorePath.js';
 import {
@@ -3115,6 +3116,34 @@ class PageManager extends BaseManager implements CatalogSource {
     return (await this.provider.listPrivateStorePages(ctx, owner))
       .filter((p) => p.store === vault)
       .map((p) => ({ name: formatPrivatePageName(owner, vault, p.title), title: p.title, uuid: p.uuid }));
+  }
+
+  /**
+   * Every page of one system-category, by the name `mayShowPage` takes (#2299):
+   * the public pages stamped with it, and the pages in its vault, whoever owns
+   * them. A vault is opened per owner as the start-up migrations do, so a
+   * sealed vault (no key at start-up) is not counted. Says nothing about who
+   * may see a page; the caller asks `mayShowPage` as the reader.
+   *
+   * @param category - The category's key or label, any case
+   */
+  async listCategoryPages(category: string): Promise<string[]> {
+    if (!this.provider) return [];
+    const wanted = category.toLowerCase();
+    const names = (await this.provider.getAllPageInfo())
+      .filter((info) => String(info.metadata?.['system-category'] ?? '').toLowerCase() === wanted)
+      .map((info) => info.title);
+    const catalogue = (this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string }>;
+    const vault = systemCategoryVaults(catalogue).find((v) => v.key.toLowerCase() === wanted || catalogue[v.key]?.label?.toLowerCase() === wanted)?.vaultId;
+    if (!vault || !this.provider.listPrivateStorePages) return names;
+    const owners = new Set([...await this.listVaults()].map((v) => v.slice(0, v.indexOf('/'))));
+    for (const owner of [...owners].filter((o) => o && !isSharedFolderOwner(o)).sort()) {
+      const own = jobContextForOwner(owner, `counting the pages in the '${wanted}' category's vault, to tell an administrator how many an upgrade left uneditable (#2299)`);
+      for (const page of await this.provider.listPrivateStorePages(own, owner)) {
+        if (page.store === vault) names.push(formatPrivatePageName(owner, vault, page.title));
+      }
+    }
+    return names;
   }
 
   /** The store ids the requester has of their own (#1387). */

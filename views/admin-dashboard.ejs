@@ -41,6 +41,17 @@
         attentionManagers: typeof attentionManagers !== 'undefined' && attentionManagers ? attentionManagers : []
     }) %>
 
+    <%# #2301 — one notice while the last update left something to decide; the page lists it. %>
+    <% if (typeof upgradeItems !== 'undefined' && upgradeItems && upgradeItems.length > 0) { %>
+        <div class="alert alert-info d-flex align-items-start" role="status" id="after-updating-notice">
+            <i class="fas fa-circle-info me-2 mt-1" aria-hidden="true"></i>
+            <div>
+                <strong>The last update left <%= upgradeItems.length === 1 ? 'one thing' : upgradeItems.length + ' things' %> for you to decide.</strong>
+                <a href="/admin/upgrade">See what to do after updating</a>
+            </div>
+        </div>
+    <% } %>
+
     <%# #1842 — vault pages the startup checks found with files in the shared
         pool, or footnotes and comments in the public folders, left by moves
         before #1839 / #1842. Named by owner, vault and page uuid; a page's

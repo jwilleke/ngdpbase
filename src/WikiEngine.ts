@@ -48,6 +48,8 @@ import ShareManager from './managers/ShareManager.js';
 import ConsentManager from './managers/ConsentManager.js';
 import SharedFolderManager from './managers/SharedFolderManager.js';
 import ReviewManager from './managers/ReviewManager.js';
+import UpgradeCheckManager from './managers/UpgradeCheckManager.js';
+import { shippedUpgradeChecks } from './upgradeChecks/index.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import IdentityManager from './managers/IdentityManager.js';
 import RoleManager from './managers/RoleManager.js';
@@ -487,6 +489,13 @@ class WikiEngine extends Engine {
     // database opened, and the backup key was checked, when the notifications
     // did not exist yet. Say so now.
     await databaseManager.reportAtBoot();
+
+    // #2301: the release's run-once checks, last, once every manager they ask exists.
+    const upgradeChecks = new UpgradeCheckManager(this);
+    this.registerManager('UpgradeCheckManager', upgradeChecks);
+    await upgradeChecks.initialize();
+    shippedUpgradeChecks(this).forEach((check) => upgradeChecks.register(check));
+    await upgradeChecks.runAtBoot();
 
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
