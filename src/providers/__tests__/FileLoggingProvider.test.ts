@@ -95,6 +95,30 @@ describe('FileLoggingProvider', () => {
       expect(lines.slice(1)).toEqual(['Error: boom', '    at f (x.ts:1:1)']);
     });
 
+    test('an Error message holding a newline cannot forge a log line, and frames keep their lines (#2294)', () => {
+      const err = new Error('bad entry\nFAKE LINE\r\nFAKE2');
+      const line = render({ message: 'boom', stack: err.stack });
+      const lines = line.split('\n');
+      expect(lines.some((l) => l.startsWith('FAKE'))).toBe(false);
+      expect(lines[0]).toContain('Error: bad entry\\nFAKE LINE\\r\\nFAKE2');
+      const frames = (err.stack ?? '').split('\n').filter((l) => /^\s*at /.test(l));
+      expect(frames.length).toBeGreaterThan(0);
+      expect(lines.filter((l) => /^\s*at /.test(l))).toEqual(frames);
+    });
+
+    test('a CR or LF in a metadata key is escaped (#2294)', () => {
+      expect(render({ message: 'x', 'k\nFAKE': 'v' })).not.toMatch(/\nFAKE/);
+    });
+
+    test.each([
+      ['undefined', undefined],
+      ['a symbol', Symbol('s')],
+      ['a function', function fn() { /* noop */ }]
+    ])('%s as a message never throws', (_n, message) => {
+      expect(() => render({ message })).not.toThrow();
+      expect(render({ message })).toContain('[error]: ');
+    });
+
     test('a plain message still renders as before', () => {
       const line = render({ message: 'hello' });
       expect(line).toContain('[error]: hello');

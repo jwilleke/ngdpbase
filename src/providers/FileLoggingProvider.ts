@@ -61,7 +61,14 @@ class FileLoggingProvider extends BaseLoggingProvider {
         const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
         // #2294: a caller-sent value (a page name) in the message could carry a CR or LF and start a log line of
         // its own. Escaped here, once, for every transport and every call site; the escape is visible, not removed.
-        const msg = FileLoggingProvider.oneLine(typeof info.message === 'string' ? info.message : JSON.stringify(info.message));
+        // Never throws: a logger that throws breaks its caller. Any non-string message (undefined, symbol, function,
+        // a circular object) is coerced with String(), and a formatting error falls back to a fixed marker.
+        let msg: string;
+        try {
+          msg = FileLoggingProvider.oneLine(typeof info.message === 'string' ? info.message : String(info.message));
+        } catch {
+          msg = '[unprintable log message]';
+        }
         // #1141: render the metadata too. This printf used to emit only
         // timestamp/level/message, so the second argument of every
         // `logger.error(msg, { error, stack })` call in the codebase was
@@ -81,6 +88,22 @@ class FileLoggingProvider extends BaseLoggingProvider {
   }
 
   /**
+   * A stack keeps one frame per line, but its message portion (`Name: message`, which can span lines and can
+   * hold a caller-sent value) must not start a log line of its own (#2294). Only a line that begins with
+   * optional whitespace and `at ` starts a new output line; every other line is joined to the one before it
+   * with a visible `\n`.
+   */
+  private static stackLines(stack: string): string {
+    const out: string[] = [];
+    stack.split('\n').forEach((raw, i) => {
+      const line = FileLoggingProvider.oneLine(raw);
+      if (i === 0 || /^\s*at /.test(raw)) out.push(line);
+      else out[out.length - 1] += `\\n${line}`;
+    });
+    return out.join('\n');
+  }
+
+  /**
    * Render whatever a caller passed as the second argument to `logger.*`.
    *
    * Winston merges that object onto `info` alongside its own keys, so the
@@ -89,8 +112,9 @@ class FileLoggingProvider extends BaseLoggingProvider {
    * line would be noise at best.
    *
    * A `stack` is emitted on its own lines because a one-line stack is
-   * unreadable, and reading the stack is the entire reason this exists. It is
-   * the one value not escaped; string values of the other keys are.
+   * unreadable, and reading the stack is the entire reason this exists. Its
+   * frames keep their own lines; CR and LF in its message portion are escaped,
+   * as are those in the other keys and their string values.
    *
    * @param info - The winston info object for one log record
    * @returns The rendered metadata, or an empty string when there is none
@@ -105,10 +129,10 @@ class FileLoggingProvider extends BaseLoggingProvider {
       const value = info[key];
       if (value === undefined) continue;
       if (key === 'stack' && typeof value === 'string') {
-        stack = value;
+        stack = FileLoggingProvider.stackLines(value);
         continue;
       }
-      parts.push(`${key}=${typeof value === 'string' ? FileLoggingProvider.oneLine(value) : JSON.stringify(value)}`);
+      parts.push(`${FileLoggingProvider.oneLine(key)}=${typeof value === 'string' ? FileLoggingProvider.oneLine(value) : JSON.stringify(value)}`);
     }
 
     const inline = parts.length > 0 ? parts.join(' ') : '';

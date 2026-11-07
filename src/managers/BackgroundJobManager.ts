@@ -1157,7 +1157,7 @@ class BackgroundJobManager extends BaseManager {
       const runId = randomUUID();
       const detail = `enqueue('${jobId}') was called without a JobContext — since #631 the second argument is who asked ` +
         '(a JobContext: username, origin, requestedAt; build one with jobContextFromRequest / scheduleContext / systemContext). Refused.';
-      logger.error(`[BackgroundJobManager] ${detail}\n${new Error('caller').stack ?? ''}`);
+      logger.error(`[BackgroundJobManager] ${detail}`, { stack: new Error('caller').stack });
       const refused: JobRun = {
         runId,
         jobId,
