@@ -353,6 +353,66 @@ exits 2 and says the instance may be down. It never prompts.
 The server keeps running the old code while install and build run, so the only downtime is the
 restart itself.
 
+## Updating every checkout on this host
+
+`./server.sh update all [--dry-run] [ref] [env]` asks PM2 which ngdpbase checkouts are running
+and updates each one by calling that checkout's own `./server.sh update`. Run it from any
+checkout that has this command. The word `all` is the command, not a git ref.
+`./server.sh update v1.2.3` is unchanged. To check out a ref that is literally named `all`,
+run `./server.sh update refs/heads/all` on that one checkout.
+
+```bash
+./server.sh update all --dry-run
+./server.sh update all
+./server.sh update all v5.43.0
+```
+
+It does not pull before the per-checkout `update`. That command already fetches and
+fast-forwards. Bulk mode also does not run an update whose rollback would
+`git checkout -f` / `git reset --hard` on a tree that is dirty, detached, not on `master`
+(when no ref is given), diverged from the last fetched `origin/master`, or ahead of it with
+local commits. Those checkouts are listed and left as they are. A ref (`./server.sh update all v5.43.0`)
+may be given for a checkout that is not on `master`; a detached or dirty checkout is still skipped.
+
+PM2 `watch` restarts a process when files change. It is not an automatic release update, and it
+does not by itself include or exclude a checkout.
+
+Ownership, most protective first:
+
+- Pinned, then automatic, then an explicit manual mark. A checkout an updater already updates
+  stays skipped even if a policy line says `manual`.
+- An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
+  user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
+  `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
+  A comment that says pinned, excluded, or skipped can name a path or the PM2 app name.
+- When that script is read completely, a checkout it does not mention is updated, and the output
+  says it was not listed. When the script cannot be read completely (a site list built from
+  variables, or a pin that names neither a path nor an app name), unlisted checkouts are not
+  updated.
+- With no updater script, nothing is updated unless a line names it. The file is
+  `${NGDP_UPDATE_POLICY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ngdpbase/update-policy}`:
+
+```bash
+manual /absolute/path/to/checkout
+pinned /absolute/path/to/another
+auto /absolute/path/to/a/third
+```
+
+A line there does not authorize every other checkout. A checkout may also carry a one-word
+`.ngdpbase-update-policy` file (`auto`, `pinned`, or `manual`). That file is gitignored.
+
+Checkouts are updated one at a time. One failure does not stop the others. Two `update all`
+runs do not overlap: the second exits and updates nothing. The command prints a summary and
+exits 0 when every included checkout was updated (or there was nothing to update), 1 when an
+included checkout was held back or its update failed, 2 when PM2 could not be read or another
+`update all` holds the lock, and 3 when it updated nothing because ownership was unknown.
+`--dry-run` is the same plan with no `update` run.
+
+The child `update` is started with a clean environment plus `PATH`, `HOME`, and the ssh/proxy
+variables git and npm need. It then loads that checkout's own `.env`. The PM2 document is
+reduced to name, directory, script, status, and watch before it is printed; the process
+environment is not.
+
 ## Validation Steps (Pre-Start Checklist)
 
 Before starting server, `./server.sh start` should verify:

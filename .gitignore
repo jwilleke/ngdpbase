@@ -267,6 +267,10 @@ test-results/
 # Release-notes scratch file used by .claude/commands/release.md
 .release-notes.tmp
 .release-notes-*.tmp
+
+# Per-checkout mark for ./server.sh update all (auto, pinned, or manual).
+# Gitignored so the mark does not make `update` refuse a dirty tree.
+.ngdpbase-update-policy
 # Test config composite-mode emit (issue #667)
 .tsbuildtest/
 private/
