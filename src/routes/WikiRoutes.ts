@@ -2411,7 +2411,7 @@ class WikiRoutes {
    * The deciding policies are asked again for their ids (public pages; a vault
    * page is decided by the container rule, which names none). Best-effort.
    */
-  private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create'): Promise<void> {
+  private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create' | 'page-delete'): Promise<void> {
     try {
       const pip = this.engine.getManager<{ recordPageRefusal?: (s: unknown, p: string, a: string, r: string, ids: string[], notMet: string[]) => Promise<void> }>('PolicyInformationPoint');
       if (typeof pip?.recordPageRefusal !== 'function') return;
@@ -4263,7 +4263,6 @@ ${panes}
       // #1542: the editor's doors. A new page had no check at all — anyone,
       // signed out included, could create one — and an existing page asked
       // only the page-create capability.
-      if (!currentUser) await this.recordWriteRefusal(req, pageName, existingPage ? 'page-edit' : 'page-create');
       const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
       if (refusal) {
         return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName, 'edit'), signedIn: () => fail(403, 'Access Denied', refusal) });
@@ -4681,8 +4680,17 @@ ${panes}
   ): Promise<{ pageData: WikiPage; wikiContext: WikiContext; pageName: string } | null> {
     const identifier = req.params.identifier;
 
-    // #1198: no authentication pre-check — the action's own permission is
-    // asked below, and that is the door.
+    // #2294: someone not signed in gets one answer before the page is looked up,
+    // so neither a 404 nor a 403 tells them whether the page exists.
+    const signedOutCtx = this.createWikiContext(req, { pageName: identifier });
+    if (this.isSignedOut(signedOutCtx)) {
+      if (action === 'delete') await this.recordWriteRefusal(req, identifier, 'page-delete');
+      await this.refuse(signedOutCtx, req, res, 'json');
+      return null;
+    }
+
+    // #1198: otherwise no authentication pre-check — the action's own permission
+    // is asked below, and that is the door.
 
     // Rate limit token-authenticated mutations only. A human clicking Delete is
     // bounded by being a human; an unattended token is not.

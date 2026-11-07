@@ -53,7 +53,6 @@ const ROLE_READ_ALLOWED: Record<string, string> = {
 /** Methods in WikiRoutes.ts that may read `isAuthenticated`, and why. */
 const AUTH_FLAG_ALLOWED: Record<string, string> = {
   refuse: 'classifies a refusal AFTER policy said no — 401 / login redirect for anonymous, 403 for signed-in',
-  isSignedOut: 'classifies who is asking so a write route refuses before it looks the page up (#2294); grants nothing, a signed-in subject still goes through policy',
   getCommonTemplateData: 'login-vs-profile chrome',
   loginPage: 'sends a signed-in visitor away from the login page',
   adminLoginPage: 'sends a signed-in visitor away from the login page',
