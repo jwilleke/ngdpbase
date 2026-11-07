@@ -5,10 +5,10 @@ agent_priority_level: "medium"
 blockers: []
 requires_human_review: ["major architectural changes", "security policy modifications", "deployment to production"]
 agent_autonomy_level: "high"
-kit_version: "v1.15.0-2-gc79a0b9"
+kit_version: "v1.15.0-3-gb6389e1"
 ---
 
-<!-- KIT:START v1.15.0-2-gc79a0b9 — managed by mjs-project-template; edit below the KIT:END marker -->
+<!-- KIT:START v1.15.0-3-gb6389e1 — managed by mjs-project-template; edit below the KIT:END marker -->
 ## Agent Kit Protocols
 
 This section is __managed by the kit__ (`install-kit.sh`) — it is identical across repos. Put repo-specific context __below the `KIT:END` marker__; do not edit here.
