@@ -65,7 +65,8 @@ export class ConsoleMailProvider implements MailProvider {
     logger.info('[ConsoleMailProvider] ── Outbound email ─────────────────────');
     logger.info(`[ConsoleMailProvider] To:      an address at ${emailDomain(message.to)}`);
     logger.info(`[ConsoleMailProvider] Subject: ${message.subject}`);
-    logger.info(`[ConsoleMailProvider] Body:\n${redactEmailAddresses(message.text)}`);
+    logger.info('[ConsoleMailProvider] Body:');
+    for (const line of redactEmailAddresses(message.text).split(/\r\n|\r|\n/)) logger.info(`[ConsoleMailProvider]   ${line}`);
     if (message.attachments?.length) logger.info(`[ConsoleMailProvider]${describeAttachments(message.attachments)}`);
     logger.info('[ConsoleMailProvider] ──────────────────────────────────────');
     return Promise.resolve();

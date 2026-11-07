@@ -33,7 +33,7 @@ Content-Type: application/json
 
 - __Upsert:__ `pageName` is the key. Re-sending an edited doc __updates the page in place__ (it does not create a duplicate).
 - __Author:__ set from the authenticated identity on create and __immutable across edits__ (later edits bump `editor`, not `author`).
-- __Creation time:__ an update never changes it. `created` is set when the page is first saved and kept by every later save, so do not send it. `GET /api/page-metadata/:page` reports it at the top level; a page saved before `created` existed reports the time of its first version. The same frontmatter field also appears under `custom.created`.
+- __Creation time:__ an update never changes it. `created` is set when the page is first saved and kept by every later save, so do not send it. `GET /api/page-metadata/:page` reports it at the top level; a page saved before `created` existed reports the time of its first version. The same frontmatter field also appears under `custom.created`. The response has no `lastAccessed`: views are not tracked, and no value in it comes from the page file's stat times. It carries `url`, the page's link (base-url plus its route, `/vaults/...` for a vault page).
 - __Conflict check:__ send the `lastModified` from `GET /api/page-metadata/:page` as `baseLastModified`. If the page is unchanged the update goes through; if someone edited it since, the answer is `409` with `currentLastModified` and `currentContent`, and nothing is written. Leave it out to overwrite without the check.
 - __NCM:__ the Markdown is normalized to NGDP-Compatible Markdown — link normalization, GFM-table up-conversion, frontmatter sort, and an `ncmVersion` stamp.
 

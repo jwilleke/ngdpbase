@@ -384,7 +384,7 @@ Ownership, most protective first:
 - An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
   user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
   `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
-  A comment that says pinned, excluded, or skipped can name a path or the PM2 app name.
+  A comment pins one checkout by writing its directory basename as `basename (pinned)`, and only when exactly one running checkout has that basename. Other names in that comment are not pins. A path on a pin line, or a PM2 app name the comment names on its own, still pins that checkout. A checkout the site list already names stays automatic. The same basename on two checkouts, or a pin word with no path and no `basename (pinned)`, leaves unlisted checkouts alone.
 - When that script is read completely, a checkout it does not mention is updated, and the output
   says it was not listed. When the script cannot be read completely (a site list built from
   variables, or a pin that names neither a path nor an app name), unlisted checkouts are not
