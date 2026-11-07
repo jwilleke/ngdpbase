@@ -2328,6 +2328,15 @@ class WikiRoutes {
   }
 
   /**
+   * Whether the request has no signed-in subject (#2294). Classifies who is
+   * asking so a write route can refuse before it looks at the page; it grants
+   * nothing, and a signed-in subject still goes through policy.
+   */
+  private isSignedOut(wikiContext: { userContext: { isAuthenticated?: boolean } | null }): boolean {
+    return !wikiContext.userContext?.isAuthenticated;
+  }
+
+  /**
    * What `wikiContext`'s subject may create (#1539): a public page
    * (`page-create`), and, per system-category, a private page in that
    * category's vault — asked about a page in their own vault, so `vault-owner`
@@ -2402,7 +2411,7 @@ class WikiRoutes {
    * The deciding policies are asked again for their ids (public pages; a vault
    * page is decided by the container rule, which names none). Best-effort.
    */
-  private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create'): Promise<void> {
+  private async recordWriteRefusal(req: Request, pageName: string, action: 'page-edit' | 'page-create' | 'page-delete'): Promise<void> {
     try {
       const pip = this.engine.getManager<{ recordPageRefusal?: (s: unknown, p: string, a: string, r: string, ids: string[], notMet: string[]) => Promise<void> }>('PolicyInformationPoint');
       if (typeof pip?.recordPageRefusal !== 'function') return;
@@ -3951,6 +3960,16 @@ ${panes}
         return res.status(400).send(TITLE_RULE_MESSAGE);
       }
 
+      // #2294: someone not signed in gets one answer, whether or not the page
+      // exists and whatever its category, so no gate below can tell them. The
+      // lookup is only for the audit record's action; it is never answered from.
+      if (this.isSignedOut(this.createWikiContext(req, { pageName }))) {
+        // page-door-ignore: names the refused action in the audit record only; the refusal below never depends on it.
+        const existing = await this.engine.getManager('PageManager').getPage(pageName, req.userContext);
+        await this.recordWriteRefusal(req, pageName, existing ? 'page-edit' : 'page-create');
+        return await this.refuse(this.createWikiContext(req, { pageName }), req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName, 'edit'), signedIn: () => undefined });
+      }
+
       // Section editing: if a section index was submitted, splice edited section
       // back into the full page content before saving
       let content = _rawContent;
@@ -4244,7 +4263,6 @@ ${panes}
       // #1542: the editor's doors. A new page had no check at all — anyone,
       // signed out included, could create one — and an existing page asked
       // only the page-create capability.
-      if (!currentUser) await this.recordWriteRefusal(req, pageName, existingPage ? 'page-edit' : 'page-create');
       const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
       if (refusal) {
         return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName, 'edit'), signedIn: () => fail(403, 'Access Denied', refusal) });
@@ -4473,8 +4491,15 @@ ${panes}
    */
   async adminSaveRaw(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    const pageName = decodeURIComponent(req.params.page);
     const rawContent = typeof req.body?.rawContent === 'string' ? req.body.rawContent : '';
+    let pageName: string;
+    try {
+      pageName = decodeURIComponent(req.params.page);
+    } catch {
+      // A malformed % sequence in the address is the caller's mistake: 400, not an unhandled rejection.
+      res.status(400).send('Bad request');
+      return;
+    }
     try {
       // #1034: was hasRole('admin') — a role NAME check. Messages name the
       // PERMISSION that was actually tested; roles are bundles and the same
@@ -4662,8 +4687,17 @@ ${panes}
   ): Promise<{ pageData: WikiPage; wikiContext: WikiContext; pageName: string } | null> {
     const identifier = req.params.identifier;
 
-    // #1198: no authentication pre-check — the action's own permission is
-    // asked below, and that is the door.
+    // #2294: someone not signed in gets one answer before the page is looked up,
+    // so neither a 404 nor a 403 tells them whether the page exists.
+    const signedOutCtx = this.createWikiContext(req, { pageName: identifier });
+    if (this.isSignedOut(signedOutCtx)) {
+      if (action === 'delete') await this.recordWriteRefusal(req, identifier, 'page-delete');
+      await this.refuse(signedOutCtx, req, res, 'json');
+      return null;
+    }
+
+    // #1198: otherwise no authentication pre-check — the action's own permission
+    // is asked below, and that is the door.
 
     // Rate limit token-authenticated mutations only. A human clicking Delete is
     // bounded by being a human; an unattended token is not.
@@ -5325,6 +5359,14 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
+      // #2294: someone not signed in gets the refusal before the page is looked up,
+      // so a 404 never tells them whether it exists.
+      if (this.isSignedOut(wikiContext)) {
+        await this.recordWriteRefusal(req, pageName, 'page-delete');
+        const wantsJson = Boolean(req.xhr) || Boolean(req.headers.accept?.includes('application/json')) || Boolean(req.headers['content-type']?.includes('application/json'));
+        return await this.refuse(wikiContext, req, res, wantsJson ? 'json' : 'page', undefined, { back: pageUrl(pageName), signedIn: () => undefined });
+      }
+
       // Check if page exists
       // page-door-ignore: the delete door decides page-delete below.
       const pageData = await pageManager.getPage(pageName, req.userContext);
@@ -5719,6 +5761,12 @@ ${panes}
    */
   async uploadAttachment(req: Request, res: Response) {
     try {
+      // #2294: someone not signed in gets one answer before the page is looked up (the upload
+      // door finds a private page's owner first), so it never tells them whether the page exists.
+      const signedOutCtx = this.createWikiContext(req);
+      if (this.isSignedOut(signedOutCtx)) {
+        return await this.refuse(signedOutCtx, req, res, 'json', 'asset-upload');
+      }
       const pageName = req.params.page
         ? decodeURIComponent(req.params.page)
         : (typeof req.body.pageName === 'string' ? req.body.pageName : undefined);
@@ -5833,6 +5881,8 @@ ${panes}
   async uploadFile(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     try {
+      // #2294: files go up only for someone signed in; an anonymous grant of asset-upload is not honoured here.
+      if (this.isSignedOut(wikiContext)) return await this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const files = this.engine.getManager<FileManager>('FileManager');
       if (!files) return res.status(503).json({ success: false, error: 'Files are not available right now' });
       if (!req.file) return res.status(400).json({ success: false, error: 'No file was sent' });
@@ -5999,6 +6049,11 @@ ${panes}
       if (!this.isCaptureEnabled()) return await this.renderError(req, res, 404, 'Not Available', 'Capture is not enabled on this site.'); // #1677
       const wikiContext0 = this.createWikiContext(req);
       const currentUser = wikiContext0.userContext;
+      // #2294: someone not signed in gets one answer before any page is looked up.
+      if (this.isSignedOut(wikiContext0)) {
+        await this.refuse(wikiContext0, req, res, 'text');
+        return;
+      }
       // #1539: the write is asked once the target is known (below) — usually
       // the capturer's capture vault, where vault-owner decides.
       const pageName = (typeof req.body.pageName === 'string' ? req.body.pageName : '').trim().slice(0, 255);
@@ -12402,6 +12457,15 @@ ${panes}
     try {
       const baseContext = this.createWikiContext(req);
       const currentUser = baseContext.userContext;
+      // #2294: ingest is for a signed-in subject (an agent token or a session). Someone not
+      // signed in gets one answer before the page is looked up, so create and edit cannot tell them
+      // whether it exists. Recorded as the create it would be; no lookup is made to say which.
+      if (this.isSignedOut(baseContext)) {
+        const attempted = typeof (req.body as { pageName?: unknown })?.pageName === 'string' ? (req.body as { pageName: string }).pageName.trim() : '';
+        if (attempted) await this.recordWriteRefusal(req, attempted, 'page-create');
+        await this.refuse(baseContext, req, res, 'json');
+        return;
+      }
       // #1198: the create-or-edit permission is asked once the target is known
       // (below), about that page (#1539: a vault page by the vault check).
 
@@ -17421,6 +17485,12 @@ ${panes}
    */
   async adminConvertPreview(req: Request, res: Response) {
     try {
+      // #2294: someone not signed in gets one answer before the page is looked up, so a 404 or a 403
+      // never tells them whether it exists.
+      const signedOutCtx = this.createWikiContext(req);
+      if (this.isSignedOut(signedOutCtx)) {
+        return await this.refuse(signedOutCtx, req, res, 'json', 'page-edit');
+      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });
@@ -17475,6 +17545,12 @@ ${panes}
    */
   async adminConvertExecute(req: Request, res: Response) {
     try {
+      // #2294: someone not signed in gets one answer before the page is looked up, so a 404 or a 403
+      // never tells them whether it exists.
+      const signedOutCtx = this.createWikiContext(req);
+      if (this.isSignedOut(signedOutCtx)) {
+        return await this.refuse(signedOutCtx, req, res, 'json', 'page-edit');
+      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });
@@ -20464,6 +20540,14 @@ ${panes}
           error: 'Invalid version number',
           message: 'Version must be a positive integer'
         });
+      }
+
+      // #2294: someone not signed in gets one answer before the page is looked
+      // up, so neither a 404 nor a 401 tells them whether the page exists.
+      const signedOutCtx = this.createWikiContext(req, { pageName: identifier });
+      if (this.isSignedOut(signedOutCtx)) {
+        await this.refuse(signedOutCtx, req, res, 'json');
+        return;
       }
 
       const pageManager = this.engine.getManager('PageManager');

@@ -80,6 +80,45 @@ describe('FileLoggingProvider', () => {
       expect(line).toContain('pageName=private/molly/default/[redacted] user=molly');
     });
 
+    test('a CR or LF in a message is one line with the escapes visible (#2294)', () => {
+      const line = render({ message: 'ACL decision: page=P\r\n2026-01-01 [info]: forged\nX action=page-delete' });
+      expect(line).not.toMatch(/[\r\n]/);
+      expect(line).toContain('page=P\\r\\n2026-01-01 [info]: forged\\nX action=page-delete');
+    });
+
+    test('a CR or LF in a metadata value is escaped, but a stack keeps its own lines (#2294)', () => {
+      const line = render({ message: 'boom', pageName: 'a\nb', stack: 'Error: boom\n    at f (x.ts:1:1)' });
+      expect(line).toContain('pageName=a\\nb');
+      const lines = line.split('\n');
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain('pageName=a\\nb');
+      expect(lines.slice(1)).toEqual(['Error: boom', '    at f (x.ts:1:1)']);
+    });
+
+    test('an Error message holding a newline cannot forge a log line, and frames keep their lines (#2294)', () => {
+      const err = new Error('bad entry\nFAKE LINE\r\nFAKE2');
+      const line = render({ message: 'boom', stack: err.stack });
+      const lines = line.split('\n');
+      expect(lines.some((l) => l.startsWith('FAKE'))).toBe(false);
+      expect(lines[0]).toContain('Error: bad entry\\nFAKE LINE\\r\\nFAKE2');
+      const frames = (err.stack ?? '').split('\n').filter((l) => /^\s*at /.test(l));
+      expect(frames.length).toBeGreaterThan(0);
+      expect(lines.filter((l) => /^\s*at /.test(l))).toEqual(frames);
+    });
+
+    test('a CR or LF in a metadata key is escaped (#2294)', () => {
+      expect(render({ message: 'x', 'k\nFAKE': 'v' })).not.toMatch(/\nFAKE/);
+    });
+
+    test.each([
+      ['undefined', undefined],
+      ['a symbol', Symbol('s')],
+      ['a function', function fn() { /* noop */ }]
+    ])('%s as a message never throws', (_n, message) => {
+      expect(() => render({ message })).not.toThrow();
+      expect(render({ message })).toContain('[error]: ');
+    });
+
     test('a plain message still renders as before', () => {
       const line = render({ message: 'hello' });
       expect(line).toContain('[error]: hello');
