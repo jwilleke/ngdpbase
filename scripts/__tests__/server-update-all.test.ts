@@ -1409,6 +1409,89 @@ describe('a pin line that pins nothing blocks even beside a real pin', () => {
   });
 });
 
+describe('every pin line is read in full or blocks', () => {
+  const tail = ['SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''];
+  const layouts: [string, (pinLines: string[]) => string][] = [
+    ['alone', (pinLines) => [...pinLines, ...tail].join('\n')],
+    ['beside another pin', (pinLines) => ['# /usr (pinned)', ...pinLines, ...tail].join('\n')]
+  ];
+  const rowsFor = (text: string) => classifyScript(text, '/updater.sh', ['wiki-prod']);
+  const blockText = (text: string) =>
+    rowsFor(text)
+      .filter((row) => row[0] === 'note' && row[1] === 'block')
+      .map((row) => row[2])
+      .join('\n');
+  const pinnedPaths = (text: string) => rowsFor(text).filter((row) => row[0] === 'path' && row[1] === 'pinned').map((row) => row[2]);
+  const pinnedNames = (text: string) => rowsFor(text).filter((row) => row[0] === 'name').map((row) => row[2]);
+  const varPath = fs.realpathSync('/var');
+
+  const prefixes = ['declare -a ', 'declare -ga ', 'typeset -a ', 'readonly ', 'readonly -a ', 'local ', 'export ', '  local -a '];
+
+  // Literal entries in every prefixed form are pinned, one-line and multi-line.
+  const literal: [string, string[]][] = [];
+  for (const prefix of prefixes) {
+    literal.push([`${prefix}PINNED=(/var wiki-prod)`, [`${prefix}PINNED=(/var wiki-prod)`]]);
+    literal.push([`${prefix}SKIP=( multi-line )`, [`${prefix}SKIP=(`, '  /var', '  wiki-prod', ')']]);
+  }
+  literal.push(['PINNED+=(/var wiki-prod)', ['PINNED+=(/var wiki-prod)']]);
+  literal.push(['PINNED+=( multi-line )', ['PINNED+=(', '  /var', '  wiki-prod', ')']]);
+  literal.push(['exclude=(/var wiki-prod) in lower case', ['exclude=(/var wiki-prod)']]);
+  literal.push(['PINNED=/var:wiki-prod string', ['PINNED=/var:wiki-prod']]);
+  literal.push(['local in a function', ['pins() {', '  local PINNED=(', '    /var', '    wiki-prod', '  )', '}']]);
+
+  for (const [label, pinLines] of literal) {
+    for (const [layout, build] of layouts) {
+      it(`pins /var and wiki-prod from ${label}, ${layout}`, () => {
+        const text = build(pinLines);
+        expect(pinnedPaths(text)).toContain(varPath);
+        expect(pinnedNames(text)).toContain('wiki-prod');
+        expect(blockText(text)).toBe('');
+      });
+    }
+  }
+
+  // A variable, command or ~ left on any pin line blocks and is named, even next to a literal pin.
+  const unresolved: [string, string[], string][] = [];
+  for (const prefix of prefixes) {
+    unresolved.push([`${prefix}PINNED=(/var "$HOME/x")`, [`${prefix}PINNED=(/var "$HOME/x")`], '$HOME/x']);
+    unresolved.push([`${prefix}PINNED=( multi-line $HOME )`, [`${prefix}PINNED=(`, '  /var', '  "$HOME/x"', ')'], '$HOME/x']);
+  }
+  unresolved.push(['PINNED+=(/var "$HOME/x") after PINNED=(/var)', ['PINNED=(/var)', 'PINNED+=(/var "$HOME/x")'], '$HOME/x']);
+  unresolved.push(['PINNED+=( multi-line $HOME )', ['PINNED=(/var)', 'PINNED+=(', '  /var', '  ${SITES_DIR}/wiki', ')'], '${SITES_DIR}/wiki']);
+  unresolved.push(['PINNED=/var:$HOME/x string', ['PINNED=/var:$HOME/x'], '$HOME/x']);
+  unresolved.push(['export PINNED="/var $HOME/x" string', ['export PINNED="/var $HOME/x"'], '$HOME/x']);
+  unresolved.push(['PINNED=~/wiki string', ['PINNED=~/wiki'], '~/wiki']);
+  unresolved.push(['PINNED=(/var `cat /etc/pins`)', ['PINNED=(/var `cat /etc/pins`)'], '`cat']);
+  unresolved.push(['# pinned: /var $HOME/sites/wiki', ['# pinned: /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
+  unresolved.push(['# pinned: then /var $HOME/sites/wiki on the next comment', ['# pinned:', '#   /var $HOME/sites/wiki'], '$HOME/sites/wiki']);
+  unresolved.push(['# /var (pinned) and ~/wiki', ['# /var (pinned) and ~/wiki'], '~/wiki']);
+
+  for (const [label, pinLines, named] of unresolved) {
+    for (const [layout, build] of layouts) {
+      it(`blocks on ${label}, ${layout}`, () => {
+        expect(blockText(build(pinLines))).toContain(named);
+      });
+    }
+  }
+
+  // A pin variable filled in a way the scan does not read blocks, naming the line.
+  const unreadable: [string, string[], string][] = [];
+  unreadable.push(['a pin array opened mid-line', ['true; PINNED=(/var)'], 'true; PINNED=(/var)']);
+  unreadable.push(['a multi-line pin array opened mid-line', ['true; PINNED=(', '  /srv/unread-site', ')'], 'true; PINNED=(']);
+  // A quoted string is one path, as in an array, so a space-separated list in quotes names a path that does not exist.
+  unreadable.push(['a quoted space-separated pin string', ['export PINNED="/var wiki-prod"'], '/var wiki-prod']);
+  unreadable.push(['readarray into a pin array', ['readarray -t PINNED < /etc/pins'], 'readarray -t PINNED']);
+  unreadable.push(['an indexed pin assignment with a variable', ['PINNED[0]=$HOME/x'], '$HOME/x']);
+
+  for (const [label, pinLines, named] of unreadable) {
+    for (const [layout, build] of layouts) {
+      it(`blocks on ${label}, ${layout}`, () => {
+        expect(blockText(build(pinLines))).toContain(named);
+      });
+    }
+  }
+});
+
 describe('update-all-scan.mjs process entry', () => {
   const scanner = path.join(REPO_ROOT, 'scripts', 'update-all-scan.mjs');
 

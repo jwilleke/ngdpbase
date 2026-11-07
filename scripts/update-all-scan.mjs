@@ -201,37 +201,57 @@ function explicitBasenamePins(line) {
   return found;
 }
 
+// A pin variable: any name with a pin word in it, other than a site list.
+function isPinName(name) {
+  return PIN_ARRAY.test(name) && !SITE_ARRAY.test(name);
+}
+
+// An array opened at the start of a line: NAME=(, NAME+=(, or either after
+// declare, typeset, local, readonly or export and their flags.
+const ARRAY_OPEN = /^\s*(?:(?:declare|typeset|local|readonly|export)\s+(?:[-+][A-Za-z]+\s+)*)?([A-Za-z_][A-Za-z0-9_]*)\+?=\(\s*(.*)$/;
+// Any assignment anywhere on a line: NAME=, NAME+=, NAME[i]=, and whether it opens an array.
+const ASSIGN = /(?:^|[\s;&|({])([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=(\(?)/g;
+// Characters the scan cannot resolve: a variable, command substitution or home directory.
+const UNRESOLVED = /[$`~]/;
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function classifyScript(text, scriptPath, names) {
   const lines = text.split('\n');
-  const arrays = new Map();
+  // Each NAME=( or NAME+=( is its own entry, so an append is read like the first list.
+  const arrays = [];
+  // Lines that open or continue a pin array; its entries are checked with the array.
+  const pinArrayLines = new Set();
   let arrayName = '';
   let arrayLines = [];
+  let arrayStart = 0;
 
-  function flushArray() {
+  function flushArray(end) {
     if (!arrayName) return;
-    arrays.set(arrayName, arrayLines.join('\n'));
+    arrays.push([arrayName, arrayLines.join('\n')]);
+    if (isPinName(arrayName)) for (let k = arrayStart; k <= end; k++) pinArrayLines.add(k);
     arrayName = '';
     arrayLines = [];
   }
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (arrayName) {
       arrayLines.push(line);
-      if (stripInlineComment(line).includes(')')) flushArray();
+      if (stripInlineComment(line).includes(')')) flushArray(i);
       continue;
     }
-    const opened = stripInlineComment(line).match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=\(\s*(.*)$/);
+    const opened = stripInlineComment(line).match(ARRAY_OPEN);
     if (opened) {
       arrayName = opened[1];
       arrayLines = [opened[2]];
-      if (opened[2].includes(')')) flushArray();
+      arrayStart = i;
+      if (opened[2].includes(')')) flushArray(i);
     }
   }
-  flushArray();
+  flushArray(lines.length - 1);
 
   const records = [];
   let autoCount = 0;
@@ -239,7 +259,6 @@ export function classifyScript(text, scriptPath, names) {
   let pinCount = 0;
   let incomplete = '';
   const knownArrays = new Set();
-  const pinArrays = new Set();
 
   function addPath(policy, filePath) {
     // A line that runs <checkout>/server.sh update names the checkout, not the file.
@@ -255,28 +274,39 @@ export function classifyScript(text, scriptPath, names) {
     }
   }
 
+  // An entry of a pin list that is not a path must be a PM2 app name; any other entry pins nothing.
+  function checkPinEntry(name, entry) {
+    if (UNRESOLVED.test(entry)) {
+      // The scanner cannot resolve a variable, so it cannot tell which checkout this pins.
+      records.push(['note', 'block', `pin ${name} lists ${entry}, a variable the scan cannot resolve, so it pins nothing`, scriptPath]);
+    } else if (names.includes(entry)) {
+      records.push(['name', 'pinned', entry, scriptPath]);
+      pinCount += 1;
+    } else {
+      records.push(['note', 'block', `pin ${name} lists ${entry}, which is not a path or a PM2 app name, so it pins nothing`, scriptPath]);
+    }
+  }
+
+  // A pin line must be read completely: once its literal paths are out, any $, backtick or ~ left blocks.
+  function blockUnresolved(line, paths) {
+    let rest = line;
+    for (const filePath of paths) rest = rest.split(filePath).join(' ');
+    if (UNRESOLVED.test(rest)) {
+      records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" has a $, backtick or ~ the scan cannot resolve`, scriptPath]);
+    }
+  }
+
   for (const [name, body] of arrays) {
     const paths = extractPaths(body);
-    if (PIN_ARRAY.test(name) && !SITE_ARRAY.test(name)) {
+    if (isPinName(name)) {
       knownArrays.add(name);
-      pinArrays.add(name);
       if (paths.length === 0 && /\$[{A-Za-z_]/.test(body)) incomplete ||= 'a pin list is built from variables';
       for (const filePath of paths) addPath('pinned', filePath);
       // Entries that are not paths must be PM2 app names; any other entry pins nothing.
       let rest = body.split('\n').map(stripInlineComment).join(' ');
       rest = rest.slice(0, rest.indexOf(')') < 0 ? undefined : rest.indexOf(')'));
       for (const filePath of paths) rest = rest.split(filePath).join(' ');
-      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter(Boolean)) {
-        if (entry.includes('$')) {
-          // The scanner cannot resolve a variable, so it cannot tell which checkout this pins.
-          records.push(['note', 'block', `pin ${name} lists ${entry}, a variable the scan cannot resolve, so it pins nothing`, scriptPath]);
-        } else if (names.includes(entry)) {
-          records.push(['name', 'pinned', entry, scriptPath]);
-          pinCount += 1;
-        } else {
-          records.push(['note', 'block', `pin ${name} lists ${entry}, which is not a path or a PM2 app name, so it pins nothing`, scriptPath]);
-        }
-      }
+      for (const entry of rest.replace(/["']/g, ' ').split(/\s+/).filter(Boolean)) checkPinEntry(name, entry);
       continue;
     }
     if (SITE_ARRAY.test(name)) {
@@ -294,10 +324,37 @@ export function classifyScript(text, scriptPath, names) {
   let updateLinesWithoutPath = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (PIN_WORD.test(line)) {
+    const code = stripInlineComment(line);
+    // A pin array's lines were read with the array. Any other assignment to a pin
+    // variable is read here in full, or blocks.
+    let pinAssignment = pinArrayLines.has(i);
+    if (!pinAssignment) {
+      for (const assigned of code.matchAll(ASSIGN)) {
+        if (!isPinName(assigned[1])) continue;
+        pinAssignment = true;
+        if (assigned[2] === '(') {
+          records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" opens a pin array in a form the scan cannot read`, scriptPath]);
+          continue;
+        }
+        // A string value: paths split on spaces, colons or commas; every other word must be a PM2 app name.
+        const value = code.slice(assigned.index + assigned[0].length).replace(/[:,]/g, ' ');
+        const paths = extractPaths(value);
+        for (const filePath of paths) addPath('pinned', filePath);
+        let rest = value;
+        for (const filePath of paths) rest = rest.split(filePath).join(' ');
+        for (const entry of rest.replace(/["';]/g, ' ').split(/\s+/).filter(Boolean)) checkPinEntry(assigned[1], entry);
+      }
+      const words = code.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+      if (!pinAssignment && /\b(?:readarray|mapfile|read)\b/.test(code) && words.some(isPinName)) {
+        pinAssignment = true;
+        records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" fills a pin variable in a form the scan cannot read`, scriptPath]);
+      }
+    }
+    if (!pinAssignment && PIN_WORD.test(line)) {
       const pinsBefore = pinCount;
       const direct = extractPaths(line);
       for (const filePath of direct) addPath('pinned', filePath);
+      blockUnresolved(line, direct);
       if (direct.length === 0) {
         for (let j = i + 1; j < lines.length; j++) {
           if (!/^\s*#/.test(lines[j])) break;
@@ -305,6 +362,7 @@ export function classifyScript(text, scriptPath, names) {
           const continued = extractPaths(lines[j]);
           if (continued.length === 0) break;
           for (const filePath of continued) addPath('pinned', filePath);
+          blockUnresolved(lines[j], continued);
         }
       }
       if (/^\s*#/.test(line)) {
@@ -326,17 +384,14 @@ export function classifyScript(text, scriptPath, names) {
         }
       }
       // Each pin line must pin something, whatever other pins the script has.
-      // A pin array's own entries are checked above.
-      const opensPinArray = pinArrays.has(stripInlineComment(line).match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=\(/)?.[1]);
       // Plain prose ("# skip a checkout that has local changes") names nothing, so it
       // blocks only when it has a (pinned) marker, a path or $VAR, or a name in a different case.
       const lower = line.toLowerCase();
       const aimed = /\(\s*pinned\s*\)|\$|\//i.test(line) || names.some((n) => n.length > 0 && lower.includes(n.toLowerCase()));
-      if (pinCount === pinsBefore && !opensPinArray && aimed) {
+      if (pinCount === pinsBefore && aimed) {
         records.push(['note', 'block', `pin line "${line.trim().slice(0, 80)}" names no path or PM2 app name`, scriptPath]);
       }
     }
-    const code = stripInlineComment(line);
     if (/server\.sh\b/.test(code) && /\bupdate\b/.test(code)) {
       const found = extractPaths(code);
       if (found.length === 0) updateLinesWithoutPath += 1;
