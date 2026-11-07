@@ -1099,6 +1099,80 @@ describe('./server.sh update all', () => {
       expect(linked.out).toContain(fs.realpathSync(site));
       expect(linked.out).not.toContain('No ngdpbase checkouts');
     }, 60000);
+
+    it('N1: a (pinned) basename with the wrong case blocks the run and names the pin', () => {
+      const auto = cloneFrom(primary(), 'fairways');
+      const held = cloneFrom(primary(), 'ngdpbase-accounting');
+      const other = cloneFrom(primary(), 'encrypted');
+      const heads = [held, other].map((dir) => git(dir, 'rev-parse', 'HEAD'));
+      publish(primary(), '1.1.0');
+      writeUpdater([auto], [], '# Ngdpbase-Accounting (pinned)\n');
+      writeJlist([
+        { name: 'The Fairways', cwd: auto },
+        { name: 'Accounting Dev', cwd: held },
+        { name: 'ngdp-encrypted', cwd: other }
+      ]);
+
+      const result = run(['update', 'all']);
+
+      expect(result.status, result.out).toBe(3);
+      expect(result.out).toContain('Ngdpbase-Accounting');
+      expect(result.out).toContain('unknown ownership');
+      expect([held, other].map((dir) => git(dir, 'rev-parse', 'HEAD'))).toEqual(heads);
+      expect(npmLines()).toEqual([]);
+    }, 60000);
+
+    it('N4: other PM2 app names on a (pinned) comment line stay pinned', () => {
+      const rows = classifyScript(
+        ['# Not here: geohazardwatch, yourphr, ngdpbase-accounting (pinned)', 'SITES=(', '  /x/a-site', ')', 'for s in "${SITES[@]}"; do', '  ./server.sh update', 'done', ''].join('\n'),
+        '/updater.sh',
+        ['geohazardwatch', 'yourphr', 'Accounting Dev']
+      );
+      expect(rows.filter((row) => row[0] === 'name').map((row) => row[2])).toEqual(['geohazardwatch', 'yourphr']);
+      expect(rows.filter((row) => row[0] === 'basename').map((row) => row[2])).toEqual(['ngdpbase-accounting']);
+    });
+
+    it('N5: every ambiguous pin reason is shown', () => {
+      const a1 = cloneFrom(primary(), 'one/ngdpbase-accounting');
+      const a2 = cloneFrom(primary(), 'two/ngdpbase-accounting');
+      const b1 = cloneFrom(primary(), 'one/ngdpbase-reports');
+      const b2 = cloneFrom(primary(), 'two/ngdpbase-reports');
+      const auto = cloneFrom(primary(), 'fairways');
+      writeUpdater([auto], [], '# ngdpbase-accounting (pinned), ngdpbase-reports (pinned)\n');
+      writeJlist([
+        { name: 'Acc one', cwd: a1 },
+        { name: 'Acc two', cwd: a2 },
+        { name: 'Rep one', cwd: b1 },
+        { name: 'Rep two', cwd: b2 },
+        { name: 'The Fairways', cwd: auto }
+      ]);
+
+      const result = run(['update', 'all', '--dry-run']);
+
+      expect(result.status, result.out).toBe(3);
+      const why = result.out.split('\n').find((line) => line.includes('ownership is incomplete')) ?? '';
+      expect(why).toContain('basename ngdpbase-accounting');
+      expect(why).toContain('basename ngdpbase-reports');
+    }, 60000);
+
+    it('N6: a stopped PM2 entry does not count as a running checkout for a pin', () => {
+      const live = cloneFrom(primary(), 'one/ngdpbase-accounting');
+      const stopped = cloneFrom(primary(), 'two/ngdpbase-accounting');
+      const auto = cloneFrom(primary(), 'fairways');
+      writeUpdater([auto], [], '# ngdpbase-accounting (pinned)\n');
+      writeJlist([
+        { name: 'Acc live', cwd: live },
+        { name: 'Acc stopped', cwd: stopped, status: 'stopped' },
+        { name: 'The Fairways', cwd: auto }
+      ]);
+
+      const result = run(['update', 'all', '--dry-run']);
+
+      expect(result.out).not.toContain('2 running checkouts use it');
+      expect(result.out).not.toContain('unknown ownership');
+      expect(result.status, result.out).toBe(0);
+      expect(result.out).toContain('skip (pinned)');
+    }, 60000);
   });
 
   it('dry-runs the updater comment that pins one directory basename', () => {
@@ -1249,7 +1323,7 @@ describe('updater comment fixture', () => {
     ''
   ].join('\n');
 
-  it('keeps the site list authoritative and pins only the marked basename', () => {
+  it('keeps the site list authoritative and pins the marked basename and the other named app', () => {
     const rows = classifyScript(fixture, '/updater.sh', [
       'Accounting Dev',
       'yourphr',
@@ -1267,8 +1341,8 @@ describe('updater comment fixture', () => {
     expect(rows.filter((row) => row[0] === 'basename')).toEqual([
       ['basename', 'pinned', 'ngdpbase-accounting', '/updater.sh']
     ]);
-    expect(rows.some((row) => row[0] === 'name')).toBe(false);
+    // N4: the other PM2 app name on the pin line stays pinned.
+    expect(rows.filter((row) => row[0] === 'name')).toEqual([['name', 'pinned', 'yourphr', '/updater.sh']]);
     expect(rows.some((row) => row[0] === 'note' && row[1] === 'block')).toBe(false);
-    expect(rows.some((row) => row[1] === 'pinned' && String(row[2]).includes('yourphr'))).toBe(false);
   });
 });

@@ -389,9 +389,14 @@ Ownership, most protective first:
 - An updater script is read, not executed. The lookup is the user LaunchAgents directory, systemd
   user units, and the user crontab. In that script, a `SITES` (or `SITE`, `INSTANCES`, `REPOS`,
   `CHECKOUTS`, `TARGETS`) array is automatic, and a `PINNED` / `EXCLUDE` / `SKIP` array is pinned.
-  A comment pins one checkout by writing its directory basename as `basename (pinned)`, and only when exactly one running checkout has that basename. Other names in that comment are not pins. A path on a pin line, or a PM2 app name the comment names on its own, still pins that checkout. A checkout the site list already names stays automatic. The same basename on two checkouts, or a pin word with no path and no `basename (pinned)`, leaves unlisted checkouts alone.
-  A comment that says pinned, excluded, or skipped can name a path. A pin
-  that names a path that does not exist stops the run (it pins nothing) and names the path.
+  A comment pins one checkout by writing its directory basename as `basename (pinned)`, and only
+  when exactly one running checkout has that basename (a stopped PM2 entry does not count). Other
+  PM2 app names on that comment line stay pinned, and so does a PM2 app name written as
+  `name (pinned)`. A path on a pin line still pins that checkout. A checkout the site list already
+  names stays automatic. The same basename on two checkouts, or a pin word with no path and no
+  `basename (pinned)`, leaves unlisted checkouts alone, and every ambiguous pin is listed. A pin
+  that names a path, a directory name or an app name that matches nothing (wrong case, a
+  trailing dot, a symlink alias, a typo) stops the run and names the pin.
   A crontab line, systemd unit or LaunchAgent that runs `server.sh update` itself is an updater
   too, and is read the same way.
 - When that script is read completely, a checkout it does not mention is updated, and the output

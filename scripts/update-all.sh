@@ -307,30 +307,51 @@ ngdp_update_all_scan_ownership() {
 # unlisted checkouts stay untouched. A checkout the site list already names
 # stays automatic.
 ngdp_update_all_resolve_basenames() {
-  local i=0 base source root base_name r k already
-  local -a matches
+  local i=0 base source root base_name r k already named
+  local -a matches all_matches
   while [ "$i" -lt "${#_UA_BASE_PIN[@]}" ]; do
     base="${_UA_BASE_PIN[$i]}"
     source="${_UA_BASE_PIN_SRC[$i]}"
     i=$((i + 1))
     matches=()
+    all_matches=()
+    named=0
     r=0
     while [ "$r" -lt "${#_UA_ROOTS[@]}" ]; do
       root="${_UA_ROOTS[$r]}"
-      r=$((r + 1))
       base_name="$(basename -- "$root")"
       if [ "$base_name" = "$base" ]; then
-        matches+=("$root")
+        all_matches+=("$root")
+        # A stopped PM2 entry is not a running checkout.
+        if [ "${_UA_ONLINE[$r]}" = "1" ]; then
+          matches+=("$root")
+        fi
       fi
+      if ngdp_update_all_name_list "${_UA_NAMES[$r]}" | grep -F -x -q -- "$base"; then
+        named=1
+      fi
+      r=$((r + 1))
     done
+    # "name (pinned)" can also name a PM2 app, as it did before basename pins.
+    if [ "$named" -eq 1 ]; then
+      _UA_OWN_NAME+=("$base")
+      _UA_OWN_NAME_SRC+=("$source")
+    fi
+    if [ "${#matches[@]}" -eq 0 ] && [ "${#all_matches[@]}" -gt 0 ]; then
+      matches=("${all_matches[@]}")
+    fi
     if [ "${#matches[@]}" -gt 1 ]; then
       _UA_BLOCK=1
-      _UA_BLOCK_WHY="basename ${base} matches ${#matches[@]} checkouts (${source})"
+      _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }basename ${base} matches ${#matches[@]} checkouts (${source})"
       echo "⚠️  Directory name ${base} is pinned, but ${#matches[@]} running checkouts use it. None of them is pinned, and unlisted checkouts are left alone."
       continue
     fi
     if [ "${#matches[@]}" -eq 0 ]; then
-      echo "⚠️  Directory name ${base} is pinned, and no running checkout uses it."
+      if [ "$named" -eq 0 ]; then
+        _UA_BLOCK=1
+        _UA_BLOCK_WHY="${_UA_BLOCK_WHY}${_UA_BLOCK_WHY:+; }pin ${base} matches no checkout or PM2 app name (${source})"
+        echo "⚠️  Directory name ${base} is pinned, but no checkout or PM2 app has that name (check case, a trailing dot, symlink aliases and typos). Unlisted checkouts are left alone."
+      fi
       continue
     fi
     root="${matches[0]}"

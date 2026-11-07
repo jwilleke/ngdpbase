@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `./server.sh update all` updates the online ngdpbase checkouts PM2 is running, by calling each checkout's own `./server.sh update`. Checkouts an automatic updater already updates, and checkouts marked pinned, are skipped. `./server.sh update all --dry-run` prints the plan. See [docs/SERVER-MANAGEMENT.md](docs/SERVER-MANAGEMENT.md).
-- `./server.sh update all` reads `directory-name (pinned)` in an updater comment as a pin for the one running checkout with that directory name. Other names in the comment are not pins, and a checkout the updater's site list already names stays automatic.
+- `./server.sh update all` reads `directory-name (pinned)` in an updater comment as a pin for the one running checkout with that directory name. Other PM2 app names in the comment stay pinned, a `name (pinned)` that is a PM2 app name still pins it, and a checkout the updater's site list already names stays automatic. A pin that matches no checkout stops the run and names it, and every ambiguous pin is listed.
+- `update-all-scan.mjs` compares real paths before running, so `update all` run through a symlinked checkout path finds the same checkouts as through the real path.
 
 ## [5.43.0] - 2026-11-07
 

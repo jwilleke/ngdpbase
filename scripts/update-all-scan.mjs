@@ -15,7 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const MAX_SCRIPT = 512 * 1024;
 const MAX_PLIST = 1024 * 1024;
@@ -295,18 +295,15 @@ export function classifyScript(text, scriptPath, names) {
           records.push(['basename', 'pinned', base, scriptPath]);
           pinCount += 1;
         }
-        // A "(pinned)" basename owns this comment. Other names listed beside
-        // it are not pins. A comment with no such marker can still name one
-        // PM2 app ("Accounting Dev is pinned").
-        if (basenamePins.length === 0) {
-          const comment = line.replace(/^\s*#\s?/, '');
-          for (const appName of names) {
-            if (appName.length < 6) continue;
-            const bound = new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(appName)}([^A-Za-z0-9]|$)`);
-            if (bound.test(comment)) {
-              records.push(['name', 'pinned', appName, scriptPath]);
-              pinCount += 1;
-            }
+        // Other PM2 app names on the same comment stay pinned too. The
+        // "(pinned)" marker adds a basename pin, it does not narrow the line.
+        const comment = line.replace(/^\s*#\s?/, '');
+        for (const appName of names) {
+          if (appName.length < 6) continue;
+          const bound = new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(appName)}([^A-Za-z0-9]|$)`);
+          if (bound.test(comment)) {
+            records.push(['name', 'pinned', appName, scriptPath]);
+            pinCount += 1;
           }
         }
       }
@@ -500,6 +497,17 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compare real paths: a checkout reached through a symlink passes a symlinked
+// argv[1], while import.meta.url is always the real file.
+function isMain() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
   main();
 }
