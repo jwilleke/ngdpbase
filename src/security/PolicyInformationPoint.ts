@@ -1495,8 +1495,17 @@ class PolicyInformationPoint extends BaseManager {
    * nothing. Same record as every other page denial, `policyIds` included.
    */
   recordPageRefusal(subject: UserContext | null | undefined, pageName: string, action: string, reason: string, policyIds: readonly string[] = [], conditionNotMet: readonly string[] = []): Promise<void> {
-    this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} page=${pageName} action=${action} allowed=false reason=${reason}`);
+    // The page name is what the caller sent and the logger writes the message as one raw line, so a CR or LF in it
+    // would start a line of its own (#2294). Escaped, not removed, so the line still shows what was sent. The
+    // audit row is JSON and escapes them itself.
+    const loggedName = PolicyInformationPoint.loggable(pageName);
+    this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} page=${loggedName} action=${action} allowed=false reason=${reason}`);
     return this.auditDenial(subject, pageName, action, reason, 'page', policyIds, conditionNotMet);
+  }
+
+  /** A caller-sent name as one log line: CR and LF escaped, not removed, so it cannot start a line of its own. */
+  private static loggable(name: string): string {
+    return name.replace(/[\r\n]/g, (c) => (c === '\r' ? '\\r' : '\\n'));
   }
 
   /** The name a decision is recorded under: the subject's, or `anonymous`. */
@@ -1560,7 +1569,7 @@ class PolicyInformationPoint extends BaseManager {
           ...(conditionNotMet.length > 0 ? { conditionNotMet: [...conditionNotMet] } : {})
         }
       },
-      (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)
+      (err) => logger.warn(`Audit log failed for authorization-deny of '${PolicyInformationPoint.loggable(pageName ?? '')}':`, err)
     );
   }
 

@@ -213,3 +213,80 @@ describe('signed-out API delete and rename answer the same whether a page exists
     expect(pip.recordPageRefusal).toHaveBeenCalledWith(ANON, 'P', 'page-delete', 'capability_deny', expect.anything(), expect.anything());
   });
 });
+
+describe('signed-out restore, ingest, capture and upload answer the same whether a page exists (#2294)', () => {
+  const pages: Record<string, { content: string; metadata: Record<string, unknown> } | null> = {
+    'an existing page in the same category': { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'general' } },
+    'an existing page in another category': { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'other' } },
+    'an absent page': null
+  };
+  const base = { session: {}, userContext: ANON, headers: {}, query: {}, get: vi.fn() };
+  const calls = (r: ReturnType<typeof res>) => ({ status: r.status.mock.calls, json: r.json.mock.calls, send: r.send.mock.calls, redirect: r.redirect.mock.calls });
+  type Route = { label: string; run: (routes: WikiRoutes, r: ReturnType<typeof res>) => Promise<unknown>; status: number };
+  const routesUnderTest: Route[] = [
+    { label: 'POST /api/page/:identifier/restore/:version', status: 401,
+      run: (routes, r) => routes.restorePageVersion({ ...base, params: { identifier: 'P', version: '1' }, path: '/api/page/P/restore/1', body: {} }, r) },
+    { label: 'POST /api/page/ingest', status: 401,
+      run: (routes, r) => routes.ingestPageMarkdown({ ...base, params: {}, path: '/api/page/ingest', body: { pageName: 'P', markdown: '# Hi' } }, r) },
+    { label: 'POST /attachments/upload/:page', status: 401,
+      run: (routes, r) => routes.uploadAttachment({ ...base, params: { page: 'P' }, path: '/attachments/upload/P', body: {}, file: { buffer: Buffer.from('x'), originalname: 'a.txt', mimetype: 'text/plain', size: 1 } }, r) }
+  ];
+
+  for (const route of routesUnderTest) {
+    test(`${route.label} gives a signed-out caller the same ${route.status} for an existing, other-category and absent page`, async () => {
+      const answers = [];
+      for (const page of Object.values(pages)) {
+        const { routes, pageManager } = makeRoutes('P');
+        Object.assign(pageManager, { restoreVersion: vi.fn(), provider: { getPageVersion: vi.fn() } });
+        pageManager.getPage.mockResolvedValue(page);
+        const r = res();
+        await route.run(routes, r);
+        expect(pageManager.getPage).not.toHaveBeenCalled();
+        expect(pageManager.savePage).not.toHaveBeenCalled();
+        expect((pageManager as unknown as { restoreVersion: ReturnType<typeof vi.fn> }).restoreVersion).not.toHaveBeenCalled();
+        answers.push(calls(r));
+      }
+      expect(answers[0].status).toEqual([[route.status]]);
+      expect(answers[0].json).toHaveLength(1);
+      for (const a of answers) expect(a).toEqual(answers[0]);
+    });
+  }
+
+  test('POST /capture gives a signed-out caller the same plain 401 without looking up a page', async () => {
+    const answers = [];
+    for (const page of Object.values(pages)) {
+      const { routes, pageManager } = makeRoutes('P');
+      vi.spyOn(routes as never, 'isCaptureEnabled').mockReturnValue(true);
+      pageManager.getPage.mockResolvedValue(page);
+      const r = res();
+      await routes.captureSubmit({ ...base, params: {}, path: '/capture', body: { pageName: 'P', text: 'note' } }, r);
+      expect(pageManager.getPage).not.toHaveBeenCalled();
+      expect(pageManager.savePage).not.toHaveBeenCalled();
+      answers.push(calls(r));
+    }
+    expect(answers[0].status).toEqual([[401]]);
+    for (const a of answers) expect(a).toEqual(answers[0]);
+  });
+
+  test('a refused signed-out ingest is still recorded', async () => {
+    const { routes } = makeRoutes('P');
+    const record = vi.spyOn(routes as never, 'recordWriteRefusal').mockResolvedValue(undefined);
+    await routes.ingestPageMarkdown({ ...base, params: {}, path: '/api/page/ingest', body: { pageName: 'P', markdown: '# Hi' } }, res());
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(expect.anything(), 'P', 'page-create');
+  });
+
+  test('a signed-out form POST /delete/:page is recorded as page-delete, whether or not the page exists, and answers as before', async () => {
+    for (const page of Object.values(pages)) {
+      const { routes, pageManager } = makeRoutes('P');
+      pageManager.getPage.mockResolvedValue(page);
+      const record = vi.spyOn(routes as never, 'recordWriteRefusal').mockResolvedValue(undefined);
+      const r = res();
+      await routes.deletePage({ ...base, params: { page: 'P' }, path: '/delete/P', body: {} }, r);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith(expect.anything(), 'P', 'page-delete');
+      expect(r.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/view/P'));
+      expect(pageManager.getPage).not.toHaveBeenCalled();
+    }
+  });
+});
