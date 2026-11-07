@@ -113,3 +113,103 @@ describe('POST /delete/<page> by someone not signed in (#2289)', () => {
     expect(renderError).toHaveBeenCalledWith(expect.anything(), r, 403, 'Access Denied', expect.any(String));
   });
 });
+
+describe('signed-out save and delete answer the same whether a page exists (#2294)', () => {
+  type Case = { label: string; page: { content: string; metadata: Record<string, unknown> } | null };
+  const cases: Case[] = [
+    { label: 'an existing page in another category', page: { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'other' } } },
+    { label: 'an existing page in the same category', page: { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'general' } } },
+    { label: 'an absent page', page: null }
+  ];
+  const request = (verb: 'save' | 'delete', headers: Record<string, string>) => ({
+    params: { page: 'P' }, session: {}, path: `/${verb}/P`, userContext: ANON, headers, query: {}, get: vi.fn(),
+    body: { title: 'P', content: '# Test', categories: '', userKeywords: '', 'system-category': 'general', 'author-lock-present': '1' }
+  });
+  const answer = async (verb: 'save' | 'delete', headers: Record<string, string>, page: Case['page']) => {
+    const { routes, pageManager, renderError } = makeRoutes('P');
+    pageManager.getPage.mockResolvedValue(page);
+    // As the real one answers: only an administrator moves a page to another category.
+    Object.assign(pageManager, { systemCategoryForWrite: vi.fn((_c: unknown, requested: unknown, current?: string) => Promise.resolve(current && current !== requested ? { ok: false, reason: 'Only administrators can set a page\'s system category' } : { ok: true, category: String(requested), admin: false })) });
+    const r = res();
+    const call = verb === 'save' ? routes.savePage.bind(routes) : routes.deletePage.bind(routes);
+    await call(request(verb, headers), r);
+    expect(renderError).not.toHaveBeenCalled();
+    expect(pageManager.savePage).not.toHaveBeenCalled();
+    expect(pageManager.deletePage).not.toHaveBeenCalled();
+    return { status: r.status.mock.calls, json: r.json.mock.calls, send: r.send.mock.calls, redirect: r.redirect.mock.calls };
+  };
+
+  for (const verb of ['save', 'delete'] as const) {
+    test(`a signed-out form POST to /${verb} gets the sign-in redirect for every case`, async () => {
+      const answers = await Promise.all(cases.map(c => answer(verb, {}, c.page)));
+      expect(answers[0].redirect).toEqual([['/login?redirect=' + encodeURIComponent(verb === 'save' ? '/edit/P' : '/view/P')]]);
+      expect(answers[0].status).toEqual([]);
+      for (const a of answers) expect(a).toEqual(answers[0]);
+    });
+
+    test(`a signed-out JSON POST to /${verb} gets the same 401 for every case`, async () => {
+      const answers = await Promise.all(cases.map(c => answer(verb, { accept: 'application/json' }, c.page)));
+      expect(answers[0].status).toEqual([[401]]);
+      expect(answers[0].redirect).toEqual([]);
+      for (const a of answers) expect(a).toEqual(answers[0]);
+    });
+  }
+
+  test('a refused signed-out save is still recorded, as an edit of an existing page and a create of an absent one', async () => {
+    for (const [page, action] of [[cases[0].page, 'page-edit'], [null, 'page-create']] as const) {
+      const { routes, pageManager } = makeRoutes('P');
+      pageManager.getPage.mockResolvedValue(page);
+      const record = vi.spyOn(routes as never, 'recordWriteRefusal').mockResolvedValue(undefined);
+      await routes.savePage(request('save', {}), res());
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith(expect.anything(), 'P', action);
+    }
+  });
+});
+
+describe('signed-out API delete and rename answer the same whether a page exists (#2294)', () => {
+  const pages: Record<string, { content: string; metadata: Record<string, unknown> } | null> = {
+    'an existing page in the same category': { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'general' } },
+    'an existing page in another category': { content: 'old', metadata: { title: 'P', uuid: 'u1', 'system-category': 'other' } },
+    'an absent page': null
+  };
+  const apiRequest = (method: 'DELETE' | 'PUT') => ({
+    params: { identifier: 'P' }, session: {}, path: '/api/page/P', method, userContext: ANON, headers: {}, query: {}, get: vi.fn(),
+    body: { newName: 'Q' }
+  });
+  const answer = async (verb: 'delete' | 'rename', page: (typeof pages)[string]) => {
+    const { routes, pageManager } = makeRoutes('P');
+    pageManager.getPage.mockResolvedValue(page);
+    const r = res();
+    await (verb === 'delete' ? routes.apiDeletePage(apiRequest('DELETE'), r) : routes.apiRenamePage(apiRequest('PUT'), r));
+    expect(pageManager.deletePage).not.toHaveBeenCalled();
+    return { status: r.status.mock.calls, json: r.json.mock.calls, send: r.send.mock.calls, redirect: r.redirect.mock.calls };
+  };
+
+  for (const verb of ['delete', 'rename'] as const) {
+    test(`a signed-out API ${verb} gets the same 401 body for an existing, other-category and absent page`, async () => {
+      const answers = await Promise.all(Object.values(pages).map(p => answer(verb, p)));
+      expect(answers[0].status).toEqual([[401]]);
+      expect(answers[0].json).toHaveLength(1);
+      for (const a of answers) expect(a).toEqual(answers[0]);
+    });
+  }
+
+  test('a signed-out API delete writes a refusal row for page-delete, whether or not the page exists', async () => {
+    for (const page of Object.values(pages)) {
+      const { routes, pageManager } = makeRoutes('P');
+      pageManager.getPage.mockResolvedValue(page);
+      const record = vi.spyOn(routes as never, 'recordWriteRefusal').mockResolvedValue(undefined);
+      await routes.apiDeletePage(apiRequest('DELETE'), res());
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith(expect.anything(), 'P', 'page-delete');
+    }
+  });
+
+  test('the refusal row reaches PolicyInformationPoint.recordPageRefusal', async () => {
+    const { routes } = makeRoutes('P');
+    const pip = (routes as unknown as { engine: { getManager: (n: string) => { recordPageRefusal: ReturnType<typeof vi.fn> } } }).engine.getManager('PolicyInformationPoint');
+    await routes.apiDeletePage(apiRequest('DELETE'), res());
+    expect(pip.recordPageRefusal).toHaveBeenCalledWith(ANON, 'P', 'page-delete', 'capability_deny', expect.anything(), expect.anything());
+  });
+});
