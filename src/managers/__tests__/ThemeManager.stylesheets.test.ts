@@ -71,7 +71,8 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).not.toMatch(/65ch/);
     expect(css).not.toMatch(/18ch/);
     expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*32em;/);
-    expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
+    expect(css).toMatch(/\.markdown-body img,\s*\n\.wiki-image \{[^}]*max-width:\s*100%;/);
+    expect(css).toMatch(/img\[src\*="logo" i\][^{]*\{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
     // Login only: the sign-up button also links to /login and keeps the base look.
     expect(css).toMatch(/a\.btn-outline-primary\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
     expect(css).not.toMatch(/[\s,]a\[href\^="\/login"\]/);

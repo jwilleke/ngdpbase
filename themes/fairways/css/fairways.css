@@ -365,17 +365,25 @@ button:focus-visible {
   color: var(--link-color);
 }
 
-/* In-page wordmark stays a plate. Writing uses the main column. */
+/* Page pictures may be as wide as the text column. */
 .markdown-body img,
 .wiki-image {
   display: block;
   width: auto;
-  max-width: min(100%, 18rem);
+  max-width: 100%;
   height: auto;
   margin: 0 0 1.25rem !important;
   border-radius: 10px;
   object-fit: contain;
   object-position: left center;
+}
+
+/* A wordmark repeated in page content stays a plate, at most 18rem wide.
+   Recognised by its file name or a "logo" class, as the docs suggest. */
+.markdown-body img[src*="logo" i],
+.markdown-body img[src*="wordmark" i],
+.markdown-body img.logo {
+  max-width: min(100%, 18rem);
 }
 
 /* Bootstrap paints these on hover, focus and press. Without them a focused
