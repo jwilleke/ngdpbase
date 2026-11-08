@@ -862,7 +862,7 @@ export class PolicyDecisionPoint extends BaseManager {
     if (typeof type !== 'string' || type === '') throw new OwnedRecordError('a record decision needs a resource type');
     if (Object.hasOwn(RESOURCE_MATCHERS, type)) throw new OwnedRecordError(`resource type '${type}' is decided by its own door`);
     const entry = this.ownedTypeEntry(type);
-    const subject = decisionSubject(input);
+    const subject = decisionSubject(input) ?? null;
     const ceiling = await this.ceiling(subject, { action, resource: { type, id: '*' } });
     if (ceiling && !ceiling.permit) return { decision: ceiling };
     const userContext = await this.ownedUserContext(subject);

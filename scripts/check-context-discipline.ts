@@ -124,7 +124,7 @@ const CONVERSIONS: ReadonlyArray<{ call: RegExp; allowed: Readonly<Record<string
     call: /\bdecisionSubject\s*(<[^>]*>\s*)?\(/,
     allowed: {
       'src/context/ActorContext.ts': 1, // its declaration
-      'src/security/PolicyDecisionPoint.ts': 1, // decide, permits, holds
+      'src/security/PolicyDecisionPoint.ts': 2, // evaluate (decide, permits, holds); prepareOwned (decideOwnedRecord, decideOwnedList, #1823)
       'src/security/PolicyInformationPoint.ts': 1 // the page questions
     }
   }
