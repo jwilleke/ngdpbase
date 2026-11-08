@@ -29,6 +29,16 @@ describe('ThemeManager theme stylesheets', () => {
     }
   }
 
+  test('header logo prefers logo-header.png over logo.png', () => {
+    writeTheme('fairways', { name: 'Fairways' });
+    const assetsDir = path.join(themesDir, 'fairways', 'assets');
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(assetsDir, 'logo.png'), '');
+    expect(new ThemeManager('fairways', themesDir).paths.logoPath).toBe('/themes/fairways/assets/logo.png');
+    fs.writeFileSync(path.join(assetsDir, 'logo-header.png'), '');
+    expect(new ThemeManager('fairways', themesDir).paths.logoPath).toBe('/themes/fairways/assets/logo-header.png');
+  });
+
   test('publishes listed css files that exist in the theme css directory', () => {
     writeTheme('fairways', { name: 'Fairways', stylesheets: ['fairways.css', 'missing.css'] }, ['fairways.css']);
     const paths = new ThemeManager('fairways', themesDir).paths;

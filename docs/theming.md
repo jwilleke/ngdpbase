@@ -12,7 +12,7 @@ themes/
 │   ├── css/
 │   │   └── variables.css     # CSS custom properties (colors, fonts, spacing, Bootstrap vars)
 │   └── assets/
-│       ├── logo.svg          # Optional logo (logo.svg → logo.png → favicon.svg → favicon.png)
+│       ├── logo.svg          # Optional logo (logo-header.svg → logo-header.png → logo.svg → logo.png → favicon.svg → favicon.png)
 │       └── favicon.png
 └── volcano/
     ├── theme.json
@@ -121,6 +121,8 @@ A custom theme that omits the variables gets `2px` and `#868e96`. Check the cont
 ### Fairways: logos inside a page
 
 The Fairways theme shows a picture in a page as wide as the text column. A logo is the exception: it stays at most 18rem wide and, in dark mode, sits on a light panel like the header logo. A picture counts as a logo when its file name contains "logo" or "wordmark", or when it has `class="logo"`. Any other file name is sized as a picture.
+
+The Fairways header shows `assets/logo-header.png`, a copy of `assets/logo.png` with its thin blue frame cleared. Pages that link `logo.png` still get the original.
 
 ## Activating a Theme
 
@@ -234,7 +236,7 @@ The following variables are available in every EJS template:
 | `activeTheme` | `string` | Active theme folder name (e.g. `"volcano"`) |
 | `coreCssPath` | `string` | Path to `themes/core.css` |
 | `variablesCssPath` | `string` | Path to `themes/<active>/css/variables.css` |
-| `logoPath` | `string` | Path to theme logo (svg or png) |
+| `logoPath` | `string` | Path to the header logo (svg or png). A theme may ship `logo-header.*` to show a different copy in the header than the `logo.*` file pages link to. |
 | `faviconPath` | `string` | Path to theme favicon |
 | `locationCssPath` | `string` | Path to location plugin CSS |
 | `themeFontUrls` | `string[]` | Font URLs from `theme.json fonts[]` |
