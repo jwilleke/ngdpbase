@@ -242,19 +242,27 @@ __Success (200)__:
   "success": true,
   "identifier": "Main",
   "comparison": {
-    "version1": {
+    "fromVersion": 1,
+    "toVersion": 2,
+    "fromMetadata": {
       "version": 1,
-      "dateCreated": "2024-10-14T09:00:00Z",
       "author": "admin",
-      "changeType": "created",
-      "comment": "Initial version"
+      "timestamp": "2024-10-14T09:00:00Z",
+      "changeType": "create",
+      "message": "Initial version",
+      "contentHash": "…",
+      "contentSize": 62,
+      "compressed": false
     },
-    "version2": {
+    "toMetadata": {
       "version": 2,
-      "dateCreated": "2024-10-15T15:45:00Z",
       "author": "john",
-      "changeType": "updated",
-      "comment": "Added new section"
+      "timestamp": "2024-10-15T15:45:00Z",
+      "changeType": "update",
+      "message": "Added new section",
+      "contentHash": "…",
+      "contentSize": 118,
+      "compressed": false
     },
     "diff": [
       [0, "# Welcome to Main\n"],
