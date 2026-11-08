@@ -683,7 +683,7 @@ describe('WikiRoutes — coverage batch 4', () => {
         compareVersions: vi.fn().mockResolvedValue({
           v1: { version: 1, content: 'old' },
           v2: { version: 2, content: 'new' },
-          diff: [{ type: 'added', value: 'new line' }]
+          diff: [[1, 'new line']]
         })
       };
       mockPageManager.pageExists.mockReturnValue(true);
