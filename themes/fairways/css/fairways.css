@@ -33,6 +33,8 @@
   --occupant-border: #e7b2a4;
   --occupant-label: #f0c7ba;
   --occupant-text: #f6efe9;
+  --logo-panel-bg: #ffffff;
+  --logo-panel-padding: 3px 8px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,6 +51,8 @@
     --occupant-border: #e7b2a4;
     --occupant-label: #f0c7ba;
     --occupant-text: #f6efe9;
+    --logo-panel-bg: #ffffff;
+    --logo-panel-padding: 3px 8px;
   }
 }
 
@@ -158,11 +162,17 @@ button:focus-visible {
   margin-right: auto;
 }
 
+/* 24px tall, as the base header draws it. In dark mode a light panel sits
+   behind the wordmark, so its black lettering stays readable. */
 .jspwiki-header .navbar-brand img {
-  height: 42px !important;
+  box-sizing: content-box;
+  height: 24px !important;
   width: auto !important;
   max-width: min(46vw, 210px);
   margin-right: 0.75rem !important;
+  padding: var(--logo-panel-padding, 0);
+  background-color: var(--logo-panel-bg, transparent);
+  border-radius: 8px;
 }
 
 .jspwiki-header .form-control {
@@ -421,7 +431,6 @@ button:focus-visible {
 
 @media (max-width: 767.98px) {
   .jspwiki-header .navbar-brand img {
-    height: 34px !important;
     max-width: 52vw;
     margin-right: 0 !important;
   }
