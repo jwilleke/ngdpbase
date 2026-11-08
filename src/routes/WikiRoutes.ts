@@ -2812,14 +2812,31 @@ class WikiRoutes {
    * #2326: the provider's diff is character level (fast-diff, also what the
    * delta store keeps), which reads as noise on text. Rebuild the old and new
    * text from it and diff by line for display, in the same [-1 | 0 | 1, text]
-   * shape the view already renders.
+   * shape the view already renders. Stats count those lines, so the summary
+   * matches what is shown. A rewrite too big to diff within the time limit
+   * comes back as `tooLarge`, with both versions' sizes, and no diff.
    */
-  private lineDiffForDisplay(charDiff: Array<[number, string]>): Array<[number, string]> {
+  private lineDiffForDisplay(charDiff: Array<[number, string]>): {
+    diff: Array<[number, string]>;
+    stats: { additions: number; deletions: number; unchanged: number };
+    tooLarge?: { oldBytes: number; newBytes: number };
+  } {
     const oldText = charDiff.filter(([op]) => op <= 0).map(([, t]) => t).join('');
     const newText = charDiff.filter(([op]) => op >= 0).map(([, t]) => t).join('');
+    const stats = { additions: 0, deletions: 0, unchanged: 0 };
+    const changes = diffLines(oldText, newText, { ignoreNewlineAtEof: true, stripTrailingCr: true, timeout: 2000 });
+    if (!changes) {
+      return { diff: [], stats, tooLarge: { oldBytes: oldText.length, newBytes: newText.length } };
+    }
     // One entry per line, so each line carries its own marker and colour.
-    return diffLines(oldText, newText).flatMap((c): Array<[number, string]> =>
-      c.value.replace(/\n$/, '').split('\n').map((line): [number, string] => [c.added ? 1 : c.removed ? -1 : 0, line]));
+    const diff = changes.flatMap((c): Array<[number, string]> => {
+      const op = c.added ? 1 : c.removed ? -1 : 0;
+      return c.value.replace(/\r?\n$/, '').split('\n').map((line): [number, string] => {
+        if (op === 1) stats.additions++; else if (op === -1) stats.deletions++; else stats.unchanged++;
+        return [op, line.replace(/\r$/, '')];
+      });
+    });
+    return { diff, stats };
   }
 
   private _isPagePrivate(pageName: string): boolean {
@@ -21007,6 +21024,7 @@ ${panes}
       // Get left menu content
       const leftMenu = await this.getLeftMenu(req.userContext);
 
+      const lineDiff = this.lineDiffForDisplay(comparison.diff as Array<[number, string]>);
       res.render('page-diff', {
         ...templateData,
         leftMenu,
@@ -21015,8 +21033,9 @@ ${panes}
         // #2097: each version's editor as people see it.
         version1: (await this.describeUsersIn([this.diffSide(comparison.fromMetadata)], ['author', 'editor']))[0],
         version2: (await this.describeUsersIn([this.diffSide(comparison.toMetadata)], ['author', 'editor']))[0],
-        diff: this.lineDiffForDisplay(comparison.diff as Array<[number, string]>),
-        stats: comparison.stats
+        diff: lineDiff.diff,
+        stats: lineDiff.stats,
+        tooLarge: lineDiff.tooLarge ?? null
       });
 
     } catch (error: unknown) {

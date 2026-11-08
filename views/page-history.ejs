@@ -119,8 +119,8 @@
             <form id="compareForm" class="form-inline">
               <label class="mr-2">From:</label>
               <select id="version1" class="form-control mr-3">
-                <% versions.forEach(v => { %>
-                  <option value="<%= v.version %>">v<%= v.version %> (<%= new Date(v.timestamp).toLocaleDateString() %>)</option>
+                <% versions.forEach((v, i) => { %>
+                  <option value="<%= v.version %>" <%= i === (versions.length > 1 ? 1 : 0) ? 'selected' : '' %>>v<%= v.version %> (<%= new Date(v.timestamp).toLocaleDateString() %>)</option>
                 <% }); %>
               </select>
 
