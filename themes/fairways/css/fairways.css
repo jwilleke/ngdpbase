@@ -1,0 +1,532 @@
+/* =============================================================
+   Fairways layout. Loads after themes/core.css.
+   core.css restates shared tokens on :root, so the values that
+   must differ (white cards, white bar, occupant cue) are set
+   again here. Other sites do not load this file.
+   ============================================================= */
+
+:root {
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --navbar-bg: #ffffff;
+  --navbar-text: #1a2822;
+  --navbar-border: #c5d5cc;
+  --button-primary-bg: #146844;
+  --button-primary-hover: #0c5a3a;
+  --focus-ring: #083d27;
+  --occupant-bg: #f7f1ea;
+  --occupant-border: #7a3828;
+  --occupant-label: #7a3828;
+  --occupant-text: #1a2822;
+}
+
+[data-bs-theme="dark"] {
+  --card-bg: #1b2620;
+  --input-bg: #121a16;
+  --navbar-bg: #18241e;
+  --navbar-text: #e8f3ec;
+  --navbar-border: #31443c;
+  --button-primary-bg: #146844;
+  --button-primary-hover: #0c5a3a;
+  --focus-ring: #8ee0c2;
+  --occupant-bg: #2c221c;
+  --occupant-border: #e7b2a4;
+  --occupant-label: #f0c7ba;
+  --occupant-text: #f6efe9;
+  --logo-panel-bg: #ffffff;
+  --logo-panel-padding: 3px 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-bs-theme]) {
+    --card-bg: #1b2620;
+    --input-bg: #121a16;
+    --navbar-bg: #18241e;
+    --navbar-text: #e8f3ec;
+    --navbar-border: #31443c;
+    --button-primary-bg: #146844;
+    --button-primary-hover: #0c5a3a;
+    --focus-ring: #8ee0c2;
+    --occupant-bg: #2c221c;
+    --occupant-border: #e7b2a4;
+    --occupant-label: #f0c7ba;
+    --occupant-text: #f6efe9;
+    --logo-panel-bg: #ffffff;
+    --logo-panel-padding: 3px 8px;
+  }
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.65;
+}
+
+body > .jspwiki-header,
+body > .navigation {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+/* The page row grows so a short page still fills the window. */
+body > .container-fluid {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+}
+
+body > .container-fluid > .row {
+  flex: 1 1 auto;
+  width: 100%;
+  align-items: stretch;
+}
+
+main[role="main"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+  max-width: none;
+}
+
+main[role="main"] > .footer-content,
+main[role="main"] > .footer-contact {
+  margin-top: auto;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* Buttons ship outline:0 plus their own shadow. A second ring drawn with
+   box-shadow stays visible on those controls. */
+.form-control:focus-visible,
+.form-select:focus-visible,
+.btn:focus-visible,
+.btn-primary:focus-visible,
+.jspwiki-header a:focus-visible,
+.jspwiki-header button:focus-visible,
+.jspwiki-header input:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline-style: solid !important;
+  outline-width: 3px !important;
+  outline-color: var(--focus-ring) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 6px var(--focus-ring) !important;
+}
+
+/* Header. The wordmark file is wide; the inline height is 24px. */
+.jspwiki-header {
+  background-color: var(--navbar-bg) !important;
+  border-bottom: 1px solid var(--navbar-border) !important;
+  box-shadow: inset 0 4px 0 var(--button-primary-bg);
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.jspwiki-header .navbar-brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--navbar-text);
+}
+
+.jspwiki-header .container-fluid {
+  gap: 0.75rem 1rem;
+}
+
+.jspwiki-header .navbar-collapse {
+  flex: 1 1 auto;
+}
+
+/* The template pins search at 400px. Let it grow with the header, then stop. */
+.jspwiki-header form[action="/search"] {
+  max-width: min(34rem, 100%) !important;
+  width: 100% !important;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 24px tall, as the base header draws it. In dark mode a light panel sits
+   behind the wordmark, so its black lettering stays readable. */
+.jspwiki-header .navbar-brand img {
+  box-sizing: content-box;
+  height: 24px !important;
+  width: auto !important;
+  max-width: min(46vw, 210px);
+  margin-right: 0.75rem !important;
+  padding: var(--logo-panel-padding, 0);
+  background-color: var(--logo-panel-bg, transparent);
+  border-radius: 8px;
+}
+
+.jspwiki-header .form-control {
+  min-height: 44px;
+  font-size: 1rem;
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+.jspwiki-header .input-group .btn,
+.jspwiki-header a.btn-outline-primary[href^="/login"] {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 1rem;
+}
+
+.jspwiki-header a.btn-outline-primary[href^="/login"] {
+  gap: 0.5rem;
+  padding: 0.4rem 0.95rem;
+  font-weight: 700;
+  color: var(--occupant-label);
+  background: var(--occupant-bg);
+  border: 2px solid var(--occupant-border);
+  border-radius: 8px;
+}
+
+.jspwiki-header a.btn-outline-primary[href^="/login"]:hover {
+  color: var(--occupant-text);
+  background: var(--card-bg);
+  border-color: var(--occupant-border);
+}
+
+.navigation {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+/* Page name in the tool bar stays available, and stays quieter than the page heading. */
+.navigation-title h5 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Sidebar: public links, then the existing Members Only page as the occupant door. */
+@media (min-width: 768px) {
+  .row > .jspwiki-sidebar {
+    flex: 0 0 clamp(14.5rem, 18vw, 18.5rem);
+    width: clamp(14.5rem, 18vw, 18.5rem);
+    max-width: clamp(14.5rem, 18vw, 18.5rem);
+  }
+
+  .row > .jspwiki-sidebar + main.main-content,
+  .container-fluid > .row > main[role="main"] {
+    flex: 1 1 0%;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    padding: clamp(1.25rem, 2vw, 2.5rem) clamp(1.35rem, 2.6vw, 3.25rem);
+  }
+}
+
+.jspwiki-sidebar {
+  background-color: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border-color);
+}
+
+.leftmenu-content ul li a {
+  color: var(--text-primary);
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  min-height: 44px;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.leftmenu-content ul li a i {
+  width: 1.1em;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.leftmenu-content ul li a:before {
+  content: none;
+}
+
+.leftmenu-content ul li a:hover {
+  color: var(--link-hover);
+  background-color: var(--bg-tertiary);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"],
+.leftmenu-content a[href="/view/Members Only"] {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.1rem;
+  margin-top: 0.9rem;
+  font-weight: 700;
+  color: var(--occupant-text);
+  background: var(--occupant-bg);
+  border: 2px solid var(--occupant-border);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"]::before,
+.leftmenu-content a[href="/view/Members Only"]::before {
+  content: "Occupants";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--occupant-label);
+}
+
+.leftmenu-content a[href="/view/Members%20Only"]:hover,
+.leftmenu-content a[href="/view/Members Only"]:hover {
+  color: var(--occupant-text);
+  background: var(--card-bg);
+}
+
+/* Reading column */
+.markdown-body {
+  padding-top: 0.5rem;
+  color: var(--text-content);
+}
+
+.markdown-body h1,
+.jspwiki-content h1 {
+  font-size: clamp(2.05rem, 3.1vw, 2.85rem);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  border-bottom: none;
+  margin-top: 0;
+  margin-bottom: 0.85rem;
+  max-width: none;
+  color: var(--text-heading);
+}
+
+.markdown-body h2,
+.markdown-body h3,
+.jspwiki-content h2,
+.jspwiki-content h3 {
+  border-bottom: none;
+  letter-spacing: -0.015em;
+  color: var(--text-heading);
+}
+
+.markdown-body h2 { font-size: 1.55rem; }
+.markdown-body h3 { font-size: 1.3rem; }
+
+/* About 70 characters a line at 18px. Tables and images still use the full column. */
+.markdown-body p,
+.markdown-body li,
+.markdown-body blockquote,
+.markdown-body dl {
+  max-width: 32em;
+}
+
+/* Plugin output that is not running text keeps its full width: the
+   RecentChanges total under its table, and list-group rows in a card. */
+.markdown-body p.text-center,
+.markdown-body .list-group-item {
+  max-width: none;
+}
+
+.markdown-body p,
+.markdown-body li {
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+.markdown-body p {
+  margin-bottom: 1.15rem;
+}
+
+.markdown-body a,
+.wikipage {
+  color: var(--link-color);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.markdown-body a:hover,
+.wikipage:hover {
+  color: var(--link-hover);
+}
+
+.external-link,
+.external-link:hover {
+  color: var(--link-color);
+}
+
+/* Page pictures may be as wide as the text column (32em), never wider. */
+.markdown-body img,
+.wiki-image {
+  display: block;
+  width: auto;
+  max-width: min(100%, 32em);
+  height: auto;
+  margin: 0 0 1.25rem !important;
+  border-radius: 10px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+/* A wordmark repeated in page content stays a plate, at most 18rem wide.
+   Recognised by alt text or address containing "logo" or "wordmark", or a
+   "logo" class. Uploaded pictures are served under a code, so their alt
+   text is what usually matches. In dark mode it gets the header's light
+   panel, so its lettering reads. */
+.markdown-body img[src*="logo" i],
+.markdown-body img[src*="wordmark" i],
+.markdown-body img[alt*="logo" i],
+.markdown-body img[alt*="wordmark" i],
+.markdown-body img.logo {
+  max-width: min(100%, 18rem);
+  padding: var(--logo-panel-padding, 0);
+  background-color: var(--logo-panel-bg, transparent);
+  border-radius: 8px;
+}
+
+/* Bootstrap paints these on hover, focus and press. Without them a focused
+   primary button turns Bootstrap blue. */
+.btn-primary {
+  --bs-btn-bg: var(--button-primary-bg);
+  --bs-btn-border-color: var(--button-primary-bg);
+  --bs-btn-hover-bg: var(--button-primary-hover);
+  --bs-btn-hover-border-color: var(--button-primary-hover);
+  --bs-btn-active-bg: var(--button-primary-hover);
+  --bs-btn-active-border-color: var(--button-primary-hover);
+  --bs-btn-disabled-bg: var(--button-primary-bg);
+  --bs-btn-disabled-border-color: var(--button-primary-bg);
+  font-size: 1rem;
+  min-height: 44px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+/* Register and "Sign up with email": centre the icon and label, as Login is. */
+.jspwiki-header a.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-primary:hover:not(:focus-visible) {
+  transform: none;
+  box-shadow: none;
+}
+
+.form-control,
+.form-select {
+  font-size: 1rem;
+  min-height: 44px;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--input-border);
+}
+
+.footer-content,
+.footer-content small {
+  font-size: 1rem;
+}
+
+.footer-content,
+.footer-content .text-muted,
+.footer-content a {
+  color: var(--text-muted) !important;
+}
+
+.footer-content a:hover {
+  color: var(--link-hover) !important;
+}
+
+@media (max-width: 767.98px) {
+  /* A little larger on phones, where the header has room once the name is hidden. */
+  .jspwiki-header .navbar-brand img {
+    height: 30px !important;
+    max-width: 52vw;
+    margin-right: 0 !important;
+  }
+
+  /* The wordmark already names the site; the text name would push the
+     theme toggle and Login onto a second row. Hidden visually only, so a
+     screen reader still announces the site name. */
+  .jspwiki-header .navbar-brand strong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .jspwiki-header .container-fluid {
+    flex-wrap: nowrap;
+  }
+
+  .markdown-body h1,
+  .jspwiki-content h1 {
+    font-size: 1.85rem;
+  }
+
+  #mobileNavOffcanvas .leftmenu-content a {
+    min-height: 48px;
+    font-size: 1.125rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary,
+  .jspwiki-header .navbar-brand,
+  .leftmenu-content ul li a {
+    transition: none;
+  }
+}
+
+/* Last, so it wins over Bootstrap's outline:0 on .btn:focus-visible.
+   Literal colors: a variable in this shorthand was not painting on these controls. */
+.jspwiki-header button.btn-primary:focus-visible,
+.jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible,
+.jspwiki-header input.form-control:focus-visible {
+  outline: 3px solid #083d27 !important;
+  outline-offset: 3px !important;
+}
+
+/* Inset ring stays visible even when the outer outline is clipped or overridden. */
+.jspwiki-header button.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 3px #f4f7f4 !important;
+}
+
+.jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible {
+  border-color: #083d27 !important;
+  box-shadow: inset 0 0 0 3px #083d27 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header button.btn-primary:focus-visible,
+[data-bs-theme="dark"] .jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible,
+[data-bs-theme="dark"] .jspwiki-header input.form-control:focus-visible {
+  outline-color: #8ee0c2 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header button.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 3px #8ee0c2 !important;
+}
+
+[data-bs-theme="dark"] .jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible {
+  border-color: #8ee0c2 !important;
+  box-shadow: inset 0 0 0 3px #8ee0c2 !important;
+}

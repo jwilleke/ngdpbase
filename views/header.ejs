@@ -32,6 +32,10 @@
     <link rel="stylesheet" href="<%= typeof variablesCssPath !== 'undefined' ? variablesCssPath : '/themes/default/css/variables.css' %>?v=3.0.7">
     <link rel="stylesheet" href="<%= typeof coreCssPath !== 'undefined' ? coreCssPath : '/themes/core.css' %>?v=3.0.7">
     <link rel="stylesheet" href="<%= typeof locationCssPath !== 'undefined' ? locationCssPath : '/themes/plugins/location.css' %>?v=3.0.7">
+    <!-- Theme stylesheets (theme.json stylesheets[]) load after core so one site can adjust layout -->
+    <% if (typeof themeStylesheets !== 'undefined' && themeStylesheets && themeStylesheets.length) { %>
+    <% themeStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>?v=3.0.7">
+    <% }); %><% } %>
     <!-- Add-on stylesheets (registered via AddonsManager.registerStylesheet()) -->
     <% if (typeof addonStylesheets !== 'undefined' && addonStylesheets && addonStylesheets.length) { %>
     <% addonStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>">
