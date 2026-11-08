@@ -1248,6 +1248,12 @@ void (async (): Promise<void> => {
   //     Templates surface the token via getCommonTemplateData() as `csrfToken`;
   //     forms render `<input name="_csrf" value="<%= csrfToken %>">`;
   //     JS-driven fetches submit it via the `X-CSRF-Token` header.
+  // 6a'. The signed-out write gate (#2298): before the CSRF check and every route, so a
+  //      POST/PUT/PATCH/DELETE from someone not signed in gets one answer (sign-in redirect
+  //      or 401) whatever the route, unless it is on src/security/signedOutWrites.ts.
+  const { signedOutWriteGate } = await import('./middleware/signedOutWriteGate.js');
+  app.use(signedOutWriteGate(engine));
+
   const { csrfMiddleware } = await import('./middleware/csrf.js');
   app.use(csrfMiddleware);
 
@@ -1269,6 +1275,8 @@ void (async (): Promise<void> => {
   // same way (#1152), and is only known now that the add-ons have loaded.
   const reasonsBeforeAddons = new Set(engine.maintenance.reasons());
   await engine.initializeAddons();
+  // #2298: add-ons have declared their signed-out routes in register(); the list is closed.
+  (await import('./security/signedOutWrites.js')).sealSignedOutWrites();
   const addonBlocks = engine.maintenance.reasons().filter((r) => !reasonsBeforeAddons.has(r));
   // #1603: every document people are asked to accept, core's and the add-ons' just
   // registered, read once, so a missing one shows on the dashboard from start-up.
