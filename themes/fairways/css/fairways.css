@@ -442,7 +442,9 @@ button:focus-visible {
 }
 
 @media (max-width: 767.98px) {
+  /* A little larger on phones, where the header has room once the name is hidden. */
   .jspwiki-header .navbar-brand img {
+    height: 30px !important;
     max-width: 52vw;
     margin-right: 0 !important;
   }

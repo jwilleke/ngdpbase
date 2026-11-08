@@ -73,6 +73,10 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*32em;/);
     expect(css).toMatch(/\.markdown-body img,\s*\n\.wiki-image \{[^}]*max-width:\s*min\(100%,\s*32em\);/);
     expect(css).toMatch(/img\[src\*="logo" i\][^{]*\{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    // The header logo is 24px wide-screen and 30px on phones.
+    expect(css).toMatch(/\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*24px !important;/);
+    const phone = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    expect(phone).toMatch(/^@media \(max-width: 767\.98px\) \{[^@]*\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*30px !important;/);
     // A logo inside a page sits on the same light panel as the header logo in dark mode.
     const pageLogo = css.match(/img\[src\*="logo" i\][^{]*\{([^}]*)\}/);
     expect(pageLogo?.[1]).toMatch(/background-color:\s*var\(--logo-panel-bg,\s*transparent\)/);
