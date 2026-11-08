@@ -65,14 +65,16 @@ describe('ThemeManager theme stylesheets', () => {
     expect(addonAt).toBeGreaterThan(themeAt);
   });
 
-  test('Fairways text uses the main column and the wordmark stays a plate', () => {
+  test('Fairways text holds to about 68 characters and the wordmark stays a plate', () => {
     const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
     expect(css).toMatch(/min-height:\s*100dvh/);
     expect(css).not.toMatch(/65ch/);
     expect(css).not.toMatch(/18ch/);
-    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li \{\s*\n\s*max-width:\s*none;/);
+    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*34em;/);
     expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
-    expect(css).toMatch(/a\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
+    // Login only: the sign-up button also links to /login and keeps the base look.
+    expect(css).toMatch(/a\.btn-outline-primary\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
+    expect(css).not.toMatch(/[\s,]a\[href\^="\/login"\]/);
     expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
   });
 });
