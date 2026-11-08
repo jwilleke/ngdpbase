@@ -338,6 +338,13 @@ button:focus-visible {
   max-width: 32em;
 }
 
+/* Plugin output that is not running text keeps its full width: the
+   RecentChanges total under its table, and list-group rows in a card. */
+.markdown-body p.text-center,
+.markdown-body .list-group-item {
+  max-width: none;
+}
+
 .markdown-body p,
 .markdown-body li {
   font-size: 1.125rem;
@@ -379,10 +386,14 @@ button:focus-visible {
 }
 
 /* A wordmark repeated in page content stays a plate, at most 18rem wide.
-   Recognised by its file name or a "logo" class, as the docs suggest.
-   In dark mode it gets the header's light panel, so its lettering reads. */
+   Recognised by alt text or address containing "logo" or "wordmark", or a
+   "logo" class. Uploaded pictures are served under a code, so their alt
+   text is what usually matches. In dark mode it gets the header's light
+   panel, so its lettering reads. */
 .markdown-body img[src*="logo" i],
 .markdown-body img[src*="wordmark" i],
+.markdown-body img[alt*="logo" i],
+.markdown-body img[alt*="wordmark" i],
 .markdown-body img.logo {
   max-width: min(100%, 18rem);
   padding: var(--logo-panel-padding, 0);
@@ -399,6 +410,8 @@ button:focus-visible {
   --bs-btn-hover-border-color: var(--button-primary-hover);
   --bs-btn-active-bg: var(--button-primary-hover);
   --bs-btn-active-border-color: var(--button-primary-hover);
+  --bs-btn-disabled-bg: var(--button-primary-bg);
+  --bs-btn-disabled-border-color: var(--button-primary-bg);
   font-size: 1rem;
   min-height: 44px;
   font-weight: 700;
@@ -450,9 +463,15 @@ button:focus-visible {
   }
 
   /* The wordmark already names the site; the text name would push the
-     theme toggle and Login onto a second row. */
+     theme toggle and Login onto a second row. Hidden visually only, so a
+     screen reader still announces the site name. */
   .jspwiki-header .navbar-brand strong {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .jspwiki-header .container-fluid {

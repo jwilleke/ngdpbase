@@ -87,6 +87,12 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).toMatch(/\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*24px !important;/);
     const phone = css.slice(css.indexOf('@media (max-width: 767.98px)'));
     expect(phone).toMatch(/^@media \(max-width: 767\.98px\) \{[^@]*\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*30px !important;/);
+    // Uploaded pictures are served under a code, so alt text marks a logo too.
+    expect(css).toMatch(/img\[alt\*="logo" i\],\s*\n\.markdown-body img\[alt\*="wordmark" i\],\s*\n\.markdown-body img\.logo \{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    // Disabled primary buttons stay green, not Bootstrap blue.
+    expect(css).toMatch(/--bs-btn-disabled-bg:\s*var\(--button-primary-bg\)/);
+    // Plugin rows and the RecentChanges total keep their full width.
+    expect(css).toMatch(/\.markdown-body p\.text-center,\s*\n\.markdown-body \.list-group-item \{\s*\n\s*max-width:\s*none;/);
     // A logo inside a page sits on the same light panel as the header logo in dark mode.
     const pageLogo = css.match(/img\[src\*="logo" i\][^{]*\{([^}]*)\}/);
     expect(pageLogo?.[1]).toMatch(/background-color:\s*var\(--logo-panel-bg,\s*transparent\)/);

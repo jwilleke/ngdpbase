@@ -120,7 +120,7 @@ A custom theme that omits the variables gets `2px` and `#868e96`. Check the cont
 
 ### Fairways: logos inside a page
 
-The Fairways theme shows a picture in a page as wide as the text column. A logo is the exception: it stays at most 18rem wide and, in dark mode, sits on a light panel like the header logo. A picture counts as a logo when its file name contains "logo" or "wordmark", or when it has `class="logo"`. Any other file name is sized as a picture.
+The Fairways theme shows a picture in a page as wide as the text column. A logo is the exception: it stays at most 18rem wide and, in dark mode, sits on a light panel like the header logo. A picture counts as a logo when its alt text contains "logo" or "wordmark", when the Image plugin gives it `class='logo'`, or when its address contains "logo" or "wordmark". The address only helps for static files such as the theme's own `logo.png`: an uploaded picture is served under a code, not its file name, so give it alt text such as "Fairways logo". Any other picture is sized as a picture.
 
 The Fairways header shows `assets/logo-header.png`, a copy of `assets/logo.png` with its thin blue frame cleared. Pages that link `logo.png` still get the original.
 
