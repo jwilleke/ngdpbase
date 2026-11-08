@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A write from someone who is not signed in is refused before any route runs ([#2298](https://github.com/jwilleke/ngdpbase/issues/2298)). Every POST, PUT, PATCH and DELETE gets the sign-in redirect (a form) or 401 (JSON), whatever the route and whether its target exists, unless the route is on the signed-out write list in `src/security/signedOutWrites.ts` (signing in with a second factor, magic link, passkey, outside providers, sign-out, registration, password reset, invitation, the emailed approval and email-change confirmations, the contact form, first-run install) or the caller holds a valid Bearer token. The refusal is recorded as `authorization-deny` with the method and path. __Upgrade note:__ a site whose policy or page ACLs let anonymous callers edit, comment or create pages no longer can; that now needs a signed-in account.
+- Add-ons declare routes that signed-out callers must reach with `host.allowSignedOutWrite({ method, path, reason })`, limited to their own paths; the forms add-on declares its public submit.
+- `npm run lint:signed-out-writes` names a write route registered ahead of the gate or in a file the gate does not cover; `npm run inventory:routes` prints every route and whether a signed-out write reaches it.
 - `./server.sh update` refuses, before it changes anything, a checkout with files marked `git update-index --assume-unchanged` or `--skip-worktree`, and lists them. `git status` does not show edits to those files, and a failed update's rollback might overwrite them. A sparse checkout is refused too, since `git sparse-checkout` marks files skip-worktree; update one by hand.
 
 ## [5.43.0] - 2026-11-07

@@ -169,6 +169,14 @@ const formsAddon = {
     const existing = (engine.app?.get('views') as string | string[]) ?? [];
     engine.app?.set('views', [...[existing].flat(), path.join(__dirname, 'views')]);
 
+    // The public form submit: signed-out visitors may reach it (#2298). Whether they may SUBMIT is
+    // still the form-submit permission, asked in the route.
+    host.allowSignedOutWrite({
+      method: 'POST',
+      path: '/api/forms/submit/:formId',
+      reason: 'the public form submit; the route asks form-submit, which policy may grant to anonymous'
+    });
+
     // ── 7. Mount routes ──────────────────────────────────────────────────────
     engine.app?.use('/api/forms',           apiRoutes(engine, formsAddon, host));
     engine.app?.use('/addons/forms/builder', builderRoutes(engine, host));
