@@ -20983,6 +20983,7 @@ ${panes}
       res.render('page-diff', {
         ...templateData,
         leftMenu,
+        pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it.
         version1: (await this.describeUsersIn([comparison.version1 as object], ['author', 'editor']))[0],
