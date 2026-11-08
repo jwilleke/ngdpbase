@@ -118,6 +118,10 @@ Bundled values for `--card-outline`; each is at least 3:1 against both the page 
 
 A custom theme that omits the variables gets `2px` and `#868e96`. Check the contrast of your own colours against your page and card backgrounds. Bootstrap border utilities such as `border-info` still override the colour.
 
+### Fairways: logos inside a page
+
+The Fairways theme shows a picture in a page as wide as the text column. A logo is the exception: it stays at most 18rem wide and, in dark mode, sits on a light panel like the header logo. A picture counts as a logo when its file name contains "logo" or "wordmark", or when it has `class="logo"`. Any other file name is sized as a picture.
+
 ## Activating a Theme
 
 Set the active theme in your instance config (`$FAST_STORAGE/config/app-custom-config.json`):

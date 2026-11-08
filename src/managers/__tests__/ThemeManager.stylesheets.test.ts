@@ -65,14 +65,22 @@ describe('ThemeManager theme stylesheets', () => {
     expect(addonAt).toBeGreaterThan(themeAt);
   });
 
-  test('Fairways text uses the main column and the wordmark stays a plate', () => {
+  test('Fairways text holds to about 70 characters and the wordmark stays a plate', () => {
     const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
     expect(css).toMatch(/min-height:\s*100dvh/);
     expect(css).not.toMatch(/65ch/);
     expect(css).not.toMatch(/18ch/);
-    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li \{\s*\n\s*max-width:\s*none;/);
-    expect(css).toMatch(/max-width:\s*min\(100%,\s*18rem\)/);
-    expect(css).toMatch(/a\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
+    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*32em;/);
+    expect(css).toMatch(/\.markdown-body img,\s*\n\.wiki-image \{[^}]*max-width:\s*min\(100%,\s*32em\);/);
+    expect(css).toMatch(/img\[src\*="logo" i\][^{]*\{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    // A logo inside a page sits on the same light panel as the header logo in dark mode.
+    const pageLogo = css.match(/img\[src\*="logo" i\][^{]*\{([^}]*)\}/);
+    expect(pageLogo?.[1]).toMatch(/background-color:\s*var\(--logo-panel-bg,\s*transparent\)/);
+    expect(pageLogo?.[1]).toMatch(/padding:\s*var\(--logo-panel-padding,\s*0\)/);
+    expect(pageLogo?.[1]).toMatch(/border-radius:\s*8px/);
+    // Login only: the sign-up button also links to /login and keeps the base look.
+    expect(css).toMatch(/a\.btn-outline-primary\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
+    expect(css).not.toMatch(/[\s,]a\[href\^="\/login"\]/);
     expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
   });
 });
