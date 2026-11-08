@@ -31,7 +31,7 @@ import { actorOf, type ActorAttribution, type ActorContext } from '../context/Ac
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
-import { createPatch } from 'diff';
+import { createPatch, diffLines } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
@@ -2806,6 +2806,20 @@ class WikiRoutes {
   private diffSide(meta: unknown): Record<string, unknown> {
     const m = (meta ?? {}) as Record<string, unknown>;
     return { ...m, dateCreated: m.dateCreated ?? m.timestamp, comment: m.comment ?? m.message };
+  }
+
+  /**
+   * #2326: the provider's diff is character level (fast-diff, also what the
+   * delta store keeps), which reads as noise on text. Rebuild the old and new
+   * text from it and diff by line for display, in the same [-1 | 0 | 1, text]
+   * shape the view already renders.
+   */
+  private lineDiffForDisplay(charDiff: Array<[number, string]>): Array<[number, string]> {
+    const oldText = charDiff.filter(([op]) => op <= 0).map(([, t]) => t).join('');
+    const newText = charDiff.filter(([op]) => op >= 0).map(([, t]) => t).join('');
+    // One entry per line, so each line carries its own marker and colour.
+    return diffLines(oldText, newText).flatMap((c): Array<[number, string]> =>
+      c.value.replace(/\n$/, '').split('\n').map((line): [number, string] => [c.added ? 1 : c.removed ? -1 : 0, line]));
   }
 
   private _isPagePrivate(pageName: string): boolean {
@@ -20909,7 +20923,8 @@ ${panes}
         pageName: pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it, username and identity @id.
-        versions: await this.describeUsersIn(pagedVersions.items, ['editor', 'author']),
+        // #2326: the provider's `message` is the view's `comment` (as diffSide does for #2319).
+        versions: await this.describeUsersIn(pagedVersions.items.map((v: unknown) => this.diffSide(v)), ['editor', 'author']),
         versionCount: versions.length,
         paginationHtml: pagedVersions.paginationHtml
       });
@@ -21000,7 +21015,7 @@ ${panes}
         // #2097: each version's editor as people see it.
         version1: (await this.describeUsersIn([this.diffSide(comparison.fromMetadata)], ['author', 'editor']))[0],
         version2: (await this.describeUsersIn([this.diffSide(comparison.toMetadata)], ['author', 'editor']))[0],
-        diff: comparison.diff,
+        diff: this.lineDiffForDisplay(comparison.diff as Array<[number, string]>),
         stats: comparison.stats
       });
 

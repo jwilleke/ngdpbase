@@ -239,7 +239,10 @@ document.getElementById('compareForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const v1 = document.getElementById('version1').value;
   const v2 = document.getElementById('version2').value;
-  compareVersions('<%= pageName %>', v1, v2);
+  // #2326: compareVersions(page, a, b) opens v1=b&v2=a (right for a row's
+  // Compare button: this version, then the previous). The form's From is the
+  // left side, so pass To first to get v1=From&v2=To.
+  compareVersions('<%= pageName %>', v2, v1);
 });
 
 // Load marked.js for markdown rendering if not already loaded
