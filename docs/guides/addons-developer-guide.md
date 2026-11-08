@@ -1015,7 +1015,7 @@ Express is core's. An add-on gets a Router from `engine.createRouter(options?)` 
 
 ### Let a signed-out caller reach a route
 
-Core refuses every POST, PUT, PATCH and DELETE from a caller who is not signed in before your route runs (a form is sent to sign-in, anything else gets 401; a valid Bearer token counts as signed in). A route that visitors must reach signed out, such as a public form, is declared in `register()`:
+Core refuses every request other than GET, HEAD and OPTIONS from a caller who is not signed in before your route runs (a form is sent to sign-in, anything else gets 401; a valid Bearer token counts as signed in). A route that visitors must reach signed out, such as a public form, is declared in `register()`:
 
 ```typescript
 host.allowSignedOutWrite({
@@ -1025,7 +1025,7 @@ host.allowSignedOutWrite({
 });
 ```
 
-- The path must be under `/api/<your-slug>/` or `/addons/<your-slug>/`, with literal segments and `:name` parameters only; anything else throws. Declare it before the list is sealed, which happens once all add-ons have loaded.
+- The path must be under `/api/<your-slug>/` or `/addons/<your-slug>/`, with literal segments and `:name` parameters only; anything else throws. An add-on whose slug is one of core's own route prefixes (`admin`, `page`, `tokens`…) cannot declare any. Declare it before the list is sealed, which happens once all add-ons have loaded.
 - It lets the request reach your route and grants nothing: the route still asks its permission through `ApiContext.requirePermission`, so policy decides who may submit.
 - A route you do not declare is refused signed out. Declare only what a person must reach without an account; the forms add-on declares its public submit this way.
 

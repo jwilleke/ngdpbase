@@ -176,7 +176,7 @@ export async function collectRoutes(): Promise<RouteRecord[]> {
   // Registered by app.ts or by a library, ahead of the gate; the lint holds this list to PRE_GATE.
   records.push(
     { method: 'POST', path: '/auth/oauth/:name/callback', handler: 'outsideCallbackRelay', origin: 'app (before the gate)', file: 'src/app.ts', line: 0 },
-    { method: 'POST', path: '/oidc/*', handler: 'node-oidc-provider protocol endpoints (token, device auth, registration, session end)', origin: 'app (before the gate)', file: 'src/app.ts', line: 0 }
+    { method: 'POST', path: '/oidc/*', handler: 'node-oidc-provider protocol endpoints (token, revocation, device flow when configured, session end)', origin: 'app (before the gate)', file: 'src/app.ts', line: 0 }
   );
   return records;
 }

@@ -1562,7 +1562,7 @@ class PolicyInformationPoint extends BaseManager {
    * token. Standard tier and best-effort, like every other denial.
    */
   recordRouteRefusal(subject: UserContext | null | undefined, route: string): Promise<void> {
-    this.engine?.logger?.warn?.(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} route=${route} allowed=false reason=signed_out_write`);
+    logger.warn(`ACL decision: user=${PolicyInformationPoint.recordedUser(subject)} route=${route} allowed=false reason=signed_out_write`);
     return this.auditDenial(subject, route, 'signed-out-write', 'signed_out_write', 'route');
   }
 

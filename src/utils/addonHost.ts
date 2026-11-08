@@ -123,13 +123,13 @@ export interface AddonHost {
    */
   readonly registerReviewHandler: (handlerId: string, handler: ReviewHandler) => void;
   /**
-   * #2298: every POST, PUT, PATCH and DELETE from someone who is not signed in
-   * is refused before your route runs. A route that signed-out people must
+   * #2298: every request but GET, HEAD and OPTIONS from someone who is not
+   * signed in is refused before your route runs. A route that signed-out people must
    * reach (a public form) is declared here, in `register()`, with the reason:
    * `host.allowSignedOutWrite({ method: 'POST', path: '/api/<slug>/submit/:id', reason })`.
    * The path must be under `/api/<slug>/` or `/addons/<slug>/` (literal
-   * segments and `:name` only) or this throws; nothing else can add to the
-   * list. It only lets the request reach your route: the route still asks its
+   * segments and `:name` only), and the slug must not be one of core's own
+   * prefixes (`RESERVED_ADDON_SLUGS`), or this throws. It only lets the request reach your route: the route still asks its
    * own permission through `ApiContext.requirePermission`.
    */
   readonly allowSignedOutWrite: (route: SignedOutWriteRoute) => void;

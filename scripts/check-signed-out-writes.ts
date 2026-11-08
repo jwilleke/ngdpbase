@@ -2,7 +2,7 @@
 /**
  * Every write route is behind the signed-out write gate, or listed (#2298).
  *
- * `signedOutWriteGate` refuses a signed-out POST, PUT, PATCH or DELETE before
+ * `signedOutWriteGate` refuses a signed-out request other than GET, HEAD or OPTIONS before
  * any route runs, and only the routes in `src/security/signedOutWrites.ts` are
  * excepted. That holds only for routes registered AFTER the gate in
  * `src/app.ts`, in a file the gate's order reaches. This lint fails, naming the
@@ -31,7 +31,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Registered ahead of the gate in app.ts, and why a signed-out caller must get past it. */
 const PRE_GATE: Record<string, string> = {
-  'app.use(OIDC_MOUNT': 'the OpenID Connect provider\'s protocol endpoints (token, device, registration…) answer machine clients with their own client authentication and PKCE; mounted before the body parser and the session by design (#1570)',
+  'app.use(OIDC_MOUNT': 'the OpenID Connect provider\'s protocol endpoints (token, revocation, the device flow when configured, session end; dynamic client registration is off) answer machine clients with their own client authentication and PKCE; mounted before the body parser and the session by design (#1570)',
   'app.post(OUTSIDE_CALLBACK_PATH': 'relays an outside provider\'s form_post callback to the GET callback; it only redirects, and must run before the session (#1743)'
 };
 
@@ -45,7 +45,7 @@ const ROUTE_FILES: Record<string, string> = {
 
 export interface Violation { file: string; line: number; detail: string }
 
-const WRITE_REGISTRATION = /\b(?:app|router|this\.router)\s*\.\s*(?:post|put|patch|delete|all)\s*\(|\b(?:app|router)\.route\s*\(/;
+const WRITE_REGISTRATION = /(?:\b(?:app|\w*[Rr]outer|this\.router)|Router\(\))\s*\??\.\s*(?:post|put|patch|delete|all|propfind|proppatch|mkcol|copy|move|lock|unlock|merge|search|purge)\s*\(|\b(?:app|\w*[Rr]outer)\??\.route\s*\(/;
 const isAddonRoute = (rel: string): boolean => /^addons\/[^/]+\/(?:routes\/[^/]+|index)\.ts$/.test(rel);
 
 function code(line: string): string {
@@ -55,7 +55,7 @@ function code(line: string): string {
 }
 
 /** Routes and route-bearing calls in app.ts that must come after the gate. */
-const APP_ROUTE_BEARING = /\bapp\.(?:post|put|patch|delete|all)\(|\bapp\.use\(\s*(?:['"`]|[A-Z_]{3,}\b)|\bregisterRoutes\(|\binitializeAddons\(|\bregisterOidcRoutes\(/;
+const APP_ROUTE_BEARING = /\bapp\s*\??\.\s*(?:post|put|patch|delete|all|propfind|proppatch|mkcol|copy|move|lock|unlock|merge|search|purge|route)\s*\(|^\s*\.\s*(?:post|put|patch|delete|all|route)\s*\(|\bapp\.use\(\s*(?:['"`]|[A-Z_]{3,}\b)|\bapp\.use\([^)]*[Rr]outer\b|\bregisterRoutes\(|\binitializeAddons\(|\bregisterOidcRoutes\(/;
 
 export function checkApp(source: string): Violation[] {
   const rel = 'src/app.ts';

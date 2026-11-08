@@ -2,8 +2,8 @@
  * The signed-out write list (#2298): the one place that names which routes may
  * be written to by someone who is not signed in.
  *
- * Every POST, PUT, PATCH and DELETE from a caller who is not signed in is
- * refused by `signedOutWriteGate` (src/middleware/signedOutWriteGate.ts),
+ * Every request from a caller who is not signed in, other than GET, HEAD and
+ * OPTIONS, is refused by `signedOutWriteGate` (src/middleware/signedOutWriteGate.ts),
  * before any route runs, unless the route is on this list. A new write route
  * is therefore closed to signed-out callers until someone adds it here with a
  * reason, which is the point (#2294 came from routes that were open until
@@ -18,8 +18,10 @@
  *
  * Core's routes are listed below. An add-on lists its own through the add-on
  * host, `host.allowSignedOutWrite(...)`, which accepts only a route under the
- * add-on's own `/api/<slug>/` or `/addons/<slug>/`; nothing else can add to
- * the list, and it is sealed once the add-ons have loaded.
+ * add-on's own `/api/<slug>/` or `/addons/<slug>/`, and refuses a slug that
+ * names one of core's own `/api/` or `/addons/` prefixes. Those are the only
+ * ways onto the list, and it is sealed once the add-ons have loaded; outside
+ * tests (`NODE_ENV=test`) the seal cannot be undone.
  *
  * Permission to write is still asked by each route, as always: an entry only
  * lets the request reach the route, it grants nothing.
@@ -35,12 +37,30 @@ export interface SignedOutWriteRoute {
   reason: string;
 }
 
-const WRITE_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+/** The methods that only read. Every other method is held by the gate, so a new one (PROPFIND, MERGE, SEARCH…) fails closed. */
+const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Whether the method changes things, and so is held by the gate. */
+/** The methods an add-on may list. */
+const LISTABLE_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** Whether the method may change things, and so is held by the gate: anything but GET, HEAD and OPTIONS. */
 export function isWriteMethod(method: string): boolean {
-  return WRITE_METHODS.has(method.toUpperCase());
+  return !SAFE_METHODS.has(method.toUpperCase());
 }
+
+/**
+ * Slugs an add-on may not use to list a route, because core already answers
+ * under `/api/<slug>/` or `/addons/<slug>/`: an add-on in a directory named
+ * `admin` must not open `/api/admin/...`. Kept in step with core's route
+ * files; `signedOutWriteGate.test.ts` checks it against the route inventory.
+ */
+export const RESERVED_ADDON_SLUGS: ReadonlySet<string> = new Set([
+  'addons', 'admin', 'agent', 'agents', 'assets', 'attachments', 'audit', 'auth', 'backup', 'catalog', 'check-updates',
+  'comments', 'config', 'consent', 'core', 'export', 'footnotes', 'import', 'install', 'keywords', 'login', 'logout',
+  'media', 'notifications', 'oidc', 'page', 'page-metadata', 'page-source', 'page-suggestions', 'pages', 'policies',
+  'policy', 'preview', 'profile', 'register', 'search', 'session', 'session-count', 'session-users', 'sessions', 'share',
+  'system', 'test', 'tokens', 'user', 'user-keywords', 'users', 'vault', 'wiki'
+]);
 
 /**
  * Core's list. Each reason says why the route cannot wait for a sign-in.
@@ -112,7 +132,8 @@ export function declareAddonSignedOutWrite(slug: string, route: SignedOutWriteRo
     throw new Error(`Add-on '${slug}' cannot allow a signed-out ${String(route?.method)} ${String(route?.path)}: ${why}`);
   };
   if (sealed) refuse('the list is sealed once add-ons have loaded; declare it in register()');
-  if (!route || typeof route.method !== 'string' || !isWriteMethod(route.method)) refuse('the method must be POST, PUT, PATCH or DELETE');
+  if (RESERVED_ADDON_SLUGS.has(slug.toLowerCase())) refuse(`'${slug}' is one of core's own route prefixes`);
+  if (!route || typeof route.method !== 'string' || !LISTABLE_METHODS.has(route.method.toUpperCase())) refuse('the method must be POST, PUT, PATCH or DELETE');
   if (typeof route.reason !== 'string' || route.reason.trim() === '') refuse('say why in `reason`');
   if (typeof route.path !== 'string') return refuse('the path must be a string');
   const own = [`/api/${slug}/`, `/addons/${slug}/`];
@@ -127,8 +148,9 @@ export function sealSignedOutWrites(): void {
   sealed = true;
 }
 
-/** Test support: forget add-on declarations and reopen the list. */
+/** Test support: forget add-on declarations and reopen the list. Refuses outside `NODE_ENV=test`, so a sealed list stays sealed. */
 export function resetSignedOutWrites(): void {
+  if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) throw new Error('resetSignedOutWrites is for tests only (NODE_ENV=test)');
   addonEntries = [];
   sealed = false;
 }

@@ -33,7 +33,9 @@ const MAIL_LOG = process.env.E2E_MAIL_LOG;
 const PROBE = '/gate-probe';
 
 let baseURL: string;
-test.beforeAll((_fixtures, info) => { baseURL = String(info.project.use.baseURL ?? process.env.E2E_BASE_URL); });
+// Playwright requires the first argument to be a destructuring pattern; no fixture is needed.
+// eslint-disable-next-line no-empty-pattern
+test.beforeAll(({}, info) => { baseURL = String(info.project.use.baseURL ?? process.env.E2E_BASE_URL); });
 
 const fresh = (): Promise<APIRequestContext> => playwrightRequest.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
 

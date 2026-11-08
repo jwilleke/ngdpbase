@@ -7,7 +7,7 @@ import request from 'supertest';
 import { addonDeclarations, collectRoutes, isWriteMethod, type RouteRecord } from '../../../scripts/route-inventory';
 import { signedOutWriteGate } from '../signedOutWriteGate';
 import {
-  CORE_SIGNED_OUT_WRITES, declareAddonSignedOutWrite, resetSignedOutWrites, sealSignedOutWrites,
+  CORE_SIGNED_OUT_WRITES, RESERVED_ADDON_SLUGS, declareAddonSignedOutWrite, resetSignedOutWrites, sealSignedOutWrites,
   signedOutWriteReason, signedOutWriteRoutes
 } from '../../security/signedOutWrites';
 
@@ -138,6 +138,16 @@ describe('who counts as signed in', () => {
   test('reads are not held', async () => {
     const { app } = appWith(routes, 'anonymous');
     expect((await request(app).get('/view/x')).status).toBe(200);
+    expect((await request(app).head('/view/x')).status).toBe(200);
+    expect((await request(app).options('/view/x')).status).toBe(200);
+  });
+  test('every other method is held, so one nobody thought of fails closed', async () => {
+    const { app, reached } = appWith([{ method: 'PROPFIND', path: '/dav/:page' }, { method: 'SEARCH', path: '/find' }], 'anonymous');
+    const propfind = await request(app).propfind('/dav/x').set('Accept', 'application/json');
+    expect(propfind.status).toBe(401);
+    const search = await request(app).search('/find').set('Accept', 'application/json');
+    expect(search.status).toBe(401);
+    expect(reached).toEqual([]);
   });
 });
 
@@ -172,6 +182,17 @@ describe('add-ons declare their own routes, and nothing else', () => {
     expect(() => declareAddonSignedOutWrite('forms', route as never)).toThrow(/forms/);
     expect(signedOutWriteRoutes().filter((r) => r.owner === 'forms')).toEqual([]);
   });
+  test.each(['admin', 'page', 'tokens', 'Admin'])('refuses an add-on whose slug is core\'s own prefix: %s', (slug) => {
+    expect(() => declareAddonSignedOutWrite(slug, { method: 'POST', path: `/api/${slug}/cache/clear`, reason: 'x' })).toThrow(/core's own route prefixes/);
+    expect(signedOutWriteReason('POST', `/api/${slug}/cache/clear`)).toBeNull();
+  });
+  test('every prefix core answers under /api/ and /addons/ is reserved', async () => {
+    const corePrefixes = new Set((await collectRoutes())
+      .filter((r) => !r.origin.startsWith('addon:'))
+      .map((r) => /^\/(?:api|addons)\/([^/:]+)/.exec(r.path)?.[1])
+      .filter((p): p is string => Boolean(p)));
+    expect([...corePrefixes].filter((p) => !RESERVED_ADDON_SLUGS.has(p))).toEqual([]);
+  }, 60_000);
   test('refuses once the list is sealed', () => {
     sealSignedOutWrites();
     expect(() => declareAddonSignedOutWrite('forms', { method: 'POST', path: '/api/forms/x', reason: 'late' })).toThrow(/sealed/);

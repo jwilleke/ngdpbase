@@ -1,6 +1,6 @@
 /**
- * The signed-out write gate (#2298): a POST, PUT, PATCH or DELETE from a caller
- * who is not signed in is refused here, before any route runs, unless the route
+ * The signed-out write gate (#2298): any request but GET, HEAD or OPTIONS from a
+ * caller who is not signed in is refused here, before any route runs, unless the route
  * is on the signed-out write list (src/security/signedOutWrites.ts).
  *
  * "Signed in" is the request's own subject: a session that signed in, or a
